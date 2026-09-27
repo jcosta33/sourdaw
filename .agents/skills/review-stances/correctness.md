@@ -51,8 +51,48 @@ carries it in addition.
   it; then drive the smallest project through each route the diff did not guard. A door the diff
   leaves open while its doc says the state is unreachable is the finding, and the doc is what
   blocks.
+- When a change decides a syntax shape by hand — a header, a body, a terminator, a delimiter —
+  enumerate the grammar-legal forms the new rule does not name and drive each one in both
+  directions, because a shape it wrongly refuses is a command that cannot run and a shape it wrongly
+  accepts is a check that did not happen; a case that pins the refused forms states the bound and
+  hands the fix off, it does not close the defect.
 
 ## Lessons from escapes
+
+### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
+
+PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface and type
+headers — so a generic class header or a completed type alias would stop being mistaken for a loader
+body. The recognition names the header forms it accepts, treats an `enum`, `namespace` or `module`
+header as a terminator that refuses, and treats every other `{` as a body or an object literal, so
+eight grammar-legal TypeScript forms that each hold a `require(specifier: string): unknown` member —
+a nested property type, a parameter annotation, a return type, a class-property annotation, a
+conditional-type branch, a mapped type, a decorator-preceded member, and a union with a negative
+literal type — are refused as computed loads once another member precedes that one — except the
+decorator form, which refuses alone — and the graph assertion stops a command whose source loads
+nothing. The defect reached `main` through that pull request; the refusals were measured while
+reviewing the later change #4828, which handed the fix to #4835 and pinned nothing, so no bound on
+these forms survives in the merged revision.
+
+Blind spot: the review's stances attacked the miss direction (a load the scanner fails to see) and
+the accepted-literal direction, and probed the declaration headers the change added; none asked
+which grammar-legal forms the new recognition still refuses. A hand-rolled recogniser has two
+failure directions, and the refusal direction turns a legal source into a command that cannot run,
+which reads as a defect in the source rather than in the scanner.
+
+Probe that would have caught it: enumerate the TypeScript forms that place an object type where the
+recogniser only expects a header — nested property, parameter, return, property annotation,
+conditional branch, mapped type, decorator member, literal-union member — and drive
+`snapshotComputedDynamicSpecifiers` on each, twice: once with the named member first in its body and
+once with another member such as `version: string;` ahead of it, the union form nested in a
+class-like body so that position is the only difference between the two readings. Seven forms return
+`[]` alone and `['require(...)']` ahead-of-member, so the member position alone decides them; the
+decorator form returns `['require(...)']` for both, refusing even when it is first. Any form that
+returns a specifier is the finding, a form admitted alone reads as a legal source, and the same
+enumeration must include the forms the rule does accept so the pin covers both directions. Measure a
+genuine computed load in the same scratch script — `const p = './x.ts'; require(p);` must still
+return `['require(...)']` — because an empty result for a declaration form is otherwise
+indistinguishable from a scanner that never ran.
 
 ### 2026-09-26 — a read tool whose largest answer never fit its own receipt budget (escaped via PR #2011)
 
