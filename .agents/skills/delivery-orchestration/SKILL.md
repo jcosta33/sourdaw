@@ -141,10 +141,11 @@ follows [`.github/pull_request_template.md`](../../../.github/pull_request_templ
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
 omitted flags preserve it. A product-scope change — any handwritten path under
-`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` whose
-every segment narrates a command; it must teach user/reviewer-observable steps
-and their expected result, while a body preserved from an existing pull request
-is not re-judged. Publishing neither enables auto-merge nor posts
+`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` in
+which any sentence, clause, or line narrates a command or names specs, suites,
+or CI; it must teach only user/reviewer-observable steps and their expected
+result, with an app launch folded into the step that uses it, while a body
+preserved from an existing pull request is not re-judged. Publishing neither enables auto-merge nor posts
 reviews.
 
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
@@ -189,10 +190,15 @@ refuses if the PR is no longer open when the push lands.
 ### PR body
 
 Write for a teammate outside the session. Under template headings explain what
-changed and why, without repeating the title, and how to test. Product changes
-require user/reviewer-observable steps and expected results, not substituted
-author/CI checks; internal or developer work may name its actual validation
-interface. Exclude session diaries, unpublished rounds, and mutation tables.
+changed and why, without repeating the title, and how to test. How to test is
+the reviewer's script in the app: what to open, click, play, or export, and what
+they should see or hear. Product changes carry only those steps — unit, E2E,
+typecheck, lint, and CI runs do not belong beside them, because the reviewer does
+not re-run them and the checks list already shows them. Internal or developer
+work with no app surface exercises the tool an operator runs and what it prints
+or refuses, not the specs covering it; only a test-only change names its specs.
+The template has no Screenshots section; agents never attach one. Exclude
+session diaries, unpublished rounds, mutation tables, and test-run inventories.
 
 ## Review bundles and publication
 
@@ -264,9 +270,12 @@ than minting a second one.
 `review:prepare` logs `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`
 reconstructed from the pull request's public review history; once `<n>` reaches the
 escalation threshold it also names the bundle's `reassessment.json` as the action
-required before the next publication. The threshold is the single constant
-`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts`. A fresh
-reviewer publication at or above it refuses before any remote write until the caller
+required before the next publication. At five rounds and beyond, preparation, publication,
+and repair log a nonblocking `review-round-warning:<pr>:request-changes=<n>:threshold=<t>`
+asking the agent to review the churn and remaining findings. The thresholds are the
+constants `REVIEW_ROUND_ESCALATION_THRESHOLD` and `REVIEW_ROUND_WARNING_THRESHOLD` in
+`scripts/reviewRoundEscalation.ts`. At or above the escalation threshold, a fresh
+reviewer publication refuses before any remote write until the caller
 writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
 `pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of
 `split` | `respec` | `continue`, and a single-line, trimmed, bounded, evidence-safe
@@ -365,8 +374,15 @@ record beside `assessmentImpact` and covered by `dossierDigest`, so the
 acknowledgement is bound to what was accepted; records persisted before it
 existed keep replaying byte-identically. It records an acknowledgement, never
 agreement, and confers no verdict, approval or merge authority — ADR 0047 still
-governs. A bundle with no `semantic-ci.json` — a historical bundle, or a head
-whose assessment was never delivered — carries no such requirement.
+governs. When the record instead shows `no-assessment` — CI ran and delivered
+nothing for the head — `review:publish` refuses `assessmentImpact: none`
+outright, with or without a reason, and requires a limitation citing the
+record's own reason as the token `semantic-ci <reason>` (for example
+`semantic-ci red-check`), regardless of impact. A bundle with no
+`semantic-ci.json` file at all — a historical bundle prepared before
+`review:prepare` wrote the record — still carries no such requirement; a
+bundle whose manifest records generating that file but carries no such file on
+disk is refused instead of read as undelivered.
 
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,

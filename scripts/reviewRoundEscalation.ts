@@ -20,6 +20,9 @@ import {
 } from './reconstructReviewRounds.ts';
 
 export const REVIEW_ROUND_ESCALATION_THRESHOLD = 3;
+
+/** Warn about repeated review churn while retaining the reassessment gate for every later round. */
+export const REVIEW_ROUND_WARNING_THRESHOLD = 5;
 export const REVIEW_REASSESSMENT_FORMAT = 'reassessment-v1';
 export const REASSESSMENT_FILE_NAME = 'reassessment.json';
 
@@ -116,19 +119,38 @@ export function parseReviewReassessment(value: unknown): ReviewReassessment {
     };
 }
 
-/** The reviewer `REQUEST_CHANGES` rounds in a reconstruction — rounds, never findings. */
+/**
+ * The reviewer `REQUEST_CHANGES` rounds in a reconstruction — rounds, never findings. A round is its
+ * review, so the same review appearing twice, as a paginated read can return it, counts once.
+ */
 export function countReviewerRequestChangesRounds(reconstruction: ReviewReconstruction): number {
-    return reconstruction.rounds.filter((round) => round.role === 'reviewer' && round.verdict === 'changes-requested')
-        .length;
+    const reviews = new Set<number>();
+    for (const round of reconstruction.rounds) {
+        if (round.role === 'reviewer' && round.verdict === 'changes-requested') {
+            reviews.add(round.reviewId);
+        }
+    }
+    return reviews.size;
 }
 
 export type ReviewReassessmentFile = { present: true; value: unknown } | { present: false };
 
+export function logReviewRoundWarning(number: number, observedCount: number, log: (message: string) => void): void {
+    if (observedCount >= REVIEW_ROUND_WARNING_THRESHOLD) {
+        log(
+            `review-round-warning:${number}:request-changes=${observedCount}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}: ` +
+                'make sure you know what you are doing; review the churn and remaining findings before continuing'
+        );
+    }
+}
+
 /**
  * The escalation gate. Below the threshold it requires nothing and returns `undefined`; at or above
  * it the caller-authored reassessment must be present, must bind this pull request, head and base,
- * must record exactly the observed count, and must carry a known action and a safe reason. Every
- * refusal names the observed count, the threshold, the expected file path, and the allowed actions.
+ * must record exactly the observed count, and must carry a known action and a safe reason. A refusal
+ * for a missing file, an unknown action or an unsafe reason names the observed count, the threshold,
+ * the expected file path and the allowed actions; a refusal for a reassessment that does not bind
+ * names the field that disagrees. This gate applies at every count above the threshold.
  */
 export function gateReviewRoundEscalation(input: {
     observedCount: number;
@@ -190,6 +212,7 @@ export function logReviewRoundEscalationAtThreshold(
             comments(number)
         );
         const requestChanges = countReviewerRequestChangesRounds(reconstruction);
+        logReviewRoundWarning(number, requestChanges, log);
         if (requestChanges >= REVIEW_ROUND_ESCALATION_THRESHOLD) {
             log(
                 `review-round-escalation:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`

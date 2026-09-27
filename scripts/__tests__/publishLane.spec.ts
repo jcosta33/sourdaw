@@ -81,7 +81,7 @@ import {
     type RemoteBranchRead,
 } from '../publishLane.ts';
 import { changedReviewPaths, type ReviewChangedPath } from '../reviewDiffSummary.ts';
-import { COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL } from '../testInstructions.ts';
+import { CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL } from '../testInstructions.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -554,7 +554,7 @@ describe('stack publication fencing', () => {
         };
 
         expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
-            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+            CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
         );
 
         expect(calls).toContain(`changedPaths:${ISSUE_LANE}:parent-head:abc`);
@@ -1321,7 +1321,7 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
 
         expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
-            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+            CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
         );
         // The gate read the lane's own diff over the exact base and head the port carries before
         // refusing, so the classification is the lane's, not a guess — and it read after the
@@ -1353,7 +1353,7 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
 
         expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
-            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+            CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
         );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
@@ -1375,6 +1375,23 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${COMMAND_ONLY_TEST}`);
     });
 
+    it('drops the retired Screenshots block when it re-composes an older body', () => {
+        const preservedTest = 'Open the arrangement view and confirm the new clip handle renders.';
+        const legacyBody =
+            `### 🎯 What does this PR do?\n${DEFAULT_SUMMARY}\n\n### 🧪 How to test\n${preservedTest}\n\n` +
+            '### 🖼️ Screenshots\nNone.\n\n### 📌 Related issues & additional notes\nCloses #12\n';
+        const { port, calls, bodies } = fakePort({ existing: 41, existingBody: legacyBody });
+        const summary = 'Keep VCS identity records so every authored change names its writer.';
+
+        expect(publishLane(12, port, undefined, undefined, summary)).toBe(41);
+
+        expect(calls).toContain('edit:41');
+        expect(bodies.at(-1)).toBe(
+            `### 🎯 What does this PR do?\n${summary}\n\n### 🧪 How to test\n${preservedTest}\n\n` +
+                '### 📌 Related issues & additional notes\nCloses #12\n'
+        );
+    });
+
     it('pins the product-scope prefix inventory the gate classifies by', () => {
         expect([...PRODUCT_SCOPE_PREFIXES]).toEqual(PRODUCT_SCOPE_PREFIXES_UNDER_TEST);
     });
@@ -1389,7 +1406,7 @@ describe('lane publish', () => {
             });
 
             expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
-                COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+                CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
             );
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         }

@@ -127,6 +127,23 @@ describe('loadSnapshot', () => {
         expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
     });
 
+    it('restores the coordinate stamp so a stamped snapshot rehydrates a stamped store', () => {
+        const snapshot: ArrangementSnapshot = {
+            ...baseSnapshot,
+            midi: {
+                notesByClipId: { 'clip-1': [] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+                noteCoordinateFormat: 'clip-relative',
+            },
+        };
+
+        loadSnapshot(snapshot);
+
+        expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
+        expect(midiStore.value?.noteCoordinateFormat).toBe('clip-relative');
+    });
+
     it('delegates omitted timeline maps and Arrangement metadata', () => {
         // A snapshot captured from an arrangement that had no tempo map, markers,
         // or take lanes. The Arrangement-owned restore must clear its stale stores.

@@ -36,6 +36,7 @@ describe('handleMoveClips', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: structuredClone(baseTracks) });
         mocks.moveClip.mockReturnValue(true);
         mocks.planRippleMove.mockReturnValue(null);
+        mocks.rippleMoveClip.mockReturnValue(true);
     });
 
     it('writes every requested move with the pre-gesture position as the automation anchor', () => {
@@ -78,6 +79,25 @@ describe('handleMoveClips', () => {
             clipDuration: 4,
             plan,
         });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when the ripple move itself is refused', () => {
+        // A refused move (a legacy clip whose cross-host target the placement
+        // rule rejects) must contribute no history entry and no neighbor-shift
+        // record: the plan describes shifts around a move that never landed.
+        const plan = {
+            gapClosedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
+            destinationOpenedClips: [],
+        };
+        mocks.planRippleMove.mockReturnValue(plan);
+        mocks.rippleMoveClip.mockReturnValue(false);
+        const action = moveAction([{ clipId: 'c1', trackId: 't1', startBeat: 2 }], true);
+        const desc = handleMoveClips.describe(action);
+
+        expect(handleMoveClips.execute(action)).toEqual({ status: 'no-write' });
+        expect(desc.inverseAction).toBeNull();
+        expect(mocks.rippleMoveClip).toHaveBeenCalledTimes(1);
         expect(mocks.moveClip).not.toHaveBeenCalled();
     });
 

@@ -32,7 +32,7 @@ import {
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from './evidence.ts';
-import { fitUnitEvidence, serializedRegion } from './fit.ts';
+import { fitUnitEvidence, serializedRegion, unitReductionReason } from './fit.ts';
 import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
 import {
     assessUnit,
@@ -53,6 +53,7 @@ import {
     computePolicyDigest,
     computeRulesDigest,
     isCollectedSpec,
+    unitNeedsContractContext,
     type SemanticBudgetProfile,
     type SemanticRule,
     type SemanticRuleId,
@@ -100,6 +101,12 @@ export type SemanticUnitEvidence = {
     readonly contents: ReadonlyMap<string, string>;
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    /**
+     * The sides the per-request fitter dropped for this unit, kept apart from the collector
+     * withholdings merged into `ownDroppedSides`/`contextDroppedSides`, so the reduced-unit record can
+     * name exactly what the fitter cut.
+     */
+    readonly fittedDroppedSides: ReadonlySet<EvidenceSide>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -238,9 +245,7 @@ export function planUnits(
             }
             continue;
         }
-        const needsContract = rules.some((rule) =>
-            rule.requiredEvidence.some((token) => /contract|decision|registration/iu.test(token))
-        );
+        const needsContract = unitNeedsContractContext(rules);
         // A rule that declares it needs the implementation is asking about a path that is usually not
         // the one under assessment, so the planner supplies the changed implementation's after side as
         // context. Without this the declaration was unsatisfiable and the rule silently scored anyway;
@@ -313,6 +318,7 @@ export function planUnits(
                     fitted.context.droppedSides,
                     withheldContextSides(set, files, file.path, needsImplementation)
                 ),
+                fittedDroppedSides: new Set<EvidenceSide>([...fitted.own.droppedSides, ...fitted.context.droppedSides]),
             },
         });
     }
@@ -445,11 +451,6 @@ export type StoredUnitResponse = {
     readonly answers: Readonly<Record<string, unknown>>;
     readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
 };
-
-function contractContextPaths(port: SemanticSourcePort, contractSourceSha: string): string[] {
-    const candidates = ['AGENTS.md', '.agents/decisions/README.md'];
-    return candidates.filter((path) => port.readFile(contractSourceSha, path) !== undefined);
-}
 
 type ScanAccumulation = {
     signals: ScanAssessment[];
@@ -602,16 +603,14 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
     });
     const files = input.ports.source.changedFiles(context.mergeBaseSha, context.headSha);
 
-    const contractPaths = [
-        ...new Set([...contractContextPaths(input.ports.source, context.contractSourceSha), ...input.contractPaths]),
-    ];
     const evidenceSet = collectEvidence({
         port: input.ports.source,
         mergeBaseSha: context.mergeBaseSha,
         headSha: context.headSha,
         contractSourceSha: context.contractSourceSha,
         limits: input.limits,
-        contractPaths,
+        contractPaths: input.contractPaths,
+        includeDefaultContractContext: true,
     });
     assertEvidenceIntegrity(evidenceSet.references);
 
@@ -620,13 +619,16 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
     const budget = createBudgetController(input.profile);
     const deadline = input.ports.clock.now() + input.profile.overallDeadlineMs;
     // A unit the fitter had to reduce is a limitation of the run, not a detail of the plan: without
-    // this the operator sees a clean completion for a unit whose evidence was cut to a fraction.
-    const reducedUnits = units.filter((unit) => unit.evidence.truncated.length > 0);
+    // this the operator sees a clean completion for a unit whose evidence was cut to a fraction. Only a
+    // fitted drop is a reduction: a unit whose truncation entries are the collector's own withholdings
+    // was never reduced below the request budget, and recording it as one named a cause that never
+    // occurred. Those entries stay in the scope's `truncated` list exactly as the collector wrote them.
+    const reducedUnits = units.filter((unit) => unit.evidence.fittedDroppedSides.size > 0);
     const unitReductions = [
         ...incomplete,
         ...reducedUnits.map((unit) => ({
             path: unit.path,
-            reason: 'unit-evidence-reduced-below-request-budget',
+            reason: unitReductionReason(unit.evidence.fittedDroppedSides),
         })),
     ];
     const unitReductionLimitations = reducedUnits.flatMap((unit) => [...unit.evidence.limitations]);

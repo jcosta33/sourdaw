@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
         {
             enabled: boolean;
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             originalTempo: number | null;
         }
     >(),
@@ -24,7 +24,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         },
     getStoredWarpState: (clipId: string) => mocks.warpStates.get(clipId),
@@ -33,7 +33,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         state: {
             enabled: boolean;
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             originalTempo: number | null;
         }
     ) => {
@@ -66,7 +66,7 @@ describe('toggleMarkerLock', () => {
                 { id: 'm-1', originalBeat: 1, warpedBeat: 1, origin: 'user', locked: false },
                 { id: 'm-2', originalBeat: 2, warpedBeat: 2, origin: 'user', locked: true },
             ],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -80,7 +80,7 @@ describe('toggleMarkerLock', () => {
         mocks.warpStates.set('clip-1', {
             enabled: true,
             markers: [{ id: 'm-1', originalBeat: 1, warpedBeat: 1, origin: 'user', locked: false }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         toggleMarkerLock('m-1');

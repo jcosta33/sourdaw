@@ -36,13 +36,22 @@ type MidiTrackDeps = {
     addTrack: typeof addTrack;
 };
 
-export function resolveOrCreateMidiTrack(
-    trackId: string | undefined,
-    fallbackName: string,
-    deps: MidiTrackDeps
-): string | null {
-    if (trackId) {
-        return trackId;
+/**
+ * The read-only half of the generation target-track decision: which existing
+ * MIDI track a generation would land on, or that none is resolvable and a
+ * dedicated track must be created. `describe` runs before the write and needs
+ * the decision to pick the undo inverse (`discardDuplicatedClip` for an
+ * existing track, `discardCreatedTrack` for a created one), so both halves of
+ * `resolveOrCreateMidiTrack` share this one source of truth (#4615).
+ */
+export type GenerationTrackPlan = { kind: 'existing'; trackId: string } | { kind: 'create' };
+
+export function resolveGenerationTrackPlan(
+    requestedTrackId: string | undefined,
+    deps: Pick<MidiTrackDeps, 'getTrackStoreState'>
+): GenerationTrackPlan {
+    if (requestedTrackId) {
+        return { kind: 'existing', trackId: requestedTrackId };
     }
 
     const state = deps.getTrackStoreState();
@@ -51,13 +60,26 @@ export function resolveOrCreateMidiTrack(
     if (selectedId) {
         const selected = state?.tracks.find((time) => time.id === selectedId);
         if (selected && selected.kind === 'midi') {
-            return selectedId;
+            return { kind: 'existing', trackId: selectedId };
         }
     }
 
     const firstMidi = state?.tracks.find((time) => time.kind === 'midi');
     if (firstMidi) {
-        return firstMidi.id;
+        return { kind: 'existing', trackId: firstMidi.id };
+    }
+
+    return { kind: 'create' };
+}
+
+export function resolveOrCreateMidiTrack(
+    trackId: string | undefined,
+    fallbackName: string,
+    deps: MidiTrackDeps
+): string | null {
+    const plan = resolveGenerationTrackPlan(trackId, deps);
+    if (plan.kind === 'existing') {
+        return plan.trackId;
     }
 
     const newTrack = deps.addTrack({ name: fallbackName, kind: 'midi' });

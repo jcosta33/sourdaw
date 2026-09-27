@@ -1,3 +1,5 @@
+import { isClipCompatibleWithTrackKind } from '#/utils/isClipCompatibleWithTrackKind';
+
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { findClip, findTrack, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
@@ -19,6 +21,26 @@ type ClipPlacementCallName = Extract<
     | 'setClipStretchMode'
     | 'fitClipToBeats'
 >;
+
+/**
+ * Why the destination cannot play the clip, so the model can re-target instead
+ * of retrying the same silent placement.
+ */
+function clipPlacementRejectionReason(clipType: 'audio' | 'midi', kind: string): string {
+    if (kind === 'bus' || kind === 'master') {
+        return `The destination ${kind} track sums signal rather than playing clips; place the ${clipType} clip on an existing ${clipType} track`;
+    }
+    if (kind === 'folder') {
+        return `The destination folder track renders no timeline content; place the ${clipType} clip on an existing ${clipType} track`;
+    }
+    if (kind === 'audio' && clipType === 'midi') {
+        return 'The destination audio track has no instrument, so the midi clip would stay silent; place the clip on an existing midi track';
+    }
+    if (kind === 'midi' && clipType === 'audio') {
+        return 'The destination midi track cannot play an audio clip; place the clip on an existing audio track';
+    }
+    return `The destination ${kind} track cannot host clips; place the ${clipType} clip on an existing ${clipType} track`;
+}
 
 export const clipPlacementStrategyDefinitions = [
     {
@@ -75,6 +97,16 @@ export const clipPlacementStrategyDefinitions = [
                     'Expected one unlocked clip, one existing clip-host track, and a finite non-negative startBeat'
                 );
             }
+            // A same-host move changes no placement — the host is whatever
+            // the document already holds, so the kind rule has nothing to
+            // govern there (the exemption `moveClip` itself applies). Without
+            // it a legacy misplaced clip is rejected pre-dispatch from every
+            // retime on its own track, with its own host named as an invalid
+            // destination. Any other destination still obeys the rule.
+            const sameHost = source.track.id === destination.id;
+            if (!sameHost && !isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
+            }
             return {
                 type: 'moveClip',
                 payload: { clipId: source.clip.id, trackId: destination.id, startBeat: args.startBeat },
@@ -100,6 +132,14 @@ export const clipPlacementStrategyDefinitions = [
                     call.name,
                     'Expected one unlocked clip, one existing clip-host destination track, and a finite non-negative startBeat'
                 );
+            }
+            // No same-host exemption here, unlike `moveClip`: a duplicate is a
+            // NEW placement on the destination — even when that destination is
+            // the clip's current host — so the kind rule governs it exactly as
+            // it governs every fresh placement (the duplicate core refuses the
+            // same target at execution).
+            if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
             }
             return {
                 type: 'duplicateClipAt',
@@ -184,6 +224,18 @@ export const clipPlacementStrategyDefinitions = [
                         'Expected every move to name an unlocked clip, an existing clip-host track, and a finite non-negative startBeat'
                     );
                 }
+                // Mirrors `moveClip`: a same-host move is a retime, not a
+                // placement change, so the kind rule does not govern it — the
+                // handler routes every move through `moveClip`, which applies
+                // the same exemption at execution.
+                const sameHost = source.track.id === destination.id;
+                if (!sameHost && !isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                    return rejection(
+                        index,
+                        call.name,
+                        clipPlacementRejectionReason(source.clip.type, destination.kind)
+                    );
+                }
                 placements.push({ clipId: source.clip.id, trackId: destination.id, startBeat: candidate.startBeat });
             }
             return { type: 'moveClips', payload: { moves: placements, ripple: false } };
@@ -218,6 +270,14 @@ export const clipPlacementStrategyDefinitions = [
             if (!hasExactKeys(args, ['clipId']) || !source) {
                 return rejection(index, call.name, 'Expected only an available clipId');
             }
+            // A destinationless duplicate places a NEW clip on the source's
+            // own host, and the duplicate core refuses an own-host target the
+            // kind rule excludes — silently, for a call that names no
+            // destination. Rejecting here gives the model the same actionable
+            // reason `duplicateClipAt` gives for an explicit one.
+            if (!isClipCompatibleWithTrackKind(source.clip.type, source.track.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, source.track.kind));
+            }
             return { type: 'duplicateClip', payload: { clipId: source.clip.id } };
         },
     },
@@ -228,6 +288,11 @@ export const clipPlacementStrategyDefinitions = [
             const source = findClip(context, args.clipId);
             if (!hasExactKeys(args, ['clipId']) || !source) {
                 return rejection(index, call.name, 'Expected only an available clipId');
+            }
+            // Same own-host placement as `duplicateClip`: without this check
+            // the core's refusal reaches the model as a silent no-write.
+            if (!isClipCompatibleWithTrackKind(source.clip.type, source.track.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, source.track.kind));
             }
             return { type: 'duplicateClipToNextBar', payload: { clipId: source.clip.id } };
         },

@@ -223,7 +223,7 @@ describe('Delete Time Range retires per-clip satellite data', () => {
         });
         setWarpState('spanning', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-left', originalBeat: 1, warpedBeat: 1 },
@@ -377,7 +377,7 @@ describe('Delete Time Range retires per-clip satellite data', () => {
         ]);
         setWarpState('spanning', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-deleted', originalBeat: 8, warpedBeat: 8 },

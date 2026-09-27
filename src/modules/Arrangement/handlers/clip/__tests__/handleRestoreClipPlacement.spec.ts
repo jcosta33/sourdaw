@@ -62,7 +62,12 @@ describe('handleRestoreClipPlacement', () => {
         mocks.moveClip.mockReturnValueOnce(true);
 
         expect(handleRestoreClipPlacement.execute(action)).toEqual({ status: 'written' });
-        expect(mocks.moveClip).toHaveBeenCalledWith('clip-1', 'track-1', 2, undefined, false);
+        // `historicalPlacement`: the replacement names where the clip sat
+        // before the undone move — the replay must not refuse a placement the
+        // document itself held.
+        expect(mocks.moveClip).toHaveBeenCalledWith('clip-1', 'track-1', 2, undefined, false, {
+            historicalPlacement: true,
+        });
         expect(mocks.restoreClipAutomationMoveState).toHaveBeenCalledWith(
             'clip-1',
             action.payload.replacement.automationLanes

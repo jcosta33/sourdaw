@@ -56,13 +56,13 @@ type WarpMarkerView = { id: string; originalBeat: number; warpedBeat: number };
 type WarpState = {
     enabled: boolean;
     markers: WarpMarkerView[];
-    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
     originalTempo: number | null;
 };
 
-// Stretch modes selectable today: only those with a live executor. `complex`,
-// `texture` and `beats` name behaviours nothing in the product performs, so the
-// strip does not offer them.
+// Stretch modes selectable today: only those with a live executor.
+// `phase-vocoder` and `wsola` are reserved for the in-house streaming engine,
+// so the strip does not offer them.
 const AVAILABLE_STRETCH_MODES: WarpState['stretchMode'][] = STRETCH_MODES.filter(
     (mode) => getStretchModeInfo(mode).available
 );
@@ -482,10 +482,10 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                                         variant={warpState.stretchMode === mode ? 'secondary' : 'ghost'}
                                         size="icon-xs"
                                         onClick={() => handleStretchMode(mode)}
-                                        className="text-[9px] w-auto px-1.5 h-5 capitalize"
+                                        className="text-[9px] w-auto px-1.5 h-5"
                                         aria-pressed={warpState.stretchMode === mode}
                                     >
-                                        {mode}
+                                        {getStretchModeInfo(mode).name}
                                     </Button>
                                 ))}
                             </Row>

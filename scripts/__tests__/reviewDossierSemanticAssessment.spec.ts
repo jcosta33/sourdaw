@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { assembleReviewDossier } from '../reviewDossier.ts';
 import {
     assertSemanticAssessmentAcknowledged,
+    firedSignalCitationToken,
     parseSemanticAssessmentCoverage,
 } from '../reviewDossierSemanticAssessment.ts';
-import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
+import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
 import type { AssessmentImpact, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -30,14 +31,37 @@ const STANCE: ReviewDossierEvent = {
     outcome: 'clean',
 };
 
+/** Satisfies `finding-led`'s own construction-time requirement for at least one accepted finding. */
+const FINDING_ACCEPTED: ReviewDossierEvent = {
+    kind: 'finding-accepted',
+    findingId: 'finding-1',
+    path: 'scripts/reviewDossierSemanticAssessment.ts',
+    line: 1,
+    side: 'RIGHT',
+};
+
+/** The repository's own measured standing escape: the conditional-admission rule firing on a spec. */
+const FIRED_SIGNAL = {
+    ruleId: 'admission_branch_completes_without_asserting',
+    path: 'src/modules/audio/take.test.ts',
+    probability: 0.82,
+};
+
+const FIRED_TOKEN = firedSignalCitationToken(FIRED_SIGNAL);
+
 function dossierWith(
     impact: AssessmentImpact,
-    options: { reason?: string; limitations?: string[] } = {}
+    options: {
+        reason?: string;
+        limitations?: string[];
+        events?: ReviewDossierEvent[];
+        discarded?: { finding: string; stance: string; reason: string }[];
+    } = {}
 ): ReviewDossier {
     return assembleReviewDossier({
         plan: PLAN,
-        events: [STANCE],
-        discarded: [],
+        events: options.events ?? [STANCE],
+        discarded: options.discarded ?? [],
         evidence: [],
         limitations: options.limitations ?? [],
         recommendation: 'approve',
@@ -90,6 +114,7 @@ describe('parseSemanticAssessmentCoverage', () => {
             unresolved: 2,
             artifactName: 'semantic-review-42-1',
             withheldPaths: ['scripts/a.ts', 'scripts/b.ts'],
+            firedSignals: [],
         });
     });
 
@@ -102,14 +127,40 @@ describe('parseSemanticAssessmentCoverage', () => {
             unresolved: 0,
             artifactName: 'semantic-review-42-1',
             withheldPaths: [],
+            firedSignals: [],
         });
     });
 
-    it('projects a no-assessment record to not delivered', () => {
+    it('projects the fired signals a record carries, with their rule, path and probability', () => {
+        const record = { ...DELIVERED_WITHHELD, firedSignals: [FIRED_SIGNAL] };
+        expect(parseSemanticAssessmentCoverage(record)).toMatchObject({ firedSignals: [FIRED_SIGNAL] });
+    });
+
+    it('parses a record written before fired signals were projected as zero of them', () => {
+        // DELIVERED_WITHHELD is the pre-field shape: no firedSignals key at all.
+        expect('firedSignals' in DELIVERED_WITHHELD).toBe(false);
+        expect(parseSemanticAssessmentCoverage(DELIVERED_WITHHELD)).toMatchObject({ firedSignals: [] });
+    });
+
+    it.each([
+        ['a non-array', 'none'],
+        ['a non-object entry', [{ ruleId: 'r', path: 'p', probability: 0.9 }, 'broken']],
+        ['an entry with no ruleId', [{ path: 'src/a.ts', probability: 0.9 }]],
+        ['an entry with a blank path', [{ ruleId: 'r', path: '  ', probability: 0.9 }]],
+        ['an entry with a non-number probability', [{ ruleId: 'r', path: 'src/a.ts', probability: 'high' }]],
+        ['an entry with an out-of-range probability', [{ ruleId: 'r', path: 'src/a.ts', probability: 1.5 }]],
+    ])('refuses %s', (_label, firedSignals: unknown) => {
+        expect(() => parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals })).toThrow(
+            /semantic-ci record firedSignals/u
+        );
+    });
+
+    it('projects a no-assessment record to not delivered, carrying its reason', () => {
         expect(parseSemanticAssessmentCoverage(NO_ASSESSMENT)).toEqual({
             state: 'no-assessment',
             pr: 42,
             headSha: 'a'.repeat(40),
+            reason: 'absent',
         });
     });
 
@@ -215,11 +266,260 @@ describe('assertSemanticAssessmentAcknowledged', () => {
         ).not.toThrow();
     });
 
-    it('passes a no-assessment record', () => {
+    it('refuses a no-assessment record when the impact is none, even with a citing limitation', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { limitations: ['semantic-ci absent: CI delivered no assessment for this head'] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/assessmentImpact none/);
+    });
+
+    it('refuses a no-assessment record when the impact is none plus an assessmentIgnoredReason', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'ci ran red on this head' }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/assessmentImpact none/);
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'ci ran red on this head' }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/no semantic assessment/);
+    });
+
+    it('refuses a limitation-only round whose limitation never cites the no-assessment record', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['the native audio path is not exercised on this head'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('refuses a stance-changed round whose limitation never cites the no-assessment record', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('stance-changed', {
+                    limitations: ['draw r1s2 fell back to the authoring model'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('refuses a limitation-only round whose limitation cites the wrong reason for the no-assessment record', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('passes a no-assessment record when the impact is limitation-only with a citing limitation', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['semantic-ci absent: CI delivered no assessment for this head'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses a no-assessment record with no limitations though the impact is finding-led', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('finding-led', { events: [STANCE, FINDING_ACCEPTED] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('refuses a no-assessment record bound to another publication before the impact is checked', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
                 dossierWith('none'),
-                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                parseSemanticAssessmentCoverage({ ...NO_ASSESSMENT, pr: 99, headSha: 'f'.repeat(40) }),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci record pr 99 headSha f{40} does not match the publication pr 42 headSha a{40}/);
+    });
+});
+
+describe('fired-signal disposal at publication', () => {
+    function coverageWithFired(
+        overrides: Record<string, unknown> = {}
+    ): ReturnType<typeof parseSemanticAssessmentCoverage> {
+        return parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [FIRED_SIGNAL], ...overrides });
+    }
+
+    it('refuses an undisposed fired signal even with an assessmentIgnoredReason, naming rule and path', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'the assessment surfaced nothing actionable' }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 1 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts\): name each as semantic-signal <ruleId> <path> in a stance admittedBy, a discarded finding, or a limitation/u
+        );
+    });
+
+    it('refuses an undisposed fired signal even when a limitation cites the assessment itself', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
+                }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).toThrow(/does not dispose of 1 of the delivered assessment's 1 fired signal/u);
+    });
+
+    it('accepts a limitation naming the fired signal token', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${FIRED_TOKEN}; the branch asserts downstream in the shared harness`,
+                    ],
+                }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('accepts a discarded finding naming the fired signal token', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the fired rule is disposed of in a discarded finding',
+                    discarded: [
+                        {
+                            finding: `${FIRED_TOKEN} — the admission is the deliberate #4441 escape, pinned by its own spec`,
+                            stance: 'correctness',
+                            reason: 'the conditional admission is deliberate and tested',
+                        },
+                    ],
+                }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('accepts a stance admittedBy line naming the fired signal token', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'the fired rule is the stance this round attacked by name' }),
+                coverageWithFired(),
+                EXPECTED,
+                [`a reordered take insert drops a buffered frame, so the stance probed ${FIRED_TOKEN} first`]
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses a fired signal while a stance admission names only some other token', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'the admission lines name other risks' }),
+                coverageWithFired(),
+                EXPECTED,
+                ['a reordered send queue drops a buffered frame']
+            )
+        ).toThrow(/does not dispose of 1 of the delivered assessment's 1 fired signal/u);
+    });
+
+    it('refuses an undisposed fired signal even when nothing was withheld and nothing was unresolved', () => {
+        const completeButFiring = {
+            ...DELIVERED_COMPLETE,
+            firedSignals: [FIRED_SIGNAL],
+        };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'nothing was withheld' }),
+                parseSemanticAssessmentCoverage(completeButFiring),
+                EXPECTED
+            )
+        ).toThrow(/does not dispose of 1 of the delivered assessment's 1 fired signal/u);
+    });
+
+    it('refuses only the undisposed signals when several fired and one was named', () => {
+        const second = {
+            ruleId: 'conditional_admission_added',
+            path: 'src/components/transport/Bar.test.ts',
+            probability: 0.71,
+        };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [`the assessment fired ${FIRED_TOKEN}; covered by the shared harness`],
+                }),
+                parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [FIRED_SIGNAL, second] }),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(conditional_admission_added at src\/components\/transport\/Bar\.test\.ts\)/u
+        );
+    });
+
+    it('refuses an undisposed marker-valued fired signal, naming the marker the record carries', () => {
+        // A fired signal whose projected value the publication screen refused is carried redacted;
+        // the disposal duty travels with the marker exactly as with a verbatim value.
+        const markerSignal = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'the assessment surfaced nothing actionable' }),
+                parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [markerSignal] }),
+                EXPECTED
+            )
+        ).toThrow(
+            `does not dispose of 1 of the delivered assessment's 1 fired signal(s) (${markerSignal.ruleId} at ${UNRECOGNIZED_SIGNAL_VALUE})`
+        );
+    });
+
+    it('accepts a limitation naming a marker-valued fired signal by the token its record carries', () => {
+        const markerSignal = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired semantic-signal ${markerSignal.ruleId} ${UNRECOGNIZED_SIGNAL_VALUE}; the flagged path was screened out of the record`,
+                    ],
+                }),
+                parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [markerSignal] }),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('passes a delivered record whose fired signals were all disposed', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${FIRED_TOKEN}: the deliberate #4441 escape`,
+                    ],
+                }),
+                coverageWithFired(),
                 EXPECTED
             )
         ).not.toThrow();

@@ -201,7 +201,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
                 clipId: 'clip-vox',
                 enabled: true,
                 markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5 }],
-                stretchMode: 'beats' as const,
+                stretchMode: 'wsola' as const,
                 originalTempo: 120,
             },
         ];

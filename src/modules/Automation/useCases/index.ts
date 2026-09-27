@@ -17,6 +17,7 @@ export { setModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationLanesForTrack } from './automation/removeAutomationLanesForTrack';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
+export { removeAutomationPointById } from './automation/removeAutomationPointById';
 export { prepareAutomationTimeOperation } from './automation/prepareAutomationTimeOperation';
 export { prepareAutomationTimeStateRestore } from './automation/prepareAutomationTimeStateRestore';
 export { prepareClipAutomationShiftTransaction } from './automation/prepareClipAutomationShiftTransaction';

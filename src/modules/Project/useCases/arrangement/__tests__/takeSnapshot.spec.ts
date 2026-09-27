@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type ArrangementSnapshot } from '../../../stores/arrangementStore';
 import { takeSnapshot } from '../takeSnapshot';
@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => {
     return {
         automation_store: create_store_mock<ArrangementSnapshot['automation']>(null),
         marker_store: create_store_mock<NonNullable<ArrangementSnapshot['markers']>>(null),
-        midi_store: create_store_mock<MidiStoreState>(null),
         take_lane_store: create_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(null),
         tempo_map_store: create_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(null),
         time_signature_map_store: create_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(null),
@@ -38,11 +37,6 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: mocks.automation_store,
 }));
 
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
-    midiStore: mocks.midi_store,
-}));
-
 vi.mock('#/modules/Transport/stores', () => ({
     tempoMapStore: mocks.tempo_map_store,
     timeSignatureMapStore: mocks.time_signature_map_store,
@@ -51,7 +45,6 @@ vi.mock('#/modules/Transport/stores', () => ({
 function reset_store_values(): void {
     mocks.automation_store.value = null;
     mocks.marker_store.value = null;
-    mocks.midi_store.value = null;
     mocks.take_lane_store.value = null;
     mocks.tempo_map_store.value = null;
     mocks.time_signature_map_store.value = null;
@@ -61,6 +54,10 @@ function reset_store_values(): void {
 describe('takeSnapshot', () => {
     beforeEach(() => {
         reset_store_values();
+        // The MIDI store is the real Automerge-backed singleton, not a mock —
+        // the capture route under test reads it live, and the stamped state a
+        // case sets must be one the real store actually holds.
+        midiStore.set(null);
     });
 
     it('should capture empty fallback snapshot shapes when stores are uninitialized', () => {
@@ -99,7 +96,7 @@ describe('takeSnapshot', () => {
         const takeLanes: NonNullable<ArrangementSnapshot['takeLanes']> = { lanes: [] };
         mocks.track_store.value = tracks;
         mocks.automation_store.value = automation;
-        mocks.midi_store.value = midi;
+        midiStore.set(midi);
         mocks.tempo_map_store.value = tempoMap;
         mocks.time_signature_map_store.value = timeSignatureMap;
         mocks.marker_store.value = markers;
@@ -125,6 +122,47 @@ describe('takeSnapshot', () => {
         expect(snapshot.tracks).toEqual(tracks);
         expect(snapshot.automation).toBe(automation);
         expect(snapshot.midi).not.toHaveProperty('probabilitySeed');
+    });
+
+    // The capture route for the coordinate stamp: a stamped live store must
+    // snapshot the stamp, or every arrangement switch hands the restore path
+    // an unstamped store and the legacy coordinate migration rewrites notes
+    // clip-relative data must never rewrite.
+    it('captures the clip-relative coordinate stamp from a stamped live MIDI store', () => {
+        midiStore.set({
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            noteCoordinateFormat: 'clip-relative',
+        });
+
+        const snapshot = takeSnapshot('arr-stamped', 'Stamped');
+
+        expect(snapshot.midi).toEqual({
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            noteCoordinateFormat: 'clip-relative',
+        });
+    });
+
+    it('captures an unstamped legacy MIDI store without inventing a coordinate stamp', () => {
+        midiStore.set({
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        const snapshot = takeSnapshot('arr-legacy', 'Legacy');
+
+        expect(snapshot.midi).toEqual({
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        expect(snapshot.midi).not.toHaveProperty('noteCoordinateFormat');
     });
 
     it('should persist only the arrangement keys of the tracks section, never transient ghost clips', () => {

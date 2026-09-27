@@ -94,7 +94,7 @@ describe('restoreStripSilenceState satellite rollback', () => {
         const warpState = {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0 }],
-            stretchMode: 'beats' as const,
+            stretchMode: 'wsola' as const,
             originalTempo: 120,
         };
         setEnvelope('clip-1', envelope);
@@ -122,7 +122,7 @@ describe('restoreStripSilenceState satellite rollback', () => {
         setWarpState('clip-1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0 }],
-            stretchMode: 'beats',
+            stretchMode: 'wsola',
             originalTempo: 120,
         });
         const plan = prepareStripSilence({ clipId: 'clip-1' });

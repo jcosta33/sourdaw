@@ -63,7 +63,7 @@ describe('duplicateClipCore', () => {
         mocks.getWarpState.mockReturnValue({
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
@@ -105,7 +105,7 @@ describe('duplicateClipCore', () => {
             loopLength: 8,
             followAction: 'play_next' as const,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
 
         // computeStartBeat = clip.endBeat (matches duplicateClip's behavior)
@@ -160,12 +160,12 @@ describe('duplicateClipCore', () => {
             locked: false,
             muted: false,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
         mocks.getWarpState.mockReturnValue({
             enabled: true,
             markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.2 }],
-            stretchMode: 'beats',
+            stretchMode: 'wsola',
             originalTempo: 120,
         });
 
@@ -180,7 +180,7 @@ describe('duplicateClipCore', () => {
             'c2',
             expect.objectContaining({
                 enabled: true,
-                stretchMode: 'beats',
+                stretchMode: 'wsola',
                 originalTempo: 120,
                 markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.2 }],
             })
@@ -202,7 +202,7 @@ describe('duplicateClipCore', () => {
             locked: false,
             muted: false,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
         mocks.getWarpState.mockReturnValue({
             enabled: false,
@@ -234,7 +234,7 @@ describe('duplicateClipCore', () => {
             locked: false,
             muted: false,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
         const sourcePoints = [
             { id: 'p1', beatOffset: 0, gainDb: -3 },
@@ -272,7 +272,7 @@ describe('duplicateClipCore', () => {
             locked: false,
             muted: false,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
         mocks.getEnvelope.mockReturnValue(undefined);
 
@@ -351,7 +351,7 @@ describe('duplicateClipCore', () => {
             }
             return { status: 'missing' };
         });
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
         mocks.addClip.mockReturnValue({ id: 'clip-collision', type: 'audio' });
 
         expect(duplicateClipCore({ clipId: 'c1', computeStartBeat })).toBe(false);
@@ -376,7 +376,7 @@ describe('duplicateClipCore', () => {
             endBeat: 4,
             type: 'midi' as const,
         };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'midi', clips: [source] }] });
         mocks.addClip.mockReturnValueOnce(null).mockReturnValueOnce({ id: 'c2', type: 'midi' });
 
         expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: () => 4 })).toBe(false);
@@ -398,7 +398,7 @@ describe('duplicateClipCore', () => {
                 fadeInBeats: 0,
                 fadeOutBeats: 0,
             };
-            mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+            mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [source] }] });
             mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
 
             expect(duplicateClipCore('c1', (clip) => clip.endBeat)).toBe(true);
@@ -443,8 +443,8 @@ describe('duplicateClipCore', () => {
         });
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', clips: [source] },
-                { id: 't2', clips: [] },
+                { id: 't1', kind: 'audio', clips: [source] },
+                { id: 't2', kind: 'audio', clips: [] },
             ],
         });
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
@@ -455,6 +455,41 @@ describe('duplicateClipCore', () => {
         // and receives the copy.
         expect(mocks.resolveEligibleClipWriteTarget).toHaveBeenCalledWith({ trackId: 't2' });
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't2', startBeat: 8 }));
+    });
+
+    it('rejects a duplicate onto a folder destination before any effect', () => {
+        const computeStartBeat = vi.fn(() => 8);
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+        };
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 'folder-1') {
+                return { status: 'eligible', trackId: 'folder-1' };
+            }
+            return { status: 'missing' };
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio', clips: [source] },
+                { id: 'folder-1', kind: 'folder', clips: [] },
+            ],
+        });
+
+        // A folder passes the write-eligibility flags but never renders clip
+        // content, so the copy must be refused before it is computed or added.
+        expect(duplicateClipCore({ clipId: 'c1', destinationTrackId: 'folder-1', computeStartBeat })).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
     });
 
     it('aborts when an explicit destination track is not eligible', () => {
@@ -478,8 +513,8 @@ describe('duplicateClipCore', () => {
         });
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', clips: [source] },
-                { id: 't2', clips: [] },
+                { id: 't1', kind: 'audio', clips: [source] },
+                { id: 't2', kind: 'audio', clips: [] },
             ],
         });
 

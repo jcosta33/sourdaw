@@ -38,12 +38,12 @@ import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSen
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 
-type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
+type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
 // Stretch modes selectable today. Same treatment as the Algorithm selector
 // below: only modes with a live executor are offered, so the toolbar never
-// presents a choice the product cannot perform. `complex`, `texture` and
-// `beats` name behaviours nothing in the tree implements.
+// presents a choice the product cannot perform. `phase-vocoder` and `wsola`
+// await the in-house streaming engine.
 const AVAILABLE_STRETCH_MODES: StretchMode[] = STRETCH_MODES.filter((mode) => getStretchModeInfo(mode).available);
 
 // Warp algorithms selectable today. Only executors that actually run are offered

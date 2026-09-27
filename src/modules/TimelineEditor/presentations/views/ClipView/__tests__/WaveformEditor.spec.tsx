@@ -157,7 +157,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         subscribeReact: vi.fn(() => () => {}),
     },
     defaultTrackState: { tracks: [] },
-    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
+    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'phase-vocoder', originalTempo: null })),
     warpStates: new Map(),
 }));
 
@@ -319,7 +319,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -334,7 +334,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -357,7 +357,7 @@ describe('WaveformEditor', () => {
             vi.mocked(getWarpState).mockImplementation(() => ({
                 enabled: false,
                 markers: [],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: null,
             }));
         });
@@ -488,8 +488,11 @@ describe('WaveformEditor', () => {
         // this branch, so the absences below are real, not a missing subtree.
         expect(screen.getByText('1 marker')).toBeInTheDocument();
 
-        for (const mode of ['repitch', 'complex', 'texture', 'beats']) {
-            expect(screen.queryByRole('button', { name: mode })).not.toBeInTheDocument();
+        // The strip renders from STRETCH_MODES alone: the canonical executor
+        // labels, and never the pre-ADR 0024 names — `texture` was dropped
+        // outright and the other two survive only under their canonical ids.
+        for (const label of ['Repitch', 'Phase-vocoder', 'WSOLA', 'Complex', 'Texture', 'Beats']) {
+            expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
         }
         expect(vi.mocked(setStretchMode)).not.toHaveBeenCalled();
     });
@@ -547,7 +550,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -585,7 +588,7 @@ describe('WaveformEditor', () => {
             vi.mocked(getWarpState).mockReturnValue({
                 enabled: true,
                 markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: null,
             });
             render(<WaveformEditor {...defaultProps} />);
@@ -603,7 +606,7 @@ describe('WaveformEditor', () => {
             vi.mocked(getWarpState).mockReturnValue({
                 enabled: true,
                 markers: [],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: null,
             });
             render(<WaveformEditor {...defaultProps} />);
@@ -645,7 +648,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -669,7 +672,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -1003,7 +1006,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -1019,7 +1022,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -1044,7 +1047,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 2, warpedBeat: 2 }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
@@ -1059,7 +1062,7 @@ describe('WaveformEditor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);

@@ -13,7 +13,9 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -127,12 +129,20 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     const gainGestureOpen = useRef(false);
     const displayedGain = useRef<number | null>(null);
     const pendingGainCommit = useRef<Promise<void>>(Promise.resolve());
+    // Recency stamp arming the double-click reset's coalescing. Only a
+    // gesture settle's own recording arms it, and only when its commit
+    // actually recorded an undo entry: a jittered first click re-committing
+    // the unchanged gain is swallowed as a no-op, so the reset that follows
+    // must be its own undo step rather than join whatever entry is on top of
+    // the stack (#4616). A discrete commit never re-arms it — see
+    // `commitGain`.
     const lastGainSettleTime = useRef(0);
 
     const panGestureToken = useRef(0);
     const panGestureOpen = useRef(false);
     const displayedPan = useRef<number | null>(null);
     const pendingPanCommit = useRef<Promise<void>>(Promise.resolve());
+    // Same no-op-settle rule as `lastGainSettleTime`.
     const lastPanSettleTime = useRef(0);
 
     let displayGain = track.gain;
@@ -225,24 +235,45 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitGain = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
+    /**
+     * The coalescing decision runs at commit time, not at event time: the
+     * pending-commit chain serializes it behind the settle it would merge
+     * with, so that settle's stamp — if it recorded anything — is already
+     * visible here. The stamp itself is written only when the dispatch left
+     * the entry it recorded on top of the undo stack; a no-op or conflicted
+     * settle records nothing and must not arm the reset that follows (#4616).
+     */
+    const commitGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+        let coalesceWithPrevious = false;
+        if (!wasGestureSettle && performance.now() - lastGainSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastGainSettleTime.current = 0;
+        }
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedGain = currentTrack?.gain ?? track.gain;
+            const action: AppAction = {
+                type: 'setTrackGain',
+                payload: { trackId: track.id, gain: value, expectedGain },
+            };
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
-                await executeAppAction(
-                    {
-                        type: 'setTrackGain',
-                        payload: { trackId: track.id, gain: value, expectedGain },
-                    },
-                    options
-                );
+                await executeAppAction(action, options);
             } else {
-                await executeAppAction({
-                    type: 'setTrackGain',
-                    payload: { trackId: track.id, gain: value, expectedGain },
-                });
+                await executeAppAction(action);
+            }
+            // Only a gesture settle's own recording arms the window; a
+            // discrete commit never re-arms. A keyboard nudge records too,
+            // but letting it re-arm would chain the next burst of nudges into
+            // one undo group and take away stepping back a single nudge. And
+            // the stack top must be the entry THIS dispatch recorded — the
+            // undo entry stores the dispatched action object by reference —
+            // so a foreign recording landing inside the held-open await (the
+            // persistence barrier can hold it for real time) must not arm the
+            // reset, even when it targets the same track.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
+                lastGainSettleTime.current = performance.now();
             }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackGain', { cause: error }));
@@ -257,24 +288,32 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitPan = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
+    const commitPan = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+        let coalesceWithPrevious = false;
+        if (!wasGestureSettle && performance.now() - lastPanSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastPanSettleTime.current = 0;
+        }
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedPan = currentTrack?.pan ?? track.pan;
+            const action: AppAction = {
+                type: 'setTrackPan',
+                payload: { trackId: track.id, pan: value, expectedPan },
+            };
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
-                await executeAppAction(
-                    {
-                        type: 'setTrackPan',
-                        payload: { trackId: track.id, pan: value, expectedPan },
-                    },
-                    options
-                );
+                await executeAppAction(action, options);
             } else {
-                await executeAppAction({
-                    type: 'setTrackPan',
-                    payload: { trackId: track.id, pan: value, expectedPan },
-                });
+                await executeAppAction(action);
+            }
+            // Same rule as `commitGain`: only a gesture settle's own recording
+            // arms the window and a discrete commit never re-arms, and the
+            // stack top must be the entry this dispatch recorded, never a
+            // foreign recording that slipped in while the await was held open.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
+                lastPanSettleTime.current = performance.now();
             }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackPan', { cause: error }));
@@ -347,16 +386,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackGain(track.id, value, true);
             }
-            let coalesceWithPrevious = false;
-            if (wasOpen) {
-                lastGainSettleTime.current = performance.now();
-            } else if (performance.now() - lastGainSettleTime.current <= 500) {
-                coalesceWithPrevious = true;
-                lastGainSettleTime.current = 0;
-            }
             pendingGainCommit.current = pendingGainCommit.current
                 .catch(() => undefined)
-                .then(() => commitGain(value, token, coalesceWithPrevious));
+                .then(() => commitGain(value, token, wasOpen));
         },
         setPan: (value, isTransient = false) => {
             if (isTransient) {
@@ -378,16 +410,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackPan(track.id, value, true);
             }
-            let coalesceWithPrevious = false;
-            if (wasOpen) {
-                lastPanSettleTime.current = performance.now();
-            } else if (performance.now() - lastPanSettleTime.current <= 500) {
-                coalesceWithPrevious = true;
-                lastPanSettleTime.current = 0;
-            }
             pendingPanCommit.current = pendingPanCommit.current
                 .catch(() => undefined)
-                .then(() => commitPan(value, token, coalesceWithPrevious));
+                .then(() => commitPan(value, token, wasOpen));
         },
         setColor: (color) => {
             void executeUserAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });

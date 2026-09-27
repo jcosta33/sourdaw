@@ -25,6 +25,7 @@ import {
     REVIEW_ROUND_ESCALATION_THRESHOLD,
     REASSESSMENT_FILE_NAME,
     countReviewerRequestChangesRounds,
+    logReviewRoundWarning,
 } from './reviewRoundEscalation.ts';
 
 export type ReviewPullRequest = {
@@ -213,6 +214,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
             port.log(
                 `review-round-escalation:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
             );
+            logReviewRoundWarning(number, requestChanges, port.log);
             if (requestChanges >= REVIEW_ROUND_ESCALATION_THRESHOLD) {
                 port.log(
                     `review-round-escalation:${number}:write ${join(destination, REASSESSMENT_FILE_NAME)} before the next publication`

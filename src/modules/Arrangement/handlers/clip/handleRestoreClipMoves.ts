@@ -13,7 +13,11 @@ import { setTrackState } from '../../useCases/setTrackState';
 export const handleRestoreClipMoves = createHandler<'restoreClipMoves'>({
     execute: (action) => {
         for (const moved of action.payload.movedClips) {
-            moveClip(moved.clipId, moved.trackId, moved.startBeat);
+            // `historicalPlacement`: each `moved` names the clip's pre-gesture
+            // host — a placement the document itself held, which the placement
+            // rule may not have allowed. A replay that refuses it would strand
+            // that clip on the wrong track while the restore reports written.
+            moveClip(moved.clipId, moved.trackId, moved.startBeat, undefined, true, { historicalPlacement: true });
         }
         const shifts = action.payload.neighborShifts;
         if (shifts.length === 0) {

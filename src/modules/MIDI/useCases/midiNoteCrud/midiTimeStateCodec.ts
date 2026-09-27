@@ -66,7 +66,8 @@ type DecodeValueResult = DecodedValue | RejectedValue;
 const REJECTED_VALUE: RejectedValue = { status: 'rejected' };
 const MAX_ARRAY_LENGTH = 0xffff_ffff;
 const MIDI_STATE_REQUIRED_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
-const MIDI_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
+// noteCoordinateFormat is durable default-on state since the coordinate-format change; an unknown value must not decode.
+const MIDI_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds', 'noteCoordinateFormat'] as const;
 const MIDI_STATE_ALLOWED_KEYS: ReadonlySet<string> = new Set([
     ...MIDI_STATE_REQUIRED_KEYS,
     ...MIDI_STATE_OPTIONAL_KEYS,

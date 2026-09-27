@@ -38,9 +38,7 @@ export type ScanOutcome = (typeof SCAN_OUTCOMES)[number];
  * threshold is an ordinary no, not a third state. `insufficient_context` is reserved for evidence the
  * application knows it did not send, which is a fact rather than a probability.
  */
-export type RuleThresholds = {
-    readonly fire: number;
-};
+export type RuleThresholds = { readonly fire: number };
 
 export type RuleInvestigationCategory =
     'test-validity' | 'project-integrity' | 'realtime' | 'security-platform' | 'architecture-integration';
@@ -580,6 +578,16 @@ export function applicableRules(paths: readonly string[]): SemanticRule[] {
 }
 
 /**
+ * Whether a unit's applicable rules declare a contract, decision or registration token. The planner
+ * reads it to decide which context to attach to a unit, and the collector's planned-unit predicate
+ * reads it to decide which documents to charge and how to order them; one definition is what keeps the
+ * charge and the attachment from disagreeing about which rules need context.
+ */
+export function unitNeedsContractContext(rules: readonly SemanticRule[]): boolean {
+    return rules.some((rule) => rule.requiredEvidence.some((token) => /contract|decision|registration/iu.test(token)));
+}
+
+/**
  * Thresholds applied when a candidate finding is assessed. They live here, with the rest of the
  * policy, so they are covered by `computePolicyDigest` and a verification report can identify the
  * policy that produced it. Verification still asks its own three-way Choice questions, because
@@ -665,6 +673,27 @@ export type SemanticBudgetProfile = {
     readonly maxStatePlusQuestionBytes: number;
     readonly maxTotalSubmittedBytes: number;
     readonly contextExpansionPasses: number;
+    /**
+     * The byte budgets the verify pass runs under. The budgets above are sized for the scan pass's
+     * hunk-shaped regions; a candidate finding references whole regions of the files it is about, and
+     * collecting them under scan-sized budgets withheld exactly the evidence its questions needed.
+     */
+    readonly verify: SemanticVerifyBudget;
+};
+
+/**
+ * The verify pass's byte budgets, owned by the profile so the evidence the collector admits is
+ * measured against the same numbers the provider request and the budget controller enforce.
+ */
+export type SemanticVerifyBudget = {
+    /** Maximum serialized bytes of one supplied finding region; a longer region is withheld and named. */
+    readonly maxRegionBytes: number;
+    /** Maximum serialized bytes of one finding request's state plus its questions. */
+    readonly maxStatePlusQuestionBytes: number;
+    /** Maximum bytes of one whole verify request body. */
+    readonly maxRequestBytes: number;
+    /** Maximum submitted bytes across one verify run. */
+    readonly maxTotalSubmittedBytes: number;
 };
 
 export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, SemanticBudgetProfile>> = {
@@ -679,6 +708,12 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         maxStatePlusQuestionBytes: 24 * 1024,
         maxTotalSubmittedBytes: 1024 * 1024,
         contextExpansionPasses: 1,
+        verify: {
+            maxRegionBytes: 96 * 1024,
+            maxStatePlusQuestionBytes: 128 * 1024,
+            maxRequestBytes: 160 * 1024,
+            maxTotalSubmittedBytes: 2 * 1024 * 1024,
+        },
     },
     local: {
         name: 'local',
@@ -691,6 +726,12 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         maxStatePlusQuestionBytes: 16 * 1024,
         maxTotalSubmittedBytes: 96 * 1024,
         contextExpansionPasses: 0,
+        verify: {
+            maxRegionBytes: 48 * 1024,
+            maxStatePlusQuestionBytes: 64 * 1024,
+            maxRequestBytes: 80 * 1024,
+            maxTotalSubmittedBytes: 384 * 1024,
+        },
     },
 };
 
@@ -703,6 +744,7 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
         profile.maxRequestBytes,
         profile.maxStatePlusQuestionBytes,
         profile.maxTotalSubmittedBytes,
+        ...Object.values(profile.verify),
     ];
     if (positive.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
         throw new Error(`budget profile ${profile.name} has a non-positive limit`);
@@ -713,7 +755,14 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
     if (!Number.isSafeInteger(profile.contextExpansionPasses) || profile.contextExpansionPasses < 0) {
         throw new Error(`budget profile ${profile.name} contextExpansionPasses must be zero or more`);
     }
-    if (profile.maxRequestBytes > profile.maxTotalSubmittedBytes) {
-        throw new Error(`budget profile ${profile.name} allows one request larger than its total budget`);
+    // A region the collector admits must fit one request's state budget, and one request the run's
+    // total, or the profile configures a collection that can never be sent.
+    if (
+        profile.maxRequestBytes > profile.maxTotalSubmittedBytes ||
+        profile.verify.maxRegionBytes > profile.verify.maxStatePlusQuestionBytes ||
+        profile.verify.maxStatePlusQuestionBytes > profile.verify.maxRequestBytes ||
+        profile.verify.maxRequestBytes > profile.verify.maxTotalSubmittedBytes
+    ) {
+        throw new Error(`budget profile ${profile.name} admits a request or region its own total cannot carry`);
     }
 }

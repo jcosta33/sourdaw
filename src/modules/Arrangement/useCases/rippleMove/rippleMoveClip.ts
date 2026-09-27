@@ -19,14 +19,24 @@ type RippleMoveClipInput = {
  * 1. Moves the clip to its new position (via moveClip — handles automation and MIDI shifting).
  * 2. Shifts clips at the source backward to fill the gap.
  * 3. Shifts clips at the destination forward to make room.
+ *
+ * Returns whether the move landed. A refused move stops the whole plan — the
+ * caller records nothing — because the neighbor shifts only make sense around
+ * a move that actually happened.
  */
-export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, plan }: RippleMoveClipInput): void {
-    // Move the clip itself (also shifts automation and MIDI notes)
-    moveClip(clipId, trackId, newStartBeat);
+export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, plan }: RippleMoveClipInput): boolean {
+    // Move the clip itself (also shifts automation and MIDI notes). A refused
+    // move (a locked clip, an ineligible host, a clip gone since planning)
+    // must leave every neighbor where it is: shifting them around a move that
+    // never landed would strand the clip at its source, open a hole where it
+    // should have landed, and record an inverse for shifts over nothing.
+    if (!moveClip(clipId, trackId, newStartBeat)) {
+        return false;
+    }
 
     const state = getTrackStoreState();
     if (!state) {
-        return;
+        return false;
     }
 
     // Build shift deltas for other clips
@@ -76,4 +86,6 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
     for (const [collateralClipId, delta] of collateralDeltas) {
         shiftClipAutomation(collateralClipId, delta);
     }
+
+    return true;
 }

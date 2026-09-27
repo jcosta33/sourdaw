@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { type ToolCallResult } from '../../../models/ToolCallResult';
 import { bridgeClipToolCall, clipActionNames, clipStrategyRegistry } from '../clipStrategy';
 
 const projectContext: ProjectContext = {
@@ -107,6 +108,34 @@ const projectContext: ProjectContext = {
 
 const foreignCall = { name: 'addMarker', arguments: { beat: 0, name: 'Intro' } };
 
+const projectContextWithNonContentTracks: ProjectContext = {
+    ...projectContext,
+    tracks: [
+        ...projectContext.tracks,
+        { ...projectContext.tracks[0]!, id: 'track-bus', name: 'Drum Bus', kind: 'bus', clips: [], clipCount: 0 },
+        { ...projectContext.tracks[0]!, id: 'track-folder', name: 'Strings', kind: 'folder', clips: [], clipCount: 0 },
+        { ...projectContext.tracks[0]!, id: 'master', name: 'Master', kind: 'master', clips: [], clipCount: 0 },
+    ],
+};
+
+/** A clip a pre-rule project parked on the wrong kind of track: its own host
+ *  cannot play it, so an unconditional kind rule would refuse even the host —
+ *  the shape the same-host retime exemption exists for. */
+const legacyMisplacedClip = {
+    ...projectContext.tracks[1]!.clips[0]!,
+    id: 'clip-legacy-audio',
+    name: 'Legacy Audio',
+    startBeat: 8,
+    endBeat: 12,
+};
+
+const projectContextWithLegacyMisplacedClip: ProjectContext = {
+    ...projectContextWithNonContentTracks,
+    tracks: projectContextWithNonContentTracks.tracks.map((track) =>
+        track.id === 'track-midi' ? { ...track, clips: [...track.clips, legacyMisplacedClip] } : track
+    ),
+};
+
 describe('clipStrategy', () => {
     it('registers exactly the exported clip action names', () => {
         expect(new Set(clipStrategyRegistry.keys())).toEqual(new Set(clipActionNames));
@@ -203,6 +232,137 @@ describe('clipStrategy', () => {
         });
     });
 
+    it('moveClip refuses a destination that cannot play the clip and names why', () => {
+        const rejections: { call: ToolCallResult; reason: string }[] = [
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-bus', startBeat: 2 } },
+                reason: 'sums signal rather than playing clips',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-folder', startBeat: 2 } },
+                reason: 'renders no timeline content',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-audio', startBeat: 2 } },
+                reason: 'has no instrument',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-audio-a', trackId: 'track-midi', startBeat: 2 } },
+                reason: 'cannot play an audio clip',
+            },
+        ];
+        for (const { call, reason } of rejections) {
+            expect(bridgeClipToolCall({ call, context: projectContextWithNonContentTracks, index: 3 })).toMatchObject({
+                index: 3,
+                name: call.name,
+                reason: expect.stringContaining(reason),
+            });
+        }
+    });
+
+    it('duplicateClipAt and moveClips refuse destinations that cannot play the clip', () => {
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'duplicateClipAt',
+                    arguments: { clipId: 'clip-audio-a', destinationTrackId: 'track-folder', startBeat: 20 },
+                },
+                context: projectContextWithNonContentTracks,
+                index: 4,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipAt',
+            reason: expect.stringContaining('renders no timeline content'),
+        });
+
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClips',
+                    arguments: { moves: [{ clipId: 'clip-audio-a', trackId: 'master', startBeat: 5 }] },
+                },
+                context: projectContextWithNonContentTracks,
+                index: 5,
+            })
+        ).toMatchObject({
+            name: 'moveClips',
+            reason: expect.stringContaining('sums signal rather than playing clips'),
+        });
+    });
+
+    it('bridges a same-host retime of a legacy misplaced clip the kind rule cannot govern', () => {
+        // A pre-rule project can hold an audio clip on a MIDI track. A
+        // same-host move changes no placement, so the use case exempts it —
+        // the bridge must not reject the call pre-dispatch with the clip's
+        // own host named as an invalid destination.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 3,
+            })
+        ).toEqual({
+            type: 'moveClip',
+            payload: { clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 },
+        });
+
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClips',
+                    arguments: { moves: [{ clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 }] },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 4,
+            })
+        ).toEqual({
+            type: 'moveClips',
+            payload: { moves: [{ clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 }], ripple: false },
+        });
+    });
+
+    it('still refuses a legacy misplaced clip on a destination other than its own host', () => {
+        // The same-host exemption is not a waiver: any other destination
+        // obeys the kind rule, including this one the clip already violates
+        // by existing.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-legacy-audio', trackId: 'master', startBeat: 6 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 5,
+            })
+        ).toMatchObject({
+            name: 'moveClip',
+            reason: expect.stringContaining('sums signal rather than playing clips'),
+        });
+    });
+
+    it('duplicateClipAt keeps refusing a copy onto a legacy misplaced clip own host', () => {
+        // A duplicate is a NEW placement on the destination — even when that
+        // destination is the clip's current host — so no same-host exemption
+        // applies: the copy would be unplayable exactly like any fresh
+        // placement.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'duplicateClipAt',
+                    arguments: { clipId: 'clip-legacy-audio', destinationTrackId: 'track-midi', startBeat: 20 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipAt',
+            reason: expect.stringContaining('cannot play an audio clip'),
+        });
+    });
+
     it('splitClip splits an unlocked clip at a beat inside its bounds', () => {
         expect(
             bridgeClipToolCall({
@@ -231,6 +391,36 @@ describe('clipStrategy', () => {
                 index: 6,
             })
         ).toEqual({ type: 'duplicateClipToNextBar', payload: { clipId: 'clip-midi-a' } });
+    });
+
+    it('duplicateClip refuses a legacy misplaced clip whose own host cannot play it', () => {
+        // The duplicate's implicit destination is the clip's own host, and
+        // the duplicate core refuses such a target at execution — so the
+        // bridge must reject pre-dispatch with the reason, or the model sees
+        // only a silent no-write.
+        expect(
+            bridgeClipToolCall({
+                call: { name: 'duplicateClip', arguments: { clipId: 'clip-legacy-audio' } },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClip',
+            reason: expect.stringContaining('cannot play an audio clip'),
+        });
+    });
+
+    it('duplicateClipToNextBar refuses a legacy misplaced clip whose own host cannot play it', () => {
+        expect(
+            bridgeClipToolCall({
+                call: { name: 'duplicateClipToNextBar', arguments: { clipId: 'clip-legacy-audio' } },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipToNextBar',
+            reason: expect.stringContaining('cannot play an audio clip'),
+        });
     });
 
     it('normalizeClip normalizes an unlocked audio clip to the default peak mode', () => {

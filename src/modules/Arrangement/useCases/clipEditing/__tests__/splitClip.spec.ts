@@ -310,7 +310,7 @@ describe('splitClip', () => {
         );
         setWarpState('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
@@ -335,7 +335,7 @@ describe('splitClip', () => {
         // content beats — the right clip's audioOffsetBeats grew by the split.
         expect(warpStates.get('new-clip-right')).toEqual({
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-seam', originalBeat: 6, warpedBeat: 6 },
@@ -409,7 +409,7 @@ describe('splitClip', () => {
         );
         setWarpState('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },

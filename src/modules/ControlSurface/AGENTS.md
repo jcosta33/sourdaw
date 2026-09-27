@@ -9,7 +9,7 @@ Owns hardware MIDI controller integrations, controller surface profiles, MIDI Le
 ## Public Contract Surface
 
 - **`useCases`**: `completeMidiLearn`, `handleMidiMessage`, `getMidiLearnState`, `setMidiLearnDependencies`, `exportHardwareMappings`, `importHardwareMappings`, `matchControllerProfile`, `getControlSurfaceHandlers`.
-- **`stores`**: `midiLearnStore`.
+- **`stores`**: `midiLearnStore`, `sanitizeMidiLearnState`.
 - **`presentations/views`**: `MidiLearnButton`, `MidiLearnRotaryKnob`.
 - **`events`**: None.
 - **Handler maps**: `getControlSurfaceHandlers` (`handleSetControlSurface`, `handleClearAllMappings`, `handleRestoreMidiLearnMappings`, `handleConnectPush`, `handleDisconnectPush`).

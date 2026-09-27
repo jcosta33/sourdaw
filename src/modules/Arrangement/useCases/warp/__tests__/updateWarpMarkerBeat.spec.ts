@@ -12,7 +12,7 @@ describe('updateWarpMarkerBeat', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -30,7 +30,7 @@ describe('updateWarpMarkerBeat', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1.25, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -54,7 +54,7 @@ describe('updateWarpMarkerBeat', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -68,7 +68,7 @@ describe('updateWarpMarkerBeat', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1.5, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 

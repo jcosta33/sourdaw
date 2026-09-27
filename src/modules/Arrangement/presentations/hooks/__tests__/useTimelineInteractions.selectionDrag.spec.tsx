@@ -937,6 +937,8 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
                     for (const shifted of input.plan.gapClosedClips) {
                         moveClip(shifted.clipId, input.trackId, shifted.origStartBeat + 1);
                     }
+                    // The real use case returns whether the move landed; this one does.
+                    return true;
                 }
             );
             const { result } = renderInteractions();
@@ -1032,6 +1034,8 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
                     for (const shifted of input.plan.gapClosedClips) {
                         moveClip(shifted.clipId, input.trackId, shifted.origStartBeat + 2);
                     }
+                    // The real use case returns whether the move landed; this one does.
+                    return true;
                 }
             );
             const { result } = renderInteractions();

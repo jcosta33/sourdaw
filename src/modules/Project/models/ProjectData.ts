@@ -125,6 +125,15 @@ export type ProjectData = {
     timeSignatureMap?: ProjectTimeSignatureMap;
     takeLanes?: ProjectTakeLaneStoreState;
     sidechainRoutes?: ProjectSidechainRoute[];
+    /**
+     * Durable half of ControlSurface's MIDI Learn state (the same projection
+     * its CRDT slot persists): the learned controller mappings, without the
+     * ephemeral learn-arm UI fields. Without this field the named-project JSON
+     * routes — Open Recent, Discard changes, `.sourdaw` import — rebuild the
+     * CRDT root and lose every mapping (#4600). Absent in older files hydrates
+     * to an empty table.
+     */
+    midiLearn?: ProjectMidiLearnState;
     arrangements?: ProjectArrangementSnapshot[];
     activeArrangementId?: string;
     audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
@@ -269,6 +278,13 @@ export type ProjectMidiPitchBend = {
 
 export type ProjectMidi = {
     probabilitySeed?: number;
+    /**
+     * Coordinate format of the stored note positions. Written by the current
+     * build once the store is clip-relative; absent means a file from before
+     * the stamp (or a foreign writer), which `migrateAbsoluteMidiNotes`
+     * re-derives from the note geometry on load.
+     */
+    noteCoordinateFormat?: 'clip-relative';
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
@@ -310,6 +326,9 @@ export type ProjectArrangementMidi = {
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
+    /** Same stamp as the top-level ProjectMidi block: written by the
+     * per-arrangement serialization, absent in pre-stamp arrangements. */
+    noteCoordinateFormat?: 'clip-relative';
 };
 
 export type ProjectMidiNote = {
@@ -450,12 +469,15 @@ export type ProjectClipGainEnvelope = {
     enabled: boolean;
 };
 
-/** Local mirror of Arrangement's per-clip `WarpState`, keyed by `clipId`. */
+/** Local mirror of Arrangement's per-clip `WarpState`, keyed by `clipId`.
+ *  The wire format carries the canonical ADR 0024 ids plus the legacy
+ *  pre-ADR ids older project files still hold; the warp store maps those
+ *  onto the canonical set where the state is read (`decodeStretchMode`). */
 export type ProjectClipWarpState = {
     clipId: string;
     enabled: boolean;
     markers: ProjectWarpMarker[];
-    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    stretchMode: 'repitch' | 'phase-vocoder' | 'wsola' | 'complex' | 'texture' | 'beats';
     originalTempo: number | null;
 };
 
@@ -798,6 +820,31 @@ export type ProjectSidechainRoute = {
     targetDeviceId: string;
     targetParameterId: string;
     gain: number;
+};
+
+/**
+ * Local mirror of ControlSurface's durable MIDI Learn mapping. Duplicated
+ * rather than imported because models do not cross module boundaries;
+ * structural typing keeps the two assignable, which `buildProjectData` and
+ * the hydrator rely on.
+ */
+export type ProjectMidiLearnMapping = {
+    id: string;
+    channel: number;
+    cc: number;
+    targetType: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
+    trackId?: string;
+    deviceId?: string;
+    paramId?: string;
+    minValue: number;
+    maxValue: number;
+    scaleMode?: 'linear' | 'log' | 'exp';
+};
+
+/** Durable half of ControlSurface's `MidiLearnState` — see `ProjectData.midiLearn`. */
+export type ProjectMidiLearnState = {
+    mappingsSchemaVersion: number;
+    mappings: ProjectMidiLearnMapping[];
 };
 
 export type ProjectArrangementSnapshot = {

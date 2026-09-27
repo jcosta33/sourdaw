@@ -7,6 +7,7 @@ type CreateTrackInput = {
     name: string;
     kind: TrackKind;
     parentId?: string;
+    withoutDefaultDevice?: boolean;
 };
 
 export function createTrack(input: CreateTrackInput): Track {

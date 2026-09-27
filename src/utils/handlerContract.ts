@@ -216,7 +216,15 @@ export type ClipSatelliteWarpMarkerSnapshot = {
 export type ClipSatelliteWarpStateSnapshot = {
     readonly enabled: boolean;
     readonly markers: readonly ClipSatelliteWarpMarkerSnapshot[];
-    readonly stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    /**
+     * Wire union: the canonical ADR 0024 ids this build writes, plus the
+     * pre-ADR legacy ids (`complex`, `texture`, `beats`) that versioned
+     * command envelopes recorded by earlier builds still carry. Validation
+     * admits the union; the satellite store decodes legacy ids back onto the
+     * canonical set at the write boundary (`normalizeWarpState`), so
+     * in-memory state always stays canonical.
+     */
+    readonly stretchMode: 'repitch' | 'phase-vocoder' | 'wsola' | 'complex' | 'texture' | 'beats';
     readonly originalTempo: number | null;
 };
 export type ClipSatelliteGainEnvelopePointSnapshot = {
@@ -1364,6 +1372,16 @@ export type AppAction =
               rightClipId: string;
               expected: ClipSplitActionSnapshot;
               replacement: ClipSplitActionSnapshot;
+              /**
+               * Shared holder for the take lanes the undo leg retires from the
+               * right half, filled in place by `execute()` when it filters the
+               * right clip out. The paired redo carries the same array, so the
+               * redo can put back a take that landed on the right half after the
+               * split. Optional so entries persisted before the field existed
+               * still decode; absent means the undo records nothing and the redo
+               * restores nothing.
+               */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
@@ -2755,6 +2773,7 @@ export type AppAction =
     | { type: 'toggleNodeView'; payload?: undefined }
     | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
     | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
+    | { type: 'removeCvOutput'; payload: { outputId: string } }
     | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
     | { type: 'disconnectPush'; payload?: undefined }
     | { type: 'exportDawProject'; payload?: undefined }
@@ -2987,6 +3006,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     describe: (action: Action, context?: HandlerValidationContext) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
+    /** Why `validate` refused, read only after it has, so the batch conflict names the owner's reason rather than the bare operation. */
+    validationRefusalReason?: (action: Action, context: HandlerValidationContext) => string | null;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
     canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
     /**

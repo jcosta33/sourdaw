@@ -153,11 +153,16 @@ should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <pat
 findings are collected and before `review.json` is written. Both are advisory and optional: their
 output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
 a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. Their sidecars live outside the review bundle, in gitignored
+deterministic check, or publish anything. One duty survives the advisory status: a fired signal the
+bundle's `semantic-ci.json` records (a scan signal whose disposition is `recommend_investigation`)
+must be disposed of by name — its token `semantic-signal <ruleId> <path>` in a stance's `admittedBy`,
+a discarded finding, or a dossier limitation — before `review:publish` will make a fresh publication;
+the duty forces the round to name what fired, never to act on it. Their sidecars live outside the review bundle, in gitignored
 `.agents/semantic-review/`, so a blind reviewer is never handed a proposed verdict. They never
 substitute for the reproduction and baseline-probe duties below, and no semantic result may approve,
 request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
+([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md),
+[ADR 0050](./.agents/decisions/0050-fired-semantic-signals-carry-a-disposal-duty.md)).
 
 The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
 same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
@@ -208,19 +213,33 @@ and the withheld figure; a reason beside a non-`none` token is refused naming `a
 and the token it contradicts. The reason is folded into the canonical record beside `assessmentImpact`
 and covered by `dossierDigest`, so the acknowledgement is bound to what was accepted; records persisted
 before it existed keep verifying byte-identically. It records an acknowledgement, never agreement, and
-confers no verdict, approval or merge authority — ADR 0047 still governs. A bundle with no
-`semantic-ci.json` — a historical bundle, or a head whose assessment was never delivered — carries no
-such requirement.
+confers no verdict, approval or merge authority — ADR 0047 still governs. When the record instead
+shows `no-assessment` — CI ran and delivered nothing for the head — `review:publish` refuses
+`assessmentImpact: none` outright, with or without a reason, and requires a limitation citing the
+record's own reason as the token `semantic-ci <reason>` (for example `semantic-ci red-check`),
+regardless of impact. A bundle with no `semantic-ci.json` file at all — a historical bundle prepared
+before `review:prepare` wrote the record — still carries no such requirement; a bundle whose manifest
+records generating that file but carries no such file on disk is refused instead of read as
+undelivered.
 
 A pull request that has taken the reviewer change-request escalation threshold — the constant
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer
 `REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
 explicit reassessment for that head in the bundle's `reassessment.json` beside the other caller
-documents. The observed count is reconstructed from the pull request's public review history and
-flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; at or above the threshold
-the same log names the reassessment duty. The consumed reassessment enters the durable record as one
+documents, at every count from that threshold onward. The observed count is reconstructed from
+the pull request's public review history and
+flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; the same log names the
+reassessment duty at every escalated count. The consumed reassessment enters the durable record as one
 addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
 threads must stay resolvable, so it logs the flag and never refuses on it.
+
+A pull request that reaches `REVIEW_ROUND_WARNING_THRESHOLD` — five reviewer `REQUEST_CHANGES`
+rounds — logs `review-round-warning:<pr>:request-changes=<n>:threshold=<t>` at preparation,
+publication, and repair. The warning asks the agent to make sure it knows what it is doing and
+to review the churn and remaining findings. It does not block another review when a valid
+reassessment and all other publication requirements are met. `review:repair` and `review:confirm`
+remain open so unresolved threads can be resolved
+([ADR 0050](./.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md)).
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a

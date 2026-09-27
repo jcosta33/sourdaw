@@ -68,6 +68,7 @@ describe('mergeImportedMidiClipNotes', () => {
             notesByClipId: { 'imported-clip': [importedNote] },
             ccByClipId: {},
             pitchBendByClipId: {},
+            noteCoordinateFormat: 'clip-relative',
         });
     });
 

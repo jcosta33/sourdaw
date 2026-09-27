@@ -141,7 +141,7 @@ describe('prepareClipSplitSatellites', () => {
     it('partitions warp markers by content beat while still emptying the right half on undo', () => {
         setWarpState('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },

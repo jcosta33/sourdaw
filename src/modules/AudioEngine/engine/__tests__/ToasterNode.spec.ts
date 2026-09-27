@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
+import { TOASTER_PAD_PARAM_IDS } from '../../models/ToasterPadParamIds';
 import { telemetryAllocator, TELEMETRY_SEQ_IDX, TOASTER_IDX } from '../telemetryAllocator';
 import { createToasterNode, isToasterDevice } from '../ToasterNode';
 
@@ -154,7 +155,7 @@ describe('createToasterNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'noteOff', pad: 2, sampleFrame: 256 });
     });
 
-    it('should post a scheduledHit with the full payload, defaulting midiNote to 60', async () => {
+    it('should post a scheduledHit with pad locks translated to numeric ids, defaulting midiNote to 60', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();
 
@@ -162,7 +163,13 @@ describe('createToasterNode', () => {
             pad: 1,
             velocity: 300,
             sampleFrame: 64,
-            padParams: [{ name: 'tune', value: 0.5 }],
+            padParams: [
+                { name: 'tune', value: 0.5 },
+                // A name TOASTER_PAD_PARAM_IDS does not declare is dropped: it
+                // only ever reached Rust's no-op arm, and the string path must
+                // not cross into the worklet (#4633).
+                { name: 'unknownPad', value: 1 },
+            ],
             restoreEngineType: 2,
             fillCondition: 'fill',
         });
@@ -173,7 +180,7 @@ describe('createToasterNode', () => {
             velocity: 127,
             note: 60,
             sampleFrame: 64,
-            padParams: [{ name: 'tune', value: 0.5 }],
+            padParams: [{ id: TOASTER_PAD_PARAM_IDS.tune, value: 0.5 }],
             restoreEngineType: 2,
             fillCondition: 'fill',
         });

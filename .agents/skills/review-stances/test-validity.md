@@ -32,7 +32,10 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   incident fixture alone does not discharge the detector's global claim.
 - The e2e matrix never runs on a pull request, so nothing on the reviewing head catches a spec left
   asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
-  name, aria-label, or text and re-home the affected specs in the same change. A control can also be
+  name, aria-label, or text and re-home the affected specs in the same change. When a diff adds,
+  removes, or reorders a desktop-bridge crossing on a launch or project-activation route, search
+  `tests/e2e/` for the command string and for specs pinning an exact runtime-call list
+  (`desktopRuntime.spec.ts`), and update the pinned list in the same change. A control can also be
   retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
   condition, read the changed control's attributes in the product and search `tests/e2e/` for each
   value it can be located by — its test id, its aria-label or accessible name, its placeholder, its
@@ -72,6 +75,21 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   disjunction can be silently narrowed to a single live arm.
 
 ## Lessons from escapes
+
+### 2026-09-26 — a startup bridge crossing left the desktop-runtime call list stale (escaped via PR #4568)
+
+PR #4568 (commit `a0aa4c1f18`) added `clearInheritedRetrospectiveCaptureArm()` to `src/app/main.tsx`,
+issuing a `disarm_retrospective_capture` bridge call before anything renders whenever a desktop
+bridge is present. `tests/e2e/desktopRuntime.spec.ts` pins the exact ordered list of non-poll
+runtime calls a launch issues; it was never updated, so nightly e2e reddened on `main`.
+
+Blind spot: e2e never runs on a pull request, so a new call on the startup path has no check on the
+reviewing head, and a call-list pin looks like an assertion about diagnostics polling rather than
+about every crossing the launch route makes.
+
+Probe that would have caught it: when a diff adds, removes, or reorders a desktop-bridge crossing on
+a launch or project-activation route, search `tests/e2e/` for the command string and for specs
+pinning an exact runtime-call list, and update the pinned list in the same change.
 
 ### 2026-09-22 — renamed controls and an ambiguous text locator left `tests/e2e/` stale (escaped via PRs #4464, #4473, #4479)
 

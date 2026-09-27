@@ -47,6 +47,51 @@ function collapseCommittedFailures(failures: readonly unknown[], message: string
     return new AggregateError(failures, message);
 }
 
+/**
+ * The singular `*Id` fields a payload names its target by. Same-type actions
+ * share one payload schema, so the ids present decide the comparison; a value
+ * that is not a primitive id (arrays, nested snapshots) names no direct target.
+ */
+function coalesceTargetIds(action: AppAction): Map<string, string | number> {
+    const payload: Record<string, unknown> = action.payload ?? {};
+    const targets = new Map<string, string | number>();
+    for (const [field, value] of Object.entries(payload)) {
+        if (!field.endsWith('Id')) {
+            continue;
+        }
+        if (typeof value === 'string' || typeof value === 'number') {
+            targets.set(field, value);
+        }
+    }
+    return targets;
+}
+
+/**
+ * Whether a coalescing action may merge into the previous entry's action.
+ *
+ * Matching the action type alone let a double-click reset on one track join an
+ * older, unrelated fader move on another (#4616): the reset adopted that
+ * entry's group and one Undo reverted both. The ids must name the same target,
+ * and an id field only one side carries refuses the merge. A payload with no
+ * id field targets a singleton (the master fader) and stays type-only.
+ */
+function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
+    if (previous.type !== next.type) {
+        return false;
+    }
+    const previousTargets = coalesceTargetIds(previous);
+    const nextTargets = coalesceTargetIds(next);
+    if (previousTargets.size !== nextTargets.size) {
+        return false;
+    }
+    for (const [field, value] of previousTargets) {
+        if (nextTargets.get(field) !== value) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
@@ -348,19 +393,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             options?.source ?? 'manual',
                             undoResult.redoAction
                         );
-                        if (options?.coalesceWithPrevious) {
-                            const previousEntry = undoStore.value?.past.at(-1);
-                            if (
-                                previousEntry &&
-                                isActionEntry(previousEntry) &&
-                                previousEntry.action.type === action.type
-                            ) {
-                                const groupId = previousEntry.groupId ?? `group-${crypto.randomUUID().slice(0, 8)}`;
-                                previousEntry.groupId = groupId;
-                                entry.groupId = groupId;
-                                if (previousEntry.groupLabel) {
-                                    entry.groupLabel = previousEntry.groupLabel;
-                                }
+                        const previousEntry = undoStore.value?.past.at(-1);
+                        if (
+                            options?.coalesceWithPrevious &&
+                            previousEntry &&
+                            isActionEntry(previousEntry) &&
+                            coalesceTargetsMatch(previousEntry.action, action)
+                        ) {
+                            const groupId = previousEntry.groupId ?? `group-${crypto.randomUUID().slice(0, 8)}`;
+                            previousEntry.groupId = groupId;
+                            entry.groupId = groupId;
+                            if (previousEntry.groupLabel) {
+                                entry.groupLabel = previousEntry.groupLabel;
                             }
                         } else if (historyGroupId) {
                             entry.groupId = historyGroupId;

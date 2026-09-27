@@ -92,6 +92,66 @@ function finalizeDescription(action: MoveClipsAction, state: MoveClipsState): vo
     };
 }
 
+/**
+ * Runs one same-track ripple move and records its plan and pre-gesture origin
+ * when it lands. Returns whether the ripple leg handled the target: a missing
+ * clip or an unavailable plan leaves the move to the plain path below, while a
+ * REFUSED move is handled and records nothing — its plan describes shifts
+ * around a move that never happened, so no neighbor may move and no inverse
+ * entry may claim it.
+ */
+function runRippleMove(
+    state: MoveClipsState,
+    restored: ClipMoveTarget[],
+    target: ClipMoveTarget,
+    origin: MoveOrigin
+): boolean {
+    // The callback's `if (clip)` guard: read the clip from the live store
+    // before planning. A clip the memoized origin remembers but the store no
+    // longer holds (replay or redo after a later delete) must skip the ripple
+    // entirely — shifting neighbors around a move that never landed would
+    // corrupt the timeline.
+    const clip = getTrackStoreState()
+        ?.tracks.find((candidate) => candidate.id === target.trackId)
+        ?.clips.find((candidate) => candidate.id === target.clipId);
+    if (!clip) {
+        return false;
+    }
+    const duration = clip.endBeat - clip.startBeat;
+    const plan = planRippleMove({
+        trackId: target.trackId,
+        clipId: target.clipId,
+        oldStartBeat: origin.startBeat,
+        newStartBeat: target.startBeat,
+        clipDuration: duration,
+    });
+    if (!plan) {
+        return false;
+    }
+    // A no-op is not a refusal: the clip already sits at its target (an
+    // earlier plan of this gesture put it there), so its plan is vacuous but
+    // its inverse must exist — record exactly as a landed move, without
+    // calling rippleMoveClip.
+    if (Object.is(clip.startBeat, target.startBeat)) {
+        state.recordedRipplePlans.push(plan);
+        restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
+        return true;
+    }
+    if (
+        rippleMoveClip({
+            trackId: target.trackId,
+            clipId: target.clipId,
+            newStartBeat: target.startBeat,
+            clipDuration: duration,
+            plan,
+        })
+    ) {
+        state.recordedRipplePlans.push(plan);
+        restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
+    }
+    return true;
+}
+
 export const handleMoveClips = createHandler<'moveClips'>({
     execute: (action) => {
         const state = getMoveClipsState(action);
@@ -107,35 +167,8 @@ export const handleMoveClips = createHandler<'moveClips'>({
                 continue;
             }
             if (action.payload.ripple && origin.trackId === target.trackId) {
-                // The callback's `if (clip)` guard: read the clip from the live
-                // store before planning. A clip the memoized origin remembers
-                // but the store no longer holds (replay or redo after a later
-                // delete) must skip the ripple entirely — shifting neighbors
-                // around a move that never landed would corrupt the timeline.
-                const clip = getTrackStoreState()
-                    ?.tracks.find((candidate) => candidate.id === target.trackId)
-                    ?.clips.find((candidate) => candidate.id === target.clipId);
-                if (clip) {
-                    const duration = clip.endBeat - clip.startBeat;
-                    const plan = planRippleMove({
-                        trackId: target.trackId,
-                        clipId: target.clipId,
-                        oldStartBeat: origin.startBeat,
-                        newStartBeat: target.startBeat,
-                        clipDuration: duration,
-                    });
-                    if (plan) {
-                        rippleMoveClip({
-                            trackId: target.trackId,
-                            clipId: target.clipId,
-                            newStartBeat: target.startBeat,
-                            clipDuration: duration,
-                            plan,
-                        });
-                        state.recordedRipplePlans.push(plan);
-                        restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
-                        continue;
-                    }
+                if (runRippleMove(state, restored, target, origin)) {
+                    continue;
                 }
             }
             // The four-arg form keeps the automation delta anchored on the

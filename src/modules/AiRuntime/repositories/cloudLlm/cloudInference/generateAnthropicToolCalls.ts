@@ -19,6 +19,7 @@ import { normalizeAnthropicInputUsage } from './normalizeAnthropicUsage';
 import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
+import { selectAnthropicStrictTools } from './selectAnthropicStrictTools';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -140,6 +141,12 @@ export async function generateAnthropicToolCalls(input: {
     const codec = buildWireToolNameCodec(input.toolSchemas);
     const wireToolSchemas = narrowToolSchemasForDirective(input.toolSchemas, input.directive);
     const lastToolIndex = wireToolSchemas.length - 1;
+    const projectedToolSchemas = wireToolSchemas.map((schema) => projectAnthropicStrictToolSchema(schema));
+    // First-fit admission against Anthropic's combined strict-schema complexity caps
+    // (see selectAnthropicStrictTools.ts): a tool that would blow the tool, optional-
+    // parameter, or union-parameter budget is sent non-strict rather than rejecting
+    // the whole request, per the docs' own "mark only critical tools as strict" tip.
+    const strictToolAdmission = selectAnthropicStrictTools(projectedToolSchemas);
     // A tool-planning turn reads none of the thinking it asks for: the plan is the tool
     // calls, and any thinking block the response carries is skipped by the parser below.
     const outputBudget = buildAnthropicThinkingBudget({
@@ -151,16 +158,13 @@ export async function generateAnthropicToolCalls(input: {
         model: input.runtime.model,
         max_tokens: outputBudget.maxTokens,
         system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
-        tools: wireToolSchemas.map((schema, index) => {
-            const strictSchema = projectAnthropicStrictToolSchema(schema);
-            return {
-                name: codec.encode(strictSchema.function.name),
-                description: strictSchema.function.description,
-                input_schema: strictSchema.function.parameters,
-                strict: true,
-                ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
-            };
-        }),
+        tools: projectedToolSchemas.map((strictSchema, index) => ({
+            name: codec.encode(strictSchema.function.name),
+            description: strictSchema.function.description,
+            input_schema: strictSchema.function.parameters,
+            ...(strictToolAdmission[index] ? { strict: true } : {}),
+            ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
+        })),
         messages: buildTurnMessages({
             userMessage: input.userMessage,
             history: input.history ?? [],

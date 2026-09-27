@@ -5,10 +5,10 @@ import {
     type ClipSatelliteWarpStateSnapshot,
 } from '#/utils/handlerContract';
 
+import { decodePersistedStretchMode, type WarpMarker, type WarpState } from '../models/WarpMarker';
+
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
 import { getStoredWarpState, isDefaultWarpState, removeWarpState, setWarpState } from './warpStates';
-
-import type { WarpMarker, WarpState } from '../models/WarpMarker';
 
 /**
  * Read/write surface for the per-clip satellite records a clip carries besides
@@ -82,7 +82,11 @@ function normalizeWarpState(state: ClipSatelliteWarpStateSnapshot): WarpState {
     return {
         enabled: state.enabled,
         markers: state.markers.map(normalizeWarpMarker),
-        stretchMode: state.stretchMode,
+        // The wire union carries the pre-ADR legacy ids recorded envelopes
+        // still hold; decode onto the canonical set at the write boundary —
+        // the same mapping the warp store's sanitize boundary applies — so
+        // in-memory state never carries a legacy id.
+        stretchMode: decodePersistedStretchMode(state.stretchMode),
         originalTempo: state.originalTempo,
     };
 }
@@ -145,16 +149,28 @@ export function serializeProjectedClipSatelliteEntries(
     return JSON.stringify(
         clipIds.map((clipId) => {
             const entry = entryByClipId.get(clipId);
-            return entry ? normalizeEntry(entry) : { clipId, gainEnvelope: null, warpState: null };
+            return entry ? normalizeClipSatelliteEntry(entry) : { clipId, gainEnvelope: null, warpState: null };
         })
     );
 }
 
-function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+/**
+ * The projected form of one snapshot entry — the exact shape
+ * `writeClipSatelliteEntry` would store for it. Exported for the
+ * `restoreTrackClipStates` guard: comparing the live read against the entry
+ * *raw* would conflict on a legacy recorded stretch mode the write itself
+ * decodes, so the guard must compare the same projection the write applies.
+ * The write also stores a value that decodes onto `defaultWarpState` as absent
+ * (`setWarpState`), so this projection collapses such an entry to `null` —
+ * without the collapse a legacy default-content entry would conflict on every
+ * replay over the only live state its content can ever meet.
+ */
+export function normalizeClipSatelliteEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+    const warpState = entry.warpState === null ? null : normalizeWarpState(entry.warpState);
     return {
         clipId: entry.clipId,
         gainEnvelope: entry.gainEnvelope === null ? null : normalizeGainEnvelope(entry.gainEnvelope, entry.clipId),
-        warpState: entry.warpState === null ? null : normalizeWarpState(entry.warpState),
+        warpState: warpState !== null && isDefaultWarpState(warpState) ? null : warpState,
     };
 }
 
@@ -166,7 +182,8 @@ function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
  */
 export function clipSatelliteEntriesMatchSnapshot(entries: readonly ClipSatelliteEntrySnapshot[]): boolean {
     return entries.every(
-        (entry) => JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeEntry(entry))
+        (entry) =>
+            JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeClipSatelliteEntry(entry))
     );
 }
 

@@ -51,8 +51,56 @@ carries it in addition.
   it; then drive the smallest project through each route the diff did not guard. A door the diff
   leaves open while its doc says the state is unreachable is the finding, and the doc is what
   blocks.
+- When a change decides a syntax shape by hand — a header, a body, a terminator, a delimiter —
+  enumerate the grammar-legal forms the new rule does not name and drive each one in both
+  directions, because a shape it wrongly refuses is a command that cannot run and a shape it wrongly
+  accepts is a check that did not happen; a case that pins the refused forms states the bound and
+  hands the fix off, it does not close the defect.
 
 ## Lessons from escapes
+
+### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
+
+PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface and type
+headers — so a generic class header or a completed type alias would stop being mistaken for a loader
+body. The recognition names the header forms it accepts, treats an `enum`, `namespace` or `module`
+header as a terminator that refuses, and treats every other `{` as a body or an object literal, so
+eight grammar-legal TypeScript forms that each hold a `require(specifier: string): unknown` member —
+a nested property type, a parameter annotation, a return type, a class-property annotation, a
+conditional-type branch, a mapped type, a decorator-preceded member, and a union with a negative
+literal type — are refused as computed loads once another member precedes that one — except the
+decorator form, which refuses alone — and the graph assertion stops a command whose source loads
+nothing. The defect reached `main` through that pull request; the refusals were measured while
+reviewing the later change #4828, which handed the fix to #4835 and pinned nothing, so no bound on
+these forms survives in the merged revision.
+
+Blind spot: the review's stances attacked the miss direction (a load the scanner fails to see) and
+the accepted-literal direction, and probed the declaration headers the change added; none asked
+which grammar-legal forms the new recognition still refuses. A hand-rolled recogniser has two
+failure directions, and the refusal direction turns a legal source into a command that cannot run,
+which reads as a defect in the source rather than in the scanner.
+
+Probe that would have caught it: enumerate the TypeScript forms that place an object type where the
+recogniser only expects a header — nested property, parameter, return, property annotation,
+conditional branch, mapped type, decorator member, literal-union member — and drive
+`snapshotComputedDynamicSpecifiers` on each, twice: once with the named member first in its body and
+once with another member such as `version: string;` ahead of it, the union form nested in a
+class-like body so that position is the only difference between the two readings. Seven forms return
+`[]` alone and `['require(...)']` ahead-of-member, so the member position alone decides them; the
+decorator form returns `['require(...)']` for both, refusing even when it is first. Any form that
+returns a specifier is the finding, a form admitted alone reads as a legal source, and the same
+enumeration must include the forms the rule does accept so the pin covers both directions. Measure a
+genuine computed load in the same scratch script — `const p = './x.ts'; require(p);` must still
+return `['require(...)']` — because an empty result for a declaration form is otherwise
+indistinguishable from a scanner that never ran.
+
+### 2026-09-26 — a read tool whose largest answer never fit its own receipt budget (escaped via PR #2011)
+
+PR #2011 shipped `device.factory-manifest.read` returning a whole descriptor's `parameters` array in one receipt, checked only against a synthetic small descriptor. Several real descriptors (Fermenter, Bacteria, Gluten, Crust, and every other descriptor declaring a `legalSet`) exceed the loop's per-call receipt budget alone, even requested one type at a time — the narrowest request the schema allowed — so the planner could never read their parameter bounds, legal values, or guidance; the tool always returned `tool-receipt-too-large` for them instead.
+
+Blind spot: review verified the generic budget-enforcement mechanism (`boundReceipt`) and the tool's schema shape, but never checked the tool's own worst-case output against the budget it was bound by — a receipt shape can be correct and still be an answer the route can never deliver.
+
+Probe that would have caught it: for every registered type the tool can name, request it alone with no other arguments and measure the real receipt (`JSON.stringify` byte length, exactly as the loop measures it) against the per-call budget; a type whose single-type, otherwise-default request already fails is the finding, and a `legalSet`-declaring type failing it is the reproduction to keep.
 
 ### 2026-09-21 — level context was complete before serialization, not after it (escaped via PR #4392)
 
@@ -313,3 +361,22 @@ whether the cleared receipt was the one recovery began from, or whether the remo
 Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
 child before it returns code 0 and require recovery to return non-zero with the replacement bytes
 preserved; then make the unlink throw and require recovery to report the failure.
+
+### 2026-09-26 — quantize swing ignored the grid and a spec pinned the deviation (introduced in 6fa76ee35e; fixed in #4788)
+
+A bulk MIDI remediation commit made quantize swing always delay the eighth-note "and" by a fixed
+half-beat unit, whatever grid the user chose, and added a spec row asserting exactly that. On a 1/16
+grid the swung positions therefore never moved and beat 0.5 moved instead, which no established DAW
+does: Logic, Ableton and Pro Tools swing every second step of the selected grid. The pinned row made
+the deviation look like a contract to every later reader.
+
+Blind spot: review checked that the spec discriminated the code and never asked whether the pinned
+musical law matched professional convention; a green, mutation-sensitive row proved only
+self-consistency.
+
+Probe that would have caught it: for any timing, quantize, swing, or grid semantic, state the law an
+established DAW applies and evaluate the change at two grids (1/16 and 1/4 here); a result that
+cannot be reproduced in a reference DAW is a finding unless a decision record names the deliberate
+difference. Then quantize the output a second time: a destructive quantize must leave its own output
+in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
+an offset.

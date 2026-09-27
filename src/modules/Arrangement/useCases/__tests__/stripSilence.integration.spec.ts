@@ -297,7 +297,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         const warpState = {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 2, warpedBeat: 3 }],
-            stretchMode: 'beats' as const,
+            stretchMode: 'wsola' as const,
             originalTempo: 120,
         };
         setWarpState('clip-1', warpState);

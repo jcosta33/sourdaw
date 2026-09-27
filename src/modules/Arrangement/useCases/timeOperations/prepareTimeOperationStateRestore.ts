@@ -5,8 +5,12 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
+import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
+import { reverseTakeLaneTransitionPlan } from './reverseTakeLaneTransitionPlan';
+import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
+import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
 
 type PreparedHandle = {
     name: string;
@@ -35,6 +39,7 @@ type CombinedStateRestorePlan = {
     midi: Record<string, unknown> | null;
     timelineMap: Record<string, unknown> | null;
     clipSatellites: Record<string, unknown> | null;
+    takeLanes: TakeLaneTransitionPlan | null;
 };
 
 type PreparedLocalState = {
@@ -68,6 +73,10 @@ const COMBINED_PLAN_KEYS = [
     'timelineMap',
     'clipSatellites',
 ] as const;
+// Plans written before take-lane retirement joined the operation (#4520) carry
+// no `takeLanes` key, so it stays optional: absent means the operation retired
+// no takes, exactly like a present null.
+const COMBINED_PLAN_WITH_TAKE_LANES_KEYS = [...COMBINED_PLAN_KEYS, 'takeLanes'] as const;
 const LOCAL_PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
 const LOCAL_STATE_PAIR_KEYS = ['trackState', 'markerState'] as const;
 const OWNER_PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
@@ -186,7 +195,8 @@ function validateOwnerPlan(value: unknown): Record<string, unknown> | null {
 
 function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan | null {
     const cloned = timeOperationStateCodec.cloneJsonPlan(value);
-    const properties = readDataObject(cloned, COMBINED_PLAN_KEYS);
+    const properties =
+        readDataObject(cloned, COMBINED_PLAN_WITH_TAKE_LANES_KEYS) ?? readDataObject(cloned, COMBINED_PLAN_KEYS);
     if (!properties || properties.version !== 1) {
         return null;
     }
@@ -223,6 +233,12 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         return null;
     }
 
+    const takeLanesValue: unknown = properties.takeLanes ?? null;
+    const takeLanes = takeLanesValue === null ? null : validateTakeLaneTransitionPlan(takeLanesValue);
+    if (takeLanesValue !== null && takeLanes === null) {
+        return null;
+    }
+
     return {
         version: 1,
         scope: properties.scope,
@@ -231,6 +247,7 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         midi,
         timelineMap,
         clipSatellites,
+        takeLanes,
     };
 }
 
@@ -668,6 +685,11 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
     if (clipSatellites === false) {
         return null;
     }
+    // Take lanes join last in both scopes (#4520): the restore direction needs
+    // the clips back on their tracks first (a lane whose track is gone, or a
+    // take whose clip is gone, has nothing to resolve against and is skipped),
+    // and the retire direction is order-independent.
+    const takeLanes = plan.takeLanes === null ? null : prepareTakeLaneStateRestore(plan.takeLanes);
 
     const handles: PreparedHandle[] = [];
     if (plan.scope === 'selected-range') {
@@ -699,6 +721,9 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         if (clipSatellites) {
             handles.push(clipSatellites);
         }
+    }
+    if (takeLanes) {
+        handles.push(takeLanes);
     }
 
     return {
@@ -867,6 +892,10 @@ function reversePlan(plan: CombinedStateRestorePlan): Record<string, unknown> | 
         midi,
         timelineMap,
         clipSatellites,
+        // Not an expected/replacement pair, so the owner swap above cannot
+        // reverse it: flipping the effect is what makes the reversed plan
+        // re-retire the lanes this plan restored.
+        takeLanes: plan.takeLanes === null ? null : reverseTakeLaneTransitionPlan(plan.takeLanes),
     };
 }
 

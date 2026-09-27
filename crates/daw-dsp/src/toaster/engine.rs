@@ -484,6 +484,42 @@ impl ToasterEngine {
         }
     }
 
+    /// Set a per-pad parameter by stable numeric id instead of name.
+    ///
+    /// The sequencer's scheduled-hit path applies parameter/sound locks inside
+    /// the worklet's `process()`: crossing wasm-bindgen with a string name
+    /// heap-allocates once per locked parameter per hit on the render thread
+    /// (#4633). Ids are the TS-side `TOASTER_PAD_PARAM_IDS` table
+    /// (`src/modules/AudioEngine/models/ToasterPadParamIds.ts`); neither side
+    /// compiles against the other, so both pin the mapping in tests.
+    ///
+    /// Dispatches through `set_pad_param` so clamps, the transient-shaper
+    /// forwarding, and the engine-type reset stay single-sourced: the numeric
+    /// path must be the same write, not a copy of it.
+    pub fn set_pad_param_by_id(&mut self, pad: u8, param_id: u32, value: f32) {
+        let name = match param_id {
+            0 => "volume",
+            1 => "pan",
+            2 => "muted",
+            3 => "soloed",
+            4 => "choke_group",
+            5 => "tune",
+            6 => "decay",
+            7 => "tone",
+            8 => "drive",
+            9 => "filter_cutoff",
+            10 => "filter_resonance",
+            11 => "send_reverb",
+            12 => "send_delay",
+            13 => "transient_attack",
+            14 => "transient_sustain",
+            15 => "bus_route",
+            16 => "engine_type",
+            _ => return,
+        };
+        self.set_pad_param(pad, name, value);
+    }
+
     pub fn set_pad_param(&mut self, pad: u8, name: &str, value: f32) {
         let pad_idx = pad as usize;
         if pad_idx >= self.pads.len() {

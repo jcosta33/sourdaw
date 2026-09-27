@@ -129,7 +129,7 @@ describe('handleDuplicateClip atomic integration', () => {
         });
         setWarpState('clip-1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.25 }],
         });
@@ -175,7 +175,7 @@ describe('handleDuplicateClip atomic integration', () => {
         // Warp: cloned with its own marker objects.
         expect(getWarpState(duplicated.id)).toEqual({
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.25 }],
         });

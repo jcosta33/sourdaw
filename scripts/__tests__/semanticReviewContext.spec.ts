@@ -17,6 +17,7 @@ import {
     type SemanticCheckRun,
     type SemanticCiRecord,
     type SemanticReviewContextPort,
+    UNRECOGNIZED_SIGNAL_VALUE,
 } from '../semanticReviewContext.ts';
 import { SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME } from '../semanticReviewWorkflowContract.ts';
 
@@ -250,6 +251,136 @@ describe('semantic review context', () => {
         expect(JSON.stringify(result)).not.toContain('disposition');
         expect(JSON.stringify(result)).not.toContain('probability');
         expect(JSON.stringify(result)).not.toContain('the model declined to flag this');
+    });
+
+    it('projects the fired signals a scan carries, bounded to their rule, path and probability', () => {
+        const fired = signal({
+            ruleId: 'admission_branch_completes_without_asserting',
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.82,
+            confidence: 0.82,
+            disposition: 'recommend_investigation',
+            reasoning: 'yes probability 0.820 is at or above 0.7',
+        });
+        const unfired = [
+            signal({ outcome: 'insufficient_context', disposition: 'unresolved', probability: 0.5 }),
+            signal({ outcome: 'no_signal', disposition: 'no_additional_recommendation', probability: 0.55 }),
+        ];
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired, ...unfired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            {
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: 'src/modules/audio/take.test.ts',
+                probability: 0.82,
+            },
+        ]);
+        // The fired signal carries only its rule, path, and probability: the reasoning, outcome band,
+        // and disposition the producer recorded stay in the artifact.
+        expect(JSON.stringify(result)).not.toContain('recommend_investigation');
+        expect(JSON.stringify(result)).not.toContain('at or above');
+    });
+
+    it('caps the fired signals it records at the summary bound, leaving overflow in the artifact', () => {
+        const fired = Array.from({ length: 7 }, (_unused, index) =>
+            signal({
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: `src/module/file-${index}.test.ts`,
+                outcome: 'signal',
+                probability: 0.8,
+                confidence: 0.8,
+                disposition: 'recommend_investigation',
+            })
+        );
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: fired })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toHaveLength(5);
+    });
+
+    it('records zero fired signals for a scan whose signals never recommend investigation', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        expect(asAssessed(resolveSemanticReviewContext(42, HEAD, port)).firedSignals).toEqual([]);
+    });
+
+    it('redacts a fired signal whose projected path carries a credential shape, keeping the record', () => {
+        const fired = signal({
+            ruleId: 'conditional_admission_added',
+            // Composed from parts so no single source literal matches the diff secret scan;
+            // at runtime it is still a full `ghp_` + 36-char token shape, which the screening refuses.
+            path: `src/ghp_${'0'.repeat(36)}/x.test.ts`,
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        // The refused value becomes the fixed marker; the signal's slot, the cap, and the rest of
+        // the assessed record survive, so `review:prepare` completes and the disposal duty at
+        // publication stays writable against the marker the record carries. The screen's refusal is
+        // no longer a throw — that aborted `review:prepare` before any bundle file was written,
+        // a harder stop than the advisory assessment's non-existent merge authority (ADR 0047).
+        expect(result.firedSignals).toEqual([
+            { ruleId: 'conditional_admission_added', path: UNRECOGNIZED_SIGNAL_VALUE, probability: 0.9 },
+        ]);
+        expect(result).toMatchObject({
+            state: 'assessed',
+            assessedHeadSha: HEAD,
+            scope: { discovered: 4, eligible: 3, assessed: 2 },
+            artifact: { name: 'semantic-review-42-456-1' },
+        });
+        // No unscreened projected byte reaches the record `semantic-ci.json` serialises.
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('0'.repeat(36));
+    });
+
+    it('redacts a fired signal whose projected ruleId carries a credential shape, keeping its slot', () => {
+        const fired = signal({
+            // Composed from parts so no single source literal matches the diff secret scan.
+            ruleId: `exposed_ghp_${'1'.repeat(36)}_rule`,
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            { ruleId: UNRECOGNIZED_SIGNAL_VALUE, path: 'src/modules/audio/take.test.ts', probability: 0.9 },
+        ]);
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('1'.repeat(36));
     });
 
     it('finds the semantic check when it sits beyond the first page of check runs', () => {
@@ -736,6 +867,7 @@ describe('semantic review context', () => {
                                 { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
                                 { path: 'src/d.ts', reason: 'total-evidence-budget-exhausted (context)' },
                                 { path: 'src/e.ts', reason: 'region-exceeds-per-region-budget (contract)' },
+                                { path: 'src/f.ts', reason: 'hunk-beyond-file (after, contract)' },
                             ],
                         },
                     })
@@ -749,6 +881,245 @@ describe('semantic review context', () => {
             'region-exceeds-per-region-budget (after)',
             'total-evidence-budget-exhausted (context)',
             'region-exceeds-per-region-budget (contract)',
+            'hunk-beyond-file (after, contract)',
+        ]);
+    });
+
+    it('keeps a withheld contract-carrying path named as such, apart from an anonymous bulk trim', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (after, contract)',
+                                },
+                                { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'total-evidence-budget-exhausted (after, contract)' },
+            { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('keeps a reduced-unit entry that names the sides the fitter dropped', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'crates/daw-dsp/src/big.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after)',
+                                },
+                                {
+                                    path: 'crates/daw-dsp/src/wider.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'crates/daw-dsp/src/big.rs', reason: 'unit-evidence-reduced-below-request-budget (after)' },
+            {
+                path: 'crates/daw-dsp/src/wider.rs',
+                reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+            },
+        ]);
+    });
+
+    it('keeps the three-term reduced-unit reason the fitter emits when it cuts every side', () => {
+        // The fitter unions the own before/after drops with the context drop, so a unit cut on all three
+        // sides emits `(before, after, context)`. Restoring the two-term qualifier cap would normalise
+        // this real producer shape to `unrecognized-reason`; the projection must keep it. This guards the
+        // previous repair's three-term qualifier support, not this change's context gate.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'src/modules/Project/cut.ts',
+                                    reason: 'unit-evidence-reduced-below-request-budget (before, after, context)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            {
+                path: 'src/modules/Project/cut.ts',
+                reason: 'unit-evidence-reduced-below-request-budget (before, after, context)',
+            },
+        ]);
+    });
+
+    it('accepts the contract-marked comma qualifier and the retired withheld code for reading', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (before, contract)',
+                                },
+                                { path: 'scripts/old.ts', reason: 'contract-evidence-withheld (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated.map((entry) => entry.reason)).toEqual([
+            'region-exceeds-per-region-budget (after, contract)',
+            'total-evidence-budget-exhausted (before, contract)',
+            'contract-evidence-withheld (after)',
+        ]);
+    });
+
+    it('normalises a parameterised reason with an unknown or duplicated qualifier term', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                { path: 'src/b.ts', reason: 'region-exceeds-per-region-budget (after, bogus)' },
+                                { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after, after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'src/b.ts', reason: 'unrecognized-reason' },
+            { path: 'src/c.ts', reason: 'unrecognized-reason' },
+        ]);
+    });
+
+    it('keeps the withheld qualifier to the region classes the producer emits', () => {
+        // `withheldRegionReason` names the region's own content class: a spec-covered source's own side
+        // reads plain, a contract-carrying side and a contract-context region carry the contract term.
+        // The tier is an attempt order over the record and never joins the qualifier; a tier term here
+        // would project to `unrecognized-reason` and stop the scan and verify references reading alike.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/semanticReview/vocabulary.ts',
+                                    reason: 'region-exceeds-per-region-budget (after)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: '.agents/decisions/README.md',
+                                    reason: 'region-exceeds-per-region-budget (context, contract)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
+            { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            {
+                path: '.agents/decisions/README.md',
+                reason: 'region-exceeds-per-region-budget (context, contract)',
+            },
         ]);
     });
 

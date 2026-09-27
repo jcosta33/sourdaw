@@ -15,11 +15,21 @@
  * counts rather than `state` alone: a `skipped` execution with a zero scope is a complete
  * assessment of an empty scope, not a missing one.
  *
- * The projection is coverage-only. The report's signals, findings, reasoning, question text, and
- * probabilities never reach the bundle, and each scope entry's `reason` is validated against the
- * producer's vocabulary with anything unrecognised normalised to a fixed code: feeding a downstream
- * reviewer the assessment's judgements anchors it, so the bundle carries only the scope, the
- * abstentions, and the revision it covers.
+ * The projection is coverage plus the fired-signal disposal list: the coverage side names what was
+ * withheld, excluded, and left unassessed, never what was admitted. The report's findings, reasoning,
+ * question text, dispositions, and per-signal judgement text never reach the bundle, and each scope
+ * entry's `reason` is validated against the producer's vocabulary with anything unrecognised
+ * normalised to a fixed code: feeding a downstream reviewer the assessment's judgements anchors it,
+ * so the bundle carries the scope, the abstentions, and the revision it covers. One bounded carve-out
+ * carries the signals the assessment itself flagged for investigation (`recommend_investigation`),
+ * because a fired signal no one is forced to name is a fired signal an orchestrator can forget: the
+ * projection records at most their rule, path, and probability, screening each value
+ * publication-safe and redacting a refused value to a fixed marker, so an unscreenable byte can
+ * neither reach the bundle nor stop `review:prepare` — the signal still fires, its disposal duty
+ * survives, and the publication gate still refuses a fresh round that never disposes of one by name
+ * (ADR 0050). Everything else about the signals stays out. No projection failure throws: the
+ * assessment is advisory and holds no merge authority (ADR 0047), so its trouble is disclosed,
+ * never a stop.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -27,6 +37,7 @@ import { createHash } from 'node:crypto';
 
 import { unzipSync } from 'fflate';
 
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import {
     parseJson,
     REQUIRED_REPOSITORY,
@@ -35,7 +46,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { EVIDENCE_SIDES, isSemanticFailureCode } from './semanticReview/contracts.ts';
-import { parseReportJson, type SemanticReport } from './semanticReview/report.ts';
+import { MAX_SUMMARY_ITEMS, parseReportJson, type SemanticReport } from './semanticReview/report.ts';
 import { SEMANTIC_REVIEW_CHECK_NAME, SEMANTIC_REVIEW_WORKFLOW_FILE } from './semanticReviewWorkflowContract.ts';
 
 export const SEMANTIC_CI_FORMAT = 'semantic-ci-v1';
@@ -60,6 +71,59 @@ export type SemanticCiScope = {
     readonly truncated: readonly SemanticCiExclusion[];
 };
 
+/**
+ * One fired signal a fresh publication must dispose of by name: its rule, path, and probability. A
+ * value the publication screen refuses is carried as `UNRECOGNIZED_SIGNAL_VALUE`, never dropped.
+ */
+export type SemanticCiFiredSignal = {
+    readonly ruleId: string;
+    readonly path: string;
+    readonly probability: number;
+};
+
+/**
+ * Fired signals are bounded like the report summary's actionable list: at most `MAX_SUMMARY_ITEMS`
+ * entries are recorded, and a scan firing more leaves the overflow in the artifact, which the
+ * record's `digest` binds. The measured fire rate on this repository is well under one per scan, so
+ * the cap is a publication-safety bound, not a working limit.
+ */
+const MAX_FIRED_SIGNALS = MAX_SUMMARY_ITEMS;
+
+/**
+ * A projected fired-signal value as the record carries it: verbatim when the shared publication
+ * screen admits it, the fixed marker when the screen refuses. The refusal set is the screen's own —
+ * redaction changes where a refused value lands, never what the screen refuses.
+ */
+function screenedFiredSignalValue(value: string): string {
+    try {
+        assertPublicationSafeEvidence('semantic-ci fired signal value', [value]);
+    } catch {
+        return UNRECOGNIZED_SIGNAL_VALUE;
+    }
+    return value;
+}
+
+/**
+ * The fired signals a fresh publication must dispose of by name: the scan's
+ * `recommend_investigation` entries, projected to their rule, path, and probability and capped at
+ * `MAX_FIRED_SIGNALS`. The projected strings are publication-safe screened, and a value the screen
+ * refuses is redacted to `UNRECOGNIZED_SIGNAL_VALUE` instead of written: the record keeps the
+ * signal's slot — the cap and the count stay intact — so the disposal duty survives under the
+ * marker-valued citation token, the unscreened bytes never reach the bundle, and `review:prepare`
+ * completes rather than aborting on advisory assessment content (ADR 0047).
+ */
+function firedSignalsOf(report: SemanticReport): readonly SemanticCiFiredSignal[] {
+    if (report.mode !== 'scan') {
+        return [];
+    }
+    const fired = report.signals.filter((signal) => signal.disposition === 'recommend_investigation');
+    return fired.slice(0, MAX_FIRED_SIGNALS).map((signal) => ({
+        ruleId: screenedFiredSignalValue(signal.ruleId),
+        path: screenedFiredSignalValue(signal.path),
+        probability: signal.probability,
+    }));
+}
+
 export type SemanticCiArtifact = {
     readonly id: number;
     readonly name: string;
@@ -78,6 +142,8 @@ export type SemanticCiAssessment = {
     readonly execution: SemanticReport['execution'];
     readonly scope: SemanticCiScope;
     readonly unresolvedQuestions: number;
+    /** The fired signals a fresh publication must dispose of by name; empty when none fired. */
+    readonly firedSignals: readonly SemanticCiFiredSignal[];
     readonly artifact: SemanticCiArtifact;
 };
 
@@ -143,9 +209,21 @@ const UNRECOGNIZED_REASON = 'unrecognized-reason';
 const UNRECOGNIZED_PATH = '(unrecognized-path)';
 
 /**
+ * The fixed marker a publication-unsafe projected fired-signal value is redacted to, the same shape
+ * as `UNRECOGNIZED_PATH`: the record keeps the signal's slot with the refused value replaced, so the
+ * disposal duty stays writable without the unscreened bytes.
+ */
+export const UNRECOGNIZED_SIGNAL_VALUE = '(unrecognized-value)';
+
+/**
  * The producer's fixed scope-entry reason codes. Mirrored here rather than imported because the
  * collector and verifier spread them across three modules without a single exported vocabulary; the
  * two sides must stay equal, and a code the producer has not yet grown is normalised, never leaked.
+ * `evidence-withheld` is retired as an emitted code — the content screen names its cause
+ * `evidence-withheld-credential-shaped` on both routes — but stays here so records persisted before the
+ * change keep reading. `credential-shaped-content-excluded` is the scope-exclusion vocabulary the scan
+ * records in `excluded`; the `evidence-withheld*` codes are the withheld vocabulary and say why no
+ * reference left the machine.
  */
 const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'sensitive-content-excluded',
@@ -169,21 +247,52 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'unit-overhead-exceeds-request-budget',
 ]);
 
-/** Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`. */
+/**
+ * Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`.
+ * `contract-evidence-withheld` is retired as an emitted code but stays here so records persisted before
+ * the change keep reading.
+ */
 const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
     'total-evidence-budget-exhausted',
+    'contract-evidence-withheld',
+    'unit-evidence-reduced-below-request-budget',
 ];
 
-/** The closed qualifier labels the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
+/** The closed single qualifier terms the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
 const PARAMETERIZED_REASON_QUALIFIERS: ReadonlySet<string> = new Set([...EVIDENCE_SIDES, 'contract']);
+
+/**
+ * Whether a parenthesised qualifier is a producer shape: one or more distinct side terms, optionally
+ * followed by the context label `contract` — no duplicates, no unknown terms, and `contract` at most
+ * once, last.
+ */
+function isParameterizedQualifierList(qualifier: string): boolean {
+    const terms = qualifier.split(',').map((term) => term.trim());
+    if (terms.length === 0) {
+        return false;
+    }
+    if (terms.some((term) => term === '')) {
+        return false;
+    }
+    if (new Set(terms).size !== terms.length) {
+        return false;
+    }
+    if (terms.some((term) => !PARAMETERIZED_REASON_QUALIFIERS.has(term))) {
+        return false;
+    }
+    const contractIndex = terms.indexOf('contract');
+    return contractIndex === -1 || contractIndex === terms.length - 1;
+}
 
 function isParameterizedReason(reason: string): boolean {
     for (const prefix of PARAMETERIZED_REASON_PREFIXES) {
         const start = `${prefix} (`;
         if (reason.startsWith(start) && reason.endsWith(')')) {
-            return PARAMETERIZED_REASON_QUALIFIERS.has(reason.slice(start.length, -1));
+            if (isParameterizedQualifierList(reason.slice(start.length, -1))) {
+                return true;
+            }
         }
     }
     return false;
@@ -426,6 +535,7 @@ export function resolveSemanticReviewContext(
             truncated: report.scope.truncated.map(projectionOf),
         },
         unresolvedQuestions: unresolvedQuestionCount(report),
+        firedSignals: firedSignalsOf(report),
         artifact: {
             id: selected.artifact.id,
             name: selected.artifact.name,

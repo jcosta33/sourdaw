@@ -140,7 +140,7 @@ describe('DAWproject import → export → import round-trip', () => {
                 countInBars: 1,
                 preRollEnabled: false,
                 preRollBars: 1,
-                masterGain: 0.8,
+                masterGain: 80,
             },
             arrangement: {
                 tracks: [

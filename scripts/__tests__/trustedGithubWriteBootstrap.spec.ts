@@ -4,6 +4,7 @@ import {
     bareModuleSpecifiers,
     executeTrustedSnapshot,
     forwardTrustedSnapshotSignal,
+    snapshotComputedDynamicSpecifiers,
     snapshotImportSpecifiers,
     trustedSnapshotRunsDetached,
 } from '../trustedGithubWriteBootstrap.ts';
@@ -202,6 +203,16 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers("obj?.require?.resolve('yaml')")).toEqual([]);
     });
 
+    it('collects a require load hidden by a dot-ending line comment', () => {
+        expect(snapshotImportSpecifiers("// Fall back to the plugin entry.\nrequire('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("// Fall back to the plugin entry.\nrequire('yaml')")).toEqual(['yaml']);
+    });
+
+    it('collects a require load spread into an array', () => {
+        expect(snapshotImportSpecifiers("[...require('yaml')]")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("[...require('yaml')]")).toEqual(['yaml']);
+    });
+
     it('collects createRequire chained calls across quotes, grouping parens, and optional chaining', () => {
         expect(snapshotImportSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
         expect(bareModuleSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
@@ -225,6 +236,407 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers("obj.createRequire(import.meta.url)('yaml')")).toEqual([]);
         expect(snapshotImportSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
         expect(bareModuleSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
+    });
+
+    /**
+     * A statement-position regex after a control header's `)` or after `else` is a regex literal, so
+     * the apostrophe in `/don't/` cannot open a string that swallows the rest of the file — the shape
+     * that hid every later load (#4818). The division cases pin the other half: a `/` after a call's
+     * `)` or after a `)` that closes no header still divides, including a private member named after
+     * a control keyword, whose `#` makes it a member exactly as `.` does (#4828).
+     */
+    it('collects an import a statement-position regex used to hide', () => {
+        expect(snapshotImportSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual([
+            'yaml',
+        ]);
+        expect(bareModuleSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (url) /^https?:\\/\\//.test(url);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (x) run(); else /don't/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("for (;;) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("while (ok) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("with (o) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) report(x) / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) { run(); } const v = g(a) / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) obj / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(
+            snapshotImportSpecifiers(
+                "class C { #while(n){return n} r(){ return this.#while(1) / require('yaml') / 2 } }"
+            )
+        ).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("obj.while(1) / require('yaml') / 2;")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("obj?.while(1) / require('yaml') / 2;")).toEqual(['yaml']);
+    });
+
+    /**
+     * A division `/` inside the header a backward walk crosses must not pair with an earlier slash.
+     * `a / g(b / c) / require(spec)` read itself as one literal from its second `/` back to the first,
+     * so the walk stepped over the call's `(` and hid a real load the merge base refused (#4828).
+     */
+    it('reads a division pair inside a crossed header as a division', () => {
+        expect(snapshotImportSpecifiers('if (x = a / g(b / c) / require(spec) / 2) {}')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('if (x = a / g(b / c) / require(spec) / 2) {}')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('if (ratio / compute(x / y) / import(spec) / 2 > 0) {}')).toEqual([
+            'import(...)',
+        ]);
+    });
+
+    /**
+     * `for await (…)` is a control header exactly as `for (…)` is, so its `)` ends a header and
+     * `/don't/` after it opens a regex whose apostrophe would otherwise swallow the load behind it.
+     * The two-word header has to be read before the member guard, which sees the `r` of `for` in
+     * front of `await` and rejects it as a member's name.
+     */
+    it('collects a load a for await header regex used to hide', () => {
+        expect(snapshotComputedDynamicSpecifiers("for await (const a of b) /don't/.test(l);\nrequire(spec);")).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotImportSpecifiers("for await (const a of b) /don't/.test(l);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+    });
+
+    /**
+     * A load reached through a wrapped or bound callee is the same load: `(require)(spec)`,
+     * `(0, require)(spec)`, a name bound to `require` or to `createRequire(…)`, and an aliased
+     * `createRequire` import (#4818). The boundary cases pin the limits: a parenthesis that continues
+     * the enclosing call is an argument list rather than a wrapped callee — `pass(require)('./hidden')`
+     * is an ordinary call, and reading it as a wrapped `require` refused it (#4828) — a longer name is
+     * not the binding, and a name redeclared in a nested function, class, or parameter list keeps the
+     * merge base's reading.
+     */
+    it('collects a load reached through a wrapped or bound callee', () => {
+        expect(snapshotImportSpecifiers("(require)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = createRequire(import.meta.url);\nload('yaml')")).toEqual([
+            'yaml',
+        ]);
+        expect(
+            snapshotImportSpecifiers(
+                "import { createRequire as makeRequire } from 'node:module';\nmakeRequire(import.meta.url)('yaml')"
+            )
+        ).toEqual(['node:module', 'yaml']);
+        expect(bareModuleSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = require;\ndownload('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nregistry.load('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nfunction f(load) { load('yaml') }")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require('yaml');\nload('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("pass(require)('./hidden');")).toEqual([]);
+        expect(snapshotImportSpecifiers('pass(require)(specifier);')).toEqual([]);
+        expect(snapshotImportSpecifiers("this.#m(require)('./hidden');")).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'function outer() { function load(s) { return s; } return load(1); }\nconst load = require;'
+            )
+        ).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nclass load {}\nload('yaml');")).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'const load = require;\nfunction outer(load) { return load(1); }\nload(specifier);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'const load = require;\nfunction outer() { function load(s) { return s; } return load(1); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotImportSpecifiers("const load = require;\nfunction outer(s) { return s; }\nload('yaml');")
+        ).toEqual(['yaml']);
+    });
+
+    /**
+     * A name declared again in a nested function, class, or parameter list is that declaration, not the
+     * loader bound outside it, so the binding is dropped and the nested call keeps the merge base's
+     * reading (#4828). The bare bound name still resolves, which is what separates the two.
+     */
+    it('drops a loader binding redeclared in a nested scope', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nload(specifier);')).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function outer() { function load(s) { return s; } return load(1); }\nconst load = require;'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const load = require;\nfunction outer() { class load {}\nreturn new load(); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('const load = require;\nfunction outer(load) { return load(1); }')
+        ).toEqual([]);
+    });
+
+    /**
+     * A file that declares `require` itself — as a parameter, a `const`/`let`/`var` name, a
+     * destructuring target, or a catch parameter — forms no binding of any name to the loader, so the
+     * file keeps the merge base's reading. The four shapes load nothing, and reading them as loads
+     * refused sources that reach no module (#4828). The declaration is the file's, not the scope's: the
+     * file's own shadowing wins. It stops at the binding pass, which is what keeps the callee cases
+     * below loads.
+     */
+    it('drops the loader binding when the file declares require itself', () => {
+        expect(snapshotComputedDynamicSpecifiers('function f(require) { const load = require; load(spec); }')).toEqual(
+            []
+        );
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nconst load = require;\nload(spec);')).toEqual(
+            []
+        );
+        expect(
+            snapshotComputedDynamicSpecifiers('const { require } = box;\nconst load = require;\nload(spec);')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('try {} catch (require) { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(snapshotImportSpecifiers("const require = fake;\nconst load = require;\nload('yaml');")).toEqual([]);
+        // The binding a file that does not declare `require` still makes, which is the rule's other half.
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nload(spec);')).toEqual(['require(...)']);
+    });
+
+    /**
+     * A declaration binds the name wherever its parameter list stands, whatever follows the list. The
+     * list closes on its own `)`, so a return type or a body brace abutting that `)` still proves the
+     * list a declaration; reading one character past the close missed every shape whose `)` is followed
+     * by a significant character, and each of them loads nothing through the parameter (#4828).
+     */
+    it('drops the loader binding for a parameter list closed before a return type or a body', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers('function f(require: string): void { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const f = (require: string): void => { const load = require; load(spec); };'
+            )
+        ).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('(require)=>{const load=require; load(spec);}')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('function(require: string): void { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C { m(require: string): void { const load = require; load(spec); } }'
+            )
+        ).toEqual([]);
+    });
+
+    /**
+     * An `import` clause binds the name it introduces — the default binding, a named specifier, a
+     * namespace alias, and the type-only spellings of those clauses — and a rest parameter and an `enum`
+     * name bind it too. Each is a local declaration of `require`, so none of them forms a binding of a
+     * name to the loader and each file keeps the merge base's reading; without the branch, every one of
+     * them was refused (#4828). A specifier the clause aliases away reads as a declaration as well, which
+     * is the direction this test errs toward.
+     */
+    it('drops the loader binding for an import binding, a rest parameter, and an enum name', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers("import require from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import { require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import * as require from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('function f(...require) {}\nconst load = require;\nload(spec);')
+        ).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('enum require { A }\nconst load = require;\nload(spec);')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import type { require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import { type require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+    });
+
+    /**
+     * A declaration keyword announces the name wherever the language allows a modifier or a prefix or
+     * nothing at all in front of it, and the TypeScript body keywords declare it too. Reading the
+     * keyword at its own start is what separates a prefix from a member: `export const require = fake`
+     * and `export namespace require {}` declare the name, while `obj.require = fake` names a member and
+     * declares nothing, so the file's own `require` is the loader there. Without that reading every
+     * shape below bound the loader to `require` and refused an ordinary call through it, which the
+     * merge base admitted (#4828). Each case pins one family; `export default class` and
+     * `export abstract class` pin a two-word prefix chain, and the ambient declarations pin the
+     * `declare` modifier the merge base admitted with them.
+     */
+    it.each([
+        ['a prefixed const', 'export const require = fake;'],
+        ['a prefixed function', 'export function require() {}'],
+        ['a prefixed class', 'export class require {}'],
+        ['a prefixed enum', 'export enum require { A }'],
+        ['a prefixed default class', 'export default class require {}'],
+        ['a prefixed async function', 'export async function require() {}'],
+        ['a bare async function', 'async function require() {}'],
+        ['an abstract class', 'abstract class require {}'],
+        ['a const enum', 'const enum require { A }'],
+        ['a namespace', 'namespace require {}'],
+        ['a module', 'module require {}'],
+        ['a bare arrow parameter', 'const f = require => {};'],
+        ['a parameter property', 'class C { constructor(private require: string) {} }'],
+        ['a prefixed default function', 'export default function require() {}'],
+        ['a prefixed abstract class', 'export abstract class require {}'],
+        ['an ambient function', 'declare function require(name: string): unknown;'],
+        ['a declared ambient const', 'declare const require: unknown;'],
+        ['a prefixed declared ambient const', 'export declare const require: unknown;'],
+        ['an ambient namespace', 'declare namespace require {}'],
+    ])('drops the loader binding for %s named require', (_label, prelude) => {
+        expect(snapshotComputedDynamicSpecifiers(`${prelude}\nconst load = require;\nload(spec);`)).toEqual([]);
+    });
+
+    /**
+     * The member shapes the prefix rule must not swallow: a `.` or a `#` in front of the keyword names
+     * a member, so no declaration of `require` stands in the file and the binding through the loader
+     * resolves — which is what the merge base's own callee detection refused to see (#4818). Reading
+     * the identifier character before the keyword as the member instead of the dot read every prefixed
+     * declaration as a member.
+     */
+    it('drops no loader binding for a member named require', () => {
+        expect(snapshotComputedDynamicSpecifiers('obj.require = fake;\nconst load = require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class C { require() {} }\nconst load = require;\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('x.namespace = 1;\nconst load = require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    /**
+     * The declaration above stops the binding pass alone. A `require(…)` call is the loader whatever
+     * else the file declares, as the merge base read it, so an unrelated declaration never hides a real
+     * load: a literal specifier is collected, and a computed one is refused by `require(...)`. Only the
+     * binding through the name is dropped, which is what the four stand-down shapes above observe.
+     */
+    it('keeps a require callee a load when the file declares the name elsewhere', () => {
+        expect(snapshotImportSpecifiers("function f(require) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("function f({ require }) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("try {} catch (require) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const require = fake;\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nrequire(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nrequire.resolve(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('function f(require) { require(spec); }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\n(0, require)(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\n(require)(spec);')).toEqual(['require(...)']);
+    });
+
+    /**
+     * A parameter list inside a type declares nothing at runtime, so it is no declaration of the name
+     * `require` and must not stand the binding pass down: `const load = require` still binds the loader
+     * and `load(spec)` is a computed load. Only the `=` of a `type` alias and the `:` of a declared
+     * name's annotation prove the type position; every other list keeps the stand-down above (#4828).
+     */
+    it('reads a parameter list inside a type as no declaration of require', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers('type L = (require: string) => void;\nconst load = require;\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'type L<T> = (require: string) => void;\nconst load = require;\nload(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'let loader: (require: string) => void;\nconst load = require;\nload(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotImportSpecifiers("type L = (require: string) => void;\nconst y = require('yaml');")).toEqual([
+            'yaml',
+        ]);
+    });
+
+    /**
+     * Only a value `import { createRequire as <name> } from '…'` binds a local name, so only it makes a
+     * call through that name a load. `export { … } from` re-exports without binding anything,
+     * `import type { … }` imports a type, and an inline `type` specifier names a type, so
+     * `cr(import.meta.url)('./hidden')` behind any of them reaches no local loader and the file reaches
+     * `node:module` alone. Reading the alias out of any `{ … } from` clause collected `./hidden`, which
+     * the merge base never did (#4828).
+     */
+    it.each([
+        {
+            label: 'an export clause re-exporting createRequire',
+            source: "export { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'an export type clause re-exporting createRequire',
+            source: "export type { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'a type-only import of createRequire',
+            source: "import type { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'an inline type specifier of createRequire',
+            source: "import { type createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+    ])('binds no local loader through $label', ({ source }) => {
+        expect(snapshotImportSpecifiers(source)).toEqual(['node:module']);
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * A type literal's `}` is not an operand-position object literal's `}`: treating it as one
+     * mislexed the statement-position regex after it and let its apostrophe swallow the file (#4828).
+     * Only the argument, array, sequence, `return`, arrow, and declaration-assignment positions keep
+     * the division reading, so a `const` initializer's braces still divide while every type shape —
+     * a type alias, an intersection or union branch, an annotation — keeps the merge base's reading.
+     */
+    it('keeps the merge base reading at a type literal close', () => {
+        expect(snapshotImportSpecifiers("type T = { a: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("type T = A & { b: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("type T = A | { b: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("let x: { a: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        // The division reading is what the `const` initializer proves: the literal specifier after the
+        // divided `/` is a real load and is collected, while the computed form is refused above.
+        expect(snapshotImportSpecifiers("const r = {} / import('yaml') / 2;")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const r = {} / require('yaml') / 2;")).toEqual(['yaml']);
+    });
+
+    /**
+     * The operand-position proof crosses the same backward walks, so a division pair inside the brace
+     * it matches has to read as a division there too. The `}` of `{ ({ a: 1 / 2 }) / c }` closes a
+     * statement block and the `/ require(spec) /` after it is a regex literal the file loads nothing
+     * through, as the merge base read it; pairing the slashes proved an object literal and refused it.
+     */
+    it('keeps a statement-position regex after a brace holding a division', () => {
+        expect(snapshotComputedDynamicSpecifiers('{ ({ a: 1 / 2 }) / c } / require(spec) /;')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('function f() { ({ a: b / c }) / d; } / require(spec) /;')).toEqual(
+            []
+        );
+    });
+
+    /**
+     * The close-brace walk must answer each `/` once. `canStartRegexLiteral` re-enters itself through
+     * `lineCommentOpenBefore`, because skipping a comment, string, or regex needs the same question
+     * answered at an earlier index, so the cost of a line of repeated `} /` delimiters grew by about
+     * nine times every four repetitions before the answers were memoised (#4828). The bound is loose:
+     * the repaired scan takes under two milliseconds at this length, while the walk without the memo
+     * took 9.7 s at 32 repetitions and 271 s here.
+     */
+    it('scans a line of repeated close-brace divisions in bounded time', () => {
+        const source = `${'} / '.repeat(40)};`;
+        const startedAt = performance.now();
+        const shapes = snapshotComputedDynamicSpecifiers(source);
+        const elapsedMs = performance.now() - startedAt;
+        expect(shapes).toEqual([]);
+        expect(elapsedMs).toBeLessThan(2_000);
     });
 });
 

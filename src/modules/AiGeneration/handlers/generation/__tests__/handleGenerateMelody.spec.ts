@@ -5,6 +5,7 @@ import { handleGenerateMelody } from '../handleGenerateMelody';
 const mocks = vi.hoisted(() => ({
     applyMelodyToTrack: vi.fn<typeof import('../../../useCases/generateMelody/applyToTrack').applyMelodyToTrack>(),
     resolveOrCreateMidiTrack: vi.fn<typeof import('../generationHandlerHelpers').resolveOrCreateMidiTrack>(() => 't1'),
+    resolveGenerationTrackPlan: vi.fn(() => ({ kind: 'existing', trackId: 't1' })),
     getPlayheadBeat: vi.fn<typeof import('../generationHandlerHelpers').getPlayheadBeat>(() => 0),
 }));
 
@@ -15,6 +16,7 @@ vi.mock('../../../useCases/generateMelody/applyToTrack', () => ({
 vi.mock('../generationHandlerHelpers', () => ({
     getPlayheadBeat: mocks.getPlayheadBeat,
     resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
+    resolveGenerationTrackPlan: mocks.resolveGenerationTrackPlan,
     VALID_MELODY_STYLES: new Set(['simple', 'arpeggiated']),
     VALID_SCALES: new Set(['major', 'minor']),
     VALID_DRUM_STYLES: new Set(['rock', 'house']),

@@ -59,6 +59,7 @@ import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerMo
 import {
     assertAcceptanceAuthorization,
     assertAcceptanceDossierAccounting,
+    assertReviewRoundPublicationAdmitted,
     prepareReviewDossierPublication,
     recordAcceptanceAuthorization,
     recordedPublicationReplay,
@@ -227,6 +228,16 @@ function prepareReviewPublication(
     // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
     const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
     assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
+    // The round escalation decision precedes approval context and comment preflight so a missing
+    // reassessment is named even when the manifest cannot be read (#4754).
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
+    }
+    // The approval context and the comment preflight run before the dossier publication, and the
+    // order matters: a refusal here must not have written the canonical dossier, because a comment
+    // whose position is wrong is repaired by moving it, and a dossier that already pinned the old
+    // position refuses the repair. The escalation gate runs above and again inside the dossier
+    // publication.
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     const reviewReassessment =

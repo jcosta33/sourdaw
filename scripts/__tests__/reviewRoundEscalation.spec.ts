@@ -9,8 +9,10 @@ import {
 } from '../reconstructReviewRounds.ts';
 import {
     REVIEW_ROUND_ESCALATION_THRESHOLD,
+    REVIEW_ROUND_WARNING_THRESHOLD,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
+    logReviewRoundEscalationAtThreshold,
     parseReviewReassessment,
 } from '../reviewRoundEscalation.ts';
 
@@ -70,6 +72,18 @@ describe('countReviewerRequestChangesRounds', () => {
 
     it('returns zero when no reviewer round requested changes', () => {
         expect(countReviewerRequestChangesRounds(reconstruction([reviewerReview(1, HEAD, 'APPROVED')]))).toBe(0);
+    });
+
+    it('counts one review once when the history returns it twice', () => {
+        const reviews: PublicReview[] = [
+            reviewerReview(14, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(13, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(12, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(11, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(11, HEAD, 'CHANGES_REQUESTED'),
+        ];
+
+        expect(countReviewerRequestChangesRounds(reconstruction(reviews))).toBe(4);
     });
 });
 
@@ -164,5 +178,59 @@ describe('gateReviewRoundEscalation', () => {
         expect(() =>
             gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment({ reason: `ghp_${'A'.repeat(24)}` }))
         ).toThrow(/reason value at index 0 contains a GitHub token/);
+    });
+
+    it.each([REVIEW_ROUND_WARNING_THRESHOLD - 1, REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
+        'requires a matching reassessment after %s request-changes rounds',
+        (rounds) => {
+            expect(gate(rounds, reassessment({ roundsObserved: rounds }))).toEqual(
+                parseReviewReassessment(reassessment({ roundsObserved: rounds }))
+            );
+            expect(() => gate(rounds, undefined)).toThrow(/review round escalation/);
+            expect(() => gate(rounds, reassessment({ roundsObserved: rounds - 1 }))).toThrow(
+                /does not match the observed/
+            );
+        }
+    );
+});
+
+describe('logReviewRoundEscalationAtThreshold', () => {
+    function loggedReviews(count: number): PublicReview[] {
+        return Array.from({ length: count }, (_, index) => reviewerReview(index + 1, HEAD, 'CHANGES_REQUESTED'));
+    }
+
+    function messagesFor(count: number): string[] {
+        const messages: string[] = [];
+        logReviewRoundEscalationAtThreshold(
+            PR,
+            HEAD,
+            () => loggedReviews(count),
+            () => [],
+            (message) => messages.push(message)
+        );
+        return messages;
+    }
+
+    it('logs only escalation below the warning threshold', () => {
+        expect(messagesFor(REVIEW_ROUND_WARNING_THRESHOLD - 1)).toEqual([
+            expect.stringContaining('review-round-escalation:'),
+        ]);
+    });
+
+    it.each([REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
+        'warns at %s rounds without suggesting a freeze',
+        (rounds) => {
+            expect(messagesFor(rounds)).toEqual([
+                expect.stringContaining(
+                    `review-round-warning:${PR}:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
+                ),
+                expect.stringContaining('review-round-escalation:'),
+            ]);
+            expect(messagesFor(rounds)[0]).toContain('make sure you know what you are doing');
+        }
+    );
+
+    it('logs nothing below the escalation threshold', () => {
+        expect(messagesFor(REVIEW_ROUND_ESCALATION_THRESHOLD - 1)).toEqual([]);
     });
 });

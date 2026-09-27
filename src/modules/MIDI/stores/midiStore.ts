@@ -28,6 +28,10 @@ export type MidiStoreState = {
      * migration must run exactly once per clip or every project load
      * corrupts notes further (M-144). */
     migratedAbsoluteNoteClipIds?: string[];
+    /** Coordinate format of the stored note positions. Absent means legacy
+     * or unknown data whose format migrateAbsoluteMidiNotes still has to
+     * discriminate; 'clip-relative' marks data it must never rewrite. */
+    noteCoordinateFormat?: 'clip-relative';
 };
 
 export type MidiStoreStateInput = Omit<MidiStoreState, 'probabilitySeed'> & {
@@ -41,10 +45,11 @@ export const defaultMidiStoreState: MidiStoreState = {
     notesByClipId: {},
     ccByClipId: {},
     pitchBendByClipId: {},
+    noteCoordinateFormat: 'clip-relative',
 };
 
 const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
-const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
+const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds', 'noteCoordinateFormat'] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
 const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 
@@ -289,6 +294,10 @@ function isMigratedClipIdList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
+function isClipRelativeFormat(value: unknown): value is 'clip-relative' {
+    return value === 'clip-relative';
+}
+
 function isExactMidiStoreState(value: unknown): value is MidiStoreState {
     return (
         isPlainObject(value) &&
@@ -301,7 +310,8 @@ function isExactMidiStoreState(value: unknown): value is MidiStoreState {
         isExactNoteClipMap(value.notesByClipId) &&
         isExactCcClipMap(value.ccByClipId) &&
         isExactPitchBendClipMap(value.pitchBendByClipId) &&
-        (value.migratedAbsoluteNoteClipIds === undefined || isMigratedClipIdList(value.migratedAbsoluteNoteClipIds))
+        (value.migratedAbsoluteNoteClipIds === undefined || isMigratedClipIdList(value.migratedAbsoluteNoteClipIds)) &&
+        (value.noteCoordinateFormat === undefined || isClipRelativeFormat(value.noteCoordinateFormat))
     );
 }
 
@@ -324,7 +334,10 @@ export function sanitizeMidiStoreState(
         return candidate;
     }
 
-    return {
+    // A value degraded through normalization keeps its stamp only when the
+    // stamp itself survived validation; absence means unknown format, which the
+    // migration pass resolves (and re-stamps) on the next load.
+    const normalized: MidiStoreState = {
         probabilitySeed,
         notesByClipId: normalizeClipMap({
             value: candidate.notesByClipId,
@@ -341,10 +354,14 @@ export function sanitizeMidiStoreState(
             isValidRow: isValidMidiPitchBend,
             normalizeRow: normalizeMidiPitchBend,
         }),
-        ...(isMigratedClipIdList(candidate.migratedAbsoluteNoteClipIds)
-            ? { migratedAbsoluteNoteClipIds: candidate.migratedAbsoluteNoteClipIds }
-            : {}),
     };
+    if (isMigratedClipIdList(candidate.migratedAbsoluteNoteClipIds)) {
+        normalized.migratedAbsoluteNoteClipIds = candidate.migratedAbsoluteNoteClipIds;
+    }
+    if (isClipRelativeFormat(candidate.noteCoordinateFormat)) {
+        normalized.noteCoordinateFormat = candidate.noteCoordinateFormat;
+    }
+    return normalized;
 }
 
 // `trySet` is omitted rather than forwarded. Its boolean means "durable at the

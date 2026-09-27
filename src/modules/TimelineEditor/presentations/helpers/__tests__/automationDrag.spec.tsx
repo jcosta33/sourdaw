@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     },
     addAutomationPoint: vi.fn(),
     removeAutomationPoint: vi.fn(),
+    removeAutomationPointById: vi.fn(),
     updateAutomationPoint: vi.fn(),
     setAutomationPointCurve: vi.fn(),
     beginDrawSession: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/Automation/useCases', () => ({
     addAutomationPoint: mocks.addAutomationPoint,
     removeAutomationPoint: mocks.removeAutomationPoint,
+    removeAutomationPointById: mocks.removeAutomationPointById,
     updateAutomationPoint: mocks.updateAutomationPoint,
     setAutomationPointCurve: mocks.setAutomationPointCurve,
     beginDrawSession: mocks.beginDrawSession,
@@ -189,21 +191,23 @@ describe('automationDrag', () => {
 
             fireEvent.mouseUp(window, { clientX: 50, clientY: 40 });
 
-            expect(mocks.addAutomationPoint).toHaveBeenCalledWith('lane-1', {
-                beat: 5,
-                value: 0.6,
-                curve: 'linear',
-                tension: 0,
-            });
+            expect(mocks.addAutomationPoint).toHaveBeenCalledWith(
+                'lane-1',
+                expect.objectContaining({ beat: 5, value: 0.6, curve: 'linear', tension: 0 })
+            );
             expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
                 'Add automation point',
                 expect.any(Function),
                 expect.any(Function)
             );
 
+            // Undo removes the added point by its id, not by beat: the id handed
+            // to removeAutomationPointById is the added point's own.
+            const addedPointId = mocks.addAutomationPoint.mock.calls[0]?.[1]?.id;
+            expect(addedPointId).toEqual(expect.any(String));
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
-            expect(mocks.removeAutomationPoint).toHaveBeenCalledWith('lane-1', 5);
+            expect(mocks.removeAutomationPointById).toHaveBeenCalledWith('lane-1', addedPointId);
         });
 
         it('a meaningful drag selects the points in range instead of adding one', () => {

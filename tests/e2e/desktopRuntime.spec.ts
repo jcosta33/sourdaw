@@ -177,12 +177,16 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
         expect(call.args).toEqual([]);
     }
 
-    // Beyond the poll, exactly three native crossings: startup checks for a
+    // Beyond the poll, exactly four native crossings. The disarm comes first:
+    // a new renderer clears any retrospective arm inherited from a previous
+    // renderer before it can issue its own, because the main process and its
+    // native engine outlive any one renderer. Then startup checks for a
     // verified cached Whisper model, the MIDI fallback enumerates input ports,
-    // then project activation clears plugin state (its optional instance id
+    // and project activation clears plugin state (its optional instance id
     // crosses as an undefined positional slot). The bridge takes positional
     // arguments, so a no-argument command arrives as an empty array.
     expect(runtimeCalls.filter((call) => call.command !== 'engine_rt_diagnostics')).toEqual([
+        { command: 'disarm_retrospective_capture', args: [] },
         { command: 'load_cached_whisper_model', args: [] },
         { command: 'list_midi_inputs', args: [] },
         { command: 'unload_plugin', args: [undefined] },

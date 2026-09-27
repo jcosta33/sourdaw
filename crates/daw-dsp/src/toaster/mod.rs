@@ -76,6 +76,13 @@ impl ToasterInstance {
         self.engine.set_pad_param(pad, name, value);
     }
 
+    /// Set a per-pad parameter without string marshaling. The scheduled-hit
+    /// path calls this from inside `process()`, where the string-keyed glue
+    /// would heap-allocate per locked parameter per hit (#4633).
+    pub fn set_pad_param_by_id(&mut self, pad: u8, param_id: u32, value: f32) {
+        self.engine.set_pad_param_by_id(pad, param_id, value);
+    }
+
     /// Transfer or restore ownership of a pad's dry contribution to output 0.
     pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
         self.engine.set_pad_dry_routed(pad, routed);
@@ -152,6 +159,63 @@ mod tests {
             }
             instance.set_param_by_id(u32::MAX, 0.5);
         });
+    }
+
+    #[test]
+    fn numeric_pad_setter_does_not_allocate() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        assert_no_alloc(|| {
+            // 0..=16 spans every id TOASTER_PAD_PARAM_IDS declares (#4633);
+            // u32::MAX guards the unmapped fall-through.
+            for param_id in 0..=16 {
+                instance.set_pad_param_by_id(0, param_id, 0.5);
+            }
+            instance.set_pad_param_by_id(0, u32::MAX, 0.5);
+        });
+    }
+
+    #[test]
+    fn numeric_pad_setter_matches_the_string_path() {
+        let mut by_id = ToasterInstance::new(48_000.0, 16);
+        let mut by_name = ToasterInstance::new(48_000.0, 16);
+        let names = [
+            "volume",
+            "pan",
+            "muted",
+            "soloed",
+            "choke_group",
+            "tune",
+            "decay",
+            "tone",
+            "drive",
+            "filter_cutoff",
+            "filter_resonance",
+            "send_reverb",
+            "send_delay",
+            "transient_attack",
+            "transient_sustain",
+            "bus_route",
+            "engine_type",
+        ];
+        for (param_id, name) in names.iter().enumerate() {
+            by_id.set_pad_param_by_id(0, param_id as u32, 0.5);
+            by_name.set_pad_param(0, name, 0.5);
+        }
+        by_id.note_on(0, 100.0, 60);
+        by_name.note_on(0, 100.0, 60);
+
+        let mut by_id_out = Vec::new();
+        let mut by_name_out = Vec::new();
+        for _ in 0..4 {
+            let ptr = by_id.process(128);
+            by_id_out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
+            let ptr = by_name.process(128);
+            by_name_out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
+        }
+        assert_eq!(
+            by_id_out, by_name_out,
+            "every numeric pad id must be the same write as its string name"
+        );
     }
 
     #[test]

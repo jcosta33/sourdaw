@@ -49,19 +49,19 @@ import { getTrackStoreState } from './getTrackStoreState';
  * through `removeClip`, so the capture can carry the lanes that removal will
  * retire and undo can put them back; a capture that names any carries the
  * `retiredTakeLanes` key even when it found none, which is how the restore tells
- * a take-retiring route from one that never captured. `cutClip` is the only
- * caller that passes it: `pasteClip` removes only ids it minted moments earlier.
+ * a take-retiring route from one that never captured. `cutClip` passes it for
+ * the clips it removes directly; `flattenTrack` and `consolidateAllTracks` pass
+ * the clip ids their forwards replace and retire those takes through
+ * `removeTakesForClips`, since their collection rewrite never reaches
+ * `removeClip`. `pasteClip` removes only ids it minted moments earlier.
  *
- * Every other route that drops pre-existing clips leaves their takes behind, and
- * that gap is filed rather than covered here. `flattenTrack` and
- * `consolidateAllTracks` replace the clip collection directly without going
- * through `removeClip`; Delete Time and Delete Time Range drop clips through
- * `removeClipSatelliteData` alone; and undoing the `splitClip` action removes the
- * right half directly. None retires a take. The orphan comp region then advances
- * the comp cursor, so the replacement clip is silent over that span in live
- * playback and in the offline render. The clip-replacement routes are defect
- * #4518, the time routes are #4520, and the split action's undo is #4521; this
- * capture deliberately does not extend any of them.
+ * Two more routes drop pre-existing clips outside `removeClip`, and both retire
+ * the takes through their own transactions rather than through this capture:
+ * Delete Time and Delete Time Range retire the fully-removed clips' takes in
+ * their publish sweep and carry the retired lanes in the operation's own
+ * restore plan (#4520), and undoing the `splitClip` action retires and
+ * reinstates the right half's takes through the `restoreClipSplitState`
+ * payload (#4521). This capture deliberately does not extend to either.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],
@@ -105,9 +105,10 @@ export function captureTrackClipStates(
             .map((clipId) => readClipSatelliteEntry(clipId))
             .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
         const clipAutomationLanes = structuredClone(readClipScopedAutomationLanes(clipIds));
-        const trackRetiringClipIds = track.clips
-            .filter((clip) => retiringClipIdSet.has(clip.id))
-            .map((clip) => clip.id);
+        // Intersect against the track's whole clip universe, not the active
+        // collection: routes like flatten retire takes of hidden-alternative
+        // clips too, and an id dropped here is a take the undo never restores.
+        const trackRetiringClipIds = clipIds.filter((clipId) => retiringClipIdSet.has(clipId));
 
         const snapshot: TrackClipStateSnapshot = {
             trackId,

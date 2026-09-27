@@ -5,12 +5,27 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 
+import { isClipDropCompatible } from './isClipDropCompatible';
+
+type MoveClipOptions = {
+    /**
+     * Marks an undo/redo replay: the target names a placement the document
+     * itself held before the move being restored. Undo returns the document
+     * to a state it was actually in, and a project saved before the placement
+     * rule can hold an audio clip on a MIDI track — the kind guard governs
+     * new placements, so it must not refuse that return. Every other guard
+     * still applies.
+     */
+    historicalPlacement?: boolean;
+};
+
 export function moveClip(
     clipId: string,
     targetTrackId: string,
     startBeat: number,
     originalStartBeat?: number,
-    moveAutomation = true
+    moveAutomation = true,
+    options?: MoveClipOptions
 ): boolean {
     const state = getTrackState();
     if (!state || !Number.isFinite(startBeat) || startBeat < 0) {
@@ -46,7 +61,24 @@ export function moveClip(
     if (!movedClip || oldStartBeat === undefined || sourceTrackId === undefined) {
         return false;
     }
-    if (sourceTrackId === targetTrackId && Object.is(oldStartBeat, startBeat)) {
+    // `acceptsClipUpdate` is true for bus/master/folder, but none of them
+    // renders clip content: a clip moved there is never scheduled. The same
+    // rule the timeline drop enforces, applied to every route through here —
+    // except the undo replay, which restores a historical placement the
+    // document already held (see `MoveClipOptions.historicalPlacement`), and
+    // except a same-host move, which changes no placement: the host is
+    // whatever the document already holds, so the rule has nothing to govern.
+    // Refusing a same-host retime would strand a legacy misplaced clip (an
+    // audio clip a pre-rule project parked on a MIDI track) against every
+    // later drag on its own track. The AI placement bridge applies the same
+    // exemption for its `moveClip`/`moveClips` arms, so a provider-driven
+    // retime of such a clip is not rejected pre-dispatch with its own host
+    // named as an invalid destination.
+    const sameHost = sourceTrackId === targetTrackId;
+    if (!sameHost && options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
+        return false;
+    }
+    if (sameHost && Object.is(oldStartBeat, startBeat)) {
         return false;
     }
 
