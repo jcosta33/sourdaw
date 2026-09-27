@@ -1,0 +1,29 @@
+scripts/semanticReview/evidence.ts
+  s_fe7d9519d0226e::t_1df8f66f6f02af 18-20
+scripts/semanticReview/evidenceOrdering.ts
+  s_ed5aa36a3ba357::t_feaf5f3dfce120 12-14,324-331,338,389-393,450-453,539-545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d31579e8703521be833b9baba000e75c0cf9ead3",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
