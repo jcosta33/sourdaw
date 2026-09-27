@@ -148,6 +148,51 @@ describe('handleMoveClips ripple over a legacy misplaced clip', () => {
         expect(clipById('track-1', 'clip-2')).toMatchObject({ startBeat: 12, endBeat: 16 });
     });
 
+    it('claims a no-op leg origin in the inverse of a multi-clip ripple gesture', async () => {
+        // Dragging clip-1 by its own duration (2 -> 10) ripples clip-2 forward
+        // by that same duration (12 -> 20) — exactly clip-2's own target in this
+        // gesture (12 + 8). That leg is a no-op, not a refusal: it must still be
+        // recorded as landed, or the committed entry loses its second mover.
+        const action = {
+            type: 'moveClips' as const,
+            payload: {
+                moves: [
+                    { clipId: 'clip-1', trackId: 'track-1', startBeat: 10 },
+                    { clipId: 'clip-2', trackId: 'track-1', startBeat: 20 },
+                ],
+                ripple: true,
+            },
+        };
+        expect(await executeAppActionBatch([action], { source: 'prompt' })).toMatchObject({
+            status: 'committed',
+        });
+
+        expect(clipById('track-1', 'clip-1')).toMatchObject({ trackId: 'track-1', startBeat: 10, endBeat: 18 });
+        // clip-2 sits exactly where clip-1's ripple shift left it — its own leg
+        // moved it nowhere further.
+        expect(clipById('track-1', 'clip-2')).toMatchObject({ startBeat: 20, endBeat: 24 });
+        expect(clipsOn('track-2')).toEqual([]);
+
+        expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
+            kind: 'action',
+            inverseAction: {
+                type: 'restoreClipMoves',
+                payload: {
+                    movedClips: [
+                        { clipId: 'clip-1', trackId: 'track-1', startBeat: 2 },
+                        { clipId: 'clip-2', trackId: 'track-1', startBeat: 12 },
+                    ],
+                    neighborShifts: [{ clipId: 'clip-2', origStartBeat: 12, origEndBeat: 16 }],
+                },
+            },
+        });
+
+        await undo();
+
+        expect(clipById('track-1', 'clip-1')).toMatchObject({ trackId: 'track-1', startBeat: 2, endBeat: 10 });
+        expect(clipById('track-1', 'clip-2')).toMatchObject({ startBeat: 12, endBeat: 16 });
+    });
+
     it('stops a whole same-host ripple plan when the move is refused, neighbors included', async () => {
         // A locked clip cannot move, so its ripple plan must not run: shifting
         // the follower around a refused move would strand the clip at its

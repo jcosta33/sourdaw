@@ -128,6 +128,15 @@ function runRippleMove(
     if (!plan) {
         return false;
     }
+    // A no-op is not a refusal: the clip already sits at its target (an
+    // earlier plan of this gesture put it there), so its plan is vacuous but
+    // its inverse must exist — record exactly as a landed move, without
+    // calling rippleMoveClip.
+    if (Object.is(clip.startBeat, target.startBeat)) {
+        state.recordedRipplePlans.push(plan);
+        restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
+        return true;
+    }
     if (
         rippleMoveClip({
             trackId: target.trackId,
