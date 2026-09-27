@@ -50,7 +50,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
-vi.mock('../../../stores/clipSatelliteState', () => ({
+vi.mock('../../../stores/clipSatelliteState', async (importOriginal) => ({
+    // The satellite normalizer stays real: the guard compares the live read
+    // against the expected entry projected through it, so a mocked normalizer
+    // would make the satellite cases pass for the wrong reason.
+    ...(await importOriginal<typeof import('../../../stores/clipSatelliteState')>()),
     writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
     readClipSatelliteEntry: mocks.readClipSatelliteEntry,
 }));

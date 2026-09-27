@@ -149,12 +149,19 @@ export function serializeProjectedClipSatelliteEntries(
     return JSON.stringify(
         clipIds.map((clipId) => {
             const entry = entryByClipId.get(clipId);
-            return entry ? normalizeEntry(entry) : { clipId, gainEnvelope: null, warpState: null };
+            return entry ? normalizeClipSatelliteEntry(entry) : { clipId, gainEnvelope: null, warpState: null };
         })
     );
 }
 
-function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+/**
+ * The projected form of one snapshot entry — the exact shape
+ * `writeClipSatelliteEntry` would store for it. Exported for the
+ * `restoreTrackClipStates` guard: comparing the live read against the entry
+ * *raw* would conflict on a legacy recorded stretch mode the write itself
+ * decodes, so the guard must compare the same projection the write applies.
+ */
+export function normalizeClipSatelliteEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
     return {
         clipId: entry.clipId,
         gainEnvelope: entry.gainEnvelope === null ? null : normalizeGainEnvelope(entry.gainEnvelope, entry.clipId),
@@ -170,7 +177,8 @@ function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
  */
 export function clipSatelliteEntriesMatchSnapshot(entries: readonly ClipSatelliteEntrySnapshot[]): boolean {
     return entries.every(
-        (entry) => JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeEntry(entry))
+        (entry) =>
+            JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeClipSatelliteEntry(entry))
     );
 }
 

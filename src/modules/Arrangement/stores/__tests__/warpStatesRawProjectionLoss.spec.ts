@@ -25,6 +25,12 @@ function legacyRow(stretchMode: string): Record<string, unknown> {
     };
 }
 
+/** A row with no warp content of its own: whatever it decodes to, the slot
+ *  sanitizer's `isDefaultWarpState` collapse removes it from the projection. */
+function defaultCollapsingRow(stretchMode: string): Record<string, unknown> {
+    return { enabled: false, markers: [], stretchMode, originalTempo: null };
+}
+
 function findWarpStatesLosses(states: Record<string, unknown>): string[] {
     return findAutomergeStorageRawProjectionLosses({ docId: 'root', document: { warpStates: { states } } });
 }
@@ -54,6 +60,31 @@ describe('warpStates slot legacy stretch modes', () => {
                 'clip-3': legacyRow('repitch'),
             })
         ).toEqual([]);
+    });
+
+    it('reports no loss for a bare legacy row the sanitizer collapses to default', () => {
+        // A `texture` row with no content decodes onto the canonical default,
+        // which the sanitizer stores as absent. Undeclared in the pre-image,
+        // the detector reads the empty projection as losing the row and holds
+        // the project in repair-required forever — the repair re-projects into
+        // the same collapse and reports the same loss again.
+        expect(findWarpStatesLosses({ 'clip-1': defaultCollapsingRow('texture') })).toEqual([]);
+    });
+
+    it('reports no loss when a default-collapsing legacy row sits beside a healthy row', () => {
+        expect(
+            findWarpStatesLosses({
+                'clip-1': defaultCollapsingRow('beats'),
+                'clip-2': legacyRow('complex'),
+            })
+        ).toEqual([]);
+    });
+
+    it('reports no loss for a canonical row that is default', () => {
+        // The collapse is the `isDefaultWarpState` contract, not a side effect
+        // of the legacy mapping: a canonical-mode row with no content is
+        // dropped by the same rule and must leave the pre-image the same way.
+        expect(findWarpStatesLosses({ 'clip-1': defaultCollapsingRow('repitch') })).toEqual([]);
     });
 
     it('still reports a row whose stretch mode nothing decodes', () => {

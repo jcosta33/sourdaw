@@ -271,6 +271,47 @@ describe('handleMoveClip atomic integration', () => {
         expect(undoHistoryStore.value?.future).toHaveLength(1);
     });
 
+    it('commits an ordinary same-host retime of a legacy misplaced clip', async () => {
+        // A pre-placement-rule project can hold an audio clip on a MIDI track.
+        // Retiming it on that same host changes no placement — the host is
+        // whatever the document already holds — so the compatibility rule has
+        // nothing to govern and the move must commit like any other retime.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    name: 'Vocals',
+                    kind: 'midi',
+                    clips: [
+                        ClipDummy.create({
+                            id: 'clip-1',
+                            type: 'audio',
+                            trackId: 'track-1',
+                            startBeat: 2,
+                            endBeat: 10,
+                        }),
+                    ],
+                }),
+                TrackDummy.create({ id: 'track-2', name: 'Comp', kind: 'audio', clips: [] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        const action = {
+            type: 'moveClip' as const,
+            payload: { clipId: 'clip-1', trackId: 'track-1', startBeat: 8 },
+        };
+        expect(await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true })).toMatchObject({
+            status: 'committed',
+        });
+
+        const host = trackStore.value?.tracks.find((track) => track.id === 'track-1');
+        expect(host?.clips).toHaveLength(1);
+        expect(host?.clips[0]).toMatchObject({ id: 'clip-1', trackId: 'track-1', startBeat: 8, endBeat: 16 });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-2')?.clips).toEqual([]);
+    });
+
     it('restores a legacy misplaced clip through the multi-clip move inverse without stranding it', async () => {
         // The multi-clip inverse replays every moved clip through moveClip.
         // One legacy clip (audio on a MIDI track) rides along with an ordinary

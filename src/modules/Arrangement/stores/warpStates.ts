@@ -391,10 +391,14 @@ function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
  * for.
  *
  * The rewrite runs through the same `decodeStretchMode` the sanitizer reads,
- * so the declaration cannot drift from the mapping, and it never drops a row:
- * content the sanitizer drops outright — an id that does not decode, a row
- * that is default after mapping — stays in the pre-image and still reports,
- * which is the detector doing its job.
+ * so the declaration cannot drift from the mapping. One of the sanitizer's
+ * drops is mirrored outright: a row that decodes and validates but is
+ * `isDefaultWarpState` afterwards is absent from the projection by contract,
+ * so it leaves the pre-image too — kept, a document merely carrying one arms
+ * the detector over content the store deliberately holds nothing for, the same
+ * permanent-false-loss class in a milder form. Every other drop — an id that
+ * does not decode, a row that does not validate — stays in the pre-image and
+ * still reports, which is the detector doing its job.
  */
 export function discard_warp_states_raw_keys(raw: unknown): unknown {
     const slot = asPlainRecord(raw);
@@ -407,7 +411,18 @@ export function discard_warp_states_raw_keys(raw: unknown): unknown {
     for (const [clipId, state] of Object.entries(states)) {
         const record = asPlainRecord(state);
         const canonical = record === undefined ? undefined : decodeStretchMode(record.stretchMode);
-        if (record === undefined || canonical === undefined || canonical === record.stretchMode) {
+        if (record === undefined || canonical === undefined) {
+            decodedStates[clipId] = state;
+            continue;
+        }
+        // `copySanitizedWarpState` is `undefined` only for a mode that does not
+        // decode, which `canonical` already rules out.
+        const decoded = isPersistedWarpState(record) ? copySanitizedWarpState(record) : undefined;
+        if (decoded !== undefined && isDefaultWarpState(decoded)) {
+            changed = true;
+            continue;
+        }
+        if (canonical === record.stretchMode) {
             decodedStates[clipId] = state;
             continue;
         }

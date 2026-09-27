@@ -216,4 +216,31 @@ describe('moveClip', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
+
+    it('retimes a legacy misplaced clip on its own incompatible host', () => {
+        // A pre-placement-rule project can hold an audio clip on a MIDI track.
+        // A same-host move changes no placement — the host is whatever the
+        // document already holds — so the compatibility rule has nothing to
+        // govern and the retime must go through like any other.
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'midi',
+                    clips: [{ id: 'c1', type: 'audio', trackId: 't1', startBeat: 2, endBeat: 6 }],
+                },
+            ],
+        } as never);
+
+        expect(moveClip('c1', 't1', 8)).toBe(true);
+
+        expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to have been called');
+        }
+        const clip = setCall[0].tracks[0]?.clips[0];
+        expect(clip).toMatchObject({ id: 'c1', trackId: 't1', startBeat: 8, endBeat: 12 });
+        expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 6, 't1');
+    });
 });

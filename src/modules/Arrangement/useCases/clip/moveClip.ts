@@ -65,11 +65,17 @@ export function moveClip(
     // renders clip content: a clip moved there is never scheduled. The same
     // rule the timeline drop enforces, applied to every route through here —
     // except the undo replay, which restores a historical placement the
-    // document already held (see `MoveClipOptions.historicalPlacement`).
-    if (options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
+    // document already held (see `MoveClipOptions.historicalPlacement`), and
+    // except a same-host move, which changes no placement: the host is
+    // whatever the document already holds, so the rule has nothing to govern.
+    // Refusing a same-host retime would strand a legacy misplaced clip (an
+    // audio clip a pre-rule project parked on a MIDI track) against every
+    // later drag on its own track.
+    const sameHost = sourceTrackId === targetTrackId;
+    if (!sameHost && options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
         return false;
     }
-    if (sourceTrackId === targetTrackId && Object.is(oldStartBeat, startBeat)) {
+    if (sameHost && Object.is(oldStartBeat, startBeat)) {
         return false;
     }
 
