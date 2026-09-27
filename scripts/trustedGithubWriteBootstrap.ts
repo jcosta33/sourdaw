@@ -508,8 +508,10 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  *
  * The class-field read-back binds only an instance field of the class the constructor name resolves to
  * in scope: a `static` field is not on the instance, a same-named class in a nested scope owns the name
- * there, a subclass reaches an inherited field, and a local bound to `new <Name>` reaches the same field
- * a direct construction would.
+ * there, any own field, method, accessor, or string-literal computed member shadows a parent's field of
+ * that name, a subclass reaches an inherited field, and a local bound to `new <Name>` reaches the same
+ * field a direct construction would — resolved through the same scope chain, so a sibling rebinding or
+ * a nested redeclaration or reassignment to anything else does not reach the loader.
  *
  * Every shape those rules do not model also keeps the merge base's reading, and these stay undecided:
  * a callee bound to another bound name (`const a = require; const b = a; b(expr)`), a member reached
@@ -650,7 +652,7 @@ const NO_LOADER_READ: LoaderRead = { names: new Map(), requireIsFileOwnName: fal
 function collectLoaderBindings(source: string): LoaderRead {
     const bindings = new Map<string, LoaderBindingKind>();
     const classFields = new Map<number, ClassFieldsEntry>();
-    const localInstances = new Map<string, number>();
+    const localInstances = new Map<string, LocalInstance[]>();
     const requireIsFileOwnName = declaresRequireName(source);
     let index = 0;
     while (index < source.length) {
@@ -709,13 +711,30 @@ function collectLoaderBindings(source: string): LoaderRead {
         }
         const localInstance = readLocalInstanceDeclarationAt(source, index, classFields);
         if (localInstance !== undefined) {
-            localInstances.set(localInstance.name, localInstance.classRef);
+            const entries = localInstances.get(localInstance.name);
+            if (entries === undefined) {
+                localInstances.set(localInstance.name, [
+                    { classRef: localInstance.classRef, scopeChain: localInstance.scopeChain },
+                ]);
+            } else {
+                entries.push({ classRef: localInstance.classRef, scopeChain: localInstance.scopeChain });
+            }
             index = localInstance.end;
             continue;
         }
+        if (localInstances.size > 0) {
+            const shadow = readLocalShadowAt(source, index);
+            if (shadow !== undefined && localInstances.has(shadow.name)) {
+                localInstances
+                    .get(shadow.name)!
+                    .push({ classRef: undefined, scopeChain: enclosingScopeChain(source, index) });
+                index = shadow.end;
+                continue;
+            }
+        }
         const classDeclaration = readClassDeclarationAt(source, index);
         if (classDeclaration !== undefined) {
-            classEntryFromOpen(source, classFields, classDeclaration.open);
+            recordClassMembers(source, classFields, classDeclaration.open);
             index = classDeclaration.end;
             continue;
         }
@@ -1255,16 +1274,26 @@ type LoaderBinding = {
 /**
  * One class declaration the field read-back can resolve: its name, the statement scope that contains it
  * (the outermost-first chain of enclosing block braces, empty at top level), the parent class a plain
- * `extends <Name>` clause names, and the instance fields it declares. Static fields never enter
- * `fields`, and a same-named class in another scope owns its own entry, so a read-back resolves to the
- * class its constructor name reaches there rather than to whichever class declared the name first.
+ * `extends <Name>` clause names, the loader-valued instance fields it declares, and the names of every
+ * own instance member. Static fields never enter `fields` or `members`, and a same-named class in
+ * another scope owns its own entry, so a read-back resolves to the class its constructor name reaches
+ * there rather than to whichever class declared the name first. `members` carries fields, methods, and
+ * accessors alike so any own declaration shadows the parent's field of the same name.
  */
 type ClassFieldsEntry = {
     name: string;
     scopeChain: number[];
     parentName: string | undefined;
     fields: Map<string, LoaderBindingKind>;
+    members: Set<string>;
 };
+
+/**
+ * A local name the file binds, remembered with the scope it was declared in. `classRef` is the class a
+ * `new <Class>()` initializer constructs, or `undefined` when the binding names anything else — a plain
+ * value, a reassignment, or a nested redeclaration — which shadows any outer instance of the same name.
+ */
+type LocalInstance = { classRef: number | undefined; scopeChain: number[] };
 
 /** The loader expression a binding or a callee reads, and the position after it. */
 type LoaderExpression = { kind: LoaderBindingKind; end: number };
@@ -1445,7 +1474,7 @@ function readLoaderDefaultBindingAt(
     requireIsFileOwnName: boolean,
     known: ReadonlyMap<string, LoaderBindingKind>,
     classFields: ReadonlyMap<number, ClassFieldsEntry>,
-    localInstances: ReadonlyMap<string, number>
+    localInstances: ReadonlyMap<string, readonly LocalInstance[]>
 ): LoaderBinding | undefined {
     if (isIdentifierContinue(source[index - 1]) || !isIdentifierStart(source[index])) {
         return undefined;
@@ -1495,7 +1524,7 @@ function readClassFieldReadBack(
     index: number,
     name: string,
     classFields: ReadonlyMap<number, ClassFieldsEntry>,
-    localInstances: ReadonlyMap<string, number>
+    localInstances: ReadonlyMap<string, readonly LocalInstance[]>
 ): LoaderBindingKind | undefined {
     const open = enclosingOpenerBefore(source, index, '{');
     if (open === undefined) {
@@ -1511,7 +1540,8 @@ function readClassFieldReadBack(
     }
     const sourceStart = skipWhitespace(source, equals + 1);
     // Resolve the source expression's class without the scope walk unless it is a `new <Name>` of a
-    // declared class, which is the only shape whose resolution needs the enclosing scopes.
+    // declared class or a local the file bound to one, which are the shapes whose resolution needs the
+    // enclosing scopes.
     if (isKeywordAt(source, sourceStart, 'new')) {
         const className = readWordForward(source, skipWhitespace(source, sourceStart + 3));
         if (className === undefined || !declaresClassName(classFields, className)) {
@@ -1521,8 +1551,47 @@ function readClassFieldReadBack(
         return classRef === undefined ? undefined : resolveInstanceField(classRef, name, classFields);
     }
     const localName = readWordForward(source, sourceStart);
-    const localRef = localName === undefined ? undefined : localInstances.get(localName);
-    return localRef === undefined ? undefined : resolveInstanceField(localRef, name, classFields);
+    if (localName === undefined || !localInstances.has(localName)) {
+        return undefined;
+    }
+    const localRef = resolveLocalInstanceRef(localName, enclosingScopeChain(source, index), localInstances);
+    if (localRef === undefined || localRef.classRef === undefined) {
+        return undefined;
+    }
+    return resolveInstanceField(localRef.classRef, name, classFields);
+}
+
+/**
+ * The binding a local name reaches in `scopeChain`, resolved the way a class name resolves: the deepest
+ * binding of that name whose own scope is a prefix of `scopeChain`, or `undefined` when none binds the
+ * name there. A `classRef` of `undefined` marks a binding to anything but a tracked class instance — a
+ * plain value, a reassignment, or a nested redeclaration — which shadows any outer instance of the same
+ * name. A same-named binding in a sibling or inner scope is not a prefix of the position's chain and so
+ * does not compete.
+ */
+function resolveLocalInstanceRef(
+    name: string,
+    scopeChain: number[],
+    localInstances: ReadonlyMap<string, readonly LocalInstance[]>
+): LocalInstance | undefined {
+    const entries = localInstances.get(name);
+    if (entries === undefined) {
+        return undefined;
+    }
+    let best: LocalInstance | undefined;
+    let bestDepth = -1;
+    for (const entry of entries) {
+        if (!isScopeChainPrefix(entry.scopeChain, scopeChain)) {
+            continue;
+        }
+        // Later bindings in the same scope win, so a reassignment or a redeclaration shadows the
+        // instance it follows.
+        if (entry.scopeChain.length >= bestDepth) {
+            bestDepth = entry.scopeChain.length;
+            best = entry;
+        }
+    }
+    return best;
 }
 
 /**
@@ -1535,7 +1604,7 @@ function readLocalInstanceDeclarationAt(
     source: string,
     index: number,
     classFields: ReadonlyMap<number, ClassFieldsEntry>
-): { name: string; classRef: number; end: number } | undefined {
+): { name: string; classRef: number; scopeChain: number[]; end: number } | undefined {
     const keyword = ['const', 'let', 'var'].find((candidate) => isKeywordAt(source, index, candidate));
     if (keyword === undefined) {
         return undefined;
@@ -1563,8 +1632,34 @@ function readLocalInstanceDeclarationAt(
     if (!declaresClassName(classFields, className)) {
         return undefined;
     }
-    const classRef = resolveClassRef(className, enclosingScopeChain(source, index), classFields);
-    return classRef === undefined ? undefined : { name, classRef, end: classNameStart + className.length };
+    const scopeChain = enclosingScopeChain(source, index);
+    const classRef = resolveClassRef(className, scopeChain, classFields);
+    return classRef === undefined ? undefined : { name, classRef, scopeChain, end: classNameStart + className.length };
+}
+
+/**
+ * The name an assignment at `index` rebinds — a `const`/`let`/`var` initializer that is anything but a
+ * `new <Class>()`, or a later reassignment of a bound name — or `undefined` when `index` is not such a
+ * binding target. A member assignment (`obj.h = …`) is not a binding, so the dot is excluded. The caller
+ * records only names it already tracks as instances, so a nested redeclaration or a reassignment
+ * shadows an outer instance instead of reaching it.
+ */
+function readLocalShadowAt(source: string, index: number): { name: string; end: number } | undefined {
+    if (isIdentifierContinue(source[index - 1]) || !isIdentifierStart(source[index])) {
+        return undefined;
+    }
+    const name = readWordForward(source, index);
+    if (name === undefined) {
+        return undefined;
+    }
+    const after = skipWhitespace(source, index + name.length);
+    if (source[after] !== '=' || source[after + 1] === '=' || source[after + 1] === '>') {
+        return undefined;
+    }
+    if (isPrecededByDotAccess(source, index)) {
+        return undefined;
+    }
+    return { name, end: index + name.length };
 }
 
 /** Whether any class declaration carries the given name. */
@@ -1587,8 +1682,35 @@ function readClassDeclarationAt(source: string, index: number): { open: number; 
     if (!isKeywordAt(source, index, 'class') || isPrecededByDotAccess(source, index)) {
         return undefined;
     }
+    // A class expression (`const X = class H { … }`) binds its name only inside its own expression, so
+    // it must not register a declaration that shadows a real class in the enclosing statement scope.
+    if (!isClassDeclarationPosition(source, index)) {
+        return undefined;
+    }
     const open = classBodyOpenAfterClass(source, index);
     return open === undefined ? undefined : { open, end: index + 'class'.length };
+}
+
+/**
+ * Whether the `class` keyword at `index` stands in statement position, and so declares its name in the
+ * enclosing scope, rather than in expression position (`= class`, `(class`, `[class`, `, class`), where
+ * the name is bound only inside the expression. Statement boundaries and the declaration modifiers
+ * admit a declaration; anything else leaves the keyword an expression.
+ */
+function isClassDeclarationPosition(source: string, index: number): boolean {
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return true;
+    }
+    const character = source.charAt(before);
+    if (character === ';' || character === '{' || character === '}') {
+        return true;
+    }
+    if (!isIdentifierContinue(character)) {
+        return false;
+    }
+    const word = readWordBackward(source, before);
+    return word === 'export' || word === 'default' || word === 'abstract' || word === 'declare';
 }
 
 /**
@@ -1650,6 +1772,324 @@ function classBodyOpenAfterClass(source: string, keywordStart: number): number |
         cursor += 1;
     }
     return undefined;
+}
+
+/**
+ * Records the name of every own instance member — a field, method, or accessor — the class body `open`
+ * opens, into the class's `members` set, so a subclass that declares its own member of a name shadows
+ * the parent's field of the same name when a read-back resolves it. Static members live on the
+ * constructor and are not recorded, matching a read-back that only reads an instance. The scan walks
+ * the body's top level, skipping method bodies and field initializers so their locals cannot read as
+ * members.
+ */
+function recordClassMembers(source: string, classFields: Map<number, ClassFieldsEntry>, open: number): void {
+    const entry = classEntryFromOpen(source, classFields, open);
+    const close = skipBalancedDelimited(source, open, source.length, '{', '}');
+    if (close === undefined) {
+        return;
+    }
+    let cursor = open + 1;
+    while (cursor < close - 1) {
+        cursor = skipClassBodyTrivia(source, cursor, close - 1);
+        if (cursor >= close - 1) {
+            return;
+        }
+        if (source[cursor] === '[') {
+            const computed = readComputedMemberName(source, cursor, close - 1);
+            if (computed !== undefined) {
+                entry.members.add(computed.name);
+                cursor = computed.next;
+                continue;
+            }
+            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
+        const head = readClassMemberHead(source, cursor, close - 1);
+        if (head === undefined) {
+            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
+        if (!head.static) {
+            entry.members.add(head.name);
+        }
+        cursor = head.next;
+    }
+}
+
+/**
+ * The name a string-literal computed member `['name']` or `["name"]` declares, with the position after
+ * the member, or `undefined` when the `[` at `open` opens an index signature or a computed expression
+ * the scanner does not resolve. Only a string literal names a property exactly, so it is the one
+ * computed spelling that shadows the parent's field of that name.
+ */
+function readComputedMemberName(source: string, open: number, end: number): { name: string; next: number } | undefined {
+    const contentStart = skipWhitespace(source, open + 1);
+    const quote = source[contentStart];
+    if (quote !== "'" && quote !== '"') {
+        return undefined;
+    }
+    const value = readQuotedValue(source, contentStart, quote);
+    if (value === undefined) {
+        return undefined;
+    }
+    const afterBracket = skipWhitespace(source, value.end);
+    if (source[afterBracket] !== ']') {
+        return undefined;
+    }
+    const afterName = skipWhitespace(source, afterBracket + 1);
+    const next =
+        source[afterName] === '(' || source[afterName] === '<' || source[afterName] === '?'
+            ? skipClassMethodMember(source, afterName, end)
+            : skipClassFieldMember(source, afterName, end);
+    return { name: value.value, next };
+}
+
+/** Whitespace, comments, and the separators that can stand between class body members. */
+function skipClassBodyTrivia(source: string, cursor: number, end: number): number {
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (
+            character !== undefined &&
+            (isWhiteSpace(character) || isLineTerminator(character) || character === ';' || character === ',')
+        ) {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+    return cursor;
+}
+
+/** The modifiers a class member name may carry in front of it. */
+const CLASS_MEMBER_MODIFIERS: ReadonlySet<string> = new Set([
+    'static',
+    'public',
+    'private',
+    'protected',
+    'readonly',
+    'abstract',
+    'override',
+    'declare',
+    'accessor',
+    'async',
+    'get',
+    'set',
+]);
+
+/**
+ * The name a class body member declares at `start`, with whether it is static and the position after
+ * the member, or `undefined` when `start` does not begin a plain named member (a computed member, an
+ * index signature, a decorator, or a stray token).
+ */
+function readClassMemberHead(
+    source: string,
+    start: number,
+    end: number
+): { name: string; static: boolean; next: number } | undefined {
+    let cursor = start;
+    let isStatic = false;
+    while (cursor < end) {
+        const word = readWordForward(source, cursor);
+        if (word === undefined || !CLASS_MEMBER_MODIFIERS.has(word)) {
+            break;
+        }
+        if (word === 'static') {
+            isStatic = true;
+        }
+        cursor = skipWhitespace(source, cursor + word.length);
+    }
+    if (source[cursor] === '*') {
+        cursor = skipWhitespace(source, cursor + 1);
+    }
+    const name = readWordForward(source, cursor);
+    if (name === undefined) {
+        return undefined;
+    }
+    const afterName = skipWhitespace(source, cursor + name.length);
+    if (source[afterName] === '(' || source[afterName] === '<' || source[afterName] === '?') {
+        return { name, static: isStatic, next: skipClassMethodMember(source, afterName, end) };
+    }
+    return { name, static: isStatic, next: skipClassFieldMember(source, afterName, end) };
+}
+
+/** Skips a method signature and body from the `(`, `<`, or `?` after the method name. */
+function skipClassMethodMember(source: string, cursor: number, end: number): number {
+    if (source[cursor] === '<') {
+        const after = skipTypeArguments(source, cursor, end);
+        if (after === undefined) {
+            return end;
+        }
+        cursor = skipWhitespace(source, after);
+    }
+    if (source[cursor] === '?') {
+        cursor = skipWhitespace(source, cursor + 1);
+    }
+    if (source[cursor] === '(') {
+        const after = skipBalancedParens(source, cursor);
+        if (after === undefined) {
+            return end;
+        }
+        cursor = after;
+    }
+    const body = skipUntilMethodBody(source, cursor, end);
+    if (body >= end) {
+        return end;
+    }
+    if (source[body] === ';') {
+        return body + 1;
+    }
+    const afterBody = skipBalancedDelimited(source, body, end, '{', '}');
+    return afterBody === undefined ? end : afterBody;
+}
+
+/** Skips a method's return type and modifiers to its body `{` or its terminating `;`. */
+function skipUntilMethodBody(source: string, cursor: number, end: number): number {
+    let depth = 0;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (character !== undefined && (isWhiteSpace(character) || isLineTerminator(character))) {
+            cursor += 1;
+            continue;
+        }
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = Math.min(regexEnd, end);
+            continue;
+        }
+        if (character === '=' && source[cursor + 1] === '>') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '<') {
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === ')' || character === ']' || character === '>') {
+            if (depth > 0) {
+                depth -= 1;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (character === '{') {
+            if (depth === 0) {
+                return cursor;
+            }
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === '}') {
+            if (depth > 0) {
+                depth -= 1;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (depth === 0 && character === ';') {
+            return cursor;
+        }
+        cursor += 1;
+    }
+    return end;
+}
+
+/** Skips a field's type annotation and initializer to the next `;` or `,` at the class body's top level. */
+function skipClassFieldMember(source: string, cursor: number, end: number): number {
+    let depth = 0;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = Math.min(regexEnd, end);
+            continue;
+        }
+        if (character === '=' && source[cursor + 1] === '>') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '{' || character === '<') {
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === ')' || character === ']' || character === '}' || character === '>') {
+            if (depth > 0) {
+                depth -= 1;
+                cursor += 1;
+                continue;
+            }
+            if (character === '}') {
+                return cursor;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (depth === 0 && (character === ';' || character === ',')) {
+            return cursor + 1;
+        }
+        cursor += 1;
+    }
+    return end;
+}
+
+/** Skips one balanced region, a decorator, or a private name at `cursor`, so a computed member, an index signature, or a private field is crossed. */
+function skipClassBodyRegion(source: string, cursor: number, end: number): number {
+    const character = source[cursor];
+    if (character === '(' || character === '[' || character === '{' || character === '<') {
+        const closer = matchingTypeDelimiter(character);
+        const after = skipBalancedDelimited(source, cursor, end, character, closer);
+        return after === undefined ? end : after;
+    }
+    if (character === '@') {
+        const name = readWordForward(source, cursor + 1);
+        if (name !== undefined) {
+            const afterName = skipWhitespace(source, cursor + 1 + name.length);
+            if (source[afterName] === '(') {
+                const after = skipBalancedParens(source, afterName);
+                return after === undefined ? end : after;
+            }
+            return afterName;
+        }
+        return cursor + 1;
+    }
+    if (character === '#') {
+        const name = readWordForward(source, cursor + 1);
+        return name === undefined ? cursor + 1 : cursor + 1 + name.length;
+    }
+    return cursor + 1;
 }
 
 /**
@@ -2236,6 +2676,7 @@ function classEntryFromOpen(
             scopeChain: info?.scopeChain ?? [],
             parentName: info?.parentName,
             fields: new Map(),
+            members: new Set(),
         };
         classFields.set(open, entry);
     }
@@ -2361,7 +2802,9 @@ function isScopeChainPrefix(classChain: number[], refChain: number[]): boolean {
 
 /**
  * The loader-valued instance field `fieldName` on the class `classRef`, walking `extends` parents when
- * the class declares none, or `undefined` when no such instance field exists. A cycle stops the walk.
+ * the class declares none, or `undefined` when no such instance field exists. An own member of that
+ * name — a field, method, or accessor, loader-valued or not — shadows the parent's field, so the walk
+ * stops at the first class that declares it. A cycle stops the walk.
  */
 function resolveInstanceField(
     classRef: number,
@@ -2376,9 +2819,8 @@ function resolveInstanceField(
         if (entry === undefined) {
             return undefined;
         }
-        const kind = entry.fields.get(fieldName);
-        if (kind !== undefined) {
-            return kind;
+        if (entry.members.has(fieldName)) {
+            return entry.fields.get(fieldName);
         }
         current =
             entry.parentName === undefined
@@ -2394,13 +2836,12 @@ function resolveInstanceField(
  * walk crosses balanced parentheses and brackets in the header, so a parenthesised heritage clause
  * (`class C<T> extends (B) { … }`) is read as the class body it is rather than as a statement block.
  *
- * Angle brackets are not delimiters. A type-parameter list (`class C<T>`) is crossed the same way the
- * surrounding tokens are — its `<`, `>`, and parameter names are skipped one by one — while a `<` or `>`
- * that stands in an expression or function-type position (`() => void`, `B as new () => B`, a generic
- * heritage `extends Base<X>`) is skipped without pairing, which is what keeps the walk at depth zero
- * until it reaches the `class`, `interface`, or `type` keyword (#4835). Counting them as balanced
- * delimiters left a lone `>` from an arrow or a generic reference unmatched, so the walk never
- * returned to depth zero and refused a header that declares no load.
+ * A `>` that closes a real type-parameter list — the `<` immediately after the declared class,
+ * interface, or type-alias name — is crossed as one balanced region, so a `{`, `}`, or `:` inside the
+ * list (`class C<T extends { a: string }>`, a conditional type, a generic call) cannot reach the
+ * fallthrough. Any other `<` or `>` — an arrow's `>`, a comparison, a generic heritage
+ * `extends Base<X>` — is skipped without pairing, which keeps the walk at depth zero until it reaches
+ * the `class`, `interface`, or `type` keyword (#4835).
  */
 function classLikeBodyKeywordBefore(
     source: string,
@@ -2454,6 +2895,15 @@ function classLikeBodyKeywordBefore(
             cursor -= 1;
             continue;
         }
+        if (character === '>') {
+            const open = matchingOpenDelimiterBackward(source, cursor, '<', '>');
+            if (open !== undefined && typeParameterListAfterDeclaredName(source, open)) {
+                cursor = open - 1;
+                continue;
+            }
+            cursor -= 1;
+            continue;
+        }
         if (isIdentifierContinue(character)) {
             const word = readWordBackward(source, cursor);
             const keywordStart = cursor - word.length + 1;
@@ -2472,8 +2922,7 @@ function classLikeBodyKeywordBefore(
             character === '=' ||
             character === '|' ||
             character === '&' ||
-            character === '<' ||
-            character === '>'
+            character === '<'
         ) {
             cursor -= 1;
             continue;
@@ -2481,6 +2930,25 @@ function classLikeBodyKeywordBefore(
         return undefined;
     }
     return undefined;
+}
+
+/**
+ * Whether the `<` at `openAngle` opens a type-parameter list: it sits immediately after the name a
+ * `class`, `interface`, or `type` declaration declares. Only that position proves a type-parameter list,
+ * so a `<` after `extends` (a generic heritage), or in an expression, is not crossed as one.
+ */
+function typeParameterListAfterDeclaredName(source: string, openAngle: number): boolean {
+    const nameEnd = previousSignificantCharacter(source, openAngle - 1);
+    if (nameEnd === undefined || !isIdentifierContinue(source[nameEnd])) {
+        return false;
+    }
+    const name = readWordBackward(source, nameEnd);
+    const keywordEnd = previousSignificantCharacter(source, nameEnd - name.length);
+    if (keywordEnd === undefined || !isIdentifierContinue(source[keywordEnd])) {
+        return false;
+    }
+    const keyword = readWordBackward(source, keywordEnd);
+    return keyword === 'class' || keyword === 'interface' || keyword === 'type';
 }
 
 /** The opening quote of the string literal whose closing quote is at `index`, or `undefined`. */

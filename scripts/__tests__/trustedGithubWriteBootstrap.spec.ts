@@ -471,6 +471,61 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nconst C = H;\nconst { loader } = new C();\nloader(spec);'
             )
         ).toEqual([]);
+        // A class expression's name is bound only inside its own expression, so it does not shadow the
+        // real class declaration the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class H { loader = other; };\nclass H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A subclass's own field, method, or getter of a name shadows the parent's field of that name,
+        // so each is not a load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader = other; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { get loader() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A local bound to an instance in one scope does not bind a read-back of the same name in a
+        // sibling scope.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction a() { const h = new H(); return h; }\nfunction b() { const h = options; const { loader } = h; loader(spec); }'
+            )
+        ).toEqual([]);
+        // A nested redeclaration or a reassignment of a local to a non-instance shadows the instance
+        // binding, so neither read-back reaches the loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst h = new H();\nfunction f() { const h = options; const { loader } = h; loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nlet h = new H();\nh = options;\nconst { loader } = h;\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A private field and an index signature declare no public `loader` property, so the parent's
+        // field is still reached; a string-literal computed member does declare one, so it shadows it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { #loader = other; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { ["loader"]() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
     });
 
     /**
@@ -517,8 +572,10 @@ describe('snapshotImportSpecifiers', () => {
      * A `<` or `>` in a class or type header is not a balanced delimiter, so a function type's `=>` and
      * a cast's `new () => B` in the header cannot open a depth the walk never closes. Counting them as
      * delimiters left the walk above depth zero and refused a header that declares no load, while the
-     * merge base admitted each (#4835). The type-parameter list on the declared name still crosses —
-     * `class C<T> extends (B)` above — because its tokens are skipped, not paired.
+     * merge base admitted each (#4835). A type-parameter list on the declared name still crosses —
+     * `class C<T> extends (B)` above — as one balanced region, so an object type, a conditional type,
+     * or a generic call inside the list cannot reach the fallthrough either, and a class whose parent
+     * carries such a list still declares the field a read-back inherits.
      */
     it('admits a class or type header whose heritage holds an arrow', () => {
         expect(
@@ -534,6 +591,27 @@ describe('snapshotImportSpecifiers', () => {
                 'class C extends (mixin(B) as new () => B) { x = 1; require(spec: string) { run(); } }'
             )
         ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends { a: string }> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends U extends V ? X : Y> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends Mixin<{ a: string }>> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        // The parent's type-parameter list is crossed, so the field the subclass inherits is registered.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H<T extends { a: string }> { loader = require; }\nclass D extends H<string> {}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
     });
 
     /**
