@@ -1,0 +1,23 @@
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_ed5aa36a3ba357::t_c016abab902e14 30-34,61-72,131,386-481
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_ed5aa36a3ba357::t_3643df7300408a 7,96-99,127-132,138,140-142,169
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_ed5aa36a3ba357::t_a12b1145435502 48-67,124,668-677,704-797
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "32419f3676581884bfabbbca721e1785987894ff",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
