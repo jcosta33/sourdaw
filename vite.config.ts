@@ -63,6 +63,7 @@ export default defineConfig({
     ],
     test: {
         environment: 'jsdom',
+        clearMocks: false,
         /**
          * Two workers is the agent-session ceiling: a lane shares its machine
          * with every other lane and with the resource guard's reservations.
