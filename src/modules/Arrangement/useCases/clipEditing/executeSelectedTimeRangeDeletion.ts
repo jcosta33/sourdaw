@@ -11,9 +11,14 @@ import {
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { captureTakeReKeyTransitions } from '../comping/captureTakeReKeyTransitions';
+import { collectTakeReKeyWindows } from '../comping/collectTakeReKeyWindows';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
+import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
+import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 import { createTakeLaneTransitionPlan } from '../timeOperations/createTakeLaneTransitionPlan';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
@@ -777,6 +782,51 @@ function prepareLocalState(
     };
 }
 
+/**
+ * The take-lane half of the excise (#4841): how every take and comp region on
+ * the selected tracks follows the clips' surviving fragments. The windows diff
+ * the pre-operation clips against the prepared track state — the same
+ * transition `planTrack` committed to — and the spanning records name the
+ * right fragments, which stay at `endBeat` (the excise leaves a gap; nothing
+ * ripples). Captured alongside the retirement, before any handle publishes, so
+ * the undo closure and the inverse plan restore the exact facets, and a
+ * replayed redo re-mints the same fragment take ids.
+ */
+function captureSelectedRangeTakeReKeyTransitions(
+    owners: readonly NormalizedOwner[],
+    operation: SelectedTimeRangeOperation,
+    nextTrackState: TrackState,
+    spanningClips: readonly SpanningClipRecord[],
+    removedClipIds: readonly string[]
+): readonly TakeReKeyLaneTransition[] {
+    const windowsByTrackId = collectTakeReKeyWindows({
+        beforeTracks: owners.map((owner) => ({
+            trackId: owner.id,
+            clips: owner.clips.map((normalizedClip) => ({
+                id: normalizedClip.source.id,
+                startBeat: normalizedClip.source.startBeat,
+                endBeat: normalizedClip.source.endBeat,
+            })),
+        })),
+        afterTracks: nextTrackState.tracks.map((track) => ({
+            trackId: track.id,
+            clips: track.clips.map((clip) => ({
+                id: clip.id,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+            })),
+        })),
+        reKeyTargets: new Map(spanningClips.map((record) => [record.sourceClipId, record.fragmentClipId])),
+        deleteStartBeat: operation.startBeat,
+    });
+    return captureTakeReKeyTransitions({
+        windowsByTrackId,
+        removedClipIds: new Set(removedClipIds),
+        deleteStartBeat: operation.startBeat,
+        deleteEndBeat: operation.endBeat,
+    });
+}
+
 function createLocalHandle(input: { capturedState: TrackState; nextState: TrackState }): PreparedHandle {
     const hasChanges = input.capturedState !== input.nextState;
     let phase: LocalTransactionPhase = 'closed';
@@ -1018,7 +1068,11 @@ function compensateAppliedHandles(applied: readonly PreparedHandle[]): unknown[]
     return failures;
 }
 
-function publishHandles(handles: readonly PreparedHandle[], removedClipIds: readonly string[]): boolean {
+function publishHandles(
+    handles: readonly PreparedHandle[],
+    removedClipIds: readonly string[],
+    reKeyedTakeLanes: readonly TakeReKeyLaneTransition[]
+): boolean {
     return batchStoreUpdates(() => {
         const applied: PreparedHandle[] = [];
         for (const handle of handles) {
@@ -1060,8 +1114,11 @@ function publishHandles(handles: readonly PreparedHandle[], removedClipIds: read
         removeClipSatelliteData(removedClipIds);
         // Take-lane state is keyed by clip id too (#4520): a take whose clip the
         // range fully removed is a comp no resolver can play, and its orphan
-        // region keeps advancing the comp cursor over the freed span.
+        // region keeps advancing the comp cursor over the freed span. Takes
+        // whose clips survive trimmed or split follow those fragments instead
+        // of retiring (#4841) — the other half of the same sweep.
         removeTakesForClips(removedClipIds);
+        applyTakeReKeyTransitions(reKeyedTakeLanes);
         return true;
     });
 }
@@ -1372,6 +1429,16 @@ export function executeSelectedTimeRangeDeletion(
     // them (#4520), captured before any handle publishes so the undo closure
     // and the inverse plan restore exactly what the publish sweep retires.
     const retiredTakeLanes = captureRetiredTakeLanes(removedClipIds);
+    // A clip the range trims or splits keeps its material, so its takes and
+    // comp regions follow the surviving fragments instead of retiring (#4841) —
+    // the other half of the same sweep.
+    const reKeyedTakeLanes = captureSelectedRangeTakeReKeyTransitions(
+        requestedOwners,
+        validated.operation,
+        local.trackState,
+        local.spanningClips,
+        removedClipIds
+    );
 
     const inversePlan = createCombinedInversePlan({
         expectedTrackState: local.trackState,
@@ -1388,13 +1455,13 @@ export function executeSelectedTimeRangeDeletion(
                   }
                 : null,
         },
-        takeLanes: createTakeLaneTransitionPlan(removedClipIds, retiredTakeLanes),
+        takeLanes: createTakeLaneTransitionPlan(removedClipIds, retiredTakeLanes, reKeyedTakeLanes),
     });
     if (!inversePlan) {
         return rejectResult();
     }
 
-    const applied = publishHandles(handles, removedClipIds);
+    const applied = publishHandles(handles, removedClipIds, reKeyedTakeLanes);
     if (!applied) {
         return rejectResult();
     }
@@ -1410,6 +1477,7 @@ export function executeSelectedTimeRangeDeletion(
             // undo cannot resurrect takes whose clips are still gone.
             if (undone) {
                 restoreTakesForClip(retiredTakeLanes);
+                restoreTakeReKeyTransitions(reKeyedTakeLanes);
             }
             return undone;
         },

@@ -1112,6 +1112,142 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
+    // #4841 — the re-key half of the slot: applying a restore plan un-re-keys
+    // the captured facets, and reverting it (the reversed plan, as redo uses)
+    // replays the post-operation ones.
+    it('un-re-keys the plan’s re-keyed take lanes on apply and replays them on revert', () => {
+        // The plan's replacement holds the pre-delete clip; its expected side
+        // holds the re-keyed fragment, so both take geometries resolve against
+        // a live clip when their leg runs.
+        const expectedTrackState = createTrackState(2, 0, {
+            clips: [ClipDummy.create({ id: 'clip-1-frag', trackId: 'track-1', startBeat: 2, endBeat: 6 })],
+        });
+        const replacementTrackState = createTrackState(1, 0, {
+            clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 4, endBeat: 10 })],
+        });
+        const expectedMarkerState = createMarkerState(8);
+        const replacementMarkerState = createMarkerState(4);
+        setCurrentState(expectedTrackState, expectedMarkerState);
+        installDependencies();
+        const takeBefore = createTake('clip-1', 'Re-keyed take', 4, 10);
+        const takeAfter = { ...takeBefore, clipId: 'clip-1-frag', startBeat: 2, endBeat: 6 };
+        const lane = {
+            ...createTakeLane('track-1'),
+            takes: [takeAfter],
+            activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: takeAfter.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        const plan = createPlan({
+            scope: 'global',
+            expectedTrackState,
+            replacementTrackState,
+            expectedMarkerState,
+            replacementMarkerState,
+            takeLanes: {
+                version: 1,
+                appliedEffect: 'restore',
+                removedClipIds: [],
+                retiredLanes: [],
+                reKeyedLanes: [
+                    {
+                        laneIndex: 0,
+                        laneId: lane.id,
+                        trackId: 'track-1',
+                        takesBefore: [takeBefore],
+                        takesAfter: [takeAfter],
+                        regionsBefore: [{ startBeat: 4, endBeat: 10, takeId: takeBefore.id }],
+                        regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: takeAfter.id }],
+                    },
+                ],
+            },
+        });
+        const transaction = prepareTimeOperationStateRestore(JSON.parse(JSON.stringify(plan)));
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.trackState.value).toEqual(replacementTrackState);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([takeBefore]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 4, endBeat: 10, takeId: takeBefore.id },
+        ]);
+
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.trackState.value).toEqual(expectedTrackState);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([takeAfter]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 6, takeId: takeAfter.id },
+        ]);
+    });
+
+    it('rejects a plan whose re-keyed lane entries are malformed without touching the store', () => {
+        const expectedTrackState = createTrackState(2);
+        const replacementTrackState = createTrackState(1);
+        const expectedMarkerState = createMarkerState(8);
+        const replacementMarkerState = createMarkerState(4);
+        setCurrentState(expectedTrackState, expectedMarkerState);
+        installDependencies();
+        const takeBefore = createTake('clip-1', 'Re-keyed take', 4, 10);
+        const takeAfter = { ...takeBefore, clipId: 'clip-1-frag', startBeat: 2, endBeat: 6 };
+        const wellFormedEntry = {
+            laneIndex: 0,
+            laneId: 'lane-1',
+            trackId: 'track-1',
+            takesBefore: [takeBefore],
+            takesAfter: [takeAfter],
+            regionsBefore: [{ startBeat: 4, endBeat: 10, takeId: takeBefore.id }],
+            regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: takeAfter.id }],
+        };
+        const wellFormed = {
+            version: 1,
+            appliedEffect: 'restore',
+            removedClipIds: [],
+            retiredLanes: [],
+        };
+        const malformedSlots: unknown[] = [
+            { ...wellFormed, reKeyedLanes: 'lanes' },
+            { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, extra: true }] },
+            { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, laneIndex: -1 }] },
+            { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, laneId: '' }] },
+            // A region naming a take the same side does not hold breaks the
+            // store's exactness law the writer's reconcile depends on.
+            {
+                ...wellFormed,
+                reKeyedLanes: [
+                    { ...wellFormedEntry, regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: 'take-missing' }] },
+                ],
+            },
+            // Overlapping regions are never a live lane state, so neither side
+            // of a captured transition may carry them.
+            {
+                ...wellFormed,
+                reKeyedLanes: [
+                    {
+                        ...wellFormedEntry,
+                        regionsBefore: [
+                            { startBeat: 4, endBeat: 8, takeId: takeBefore.id },
+                            { startBeat: 6, endBeat: 10, takeId: takeBefore.id },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        for (const takeLanes of malformedSlots) {
+            expectRejected(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState,
+                    replacementMarkerState,
+                    takeLanes,
+                })
+            );
+        }
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(mocks.trackState.value).toEqual(expectedTrackState);
+    });
+
     it('rejects a plan whose take-lane slot is malformed without touching the store', () => {
         const expectedTrackState = createTrackState(2);
         const replacementTrackState = createTrackState(1);
