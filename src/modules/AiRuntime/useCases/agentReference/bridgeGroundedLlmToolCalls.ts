@@ -6,6 +6,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
+import { NOTE_NAMES } from '#/utils/noteNames';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
@@ -475,7 +476,7 @@ function containsBatchLocalCreationEvidence(
     const normalizedName = normalizePromptText(binding.name);
     const hasKindAnaphora = CREATION_ANAPHORA_PATTERNS[binding.actionType].test(normalizedPrompt);
     const hasBusAnaphora = binding.actionType === 'createBus' && hasKindAnaphora;
-    const hasAnaphora = hasKindAnaphora || /\bit\b/u.test(normalizedPrompt);
+    const hasAnaphora = hasKindAnaphora || /\b(?:it|its)\b/u.test(normalizedPrompt);
     const hasQualifiedName = [
         ` to ${normalizedName} `,
         ` into ${normalizedName} `,
@@ -4095,8 +4096,12 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
+    const admitsCreativeNestedClip =
+        call.name === 'addClip' &&
+        creativeAdmission?.status === 'admitted' &&
+        !/\bclips?\b/iu.test(scanPromptQuotedText(prompt).maskedText);
     const planCreatedAdmission: PlanCreatedObjectAdmission =
-        admitsPlanCreatedObjects || call.name === 'addNotes'
+        admitsPlanCreatedObjects || admitsCreativeNestedClip || call.name === 'addNotes'
             ? resolvePlanCreatedObjectAdmission({
                   batchLocalCreationBindings,
                   call,
@@ -4117,7 +4122,8 @@ function groundToolCall({
     // because that slot is what the record says about the tracks this batch creates. The creative
     // authority governs every other call outright, and a read-only one governs them all: it read the
     // request as asking for nothing to change, so it refuses every writing command on either route.
-    const admitsPlanCreatedObject = admitsPlanCreatedObjects && planCreatedAdmission.status === 'admitted';
+    const admitsPlanCreatedObject =
+        (admitsPlanCreatedObjects || admitsCreativeNestedClip) && planCreatedAdmission.status === 'admitted';
     if (creativeAdmission?.status === 'rejected') {
         if (!admitsPlanCreatedObject || creativeAuthorityMode === 'read-only') {
             return rejection(index, call.name, creativeAdmission.reason);
@@ -4575,22 +4581,6 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
-function namesCreatedObject(clause: PromptClause, name: string): boolean {
-    const normalizedName = normalizePromptText(name);
-    if (normalizedName.length === 0) {
-        return false;
-    }
-    const exactName = new RegExp(
-        `^${escapeRegExp(normalizedName)}(?=$| (?:on|in|from|at|for|with|that|which)\\b)`,
-        'u'
-    );
-    return [...clause.masked.matchAll(/\b(?:named|called)\b/giu)].some(
-        (match) =>
-            match.index !== undefined &&
-            exactName.test(normalizePromptText(clause.text.slice(match.index + match[0].length)))
-    );
-}
-
 const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
     addAutomationLane: /\b(?:automation )?lanes?\b/u,
     addClip: /\bclips?\b/u,
@@ -4598,44 +4588,164 @@ const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName, RegEx
     addTrack: /\btracks?\b/u,
     createBus: /\bbus(?:es)?\b/u,
 };
+const CREATED_OBJECT_ACTION_TYPES: readonly BatchLocalBindingProducerName[] = [
+    'addAutomationLane',
+    'addClip',
+    'addDevice',
+    'addTrack',
+    'createBus',
+];
+
+function namesWholeCreatedObject(text: string, name: string): boolean {
+    const normalizedName = normalizePromptText(name);
+    return (
+        normalizedName.length > 0 &&
+        new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedName)}(?![\\p{L}\\p{N}])`, 'u').test(
+            normalizePromptText(text)
+        )
+    );
+}
+
+function getOpenCreatedObjectRequest(
+    prompt: string,
+    maskedPrompt: string
+): {
+    wholeComposition: boolean;
+    nestedMidiContent: boolean;
+} {
+    let wholeComposition = false;
+    let nestedMidiContent = false;
+    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        if (!hasHighLevelCreationEvidence(clause.masked)) {
+            continue;
+        }
+        const normalized = normalizePromptText(clause.masked);
+        const typedObject = Object.values(CREATED_OBJECT_NOUNS).some((noun) => noun.test(normalized));
+        wholeComposition ||= !typedObject;
+        nestedMidiContent ||=
+            /\b(?:create|add|write|compose|make|lay down|with)\s+(?:a|an|new|some)\s+(?:\w+\s+){0,2}(?:bass\s+lines?|drum\s+parts?|melod(?:y|ies)|grooves?|riffs?|progressions?|chords?)\b/u.test(
+                normalized
+            ) &&
+            CREATED_OBJECT_NOUNS.addTrack.test(normalized) &&
+            !CREATED_OBJECT_NOUNS.addClip.test(normalized);
+    }
+    return { wholeComposition, nestedMidiContent };
+}
+
+function namesCreationInScope(input: {
+    actionType: BatchLocalBindingProducerName;
+    name: string;
+    scope: PromptClause & { actionType: string };
+    slots: number;
+}): boolean {
+    const normalized = normalizePromptText(input.scope.text);
+    const normalizedName = normalizePromptText(input.name);
+    const noun = CREATED_OBJECT_NOUNS[input.actionType];
+    const namedSegments = [
+        ...input.scope.masked.matchAll(new RegExp(`${noun.source}\\s+(?:named|called)\\b`, 'giu')),
+    ].flatMap((match) => {
+        if (match.index === undefined) {
+            return [];
+        }
+        const tail = input.scope.text.slice(match.index + match[0].length);
+        const nextObject =
+            /\b(?:tracks?|clips?|buses?|devices?|plugins?|effects?|(?:automation )?lanes?)\s+(?:named|called)\b/iu.exec(
+                tail
+            );
+        return [tail.slice(0, nextObject?.index ?? tail.length)];
+    });
+    const namesObject = namedSegments.some((segment) =>
+        new RegExp(
+            `^${escapeRegExp(normalizedName)}(?=$| (?:on|in|from|at|for|with|that|which|and|then|but)\\b)`,
+            'u'
+        ).test(normalizePromptText(segment))
+    );
+    const namedListMember =
+        input.slots > 1 && namedSegments.some((segment) => namesWholeCreatedObject(segment, input.name));
+    const introducedName = new RegExp(
+        `\\b(?:a|an|new|another|\\d+)\\s+(?:[\\p{L}\\p{N}-]+\\s+){0,3}${escapeRegExp(normalizedName)}` +
+            `(?:\\s+(?:midi|audio))?\\s+${noun.source}`,
+        'u'
+    ).test(normalized);
+    const descriptorName =
+        input.actionType === 'addDevice' &&
+        namesWholeCreatedObject(input.scope.text, input.name) &&
+        (input.scope.actionType === 'addDevice' ||
+            new RegExp(`\\bwith\\s+(?:a|an)\\s+${escapeRegExp(normalizedName)}\\b`, 'u').test(normalized));
+    const genericObject = [
+        ...normalized.matchAll(
+            new RegExp(
+                `\\b(a|an|new|another|\\d+)\\s+(?:(?:midi|audio|automation)\\s+)?${noun.source}(?!\\s+(?:named|called)\\b)`,
+                'gu'
+            )
+        ),
+    ].some(
+        (match) =>
+            match.index !== undefined &&
+            (match[1] !== 'new' || !/\b(?:that|this|the)\s+$/u.test(normalized.slice(0, match.index)))
+    );
+    return namesObject || namedListMember || introducedName || descriptorName || genericObject;
+}
 
 function getCreatedObjectRequestIndexes(input: {
     bindings: ReadonlyMap<number, BatchLocalCreationBinding>;
     calls: readonly ToolCallResult[];
+    catalog: GroundingCatalog;
     prompt: string;
 }): ReadonlySet<number> {
     const authorized = new Set<number>();
     const quoteScan = scanPromptQuotedText(input.prompt);
-    const clauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter((clause) =>
-        hasHighLevelCreationEvidence(clause.text)
-    );
-    for (const clause of clauses.filter((candidate) => /\b(?:named|called)\b/iu.test(candidate.masked))) {
-        const matching = [...input.bindings.entries()].find(
-            ([index, binding]) =>
-                !authorized.has(index) &&
-                input.calls[index]?.name === binding.actionType &&
-                CREATED_OBJECT_NOUNS[binding.actionType].test(normalizePromptText(clause.masked)) &&
-                namesCreatedObject(clause, binding.name)
-        );
-        if (matching) {
-            authorized.add(matching[0]);
+    const creationSpans = getPromptActionSpans(input.prompt, quoteScan.maskedText, input.catalog);
+    for (const clause of getPromptClauses(input.prompt, quoteScan.maskedText)) {
+        if (hasHighLevelCreationEvidence(clause.masked) && !creationSpans.some((span) => span.start === clause.start)) {
+            for (const span of creationSpans) {
+                if (span.start < clause.start && span.end > clause.start) {
+                    span.end = clause.start;
+                }
+            }
+            const nextActionStart = Math.min(
+                ...creationSpans.filter((span) => span.start > clause.start).map((span) => span.start)
+            );
+            creationSpans.push({
+                actionType: 'creation-request',
+                start: clause.start,
+                end: Number.isFinite(nextActionStart) ? nextActionStart : input.prompt.length,
+            });
         }
     }
-    for (const clause of clauses.filter((candidate) => !/\b(?:named|called)\b/iu.test(candidate.masked))) {
-        const normalized = normalizePromptText(clause.text);
-        const quantity = /\b(\d+) (?:\w+ ){0,2}(?:tracks?|clips?)\b/u.exec(normalized);
-        const slots = quantity ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS) : 1;
-        for (let slot = 0; slot < slots; slot += 1) {
-            const matching = [...input.bindings.entries()].find(
-                ([index, binding]) =>
-                    !authorized.has(index) &&
-                    input.calls[index]?.name === binding.actionType &&
-                    CREATED_OBJECT_NOUNS[binding.actionType].test(normalized)
-            );
-            if (!matching) {
-                break;
+    for (const span of creationSpans) {
+        const scope: PromptClause & { actionType: string } = {
+            actionType: span.actionType,
+            text: input.prompt.slice(span.start, span.end),
+            masked: quoteScan.maskedText.slice(span.start, span.end),
+        };
+        const restriction = /\b(?:excluding|except|leave|leaving|keep|keeping|preserve|preserving)\b/iu.exec(
+            scope.masked
+        );
+        if (restriction?.index !== undefined) {
+            scope.text = scope.text.slice(0, restriction.index);
+            scope.masked = scope.masked.slice(0, restriction.index);
+        }
+        for (const actionType of CREATED_OBJECT_ACTION_TYPES) {
+            const noun = CREATED_OBJECT_NOUNS[actionType];
+            const normalized = normalizePromptText(scope.masked);
+            if (span.actionType !== actionType && !noun.test(normalized) && actionType !== 'addDevice') {
+                continue;
             }
-            authorized.add(matching[0]);
+            const quantity = new RegExp(`\\b(\\d+)\\s+(?:\\w+\\s+){0,2}${noun.source}`, 'u').exec(normalized);
+            const slots = quantity ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS) : 1;
+            for (let slot = 0; slot < slots; slot += 1) {
+                const matching = [...input.bindings.entries()].find(
+                    ([index, binding]) =>
+                        !authorized.has(index) &&
+                        input.calls[index]?.name === actionType &&
+                        namesCreationInScope({ actionType, name: binding.name, scope, slots })
+                );
+                if (!matching) {
+                    break;
+                }
+                authorized.add(matching[0]);
+            }
         }
     }
     return authorized;
@@ -4735,6 +4845,169 @@ function hasCompleteCreatedTargetReference(
     return sameKindBindings.length === 1 && firstTargetTail !== undefined && anaphora.test(firstTargetTail);
 }
 
+function hasContradictoryCreatedTargetReference(input: {
+    actionName: string;
+    binding: BatchLocalCreationBinding;
+    bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    capability: GroundingRules['targetRules'][number]['capability'];
+    clause: PromptClause;
+    context: ProjectContext;
+    promptRole?: GroundingRules['targetRules'][number]['promptRole'];
+}): boolean {
+    const targetText = getTargetPromptScope(
+        { ...input.clause, directional: false, matchedIntentPhrase: '' },
+        input.promptRole
+    );
+    const normalized = normalizePromptText(targetText);
+    if (normalized.length === 0) {
+        return false;
+    }
+    if (namesWholeCreatedObject(targetText, input.binding.name)) {
+        return true;
+    }
+    if (
+        [...input.bindings.values()].some(
+            (candidate) =>
+                candidate.binding !== input.binding.binding &&
+                candidate.capabilities.includes(input.capability) &&
+                namesWholeCreatedObject(targetText, candidate.name)
+        )
+    ) {
+        return true;
+    }
+    const projectTargets = [
+        ...input.context.tracks.map((track) => ({ id: track.id, name: track.name })),
+        ...input.context.tracks.flatMap((track) => [
+            ...track.clips.map((clip) => ({ id: clip.id, name: clip.name })),
+            ...track.devices.map((device) => ({ id: device.id, name: device.name ?? device.type })),
+        ]),
+        ...(input.context.automationLanes ?? []).map((lane) => ({ id: lane.id, name: lane.name })),
+    ];
+    if (
+        projectTargets.some(
+            (target) =>
+                target.id !== input.binding.createdId &&
+                isCompatibleTargetId(target.id, input.capability, input.context) &&
+                namesWholeCreatedObject(targetText, target.name)
+        )
+    ) {
+        return true;
+    }
+    if (input.actionName === 'addNotes') {
+        const targetTail = /\b(?:to|on|in|into)\s+(?:the\s+)?(.+)$/iu.exec(targetText)?.[1];
+        return targetTail !== undefined && !/^(?:it|its|that|this|new|beats?|bars?|measures?|\d+)\b/iu.test(targetTail);
+    }
+    if (input.actionName === 'renameClip') {
+        const source = /\brename\s+(?:(?:the|a)\s+)?(.+)$/iu.exec(targetText)?.[1];
+        return source !== undefined && !/^(?:it|its|that|this)\b/iu.test(source);
+    }
+    return false;
+}
+
+function getRequestedCreatedClipNotes(input: {
+    binding: BatchLocalCreationBinding;
+    bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    context: ProjectContext;
+    prompt: string;
+}): readonly { pitch: number; startBeat: number }[] | null {
+    if (input.binding.actionType !== 'addClip') {
+        return null;
+    }
+    const createdClips = [...input.bindings.values()].filter((binding) => binding.actionType === 'addClip');
+    if (createdClips.length !== 1 || createdClips[0]?.binding !== input.binding.binding) {
+        return null;
+    }
+    const ownerReference = input.binding.parentTrackReference;
+    const owner = ownerReference?.startsWith('$') ? input.bindings.get(ownerReference.slice(1)) : undefined;
+    if (
+        owner?.trackKind !== 'midi' ||
+        input.context.tracks.some((track) =>
+            track.clips.some(
+                (clip) =>
+                    clip.id !== input.binding.createdId &&
+                    normalizePromptText(clip.name) === normalizePromptText(input.binding.name)
+            )
+        )
+    ) {
+        return null;
+    }
+    const quoteScan = scanPromptQuotedText(input.prompt);
+    if (!quoteScan.complete) {
+        return null;
+    }
+    const clauses = getPromptClauses(input.prompt, quoteScan.maskedText);
+    const creationIndex = clauses.findIndex(
+        (clause) =>
+            /\b(?:create|add|with)\b/iu.test(clause.masked) &&
+            /\bclips?\b/iu.test(clause.masked) &&
+            namesWholeCreatedObject(clause.text, input.binding.name)
+    );
+    if (creationIndex < 0) {
+        return null;
+    }
+    const requested: { pitch: number; startBeat: number }[] = [];
+    for (const [index, clause] of clauses.entries()) {
+        if (index <= creationIndex) {
+            continue;
+        }
+        const literal = clause.masked.trim().toLowerCase();
+        const match = /^(?:add\s+)?([a-g]#?-?\d+)\s+at\s+beat\s+(\d+(?:\.\d+)?)$/u.exec(literal);
+        if (!match) {
+            if (requested.length > 0) {
+                break;
+            }
+            continue;
+        }
+        if (requested.length === 0 && !/^add\s/u.test(literal)) {
+            continue;
+        }
+        const note = /^([a-g]#?)(-?\d+)$/u.exec(match[1] ?? '');
+        const semitone = NOTE_NAMES.findIndex((name) => name.toLowerCase() === note?.[1]);
+        const octave = Number(note?.[2]);
+        const startBeat = Number(match[2]);
+        const pitch = (octave + 1) * 12 + semitone;
+        if (semitone < 0 || !Number.isInteger(octave) || pitch < 0 || pitch > 127 || !Number.isFinite(startBeat)) {
+            return null;
+        }
+        requested.push({ pitch, startBeat });
+    }
+    return requested.length > 0 ? requested : null;
+}
+
+function getLiteralCreatedClipNoteIntent(input: {
+    binding: BatchLocalCreationBinding;
+    bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    call: ToolCallResult;
+    context: ProjectContext;
+    prompt: string;
+}): 'matched' | 'mismatched' | 'none' {
+    if (input.call.name !== 'addNotes') {
+        return 'none';
+    }
+    const requested = getRequestedCreatedClipNotes(input);
+    if (requested === null) {
+        return 'none';
+    }
+    const proposed = input.call.arguments.notes;
+    if (!Array.isArray(proposed) || proposed.length !== requested.length) {
+        return 'mismatched';
+    }
+    const remaining = [...requested];
+    for (const note of proposed as unknown[]) {
+        if (typeof note !== 'object' || note === null || !('pitch' in note) || !('startBeat' in note)) {
+            return 'mismatched';
+        }
+        const index = remaining.findIndex(
+            (candidate) => candidate.pitch === note.pitch && candidate.startBeat === note.startBeat
+        );
+        if (index < 0) {
+            return 'mismatched';
+        }
+        remaining.splice(index, 1);
+    }
+    return 'matched';
+}
+
 function getExplicitCreatedTargetIntent(input: {
     bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
@@ -4752,10 +5025,22 @@ function getExplicitCreatedTargetIntent(input: {
             return [];
         }
         const binding = input.bindings.get(value.slice(1));
-        return binding ? [binding] : [];
+        return binding && binding.capabilities.includes(rule.capability) ? [{ binding, rule }] : [];
     });
     if (targetBindings.length === 0) {
         return 'none';
+    }
+    if (targetBindings.length === 1) {
+        const literalNotes = getLiteralCreatedClipNoteIntent({
+            binding: targetBindings[0]!.binding,
+            bindings: input.bindings,
+            call: input.call,
+            context: input.context,
+            prompt: input.prompt,
+        });
+        if (literalNotes !== 'none') {
+            return literalNotes;
+        }
     }
     const quoteScan = scanPromptQuotedText(input.prompt);
     const actionClauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter(
@@ -4766,13 +5051,30 @@ function getExplicitCreatedTargetIntent(input: {
     if (actionClauses.length === 0) {
         return 'none';
     }
+    if (
+        actionClauses.some((clause) =>
+            targetBindings.every(({ binding }) =>
+                hasCompleteCreatedTargetReference(clause.text, binding, input.bindings, input.context, input.call.name)
+            )
+        )
+    ) {
+        return 'matched';
+    }
     return actionClauses.some((clause) =>
-        targetBindings.every((binding) =>
-            hasCompleteCreatedTargetReference(clause.text, binding, input.bindings, input.context, input.call.name)
+        targetBindings.some(({ binding, rule }) =>
+            hasContradictoryCreatedTargetReference({
+                actionName: input.call.name,
+                binding,
+                bindings: input.bindings,
+                capability: rule.capability,
+                clause,
+                context: input.context,
+                ...(rule.promptRole === undefined ? {} : { promptRole: rule.promptRole }),
+            })
         )
     )
-        ? 'matched'
-        : 'mismatched';
+        ? 'mismatched'
+        : 'none';
 }
 
 type PromptActionRequest = {
@@ -5660,10 +5962,14 @@ export function bridgeGroundedLlmToolCalls({
         };
     }
     const hasCreationEvidence = hasHighLevelCreationEvidence(prompt);
+    const openCreatedObjectRequest = hasCreationEvidence
+        ? getOpenCreatedObjectRequest(prompt, scanPromptQuotedText(prompt).maskedText)
+        : { wholeComposition: false, nestedMidiContent: false };
     const createdObjectRequestIndexes = hasCreationEvidence
         ? getCreatedObjectRequestIndexes({
               bindings: collectedBindings.bindingsByCallIndex,
               calls: effectiveCalls,
+              catalog,
               prompt,
           })
         : new Set<number>();
@@ -5724,7 +6030,11 @@ export function bridgeGroundedLlmToolCalls({
                 actionOrdinal,
                 admitsPlanCreatedObjects:
                     hasCreationEvidence &&
-                    (createdObjectRequestIndexes.has(index) || createdTargetIntent === 'matched'),
+                    (openCreatedObjectRequest.wholeComposition ||
+                        (openCreatedObjectRequest.nestedMidiContent &&
+                            (call.name === 'addClip' || call.name === 'addNotes')) ||
+                        createdObjectRequestIndexes.has(index) ||
+                        createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,

@@ -175,7 +175,11 @@ function materializeWorkflow(
         prompt: workflowPrompt,
     });
     if (bridged.rejections.length > 0) {
-        throw new Error(bridged.rejections.map((rejection) => rejection.reason).join('; '));
+        throw new Error(
+            bridged.rejections
+                .map((rejection) => `${String(rejection.index)}:${rejection.name}: ${rejection.reason}`)
+                .join('; ')
+        );
     }
     const identified = materializeBatchLocalActionIdentities(bridged.actions, bridged.batchLocalActionIdentities ?? []);
     if (identified.status !== 'accepted') {

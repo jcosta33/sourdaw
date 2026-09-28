@@ -2920,6 +2920,218 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it.each([
+        {
+            name: 'exact requested notes',
+            notes: [
+                [60, 0],
+                [67, 1],
+            ],
+            allowed: true,
+        },
+        {
+            name: 'changed pitch',
+            notes: [
+                [61, 0],
+                [67, 1],
+            ],
+            allowed: false,
+        },
+        {
+            name: 'changed beat',
+            notes: [
+                [60, 0],
+                [67, 2],
+            ],
+            allowed: false,
+        },
+        {
+            name: 'extra note',
+            notes: [
+                [60, 0],
+                [67, 1],
+                [72, 2],
+            ],
+            allowed: false,
+        },
+    ])('grounds a created clip note phrase by exact pitch and beat: $name', ({ notes, allowed }) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: notes.map(([pitch, startBeat]) => ({ pitch, startBeat, duration: 1, velocity: 90 })),
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0 and G4 at beat 1',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions.map((action) => action.type)).toEqual(allowed ? ['addTrack', 'addClip', 'addNotes'] : []);
+        expect(result.rejections.length === 0).toBe(allowed);
+    });
+
+    it.each([
+        {
+            name: 'quoted note-like label',
+            prompt: 'Create a MIDI track named Lead with a four-beat Melody clip, label it "add C4 at beat 0 and G4 at beat 1"',
+        },
+        {
+            name: 'requested empty clip',
+            prompt: 'Create a MIDI track named Lead with an empty MIDI clip named Melody from beat 0 to beat 4, add C4 at beat 0 and G4 at beat 1',
+        },
+    ])('refuses notes when literal content is not authorized: $name', ({ prompt }) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: [
+                            { pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+                            { pitch: 67, startBeat: 1, duration: 1, velocity: 90 },
+                        ],
+                    },
+                },
+            ],
+            prompt,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.length).toBeGreaterThan(0);
+    });
+
+    it('refuses a literal note phrase when a project clip has the same name as the new clip', () => {
+        const existingMelody = {
+            id: 'clip-existing-melody',
+            name: 'Melody',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 4,
+            noteCount: 0,
+        };
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0',
+            {
+                ...projectContext,
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-existing', name: 'Existing', kind: 'midi' }),
+                        clips: [existingMelody],
+                        clipCount: 1,
+                    },
+                ],
+            }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'addNotes' })]);
+    });
+
+    it('keeps one requested bass track slot while allowing its new clip and notes', () => {
+        const prompt = 'create a walking bass line on a new track';
+        const track = { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } };
+        const clip = {
+            name: 'addClip',
+            arguments: { trackId: '$bass', startBeat: 0, endBeat: 8, name: 'Walking Bass', binding: 'walking' },
+        };
+        const notes = {
+            name: 'addNotes',
+            arguments: { clipId: '$walking', notes: [{ pitch: 40, startBeat: 0, duration: 1, velocity: 90 }] },
+        };
+        const context = { ...projectContext, tracks: [] };
+        const requested = bridge([track, clip, notes], prompt, context);
+        const extraTrack = bridge(
+            [{ name: 'addTrack', arguments: { name: 'Sneaky', kind: 'midi', binding: 'sneaky' } }, track, clip, notes],
+            prompt,
+            context
+        );
+        expect(requested.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        expect(requested.rejections).toEqual([]);
+        expect(extraTrack.actions).toEqual([]);
+        expect(extraTrack.rejections).toContainEqual(expect.objectContaining({ index: 1, name: 'addTrack' }));
+    });
+
+    it('does not treat a track named Melody as a request for MIDI clip content', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Melody', kind: 'midi', binding: 'melody-track' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$melody-track',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Phrase',
+                        binding: 'phrase',
+                    },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$phrase',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'create a MIDI track named Melody',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(expect.objectContaining({ index: 1, name: 'addClip' }));
+    });
+
+    it('refuses notes bound to a different newly created clip than the one the request names', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 4, endBeat: 8, name: 'Other', binding: 'other' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$other',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead; add a MIDI clip named Melody on Lead from beat 0 to beat 4; add a MIDI clip named Other on Lead from beat 4 to beat 8; add notes to Melody',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'addNotes' })]);
+    });
+
     it('rejects forward and capability-incompatible references to plan-created tracks and clips', () => {
         const forwardTrack = bridge(
             [
