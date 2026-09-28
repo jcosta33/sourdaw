@@ -1,0 +1,21 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_1538eaa8fa20aa 4691-4739,4756-4776
+scripts/semanticReview/sensitive.ts
+  s_ed5aa36a3ba357::t_f1dec8332ba479 150-158,324-332,334-344,368-384,393,411,417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb09c98f04f3f393f09b00a2821681a8bb4013b4",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
