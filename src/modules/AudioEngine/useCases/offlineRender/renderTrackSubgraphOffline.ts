@@ -364,6 +364,7 @@ export async function renderTrackSubgraphOffline({
                 midi: midiState,
                 trackInputNode: strip.inputNode,
                 trackGainNode: strip.faderNode,
+                trackPreFaderTap: strip.preFaderTap,
                 trackPanNode: strip.panNode,
                 destination: offlineCtx.destination,
                 durationSeconds,

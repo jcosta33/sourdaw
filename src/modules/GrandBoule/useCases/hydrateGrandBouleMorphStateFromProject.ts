@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
-import { readGrandBouleMorphState } from '../models/GrandBouleDeviceState';
+import { readGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
 import { type GrandBouleMorphState } from '../models/GrandBouleMorphState';
 import { createGrandBouleStore } from '../stores/grandBouleStore';
 
@@ -12,11 +12,21 @@ export function hydrateGrandBouleMorphStateFromProject(deviceId: string): GrandB
     if (!device) {
         return null;
     }
-    const morph = readGrandBouleMorphState(device.deviceState);
+    const persisted = readGrandBouleDeviceState(device.deviceState);
     const store = createGrandBouleStore(deviceId);
     const state = store.value;
-    if (state && JSON.stringify(state.morph) !== JSON.stringify(morph)) {
-        store.set({ ...state, morph });
+    if (
+        state &&
+        (JSON.stringify(state.morph) !== JSON.stringify(persisted.morph) ||
+            state.temperament !== persisted.temperament ||
+            JSON.stringify(state.parameters) !== JSON.stringify(persisted.parameters))
+    ) {
+        store.set({
+            ...state,
+            morph: persisted.morph,
+            temperament: persisted.temperament,
+            parameters: persisted.parameters,
+        });
     }
-    return morph;
+    return persisted.morph;
 }

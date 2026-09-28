@@ -423,6 +423,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
+        // Count provenance: new file entry, measured 4 — the four preset
+        // parameters the load-replay sync pushes through the engine handle
+        // (#4727), so a reloaded piano is voiced like the saved project. The
+        // temperament rides `setTemperament`, which this family does not
+        // count, and the calibration sync beside it stays in its own row.
+        'src/modules/GrandBoule/useCases/syncGrandBouleVoicingToEngine.ts': 4,
         // Count provenance: measured 2 in code, was 8 — the `LevainDevice`
         // handle's own `setParam` field and the one call through it. The six
         // retired matches were the macro fan-out's direct `device.setParam`

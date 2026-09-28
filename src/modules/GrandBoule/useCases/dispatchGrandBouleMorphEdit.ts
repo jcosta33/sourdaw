@@ -6,6 +6,7 @@ import { type GrandBouleState } from '../stores/grandBouleStore';
 
 import { applyGrandBouleMorphState } from './applyGrandBouleMorphState';
 import { commitGrandBouleDeviceState } from './commitGrandBouleDeviceState';
+import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 
 export function dispatchGrandBouleMorphEdit(input: {
     deviceId: string;
@@ -25,5 +26,10 @@ export function dispatchGrandBouleMorphEdit(input: {
         input.store.set({ ...state, morph: input.nextMorph });
         return;
     }
-    commitGrandBouleDeviceState(input.deviceId, input.nextMorph);
+    const projectState = projectGrandBoulePersistedState(input.deviceId);
+    commitGrandBouleDeviceState(input.deviceId, {
+        morph: input.nextMorph,
+        temperament: projectState.temperament,
+        parameters: projectState.parameters,
+    });
 }

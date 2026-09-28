@@ -109,7 +109,16 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
             controls.setSostenuto(pedalInput.engaged);
             sendPedalToNativeBody(track.id, input.deviceId, CC_SOSTENUTO_PEDAL, wireSwitch(pedalInput.engaged));
         },
-        setTemperament: (temperamentInput) => controls.setTemperament(temperamentInput.index),
+        // Both carriers on every temperament pick (#4727), the same reason the
+        // calibration write above takes both: a native body (re)built at Play
+        // starts on the DSP's Equal default, and a body already carried keeps
+        // whatever it was last told, so a temperament that only reached the
+        // Web Audio node would tune the desktop piano differently from the
+        // panel's.
+        setTemperament: (temperamentInput) => {
+            controls.setTemperament(temperamentInput.index);
+            writeNativeBuiltinParameters(track.id, input.deviceId, { temperament: temperamentInput.index });
+        },
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
         getAnalyserNode: () => strip.analyserNode,

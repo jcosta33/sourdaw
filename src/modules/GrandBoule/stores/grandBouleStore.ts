@@ -9,6 +9,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type GrandBouleConfig, createDefaultGrandBouleConfig } from '../models/GrandBouleConfig';
+import { type TemperamentIndex } from '../models/GrandBouleDeviceState';
 import { type GrandBouleMidiCalibration, createDefaultMidiCalibration } from '../models/GrandBouleMidiCalibration';
 import { type GrandBouleMorphState, createDefaultMorphState } from '../models/GrandBouleMorphState';
 import { type GrandBoulePerNoteMap } from '../models/GrandBoulePerNoteParams';
@@ -24,11 +25,11 @@ export type GrandBoulePedalState = {
 };
 
 /**
- * Historical temperament index. Matches the Rust enum `Temperament` values.
- * 0 = Equal (default), 1 = Werckmeister III, 2 = Kirnberger III,
- * 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma.
+ * Historical temperament index. Defined beside the persisted device state it
+ * is saved with (`models/GrandBouleDeviceState.ts`); re-exported here because
+ * the panel reads it off the store.
  */
-export type TemperamentIndex = 0 | 1 | 2 | 3 | 4 | 5;
+export type { TemperamentIndex };
 
 export type GrandBouleState = {
     config: GrandBouleConfig;

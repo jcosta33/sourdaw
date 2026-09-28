@@ -122,6 +122,7 @@ function midiTrack(overrides: Record<string, unknown> = {}) {
         followChordTrack: false,
         devices: [],
         clips: [],
+        sends: [],
         freezeState: { status: 'unfrozen' },
         ...overrides,
     } as never;

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type AdjustmentLayerState, type AdjustmentLayer } from '../../../stores/adjustmentLayer';
-import { type TrackStoreState, type Track } from '../../../stores/trackStore';
+import { type TrackStoreState, type Track, type Clip } from '../../../stores/trackStore';
 import { restoreAdjustmentLayerMutation } from '../restoreAdjustmentLayerMutation';
 
 type RestorePayload = {
@@ -266,16 +266,35 @@ describe('restoreAdjustmentLayerMutation', () => {
 });
 
 // Local copy of the source-signature logic so the test derives expected values
-// from the domain rather than hard-coding a brittle string.
+// from the domain rather than hard-coding a brittle string. It must mirror the
+// production entry format slot for slot: a divergence fails the
+// unchanged-signature case above, which is how format drift gets caught.
 function createTrackFreezeSourceSignatureFor(source: {
-    clips: { id: string; startBeat: number; endBeat: number; assetHash?: string; gain: number }[];
+    clips: Clip[];
     devices: { id: string; type: string; parameterValues: Record<string, number>; bypassed: boolean }[];
 }): string {
     const clipSignatures = [...source.clips]
         .sort((a, b) => a.startBeat - b.startBeat || a.id.localeCompare(b.id))
         .map((clip) => {
             const duration = clip.endBeat - clip.startBeat;
-            return `${clip.id}:${clip.startBeat}:${duration}:${clip.assetHash ?? ''}:${clip.gain}`;
+            return [
+                clip.id,
+                clip.startBeat,
+                duration,
+                clip.assetHash ?? '',
+                clip.gain,
+                clip.type,
+                clip.audioBufferId ?? '',
+                clip.audioOffsetBeats ?? 0,
+                clip.midiOffsetBeats ?? 0,
+                clip.fadeInBeats,
+                clip.fadeOutBeats,
+                clip.muted,
+                clip.stretchMode ?? '',
+                clip.stretchRatio ?? '',
+                clip.loopEnabled ?? false,
+                clip.loopLength ?? 0,
+            ].join(':');
         });
     const deviceSignatures = source.devices.map((device) => {
         const parameters = Object.entries(device.parameterValues)

@@ -404,12 +404,23 @@ export function scheduleAudioClips(
                         fadeGain.gain.setValueAtTime(clipGain, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
                     } else if (needsMicroFadeOut) {
-                        const iterEndTime = effectiveStart + playDuration;
+                        // The source stops at `soundStartTime + playDuration`
+                        // however playback reached it: a start at or past the
+                        // sound head plays `playDuration·stretchRatio`
+                        // buffer-seconds from `soundStartTime`, and a mid-clip
+                        // start (transport resume, loop wrap, locate) plays
+                        // the remaining `(playDuration − elapsed)·stretchRatio`
+                        // from `now` — both spans land on the same instant,
+                        // the rate cancelling on either side. Anchoring on
+                        // `effectiveStart` scheduled the ramp `elapsed`
+                        // seconds past a source that had already stopped, so
+                        // it sounded nothing and the clip clicked (#4690).
+                        const sourceEndTime = soundStartTime + playDuration;
                         fadeGain.gain.setValueAtTime(
                             clipGain,
-                            Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS)
+                            Math.max(effectiveStart, sourceEndTime - MICRO_FADE_SECONDS)
                         );
-                        fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
+                        fadeGain.gain.linearRampToValueAtTime(0, sourceEndTime);
                     }
                 }
 
