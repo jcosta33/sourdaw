@@ -149,6 +149,55 @@ describe('createTrackFreezeSourceSignature', () => {
         expect(sigA).toBe(sigB);
     });
 
+    // The offline render hydrates a built-in device from its `deviceState`
+    // chunk (Grand Boule's temperament and preset voicing ride it through
+    // `prepareOfflineGrandBoule`), so a chunk edit must move the signature
+    // even though `parameterValues` is untouched.
+    it('changes when a device deviceState chunk carries a different temperament', () => {
+        const device = { id: 'd1', type: 'grand-boule', parameterValues: {}, bypassed: false };
+
+        const werckmeister = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { temperament: 1 } } }],
+        });
+        const kirnberger = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { temperament: 2 } } }],
+        });
+
+        expect(werckmeister).not.toBe(kirnberger);
+    });
+
+    it('is independent of deviceState key insertion order', () => {
+        const sigForward = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [
+                {
+                    id: 'd1',
+                    type: 'grand-boule',
+                    parameterValues: {},
+                    bypassed: false,
+                    deviceState: { data: { temperament: 1 }, version: 1 },
+                },
+            ],
+        });
+        const sigReversed = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [
+                {
+                    id: 'd1',
+                    type: 'grand-boule',
+                    parameterValues: {},
+                    bypassed: false,
+                    deviceState: { version: 1, data: { temperament: 1 } },
+                },
+            ],
+        });
+
+        // Chunk keys are serialized sorted, so declaration order is irrelevant.
+        expect(sigForward).toBe(sigReversed);
+    });
+
     // Every render-affecting clip field the freeze render reads must move the
     // signature, or a frozen track keeps replaying its stale buffer after the
     // edit (audit #4591).

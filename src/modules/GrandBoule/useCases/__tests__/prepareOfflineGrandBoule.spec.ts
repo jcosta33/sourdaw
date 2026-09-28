@@ -103,9 +103,17 @@ describe('prepareOfflineGrandBoule', () => {
         });
 
         const posted = postMessage.mock.calls.map(([message]) => message);
-        expect(posted).toEqual(
-            projectGrandBouleMorphState(snapshotMorph).map((parameter) => ({ type: 'param', ...parameter }))
-        );
+        // The persisted chunk also carries the default voicing, so the posts
+        // continue past the morph ones with temperament 0 and the neutral
+        // preset — the capture's project-truth fallback, not a live store.
+        expect(posted).toEqual([
+            ...projectGrandBouleMorphState(snapshotMorph).map((parameter) => ({ type: 'param', ...parameter })),
+            { type: 'temperament', index: 0 },
+            { type: 'param', name: 'hammer_hardness', value: NEUTRAL_PARAMETERS.hammerHardness },
+            { type: 'param', name: 'tone_tilt', value: NEUTRAL_PARAMETERS.toneTilt },
+            { type: 'param', name: 'stereo_width', value: NEUTRAL_PARAMETERS.stereoWidth },
+            { type: 'param', name: 'velocity_curve', value: NEUTRAL_PARAMETERS.velocityCurve },
+        ]);
         expect(posted).not.toEqual(
             projectGrandBouleMorphState(liveMorph).map((parameter) => ({ type: 'param', ...parameter }))
         );
@@ -194,8 +202,13 @@ describe('prepareOfflineGrandBoule', () => {
         });
 
         const posted = postMessage.mock.calls.map(([message]) => message);
-        expect(posted).toEqual(
-            projectGrandBouleMorphState(morph).map((parameter) => ({ type: 'param', ...parameter }))
-        );
+        expect(posted).toEqual([
+            ...projectGrandBouleMorphState(morph).map((parameter) => ({ type: 'param', ...parameter })),
+            { type: 'temperament', index: 0 },
+            { type: 'param', name: 'hammer_hardness', value: NEUTRAL_PARAMETERS.hammerHardness },
+            { type: 'param', name: 'tone_tilt', value: NEUTRAL_PARAMETERS.toneTilt },
+            { type: 'param', name: 'stereo_width', value: NEUTRAL_PARAMETERS.stereoWidth },
+            { type: 'param', name: 'velocity_curve', value: NEUTRAL_PARAMETERS.velocityCurve },
+        ]);
     });
 });

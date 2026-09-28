@@ -1,4 +1,6 @@
-import { type Clip } from '../models/Track';
+import { canonicalJson } from '#/utils/canonicalDigest';
+
+import { type Clip, type DeviceStateChunk } from '../models/Track';
 
 /**
  * Every clip field the freeze render reads — what `scheduleTrackClips`
@@ -35,6 +37,9 @@ type TrackFreezeSource = {
         type: string;
         parameterValues: Readonly<Record<string, number>>;
         bypassed: boolean;
+        /** The device's own persisted state chunk; render state the offline
+         *  render hydrates the device from. */
+        deviceState?: DeviceStateChunk;
     }[];
 };
 
@@ -63,6 +68,24 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         clip.loopEnabled ?? false,
         clip.loopLength ?? 0,
     ].join(':');
+}
+
+/**
+ * A built-in device's state chunk is render state too: the offline render
+ * hydrates the device from it (`prepareOfflineGrandBoule` restores
+ * temperament and preset voicing from the chunk), so a chunk edit must mark
+ * a frozen track stale exactly like a parameter edit. Absent stays absent —
+ * a device that never wrote a chunk produces the signature it always did, so
+ * pre-chunk tracks do not churn stale on this change. Serialized through
+ * `canonicalJson` so the chunk's key order never leaks into the signature;
+ * the leading delimiter rides the slot so a present chunk can never collide
+ * with an absent one.
+ */
+function deviceStateSignature(deviceState: DeviceStateChunk | undefined): string {
+    if (deviceState === undefined) {
+        return '';
+    }
+    return `:${canonicalJson(deviceState)}`;
 }
 
 /**
@@ -95,7 +118,7 @@ export function createTrackFreezeSourceSignature(source: TrackFreezeSource): str
             .sort(([alpha], [buffer]) => alpha.localeCompare(buffer))
             .map(([name, value]) => `${name}=${value}`)
             .join(',');
-        return `${device.id}:${device.type}:${parameters}:${device.bypassed}`;
+        return `${device.id}:${device.type}:${parameters}:${device.bypassed}${deviceStateSignature(device.deviceState)}`;
     });
 
     return `${clipSignatures.join('|')}||${deviceSignatures.join('|')}`;
