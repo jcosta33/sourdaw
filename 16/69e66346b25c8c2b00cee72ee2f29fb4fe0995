@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparison.spec.ts
+  h_beb54bf43b47b7 176-178,180,413-416,420-424
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparisonLoudnessPath.spec.ts
+  h_beb54bf43b47b7 58-66,78,135,153-156,163-178
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  h_beb54bf43b47b7 64-65,82-130,137,249-254,261-263,288-289,291,365
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/sweepAbandonedRecordingTempFiles.spec.ts
+  h_beb54bf43b47b7 120-140
+src/modules/AudioEngine/repositories/audioRecorder/sweepAbandonedRecordingTempFiles.ts
+  h_beb54bf43b47b7 31-45,58
+src/modules/Metering/presentations/views/LUFSMeter.tsx
+  h_beb54bf43b47b7 26-28,76-113,128,130-133
+src/modules/Metering/presentations/views/__tests__/LUFSMeterWindow.spec.tsx
+  h_beb54bf43b47b7 1-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1669e66346b25c8c2b00cee72ee2f29fb4fe0995",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
