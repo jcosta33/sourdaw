@@ -1,0 +1,110 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ed5aa36a3ba357::t_9dbb940dde0041 441
+  s_ed5aa36a3ba357::t_8ca41a74b550d7 420-423,426-427,444
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  s_ed5aa36a3ba357::t_530e137b6dae46 1,79-117
+  s_ed5aa36a3ba357::t_dbde66773c89ed 118-123
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 193-200,293-302,305
+  s_ed5aa36a3ba357::t_ea884acdd5d43b 32-34,144-146,160,176,190-192,201-215,284-292,303-304,306-308
+  s_fe7d9519d0226e::t_957e69ef1cd973 309
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_e36bbbbaabc90e 62-67
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e36bbbbaabc90e 81-86
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 60
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ed5aa36a3ba357::t_d77111fd9ea1fe 787
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_ed5aa36a3ba357::t_79947a8034c3c9 111
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_5d73f680a17891 3-6
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_ed5aa36a3ba357::t_658c63032169f7 13,16-17,100,111,118,136-161
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 2-3
+  s_ed5aa36a3ba357::t_27c443673b4da3 4-8,10,13-15
+  s_ed5aa36a3ba357::t_6e908ae9921520 1,9,11-12
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 58,474,597
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_5b2531acd8fa0e 2320-2322
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 2303-2305,2360-2361,2364-2369
+  s_ed5aa36a3ba357::t_a646857b7e0503 2319,2357
+  s_ed5aa36a3ba357::t_02a4aa969e84c9 43,2294,2297,2300-2302,2306-2318,2323-2349,2355-2356,2358-2359,2362-2363,2370
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ed5aa36a3ba357::t_e68df3a74533cf 118-126,601
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ed5aa36a3ba357::t_61baf207331a94 44-45,75
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ed5aa36a3ba357::t_e3366094fb1959 18-19,467-497
+  s_ed5aa36a3ba357::t_fd30e510099b07 498
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 647-651,662-664,670-671,686-692,695-699,701-703,726-730,1205-1209,1228-1230,1232-1233
+  s_ed5aa36a3ba357::t_4d7f5109ca9d46 679-685,693-694,700,704-725,731-750
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 12
+  s_ed5aa36a3ba357::t_3d8b5af219592c 63,141,652-658,669,672,1203-1204,1210-1211,1217,1223,1231,1234
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  s_ed5aa36a3ba357::t_27c443673b4da3 8,44
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_ed5aa36a3ba357::t_0b0a8a46575067 1-3,5,9-24,26,34-35,37-45,50-78,86-87,89-127,145,160-163,179,181-184,197-198,205-218,234-241,243,247-254,259-263,276-279,312-315,368
+  s_ed5aa36a3ba357::t_332de57b67b301 25,88,166,292-293,297-299
+  s_ed5aa36a3ba357::t_b0ca2c224787fe 270
+  s_ed5aa36a3ba357::t_ae73308add8085 316-317,324-325,338-360,363-367
+  s_ed5aa36a3ba357::t_5b2e677ff2da9d 242,258
+  s_ed5aa36a3ba357::t_a0d707741caba9 27-32,167
+  s_ed5aa36a3ba357::t_7fea905826b360 146,148,164,201-202
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 6,8
+  s_ed5aa36a3ba357::t_bdc28cfca0f8a5 46-49
+  s_ed5aa36a3ba357::t_add363ed661e9f 147,149,155-159,165,203,256,265
+  s_ed5aa36a3ba357::t_063b3739b871c4 4,233,283-291,300-303
+  s_ed5aa36a3ba357::t_856a0e342d32ef 7,33,36,318-323
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 79-85,130-131,150-154,168-178,180,185-196,199-200,204,219-232,244-246,267-269,271-275,280-282,294-296,304-311,326-337,361-362
+  s_ed5aa36a3ba357::t_abfd1e07dfda7d 128-129,132-144,255,257,264,266
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ed5aa36a3ba357::t_a4feff6ede74fa 581,604,960
+  s_ed5aa36a3ba357::t_38ee260cff1c83 943-945,959,961-968,1200-1212
+src/modules/AudioEngine/useCases/engineAccess/waitForDevices.ts
+  s_ed5aa36a3ba357::t_6bf731a8c8ba56 3
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 35
+  s_ed5aa36a3ba357::t_27c443673b4da3 2338
+src/modules/AudioEngine/useCases/__tests__/engineAccess.spec.ts
+  s_ed5aa36a3ba357::t_e92c7a5c8514da 41,79,181
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ed5aa36a3ba357::t_944c4a427722bf 376
+  s_ed5aa36a3ba357::t_61baf207331a94 89-92,288-294,379-383,404
+  s_ed5aa36a3ba357::t_3e214a5757e211 295-298,366-367,405-408,414
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_ed5aa36a3ba357::t_61baf207331a94 8-9,11
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 503-504
+src/modules/AudioEngine/repositories/__tests__/deviceContentReadinessTimeout.integration.spec.ts
+  s_ed5aa36a3ba357::t_9e007e9a691a08 147-148
+  s_ed5aa36a3ba357::t_cbbf1ff1885c74 149-151,183-187,228-231,271-274,297-300,315-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b5e517d8f6fa25a64bc4708cd38780eaedf667b3",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
