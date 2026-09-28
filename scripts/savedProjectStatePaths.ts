@@ -130,12 +130,35 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  * - `projectstore`, `arrangementstore`, `productionbrief`, the `recentProjects/` use cases: the
  *   persisted CRDT slots (`projectStore`'s durable `projectMeta` keys, `arrangementStore`'s
  *   `arrangements` slot, the `productionBrief` durable key) and the recent-projects persistence.
+ * - the Project module's direct persisted-slot writers and saved-project creators whose names carry
+ *   none of the markers above: the `useCases/arrangement/` snapshot/edit use cases (which write
+ *   `arrangementStore` and clear undo history), the metadata and tuning writers (`setProjectKeyRoot`,
+ *   `setProjectScaleName`, `importSclFile`, `finishProjectLoading`, `reportProjectLoadFailure`,
+ *   `createFreshProjectMetadata`, `setTrackCanonicalRole`), the project-template handler
+ *   (`handleCreateProjectFromTemplate`), the persisted-store barrel
+ *   (`stores/index.ts`), and the composition-root handler-map registration
+ *   (`src/app/getProductionCommandHandlerMaps.ts`).
  *
  * Deliberately not matched, with no persisted-project or undo ownership documented in their own
  * `AGENTS.md`: `MIDI/` and `Arrangement/` beyond their migration files, `Command/` beyond its undo
- * files, the Project module's presentation views, semantic queries, templates and demo projects, and
- * the rest of `src/app/` (router, query client, error handlers, native device state) that does not
- * wire persisted state.
+ * files, the Project module's presentation views (`presentations/views/`), its semantic queries
+ * (`semanticProjectQueries`, `semanticProjectIndex`, `semanticRangeOverlap`,
+ * `getSemanticProjectIndexDiagnostics`, `parseSemanticProjectQueryInput`, the `SemanticProjectQuery`
+ * model), its creative-brief admission and read surfaces (`acceptCreativeIntent`,
+ * `collectProtectedScopes`, `getProjectScopedBriefLock`, `unlockProjectScopedBrief`,
+ * `isProjectWideScope`, `getDurableProjectOwnerId`, `getCanonicalTrackRole`,
+ * `getCanonicalTrackRoleOptions`, the `CanonicalTrackRole` model), its agent discovery and
+ * agent-facing query surfaces (`services/agentDiscovery/`, `useCases/agentDiscovery/`,
+ * `queryAgentDiscovery`, `parseAgentDiscoveryInput`, `agentCapabilityDiscoveryPort`,
+ * `agentAssetFileBoundary`, `getAgentProjectModelContract`, `getProjectProtocolContracts`,
+ * `createBoundedRevisionToken`, the `AgentDiscoveryQuery` and `AgentProjectModelContract` models),
+ * its templates and demo content (`useCases/projectTemplates/`, `useCases/demoProjects/`, and the
+ * `ProjectTemplateTypes` and `DemoProjectTypes` models), its session-scoped stores
+ * (`missingMediaStore`, `projectLoadFailureStore`), its read-only barrels and handler assembly
+ * (`events/index.ts`, `useCases/index.ts`, `getProjectHandlers`), its file dialog and runtime
+ * detection (`fileDialog`, `isNativeProjectRuntimeAvailable`), and the rest of `src/app/` (router,
+ * query client, error handlers, notification bus, native device state, browser display, agent
+ * production-readiness and protocol manifest, startup error surfaces) that wires no persisted state.
  */
 export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] = [
     { matcher: { kind: 'wordPrefix', value: 'undo' }, scopes: ['undo', 'persisted-state'] },
@@ -163,9 +186,50 @@ export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] =
         matcher: { kind: 'prefix', value: 'src/modules/project/usecases/recentprojects/' },
         scopes: ['persisted-state'],
     },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/project/usecases/arrangement/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/setprojectkeyroot.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/setprojectscalename.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/importsclfile.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/finishprojectloading.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/reportprojectloadfailure.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/createfreshprojectmetadata.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/settrackcanonicalrole.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/handlers/projecttemplate/handlecreateprojectfromtemplate.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/project/stores/index.ts' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'exact', value: 'src/app/main.tsx' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'exact', value: 'src/app/registerdependencies.ts' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'exact', value: 'src/app/resolveappcomposition.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/app/getproductioncommandhandlermaps.ts' }, scopes: ['persisted-state'] },
 ];
 
 function matchersFor(scope: SavedProjectStateScope): readonly SavedProjectStateMatcher[] {

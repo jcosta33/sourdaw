@@ -6155,6 +6155,74 @@ describe('saved-project-state applicability matrix', () => {
             ['src/app/registerDependencies.ts', true, 'composition root wiring'],
             ['src/app/resolveAppComposition.ts', true, 'composition root wiring'],
             ['src/app/main.tsx', true, 'composition root wiring'],
+            // Restored direct persisted-slot writers and saved-project creators (#4902 finding A).
+            [
+                'src/modules/Project/useCases/arrangement/createArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/duplicateArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/loadSnapshot.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/renameArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/switchArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/syncCurrentArrangementToStore.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            ['src/modules/Project/useCases/arrangement/takeSnapshot.ts', true, 'arrangement snapshot use case'],
+            ['src/modules/Project/useCases/arrangement/helpers.ts', true, 'arrangement persisted-shape helper'],
+            ['src/modules/Project/useCases/setProjectKeyRoot.ts', true, 'writes `projectStore` key root'],
+            ['src/modules/Project/useCases/setProjectScaleName.ts', true, 'writes `projectStore` scale name'],
+            ['src/modules/Project/useCases/importSclFile.ts', true, 'writes `projectStore` tuning'],
+            ['src/modules/Project/useCases/finishProjectLoading.ts', true, 'writes `projectStore` loading flag'],
+            [
+                'src/modules/Project/useCases/reportProjectLoadFailure.ts',
+                true,
+                'writes `projectStore` loading flag on failure',
+            ],
+            [
+                'src/modules/Project/useCases/createFreshProjectMetadata.ts',
+                true,
+                'creates the persisted project-metadata shape',
+            ],
+            [
+                'src/modules/Project/useCases/setTrackCanonicalRole.ts',
+                true,
+                'routes a canonical-role change into the persisted production brief',
+            ],
+            [
+                'src/modules/Project/handlers/projectTemplate/handleCreateProjectFromTemplate.ts',
+                true,
+                'creates a saved project from a template',
+            ],
+            ['src/modules/Project/stores/index.ts', true, 'persisted-store barrel'],
+            [
+                'src/app/getProductionCommandHandlerMaps.ts',
+                true,
+                'registers the project, undo and version-control handler maps',
+            ],
+            [
+                'src/modules/Project/useCases/repairprojectdata.ts',
+                true,
+                'all-lowercase project-data repair spelling, selected only by the `repairprojectdata` substring matcher',
+            ],
             // Excluded, recorded with the reason each surface is left out.
             [
                 'src/modules/Arrangement/presentations/views/TrackList.tsx',
