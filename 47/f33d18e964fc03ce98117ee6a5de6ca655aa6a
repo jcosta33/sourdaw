@@ -1,0 +1,16 @@
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparisonBlockFeeder.spec.ts
+  h_beb54bf43b47b7 1-265
+src/modules/Metering/presentations/views/__tests__/LUFSMeterBlockFeeder.spec.tsx
+  h_beb54bf43b47b7 1-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "47f33d18e964fc03ce98117ee6a5de6ca655aa6a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
