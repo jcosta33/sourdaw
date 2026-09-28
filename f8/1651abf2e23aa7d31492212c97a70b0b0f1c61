@@ -1,0 +1,23 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_7c2f25e76c03ea 24,34,435-440,471-477,2006-2012,2196-2200,2214-2217,2533-2538,2541,3094-3096,3098,3696-3699,3957-3977,4051-4082,5258-5263,5269-5271,9285-9315
+scripts/semanticReview/contracts.ts
+  s_ed5aa36a3ba357::t_a9855004ef0799 47-49
+scripts/semanticReview/rules.ts
+  s_ed5aa36a3ba357::t_5e077f5940476b 713-717,724-729,788-792
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f81651abf2e23aa7d31492212c97a70b0b0f1c61",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
