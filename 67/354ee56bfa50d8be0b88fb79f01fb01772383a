@@ -1,0 +1,25 @@
+Cargo.lock
+  s_fe7d9519d0226e::t_cbd4061bf9117c 125,127
+public/legal/DEPENDENCY-LICENSES.txt
+  s_fe7d9519d0226e::t_c9cfa370809e81 9-10,23,336,4113,18037,18040,18044-18046,18052,18068,18266-18298,20256
+release/dependency-license-proofs.json
+  s_fe7d9519d0226e::t_d68c5d7d5d7f2f 4,16,64,325,337,347,7874-7876,7881
+release/open-source-inventory.json
+  s_fe7d9519d0226e::t_14913ef27c51c6 168-169,279,402,1740,1752,1760
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "67354ee56bfa50d8be0b88fb79f01fb01772383a",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
