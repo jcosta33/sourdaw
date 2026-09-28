@@ -75,8 +75,25 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   each arm to be load-bearing by mutating that arm's condition away and confirming the assertion
   reddens — that mutation is how a dead arm is exposed, and until both arms are proven the
   disjunction can be silently narrowed to a single live arm.
+- A test whose expectation is computed with the code's own expression cannot observe a divergence
+  between that expression and its consumer's: it proves the expression is stable, never that it
+  agrees with the boundary that will refuse the value. Pin the figure at the consumer's boundary, and
+  state which source each literal came from.
+- For every assertion a change adds, mutate the input it reads and confirm it fails _alone_, with
+  its neighbours exactly as shipped. A pin placed after another assertion that already fixes the
+  same value observes nothing; a relation with slack cannot redden the constant it was written for;
+  a parse that reads the first match in a file bounds whichever entry comes first rather than the one
+  it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-09-28 — specs that measured a budget with the budget's own expression could not fail (escaped via PR #4491; merge `9effe3689c`)
+
+The semantic review's planner and its provider each measured one request budget differently — the planner reserved a hand-rolled wrapper, the provider measured `{state, questions}` — and the specs asserted the planner's figure with the planner's arithmetic, so the nine-byte divergence that left 37 of 42 scanned units unassessed in CI — the oversized unit under its own `budget_exhausted` refusal and 36 more under `budget-exhausted-before-admission` — was invisible to a green suite. The class of pin that cannot fail reappears whenever a repair adds pins, and each shape is checkable in the spec at head rather than in the history: an assertion reachable only after a neighbouring pin has already fixed the same value, a relation with enough slack that the constant it was written for cannot redden it, a parse that reads the first match in a file rather than the entry it names, and a ratio computed from a value its neighbour pinned.
+
+Blind spot: a suite that measures the system with the system's own arithmetic is self-consistent by construction, so it can never fail on the disagreement that matters; and a pin written beside an exact pin feels like coverage while observing nothing. The first real signal came from running the command end to end and reading its own report, not from any test.
+
+Probe that would have caught it: for each budget, take the consumer's expression as the oracle and assert the producer's admitted unit against it (`JSON.stringify` byte length against the profile's ceiling). For each pin, mutate the input it reads with its neighbours untouched and require it to fail alone; when a mutation leaves the suite green, the pin is the finding.
 
 ### 2026-09-26 — a startup bridge crossing left the desktop-runtime call list stale (escaped via PR #4568)
 
