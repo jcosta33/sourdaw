@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_ed5aa36a3ba357::t_42bbfd85bca27f 22-25,35,85,97-98,101,108,119,168-171,182-190,195
+  s_ed5aa36a3ba357::t_1e67d7050010cc 37,55
+  s_ed5aa36a3ba357::t_dce4594d068150 5,181
+  s_ed5aa36a3ba357::t_16fef5c1e5e1fa 29,88,90-93,99-100,113-115,174-180
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_ed5aa36a3ba357::t_563f886aa42531 226-229
+  s_ed5aa36a3ba357::t_afd54597bee8ef 214-215,222,225,234-238,241-242,248
+  s_ed5aa36a3ba357::t_30af403356485c 216-221,223-224,230-233,239-240,243-247
+  s_ed5aa36a3ba357::t_c9d397c60b70bb 249-250
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_2c7be73310d205 3894-3908,3923,3931,3950-3956,4106,5491,5538
+  s_ed5aa36a3ba357::t_0eeae63acaf528 4793,4798
+  s_ed5aa36a3ba357::t_0fa31bde76bd06 4576-4606,5539-5547
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_ed5aa36a3ba357::t_6a3154ae9a005e 407
+  s_ed5aa36a3ba357::t_5e49566e832af2 417-451,501,503,507-510,522,526,528,544,549-551,566,570-572,579-582,588-589
+  s_ed5aa36a3ba357::t_387814125b2da1 452-457,459-498,554,585
+  s_ed5aa36a3ba357::t_d0bb1755f1e22e 364-369,371-373,406,408-414
+  s_ed5aa36a3ba357::t_ce99eacc0d19b8 322-363,374-393,397-405,415-416,523-524,530-531,542-543,548,559,561,564-565,590-595
+  s_ed5aa36a3ba357::t_e444a96b91ac13 394-396
+  s_ed5aa36a3ba357::t_853db991d354b6 370,458
+  s_ed5aa36a3ba357::t_75d52e0ddce1b1 499-500,502,504-506,511-521,525,527,529,532-541,545-547,552-553,555-558,560,562-563,567-569,573-578,583-584,586-587,596-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "55e56c7c4c434551ff804cceb582884a1e877474",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
