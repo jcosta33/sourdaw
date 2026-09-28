@@ -65,6 +65,8 @@ function positiveModulo(value: number, divisor: number): number {
  * before it is due and nothing past loopEnd is ever scheduled while looping.
  */
 type LoopSeamEmission = {
+    /** The audio-clock instant both passes pivot on. */
+    seamAudioTime: number;
     /** The dying pass's position at `now`; emits its remaining window. */
     passPosition: number;
     /** The dying pass's scheduling high-water mark; its window opens there. */
@@ -263,7 +265,7 @@ export function startPlayheadScheduler(): void {
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
     schedulerSession.lastLoopSignature = loopSignatureOf(state);
-    schedulerSession.pendingSeamAudioTime = null;
+    schedulerSession.pendingSeam = null;
     resetMetronomeBeat(state.playheadPosition);
 
     const grainMs = state.scheduleGrainMs;
@@ -433,7 +435,7 @@ export function startPlayheadScheduler(): void {
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
-            schedulerSession.pendingSeamAudioTime = null;
+            schedulerSession.pendingSeam = null;
         } else if (insideLoopRegion && horizonUpTo >= current.loopEnd) {
             // #4656 — scheduled seam: the look-ahead horizon reaches the seam
             // while the playhead is still short of it. Wrap the scheduling
@@ -474,23 +476,19 @@ export function startPlayheadScheduler(): void {
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
             tickStartPosition = current.loopStart;
-            // The incoming pass's click window opens at its own start. The
-            // dying pass's window below may still fire the click on loopEnd —
-            // the same physical instant as the incoming loopStart click — and
-            // the `firedClickTimes` dedup merges the pair.
-            resetMetronomeBeat(current.loopStart);
-            // Nothing scheduled may be stopped: the dying pass's remaining
-            // window below is material still to play, and nothing past the
-            // seam was ever emitted (the horizon is clipped here from now on).
-            // Only the frozen-track sources — single buffers spanning the
-            // whole arrangement — must not sound past the seam, and they get
-            // a stop at the seam instant, not one grain late.
-            stopActiveSources(schedulerSession.activeAudioSources, ctx, seamAudioTime);
-            schedulerSession.scheduledAudioClips.clear();
-            schedulerSession.scheduledFrozenTracks.clear();
-
-            schedulerSession.pendingSeamAudioTime = seamAudioTime;
+            // The handover between the two windows happens between their
+            // emissions below — the dying pass's events belong to the pass
+            // that is ending and must be emitted against its own position and
+            // its own dedup keys first. Only then are the sources fenced at
+            // the seam instant, the dedup keys cleared for the incoming pass,
+            // and the metronome re-anchored at loopStart.
+            schedulerSession.pendingSeam = {
+                seamAudioTime,
+                anchorAudioTime: now,
+                anchorPosition: newPosition,
+            };
             seam = {
+                seamAudioTime,
                 passPosition: newPosition,
                 passHighWater: schedulerSession.lastScheduledBeat,
                 passUpTo: current.loopEnd,
@@ -519,7 +517,7 @@ export function startPlayheadScheduler(): void {
         if (jumpToPosition !== null) {
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
-            schedulerSession.pendingSeamAudioTime = null;
+            schedulerSession.pendingSeam = null;
             newPosition = jumpToPosition;
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
@@ -551,21 +549,31 @@ export function startPlayheadScheduler(): void {
         // integration: on the seam tick itself the dying pass is still what
         // sounds, and until the seam instant arrives the incoming pass's
         // position is negative-phase — before loopStart — which no reader may
-        // see. The published clock holds at loopStart for that window (at most
-        // one look-ahead) and resumes the map-exact position at the seam.
-        // Scheduling decisions — punch, follow actions, the windows themselves
-        // — stay on `newPosition` above: they are about material *this*
-        // scheduler emitted, against its own clock (ADR 0039).
-        if (schedulerSession.pendingSeamAudioTime !== null && now >= schedulerSession.pendingSeamAudioTime) {
-            schedulerSession.pendingSeamAudioTime = null;
+        // see. The published clock follows the dying pass through that window,
+        // integrated from where the seam tick saw it and clamped at loopEnd —
+        // always a valid positive-phase position — and resumes the map-exact
+        // position at the seam. Scheduling decisions — punch, follow actions,
+        // the windows themselves — stay on `newPosition` above: they are about
+        // material *this* scheduler emitted, against its own clock (ADR 0039).
+        if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
+            schedulerSession.pendingSeam = null;
         }
         let publishedBeat = newPosition;
         if (seam) {
             publishedBeat = seam.passPosition;
-        } else if (schedulerSession.pendingSeamAudioTime !== null) {
+        } else if (schedulerSession.pendingSeam !== null) {
             // Still-future seam: the incoming pass's integration is negative
-            // phase until the seam instant arrives.
-            publishedBeat = current.loopStart;
+            // phase until the seam instant arrives, so publish the dying
+            // pass's continued position instead.
+            publishedBeat = Math.min(
+                current.loopEnd,
+                beatAtSecondsFromAnchor(
+                    changes,
+                    schedulerSession.pendingSeam.anchorPosition,
+                    now - schedulerSession.pendingSeam.anchorAudioTime,
+                    current.tempo
+                )
+            );
         }
         playheadClockRef.beat = publishedBeat;
         playheadClockRef.audioTimeSeconds = now;
@@ -764,6 +772,32 @@ export function startPlayheadScheduler(): void {
             // incoming pass's own position at `now`, so its first beat lands
             // exactly at the seam instant — ahead of the audio clock on every
             // non-stalled pass, and sample-accurate through the tempo map.
+            // Before it runs, the handover between the two windows:
+            //
+            // The fence and the dedup clears sit here, not in the detection
+            // branch, because the dying window's emission above is material
+            // still to play — its events land at or before the seam instant —
+            // and it must run against the dying pass's OWN dedup keys. Only
+            // the incoming window may repopulate those keys: cleared one tick
+            // early, the dying window's calls re-schedule the frozen tracks
+            // and the clips spanning the seam at the dying position — an
+            // immediate mid-buffer duplicate layered over its own fenced
+            // source, whose key then blocks the incoming pass from ever
+            // re-anchoring them. Sources sounding across the seam are cut at
+            // the seam instant itself, not one grain late.
+            stopActiveSources(schedulerSession.activeAudioSources, ctx, seam.seamAudioTime);
+            schedulerSession.scheduledAudioClips.clear();
+            schedulerSession.scheduledFrozenTracks.clear();
+            // The dying window's emission walked the metronome's beat up to
+            // loopEnd, and `scheduleMetronome` gates on `lastBeat` before its
+            // time-keyed dedup — left standing, that gate would swallow every
+            // incoming-pass click, because the loopEnd beat outranks every
+            // beat the new pass offers. Re-open the window at loopStart; the
+            // `firedClickTimes` dedup (deliberately kept alive by
+            // `resetMetronomeBeat`) then merges the seam pair — the dying
+            // loopEnd click and the incoming loopStart click are the same
+            // physical instant.
+            resetMetronomeBeat(current.loopStart);
             scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current);
             await scheduleMidiNotes(
                 current.loopStart,
@@ -826,7 +860,7 @@ export function startPlayheadScheduler(): void {
         // composed (VCA multiplier folded in); applyVcaGains then drives only the
         // VCA-member tracks it did NOT write, so the two never race the fader.
         // These appliers drive what is audible, so they follow the published
-        // clock — the dying pass on a seam tick, loopStart while the seam is
+        // clock — the dying pass on a seam tick and while the seam is still
         // pending — not the scheduler's negative-phase integration.
         const gainAutomatedTrackIds = applyAutomation(publishedBeat);
         applyVcaGains(gainAutomatedTrackIds);

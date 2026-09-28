@@ -206,4 +206,51 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         const mediaOriginBeat = clipUpdate.startBeat - (clipUpdate.audioOffsetBeats ?? 0);
         expect(mediaOriginBeat).toBeCloseTo(-0.08, 9);
     });
+
+    it('refuses a take shorter than its latency offset instead of committing an inverted clip', async () => {
+        const recordingClip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 0,
+            endBeat: 0,
+        };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.01;
+        audioClock.outputLatency = 0.03;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+        mocks.getCompensationDelay.mockReturnValueOnce(0.24);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        // The review's break: 0.1 s of capture against 0.28 s of offset
+        // (10 ms base + 30 ms output + 240 ms compensation). The whole take
+        // predates beat 0, so the computed end beat (-0.36) lands before the
+        // clamped start beat (0). The take must be refused — no clip commit,
+        // no cached buffer, the provisional clip (and with it the staged take
+        // and its lane) discarded, and the user told — never an inverted
+        // `endBeat < startBeat` clip committed.
+        captured({ kind: 'completed', buffer: { duration: 0.1 } });
+        await Promise.resolve();
+
+        expect(mocks.commitRecording).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.discardRecording).toHaveBeenCalledWith('clip-recording');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording discarded'), 'warning');
+    });
 });

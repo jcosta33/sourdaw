@@ -78,9 +78,6 @@ async function beginActualRecording(
                 const { buffer } = result;
                 const recClip = clips.find((context) => context.trackId === track.id);
                 if (recClip) {
-                    const bufferId = `rec-${crypto.randomUUID()}`;
-                    cacheAudioBuffer({ buffer, bufferId });
-
                     const transport = getTransportState();
                     const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
                     const tempoChanges = tempoMapStore.value?.changes ?? [];
@@ -111,6 +108,28 @@ async function beginActualRecording(
                     const startBeat = Math.max(0, originBeat);
                     const audioOffsetBeats = startBeat - originBeat;
                     const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
+                    // A capture shorter than the offset that precedes it ends
+                    // before the timeline begins: `startBeat` clamps to 0 and
+                    // nothing audible remains. Committing it would write an
+                    // inverted clip (`endBeat < startBeat`) — the shape every
+                    // clip writer refuses and playback skips — with a take-lane
+                    // entry claiming audio that does not exist. Refuse the take
+                    // the way a capture that never completes is refused, matching
+                    // the scheduler's own `playDuration <= 0` do-not-start rule:
+                    // the provisional clip — and with it the staged take and the
+                    // lane it would leave empty — is discarded before anything
+                    // is cached or committed.
+                    if (exactEndBeat <= startBeat) {
+                        notifyUser(
+                            'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
+                            'warning'
+                        );
+                        discardRecording(recClip.id);
+                        return;
+                    }
+
+                    const bufferId = `rec-${crypto.randomUUID()}`;
+                    cacheAudioBuffer({ buffer, bufferId });
 
                     const recordedClip = {
                         ...recClip,

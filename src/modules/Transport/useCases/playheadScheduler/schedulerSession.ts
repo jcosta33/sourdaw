@@ -68,9 +68,16 @@ export const schedulerSession = {
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
     lastTempoMapChanges: null as unknown[] | null,
     lastLoopSignature: '',
-    // Audio instant of the loop seam the scheduler has scheduled but the playhead
-    // has not reached yet (#4656). While set and still ahead of the clock, the
-    // published position holds at loopStart instead of showing the incoming
-    // pass's negative-phase integration (see startPlayheadScheduler).
-    pendingSeamAudioTime: null as number | null,
+    // The loop seam the scheduler has scheduled but the playhead has not
+    // reached yet (#4656): the audio instant both passes pivot on, plus where
+    // the dying pass — the one still audible — stood when the seam tick ran.
+    // While set and `seamAudioTime` is still ahead of the clock, the published
+    // position integrates the dying pass forward from that anchor instead of
+    // showing the incoming pass's negative-phase integration (see
+    // startPlayheadScheduler).
+    pendingSeam: null as {
+        seamAudioTime: number;
+        anchorAudioTime: number;
+        anchorPosition: number;
+    } | null,
 };
