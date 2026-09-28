@@ -7,7 +7,7 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e
-- pnpm-lock.yaml sha256:e817b4ae86c278dbd28719756e844e6bf8c96135c8913bcddd81372f692a65bc
+- pnpm-lock.yaml sha256:0ecb1f7d17e6e2d4374b62d12289ba9ab95a7ead7cbe69700ac82da8f9bccaac
 - server/package-lock.json sha256:9e491a9c1d3f49b0555fc2ea8bc3b7ae3854d734a6e3c4a6a645a93ed73a7a00
 
 Package inventory: 353 npm, 321 Cargo
@@ -413,13 +413,13 @@ npm:@radix-ui/rect@1.1.3 | MIT | sha256:0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f
 npm:@rollup/plugin-node-resolve@15.3.1 | MIT | sha256:7b8136f76c483d03597500bfa991aae9be68d4629e1121cbf9b93aa727efe305 | pnpm-lock.yaml
 npm:@rollup/pluginutils@5.4.0 | MIT | sha256:7b8136f76c483d03597500bfa991aae9be68d4629e1121cbf9b93aa727efe305 | pnpm-lock.yaml
 npm:@spotify/basic-pitch@1.0.1 | Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | pnpm-lock.yaml
-npm:@tanstack/history@1.162.1 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/query-core@5.102.8 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/react-query@5.102.8 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/react-router@1.170.31 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/react-store@0.9.3 | MIT | sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 | pnpm-lock.yaml
-npm:@tanstack/router-core@1.171.26 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/store@0.9.3 | MIT | sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 | pnpm-lock.yaml
+npm:@tanstack/history@1.162.4 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/query-core@5.104.0 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/react-query@5.104.0 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/react-router@1.170.40 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/react-store@0.11.1 | MIT | sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 | pnpm-lock.yaml
+npm:@tanstack/router-core@1.171.33 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/store@0.11.1 | MIT | sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 | pnpm-lock.yaml
 npm:@tensorflow/tfjs@3.21.0 | Apache-2.0 | sha256:6230ee160be267547be8d722fcd5341e94ac7fb211377ecb2d54115ce6a1241c | pnpm-lock.yaml
 npm:@tensorflow/tfjs-backend-cpu@3.21.0 | Apache-2.0 | sha256:18f1ac428c27a3cf74dec5c0e01b720c1923859a4042afe79a9cc7b7b2b3c6c5 | pnpm-lock.yaml
 npm:@tensorflow/tfjs-backend-cpu@4.22.0 | Apache-2.0 | sha256:b5ff033fd46d76efe793a70f27db999bbae54a45ded0a6234fd91e4b752356de | pnpm-lock.yaml
@@ -445,8 +445,8 @@ npm:@types/node@26.4.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748
 npm:@types/node-fetch@2.6.13 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.3.0 | MIT | sha256:dea9265341829002e2c23a7372393eb2ed6e26085fb623f38a4ba0af833f30a6 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.7.3 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
-npm:@types/react@19.2.18 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
-npm:@types/react-dom@19.2.4 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
+npm:@types/react@19.3.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
+npm:@types/react-dom@19.3.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/resolve@1.20.2 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/seedrandom@2.4.34 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/unist@2.0.11 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
@@ -619,8 +619,8 @@ npm:property-information@7.2.0 | MIT | sha256:5d0698266086f217bb11ea0499d33453e4
 npm:protobufjs@7.6.6 | BSD-3-Clause | sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c,sha256:4ab87e6e3c0c0b78e47c77d49ec10c048f8a519fb8062e6e3217e3e6e9b0c6e9 | pnpm-lock.yaml
 npm:qrcode@1.5.4 | MIT | sha256:8df47c6ad9ac2c41eb9b2a72def9908959da0ede8dadd56c7b249c1bdb0c5ce6 | pnpm-lock.yaml
 npm:radix-ui@1.6.7 | MIT | sha256:0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138 | pnpm-lock.yaml
-npm:react@19.2.8 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
-npm:react-dom@19.2.8 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
+npm:react@19.3.0 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
+npm:react-dom@19.3.0 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
 npm:react-markdown@10.1.0 | MIT | sha256:f6196c64e144f9a6fa9154c3a80bc8b89615a9567934b83a8951879f06ba2aef | pnpm-lock.yaml
 npm:react-remove-scroll@2.7.2 | MIT | sha256:30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9 | pnpm-lock.yaml
 npm:react-remove-scroll-bar@2.3.8 | MIT | sha256:9ec821012cde87b7447430e242044069db6e51ece7e3fc7ec1a00c97403c875f | pnpm-lock.yaml
@@ -636,10 +636,10 @@ npm:require-main-filename@2.0.0 | ISC | sha256:365496ca1f56da40b23c9815fc40fa900
 npm:resolve@1.22.12 | MIT | sha256:60acd7711e6c138e6041836e32d922705254cc1568a30fdf16aa8f59bb87aeaa | pnpm-lock.yaml
 npm:rollup@4.60.1 | MIT | sha256:fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8 | pnpm-lock.yaml
 npm:safe-buffer@5.2.1 | MIT | sha256:c7cc929b57080f4b9d0c6cf57669f0463fc5b39906344dfc8d3bc43426b30eac | pnpm-lock.yaml
-npm:scheduler@0.27.0 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
+npm:scheduler@0.28.0 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
 npm:seedrandom@3.0.5 | MIT | sha256:4f42a296eee4f5ae3a8dadba94c2b0b5fb57662b96b8749f4d5288d4629b6240 | pnpm-lock.yaml
-npm:seroval@1.6.2 | MIT | sha256:2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4 | pnpm-lock.yaml
-npm:seroval-plugins@1.6.2 | MIT | sha256:2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4 | pnpm-lock.yaml
+npm:seroval@1.6.7 | MIT | sha256:2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4 | pnpm-lock.yaml
+npm:seroval-plugins@1.6.7 | MIT | sha256:2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4 | pnpm-lock.yaml
 npm:set-blocking@2.0.0 | ISC | sha256:365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d | pnpm-lock.yaml
 npm:space-separated-tokens@2.0.2 | MIT | sha256:ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d | pnpm-lock.yaml
 npm:sprintf-js@1.0.3 | BSD-3-Clause | sha256:a4cdda44b5adea4731d53dcae78fb5124f8fd853e994f01e25d8c33a7daf818b | pnpm-lock.yaml
@@ -5205,8 +5205,8 @@ SOFTWARE.
 ===== sha256:2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4 =====
 Evidence labels: LICENSE
 Packages:
-- npm:seroval-plugins@1.6.2
-- npm:seroval@1.6.2
+- npm:seroval-plugins@1.6.7
+- npm:seroval@1.6.7
 
 MIT License Copyright (c) 2025 Alexis Munsayac <alexis.munsayac@gmail.com>
 
@@ -20108,11 +20108,11 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 =====
 Evidence labels: LICENSE
 Packages:
-- npm:@tanstack/history@1.162.1
-- npm:@tanstack/query-core@5.102.8
-- npm:@tanstack/react-query@5.102.8
-- npm:@tanstack/react-router@1.170.31
-- npm:@tanstack/router-core@1.171.26
+- npm:@tanstack/history@1.162.4
+- npm:@tanstack/query-core@5.104.0
+- npm:@tanstack/react-query@5.104.0
+- npm:@tanstack/react-router@1.170.40
+- npm:@tanstack/router-core@1.171.33
 
 MIT License
 
@@ -23807,8 +23807,8 @@ Packages:
 - npm:@types/node-fetch@2.6.13
 - npm:@types/node@26.4.0
 - npm:@types/offscreencanvas@2019.7.3
-- npm:@types/react-dom@19.2.4
-- npm:@types/react@19.2.18
+- npm:@types/react-dom@19.3.0
+- npm:@types/react@19.3.0
 - npm:@types/resolve@1.20.2
 - npm:@types/seedrandom@2.4.34
 - npm:@types/unist@2.0.11
@@ -25556,8 +25556,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 =====
 Evidence labels: LICENSE
 Packages:
-- npm:@tanstack/react-store@0.9.3
-- npm:@tanstack/store@0.9.3
+- npm:@tanstack/react-store@0.11.1
+- npm:@tanstack/store@0.11.1
 
 MIT License
 
@@ -28124,9 +28124,9 @@ SOFTWARE.
 ===== sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 =====
 Evidence labels: LICENSE
 Packages:
-- npm:react-dom@19.2.8
-- npm:react@19.2.8
-- npm:scheduler@0.27.0
+- npm:react-dom@19.3.0
+- npm:react@19.3.0
+- npm:scheduler@0.28.0
 - npm:use-sync-external-store@1.6.0
 
 MIT License
