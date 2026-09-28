@@ -423,9 +423,9 @@ function withheldCauseCode(cause: WithheldRegionCause): string {
     if (cause === 'request') {
         // The region fits the per-region ceiling; the request that would carry it — the state plus the
         // questions, whose text depends on which regions are supplied — does not fit the per-request
-        // state ceiling. Naming the per-region code here would tell the reader a region was over a
-        // budget it is under.
-        return 'region-exceeds-per-request-budget';
+        // state ceiling. Naming the per-region code here would describe a budget no admitted region can
+        // exceed.
+        return 'request-exceeds-state-budget';
     }
     if (cause === 'total') {
         return 'total-evidence-budget-exhausted';

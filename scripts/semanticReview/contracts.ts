@@ -48,6 +48,12 @@ export const SEMANTIC_FAILURE_CODES = [
      * `budget_exhausted` — the run's attempt and total-byte budgets — does.
      */
     'request_too_large',
+    /**
+     * The overall assessment deadline elapsed before the next attempt. A property of the run rather than
+     * of the unit: the units still queued were never attempted, so admission stops and they are recorded
+     * with the deadline's own reason instead of each reading as a request that timed out.
+     */
+    'deadline_elapsed',
     'stale_context',
     'unsupported_scope',
     'sensitive_content_excluded',

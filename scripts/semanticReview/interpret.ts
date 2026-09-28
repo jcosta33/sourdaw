@@ -343,12 +343,17 @@ export function interpretFinding(input: {
 /**
  * The failure code a refused assessment carries, for the report's execution state.
  *
- * A per-request size refusal is one unit's outcome, exactly as a spent run budget is: both leave the
- * run with completed assessments and a recorded failure, which is what the report's own
- * `executionState` calls partial. Only a failure that stops the run outright is unavailable.
+ * A per-request size refusal is one unit's outcome, exactly as a spent run budget or an elapsed deadline
+ * is: each leaves the run with completed assessments and a recorded failure, which is what the report's
+ * own `executionState` calls partial. Only a failure that stops the run outright is unavailable.
  */
 export function executionStateFor(failure: SemanticFailureCode): 'partial' | 'unavailable' {
-    if (failure === 'budget_exhausted' || failure === 'request_too_large' || failure === 'context_collection_failed') {
+    if (
+        failure === 'budget_exhausted' ||
+        failure === 'deadline_elapsed' ||
+        failure === 'request_too_large' ||
+        failure === 'context_collection_failed'
+    ) {
         return 'partial';
     }
     return 'unavailable';

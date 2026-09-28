@@ -570,7 +570,9 @@ async function attemptWithRetries(input: {
         }
         const remaining = input.deadline - input.now();
         if (remaining <= 0) {
-            refuse('timeout', 'the overall assessment deadline elapsed before the next attempt');
+            // The run's own deadline, not this request's: the caller stops admitting and names the tail
+            // under the deadline, where `timeout` stays what an attempt that overran its own budget is.
+            refuse('deadline_elapsed', 'the overall assessment deadline elapsed before the next attempt');
         }
         const reservation = input.budget.reserve(input.bytes);
         if ('refused' in reservation) {

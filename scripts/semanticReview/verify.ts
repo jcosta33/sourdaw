@@ -210,15 +210,19 @@ function findingRequestBytes(
 }
 
 /**
- * Fits one finding's collected regions inside the per-request state ceiling, dropping from the tail
- * until the request that would carry them fits and recording every drop.
+ * Fits one finding's collected regions inside the per-request state ceiling, keeping every region whose
+ * addition fits and skipping only the ones that do not, recording every skip.
  *
  * The per-region gate bounds one region, not the request: a region the region ceiling admits, plus the
  * questions, can still exceed the state ceiling — and the id list the strongest-evidence question
  * carries grows with the regions supplied, so the gap widens with a longer claim or expected behavior.
  * The provider then refuses the whole finding, which loses it and discloses nothing. The questions
- * depend on which regions are supplied, so this measures the real payload once the collected set is
- * known rather than estimating a per-region share of it.
+ * depend on which regions are supplied, so each candidate is measured against the real payload rather
+ * than a per-region share of it.
+ *
+ * The policy is the scan fitter's: a region that cannot fit is skipped, never a reason to stop. Popping
+ * from the tail instead dropped a fitting region whenever an unfittable one sorted before it, so a
+ * finding whose first region was too large lost the rest of its evidence too.
  */
 function fitFindingEvidence(input: {
     readonly finding: CandidateFinding;
@@ -230,30 +234,31 @@ function fitFindingEvidence(input: {
     truncated: SemanticScopeExclusion[];
     limitations: string[];
 } {
-    const references = [...input.set.references];
-    const contents = new Map(input.set.contents);
+    const references: EvidenceReference[] = [];
+    const contents = new Map<string, string>();
     const truncated: SemanticScopeExclusion[] = [];
     const limitations: string[] = [];
-    while (
-        references.length > 0 &&
-        findingRequestBytes(input.finding, { references, contents }) > input.maxStatePlusQuestionBytes
-    ) {
-        const dropped = references.pop();
-        if (dropped === undefined) {
-            break;
+    for (const reference of input.set.references) {
+        const text = input.set.contents.get(reference.evidenceId) ?? '';
+        references.push(reference);
+        contents.set(reference.evidenceId, text);
+        if (findingRequestBytes(input.finding, { references, contents }) <= input.maxStatePlusQuestionBytes) {
+            continue;
         }
-        const text = input.set.contents.get(dropped.evidenceId) ?? '';
-        contents.delete(dropped.evidenceId);
+        // This candidate is what the request cannot carry; the ones already kept stay kept, so a later
+        // smaller region still gets its turn.
+        references.pop();
+        contents.delete(reference.evidenceId);
         truncated.push({
-            path: dropped.path,
+            path: reference.path,
             reason: withheldRegionReason(
-                withheldRegionCarriesContract(dropped.side, isContractCarryingContent(dropped.path, text)),
-                dropped.side,
+                withheldRegionCarriesContract(reference.side, isContractCarryingContent(reference.path, text)),
+                reference.side,
                 'request'
             ),
         });
         limitations.push(
-            `finding evidence ${dropped.path} (${dropped.side}) was not supplied: the request carrying it exceeds the per-request state budget`
+            `finding evidence ${reference.path} (${reference.side}) was not supplied: the request carrying it exceeds the per-request state budget`
         );
     }
     return { references, contents, truncated, limitations };

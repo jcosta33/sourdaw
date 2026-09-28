@@ -499,9 +499,19 @@ async function assessOneUnit(input: {
 }
 
 /**
- * Assesses every planned unit under one shared budget. A budget exhaustion stops admitting new
- * requests, preserves what completed, and records each unassessed unit with its reason; completed
- * assessments are never discarded to make the report look uniform.
+ * The reason recorded for every unit a stopped run never admitted, keyed by the failure that stopped
+ * admission. A per-request refusal is absent on purpose: it is a property of that unit's request, so
+ * the units after it keep their bytes and attempts and must stay assessable.
+ */
+const STOPPED_ADMISSION_REASONS: Readonly<Record<string, string>> = {
+    budget_exhausted: 'budget-exhausted-before-admission',
+    deadline_elapsed: 'deadline-elapsed-before-admission',
+};
+
+/**
+ * Assesses every planned unit under one shared budget. A budget exhaustion or an elapsed deadline stops
+ * admitting new requests, preserves what completed, and records each unassessed unit with its reason;
+ * completed assessments are never discarded to make the report look uniform.
  */
 async function assessPlannedUnits(input: {
     readonly ports: SemanticPorts;
@@ -526,10 +536,10 @@ async function assessPlannedUnits(input: {
         }
         return accumulation;
     }
-    let admissionStopped = false;
+    let stoppedReason: string | undefined;
     for (const unit of input.units) {
-        if (admissionStopped) {
-            accumulation.unassessed.push({ path: unit.path, reason: 'budget-exhausted-before-admission' });
+        if (stoppedReason !== undefined) {
+            accumulation.unassessed.push({ path: unit.path, reason: stoppedReason });
             continue;
         }
         try {
@@ -552,10 +562,7 @@ async function assessPlannedUnits(input: {
             const failure = asFailure(error);
             accumulation.failureCode = failure.code;
             accumulation.unassessed.push({ path: unit.path, reason: failure.code });
-            // Only the run's own budgets stop admission. A per-request size refusal
-            // (`request_too_large`) is a property of that unit's request, so the remaining units keep
-            // their bytes and attempts and must stay assessable.
-            admissionStopped = failure.code === 'budget_exhausted';
+            stoppedReason = STOPPED_ADMISSION_REASONS[failure.code];
             input.ports.log(`semantic scan: unit ${unit.path} was not assessed (${failure.code}): ${failure.message}`);
         }
     }

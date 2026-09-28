@@ -1070,6 +1070,41 @@ describe('semantic review context', () => {
         expect(result.scope.unassessed).toEqual([{ path: 'src/modules/Project/big.ts', reason: 'request_too_large' }]);
     });
 
+    it('keeps the deadline admission reason as a known scope reason', () => {
+        // The units a run never attempted after its deadline are recorded with the deadline's own reason;
+        // an unregistered one would project to `unrecognized-reason` and read as an unknown cause rather
+        // than as a run that ran out of time.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 1,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [
+                                { path: 'src/a.ts', reason: 'deadline_elapsed' },
+                                { path: 'src/b.ts', reason: 'deadline-elapsed-before-admission' },
+                            ],
+                            truncated: [],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.unassessed).toEqual([
+            { path: 'src/a.ts', reason: 'deadline_elapsed' },
+            { path: 'src/b.ts', reason: 'deadline-elapsed-before-admission' },
+        ]);
+    });
+
     it('keeps the per-request withheld-region reason the verify collector emits', () => {
         // A region that fits the per-region ceiling but not the request that would carry it is withheld
         // with the shared reason shape and this cause. An unregistered cause would project to
@@ -1091,7 +1126,7 @@ describe('semantic review context', () => {
                             truncated: [
                                 {
                                     path: 'src/modules/Project/zzz.ts',
-                                    reason: 'region-exceeds-per-request-budget (after)',
+                                    reason: 'request-exceeds-state-budget (after)',
                                 },
                             ],
                         },
@@ -1102,7 +1137,7 @@ describe('semantic review context', () => {
 
         const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
         expect(result.scope.truncated).toEqual([
-            { path: 'src/modules/Project/zzz.ts', reason: 'region-exceeds-per-request-budget (after)' },
+            { path: 'src/modules/Project/zzz.ts', reason: 'request-exceeds-state-budget (after)' },
         ]);
     });
 

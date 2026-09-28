@@ -700,25 +700,28 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        // The attempt count is only a backstop against a runaway retry loop, sized above what the
-        // deadline itself can carry: the run that motivated these numbers spent 42 attempts in 26 s,
-        // about 0.62 s each, so 1024 attempts would need roughly 635 s — past the 600 s deadline, which
-        // therefore ends a run first. The guards that actually bind are the deadline and, for a plan far
-        // larger than its share of the byte budget, the 16 MiB total; a cap below the deadline's own
-        // capacity stops a plan that still has both.
-        maxAttempts: 1024,
+        // The deadline is the guard that ends a real run. The ci profile's retained scan reports measure
+        // 0.217-0.291 s per attempt at about 21.5 KB per request, and PR #4884's 42-unit run is the
+        // slowest observed at 0.62 s per attempt (42 attempts in 26 s), so 600 s carries roughly two
+        // thousand attempts at the slow rate. The 16 MiB total binds only for a plan far larger than its
+        // share of it, and the attempt count is a backstop above both: 6144 attempts would need 0.098 s
+        // each to fit inside the deadline, faster than any observed call, so it cannot end a run the
+        // deadline would have continued. The floor the byte guard implies is 171 maximal requests.
+        maxAttempts: 6144,
         maxRetriesPerRequest: 1,
         // One attempt may spend the whole state budget.
         attemptTimeoutMs: 20_000,
         // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
         overallDeadlineMs: 600_000,
-        // The provider's context window, not spend, is what binds the state budget: on the first run at
-        // 128 KiB states, requests of 130,104 and 130,895 bytes were both answered
-        // `400 max_tokens_exceeded` while a 130,723-byte request was answered. 96 KiB is 24,576
-        // estimated tokens by the `bytes / 4` proxy, which over-estimates — that run reported 1,000,954
-        // estimated against 941,550 actual — and keeps every request under the window. The total is
-        // still sized from cost: 115210 bytes were estimated at $0.0014, about 1.3 cents per MiB, so
-        // 16 MiB is roughly 20 cents and exists to bound a runaway rather than to ration coverage.
+        // The provider's context window, not spend, is what binds the state budget: on the run at 128 KiB
+        // states, requests of 130,104 and 130,895 bytes were both answered `400 max_tokens_exceeded`
+        // while a 130,723-byte request was answered. 96 KiB is 24,576 estimated tokens by the `bytes / 4`
+        // proxy, which runs slightly under the provider's own count — that run reported 930,965
+        // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
+        // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
+        // answered. The total is still sized from cost: 115210 bytes were estimated at $0.0014, about
+        // 1.3 cents per MiB, so 16 MiB is roughly 20 cents and exists to bound a runaway rather than to
+        // ration coverage.
         maxRequestBytes: 128 * 1024,
         maxStatePlusQuestionBytes: 96 * 1024,
         maxTotalSubmittedBytes: 16 * 1024 * 1024,

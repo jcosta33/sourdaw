@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { AuthenticationError, BadRequestError, RateLimitError } from '@typesafe-ai/sdk';
+import { APITimeoutError, AuthenticationError, BadRequestError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -4145,6 +4145,7 @@ describe('a request refused for its own size leaves the rest of the plan assesse
         // the run delivered nothing.
         expect(executionStateFor('request_too_large')).toBe('partial');
         expect(executionStateFor('budget_exhausted')).toBe('partial');
+        expect(executionStateFor('deadline_elapsed')).toBe('partial');
         expect(executionStateFor('provider_unavailable')).toBe('unavailable');
     });
 
@@ -4163,6 +4164,81 @@ describe('a request refused for its own size leaves the rest of the plan assesse
             { path: lastPath, reason: 'budget-exhausted-before-admission' },
         ]);
         expect(report.failureCode).toBe('budget_exhausted');
+        expect(report.execution).toBe('partial');
+    });
+});
+
+describe('the deadline stops admission under its own name', () => {
+    const firstPath = 'src/modules/AudioEngine/aaa.ts';
+    const deadlinePath = 'src/modules/AudioEngine/mmm.ts';
+    const lastPath = 'src/modules/AudioEngine/zzz.ts';
+
+    function deadlineSource(): SemanticSourcePort {
+        const strings = [
+            [firstPath, 'export const a = 1;\n', 'export const a = 2;\n'],
+            [deadlinePath, 'export const m = 1;\n', 'export const m = 2;\n'],
+            [lastPath, 'export const z = 1;\n', 'export const z = 2;\n'],
+        ] as const;
+        return fakeSource({
+            files: strings.map(([path]) => changedFile(path)),
+            blobs: Object.fromEntries(
+                strings.flatMap(([path, before, after]) => [
+                    [`${MERGE_BASE}:${path}`, before],
+                    [`${HEAD}:${path}`, after],
+                ])
+            ),
+        });
+    }
+
+    it('records the tail the deadline skipped under the deadline, not as each request timing out', async () => {
+        // Past the deadline every remaining unit would be refused by the same clock. Recording each as
+        // `timeout` reads as if its own request had timed out and buries the one fact that matters: the
+        // run ran out of time. The deadline now carries its own code, admission stops on it, and the tail
+        // is recorded as never attempted.
+        const clock = fixedClock(1_000);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const provider = constantProvider(0.05, {
+            systemOne: async ({ questions }) => {
+                // The first unit's own attempt outlives the whole deadline.
+                clock.advance(profile.overallDeadlineMs + 1_000);
+                const answers: Record<string, unknown> = {};
+                for (const key of Object.keys(questions)) {
+                    answers[key] = { type: 'noul', noul: 0.05 };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        });
+        const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
+        expect(report.scope.eligible).toBe(3);
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toEqual([
+            { path: deadlinePath, reason: 'deadline_elapsed' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+        ]);
+        expect(report.failureCode).toBe('deadline_elapsed');
+        expect(report.execution).toBe('partial');
+        expect(() => validateReport(report)).not.toThrow();
+    });
+
+    it('still reports a request that overran its own attempt timeout as a timeout', async () => {
+        // The other side of the same distinction: an attempt that timed out is that unit's failure, the
+        // run continues, and nothing is blamed on the deadline.
+        const provider = constantProvider(0.05, {
+            systemOne: async ({ state, questions }) => {
+                if (JSON.stringify(state).includes(deadlinePath)) {
+                    throw new APITimeoutError(SEMANTIC_BUDGET_PROFILES.local.attemptTimeoutMs);
+                }
+                const answers: Record<string, unknown> = {};
+                for (const key of Object.keys(questions)) {
+                    answers[key] = { type: 'noul', noul: 0.05 };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        });
+        const { report } = await runScan(scanPorts(provider, deadlineSource(), fixedClock(1_000)));
+        expect(report.scope.assessed).toBe(2);
+        expect(report.scope.unassessed).toEqual([{ path: deadlinePath, reason: 'timeout' }]);
+        expect(report.failureCode).toBe('timeout');
         expect(report.execution).toBe('partial');
     });
 });
@@ -5060,17 +5136,24 @@ describe('budget profiles', () => {
     });
 
     it('sizes the ci attempt backstop above the byte guard it backs up', () => {
-        // The byte guard's own capacity is a floor and nothing more: it counts maximal requests, and most
-        // requests are a fraction of one. The intent is that the deadline ends a run first, so the cap has
-        // to exceed what the deadline can carry at the measured attempt rate. That rate comes from the
-        // 42-unit ci scan of PR #4884: 42 attempts in 26 s, about 0.62 s each.
+        // Measured attempt rates for the ci profile. The fast end, 0.217-0.291 s per attempt at about
+        // 21.5 KB per request, comes from the profile's retained scan reports — submittedBytes and
+        // networkAttempts against each report's own startedAt/completedAt. The slow end, 0.62 s per
+        // attempt, comes from PR #4884's 42-unit run: 42 attempts in 26 s. The relations below pin the
+        // hierarchy those rates imply: the byte guard's own capacity is reachable inside the deadline,
+        // and the attempt cap is above what the deadline carries even at the fastest observed rate, so
+        // the cap can never end a run the deadline would have continued.
         const ci = SEMANTIC_BUDGET_PROFILES.ci;
         const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
+        const fastestMeasuredSecondsPerAttempt = 0.217;
+        const slowestMeasuredSecondsPerAttempt = 0.62;
         expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
-        const measuredSecondsPerAttempt = 0.62;
-        expect(ci.maxAttempts * measuredSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
-        // No such rule applies to `local`: its binding guard is its 8 s deadline, which elapses before
-        // four attempts at a 3 s timeout could, so raising its attempt count would change nothing.
+        expect(ci.maxAttempts * fastestMeasuredSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
+        expect(maximalRequests * slowestMeasuredSecondsPerAttempt).toBeLessThan(ci.overallDeadlineMs / 1_000);
+        // No such rule applies to `local`, whose attempt cap is the ordinary guard and whose deadline is
+        // the worst-case bound: four attempts at the 3 s timeout would take 12 s, past the 8 s deadline,
+        // so the cap ends a normal run and the deadline only bounds one whose attempts hang. Its cap is
+        // small by design — a local run assesses a handful of units, not a plan.
         const local = SEMANTIC_BUDGET_PROFILES.local;
         expect(local.overallDeadlineMs).toBeLessThanOrEqual(local.maxAttempts * local.attemptTimeoutMs);
     });
@@ -8999,6 +9082,49 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
         });
     }
 
+    /** The same decisive answers, keeping the state each request carried so a case can read what was sent. */
+    function capturingVerifyProvider(seenStates: unknown[]): SemanticProviderPort {
+        return {
+            systemOne: async ({ state }) => {
+                seenStates.push(state);
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: {
+                        support: {
+                            type: 'choice',
+                            probabilities: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                            confidence: 0.9,
+                            choice: 'supported',
+                        },
+                        attribution: {
+                            type: 'choice',
+                            probabilities: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                            confidence: 0.9,
+                            choice: 'introduced_by_change',
+                        },
+                        kind: {
+                            type: 'choice',
+                            probabilities: {
+                                behavioral_or_contract_issue: 0.9,
+                                style_preference: 0.05,
+                                undetermined: 0.05,
+                            },
+                            confidence: 0.9,
+                            choice: 'behavioral_or_contract_issue',
+                        },
+                        strongestEvidence: {
+                            type: 'choice',
+                            probabilities: { none: 1 },
+                            confidence: 0.9,
+                            choice: 'none',
+                        },
+                    },
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        };
+    }
+
     it('withholds a region the request cannot carry instead of losing the finding to a provider refusal', async () => {
         // The per-region ceiling admits a 98,104-byte region at ci and the state ceiling cannot carry it
         // together with the finding's questions, whose strongest-evidence labels grow with the regions
@@ -9026,7 +9152,7 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
             blobs: { [`${HEAD}:${path}`]: region },
         });
         expect(providerCalls).toBe(0);
-        expect(report.scope.truncated).toEqual([{ path, reason: 'region-exceeds-per-request-budget (after)' }]);
+        expect(report.scope.truncated).toEqual([{ path, reason: 'request-exceeds-state-budget (after)' }]);
         expect(report.limitations).toContain(
             `finding evidence ${path} (after) was not supplied: the request carrying it exceeds the per-request state budget`
         );
@@ -9035,46 +9161,60 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
         expect(report.failureCode).toBeUndefined();
     });
 
-    it('keeps a finding assessed on the regions its request can carry', async () => {
-        // The other direction, on the same finding: the region the request cannot carry is dropped from
-        // the tail and named, the smaller one is still sent and judged, and the assessment carries the
-        // dropped region as missing rather than reading it as supplied. References are collected in
-        // `${side}:${path}` order, so the oversized region sorts last and is the one the fit drops.
-        const smallPath = 'src/modules/Project/aaa.ts';
-        const oversizePath = 'src/modules/Project/zzz.ts';
-        const oversize = regionCostingExactly(oversizePath, 98_104);
-        const { report } = await verifyWith({
-            provider: decisiveVerifyProvider(),
-            profile: SEMANTIC_BUDGET_PROFILES.ci,
-            blobs: {
-                [`${HEAD}:${smallPath}`]: 'export const small = 1;\n',
-                [`${HEAD}:${oversizePath}`]: oversize,
-            },
-            findings: [
-                {
-                    findingId: 'f1',
-                    headSha: HEAD,
-                    claim: 'a claim',
-                    expectedBehavior: 'expected',
-                    evidenceReferences: [
-                        { path: oversizePath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
-                        { path: smallPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
-                    ],
-                },
-            ],
-        });
-        expect(report.scope.assessed).toBe(1);
-        expect(report.scope.unassessed).toHaveLength(0);
-        expect(report.scope.truncated).toEqual([
-            { path: oversizePath, reason: 'region-exceeds-per-request-budget (after)' },
-        ]);
-        expect(report.failureCode).toBeUndefined();
-        const assessment = report.findingAssessments[0];
-        // Assessed on what it was given, with the dropped region reported as not supplied rather than
-        // read as evidence the model saw: a withheld side still blocks an advancing disposition.
-        expect(assessment?.disposition).toBe('needs_more_evidence');
-        expect(assessment?.reasoning).toContain('referenced evidence was not supplied');
-        expect(assessment?.reasoning).toContain(`${oversizePath} (region-exceeds-per-request-budget (after))`);
+    it('keeps every region whose addition fits, in every position of the unfittable one', async () => {
+        // The scan fitter's policy: a region that cannot fit is skipped, never a reason to stop. Popping
+        // from the tail instead dropped a fitting region whenever the unfittable one sorted before it, so
+        // a finding whose first or middle region was too large lost the rest of its evidence too — and one
+        // whose only region was too large lost the finding. References are collected in `${side}:${path}`
+        // order, so each position is a different arrival order for the same set.
+        const paths = ['src/modules/Project/aaa.ts', 'src/modules/Project/mmm.ts', 'src/modules/Project/zzz.ts'];
+        for (const oversizeIndex of [0, 1, 2]) {
+            const oversizePath = paths[oversizeIndex] ?? '';
+            const oversize = regionCostingExactly(oversizePath, 98_104);
+            const blobs: Record<string, string> = {};
+            for (const path of paths) {
+                blobs[`${HEAD}:${path}`] = path === oversizePath ? oversize : 'export const small = 1;\n';
+            }
+            const seenStates: unknown[] = [];
+            const { report } = await verifyWith({
+                provider: capturingVerifyProvider(seenStates),
+                profile: SEMANTIC_BUDGET_PROFILES.ci,
+                blobs,
+                findings: [
+                    {
+                        findingId: 'f1',
+                        headSha: HEAD,
+                        claim: 'a claim',
+                        expectedBehavior: 'expected',
+                        evidenceReferences: paths.map((path) => ({
+                            path,
+                            side: 'after' as const,
+                            startLine: 1,
+                            endLine: Number.MAX_SAFE_INTEGER,
+                        })),
+                    },
+                ],
+            });
+            expect(report.scope.assessed).toBe(1);
+            expect(report.scope.unassessed).toHaveLength(0);
+            expect(report.scope.truncated).toEqual([
+                { path: oversizePath, reason: 'request-exceeds-state-budget (after)' },
+            ]);
+            expect(report.failureCode).toBeUndefined();
+            // Measured, not assumed: the request carried every region that fits and not the one that does
+            // not, whatever position the unfittable one arrived in.
+            const carried = JSON.stringify(seenStates);
+            for (const path of paths) {
+                if (path === oversizePath) {
+                    expect(carried).not.toContain(path);
+                } else {
+                    expect(carried).toContain(path);
+                }
+            }
+            const assessment = report.findingAssessments[0];
+            expect(assessment?.disposition).toBe('needs_more_evidence');
+            expect(assessment?.reasoning).toContain(`${oversizePath} (request-exceeds-state-budget (after))`);
+        }
     });
 
     it('still assesses a region whose request fits the state ceiling', async () => {
