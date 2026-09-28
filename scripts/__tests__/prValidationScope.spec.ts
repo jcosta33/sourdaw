@@ -69,6 +69,25 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
     'countInCycleTestId',
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
+const PR_4890_PATHS = [
+    '.agents/skills/review-stances/correctness.md',
+    'scripts/__tests__/semanticReviewContext.spec.ts',
+    'scripts/semanticReview/__tests__/semanticReview.spec.ts',
+    'scripts/semanticReview/admissionBytes.ts',
+    'scripts/semanticReview/candidateFindings.ts',
+    'scripts/semanticReview/contracts.ts',
+    'scripts/semanticReview/evidence.ts',
+    'scripts/semanticReview/evidenceOrdering.ts',
+    'scripts/semanticReview/fit.ts',
+    'scripts/semanticReview/interpret.ts',
+    'scripts/semanticReview/provider.ts',
+    'scripts/semanticReview/requestPayload.ts',
+    'scripts/semanticReview/rules.ts',
+    'scripts/semanticReview/run.ts',
+    'scripts/semanticReview/verify.ts',
+    'scripts/semanticReview/withheldReasons.ts',
+    'scripts/semanticReviewContext.ts',
+];
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -143,6 +162,7 @@ describe('required affected verification', () => {
 
     it('does not start browser or security analysis for documentation', () => {
         expect(selectValidationPlan(['docs/06-testing.md', 'AGENTS.md'], INVENTORY)).toMatchObject({
+            profile: 'docs',
             browser: false,
             browserAi: false,
             codeql: false,
@@ -153,7 +173,47 @@ describe('required affected verification', () => {
     it('keeps known review tooling security checked without browser execution', () => {
         expect(
             selectValidationPlan(['scripts/publishReview.ts', 'scripts/__tests__/reviewDossier.spec.ts'], INVENTORY)
-        ).toMatchObject({ browser: false, browserAi: false, codeql: true, matrix: { include: [] } });
+        ).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+    });
+
+    it('keeps the exact 17 paths of PR 4890 in the tooling scope', () => {
+        const plan = selectValidationPlan(PR_4890_PATHS, INVENTORY);
+        expect(plan).toMatchObject({ profile: 'tooling', browser: false, browserAi: false, codeql: true });
+        expect(plan.matrix.include).toEqual([]);
+        expect(plan.reasons.map(({ path }) => path)).toEqual(PR_4890_PATHS);
+    });
+
+    it('uses broad scope for mixed, unknown, and build paths', () => {
+        for (const path of [
+            'src/app/bootstrap.ts',
+            'scripts/newBuildStep.ts',
+            'scripts/semanticReview/newBuildStep.ts',
+            'package.json',
+        ]) {
+            expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject({
+                profile: 'broad',
+                browser: true,
+                browserAi: true,
+            });
+        }
+    });
+
+    it('keeps either side of a rename or deletion in the classification', () => {
+        const renamedToUnknown = parseChangedPaths('R100\0scripts/semanticReviewContext.ts\0scripts/newBuildStep.ts\0');
+        const renamedFromUnknown = parseChangedPaths(
+            'R100\0scripts/newBuildStep.ts\0scripts/semanticReviewContext.ts\0'
+        );
+        expect(selectValidationPlan(renamedToUnknown, INVENTORY).profile).toBe('broad');
+        expect(selectValidationPlan(renamedFromUnknown, INVENTORY).profile).toBe('broad');
+        expect(
+            selectValidationPlan(parseChangedPaths('D\0scripts/semanticReviewContext.ts\0'), INVENTORY).profile
+        ).toBe('tooling');
     });
 
     it.each([TUNER, EXPORT])('widens product presentation %s to every browser proof', (path) => {

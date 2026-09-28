@@ -68,6 +68,18 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-28 — browser exception and validation scope disagreed (escaped via PR #4854)
+
+PR #4854 exempted known review tooling and agent documentation from browser selection, but did not
+carry that classification into the independent validation path filter. A semantic-review-only PR
+therefore selected the complete browser matrix: `scripts/**` claimed web work and an `.agents/*.md`
+lesson entered the unclassified fallback, promoting Rust, server and web checks as well.
+
+Blind spot: the review proved the browser selector in isolation and did not trace the same path list
+through the validation workflow's job conditions. Probe: feed a real mixed review-tooling and agent-doc
+diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
+cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
+
 ### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
 
 PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at an upper bound of thirteen fitted regions (the overage is `22 − fittedRegions` only when the fitter left no slack, so any slack lowers the count) — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the oversized unit's own refusal began the cascade: the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported 37 unassessed, 36 as `budget-exhausted-before-admission` plus the oversized unit itself under `budget_exhausted`.
