@@ -1,0 +1,45 @@
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_212bfe21af1da2 178-182
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_96a45df8b1f6c8 3015-3039,3050-3054
+  s_ed5aa36a3ba357::t_ef27f0f9fb14a2 3076
+  s_ed5aa36a3ba357::t_bcf0c45c017523 3055-3075,3100-3128,3131-3133
+  s_ed5aa36a3ba357::t_6a50dedf9d417d 2987
+  s_ed5aa36a3ba357::t_1d8898e1891330 2923,2957-2986,2988-3014
+  s_ed5aa36a3ba357::t_7d2cad45e0a6be 2924-2956,3040-3049,3077-3099
+  s_ed5aa36a3ba357::t_d9179fd8f54873 3129-3130,3134
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_49e7ee94ed9757 4599-4608,4633-4643,4662,4664-4673,4686-4688,4716-4726,4729-4746
+  s_ed5aa36a3ba357::t_85f1031144ee8f 4657,4661
+  s_ed5aa36a3ba357::t_93f004806890a6 4658
+  s_ed5aa36a3ba357::t_03c47e606db89c 4099-4102,4104,4125-4126
+  s_ed5aa36a3ba357::t_10d825a0b4b14e 4929
+  s_ed5aa36a3ba357::t_c6a731bc8ded49 479,4848-4905,5054-5062,5064-5073,5076
+  s_ed5aa36a3ba357::t_64e8afa4b40236 9,4693,4727,4747,4906-4919,4931-4951,4954-4959,4961-4994,4997-4999,5001-5010,5028,5033-5044,5077
+  s_ed5aa36a3ba357::t_0f909a3d2124f1 4591-4597,4609-4612,4644-4652,4655-4656,4659-4660,4674-4684,4699,4728,4920-4928,4930,4995-4996,5000
+  s_ed5aa36a3ba357::t_73d6a8c9444d87 4685,4698,4713-4715
+  s_ed5aa36a3ba357::t_53039a06b27b4a 4952-4953,4960
+  s_ed5aa36a3ba357::t_9bd5fc5243992b 4705-4707,4709-4712
+  s_ed5aa36a3ba357::t_00abf4fbbabb43 4653-4654,4663
+  s_ed5aa36a3ba357::t_e4e2df4dcf381e 4613-4618,4620-4625,4627-4632,5965-5967,5972,6033-6034
+  s_ed5aa36a3ba357::t_ff749361b0e7c0 6035-6036
+  s_ed5aa36a3ba357::t_3320da2bd235ba 4619,4626
+  s_ed5aa36a3ba357::t_b5bf11841d3109 4700-4704
+  s_ed5aa36a3ba357::t_e18b3ef78c4abb 4598,6037
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "38df864563f37147f4c1f7a0c9fcb6ad777a767e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
