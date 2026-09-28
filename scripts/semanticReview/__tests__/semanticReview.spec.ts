@@ -4730,11 +4730,75 @@ describe('the egress screen tells code from credentials', () => {
             expect(sensitiveContentReason(line), line).toBeUndefined();
         }
         // Packed against the value with no gap, the second operator rides the bare value class
-        // and no interior pair ever forms, so the screen stays admitted; only the pinned
-        // scanner's entropy gate separates that run from a benign chain — a gate this module
-        // deliberately does not model (#4579). The pinned binary flags this line.
+        // and no interior pair ever forms, so the screen stays admitted. The pinned binary flags
+        // this line through its entropy gate — the packed run measures 5.27 against the 3.5
+        // floor — while the benign `session.token` chain pinned in the fabrication test above
+        // stays silent on the scanner's stopword allowlist (`session`, `runtime`, `token`: each
+        // alone silences a de-stopworded variant that otherwise flags at 4.35), not on entropy,
+        // which is 3.57 there — above the same floor. Neither mechanism is modelled here (#4579).
         const dotted = secretFixture('A1b2C3d4', 'E5f6G7h8', '.secret');
         expect(sensitiveContentReason(secretFixture('token = ', dotted, '=', value))).toBeUndefined();
+    });
+
+    it("withholds an interior assignment when a glued arrow breaks the scanner's first match", () => {
+        // Round-4 review of #4872. A glued `=>` breaks the scanner's first match one character
+        // later than the round-3 operators: the `=` rides the `[\w.=-]` secret run and the `>` is
+        // neither a run character nor a terminator, so the match fails there and the scanner
+        // re-matches from inside the run with no left boundary, flagging the interior key. Every
+        // expectation was checked against the pinned binary: Gitleaks v8.30.1 with the
+        // repository's `.gitleaks.toml` flags each withheld line as generic-api-key with the
+        // interior assignment as the match, and stays silent on each admitted control — the
+        // spaced arrow terminates the first match before the operator, and the doubled or mixed
+        // operators form no probe assignment at all. The 32-character value is composed at
+        // runtime for the same reason as the fixtures above.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('password = runtime.sessionToken2=>', ' ', value),
+            secretFixture('password = config.sessionToken=>', ' ', value),
+            secretFixture('password = runtime.sessionToken2=>', value),
+            secretFixture('token = credentials.sessionToken2=>', ' ', value),
+            secretFixture('secret = a1a1a1a1a1a1a1a1.xsecret=>', ' ', value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        for (const line of [
+            secretFixture('password = runtime.sessionToken2==', ' ', value),
+            secretFixture('password = runtime.sessionToken2 =>', ' ', value),
+            secretFixture('password = runtime.sessionToken2==>', ' ', value),
+            secretFixture('password = runtime.sessionToken2=|', ' ', value),
+            secretFixture('password = runtime.sessionToken2=&', ' ', value),
+            secretFixture('password = runtime.sessionToken2=?', ' ', value),
+            secretFixture('password = runtime.sessionToken2=,', ' ', value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+    });
+
+    it("withholds an interior assignment that ends at a rejected quoted value's closing quote", () => {
+        // Round-4 review of #4872. A rejected quoted value's interior is real text — the content
+        // class admits operators and dotted names — terminated by the closing quote, which the
+        // match leaves unconsumed. A genuine assignment inside it ends at that quote or at an
+        // interior space, so the bare span's eight-character window and reach-past-the-end test
+        // do not apply, and the screen admitted each of the first three lines while the scanner
+        // flagged them. Every expectation was checked against the pinned binary: Gitleaks
+        // v8.30.1 with the repository's `.gitleaks.toml` flags the first four lines as
+        // generic-api-key with the interior assignment as the match. The three `=` forms are
+        // scanner-silent — a space-`=` first assignment shadows the interior one — and stay
+        // withheld as the accepted over-withhold of a quoted value, which reads as a value by
+        // construction. The 32-character value is composed at runtime for the same reason as
+        // the fixtures above.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture("token = 'runtime.sessionToken2:", value, "'"),
+            secretFixture("token = 'runtime.sessionToken2::=", value, "'"),
+            secretFixture("token = 'abcdefghijklmnop.sessionToken2:", value, "'"),
+            secretFixture("token = 'x.sessionToken2: ", value, "'"),
+            secretFixture("token = credentials.sessionToken = '", value, "'"),
+            secretFixture("token = credentials.sessionToken = '", 'runtimeSessionTokenV2', "'"),
+            secretFixture("token = runtime.sessionToken2 = '", value, "'"),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
     });
 
     it('screens a hundred-kilobyte one-line run of packed rejected assignments in near-linear time', () => {
@@ -4755,18 +4819,18 @@ describe('the egress screen tells code from credentials', () => {
 
     it('screens a key-dense continuation run whose terminal probe matches in linear time', () => {
         // The rejected value here is one `[\w.-]` continuation run carrying ten thousand `Token`
-        // keys, and the probe past its end (` = <opaque>`) matches a credential-shaped value, so
-        // the rescan visits every key instead of skipping the run. The probe memo — one
-        // `probeAssignmentAt` per run — is the only thing keeping that visit linear: recomputing
-        // the probe per key re-scans the remaining continuation per key, which measures over five
-        // seconds here against under ten milliseconds with the memo. The left-edge guard rejects
-        // each mid-token `Token`, so the line is admitted; a shorter form of it is admitted by the
-        // pinned binary too. The bound separates the two measurements with wide margin on both
-        // sides. The 32-character value is composed at runtime for the same reason as the
-        // fixtures above.
-        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
-        const line = secretFixture('token = ', 'sessionToken'.repeat(10_000), ' = ', value);
-        expect(line.length).toBeGreaterThanOrEqual(120_000);
+        // keys, and the probe past its end matches a 120-kilobyte quoted value, so
+        // the rescan visits every key instead of skipping the run. Two per-run memos keep that
+        // visit linear: the probe itself — one continuation walk and one `probeAssignmentAt` per
+        // run, where recomputing it per key re-scans the remaining continuation and re-matches
+        // the value per key, over five seconds here against under ten milliseconds with the
+        // memo — and the probe's value judgment, where re-running `looksLikeCredentialValue` per
+        // key re-scans the long quoted value ten thousand times, seconds again against
+        // milliseconds. The quoted SCREAMING run is rejected as an identifier (it carries no
+        // digits), so the line is admitted; a shorter form of it is admitted by the pinned
+        // binary too. The bound separates the two measurements with wide margin on both sides.
+        const line = secretFixture('token = ', 'sessionToken'.repeat(10_000), " = '", 'A'.repeat(120_000), "'");
+        expect(line.length).toBeGreaterThanOrEqual(240_000);
         const startedAt = performance.now();
         const reason = sensitiveContentReason(line);
         const elapsedMs = performance.now() - startedAt;
