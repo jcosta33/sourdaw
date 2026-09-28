@@ -11,6 +11,11 @@ import {
 } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
+import {
+    renderSavedProjectStateApplicabilityPath,
+    SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
+    SAVED_PROJECT_STATE_MATCHERS,
+} from '../../savedProjectStatePaths.ts';
 import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
     e2eSpecPattern,
@@ -6092,6 +6097,29 @@ describe('saved-project-state applicability matrix', () => {
     function selected(path: string): string[] {
         return PROJECT_STATE_RULE_IDS.filter((id) => semanticRule(id).appliesTo(path));
     }
+
+    it('derives the digest-facing paths one-to-one from the matcher list', () => {
+        // Both the predicate and the rules digest render from SAVED_PROJECT_STATE_MATCHERS, so adding,
+        // removing, or changing a matcher changes the digest input. This pins that correspondence: a
+        // matcher without a rendered entry, or a rendered entry with no matcher, reddens.
+        const matchers = SAVED_PROJECT_STATE_MATCHERS;
+        const rendered = SAVED_PROJECT_STATE_APPLICABILITY_PATHS;
+        expect(rendered).toHaveLength(matchers.length);
+        expect(new Set(rendered).size).toBe(matchers.length);
+        for (const matcher of matchers) {
+            expect(rendered).toContain(renderSavedProjectStateApplicabilityPath(matcher));
+        }
+        // The rendered shape the rules already used for applicabilityPaths, so a render change that
+        // silently reshapes the digest input is also a redden.
+        expect(rendered).toEqual([
+            '**/*undo*',
+            '**/*crdtdocument*',
+            'src/modules/project/usecases/projectpersistence/',
+            'src/modules/project/repositories/',
+            '**/*.sdaw',
+            'src/app/*bootstrap*',
+        ]);
+    });
 
     it('selects exactly the paths that own saved-project state or undo', () => {
         const matrix: ReadonlyArray<readonly [path: string, expected: boolean, why: string]> = [
