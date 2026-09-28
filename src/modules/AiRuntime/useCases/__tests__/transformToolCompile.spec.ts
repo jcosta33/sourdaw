@@ -465,6 +465,263 @@ describe('transform.compile planner tool', () => {
         ]);
     });
 
+    it('grounds a plural compiled clause followed by a different-value singular clause', async () => {
+        const bridgeClip = {
+            id: 'clip-bridge',
+            name: 'Bridge',
+            type: 'midi' as const,
+            startBeat: 16,
+            endBeat: 24,
+            noteCount: 4,
+        };
+        const context = {
+            ...CONTEXT,
+            tracks: [{ ...CONTEXT.tracks[0]!, clips: [...CONTEXT.tracks[0]!.clips, bridgeClip] }],
+        };
+        const document = {
+            ...DOCUMENT,
+            selectors: {
+                first: { target: 'clip', where: { contentType: 'midi', nameIncludes: 'Verse' }, limit: 1 },
+                second: { target: 'clip', where: { contentType: 'midi', nameIncludes: 'Chorus' }, limit: 1 },
+                third: { target: 'clip', where: { contentType: 'midi', nameIncludes: 'Bridge' }, limit: 1 },
+            },
+            steps: [
+                ...(['first', 'second'] as const).map((selector) => ({
+                    id: `${selector}-each`,
+                    kind: 'each',
+                    selector,
+                    as: 'clip',
+                    body: [
+                        {
+                            id: `${selector}-emit`,
+                            kind: 'emit',
+                            operation: 'setAllVelocities',
+                            arguments: { clipId: { itemId: 'clip' }, velocity: { literal: 90 } },
+                        },
+                    ],
+                })),
+                {
+                    id: 'third-each',
+                    kind: 'each',
+                    selector: 'third',
+                    as: 'clip',
+                    body: [
+                        {
+                            id: 'third-emit',
+                            kind: 'emit',
+                            operation: 'setAllVelocities',
+                            arguments: { clipId: { itemId: 'clip' }, velocity: { literal: 100 } },
+                        },
+                    ],
+                },
+            ],
+        };
+        planCalls(['compile-1'], document);
+        const result = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
+        ]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+
+        vi.clearAllMocks();
+        planCalls(['compile-1'], { ...document, steps: [document.steps[2], document.steps[0], document.steps[1]] });
+        const reordered = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(reordered.rejectionReason).toBeUndefined();
+        expect(reordered.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+        ]);
+
+        vi.clearAllMocks();
+        planCalls(['compile-1'], document);
+        const reversedClauses = await parsePromptToActions(
+            'set note velocities in Bridge MIDI clip to 100; set note velocities in Verse and Chorus MIDI clips to 90',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(reversedClauses.rejectionReason).toBeUndefined();
+        expect(reversedClauses.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
+        ]);
+
+        vi.clearAllMocks();
+        const sameValue = {
+            ...document,
+            steps: [
+                ...document.steps.slice(0, 2),
+                {
+                    ...document.steps[2]!,
+                    body: [
+                        {
+                            ...document.steps[2]!.body[0]!,
+                            arguments: { clipId: { itemId: 'clip' }, velocity: { literal: 90 } },
+                        },
+                    ],
+                },
+            ],
+        };
+        planCalls(['compile-1'], sameValue);
+        const repeatedValue = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 90',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(repeatedValue.rejectionReason).toBeUndefined();
+        expect(repeatedValue.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 90 }),
+        ]);
+
+        const wrongValues = {
+            ...document,
+            steps: document.steps.map((step, index) => ({
+                ...step,
+                body: [
+                    {
+                        ...step.body[0]!,
+                        arguments: { clipId: { itemId: 'clip' }, velocity: { literal: index === 2 ? 90 : 100 } },
+                    },
+                ],
+            })),
+        };
+        const outroClip = {
+            id: 'clip-outro',
+            name: 'Outro',
+            type: 'midi' as const,
+            startBeat: 24,
+            endBeat: 32,
+            noteCount: 4,
+        };
+        const contextWithOutro = {
+            ...context,
+            tracks: [{ ...context.tracks[0]!, clips: [...context.tracks[0]!.clips, outroClip] }],
+        };
+        const extraTarget = {
+            ...document,
+            selectors: {
+                ...document.selectors,
+                outro: { target: 'clip', where: { nameIncludes: 'Outro' }, limit: 1 },
+            },
+            steps: [
+                ...document.steps,
+                {
+                    id: 'outro-each',
+                    kind: 'each',
+                    selector: 'outro',
+                    as: 'clip',
+                    body: [
+                        {
+                            id: 'outro-emit',
+                            kind: 'emit',
+                            operation: 'setAllVelocities',
+                            arguments: { clipId: { itemId: 'clip' }, velocity: { literal: 100 } },
+                        },
+                    ],
+                },
+            ],
+        };
+        vi.clearAllMocks();
+        planCalls(['compile-1'], extraTarget);
+        const pluralGroups = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge and Outro MIDI clips to 100',
+            contextWithOutro,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(pluralGroups.rejectionReason).toBeUndefined();
+        expect(pluralGroups.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
+            expect.objectContaining({ clipId: 'clip-outro', velocity: 100 }),
+        ]);
+
+        vi.clearAllMocks();
+        const threeGroups = {
+            ...extraTarget,
+            steps: [
+                ...extraTarget.steps.slice(0, 3),
+                {
+                    ...extraTarget.steps[3]!,
+                    body: [
+                        {
+                            ...extraTarget.steps[3]!.body[0]!,
+                            arguments: { clipId: { itemId: 'clip' }, velocity: { literal: 110 } },
+                        },
+                    ],
+                },
+            ],
+        };
+        planCalls(['compile-1'], threeGroups);
+        const threeClauses = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100; set note velocities in Outro MIDI clip to 110',
+            contextWithOutro,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(threeClauses.rejectionReason).toBeUndefined();
+        expect(threeClauses.actions.map((action) => action.payload)).toEqual([
+            expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }),
+            expect.objectContaining({ clipId: 'clip-bridge', velocity: 100 }),
+            expect.objectContaining({ clipId: 'clip-outro', velocity: 110 }),
+        ]);
+
+        for (const [prompt, rejectedDocument, rejectedContext] of [
+            [
+                'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+                { ...document, steps: document.steps.slice(1) },
+                context,
+            ],
+            [
+                'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+                wrongValues,
+                context,
+            ],
+            [
+                'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100',
+                extraTarget,
+                contextWithOutro,
+            ],
+            [
+                'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Bridge MIDI clip to 100 but leave Chorus unchanged',
+                document,
+                context,
+            ],
+            [
+                'set note velocities in Verse and Chorus MIDI clips to 90; set note velocities in Chorus and Bridge MIDI clips to 100',
+                document,
+                context,
+            ],
+        ] as const) {
+            vi.clearAllMocks();
+            planCalls(['compile-1'], rejectedDocument);
+            const rejected = await parsePromptToActions(prompt, rejectedContext, undefined, 'revision-transform-1');
+            expect(rejected.actions).toEqual([]);
+            expect(rejected.rejectionReason).toBeDefined();
+        }
+    });
+
     it('rejects an incomplete or ineligible captured MIDI selection', async () => {
         planCalls();
         const missing = await parsePromptToActions(

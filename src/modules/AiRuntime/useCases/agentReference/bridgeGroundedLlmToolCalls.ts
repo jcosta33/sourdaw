@@ -176,6 +176,7 @@ type GroundToolCallInput = {
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
     compilerExpandedTargets?: boolean;
+    compilerSameActionCalls?: boolean;
     compilerSetArguments?: readonly Readonly<Record<string, unknown>>[];
     resolvedTargetOverrides?: readonly CompilerResolvedTargetOverride[];
     visibleGroundedCalls: readonly ToolCallResult[];
@@ -264,6 +265,7 @@ type ResolveActionPromptScopeInput = {
     assertedArguments: Readonly<Record<string, unknown>>;
     catalog: GroundingCatalog;
     compilerExpandedTargets?: boolean;
+    compilerSameActionCalls?: boolean;
     compilerSetArguments?: readonly Readonly<Record<string, unknown>>[];
     context: ProjectContext;
     prompt: string;
@@ -1253,12 +1255,85 @@ function getScopeAtOrdinal(scopes: readonly PromptClauseScope[], actionOrdinal: 
     return undefined;
 }
 
+/** Match every compiled clip expansion to one complete clause target set. */
+function resolveCompiledClauseGroup(input: {
+    actionName: string;
+    actionOrdinal: number;
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    maskedPrompt: string;
+    prompt: string;
+    scopes: readonly PromptClauseScope[];
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
+}): { scope: PromptClauseScope; arguments: readonly Readonly<Record<string, unknown>>[] } | null {
+    const rule = getExecutableAppActionGroundingRules(input.actionName)?.targetRules;
+    const target = rule?.length === 1 ? rule[0] : undefined;
+    if (
+        !target ||
+        (target.capability !== 'editable-clip' && target.capability !== 'editable-midi-clip') ||
+        target.cardinality === 'many' ||
+        input.scopes.some((scope) => (scope.referenceSlots ?? 1) !== 1)
+    ) {
+        return null;
+    }
+    const calls = input.sameActionAssertedArguments;
+    const assertedIds = calls.map((arguments_) => arguments_[target.argument]);
+    if (
+        !assertedIds.every((id): id is string => typeof id === 'string' && id.length > 0) ||
+        new Set(assertedIds).size !== assertedIds.length
+    ) {
+        return null;
+    }
+    const assigned = new Set<string>();
+    let selected: { scope: PromptClauseScope; arguments: readonly Readonly<Record<string, unknown>>[] } | null = null;
+    for (const unextendedScope of input.scopes) {
+        const scope = extendCompiledTargetListScope({
+            catalog: input.catalog,
+            context: input.context,
+            maskedPrompt: input.maskedPrompt,
+            prompt: input.prompt,
+            selectedScope: unextendedScope,
+            setArguments: calls,
+        });
+        const set = resolveAgentReferenceArray({
+            assertedIds,
+            capability: target.capability,
+            context: input.context,
+            prompt: getTargetPromptScope(scope, target.promptRole),
+            risk: getAppActionExecutionPolicy(input.actionName).risk,
+        });
+        let ids: string[] | undefined;
+        if (set.status === 'resolved') {
+            ids = set.ids;
+        } else if (set.reason === 'asserted-target-mismatch') {
+            ids = set.expectedIds;
+        }
+        if (!ids || ids.length === 0 || ids.some((id) => assigned.has(id) || !assertedIds.includes(id))) {
+            return null;
+        }
+        for (const id of ids) {
+            assigned.add(id);
+        }
+        if (ids.includes(assertedIds[input.actionOrdinal]!)) {
+            selected = {
+                scope,
+                arguments: calls.filter((arguments_) => {
+                    const id = arguments_[target.argument];
+                    return typeof id === 'string' && ids.includes(id);
+                }),
+            };
+        }
+    }
+    return assigned.size === assertedIds.length ? selected : null;
+}
+
 function resolveActionPromptScope({
     actionName,
     actionOrdinal,
     assertedArguments,
     catalog,
     compilerExpandedTargets = false,
+    compilerSameActionCalls = false,
     compilerSetArguments = [],
     context,
     prompt,
@@ -1266,7 +1341,8 @@ function resolveActionPromptScope({
     sameActionAssertedArguments,
     sameActionCallCount,
     workflowCapabilityId,
-}: ResolveActionPromptScopeInput): ActionPromptScope | null {
+}: ResolveActionPromptScopeInput):
+    (ActionPromptScope & { compilerGroupArguments?: readonly Readonly<Record<string, unknown>>[] }) | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const hasActionCancellation = isActionCancelledByPrompt({
         actionName,
@@ -1375,12 +1451,30 @@ function resolveActionPromptScope({
     }
     const appliesOneExplicitScopeToCompilerExpansion = compilerExpandedTargets && matchingScopes.length === 1;
     const referenceSlotCount = matchingScopes.reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);
-    if (!appliesOneExplicitScopeToCompilerExpansion && referenceSlotCount !== sameActionCallCount) {
+    const compiledGroup =
+        compilerExpandedTargets &&
+        compilerSameActionCalls &&
+        matchingScopes.length > 1 &&
+        referenceSlotCount !== sameActionCallCount
+            ? resolveCompiledClauseGroup({
+                  actionName,
+                  actionOrdinal,
+                  catalog,
+                  context,
+                  maskedPrompt,
+                  prompt,
+                  scopes: matchingScopes,
+                  sameActionAssertedArguments,
+              })
+            : null;
+    if (!appliesOneExplicitScopeToCompilerExpansion && referenceSlotCount !== sameActionCallCount && !compiledGroup) {
         return null;
     }
-    let selectedScope = appliesOneExplicitScopeToCompilerExpansion
-        ? matchingScopes[0]
-        : getScopeAtOrdinal(matchingScopes, actionOrdinal);
+    let selectedScope =
+        compiledGroup?.scope ??
+        (appliesOneExplicitScopeToCompilerExpansion
+            ? matchingScopes[0]
+            : getScopeAtOrdinal(matchingScopes, actionOrdinal));
     if (!selectedScope) {
         return null;
     }
@@ -1428,7 +1522,7 @@ function resolveActionPromptScope({
     ) {
         return null;
     }
-    return selectedScope;
+    return compiledGroup ? { ...selectedScope, compilerGroupArguments: compiledGroup.arguments } : selectedScope;
 }
 
 function isTrackControlProtectionVerb(normalized: string): boolean {
@@ -3518,7 +3612,8 @@ function validateDescriptorBackedValues(
 
 type ResolveAgentReferenceArrayResult =
     | { status: 'resolved'; ids: string[] }
-    | { status: 'rejected'; reason: 'ambiguous-target' | 'asserted-target-mismatch' | 'ungrounded-target' };
+    | { status: 'rejected'; reason: 'ambiguous-target' | 'ungrounded-target' }
+    | { status: 'rejected'; reason: 'asserted-target-mismatch'; expectedIds?: string[] };
 
 type AgentReferenceEvidence = Extract<ResolveAgentReferenceResult, { status: 'resolved' }>['evidence'];
 
@@ -3574,7 +3669,7 @@ function resolveAgentReferenceArray({
         ) {
             return { status: 'resolved', ids: [...assertedIds] };
         }
-        return { status: 'rejected', reason: 'asserted-target-mismatch' };
+        return { status: 'rejected', reason: 'asserted-target-mismatch', expectedIds: [...selectedIds] };
     }
     let candidates: Array<{ id: string; name: string }>;
     if (capability === 'routable-source') {
@@ -3667,7 +3762,7 @@ function resolveAgentReferenceArray({
     const evidencedIds = new Set(withoutOverlappedNames.map(({ candidate }) => candidate.id));
     const assertedIdSet = new Set(assertedIds);
     if (evidencedIds.size !== assertedIdSet.size || [...evidencedIds].some((id) => !assertedIdSet.has(id))) {
-        return { status: 'rejected', reason: 'asserted-target-mismatch' };
+        return { status: 'rejected', reason: 'asserted-target-mismatch', expectedIds: [...evidencedIds] };
     }
     return { status: 'resolved', ids: [...assertedIds] };
 }
@@ -3962,6 +4057,7 @@ function groundToolCall({
     sameActionAssertedArguments,
     sameActionCallCount,
     compilerExpandedTargets,
+    compilerSameActionCalls,
     compilerSetArguments,
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
@@ -4022,6 +4118,7 @@ function groundToolCall({
         assertedArguments: call.arguments,
         catalog,
         compilerExpandedTargets: compilerExpandedTargets || resolvedTargetOverrides !== undefined,
+        compilerSameActionCalls,
         compilerSetArguments,
         context,
         prompt,
@@ -4133,7 +4230,9 @@ function groundToolCall({
             (targetRule.capability === 'editable-clip' || targetRule.capability === 'editable-midi-clip') &&
             targetRule.cardinality !== 'many'
         ) {
-            const groupTargetIds = (compilerSetArguments ?? []).map((arguments_) => arguments_[targetRule.argument]);
+            const groupTargetIds = (resolvedActionScope?.compilerGroupArguments ?? compilerSetArguments ?? []).map(
+                (arguments_) => arguments_[targetRule.argument]
+            );
             const set = resolveAgentReferenceArray({
                 assertedIds: groupTargetIds,
                 capability: targetRule.capability,
@@ -5397,6 +5496,9 @@ export function bridgeGroundedLlmToolCalls({
                 sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
                 sameActionCallCount,
                 compilerExpandedTargets: index < transformCalls.length,
+                compilerSameActionCalls:
+                    index < transformCalls.length &&
+                    sameActionCallCount === transformCalls.filter((candidate) => candidate.name === call.name).length,
                 compilerSetArguments,
                 resolvedTargetOverrides: compilerTargetOverridesByCallIndex?.get(index),
                 visibleGroundedCalls: acceptedGroundedCalls,
