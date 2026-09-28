@@ -55,7 +55,7 @@ import {
     type ChangedSideUnit,
     type ContractCarryingSides,
 } from '../evidenceOrdering.ts';
-import { fitUnitEvidence, regionCost } from '../fit.ts';
+import { fitUnitEvidence, regionCost, regionFitsRequest, regionRequestBytes } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -121,12 +121,24 @@ function flipCase(value: string): string {
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 
 /** A minimal workflow document with the jobs the deadline relation reads. */
-function workflowFixture(input: { readonly earlier?: number; readonly assess: number }): string {
+function workflowFixture(input: {
+    readonly earlier?: number;
+    /** Absent leaves the assess job without a timeout of its own, as a job inheriting the default would. */
+    readonly assess?: number;
+    readonly later?: number;
+}): string {
     const jobs = ['jobs:'];
     if (input.earlier !== undefined) {
         jobs.push('  earlier:', `    timeout-minutes: ${String(input.earlier)}`, '    steps: []');
     }
-    jobs.push('  assess:', `    timeout-minutes: ${String(input.assess)}`, '    steps: []');
+    jobs.push('  assess:');
+    if (input.assess !== undefined) {
+        jobs.push(`    timeout-minutes: ${String(input.assess)}`);
+    }
+    jobs.push('    steps: []');
+    if (input.later !== undefined) {
+        jobs.push('  coverage:', `    timeout-minutes: ${String(input.later)}`, '    steps: []');
+    }
     return `${jobs.join('\n')}\n`;
 }
 
@@ -4092,6 +4104,30 @@ function saturatedSources(
 }
 
 describe('the scan collector gates a region on the cost the request fitter charges', () => {
+    it('measures one region exactly as the request carries it, at the gate boundary', () => {
+        // The shared bound is the payload's own shape: the real path and side, the shortest identifier
+        // admission can mint, and a sha and a digest of the length every real one has. A measure that
+        // dropped a field would under-count the request, and a strict comparison would withhold a region
+        // sitting exactly on the ceiling.
+        const path = 'src/modules/Project/a.ts';
+        const content = 'const sample = 1;\n';
+        const exact = regionCost(
+            {
+                evidenceId: 'a1',
+                revisionSha: '0'.repeat(40),
+                path,
+                side: 'after',
+                startLine: 1,
+                endLine: 1,
+                contentHash: '0'.repeat(64),
+            },
+            content
+        );
+        expect(regionRequestBytes({ path, side: 'after', content })).toBe(exact);
+        expect(regionFitsRequest({ path, side: 'after', content }, exact)).toBe(true);
+        expect(regionFitsRequest({ path, side: 'after', content }, exact - 1)).toBe(false);
+    });
+
     it('withholds a region whose raw bytes fit the ceiling but whose serialized cost does not', () => {
         // The collector costed raw bytes while the fitter charged serialized ones, so this region was
         // admitted by admission and then dropped by the request fit: the two disagreed about the same
@@ -4173,6 +4209,16 @@ describe('the scan collector gates a region on the cost the request fitter charg
         expect(nothingSentReason([{ path: 'a', reason: 'region-exceeds-per-region-budget (after)' }])).toBe(
             'no-evidence-region-within-budget'
         );
+        // Both sides name the same size cause: the test is the cause, not the side it qualifies.
+        expect(nothingSentReason([{ path: 'a', reason: 'region-exceeds-per-region-budget (before)' }])).toBe(
+            'no-evidence-region-within-budget'
+        );
+        expect(
+            nothingSentReason([
+                { path: 'a', reason: 'region-exceeds-per-region-budget (before)' },
+                { path: 'a', reason: 'request-exceeds-state-budget (after)' },
+            ])
+        ).toBe('no-evidence-region-within-budget');
         expect(
             nothingSentReason([
                 { path: 'a', reason: 'region-exceeds-per-region-budget (after)' },
@@ -4183,6 +4229,33 @@ describe('the scan collector gates a region on the cost the request fitter charg
             'no-admissible-evidence'
         );
         expect(nothingSentReason([])).toBe('no-admissible-evidence');
+    });
+
+    it('names a before-side size refusal as the size, on a file with no other cause', () => {
+        // The before side is the only entry, so the reason must read the size from a `(before)` qualifier:
+        // a rule that matched the after side alone would call this file inadmissible.
+        const path = 'src/modules/Project/a.ts';
+        const files = [changedFile(path, { added: 1, deleted: 1 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: 'x'.repeat(900),
+                    [`${HEAD}:${path}`]: 'y'.repeat(900),
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 900, maxTotalBytes: 1_000_000 },
+        });
+        expect(set.truncated.map((entry) => entry.reason)).toEqual([
+            'region-exceeds-per-region-budget (before)',
+            'region-exceeds-per-region-budget (after)',
+        ]);
+        const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(units).toHaveLength(0);
+        expect(excluded).toEqual([{ path, reason: 'no-evidence-region-within-budget' }]);
     });
 
     it('keeps the planner predicate and the ranking charge on the measure admission gates with', () => {
@@ -5385,8 +5458,10 @@ describe('budget profiles', () => {
         // it, so the claim is read from there rather than asserted.
         expect(ci.overallDeadlineMs).toBe(600_000);
         const workflow = readFileSync(join(repositoryRoot, ADVISORY_WORKFLOW_PATH), 'utf8');
+        // The parse alone: the relation below is implied by this pin and the deadline pin beside it, so
+        // asserting it here would be an assertion no mutation of either input could fail. The fixtures
+        // drive the relation where it can fail.
         expect(assessJobTimeoutMinutes(workflow)).toBe(30);
-        expect(deadlineFitsAssessJob(workflow)).toBe(true);
         // The parse is anchored to the assess job, which is the job the deadline runs inside: an earlier
         // job's larger timeout does not bound the relation, and an assess job lowered under the deadline
         // fails it.
@@ -5402,6 +5477,14 @@ describe('budget profiles', () => {
         const singleJob = workflowFixture({ assess: 30 });
         expect(assessJobTimeoutMinutes(singleJob)).toBe(30);
         expect(deadlineFitsAssessJob(singleJob)).toBe(true);
+        // A job *after* `assess` carrying its own timeout: the assess block ends at that job's header, so a
+        // job of its own with no timeout reads as no timeout rather than inheriting the later job's — which
+        // is what ignoring the anchor would do, and would leave the relation above green.
+        const laterJob = workflowFixture({ assess: 30, later: 120 });
+        expect(assessJobTimeoutMinutes(laterJob)).toBe(30);
+        const inheritedTimeout = workflowFixture({ later: 120 });
+        expect(assessJobTimeoutMinutes(inheritedTimeout)).toBeUndefined();
+        expect(deadlineFitsAssessJob(inheritedTimeout)).toBe(false);
         // One attempt may spend the whole state budget, and this is the timeout that lets it: 20 s against
         // the slowest retained call, 1.13 s on report 9f33b0a0's single local attempt, about eighteen
         // times it. The ratio is stated here rather than asserted beside the pin, where no value above
@@ -9180,6 +9263,35 @@ describe('verify withholds a region over the per-region budget', () => {
         expect(report.scope.unassessed[0]?.reason).toBe('no-evidence-region-within-budget');
     });
 
+    it('names a before-side size refusal as the size on the verify route too', async () => {
+        // The same cause on the other side, on the route that reads a finding's own references.
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const path = 'src/modules/Project/a.ts';
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${MERGE_BASE}:${path}`]: `${'x'.repeat(900)}\n` },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 200 }),
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [{ path, side: 'before', startLine: 1, endLine: Number.MAX_SAFE_INTEGER }],
+                },
+            ],
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([{ path, reason: 'region-exceeds-per-region-budget (before)' }]);
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
+    });
+
     it('names the size only when the verify record has no other cause', async () => {
         // The verify route's mixed state: the first reference is over the region ceiling and the second
         // names a revision the file does not hold. The whole-record read keeps the reason inadmissible; a
@@ -9214,6 +9326,47 @@ describe('verify withholds a region over the per-region budget', () => {
         expect(report.scope.truncated).toEqual([
             { path: sizePath, reason: 'region-exceeds-per-region-budget (after)' },
             { path: missingPath, reason: 'evidence-unavailable-at-revision' },
+        ]);
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
+    });
+
+    it('reads the fitter-empty reason from the whole record, not from its own cause alone', async () => {
+        // The fitter's empty case goes through the same rule as the collector's: a region the request
+        // dropped beside a reference naming an absent revision is a mixed record, and the reason is
+        // inadmissibility — while a record holding only the request cause reads as the size.
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const sizePath = 'src/modules/Project/a.ts';
+        const missingPath = 'src/modules/Project/zzz.ts';
+        const { report } = await verifyWith({
+            provider,
+            // The first region fits the per-region gate and not the request; the second names a revision the
+            // file does not hold.
+            blobs: { [`${HEAD}:${sizePath}`]: 'const sample_line = 1;\n'.repeat(2_000) },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 90_000, maxStatePlusQuestionBytes: 4_000 }),
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        { path: sizePath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                        { path: missingPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                    ],
+                },
+            ],
+        });
+        expect(providerCalls).toBe(0);
+        // The collector's entries come first, the fitter's drops after them.
+        expect(report.scope.truncated).toEqual([
+            { path: missingPath, reason: 'evidence-unavailable-at-revision' },
+            { path: sizePath, reason: 'request-exceeds-state-budget (after)' },
         ]);
         expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
     });
@@ -9591,6 +9744,41 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
             expect(assessment?.disposition).toBe('needs_more_evidence');
             expect(assessment?.reasoning).toContain(`${oversizePath} (request-exceeds-state-budget (after))`);
         }
+    });
+
+    it('keeps the region it reaches first when the state budget fits only one', async () => {
+        // The fit is greedy in the order the finding lists its references, as the scan's fitter is in
+        // admission order: with a budget that fits one region, the first is carried and the later one is
+        // the skip. A fit that walked the list backwards would send the other one instead.
+        const firstPath = 'src/modules/Project/aaa.ts';
+        const secondPath = 'src/modules/Project/zzz.ts';
+        const seenStates: unknown[] = [];
+        const { report } = await verifyWith({
+            provider: capturingVerifyProvider(seenStates),
+            profile: profileWithVerifyBudget({ maxStatePlusQuestionBytes: 40_000 }),
+            blobs: {
+                [`${HEAD}:${firstPath}`]: 'const first = 1;\n'.repeat(2_100),
+                [`${HEAD}:${secondPath}`]: 'const second = 1;\n'.repeat(1_700),
+            },
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        { path: firstPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                        { path: secondPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                    ],
+                },
+            ],
+        });
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.truncated).toEqual([{ path: secondPath, reason: 'request-exceeds-state-budget (after)' }]);
+        const carried = JSON.stringify(seenStates);
+        expect(carried).toContain(firstPath);
+        expect(carried).not.toContain(secondPath);
+        expect(report.findingAssessments[0]?.disposition).toBe('needs_more_evidence');
     });
 
     it('still assesses a region whose request fits the state ceiling', async () => {

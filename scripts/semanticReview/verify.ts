@@ -471,10 +471,10 @@ async function assessOneFinding(input: {
             limitations,
             truncated,
             fromCache: false,
-            // The evidence was admissible: what would not fit is the request carrying it. Naming the size
-            // and not admissibility is the difference between a finding the run could not read and one no
-            // request had room for.
-            unassessedReason: 'no-evidence-region-within-budget',
+            // The reason comes from why, through the same rule the collector's empty case uses: a request
+            // that could not carry the regions is a size cause, and a record holding any other cause reads
+            // as inadmissible.
+            unassessedReason: nothingSentReason(truncated),
         };
     }
     assertEvidenceIntegrity(fitted.references);

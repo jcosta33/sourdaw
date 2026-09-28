@@ -58,11 +58,18 @@ export function withheldRegionCarriesContract(side: EvidenceSide, classifiedCont
 }
 
 /**
- * Whether one withheld entry names the per-region size gate rather than evidence that was never admissible.
- * Read from the same code generator the entry was written with, so the two cannot drift apart.
+ * The withheld causes that name a size rather than inadmissibility: the per-region gate, and the request
+ * that cannot carry the region beside the regions already kept. The scan collector emits the first and
+ * the verify fitter the second, and both are the same kind of fact about the same record.
+ */
+const SIZE_WITHHELD_CAUSES: readonly WithheldRegionCause[] = ['region', 'request'];
+
+/**
+ * Whether one withheld entry names a size rather than evidence that was never admissible. Read from the
+ * same code generator the entries were written with, so the two cannot drift apart.
  */
 function namesRegionSize(reason: string): boolean {
-    return reason.startsWith(`${withheldCauseCode('region')} (`);
+    return SIZE_WITHHELD_CAUSES.some((cause) => reason.startsWith(`${withheldCauseCode(cause)} (`));
 }
 
 /**
