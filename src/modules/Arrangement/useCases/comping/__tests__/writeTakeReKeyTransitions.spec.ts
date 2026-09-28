@@ -209,4 +209,77 @@ describe('writeTakeReKeyTransitions', () => {
 
         expect(liveLane().takes).toEqual([fixture.leftTake]);
     });
+
+    it('refuses to re-add a captured region whose take never made it to the live lane', () => {
+        // The transition's after side comps [2,6] with a take whose clip left
+        // the project: the take replay refuses it (no material to resolve
+        // against), so its region must be refused too — added anyway, it would
+        // advance the comp cursor over a span no live take covers.
+        const deadTake = createTake('gone', 'Dead take', 2, 6);
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [] }] };
+
+        const transition: TakeReKeyLaneTransition = {
+            laneIndex: 0,
+            laneId: lane.id,
+            trackId: 'track-1',
+            takesBefore: [],
+            takesAfter: [deadTake],
+            regionsBefore: [],
+            regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: deadTake.id }],
+        };
+        applyTakeReKeyTransitions([transition]);
+
+        expect(liveLane().takes).toEqual([]);
+        expect(liveLane().activeCompRegions).toEqual([]);
+    });
+
+    it('refuses to re-add a zero-width captured region', () => {
+        // A zero-width region names a point, not a span: the store tolerates
+        // the shape, but re-adding it would pin the comp cursor without
+        // comping anything.
+        const take = createTake('clip-1', 'The take', 0, 8);
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [take] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        const transition: TakeReKeyLaneTransition = {
+            laneIndex: 0,
+            laneId: lane.id,
+            trackId: 'track-1',
+            takesBefore: [take],
+            takesAfter: [take],
+            regionsBefore: [],
+            regionsAfter: [{ startBeat: 4, endBeat: 4, takeId: take.id }],
+        };
+        applyTakeReKeyTransitions([transition]);
+
+        expect(liveLane().activeCompRegions).toEqual([]);
+    });
+
+    it('keeps a live selection toggle when the transition re-keys the take', () => {
+        // The take's clipId moves with the transition, but `selected` is
+        // interaction state the operation never owns: a toggle that landed
+        // after the capture survives the replay.
+        const take = createTake('clip-1', 'The take', 0, 10);
+        const reKeyedTake = { ...take, clipId: 'clip-1-frag', startBeat: 2, endBeat: 6 };
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [{ ...reKeyedTake, selected: true }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        const transition: TakeReKeyLaneTransition = {
+            laneIndex: 0,
+            laneId: lane.id,
+            trackId: 'track-1',
+            takesBefore: [take],
+            takesAfter: [reKeyedTake],
+            regionsBefore: [],
+            regionsAfter: [],
+        };
+        applyTakeReKeyTransitions([transition]);
+
+        expect(liveLane().takes).toEqual([{ ...reKeyedTake, selected: true }]);
+    });
 });

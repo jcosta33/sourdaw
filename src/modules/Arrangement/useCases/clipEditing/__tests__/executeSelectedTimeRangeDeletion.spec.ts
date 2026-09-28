@@ -1352,4 +1352,86 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(takeLaneStore.value).toBe(laneStateBefore);
         expect(result.inversePlan).toMatchObject({ takeLanes: null });
     });
+
+    it('keeps the take and region of a clip parked right of the excised range', () => {
+        // The keeper sits wholly right of the range and does not move — the
+        // excise leaves the gap. Its take and region ride the lane untouched:
+        // the clamp that guards stale overhangs must not mistake a region
+        // right of the range for deleted material.
+        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4 });
+        const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 8, endBeat: 12 });
+        setArrangement([createTrack('target', [left, keeper])]);
+        const keeperTake = { ...createTake('keeper', 'Keeper take', 8, 12), id: 'take-keeper' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [keeperTake],
+            activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: keeperTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([
+            ['left', 0, 2],
+            ['keeper', 8, 12],
+        ]);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([keeperTake]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 8, endBeat: 12, takeId: keeperTake.id },
+        ]);
+    });
+
+    it('keeps a stale region’s right-of-range tail verbatim when the excise moves nothing there', () => {
+        // The stale region overhangs its take across the whole range. The
+        // excise consumes the in-range portion, but the tail right of the
+        // range names material nothing moved: it survives verbatim instead of
+        // being clamped away with the deleted beats.
+        const host = createClip({ id: 'host', trackId: 'target', startBeat: 0, endBeat: 2 });
+        const cut = createClip({ id: 'cut', trackId: 'target', startBeat: 4, endBeat: 10 });
+        setArrangement([createTrack('target', [host, cut])]);
+        const hostTake = { ...createTake('host', 'Host take', 0, 2), id: 'take-host' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [hostTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 12, takeId: hostTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([
+            ['host', 0, 2],
+            // The cut clip's only survivor is its right half, so it keeps the
+            // clip id — no left half exists to claim it.
+            ['cut', 6, 10],
+        ]);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([hostTake]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: hostTake.id },
+            { startBeat: 6, endBeat: 12, takeId: hostTake.id },
+        ]);
+    });
+
+    it('re-keys a right-fragment take onto the fragment clip, keeping its id and geometry', () => {
+        // The take covers exactly the material the right fragment carries: it
+        // belongs to the fragment clip after the split, and only its clipId
+        // moves. A modification check blind to clipId would leave it keyed to
+        // the pre-split clip.
+        const span = createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10 });
+        setArrangement([createTrack('target', [span])]);
+        const tailTake = { ...createTake('span', 'Tail take', 6, 10), id: 'take-tail' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [tailTake],
+            activeCompRegions: [{ startBeat: 6, endBeat: 10, takeId: tailTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([{ ...tailTake, clipId: 'clip-dtr-12345678' }]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 6, endBeat: 10, takeId: tailTake.id },
+        ]);
+    });
 });

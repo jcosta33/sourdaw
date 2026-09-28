@@ -201,13 +201,13 @@ function mapLaneRegions(
     lane: TakeLane,
     takesById: ReadonlyMap<string, Take>,
     fragmentsBySourceTakeId: ReadonlyMap<string, TakeFragmentMap[]>,
-    removedClipIds: ReadonlySet<string>,
-    deleteStartBeat: number
+    input: CaptureTakeReKeyTransitionsInput,
+    rightSideUnmoved: boolean
 ): LaneRegionMapping {
     const mapping: LaneRegionMapping = { regionsBefore: [], regionsAfter: [], regionsChanged: false };
     for (const region of lane.activeCompRegions) {
         const take = takesById.get(region.takeId);
-        if (take && removedClipIds.has(take.clipId)) {
+        if (take && input.removedClipIds.has(take.clipId)) {
             // The retirement leg owns this region's removal (#4520), so it
             // never reaches regionsAfter: carried there it would collide with
             // a survivor's remapped region on the freed span, and whichever
@@ -231,22 +231,34 @@ function mapLaneRegions(
             // than its take is a shape the store tolerates, and its overhang
             // can reach into the deleted span, where it would overlap the
             // regions remapped onto the freed span — leaving the after side
-            // unlawful for the plan's own validator. Clamp it to the span's
-            // left edge instead; a region starting at or past the span claims
-            // only material the operation deleted or rehomed, so it is
-            // dropped from the after side.
+            // unlawful for the plan's own validator. The after side keeps the
+            // portion left of the span; the portion inside the span claims
+            // deleted material and is gone on either route. The portion right
+            // of the span survives verbatim only when nothing moved there —
+            // the excise route leaves the gap, while the ripple route rehomes
+            // that material and a verbatim tail would overhang it.
             mapping.regionsBefore.push(region);
-            if (region.endBeat <= deleteStartBeat) {
+            if (region.endBeat <= input.deleteStartBeat) {
                 mapping.regionsAfter.push(region);
                 continue;
             }
             mapping.regionsChanged = true;
-            if (region.startBeat < deleteStartBeat) {
+            if (region.startBeat < input.deleteStartBeat) {
                 mapping.regionsAfter.push({
                     startBeat: region.startBeat,
-                    endBeat: deleteStartBeat,
+                    endBeat: input.deleteStartBeat,
                     takeId: region.takeId,
                 });
+            }
+            if (rightSideUnmoved && region.endBeat > input.deleteEndBeat) {
+                const tailStartBeat = Math.max(region.startBeat, input.deleteEndBeat);
+                if (tailStartBeat < region.endBeat) {
+                    mapping.regionsAfter.push({
+                        startBeat: tailStartBeat,
+                        endBeat: region.endBeat,
+                        takeId: region.takeId,
+                    });
+                }
             }
             continue;
         }
@@ -290,9 +302,13 @@ function mapLaneRegions(
  * outright belongs to the paired retirement (#4520): it rides the before side
  * verbatim — so the restore leg can put it back — but never the after side,
  * where it would collide with a survivor's remapped region on the freed span.
- * A region whose take's clip was untouched rides the before side verbatim too,
- * but the after side clamps it to the deleted span's left edge: the store
- * tolerates a region wider than its take, and the overhang could otherwise
+ * A region whose take's clip was untouched rides the before side verbatim
+ * too; the after side keeps the portion left of the deleted span, drops the
+ * in-span portion (it claims deleted material) on either route, and keeps the
+ * right-of-span portion verbatim only when nothing moved there — the excise
+ * route leaves the gap, while the ripple route rehomes that material and a
+ * verbatim tail would overhang it. The clamp exists because the store
+ * tolerates a region wider than its take, so the overhang could otherwise
  * reach into the freed span and overlap the regions remapped onto it.
  * The derived sides keep the store's exactness law by
  * construction: the lane's regions start sorted and non-overlapping, each
@@ -320,17 +336,23 @@ export function captureTakeReKeyTransitions(
         // index a faithful per-id lookup. The store's sanitize does not
         // dedupe, so corrupt hydrated or merged state could hold duplicates:
         // the Map then keeps the last entry where a linear scan would find
-        // the first, and two duplicate takes splitting would mint colliding
-        // fragment ids — an accepted divergence on state no route produces,
-        // reconciled by id like every other take write.
+        // the first — an accepted divergence on state no route produces.
         const takesById = new Map(lane.takes.map((take) => [take.id, take]));
         const takeMapping = mapLaneTakes(lane, groupWindowsByClipId(windows), input);
+        // Route discriminator: the excise route leaves the gap, so every
+        // window it emits is position-preserving (targetStartBeat ===
+        // sourceStartBeat), while the ripple route closes the gap and rehomes
+        // right-of-span material with shifted windows. A stale-wide region's
+        // right-of-span tail survives verbatim only when nothing moved there
+        // (see mapLaneRegions); on the ripple route a verbatim tail would
+        // overhang the rehomed material.
+        const rightSideUnmoved = windows.every((window) => window.targetStartBeat === window.sourceStartBeat);
         const regionMapping = mapLaneRegions(
             lane,
             takesById,
             takeMapping.fragmentsBySourceTakeId,
-            input.removedClipIds,
-            input.deleteStartBeat
+            input,
+            rightSideUnmoved
         );
         if (!takeMapping.takesChanged && !regionMapping.regionsChanged) {
             continue;

@@ -525,4 +525,122 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         expect(slot).not.toBeNull();
         expect(slot?.reKeyedLanes ?? []).toEqual([]);
     });
+
+    it('clamps a stale-wide region when the clamp is the lane’s only change', () => {
+        // The host clip is untouched left of the span, and the rippling mover
+        // owns no take: the stale region's clamp is the lane's only change.
+        // Without it the lane rides no transition at all and keeps advancing
+        // the comp cursor over the deleted span.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
+        ]);
+        const take = createTake('stale-host', 'Stale host', 0, 2);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 6, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        // The portion left of the span keeps its beats; the overhang into the
+        // deleted span is gone.
+        expect(liveLane().takes).toEqual([take]);
+        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 0, endBeat: 2, takeId: take.id }]);
+        expect(applied.inversePlan).toMatchObject({
+            takeLanes: {
+                reKeyedLanes: [
+                    {
+                        regionsBefore: [{ startBeat: 0, endBeat: 6, takeId: take.id }],
+                        regionsAfter: [{ startBeat: 0, endBeat: 2, takeId: take.id }],
+                    },
+                ],
+            },
+        });
+    });
+
+    it('drops a stale region that claims only beats inside the deleted span', () => {
+        // Same stale shape, but the region sits wholly inside the span: none
+        // of its material survives on either route, so the after side drops it
+        // instead of keeping a comp over deleted beats.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
+        ]);
+        const take = createTake('stale-host', 'Stale host', 0, 2);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 3, endBeat: 5, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        expect(liveLane().takes).toEqual([take]);
+        expect(liveLane().activeCompRegions).toEqual([]);
+        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: Array<{ regionsAfter: unknown }> } | null;
+        expect(slot?.reKeyedLanes?.[0]?.regionsAfter).toEqual([]);
+    });
+
+    it('drops a stale region that starts at the deleted span’s left edge', () => {
+        // Nothing of the region is left of the span, so there is no left
+        // portion to keep; the rest claims deleted material. A clamp that
+        // treated the boundary beat as interior would emit a zero-width
+        // region — the write half filters those, so only the plan itself
+        // shows it.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
+        ]);
+        const take = createTake('stale-host', 'Stale host', 0, 2);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 2, endBeat: 8, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: Array<{ regionsAfter: unknown }> } | null;
+        expect(slot?.reKeyedLanes?.[0]?.regionsAfter).toEqual([]);
+        expect(liveLane().activeCompRegions).toEqual([]);
+    });
+
+    it('emits no transition for a stale region that ends at the deleted span’s left edge', () => {
+        // The overhang ends exactly where the deletion starts: the region is
+        // already correct on the after side, so carrying it through a
+        // transition would record a no-op.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 1 }),
+            createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
+        ]);
+        const take = createTake('stale-host', 'Stale host', 0, 1);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 2, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 0, endBeat: 2, takeId: take.id }]);
+        expect(applied.inversePlan).toMatchObject({ takeLanes: null });
+    });
 });
