@@ -1,0 +1,24 @@
+package.json
+  h_beb54bf43b47b7 161,189
+pnpm-lock.yaml
+  h_beb54bf43b47b7 131,160-161,244-245,812-814,2961-2962,2964-2965,2970-2976,2978-2979,2989-2990,4404-4406,5267-5269,5546-5548,5553-5559,5562,5649-5651,6332-6333,7444,7812,7822,8191,8194-8195,8201-8203,8205,8207,8209,8211-8212,8214,8218,9756-9759,10976,11243,11245-11247,11250,11252,11254,11258,11261,11335
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10,614,26918
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 168-169,279,1740,1752
+src/types/jest-dom-vitest.d.ts
+  h_beb54bf43b47b7 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "82d8907f06d189b4830c122105fe404d83be23c9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
