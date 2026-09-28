@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_ed5aa36a3ba357::t_8b9a07f04712f5 212-284
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_ed5aa36a3ba357::t_3c4589a4a8a570 204-205,210,234-239,241,246,249,253-262,305-311,339,342-349,354-355
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeReKey.spec.ts
+  s_ed5aa36a3ba357::t_f1e95387ea966e 528-645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e33c12c566345ebb224abf885c9a69273a629baa",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
