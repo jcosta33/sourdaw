@@ -161,6 +161,13 @@ describe('setGrandBouleVelocityCurve', () => {
     it('previews a transient drag on the store and engine without committing', () => {
         const store = liveStore();
         const { handle, setParam } = fakeEngine();
+        // The device must exist in project truth or the no-commit assertion is
+        // toothless: `commitGrandBouleDeviceState` returns before dispatching
+        // for an unfindable device, so without a chunk-carrier the gate would
+        // never be the thing keeping `executeAppAction` silent. The previewed
+        // 0.7 differs from the chunk's 1.25, so a deleted transient gate
+        // dispatches and fails this case.
+        projectChunk(chunkData);
 
         setGrandBouleVelocityCurve({
             deviceId: 'grand-1',
@@ -177,6 +184,7 @@ describe('setGrandBouleVelocityCurve', () => {
         expect(state.parameters.velocityCurve).toBe(0.7);
         expect(setParam).toHaveBeenCalledWith({ name: 'velocity_curve', value: 0.7 });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.reconcile).not.toHaveBeenCalled();
     });
 
     it('clamps the exponent into the declared 0.5..2 range before storing and committing', () => {
