@@ -10,6 +10,16 @@ on:
         description: Whether the affected plan requires browser smoke.
         required: true
         type: boolean
+      profile:
+        description: Affected paths are documentation, known review tooling, or broad.
+        required: false
+        default: broad
+        type: string
+      force-full:
+        description: Run the broad validation lane regardless of affected profile.
+        required: false
+        default: false
+        type: boolean
     outputs:
       heavy:
         description: Whether the caller's event admits the heavy lane.
@@ -29,6 +39,9 @@ on:
       code:
         description: Whether the head carries anything but prose.
         value: ${{ jobs.decide.outputs.code }}
+      tooling:
+        description: Whether known review tooling requires the script unit suite.
+        value: ${{ jobs.decide.outputs.tooling }}
 
 permissions:
   contents: read
@@ -49,6 +62,7 @@ jobs:
       e2e: ${{ steps.scope.outputs.e2e }}
       web: ${{ steps.scope.outputs.web }}
       code: ${{ steps.scope.outputs.code }}
+      tooling: ${{ steps.scope.outputs.tooling }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -205,6 +219,8 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BROWSER: ${{ inputs.browser }}
+          PROFILE: ${{ inputs.profile }}
+          FULL: ${{ inputs.force-full }}
           # The retry attempt's verdict wins; its empty outputs (it never ran,
           # or it failed too) fall through to the first attempt's, and both
           # being empty leaves the value empty for the guard below to refuse.
@@ -223,6 +239,14 @@ jobs:
               exit 1
             fi
           done
+          case "$PROFILE" in
+            docs|tooling|broad) ;;
+            *) printf 'Invalid affected profile: %s\n' "$PROFILE" >&2; exit 1 ;;
+          esac
+          if [ "$FULL" != "true" ] && [ "$FULL" != "false" ]; then
+            printf 'Invalid force-full verdict: %s\n' "$FULL" >&2
+            exit 1
+          fi
           heavy=false
           if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
           rust=$RUST
@@ -236,6 +260,22 @@ jobs:
             web=true
           fi
           e2e=$BROWSER
+          tooling=false
+          if [ "$EVENT" = "pull_request" ] && [ "$FULL" = "false" ]; then
+            case "$PROFILE" in
+              docs|tooling)
+                if [ "$BROWSER" != "false" ]; then
+                  printf 'Narrow profile conflicts with browser selection\n' >&2
+                  exit 1
+                fi
+                rust=false
+                server=false
+                e2e=false
+                web=false
+                if [ "$PROFILE" = "tooling" ]; then tooling=true; fi
+                ;;
+            esac
+          fi
           # `code` is the one question the scope-independent jobs ask: does this
           # head carry anything but prose? Only a change that claims no scope at
           # all — documentation — answers no.
@@ -243,6 +283,7 @@ jobs:
           if [ "$rust" = "true" ] || [ "$server" = "true" ] || [ "$e2e" = "true" ] || [ "$web" = "true" ]; then
             code=true
           fi
+          if [ "$tooling" = "true" ]; then code=true; fi
           {
             printf 'heavy=%s\n' "$heavy"
             printf 'rust=%s\n' "$rust"
@@ -250,6 +291,7 @@ jobs:
             printf 'e2e=%s\n' "$e2e"
             printf 'web=%s\n' "$web"
             printf 'code=%s\n' "$code"
+            printf 'tooling=%s\n' "$tooling"
           } >> "$GITHUB_OUTPUT"
 
   # The fast lane is three concurrent jobs rather than one serial one. Measured
@@ -300,38 +342,46 @@ jobs:
         run: pnpm wasm:verify
 
       - name: App types
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck
 
       - name: Test types
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck:test
 
       - name: Script types
         run: pnpm typecheck:scripts
 
       - name: End-to-end types
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck:e2e
 
       - name: Desktop shell types
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck:electron
 
       - name: Format
         run: pnpm exec prettier --check "src/**/*.{ts,tsx}" "scripts/**/*.ts" "electron/**/*.ts"
 
       - name: Command argument schemas
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:command-schema
 
       - name: Release inventory
         run: pnpm test:release-inventory
 
       - name: Test collection scope
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:collection-scope
 
       - name: Barrel mock coverage
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:barrel-mocks
 
       # The census walks production sources and is isolated from the unit
       # shards so it never inherits their accumulated jsdom/module load debt.
       - name: Device write boundary census
+        if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
 
       # Every case assembles a full release candidate, so the file is isolated
@@ -480,6 +530,34 @@ jobs:
           printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
           printf '### Unit suite shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
           printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  tooling-unit:
+    name: Review tooling unit suite
+    needs: decide
+    if: needs.decide.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # These expensive specs run once in static, outside a pooled unit run.
+      - name: Run script suite
+        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'
 
   smoke:
     name: Offline browser smoke
@@ -927,3 +1005,52 @@ jobs:
             --exit-code=1 \
             --log-opts="$BASE_SHA..$HEAD_SHA -m" \
             "$GITHUB_WORKSPACE/scan-target/.git"
+
+  validation-gate:
+    name: Validation result
+    if: ${{ always() }}
+    needs:
+      - decide
+      - static
+      - lint
+      - boundaries
+      - unit
+      - tooling-unit
+      - smoke
+      - build
+      - rust
+      - native-macos
+      - native-windows
+      - native-parity
+      - dependency-review
+      - pr-secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require selected validation jobs to succeed
+        if: ${{ always() }}
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          PULL_REQUEST: ${{ github.event.pull_request != null }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$RESULTS" | jq -e --arg pr "$PULL_REQUEST" '
+            def selected($flag):
+              if $flag == "true" then "success"
+              elif $flag == "false" then "skipped"
+              else error("missing scope verdict") end;
+            (keys | sort) == (["decide", "static", "lint", "boundaries", "unit", "tooling-unit", "smoke", "build", "rust", "native-macos", "native-windows", "native-parity", "dependency-review", "pr-secrets"] | sort) and
+            .decide.result == "success" and .static.result == "success" and
+            (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == "true" or . == "false")) and
+            .lint.result == selected(.decide.outputs.code) and
+            .boundaries.result == selected(.decide.outputs.code) and
+            .unit.result == selected(.decide.outputs.web) and
+            .["tooling-unit"].result == selected(.decide.outputs.tooling) and
+            .build.result == selected(.decide.outputs.web) and
+            .rust.result == (if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "success" else "skipped" end) and
+            .["native-macos"].result == selected(.decide.outputs.rust) and
+            .["native-windows"].result == selected(.decide.outputs.rust) and
+            .["native-parity"].result == (if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "success" else "skipped" end) and
+            .smoke.result == (if $pr == "true" then selected(.decide.outputs.e2e) elif $pr == "false" then "skipped" else error("missing PR verdict") end) and
+            .["dependency-review"].result == selected($pr) and
+            .["pr-secrets"].result == selected($pr)'

@@ -27,6 +27,7 @@ const REVIEW_TOOLING = new Set([
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewShadowStatus',
+    'semanticReviewContext',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -45,9 +46,37 @@ const REVIEW_TOOLING = new Set([
     'trackerIssueReconciliation',
 ]);
 
+const SEMANTIC_REVIEW_TOOLING = new Set([
+    '__tests__/egressVendorShapeExtraction.spec.ts',
+    '__tests__/semanticReview.spec.ts',
+    'admissionBytes.ts',
+    'candidateFindings.ts',
+    'contractCarrying.ts',
+    'contracts.ts',
+    'egressVendorShapeExtraction.ts',
+    'egressVendorShapes.ts',
+    'egressVendorToml.ts',
+    'evidence.ts',
+    'evidenceOrdering.ts',
+    'fit.ts',
+    'gitSource.ts',
+    'interpret.ts',
+    'provider.ts',
+    'report.ts',
+    'requestPayload.ts',
+    'requiredEvidence.ts',
+    'rules.ts',
+    'run.ts',
+    'sensitive.ts',
+    'slicing.ts',
+    'verify.ts',
+    'withheldReasons.ts',
+]);
+
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
     version: 1;
+    profile: 'docs' | 'tooling' | 'broad';
     browser: boolean;
     browserAi: boolean;
     codeql: boolean;
@@ -69,7 +98,7 @@ function needsCodeql(path: string): boolean {
 
 function isReviewTooling(path: string): boolean {
     if (path.startsWith('scripts/semanticReview/')) {
-        return true;
+        return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
     }
     const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
     const scriptName = match?.[1];
@@ -107,6 +136,9 @@ export function parseChangedPaths(diff: string): string[] {
 }
 
 export function selectValidationPlan(paths: readonly string[], availableSpecs: readonly string[]): ValidationPlan {
+    if (paths.length === 0) {
+        throw new Error('Changed path list is empty');
+    }
     const inventory = [...new Set(availableSpecs)].sort();
     if (inventory.some((path) => !isSpec(path))) {
         throw new Error('Invalid E2E inventory');
@@ -118,6 +150,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
     let browser = false;
     let browserAi = false;
     let codeql = false;
+    let tooling = false;
     for (const path of paths) {
         if (isDocumentation(path)) {
             reasons.push({ path, reason: 'documentation; no browser execution' });
@@ -125,6 +158,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
         }
         codeql ||= needsCodeql(path);
         if (isReviewTooling(path)) {
+            tooling = true;
             reasons.push({ path, reason: 'known review tooling; security/static checks without browser execution' });
             continue;
         }
@@ -163,7 +197,13 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
         }
         group.specs.push(spec);
     }
-    return { version: 1, browser, browserAi, codeql, matrix, reasons };
+    let profile: ValidationPlan['profile'] = 'docs';
+    if (browser) {
+        profile = 'broad';
+    } else if (tooling) {
+        profile = 'tooling';
+    }
+    return { version: 1, profile, browser, browserAi, codeql, matrix, reasons };
 }
 
 export function selectedSpecArguments(value: unknown, root: string): string[] {
@@ -229,7 +269,7 @@ function main(): void {
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,
-        `browser=${plan.browser}\nbrowser-ai=${plan.browserAi}\ncodeql=${plan.codeql}\nmatrix=${JSON.stringify(plan.matrix)}\n`
+        `profile=${plan.profile}\nbrowser=${plan.browser}\nbrowser-ai=${plan.browserAi}\ncodeql=${plan.codeql}\nmatrix=${JSON.stringify(plan.matrix)}\n`
     );
     console.log(JSON.stringify(plan, null, 2));
 }

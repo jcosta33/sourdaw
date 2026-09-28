@@ -59,6 +59,18 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-28 — browser exception and validation scope disagreed (escaped via PR #4854)
+
+PR #4854 exempted known review tooling and agent documentation from browser selection, but did not
+carry that classification into the independent validation path filter. A semantic-review-only PR
+therefore selected the complete browser matrix: `scripts/**` claimed web work and an `.agents/*.md`
+lesson entered the unclassified fallback, promoting Rust, server and web checks as well.
+
+Blind spot: the review proved the browser selector in isolation and did not trace the same path list
+through the validation workflow's job conditions. Probe: feed a real mixed review-tooling and agent-doc
+diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
+cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
+
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
 PR #805 replaced one MIDI event tail with a global note tail and per-channel expression tails. Its first review caught unrelated-channel expression delayed by a pending note, but the revised note-off still waited only on the global note tail. A pending note-on followed by pressure, CC74, bend and release therefore committed the note before the last gestures reached it; the next note on that member channel could start before the old bend finished.
