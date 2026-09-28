@@ -700,14 +700,15 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        // Bytes and the deadline are the binding guards; the attempt count exists only to bound a
-        // runaway retry loop, so it sits three times above the `maxTotalSubmittedBytes /
-        // maxStatePlusQuestionBytes` = 171 requests the byte guard can admit. An attempt cap below that
-        // figure binds first and starves a plan whose byte budget is barely touched.
-        maxAttempts: 512,
+        // The attempt count is only a backstop against a runaway retry loop, sized above what the
+        // deadline itself can carry: the run that motivated these numbers spent 42 attempts in 26 s,
+        // about 0.62 s each, so 1024 attempts would need roughly 635 s — past the 600 s deadline, which
+        // therefore ends a run first. The guards that actually bind are the deadline and, for a plan far
+        // larger than its share of the byte budget, the 16 MiB total; a cap below the deadline's own
+        // capacity stops a plan that still has both.
+        maxAttempts: 1024,
         maxRetriesPerRequest: 1,
-        // One attempt may spend the whole state budget; four concurrent attempts of 20 s also stay well
-        // inside the deadline below.
+        // One attempt may spend the whole state budget.
         attemptTimeoutMs: 20_000,
         // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
         overallDeadlineMs: 600_000,

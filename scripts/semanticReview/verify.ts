@@ -11,9 +11,13 @@
  */
 
 import {
-    assertLineRange,
+    assertFindingsBoundToHead,
+    parseCandidateFindings,
+    type CandidateFinding,
+    type CandidateFindingEvidence,
+} from './candidateFindings.ts';
+import {
     buildRevisionContext,
-    isEvidenceSide,
     NO_EVIDENCE_ID,
     refuse,
     semanticDigest,
@@ -53,138 +57,8 @@ import { sliceLines } from './slicing.ts';
 
 import type { SemanticVerifyReport } from './report.ts';
 
-export type CandidateFindingEvidence = {
-    readonly path: string;
-    readonly side: EvidenceReference['side'];
-    /** The range the finding is about. A finding that names no range asks about the whole file. */
-    readonly startLine: number;
-    readonly endLine: number;
-};
-
-export type CandidateFinding = {
-    readonly findingId: string;
-    readonly headSha: string;
-    readonly claim: string;
-    readonly allegedFailureInputOrState?: string;
-    readonly expectedBehavior: string;
-    readonly allegedObservedBehavior?: string;
-    readonly evidenceReferences: readonly CandidateFindingEvidence[];
-    /** Reported observations and verified execution evidence are kept distinct. */
-    readonly reproductionReferences?: readonly {
-        readonly path: string;
-        readonly note: string;
-        readonly verifiedExecution: boolean;
-    }[];
-    readonly claimedImpactCategory?: string;
-};
-
-/** The same shape while it is being assembled field by field from untrusted input. */
-type MutableCandidateFinding = {
-    findingId: string;
-    headSha: string;
-    claim: string;
-    expectedBehavior: string;
-    evidenceReferences: CandidateFindingEvidence[];
-    allegedFailureInputOrState?: string;
-    allegedObservedBehavior?: string;
-    reproductionReferences?: { path: string; note: string; verifiedExecution: boolean }[];
-    claimedImpactCategory?: string;
-};
-
-export function parseCandidateFindings(value: unknown, label: string): CandidateFinding[] {
-    if (!Array.isArray(value)) {
-        refuse('unsupported_scope', `${label} must be an array of candidate findings`);
-    }
-    return value.map((entry, index) => {
-        const at = `${label}[${String(index)}]`;
-        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-            refuse('unsupported_scope', `${at} must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        if (typeof record.findingId !== 'string' || record.findingId.trim() === '') {
-            refuse('unsupported_scope', `${at}.findingId must be a non-empty string`);
-        }
-        if (typeof record.headSha !== 'string' || record.headSha.trim() === '') {
-            refuse('unsupported_scope', `${at}.headSha must be a non-empty string`);
-        }
-        if (typeof record.claim !== 'string' || record.claim.trim() === '') {
-            refuse('unsupported_scope', `${at}.claim must be a non-empty string`);
-        }
-        if (typeof record.expectedBehavior !== 'string' || record.expectedBehavior.trim() === '') {
-            refuse('unsupported_scope', `${at}.expectedBehavior must be a non-empty string`);
-        }
-        if (!Array.isArray(record.evidenceReferences)) {
-            refuse('unsupported_scope', `${at}.evidenceReferences must be an array`);
-        }
-        const evidenceReferences = (record.evidenceReferences as unknown[]).map((reference, referenceIndex) => {
-            const refLabel = `${at}.evidenceReferences[${String(referenceIndex)}]`;
-            if (typeof reference !== 'object' || reference === null || Array.isArray(reference)) {
-                refuse('unsupported_scope', `${refLabel} must be an object`);
-            }
-            const ref = reference as Record<string, unknown>;
-            const path = ref.path;
-            const side = ref.side;
-            if (typeof path !== 'string' || path.trim() === '') {
-                refuse('unsupported_scope', `${refLabel}.path must be a non-empty string`);
-            }
-            if (!isEvidenceSide(side)) {
-                refuse('unsupported_scope', `${refLabel}.side must be before, after, or context`);
-            }
-            // The caller named the range it is asking about, and dropping the bounds sent the whole
-            // file: a finding about lines 10-20 egressed all of it and was assessed over a scope
-            // wider than the one it named.
-            const startLine = ref.startLine;
-            const endLine = ref.endLine;
-            if (startLine === undefined || endLine === undefined) {
-                refuse('unsupported_scope', `${refLabel} must name startLine and endLine`);
-            }
-            assertLineRange(startLine, endLine, refLabel);
-            if (typeof startLine !== 'number' || typeof endLine !== 'number') {
-                refuse('unsupported_scope', `${refLabel} must name a numeric startLine and endLine`);
-            }
-            return { path, side, startLine, endLine };
-        });
-        if (evidenceReferences.length === 0) {
-            refuse('unsupported_scope', `${at}.evidenceReferences must not be empty`);
-        }
-        const finding: MutableCandidateFinding = {
-            findingId: record.findingId,
-            headSha: record.headSha,
-            claim: record.claim,
-            expectedBehavior: record.expectedBehavior,
-            evidenceReferences,
-        };
-        if (typeof record.allegedFailureInputOrState === 'string') {
-            finding.allegedFailureInputOrState = record.allegedFailureInputOrState;
-        }
-        if (typeof record.allegedObservedBehavior === 'string') {
-            finding.allegedObservedBehavior = record.allegedObservedBehavior;
-        }
-        if (Array.isArray(record.reproductionReferences)) {
-            finding.reproductionReferences = (record.reproductionReferences as unknown[]).map((entry) => {
-                const ref = entry as Record<string, unknown>;
-                return {
-                    path: typeof ref.path === 'string' ? ref.path : '',
-                    note: typeof ref.note === 'string' ? ref.note : '',
-                    verifiedExecution: ref.verifiedExecution === true,
-                };
-            });
-        }
-        if (typeof record.claimedImpactCategory === 'string') {
-            finding.claimedImpactCategory = record.claimedImpactCategory;
-        }
-        return finding;
-    });
-}
-
-/** A finding bound to another head is refused: its assessment cannot be current advice. */
-export function assertFindingsBoundToHead(findings: readonly CandidateFinding[], headSha: string): void {
-    for (const finding of findings) {
-        if (finding.headSha !== headSha) {
-            refuse('stale_context', `finding ${finding.findingId} is bound to head ${finding.headSha}, not ${headSha}`);
-        }
-    }
-}
+export { assertFindingsBoundToHead, parseCandidateFindings };
+export type { CandidateFinding, CandidateFindingEvidence };
 
 /**
  * The static wording of the verification questions. Digested separately from the scan rules because a
@@ -284,16 +158,19 @@ function findingQuestions(finding: CandidateFinding, evidenceIds: readonly strin
     };
 }
 
-function findingState(finding: CandidateFinding, set: SemanticEvidenceSet): Record<string, unknown> {
+function findingState(
+    finding: CandidateFinding,
+    evidence: { readonly references: readonly EvidenceReference[]; readonly contents: ReadonlyMap<string, string> }
+): Record<string, unknown> {
     const regions: Record<string, unknown> = {};
-    for (const reference of set.references) {
+    for (const reference of evidence.references) {
         regions[reference.evidenceId] = {
             path: reference.path,
             side: reference.side,
             revisionSha: reference.revisionSha,
             startLine: reference.startLine,
             endLine: reference.endLine,
-            content: set.contents.get(reference.evidenceId) ?? '',
+            content: evidence.contents.get(reference.evidenceId) ?? '',
         };
     }
     const described: Record<string, unknown> = {
@@ -313,6 +190,73 @@ function findingState(finding: CandidateFinding, set: SemanticEvidenceSet): Reco
         described.allegedObservedBehavior = finding.allegedObservedBehavior;
     }
     return { finding: described, evidence: regions };
+}
+
+/** The exact bytes the provider measures for one finding's request: its state plus its questions. */
+function findingRequestBytes(
+    finding: CandidateFinding,
+    evidence: { readonly references: readonly EvidenceReference[]; readonly contents: ReadonlyMap<string, string> }
+): number {
+    return Buffer.byteLength(
+        JSON.stringify({
+            state: findingState(finding, evidence),
+            questions: findingQuestions(
+                finding,
+                evidence.references.map((reference) => reference.evidenceId)
+            ),
+        }),
+        'utf8'
+    );
+}
+
+/**
+ * Fits one finding's collected regions inside the per-request state ceiling, dropping from the tail
+ * until the request that would carry them fits and recording every drop.
+ *
+ * The per-region gate bounds one region, not the request: a region the region ceiling admits, plus the
+ * questions, can still exceed the state ceiling — and the id list the strongest-evidence question
+ * carries grows with the regions supplied, so the gap widens with a longer claim or expected behavior.
+ * The provider then refuses the whole finding, which loses it and discloses nothing. The questions
+ * depend on which regions are supplied, so this measures the real payload once the collected set is
+ * known rather than estimating a per-region share of it.
+ */
+function fitFindingEvidence(input: {
+    readonly finding: CandidateFinding;
+    readonly set: SemanticEvidenceSet;
+    readonly maxStatePlusQuestionBytes: number;
+}): {
+    references: EvidenceReference[];
+    contents: Map<string, string>;
+    truncated: SemanticScopeExclusion[];
+    limitations: string[];
+} {
+    const references = [...input.set.references];
+    const contents = new Map(input.set.contents);
+    const truncated: SemanticScopeExclusion[] = [];
+    const limitations: string[] = [];
+    while (
+        references.length > 0 &&
+        findingRequestBytes(input.finding, { references, contents }) > input.maxStatePlusQuestionBytes
+    ) {
+        const dropped = references.pop();
+        if (dropped === undefined) {
+            break;
+        }
+        const text = input.set.contents.get(dropped.evidenceId) ?? '';
+        contents.delete(dropped.evidenceId);
+        truncated.push({
+            path: dropped.path,
+            reason: withheldRegionReason(
+                withheldRegionCarriesContract(dropped.side, isContractCarryingContent(dropped.path, text)),
+                dropped.side,
+                'request'
+            ),
+        });
+        limitations.push(
+            `finding evidence ${dropped.path} (${dropped.side}) was not supplied: the request carrying it exceeds the per-request state budget`
+        );
+    }
+    return { references, contents, truncated, limitations };
 }
 
 /** The revision a finding's evidence side is read from. */
@@ -500,15 +444,34 @@ async function assessOneFinding(input: {
             fromCache: false,
         };
     }
-    assertEvidenceIntegrity(set.references);
-    const supplied = new Set(set.references.map((reference) => reference.evidenceId));
+    // What the collector admitted is not yet what one request can carry: the state ceiling bounds the
+    // regions plus the questions together, so the collected set is fitted to the payload before it is
+    // sent, and every region this drops is disclosed exactly as the per-region gate discloses one.
+    const fitted = fitFindingEvidence({
+        finding: input.finding,
+        set,
+        maxStatePlusQuestionBytes: input.profile.maxStatePlusQuestionBytes,
+    });
+    const truncated = [...set.truncated, ...fitted.truncated];
+    const limitations = [...set.limitations, ...fitted.limitations];
+    if (fitted.references.length === 0) {
+        return {
+            assessment: undefined,
+            returnedModel: undefined,
+            limitations,
+            truncated,
+            fromCache: false,
+        };
+    }
+    assertEvidenceIntegrity(fitted.references);
+    const supplied = new Set(fitted.references.map((reference) => reference.evidenceId));
     const result = await assessUnit({
         port: input.ports.provider,
         cache: input.ports.cache,
         budget: input.budget,
         profile: input.profile,
         deadline: input.deadline,
-        state: findingState(input.finding, set),
+        state: findingState(input.finding, fitted),
         questions: findingQuestions(input.finding, [...supplied]),
         requestedModel: TYPESAFE_MODEL,
         signal: input.ports.signal,
@@ -520,18 +483,20 @@ async function assessOneFinding(input: {
         assessment: interpretFinding({
             findingId: input.finding.findingId,
             severityCategory: input.finding.claimedImpactCategory ?? 'unclassified',
+            // The fitted drops are part of what the finding was not given, or the assessment would read
+            // as though a region it never received had been supplied.
             missingEvidence: [
                 ...new Set([
                     ...set.excluded.map((entry) => `${entry.path} (${entry.reason})`),
-                    ...set.truncated.map((entry) => `${entry.path} (${entry.reason})`),
+                    ...truncated.map((entry) => `${entry.path} (${entry.reason})`),
                 ]),
             ],
             answers: { support: answers.support, attribution: answers.attribution, kind: answers.kind },
             strongestEvidenceIds: selectedId === NO_EVIDENCE_ID ? [] : [selectedId],
         }),
         returnedModel: result.response.model,
-        limitations: set.limitations,
-        truncated: set.truncated,
+        limitations,
+        truncated,
         fromCache: result.fromCache,
     };
 }

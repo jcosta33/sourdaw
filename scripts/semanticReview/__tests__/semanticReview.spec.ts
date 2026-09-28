@@ -44,7 +44,7 @@ import {
 } from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
-import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
+import { interpretFinding, interpretScanOutcome, executionStateFor, readChoiceAnswer } from '../interpret.ts';
 import {
     assessUnit,
     computeResponseCacheKey,
@@ -4138,6 +4138,16 @@ describe('a request refused for its own size leaves the rest of the plan assesse
         expect(SEMANTIC_FAILURE_CODES).toContain('budget_exhausted');
     });
 
+    it('reads a size refusal as a partial run in the failure-state helper too', () => {
+        // `executionStateFor` maps a failure code to the report's execution state, and the report's own
+        // `executionState` treats a completed unit plus a recorded failure as partial whether the failure
+        // was a spent run budget or one unit's size. A size refusal mapping to `unavailable` would claim
+        // the run delivered nothing.
+        expect(executionStateFor('request_too_large')).toBe('partial');
+        expect(executionStateFor('budget_exhausted')).toBe('partial');
+        expect(executionStateFor('provider_unavailable')).toBe('unavailable');
+    });
+
     it('still records the remaining units as budget-starved when the attempt budget runs out', async () => {
         // The other direction of the same policy: a whole-run budget that really is exhausted still
         // stops admission, so today's behaviour is preserved where it was true.
@@ -5050,14 +5060,15 @@ describe('budget profiles', () => {
     });
 
     it('sizes the ci attempt backstop above the byte guard it backs up', () => {
-        // Total submitted bytes and the overall deadline are the ci profile's binding guards; the
-        // attempt count exists only to bound a runaway retry loop. The byte guard cannot admit more
-        // than `maxTotalSubmittedBytes / maxStatePlusQuestionBytes` maximal requests, so an attempt cap
-        // below that figure binds first and stops a plan that still has both bytes and time, reporting
-        // the remaining units as `budget-exhausted-before-admission` for a budget never spent.
+        // The byte guard's own capacity is a floor and nothing more: it counts maximal requests, and most
+        // requests are a fraction of one. The intent is that the deadline ends a run first, so the cap has
+        // to exceed what the deadline can carry at the measured attempt rate. That rate comes from the
+        // 42-unit ci scan of PR #4884: 42 attempts in 26 s, about 0.62 s each.
         const ci = SEMANTIC_BUDGET_PROFILES.ci;
         const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
         expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
+        const measuredSecondsPerAttempt = 0.62;
+        expect(ci.maxAttempts * measuredSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
         // No such rule applies to `local`: its binding guard is its 8 s deadline, which elapses before
         // four attempts at a 3 s timeout could, so raising its attempt count would change nothing.
         const local = SEMANTIC_BUDGET_PROFILES.local;
@@ -8967,6 +8978,122 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
             region
         );
     }
+
+    /**
+     * A whole-file region whose serialized cost is exactly `target` bytes. Appending JSON-safe filler
+     * costs one byte each and leaves the line count — and so the reference's own fields — unchanged, so
+     * a deliberately short head plus one measured correction lands on the byte.
+     */
+    function regionCostingExactly(path: string, target: number): string {
+        const head = 'const large_line = 1;\n'.repeat(Math.floor(target / 46));
+        return `${head}${'x'.repeat(target - wholeFileRegionCost(path, head))}`;
+    }
+
+    /** A provider that would answer decisively, so a case can assert the request was never sent. */
+    function decisiveVerifyProvider(): SemanticProviderPort {
+        return perQuestionProvider({
+            support: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+            attribution: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+            kind: { behavioral_or_contract_issue: 0.9, style_preference: 0.05, undetermined: 0.05 },
+            strongestEvidence: { none: 1 },
+        });
+    }
+
+    it('withholds a region the request cannot carry instead of losing the finding to a provider refusal', async () => {
+        // The per-region ceiling admits a 98,104-byte region at ci and the state ceiling cannot carry it
+        // together with the finding's questions, whose strongest-evidence labels grow with the regions
+        // supplied. The dead band is admitted region cost in (state ceiling minus the question reserve,
+        // region ceiling], and it widens with a longer claim or expected behavior. Before this the
+        // provider refused the whole request and the finding was recorded `request_too_large` with
+        // nothing disclosed about the region that caused it.
+        const path = 'src/modules/Project/a.ts';
+        const region = regionCostingExactly(path, 98_104);
+        expect(wholeFileRegionCost(path, region)).toBe(98_104);
+        expect(wholeFileRegionCost(path, region)).toBeLessThanOrEqual(
+            SEMANTIC_BUDGET_PROFILES.ci.verify.maxRegionBytes
+        );
+
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a region the request cannot carry');
+            },
+        };
+        const { report } = await verifyWith({
+            provider,
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            blobs: { [`${HEAD}:${path}`]: region },
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([{ path, reason: 'region-exceeds-per-request-budget (after)' }]);
+        expect(report.limitations).toContain(
+            `finding evidence ${path} (after) was not supplied: the request carrying it exceeds the per-request state budget`
+        );
+        // Not lost to its own size: the run records why nothing was sent, and records no size failure.
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
+        expect(report.failureCode).toBeUndefined();
+    });
+
+    it('keeps a finding assessed on the regions its request can carry', async () => {
+        // The other direction, on the same finding: the region the request cannot carry is dropped from
+        // the tail and named, the smaller one is still sent and judged, and the assessment carries the
+        // dropped region as missing rather than reading it as supplied. References are collected in
+        // `${side}:${path}` order, so the oversized region sorts last and is the one the fit drops.
+        const smallPath = 'src/modules/Project/aaa.ts';
+        const oversizePath = 'src/modules/Project/zzz.ts';
+        const oversize = regionCostingExactly(oversizePath, 98_104);
+        const { report } = await verifyWith({
+            provider: decisiveVerifyProvider(),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            blobs: {
+                [`${HEAD}:${smallPath}`]: 'export const small = 1;\n',
+                [`${HEAD}:${oversizePath}`]: oversize,
+            },
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        { path: oversizePath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                        { path: smallPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                    ],
+                },
+            ],
+        });
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toHaveLength(0);
+        expect(report.scope.truncated).toEqual([
+            { path: oversizePath, reason: 'region-exceeds-per-request-budget (after)' },
+        ]);
+        expect(report.failureCode).toBeUndefined();
+        const assessment = report.findingAssessments[0];
+        // Assessed on what it was given, with the dropped region reported as not supplied rather than
+        // read as evidence the model saw: a withheld side still blocks an advancing disposition.
+        expect(assessment?.disposition).toBe('needs_more_evidence');
+        expect(assessment?.reasoning).toContain('referenced evidence was not supplied');
+        expect(assessment?.reasoning).toContain(`${oversizePath} (region-exceeds-per-request-budget (after))`);
+    });
+
+    it('still assesses a region whose request fits the state ceiling', async () => {
+        // The gate must not over-drop: a region the request can carry is sent, judged, and disclosed as
+        // nothing withheld.
+        const path = 'src/modules/Project/a.ts';
+        const region = regionCostingExactly(path, 90_000);
+        expect(wholeFileRegionCost(path, region)).toBe(90_000);
+        const { report } = await verifyWith({
+            provider: decisiveVerifyProvider(),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            blobs: { [`${HEAD}:${path}`]: region },
+        });
+        expect(report.scope.truncated).toHaveLength(0);
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toHaveLength(0);
+        expect(report.failureCode).toBeUndefined();
+        expect(report.findingAssessments[0]?.reasoning).not.toContain('not supplied');
+    });
 
     it('assesses a finding whose referenced region exceeds the scan per-region budget but fits the verify budget', async () => {
         // The verify pass collected findings under budgets sized for the scan pass, so a referenced

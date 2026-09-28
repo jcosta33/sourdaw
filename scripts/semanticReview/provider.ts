@@ -107,8 +107,9 @@ export function createSdkProviderPort(input: { apiKey: string; model?: string })
 export const TYPESAFE_SDK_VERSION_FOR_CACHE = TYPESAFE_SDK_VERSION;
 
 /**
- * The provider's own word for a request past its context window, echoed in the body it returns with a
- * 400. Reading that body keeps a size refusal from being reported as a malformed response.
+ * The provider's own word for a request past its context window. The SDK builds its error message out
+ * of the response body — and truncates a long one — so the message is what carries the token here; a
+ * body shape the message drops would not match.
  */
 const REQUEST_TOO_LARGE_PROVIDER_TOKEN = 'max_tokens_exceeded';
 
@@ -132,8 +133,9 @@ export function classifyProviderError(error: unknown): { code: SemanticFailureCo
     if (error instanceof BadRequestError || error instanceof UnprocessableEntityError) {
         // A request past the context window is a per-request size refusal, exactly as the budget
         // controller's own per-request branch is, and terminal: rerolling the same bytes cannot fit.
-        // This reads the provider's error body, so a changed body shape degrades back to
-        // `invalid_response` — a less specific code for a real failure, never a wrong one.
+        // This reads the provider's error message, which the SDK fills from the response body and
+        // truncates, so a body the message drops or reshapes degrades back to `invalid_response` — a
+        // less specific code for a real failure, never a wrong one.
         if (error.message.includes(REQUEST_TOO_LARGE_PROVIDER_TOKEN)) {
             return { code: 'request_too_large', transient: false };
         }

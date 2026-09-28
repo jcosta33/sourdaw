@@ -255,6 +255,7 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
 const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
+    'region-exceeds-per-request-budget',
     'total-evidence-budget-exhausted',
     'contract-evidence-withheld',
     'unit-evidence-reduced-below-request-budget',
