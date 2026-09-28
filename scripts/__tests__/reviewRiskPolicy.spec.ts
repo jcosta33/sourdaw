@@ -220,7 +220,12 @@ describe('planReviewRisk', () => {
         for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
             assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
         }
-    });
+    }, // The walk reads every closure file per command (sync IO over the
+    // true-import closures #4775 pinned): about 1.3 s locally, but CI's
+    // unit shards run it under heavy parallel load where the default 5 s
+    // budget was exceeded on two unrelated heads — the work is the
+    // contract, so the budget carries the load.
+    30_000);
 
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from
