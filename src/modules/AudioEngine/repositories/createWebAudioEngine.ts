@@ -2117,15 +2117,6 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    public registerTuningTable(frequencies: number[]): void {
-        if (this.fallbackMode) {
-            return;
-        }
-        for (const trackNode of this.trackNodes.values()) {
-            trackNode.registerTuningTable(frequencies);
-        }
-    }
-
     public setTransportInfo(
         beat: number,
         positionSeconds: number,

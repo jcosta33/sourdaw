@@ -1,5 +1,5 @@
 // Elastic-audio editor + audioWarping use cases moved to ElasticAudio (ADR 0011 W4).
-export { computeMomentaryLUFS } from './advancedMetering/lufs/computeMomentaryLUFS';
+export { MomentaryLUFS } from './advancedMetering/lufs/MomentaryLUFS';
 export { ShortTermLUFS } from './advancedMetering/lufs/ShortTermLUFS';
 export { IntegratedLUFS } from './advancedMetering/lufs/IntegratedLUFS';
 export { VUMeter } from './advancedMetering/vuMeter';
@@ -68,7 +68,6 @@ export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
 export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
 export { scheduleDeviceKeyOff } from './deviceControls/scheduleDeviceKeyOff';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
-export { registerTuningTable } from './deviceControls/tuningControls';
 export { addMidiFxToStrip } from './deviceControls/addMidiFxToStrip';
 export { removeMidiFxFromStrip } from './deviceControls/removeMidiFxFromStrip';
 export { updateMidiFxBypass } from './deviceControls/updateMidiFxBypass';

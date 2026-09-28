@@ -48,7 +48,7 @@ export const ProjectTab = (): ReactElement => {
                         </Row>
 
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            Change the project tuning and apply it to currently loaded Fermenter instruments.
+                            Import a Scala scale to store it on the project. No instrument consumes project tuning yet.
                         </p>
 
                         <Button

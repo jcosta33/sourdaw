@@ -92,6 +92,29 @@ function make_audio_buffer(): AudioBuffer {
     };
 }
 
+/** The temp file name the session minted and handed to the worker in `init`. */
+function session_temp_file(worker: FakeWorker): string {
+    const init = worker.postMessage.mock.calls
+        .map((call) => call[0])
+        .find(
+            (message): message is { type: 'init'; tempFile: string } =>
+                typeof message === 'object' && message !== null && (message as { type?: string }).type === 'init'
+        );
+    if (!init) {
+        throw new Error('Expected the recording worker init message');
+    }
+    return init.tempFile;
+}
+
+function mock_recording_storage(): Mock<(name: string) => Promise<void>> {
+    const removeEntry = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis.navigator, 'storage', {
+        configurable: true,
+        value: { getDirectory: vi.fn().mockResolvedValue({ removeEntry }) },
+    });
+    return removeEntry;
+}
+
 describe('stopAudioRecording', () => {
     let media_track_stop: ReturnType<typeof vi.fn>;
     let source_disconnect: Mock<() => void>;
@@ -293,37 +316,58 @@ describe('stopAudioRecording', () => {
     });
 
     it('terminates the worker when its recording session fails', async () => {
+        const removeEntry = mock_recording_storage();
         const onTerminal = vi.fn();
         await expect(startAudioRecording('track-worker-error', onTerminal)).resolves.toBe(true);
         const worker = FakeWorker.last;
         if (!worker) {
             throw new Error('Expected recording worker');
         }
+        const tempFile = session_temp_file(worker);
 
         worker.onerror?.({});
+        await Promise.resolve();
+        await Promise.resolve();
 
         expect(worker.terminate).toHaveBeenCalledOnce();
         expect(onTerminal).toHaveBeenCalledOnce();
         expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'worker-crash' });
+        // A crash carries no message payload, so the session's own name is
+        // what settlement removes.
+        expect(removeEntry).toHaveBeenCalledWith(tempFile);
     });
 
-    it('removes the named temporary file when the worker abandons an integrity-failed take', async () => {
-        const removeEntry = vi.fn().mockResolvedValue(undefined);
-        Object.defineProperty(globalThis.navigator, 'storage', {
-            configurable: true,
-            value: { getDirectory: vi.fn().mockResolvedValue({ removeEntry }) },
-        });
+    it('removes the session temp file when the take settles empty', async () => {
+        vi.stubGlobal('crypto', { randomUUID: () => 'failure-first-take' });
+        const removeEntry = mock_recording_storage();
+        const onTerminal = vi.fn();
+        const { worker, worklet } = await startAndArm('track-empty-take', onTerminal);
+
+        const stopping = stopAudioRecording();
+        worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(44) });
+        await stopping;
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'empty-wav' });
+        expect(removeEntry).toHaveBeenCalledWith('rec-tmp-failure-first-take.pcm');
+    });
+
+    it('removes the session temp file when the worker abandons an integrity-failed take', async () => {
+        const removeEntry = mock_recording_storage();
         const onTerminal = vi.fn();
         const { worker } = await startAndArm('track-worker-integrity-error', onTerminal);
+        const tempFile = session_temp_file(worker);
 
-        worker.emit({ type: 'error', message: 'Recording ring overrun', tempFile: 'rec-tmp-123.pcm' });
+        worker.emit({ type: 'error', message: 'Recording ring overrun' });
         await Promise.resolve();
         await Promise.resolve();
 
         expect(worker.terminate).toHaveBeenCalledOnce();
         expect(onTerminal).toHaveBeenCalledOnce();
         expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'worker-error' });
-        expect(removeEntry).toHaveBeenCalledWith('rec-tmp-123.pcm');
+        expect(removeEntry).toHaveBeenCalledWith(tempFile);
     });
 
     it('tears down the captured session when the producer never acknowledges stop', async () => {
@@ -380,18 +424,23 @@ describe('stopAudioRecording', () => {
         ['mismatched sample rate', { sampleZeroContextFrame: 23, sampleRate: 44100 }],
         ['non-numeric sample rate', { sampleZeroContextFrame: 23, sampleRate: '48000' }],
     ])('rejects nonempty WAV delivery with %s metadata before decode', async (_label, metadata) => {
+        const removeEntry = mock_recording_storage();
         const onTerminal = vi.fn();
         const { worker, worklet } = await startAndArm(`track-invalid-metadata-${String(_label)}`, onTerminal);
+        const tempFile = session_temp_file(worker);
 
         const stopping = stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
         worker.emit({ type: 'wav', buffer: new ArrayBuffer(52), ...metadata });
         await stopping;
+        await Promise.resolve();
+        await Promise.resolve();
 
         expect(audioEngine.context.decodeAudioData).not.toHaveBeenCalled();
         expect(onTerminal).toHaveBeenCalledOnce();
         expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'invalid-capture-metadata' });
         expect(worker.terminate).toHaveBeenCalledOnce();
+        expect(removeEntry).toHaveBeenCalledWith(tempFile);
     });
 
     it('settles a decode rejection once and releases the stopped session', async () => {

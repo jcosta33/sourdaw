@@ -38,6 +38,10 @@ export type RecordingSession = {
     decodePending: boolean;
     stopFlushTimer: ReturnType<typeof setTimeout> | null;
     producerStopAcknowledged: boolean;
+    /** OPFS entry the worker drains into. Minted on the main thread so
+     * settlement can remove it whatever the outcome; null once removal has
+     * been claimed. */
+    tempFile: string | null;
 };
 
 export type RecordingStopWaiter = {

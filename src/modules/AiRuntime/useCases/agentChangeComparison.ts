@@ -17,11 +17,11 @@
  */
 
 import {
-    computeMomentaryLUFS,
     getAudioSampleRate,
-    getMasterAnalyser,
+    getMasterStereoAnalysers,
     hasLiveNativeGraphSession,
     setMasterComparisonTrimDb,
+    MomentaryLUFS,
     ShortTermLUFS,
 } from '#/modules/AudioEngine/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
@@ -62,28 +62,31 @@ export type AgentChangeComparisonToggle =
 const SAMPLE_INTERVAL_MS = 100;
 
 /**
- * Ticks between the readings that reach the short-term accumulator. It holds
- * 400 ms blocks, so a reading pushed at every {@link SAMPLE_INTERVAL_MS} tick
- * would fill its three-second window with the last 800 ms of programme.
+ * Ticks between the block energies that reach the short-term accumulator. Four
+ * 100 ms ticks are the 400 ms of programme one BS.1770 block measures.
  */
 const TICKS_PER_BLOCK = 4;
 
 /**
  * Blocks one side contributes before its loudness is trusted. Eight 400 ms
- * blocks is the short-term window itself, so the first trusted reading is the
- * first full one.
+ * blocks are the short-term meter's three-second window, so the first trusted
+ * reading is the first full one.
  */
 const BLOCKS_PER_SIDE = 8;
 
 /** `ShortTermLUFS` floors here; a reading sitting on the floor measured silence, not a level. */
 const SILENCE_LUFS = -70;
 
-type LoudnessSampler = { readMomentaryLufs: () => number };
+/** One tap read: the master's most recent left and right chunks. */
+type StereoChunk = { left: Float32Array; right: Float32Array };
+
+type LoudnessSampler = { readStereoChunks: () => StereoChunk };
 
 type ComparisonRuntime = {
     sampler: LoudnessSampler;
     ticker: ReturnType<typeof setInterval>;
     /** Reset whenever a side becomes current, so one side's window never carries the other's programme. */
+    momentary: MomentaryLUFS;
     meter: ShortTermLUFS;
     blocksOnSide: number;
     ticksSinceBlock: number;
@@ -104,17 +107,28 @@ function serialise<TResult>(work: () => Promise<TResult>): Promise<TResult> {
 }
 
 function createMasterLoudnessSampler(): LoudnessSampler {
-    // Held across ticks: the analyser's bin count does not change while one
-    // comparison runs, and a fresh array per tick allocates ten times a second.
-    let samples: Float32Array<ArrayBuffer> | null = null;
+    // Held across ticks: the analysers' fftSize does not change while one
+    // comparison runs, and fresh arrays per tick would allocate ten times a
+    // second.
+    let tapData: {
+        left: Float32Array<ArrayBuffer>;
+        right: Float32Array<ArrayBuffer>;
+    } | null = null;
     return {
-        readMomentaryLufs: () => {
-            const analyser = getMasterAnalyser();
-            if (!samples || samples.length !== analyser.frequencyBinCount) {
-                samples = new Float32Array(analyser.frequencyBinCount);
+        readStereoChunks: () => {
+            const { left: leftAnalyser, right: rightAnalyser } = getMasterStereoAnalysers();
+            if (!tapData || tapData.left.length !== leftAnalyser.fftSize) {
+                tapData = {
+                    left: new Float32Array(leftAnalyser.fftSize),
+                    right: new Float32Array(rightAnalyser.fftSize),
+                };
             }
-            analyser.getFloatTimeDomainData(samples);
-            return computeMomentaryLUFS(samples, getAudioSampleRate());
+            const { left, right } = tapData;
+            // fftSize, not frequencyBinCount: getFloatTimeDomainData fills up to
+            // fftSize samples, so the frequency-bin length would read half the tap.
+            leftAnalyser.getFloatTimeDomainData(left);
+            rightAnalyser.getFloatTimeDomainData(right);
+            return { left, right };
         },
     };
 }
@@ -190,6 +204,7 @@ function resetSideMeter(): void {
     if (!runtime) {
         return;
     }
+    runtime.momentary = new MomentaryLUFS(getAudioSampleRate());
     runtime.meter = new ShortTermLUFS();
     runtime.blocksOnSide = 0;
     runtime.ticksSinceBlock = 0;
@@ -216,14 +231,21 @@ function sampleOnce(): void {
         return;
     }
 
-    // Every tick refreshes what the measurement is; only every fourth one
-    // contributes a block, which is the rate the window is sized in.
+    // Every tick feeds the momentary meter the tap's newest chunks; only every
+    // fourth one contributes a block, which is the rate the window is sized in.
     runtime.ticksSinceBlock += 1;
+    const chunks = runtime.sampler.readStereoChunks();
+    runtime.momentary.push(chunks.left, chunks.right);
     if (runtime.ticksSinceBlock < TICKS_PER_BLOCK) {
         return;
     }
     runtime.ticksSinceBlock = 0;
-    runtime.meter.push(runtime.sampler.readMomentaryLufs());
+    // Blocks join the window only once the 400 ms momentary window holds
+    // programme; before that its energy is a part-silence ramp, not a level.
+    if (!runtime.momentary.filled) {
+        return;
+    }
+    runtime.meter.push(runtime.momentary.energy);
     runtime.blocksOnSide += 1;
     if (runtime.blocksOnSide < BLOCKS_PER_SIDE) {
         return;
@@ -292,6 +314,7 @@ function startSampling(): void {
         ticker: setInterval(() => {
             sampleOnce();
         }, SAMPLE_INTERVAL_MS),
+        momentary: new MomentaryLUFS(getAudioSampleRate()),
         meter: new ShortTermLUFS(),
         blocksOnSide: 0,
         ticksSinceBlock: 0,

@@ -565,7 +565,6 @@ export type AudioEngine = {
     updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void;
     updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void;
     syncKneadState(trackId: string, clips: Record<string, unknown>): void;
-    registerTuningTable(frequencies: number[]): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;
     setBusGain(busId: string, gain: number): void;

@@ -3,8 +3,11 @@
  *
  * The doubles are the four things the comparison actually reads and writes:
  * Command's revert and redo, the undo stacks they move the group through, the
- * transport's play state, and the master trim. Each case names, above itself,
- * the single mutation that turns it red.
+ * transport's play state, and the master trim — plus stand-ins for the
+ * AudioEngine metering classes, restated here because a spec must not
+ * deep-import a foreign module's internals. The real metering path is driven
+ * end-to-end in agentChangeComparisonLoudnessPath.spec.ts. Each case names,
+ * above itself, the single mutation that turns it red.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -44,16 +47,41 @@ const doubles = vi.hoisted(() => {
     };
 
     /**
-     * Stands in for AudioEngine's `ShortTermLUFS`: a three-second window of
-     * 400 ms blocks whose reading is their energy mean, floored at -70.
-     * Restated here because a spec must not deep-import a foreign module's
-     * internals, and the barrel it lives behind is the one this file replaces.
+     * Stands in for AudioEngine's `MomentaryLUFS`: a 400 ms K-weighted window
+     * that reports the stereo block energy of the chunks it is fed and fills
+     * after 400 ms at 48 kHz.
+     */
+    class MomentaryLUFSDouble {
+        private samplesSeen = 0;
+        private energyPerSample = 0;
+
+        push(left: Float32Array, right: Float32Array): void {
+            let sum = 0;
+            for (let index = 0; index < left.length; index++) {
+                sum += left[index]! * left[index]! + right[index]! * right[index]!;
+            }
+            this.energyPerSample = sum / left.length;
+            this.samplesSeen += left.length;
+        }
+
+        get filled(): boolean {
+            return this.samplesSeen >= 19_200; // 400 ms at 48 kHz
+        }
+
+        get energy(): number {
+            return this.energyPerSample;
+        }
+    }
+
+    /**
+     * Stands in for AudioEngine's `ShortTermLUFS`: three seconds of 400 ms
+     * block energies averaged in the energy domain, floored at -70.
      */
     class ShortTermLUFSDouble {
         private readonly blocks: number[] = [];
 
-        push(momentaryLUFS: number): void {
-            this.blocks.push(momentaryLUFS);
+        push(blockEnergy: number): void {
+            this.blocks.push(blockEnergy);
             if (this.blocks.length > 8) {
                 this.blocks.shift();
             }
@@ -65,13 +93,15 @@ const doubles = vi.hoisted(() => {
             }
             let sum = 0;
             for (const block of this.blocks) {
-                sum += 10 ** (block / 10);
+                sum += block;
             }
-            return Math.max(-70, 10 * Math.log10(sum / this.blocks.length));
+            return Math.max(-70, -0.691 + 10 * Math.log10(sum / this.blocks.length));
         }
     }
 
     return {
+        createTestStore,
+        MomentaryLUFSDouble,
         ShortTermLUFSDouble,
         undoHistoryStore: createTestStore<UndoStateDouble>({ past: [], future: [] }),
         transportStore: createTestStore<TransportStateDouble>({ isPlaying: true }),
@@ -79,22 +109,32 @@ const doubles = vi.hoisted(() => {
     };
 });
 
+/** The master tap's amplitude; each tick delivers `fftSize` samples of it per channel. */
+const tap = { amplitude: 0 };
+
 const mocks = vi.hoisted(() => ({
     setMasterComparisonTrimDb: vi.fn<(db: number) => { appliedDb: number; limited: boolean }>(),
     hasLiveNativeGraphSession: vi.fn<() => boolean>(),
-    computeMomentaryLUFS: vi.fn<() => number>(),
     revertActionGroup: vi.fn<(groupId: string) => Promise<void>>(),
     redo: vi.fn<() => Promise<void>>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    computeMomentaryLUFS: mocks.computeMomentaryLUFS,
-    getAudioSampleRate: () => 48000,
-    getMasterAnalyser: () => ({ frequencyBinCount: 4, getFloatTimeDomainData: () => undefined }),
-    hasLiveNativeGraphSession: mocks.hasLiveNativeGraphSession,
-    setMasterComparisonTrimDb: mocks.setMasterComparisonTrimDb,
-    ShortTermLUFS: doubles.ShortTermLUFSDouble,
-}));
+vi.mock('#/modules/AudioEngine/useCases', () => {
+    const tapAnalyser = () => ({
+        fftSize: 256,
+        getFloatTimeDomainData: (arr: Float32Array) => {
+            arr.fill(tap.amplitude);
+        },
+    });
+    return {
+        getAudioSampleRate: () => 48000,
+        getMasterStereoAnalysers: () => ({ left: tapAnalyser(), right: tapAnalyser() }),
+        hasLiveNativeGraphSession: mocks.hasLiveNativeGraphSession,
+        setMasterComparisonTrimDb: mocks.setMasterComparisonTrimDb,
+        MomentaryLUFS: doubles.MomentaryLUFSDouble,
+        ShortTermLUFS: doubles.ShortTermLUFSDouble,
+    };
+});
 
 vi.mock('#/modules/Command/stores', () => ({ undoHistoryStore: doubles.undoHistoryStore }));
 
@@ -133,14 +173,24 @@ function reverted(): UndoStateDouble {
 }
 
 /**
- * Ticks that carry one side to a trusted reading: eight 400 ms blocks, each of
- * them four 100 ms sampler intervals.
+ * Ticks that carry one side to a trusted reading: 75 ticks fill the momentary
+ * meter's 400 ms window (256 samples per tap read at 48 kHz), then eight 400 ms
+ * blocks of four ticks each cover the three-second short-term window.
  */
-const TICKS_PER_TRUSTED_READING = 32;
+const TICKS_PER_TRUSTED_READING = 107;
 
-/** Run `ticks` sampler intervals with the master tap reading `lufs`. */
+/**
+ * The amplitude whose stereo chunk reads `lufs` through the metering doubles:
+ * a block energy of `10^((lufs + 0.691)/10)` is a constant-amplitude chunk's
+ * `2·a²`.
+ */
+function amplitudeFor(lufs: number): number {
+    return Math.sqrt(10 ** ((lufs + 0.691) / 10) / 2);
+}
+
+/** Run `ticks` sampler intervals with the master tap carrying a tone that reads `lufs`. */
 function sample(lufs: number, ticks: number): void {
-    mocks.computeMomentaryLUFS.mockReturnValue(lufs);
+    tap.amplitude = amplitudeFor(lufs);
     vi.advanceTimersByTime(ticks * 100);
 }
 
@@ -162,7 +212,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.setMasterComparisonTrimDb.mockReturnValue({ appliedDb: 0, limited: false });
     mocks.hasLiveNativeGraphSession.mockReturnValue(false);
-    mocks.computeMomentaryLUFS.mockReturnValue(-70);
+    tap.amplitude = 0;
     // The doubles move the stacks the way Command's own revert and redo do, so
     // the divergence watch sees what it would see in the app.
     mocks.revertActionGroup.mockImplementation(async () => {
@@ -367,8 +417,10 @@ describe('agentChangeComparison loudness match', () => {
     it('reads a side over its whole window rather than over its tail', async () => {
         await agentChangeComparison.start({ groupId: GROUP_ID });
 
-        // Six blocks at -30 then two at -10: energy mean 10 * log10(0.206 / 8).
-        sample(-30, 24);
+        // 75 ticks fill the momentary window and contribute no blocks; then six
+        // blocks at -30 and two at -10 make the trusted reading the energy mean
+        // of the whole three seconds.
+        sample(-30, 75 + 24);
         sample(-10, 8);
 
         expect(getAgentChangeComparisonView().active?.loudness.b).toBeCloseTo(-15.89, 2);

@@ -6,7 +6,6 @@ import { removeMidiFxFromStrip } from '../removeMidiFxFromStrip';
 import { scheduleDeviceKeyOff } from '../scheduleDeviceKeyOff';
 import { scheduleDeviceKeyOn } from '../scheduleDeviceKeyOn';
 import { scheduleDeviceParam } from '../scheduleDeviceParam';
-import { registerTuningTable } from '../tuningControls';
 import { updateDeviceBypass } from '../updateDeviceBypass';
 import { updateDeviceParam } from '../updateDeviceParam';
 import { updateDevicePatch } from '../updateDevicePatch';
@@ -81,27 +80,5 @@ describe('deviceControls delegators', () => {
         const spy = vi.spyOn(audioEngine, 'updateMidiFxParam').mockImplementation(() => undefined);
         updateMidiFxParam('t1', 'fx1', 'rate', 0.5);
         expect(spy).toHaveBeenCalledWith('t1', 'fx1', 'rate', 0.5);
-    });
-});
-
-describe('registerTuningTable', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('should forward a 128-entry frequency table to audioEngine.registerTuningTable', () => {
-        const spy = vi.spyOn(audioEngine, 'registerTuningTable').mockImplementation(() => undefined);
-        const frequencies = Array.from({ length: 128 }, (_, i) => 440 * 2 ** (i / 12));
-
-        registerTuningTable(frequencies);
-
-        expect(spy).toHaveBeenCalledWith(frequencies);
-    });
-
-    it('should reject a table that is not exactly 128 entries without calling the engine', () => {
-        const spy = vi.spyOn(audioEngine, 'registerTuningTable').mockImplementation(() => undefined);
-
-        expect(() => registerTuningTable([440])).toThrow('Tuning table must contain exactly 128 frequencies');
-        expect(spy).not.toHaveBeenCalled();
     });
 });

@@ -8,9 +8,9 @@ import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Stack } from '#/components/layout';
 import {
-    getMasterAnalyser,
     getAudioSampleRate,
-    computeMomentaryLUFS,
+    getMasterStereoAnalysers,
+    MomentaryLUFS,
     ShortTermLUFS,
     IntegratedLUFS,
 } from '#/modules/AudioEngine/useCases';
@@ -25,6 +25,7 @@ type LUFSMeterProps = {
 
 export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS }: LUFSMeterProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const momentaryRef = useRef<MomentaryLUFS | null>(null);
     const shortTermRef = useRef(new ShortTermLUFS());
     const integratedRef = useRef(new IntegratedLUFS());
     const [momentary, setMomentary] = useState(-70);
@@ -56,20 +57,41 @@ export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS 
         let rafId = 0;
         let lastStateUpdate = 0;
         const STATE_UPDATE_INTERVAL = 100; // ~10fps for React state
-        // Reused across frames — reallocated only if frequencyBinCount changes.
-        let analyserData: Float32Array<ArrayBuffer> | null = null;
+        // The momentary meter persists across redraws: its 400 ms window and
+        // K-weighting state span frames, sized once from the engine's rate.
+        let momentary = momentaryRef.current;
+        if (!momentary) {
+            momentary = new MomentaryLUFS(getAudioSampleRate());
+            momentaryRef.current = momentary;
+        }
+        // Reused across frames — reallocated only if the analyser grows.
+        let tapData: {
+            left: Float32Array<ArrayBuffer>;
+            right: Float32Array<ArrayBuffer>;
+        } | null = null;
 
         const draw = (): void => {
-            const analyser = getMasterAnalyser();
-            if (!analyserData || analyserData.length !== analyser.frequencyBinCount) {
-                analyserData = new Float32Array(analyser.frequencyBinCount);
+            const { left: leftAnalyser, right: rightAnalyser } = getMasterStereoAnalysers();
+            if (!tapData || tapData.left.length !== leftAnalyser.fftSize) {
+                tapData = {
+                    left: new Float32Array(leftAnalyser.fftSize),
+                    right: new Float32Array(rightAnalyser.fftSize),
+                };
             }
-            const data = analyserData;
-            analyser.getFloatTimeDomainData(data);
+            const { left: leftData, right: rightData } = tapData;
+            // fftSize, not frequencyBinCount: getFloatTimeDomainData fills up to
+            // fftSize samples, so the frequency-bin length would read half the tap.
+            leftAnalyser.getFloatTimeDomainData(leftData);
+            rightAnalyser.getFloatTimeDomainData(rightData);
 
-            const mom = computeMomentaryLUFS(data, getAudioSampleRate());
-            shortTermRef.current.push(mom);
-            integratedRef.current.push(mom);
+            momentary.push(leftData, rightData);
+            const mom = momentary.value;
+            // The short-term and integrated windows join once the 400 ms window
+            // holds programme; before that its energy is a part-silence ramp.
+            if (momentary.filled) {
+                shortTermRef.current.push(momentary.energy);
+                integratedRef.current.push(mom);
+            }
 
             const st = shortTermRef.current.value;
             const integ = integratedRef.current.value;
