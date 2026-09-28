@@ -4608,8 +4608,9 @@ describe('the egress screen tells code from credentials', () => {
         // value on an identifier that merely contains one of these names is withheld even where the
         // scanner's entropy gate stays silent, because the screen reads a quoted run as a value by
         // construction and has no entropy test. Withholding a benign region costs one file's
-        // assessment; admitting a credential sends it to the provider.
-        expect(sensitiveContentReason("author = 'externalContributorName'")).toBeDefined();
+        // assessment; admitting a credential sends it to the provider. The quoted value is composed
+        // at runtime for the same reason as the fixtures above.
+        expect(sensitiveContentReason(secretFixture("author = '", 'external', "ContributorName'"))).toBeDefined();
     });
 
     it('rescans a rejected assignment value for a later assignment on the same line', () => {

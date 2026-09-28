@@ -334,7 +334,7 @@ function genuineInteriorKey(text: string, keyIndex: number, valueStart: number, 
  *   characters probed once, and a position that yields no operator ends the search for every
  *   key before it — no key name crosses such a position — so the scan stays linear in the span.
  * - The operator and value must reach past the rejected match's end (`probeAssignmentAt`), so
- *   `session.token=runtimeSessionToken2` — an operator the bare value class absorbed inside
+ *   the second operator of the `session.token=` chain — absorbed by the bare value class inside
  *   the span — is not re-read as an assignment. The same absorption admits a packed
  *   `token = A1b2….secret=<opaque>`: no gap around the second operator leaves the whole run
  *   one bare value, so no interior pair ever forms. The parent admitted those lines too, and
