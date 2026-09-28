@@ -509,30 +509,24 @@ describe('TrackNode', () => {
         expect('channels' in initMsg).toBe(false);
     });
 
-    // ── Fix 2: Knead has no tuning-table consumer (its WASM exposes only
-    // set_shift_semitones), so registerTuningTable must NOT post 'tuning-table'
-    // to a Knead device — but must still forward it to a tuned instrument
-    // (Fermenter). ──
-    describe('registerTuningTable', () => {
+    // ── #4675: no instrument consumes the project tuning table — the old
+    // registerTuningTable posted 'tuning-table' to a set_param arm no Rust side
+    // implemented, so notes stayed 12-TET while imports claimed success.
+    // TrackNode therefore has no tuning route at all: the import stores the
+    // table on the project and says so. A future tuning consumer re-adds a real
+    // route, never this dead one. ──
+    describe('tuning-table forwarding', () => {
         function makeControls() {
             return { setParam: vi.fn() };
         }
 
-        it('does not forward a tuning table to a Knead device', () => {
+        it('exposes no registerTuningTable entry point', () => {
             const track = new TrackNode('track-1', deps);
-            const kneadControls = makeControls();
-            track.strip.deviceNodes.push({
-                deviceId: 'knead-1',
-                type: 'knead',
-                kneadControls,
-            } as never);
 
-            track.registerTuningTable([440, 466, 494]);
-
-            expect(kneadControls.setParam).not.toHaveBeenCalled();
+            expect('registerTuningTable' in track).toBe(false);
         });
 
-        it('forwards the tuning table to a Fermenter device', () => {
+        it('reaches no device controls through a tuning-table param name', () => {
             const track = new TrackNode('track-1', deps);
             const fermenterControls = makeControls();
             track.strip.deviceNodes.push({
@@ -541,10 +535,10 @@ describe('TrackNode', () => {
                 fermenterControls,
             } as never);
 
-            const table = [440, 466, 494];
-            track.registerTuningTable(table);
+            track.updateParam('ferm-1', 'tuning-table', 1);
+            track.scheduleParam('ferm-1', 'tuning-table', 1, 0);
 
-            expect(fermenterControls.setParam).toHaveBeenCalledWith('tuning-table', table);
+            expect(fermenterControls.setParam).not.toHaveBeenCalledWith('tuning-table', expect.anything());
         });
     });
 

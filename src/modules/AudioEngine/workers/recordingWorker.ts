@@ -16,19 +16,21 @@ import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../models/RecordingWavLimits';
  * zero memory growth and zero blocking during recording.
  *
  * Port protocol (self.onmessage):
- *   ← { type: 'init',  sab: SharedArrayBuffer, sampleRate: number }
+ *   ← { type: 'init',  sab: SharedArrayBuffer, sampleRate: number,
+ *       tempFile: string }   (OPFS entry name, minted by the main thread)
  *   → { type: 'ready' }
  *   ← { type: 'start' }
  *   ← { type: 'stop'  }
  *   → { type: 'wav',   buffer: ArrayBuffer,
  *       sampleZeroContextFrame: number | null, sampleRate: number } (transferable)
- *   → { type: 'error', message: string, tempFile?: string }         (on failure)
+ *   → { type: 'error', message: string }                            (on failure)
  *
- * Integrity policy: if the producer laps the drain reader (ring overrun), the
- * overwritten history cannot be recovered, so the take is abandoned — an
- * 'error' is posted, no 'wav' is ever sent, and the temp file's name rides the
- * error payload: the main thread removes it, because this worker is terminated
- * on 'error' and a terminated worker never resumes its in-flight removeEntry.
+ * Integrity policy: the main thread mints the temp file's name at session
+ * creation and owns the entry's removal after settlement, on every path — a
+ * terminated worker never resumes its in-flight removeEntry, so removal can
+ * never be this worker's sole responsibility. Removing right after posting
+ * the WAV stays as a fast path; if settlement removes it first, the redundant
+ * removeEntry here merely reports a missing entry, which is ignored.
  */
 
 const POLL_MS = 50; // drain interval — plenty of margin ahead of worklet writes
@@ -214,10 +216,11 @@ let stopRequested = false;
 let initializationPromise: Promise<void> | null = null;
 let drainInFlight: Promise<DrainResult> | null = null;
 
-// Unique temp filename per recording session to avoid collisions.
+// OPFS entry name this session drains into — minted by the main thread,
+// delivered in `init`, and removed by the main thread after settlement.
 let tmpName = '';
 
-async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<void> {
+async function initWorker(sab: SharedArrayBuffer, sampleRate: number, tempFile: string): Promise<void> {
     if (!isCaptureSampleRate(sampleRate)) {
         throw new RangeError(`Recording sample rate ${String(sampleRate)} is invalid`);
     }
@@ -230,7 +233,7 @@ async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<v
     stopRequested = false;
     workerSampleRate = sampleRate;
     sampleZeroContextFrame = null;
-    tmpName = `rec-tmp-${crypto.randomUUID()}.pcm`;
+    tmpName = tempFile;
 
     const root = await navigator.storage.getDirectory();
     opfsFileHandle = await root.getFileHandle(tmpName, { create: true });
@@ -317,11 +320,10 @@ async function runDrain(): Promise<DrainResult> {
  * Defined drop policy for a lapped reader: the overwritten interval can never
  * be recovered, so the take is abandoned. Stop draining and notify the main
  * thread on the established error channel — it tears the session down on
- * 'error'. The temp file's name rides the payload: this worker is terminated
- * on 'error', and a terminated worker never resumes an in-flight
- * `removeEntry`, so the main thread — which outlives it — owns the removal.
- * No 'wav' is ever produced, so overwritten history is never presented as a
- * recording.
+ * 'error'. The main thread owns the abandoned take's temp file: it minted the
+ * name, and this worker is terminated on 'error' before any removal here
+ * could run. No 'wav' is ever produced, so overwritten history is never
+ * presented as a recording.
  */
 function abandonTake(message: string): void {
     if (takeAbandoned) {
@@ -336,7 +338,6 @@ function abandonTake(message: string): void {
     self.postMessage({
         type: 'error',
         message,
-        tempFile: tmpName,
     });
 }
 
@@ -391,8 +392,8 @@ async function stopWorker(expectedFinalSampleCount: number): Promise<void> {
     opfsWritable = null;
 
     if (takeAbandoned) {
-        // The error — carrying the temp file name for main-thread removal —
-        // was posted when the take was abandoned; never send a 'wav' for it.
+        // The error was posted when the take was abandoned; never send a
+        // 'wav' for it. The main thread removes the temp file at settlement.
         return;
     }
 
@@ -433,7 +434,11 @@ async function stopWorker(expectedFinalSampleCount: number): Promise<void> {
     await discardTempFile();
 }
 
-/** Best-effort removal of this session's OPFS temp file. Non-fatal on failure. */
+/**
+ * Fast-path removal of this session's OPFS temp file right after the WAV was
+ * posted. The main thread owns the removal after settlement, so a missing
+ * entry (already removed there, or never created) is non-fatal.
+ */
 async function discardTempFile(): Promise<void> {
     if (!opfsFileHandle) {
         return;
@@ -448,7 +453,7 @@ async function discardTempFile(): Promise<void> {
 }
 
 type WorkerMessage =
-    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number; tempFile: string }
     | { type: 'start' }
     | { type: 'stop'; expectedFinalSampleCount: number };
 
@@ -459,7 +464,7 @@ function isCaptureSampleRate(value: number): boolean {
 self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
     switch (data.type) {
         case 'init':
-            initializationPromise = initWorker(data.sab, data.sampleRate);
+            initializationPromise = initWorker(data.sab, data.sampleRate, data.tempFile);
             void initializationPromise
                 .then(() => {
                     if (!stopRequested) {

@@ -105,12 +105,16 @@ calculations are performed in floating point" — an f32/f64 path may skip it.
 parameters **at the actual sample rate**, and their spec guards the 48 kHz-reuse mistake. This is the
 correct path — export runs at 44.1 kHz by default.
 
-`crates/daw-dsp/src/proof/metering.rs` also implements BS.1770 but adapts to non-48 kHz rates by
-scaling coefficients by `48000.0 / sr` rather than redesigning the biquads.
+`crates/daw-dsp/src/proof/metering.rs` implements BS.1770 the same way for the native engine:
+it discretises the recommendation's analog prototypes at the running sample rate, and its tests pin
+the derivation to the published 48 kHz tables.
 
-Two others are fabrications to delete rather than fix: `computeMomentaryLUFS`, whose one-pole
-`state - 0.85 * prevSample` is not K-weighting yet still wears the standard's −0.691 offset; and the
-fader-derived `const lufs = rmsDb - 3` in `analyzeMix.ts`, which reads no audio at all.
+A third implementation was a fabrication rather than a fix: `computeMomentaryLUFS` filtered with a
+one-pole `state - 0.85 * prevSample`, not K-weighting, yet still wore the standard's −0.691 offset;
+the master LUFS meter and the agent mix comparison read through it until it was deleted and both
+rerouted onto the `createKWeightingFilters` path (`MomentaryLUFS`/`ShortTermLUFS` in the
+advancedMetering use cases). One remains: the fader-derived `const lufs = rmsDb - 3` in
+`analyzeMix.ts`, which reads no audio at all.
 
 Three implementations of one measurement is how a wrong number reaches a user while a right one sits
 unused ten files away.

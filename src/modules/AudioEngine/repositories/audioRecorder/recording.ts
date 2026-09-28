@@ -36,6 +36,7 @@ import {
 } from './recordingSession';
 import { releaseSharedMediaStream } from './releaseSharedMediaStream';
 import { settleRecordingSession } from './settleRecordingSession';
+import { sweepAbandonedRecordingTempFilesOnce } from './sweepAbandonedRecordingTempFiles';
 import { waitForRecordingSessions } from './waitForRecordingSessions';
 
 export { audioRecordingStore };
@@ -54,6 +55,9 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
             onTerminal: RecordingTerminalCallback,
             inputId: string | null = null
         ): Promise<boolean> {
+            // One-time maintenance on the repository's first use: temp files a
+            // crashed previous run left behind have no session to settle them.
+            sweepAbandonedRecordingTempFilesOnce();
             const startGeneration = recordingLifecycleState.startGeneration;
             let mediaStream: MediaStream | null = null;
             let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -118,6 +122,11 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                 const readyRecordingNode = recordingNode;
                 const readyRecordingWorker = recordingWorker;
 
+                // The main thread mints the temp file's name: settlement must be
+                // able to remove the entry on every path, including a worker
+                // crash that arrives before the worker has said anything.
+                const tempFile = `rec-tmp-${crypto.randomUUID()}.pcm`;
+
                 const session: RecordingSession = {
                     trackId,
                     mediaStream,
@@ -130,6 +139,7 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     decodePending: false,
                     stopFlushTimer: null,
                     producerStopAcknowledged: false,
+                    tempFile,
                 };
                 registeredSession = session;
                 activeSessions.set(trackId, session);
@@ -162,7 +172,7 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                               sampleZeroContextFrame?: unknown;
                               sampleRate?: unknown;
                           }
-                        | { type: 'error'; message: string; tempFile?: string };
+                        | { type: 'error'; message: string };
 
                     if (msg.type === 'ready') {
                         if (activeSessions.get(trackId) !== session || session.status !== 'starting') {
@@ -178,22 +188,10 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                         void decodeAndDeliver(session, msg.buffer, msg.sampleZeroContextFrame, msg.sampleRate, ctx);
                     } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
+                        // Settlement owns the temp file's removal — the session
+                        // carries the name minted at start, so no payload echo
+                        // is needed.
                         settleRecordingSession(session, { kind: 'failed', reason: 'worker-error' });
-                        // The worker names the abandoned take's temp file because
-                        // it cannot remove the file itself: settlement terminated
-                        // it, and a terminated worker never resumes its
-                        // in-flight removeEntry — this thread outlives it. A
-                        // missing entry is fine: the file may never have been
-                        // created or may already be gone.
-                        if (msg.tempFile !== undefined) {
-                            const tempFile = msg.tempFile;
-                            void navigator.storage
-                                .getDirectory()
-                                .then((root) => root.removeEntry(tempFile))
-                                .catch((error: unknown) =>
-                                    logger.debug(`Abandoned recording temp file ${tempFile} not removed`, error)
-                                );
-                        }
                     }
                 };
 
@@ -202,7 +200,7 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     settleRecordingSession(session, { kind: 'failed', reason: 'worker-crash' });
                 };
 
-                recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
+                recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate, tempFile });
 
                 return true;
             } catch (error) {

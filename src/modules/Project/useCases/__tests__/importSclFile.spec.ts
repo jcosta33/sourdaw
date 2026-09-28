@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => {
     };
 });
 
+// The engine barrel stays mocked for one purpose: proving the import never
+// forwards the table to the engine. No instrument consumes project tuning, so
+// registering it there was the dead call #4675 removed.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     registerTuningTable: mocks.registerTuningTable,
 }));
@@ -74,7 +77,7 @@ describe('importSclFile', () => {
         mocks.projectStore.value = null;
     });
 
-    it('should import the selected Scala file into project tuning and engine tuning', async () => {
+    it('stores the imported scale on the project without forwarding it to the engine', async () => {
         const initialProject = createProjectState();
         const sclContent = '! comment\nBright twelve\n1\n2/1\n';
         const frequencies = [220, 440, 880];
@@ -103,8 +106,35 @@ describe('importSclFile', () => {
                 frequencies,
             },
         });
-        expect(mocks.registerTuningTable).toHaveBeenCalledWith(frequencies);
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Imported scale: Bright twelve', 'success');
+        // No instrument consumes the project tuning table, so there is nothing
+        // to register with the engine — forwarding would be the dead call the
+        // #4675 fix removed.
+        expect(mocks.registerTuningTable).not.toHaveBeenCalled();
+    });
+
+    it('reports the stored scale and names no instrument as retuned', async () => {
+        const sclContent = '! comment\nBright twelve\n1\n2/1\n';
+        const selectedFile = new File([sclContent], 'bright.scl', {
+            type: 'text/plain',
+        });
+        mocks.projectStore.value = createProjectState();
+        mocks.pickFiles.mockResolvedValue([selectedFile]);
+        mocks.parseScl.mockResolvedValue({
+            name: 'Bright twelve',
+            description: 'A test tuning',
+            frequencies: [220, 440, 880],
+        });
+
+        await importSclFile();
+
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        const [message, severity] = mocks.notifyUser.mock.calls[0]!;
+        // The notice claims only the real effect — storage — never a retune.
+        expect(message).toContain('stored on the project');
+        expect(message).toContain('no instrument');
+        // It names no instrument: nothing honours the table.
+        expect(message).not.toContain('Fermenter');
+        expect(severity).toBe('success');
     });
 
     it('should not parse or notify when no file is selected', async () => {

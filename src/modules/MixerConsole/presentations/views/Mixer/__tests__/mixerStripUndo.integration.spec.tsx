@@ -317,7 +317,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     readNativeEnginePlayheadSeconds: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     registerScheduledSource: vi.fn(),
-    registerTuningTable: vi.fn(),
     removeBusStrip: vi.fn(),
     removeMidiFxFromStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),

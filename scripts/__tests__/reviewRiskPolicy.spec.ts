@@ -214,13 +214,17 @@ describe('planReviewRisk', () => {
      * never statically imports, reddens this check. Classification stays with the union-wide checks
      * above, which already cover every declared path.
      */
+    // The walk reads every closure file per command over the true-import closures
+    // #4775 pinned: about 1.3 s locally, but CI's unit shards run it under heavy
+    // parallel load where the default 5 s budget was exceeded on two unrelated
+    // heads — the work is the contract, so the budget carries the load.
     it('should pin each command closure to its entry static local imports, per command', () => {
         const readSource = readRepositorySource();
 
         for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
             assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
         }
-    });
+    }, 30_000);
 
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from

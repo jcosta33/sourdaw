@@ -1,15 +1,31 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const analyserDouble = {
+    fftSize: 256,
+    getFloatTimeDomainData: (arr: Float32Array) => {
+        arr.fill(0);
+    },
+};
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getMasterAnalyser: vi.fn(() => ({
-        frequencyBinCount: 1024,
-        getFloatTimeDomainData: vi.fn((arr: Float32Array) => {
-            arr.fill(0);
-        }),
+    getMasterStereoAnalysers: vi.fn(() => ({
+        left: analyserDouble,
+        right: analyserDouble,
     })),
     getAudioSampleRate: vi.fn(() => 48000),
-    computeMomentaryLUFS: vi.fn(() => -70),
+    MomentaryLUFS: class {
+        push() {}
+        get filled(): boolean {
+            return false;
+        }
+        get energy(): number {
+            return 0;
+        }
+        get value(): number {
+            return -70;
+        }
+    },
     ShortTermLUFS: class {
         push() {}
         value = -70;

@@ -338,12 +338,8 @@ function waitForIsolatedWorker(worker: IsolatedWorker, type: string): Promise<Re
 }
 
 describe('recordingWorker temp-file isolation', () => {
-    it('gives independently loaded workers distinct files and removal isolation at one timestamp', async () => {
+    it('gives independently loaded workers distinct files and removal isolation', async () => {
         const directory = new FilenameKeyedDirectory();
-        const fixedNow = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
-        vi.stubGlobal('crypto', {
-            randomUUID: vi.fn().mockReturnValueOnce('worker-a').mockReturnValueOnce('worker-b'),
-        });
         let releaseAHeaderPatch: (() => void) | undefined;
         let releaseBHeaderPatch: (() => void) | undefined;
         let markAHeaderPatchStarted: (() => void) | undefined;
@@ -404,9 +400,19 @@ describe('recordingWorker temp-file isolation', () => {
             publishCount(aRing.control, 2, 101);
             publishCount(bRing.control, 2, 202);
 
-            sendToIsolatedWorker(a, { type: 'init', sab: aRing.sab, sampleRate: 48000 });
+            sendToIsolatedWorker(a, {
+                type: 'init',
+                sab: aRing.sab,
+                sampleRate: 48000,
+                tempFile: 'rec-tmp-worker-a.pcm',
+            });
             await waitForIsolatedWorker(a, 'ready');
-            sendToIsolatedWorker(b, { type: 'init', sab: bRing.sab, sampleRate: 48000 });
+            sendToIsolatedWorker(b, {
+                type: 'init',
+                sab: bRing.sab,
+                sampleRate: 48000,
+                tempFile: 'rec-tmp-worker-b.pcm',
+            });
             await waitForIsolatedWorker(b, 'ready');
 
             sendToIsolatedWorker(a, { type: 'stop', expectedFinalSampleCount: 2 });
@@ -441,8 +447,6 @@ describe('recordingWorker temp-file isolation', () => {
             expect(directory.entries.size).toBe(0);
         } finally {
             beforeFilenameKeyedWrite = null;
-            fixedNow.mockRestore();
-            vi.unstubAllGlobals();
         }
     });
 });
@@ -772,16 +776,15 @@ describe('recordingWorker ring overrun drop policy', () => {
     }
 
     it('abandons the take when a poll drain discovers the overrun', async () => {
-        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
 
         sendToWorker({ type: 'start' });
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/overrun/i);
-        // The main thread terminates this worker on 'error', so the worker
-        // cannot remove its own temp file — it must hand the name over for
-        // main-thread removal.
-        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
+        // The main thread owns the abandoned take's temp file — it minted the
+        // name in `init` — so this worker never attempts the removal itself.
+        expect(fakeDir.removedEntries).toEqual([]);
 
         // The corrupted interval is never written to the OPFS history and no
         // 'wav' is ever produced for the take.
@@ -790,12 +793,11 @@ describe('recordingWorker ring overrun drop policy', () => {
     });
 
     it('abandons the take when the final drain at stop discovers the overrun', async () => {
-        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
 
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 6 });
-        const error = await waitFor('error');
-        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
+        await waitFor('error');
         expect(messages.some((m) => m.type === 'wav')).toBe(false);
     });
 
@@ -805,7 +807,7 @@ describe('recordingWorker ring overrun drop policy', () => {
         ring[1] = 2;
         publishCount(control, 2);
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'start' });
         // Let one drain tick run, then stop.
@@ -813,10 +815,11 @@ describe('recordingWorker ring overrun drop policy', () => {
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 2 });
         await waitFor('wav');
 
-        // The worker owns cleanup on the normal path: the temp entry is gone
-        // once the take has been delivered.
+        // The worker's fast-path cleanup: the temp entry is gone right after
+        // the take has been delivered. Settlement later re-attempts the
+        // removal on the main thread; a missing entry is ignored there.
         await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-[\w-]+\.pcm$/)]);
+        expect(fakeDir.removedEntries).toEqual(['rec-tmp-take.pcm']);
     });
 
     it('waits for a pending PCM write before one final drain and finalizes only once', async () => {
@@ -840,7 +843,7 @@ describe('recordingWorker ring overrun drop policy', () => {
             return Promise.resolve();
         };
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'start' });
         await pcmWriteStarted;
@@ -888,7 +891,7 @@ describe('recordingWorker ring overrun drop policy', () => {
             return Promise.resolve();
         };
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'start' });
         await headerWriteStarted;
@@ -915,7 +918,7 @@ describe('recordingWorker ring overrun drop policy', () => {
         ring.set([0.25, -0.5]);
         publishCount(control, 2, 100);
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'start' });
         await vi.waitFor(() => {
@@ -939,13 +942,12 @@ describe('recordingWorker ring overrun drop policy', () => {
         const { sab, control } = makeRing(64);
         beginRecordingRingWrite(control);
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 0 });
 
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/publication was unstable after the producer stopped/i);
-        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
         expect(messages.some((message) => message.type === 'wav')).toBe(false);
         expect(fakeDir.handle.store.bytes.byteLength).toBe(mod.WAV_HEADER_BYTES);
     });
@@ -956,13 +958,12 @@ describe('recordingWorker ring overrun drop policy', () => {
         ring.set([0.25, -0.5, 0.75]);
         publishCount(control, 3);
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 3 });
 
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/RIFF limit of 2 samples/i);
-        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
         expect(messages.some((message) => message.type === 'wav')).toBe(false);
         expect(fakeDir.handle.store.bytes.byteLength).toBe(mod.WAV_HEADER_BYTES);
     });
@@ -973,13 +974,12 @@ describe('recordingWorker ring overrun drop policy', () => {
         ring[1] = -0.5;
         publishCount(control, 2);
 
-        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        sendToWorker({ type: 'init', sab, sampleRate: 48000, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 3 });
 
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/stopped at 3 published samples but drained 2/i);
-        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
         expect(messages.some((message) => message.type === 'wav')).toBe(false);
     });
 });
@@ -1006,7 +1006,7 @@ describe('recordingWorker WAV header does not clobber the first samples', () => 
         }
         publishCount(control, samples.length, 0);
 
-        sendToWorker({ type: 'init', sab, sampleRate });
+        sendToWorker({ type: 'init', sab, sampleRate, tempFile: 'rec-tmp-take.pcm' });
         await waitFor('ready');
 
         sendToWorker({ type: 'start' });

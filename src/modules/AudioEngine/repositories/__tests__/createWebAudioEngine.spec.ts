@@ -2314,7 +2314,6 @@ describe('AudioEngine', () => {
             // noop graph; an unguarded method would dereference a noop node and
             // throw. No throw is the regression signal.
             expect(() => fbEngine.cancelTrackAutomationRamps()).not.toThrow();
-            expect(() => fbEngine.registerTuningTable([440])).not.toThrow();
             expect(() => fbEngine.setSend('t1', 'bus1', 0.5)).not.toThrow();
             expect(() => fbEngine.refreshSidechainAlignment(() => 0)).not.toThrow();
             expect(() => fbEngine.scheduleOscillator(440, 0, 0.1, 0.3)).not.toThrow();
