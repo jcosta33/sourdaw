@@ -700,18 +700,48 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        maxAttempts: 40,
+        // The attempt count is a backstop above both real guards, sized above what the deadline can carry
+        // at the fastest retained rate — report fef405f0's 8 attempts in 2.53 s, 0.316 s each, about 1,897
+        // attempts in 600 s. It would take 0.098 s an attempt to fit this cap inside the deadline, faster
+        // than any retained call, and the total's own floor is 4,096 maximal requests.
+        maxAttempts: 6144,
         maxRetriesPerRequest: 1,
-        attemptTimeoutMs: 5_000,
-        overallDeadlineMs: 120_000,
-        maxRequestBytes: 48 * 1024,
-        maxStatePlusQuestionBytes: 24 * 1024,
-        maxTotalSubmittedBytes: 1024 * 1024,
+        // One attempt may spend the whole state budget.
+        attemptTimeoutMs: 20_000,
+        // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
+        overallDeadlineMs: 600_000,
+        // The provider's context window, not spend, is what binds the state budget. That boundary was
+        // measured from a dry-run plan export of the run that hit it — the request bodies that plan would
+        // have sent, read while reviewing it and not kept in the retained sidecar set: requests of 130,104
+        // and 130,895 bytes were both answered `400 max_tokens_exceeded` while a 130,723-byte request was
+        // answered. 96 KiB is 24,576 estimated tokens by the `bytes / 4`
+        // proxy, which runs slightly under the provider's own count — that run reported 930,965
+        // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
+        // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
+        // answered.
+        maxRequestBytes: 128 * 1024,
+        maxStatePlusQuestionBytes: 96 * 1024,
+        // Measured against the retained scans, the deadline is the guard that ends a real run, and it is
+        // first for every request size this profile admits. Rates are duration over network attempts: the
+        // retained ci reports run 0.316-0.974 s per attempt — fastest fef405f0's 8 attempts in 2.53 s,
+        // slowest ci call 364ccd54's 4 in 3.895 s — and the retained corpus reaches 1.13 s on 9f33b0a0's
+        // single local attempt, so 0.974 is the ci slow end and not a corpus bound. The retained report
+        // 784380a1 submitted 1,863,741 bytes over 19 attempts, 98,092
+        // bytes a request. Its assessed units are not the denominator: 23 of its 42 were cache hits, and a
+        // cache hit submits nothing. At the fastest retained rate the deadline carries about 1,897
+        // attempts, or 177 MiB at that request size and 237 MiB at the 128 KiB request ceiling, so this
+        // total can only take over where attempts run faster than any retained call — which is what a
+        // runaway guard is for. Its worst case is about $5.52 a run, from the retained cost range of
+        // 1.04-1.44 cents per MiB (lowest a79a12b8's 3.98 MB run, highest 1e3b55b7's 141 KB one), and it
+        // never rations an ordinary run: those cost cents.
+        maxTotalSubmittedBytes: 384 * 1024 * 1024,
         contextExpansionPasses: 1,
         verify: {
             maxRegionBytes: 96 * 1024,
-            maxStatePlusQuestionBytes: 128 * 1024,
-            maxRequestBytes: 160 * 1024,
+            // The same window bound as the scan budgets: a verify request must not be able to send a
+            // state the provider refuses, whatever the scan profile permits.
+            maxStatePlusQuestionBytes: 96 * 1024,
+            maxRequestBytes: 128 * 1024,
             maxTotalSubmittedBytes: 2 * 1024 * 1024,
         },
     },
@@ -755,8 +785,11 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
     if (!Number.isSafeInteger(profile.contextExpansionPasses) || profile.contextExpansionPasses < 0) {
         throw new Error(`budget profile ${profile.name} contextExpansionPasses must be zero or more`);
     }
-    // A region the collector admits must fit one request's state budget, and one request the run's
-    // total, or the profile configures a collection that can never be sent.
+    // The chain of ceilings is what this enforces: a request fits the run's total, a verify region fits
+    // the verify state ceiling, and that state ceiling fits the verify request, which fits its total. It
+    // says nothing about the question reserve, so a region at the verify region ceiling can still be
+    // withheld by the request fit, which names it with its own reason — the limitation, not this check,
+    // reports that.
     if (
         profile.maxRequestBytes > profile.maxTotalSubmittedBytes ||
         profile.verify.maxRegionBytes > profile.verify.maxStatePlusQuestionBytes ||

@@ -78,8 +78,8 @@ filer measured 4 planned units and 16 references against the merge base `9650425
 collected spec's unit as `no-admissible-evidence`. Disabling only the `specCovered` arm of
 `admissionTier` restored the merge base's units, so the promotion was the cause. The blind draw
 measured the reallocation and the approved head disclosed it as a limitation instead of reopening the
-ordering, so the defect reached `main`; at `ci` (1 MiB total) the two revisions' sets are identical,
-which is why the assessed diff never showed it.
+ordering, so the defect reached `main`; at `ci`, whose total did not bind on that fixture, the two
+revisions' sets are identical, which is why the assessed diff never showed it.
 
 Blind spot: the review's stances attacked the promotion's own direction — a spec outranking the
 source it covers — and pinned that pairwise order, but none asked what the new rank does to the
