@@ -137,7 +137,7 @@ struct Recovery {
     /// Largest output sample either channel reached in any recovery block.
     left_peak: f32,
     right_peak: f32,
-    /// 1-based index of the first block whose two-channel peak crossed
+    /// Index of the first block whose two-channel peak crossed
     /// [`RECOVERED_THRESHOLD`], `RECOVERY_BLOCKS + 1` if none ever did.
     first_recovered_block: usize,
     /// Largest output sample either channel reached in the window's final
@@ -160,14 +160,40 @@ impl Recovery {
     }
 }
 
+/// The loop block whose first input sample carries the NaN for the reverse
+/// algorithm.
+///
+/// The tank algorithms recirculate whatever reaches their delay lines, so a
+/// NaN anywhere in the input wedges them and the sweep keeps their poison at
+/// the window's first sample. The reverse engine needs its poison placed
+/// instead. Its first grain arms only after a full default 1.5 s grain
+/// (72,000 samples — the arm lands during loop block 563) and then reads the
+/// capture backwards from its anchor, the newest sample (capture position
+/// 71,999), one position per output sample down to position 0. A poison at
+/// capture position p is therefore read at output sample 143,999 − p — loop
+/// block 1125 − p/128, which is how a poison at position 0 (block 1125) falls
+/// outside this file's 750-block window and the sweep would pass green on an
+/// engine wedged from block 1125 on. At the first sample of loop block 560 —
+/// capture position 560 × 128 — the first grain reads the poison 320 reads
+/// into its 72,000-read sweep, at the last sample of loop block 565: well
+/// inside the window, with 178 blocks of margin before the end-liveness
+/// filter judges the wedge.
+const REVERSE_POISON_BLOCK: usize = 560;
+
+/// The loop block whose first input sample carries the NaN for one algorithm
+/// — see [`REVERSE_POISON_BLOCK`] for the reverse engine's placement.
+fn poison_block(algorithm: f32) -> usize {
+    if algorithm == REVERSE_ALGORITHM {
+        REVERSE_POISON_BLOCK
+    } else {
+        0
+    }
+}
+
 fn recovery_after_one_nan_input(algorithm: f32, mix: f32) -> Recovery {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
     instance.set_param("algorithm", algorithm);
     instance.set_param("mix", mix);
-
-    let mut poisoned = sine_block(0);
-    poisoned[0] = f32::NAN;
-    instance.process(&poisoned, &poisoned, FRAMES as u32);
 
     let mut recovery = Recovery {
         left_peak: 0.0,
@@ -176,8 +202,11 @@ fn recovery_after_one_nan_input(algorithm: f32, mix: f32) -> Recovery {
         end_left_peak: 0.0,
         end_right_peak: 0.0,
     };
-    for block in 1..=RECOVERY_BLOCKS {
-        let input = sine_block(block);
+    for block in 0..=RECOVERY_BLOCKS {
+        let mut input = sine_block(block);
+        if block == poison_block(algorithm) {
+            input[0] = f32::NAN;
+        }
         instance.process(&input, &input, FRAMES as u32);
         let (left_peak, right_peak) = stereo_output_peak(&mut instance);
         recovery.left_peak = recovery.left_peak.max(left_peak);
