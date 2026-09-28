@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "7b1a505426ae2afcfc683c685ab52ccc9520da41f805df022e85642c194678a3"
+                "sha256": "bc8d1e63544b9431294211b583300536e3c1c43dc9599d24489b30a5f87a536b"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -8626,12 +8626,12 @@
                 ]
             }
         },
-        "npm:ws@8.21.1": {
-            "source": "https://registry.npmjs.org/ws/-/ws-8.21.1.tgz",
-            "revision": "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==",
+        "npm:ws@8.22.0": {
+            "source": "https://registry.npmjs.org/ws/-/ws-8.22.0.tgz",
+            "revision": "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==",
             "files": [
                 {
-                    "archivePath": "release/dependency-license-proofs/ws-8.21.1.tgz",
+                    "archivePath": "release/dependency-license-proofs/ws-8.22.0.tgz",
                     "sourcePath": "LICENSE",
                     "sha256": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef"
                 }
