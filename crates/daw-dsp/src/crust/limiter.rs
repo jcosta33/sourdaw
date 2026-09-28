@@ -516,15 +516,21 @@ impl TruePeakLimiter {
         let required_right = self.required_gain(window_right_max);
         let linked = required_left.min(required_right);
 
-        // Direction decides which link control applies: a transient link of 0
-        // lets one channel duck alone on a snare hit, while a release link of
-        // 100 keeps the two recovering together so the image does not wander.
-        let target_left = if required_left < self.left.gain {
+        // Direction decides which link control applies, judged by the linked
+        // target against the channel's current gain — not by the channel's own
+        // required gain. A channel with no over-ceiling peak of its own always
+        // has required >= gain, so judging by its own requirement would hand
+        // every one-sided catch to the release link and leave link_transient
+        // multiplying zero on the channel that owns the peak: a transient link
+        // of 0 must let one channel duck alone on a snare hit, and a release
+        // link of 100 must keep the two recovering together so the image does
+        // not wander.
+        let target_left = if linked < self.left.gain {
             required_left + (linked - required_left) * self.link_transient
         } else {
             required_left + (linked - required_left) * self.link_release
         };
-        let target_right = if required_right < self.right.gain {
+        let target_right = if linked < self.right.gain {
             required_right + (linked - required_right) * self.link_transient
         } else {
             required_right + (linked - required_right) * self.link_release

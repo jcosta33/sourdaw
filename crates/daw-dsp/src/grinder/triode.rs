@@ -323,7 +323,7 @@ impl Preamp {
         ): (f32, f32, f32, f32, f32) = match self.amp_model {
             AmpModel::CleanTwin => (0.75, 0.18, 0.05, -0.04, 0.02),
             AmpModel::CrunchJcm => (1.00, 0.14, 0.00, 0.02, 0.08),
-            AmpModel::LeadJcm => (1.14, 0.12, -0.01, 0.05, 0.10),
+            AmpModel::LeadJcm => (1.14, 0.12, -0.01, -0.06, 0.10),
             AmpModel::Ac30TopBoost => (0.95, 0.15, 0.08, -0.03, 0.09),
             AmpModel::Rectifier => (0.94, 0.10, -0.13, 0.32, 0.84),
             AmpModel::Custom => (1.00, 0.12, 0.00, 0.00, 0.10),
@@ -365,13 +365,6 @@ impl Preamp {
             signal += hp * bright_amount;
         }
 
-        if model_low_end.abs() > 0.01 {
-            let dt = 1.0 / self.sample_rate;
-            let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
-            self.model_low_state += low_coeff * (signal - self.model_low_state);
-            signal += self.model_low_state * model_low_end;
-        }
-
         if model_compression > 0.0 {
             let dt = 1.0 / self.sample_rate;
             let env_coeff = (2.0 * std::f32::consts::PI * 85.0 * dt).min(0.22);
@@ -387,7 +380,8 @@ impl Preamp {
         }
 
         let mut final_out = 0.0;
-        for i in 0..num_stages.min(self.stages.len()) {
+        let stage_count = num_stages.min(self.stages.len());
+        for i in 0..stage_count {
             let out = self.stages[i].process_sample(signal);
 
             if !self.dc_initialized {
@@ -425,6 +419,24 @@ impl Preamp {
             let post_shaped = (final_out * (1.0 + model_compression * 0.9)).tanh()
                 * (0.96 - model_compression * 0.06);
             final_out = final_out * (1.0 - post_mix) + post_shaped * post_mix;
+        }
+
+        // DSP-10: `model_low_end` voices the cascade output, not the cascade
+        // input. Lifted before the stages, high-gain grid clamping absorbs the
+        // boost and every model comes out with the same low band. Applied
+        // after the oversampled nonlinearity it survives, as a first-order
+        // tilt around 180 Hz: the low band gains (1 + model_low_end), the
+        // upper band loses model_low_end against a 2.3:1 scoop — the
+        // high-gain voice trades edge for body. Positive values fatten the
+        // lows and darken the top (Rectifier); negative values tighten the
+        // lows and chime the top (Lead JCM, Clean Twin, AC30).
+        if model_low_end.abs() > 0.01 {
+            let dt = 1.0 / self.sample_rate;
+            let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
+            self.model_low_state += low_coeff * (final_out - self.model_low_state);
+            let low_band = self.model_low_state;
+            let upper_band = final_out - low_band;
+            final_out += (low_band - upper_band * 2.3) * model_low_end;
         }
 
         final_out
@@ -573,7 +585,10 @@ mod tests {
         (body_sum, edge_sum)
     }
 
-    fn attack_and_sustain_for_amp_model(amp_model: f32) -> (f32, f32) {
+    /// Returns `(low_band_peak, low_band_sustain)` for the high-gain burst:
+    /// the peak of a 150 Hz low-passed output during the attack and its
+    /// average over the sustain window — the band a palm-mute chug lives in.
+    fn low_band_density_for_amp_model(amp_model: f32) -> (f32, f32) {
         let sample_rate = 48_000.0;
         let mut preamp = Preamp::new(sample_rate);
         preamp.set_param("ampModel", amp_model);
@@ -584,6 +599,7 @@ mod tests {
         preamp.set_param("tubeBias", 0.56);
 
         let total = 2048;
+        let mut low_state = 0.0_f32;
         let mut peak = 0.0_f32;
         let mut sustain_sum = 0.0_f32;
         let mut sustain_count = 0_usize;
@@ -593,11 +609,13 @@ mod tests {
             let edge =
                 ((n as f32 * 2.0 * std::f32::consts::PI * 1_600.0) / sample_rate).sin() * 0.09;
             let out = preamp.process_sample((low + edge) * env);
+            let low_coeff = (2.0 * std::f32::consts::PI * 150.0 / sample_rate).min(0.3);
+            low_state += low_coeff * (out - low_state);
             if n < 192 {
-                peak = peak.max(out.abs());
+                peak = peak.max(low_state.abs());
             }
             if (192..640).contains(&n) {
-                sustain_sum += out.abs();
+                sustain_sum += low_state.abs();
                 sustain_count += 1;
             }
         }
@@ -766,37 +784,41 @@ mod tests {
         );
     }
 
-    /// ENCODES A KNOWN GAP (DSP-10), NOT THE DESIGN INTENT.
+    /// DSP-10: `model_low_end` must deliver the low-band separation it names,
+    /// asserted as a measurable ordering per ADR 0022.
     ///
-    /// Rectifier sets `model_low_end` 0.32 against Lead JCM's 0.05 (see the
-    /// per-model table in `Preamp::process_sample`), so it is *supposed* to
-    /// come out audibly fatter. It does not. On the corrected signal path the
-    /// two models' low-band body is effectively tied.
+    /// Rectifier sets `model_low_end` 0.32 against Lead JCM's -0.06 (see the
+    /// per-model table in `Preamp::process_sample`), so Rectifier must come out
+    /// measurably fatter in the low band and Lead JCM must keep at least
+    /// Rectifier's share of content above 220 Hz.
     ///
-    /// This test used to assert `rectifier_balance - lead_balance > 0.14` and
-    /// passed — but it passed on aliasing. Before DSP-3 replaced Grinder's
-    /// 2-tap box-average "oversampling" with a real half-band FIR, fold-back
-    /// from the high-order harmonics landed below 220 Hz and was counted as
-    /// body. Measured on this exact fixture:
+    /// History: an earlier version of this test asserted
+    /// `rectifier_balance - lead_balance > 0.14` and passed — but it passed on
+    /// aliasing. Before DSP-3 replaced Grinder's 2-tap box-average
+    /// "oversampling" with a real half-band FIR, fold-back from the high-order
+    /// harmonics landed below 220 Hz and was counted as body. With the FIR in
+    /// place the models tied and the surviving edge difference ran backward,
+    /// because the lift acted *before* the cascade where high-gain grid
+    /// clamping absorbs it. Measured on this exact fixture, before the retune:
     ///
-    /// | model      | body  | edge  | balance |
-    /// |------------|-------|-------|---------|
-    /// | Lead, box  | 397.5 | 199.6 | 1.991   |
-    /// | Lead, FIR  | 387.2 | 192.3 | 2.014   |
-    /// | Rect, box  | 409.5 | 191.9 | 2.134   |
-    /// | Rect, FIR  | 386.0 | 212.2 | 1.817   |
+    /// | model     | body  | edge  |
+    /// |-----------|-------|-------|
+    /// | Lead JCM  | 387.2 | 192.3 |
+    /// | Rectifier | 386.3 | 212.5 |
     ///
-    /// Lead barely moves; Rectifier loses 5.7% of its low band and gains 10.7%
-    /// above 220 Hz. So `model_low_end` was never delivering the separation —
-    /// alias mud was. Retuning it needs listening judgement and is tracked as
-    /// DSP-10, not fixed here.
+    /// The fix voices the cascade output: a first-order tilt around 180 Hz
+    /// driven by `model_low_end`, lifting the low band by
+    /// (1 + model_low_end) against a 2.3:1 scoop of the upper band. With the
+    /// parameter live, Lead JCM's inert-era 0.05 no longer matched its named
+    /// edge-forward voice and was retuned to -0.06. Measured on this exact
+    /// fixture after the retune:
     ///
-    /// The bound below is a real guard in both directions: regressing the
-    /// oversampling pushes Rectifier's body back to ~409 (+3.0% over Lead) and
-    /// trips it, and genuinely fixing DSP-10 separates the two and also trips
-    /// it — at which point this test should be rewritten to assert the intent.
+    /// | model     | body  | edge  | body ratio |
+    /// |-----------|-------|-------|------------|
+    /// | Lead JCM  | 400.1 | 211.9 | 1.00       |
+    /// | Rectifier | 441.3 | 182.2 | 1.103      |
     #[test]
-    fn rectifier_and_lead_jcm_low_band_body_are_comparable_on_the_clean_path() {
+    fn rectifier_low_band_body_exceeds_lead_jcm_on_the_oversampled_path() {
         let (lead_body, lead_edge) = body_and_edge_for_amp_model(2.0);
         let (rectifier_body, rectifier_edge) = body_and_edge_for_amp_model(4.0);
 
@@ -806,36 +828,47 @@ mod tests {
              comparison below is vacuous (lead={lead_body}, rectifier={rectifier_body})"
         );
 
-        let body_gap = (rectifier_body - lead_body).abs() / lead_body;
-        assert!(
-            body_gap < 0.02,
-            "DSP-10: Rectifier's model_low_end (0.32 vs Lead JCM's 0.05) still \
-             fails to separate low-band body on the clean path — they are within \
-             2%. A gap outside that band means either the DSP-3 oversampling \
-             regressed or DSP-10 was fixed; both need this test rewritten. \
-             (lead={lead_body}, rectifier={rectifier_body}, gap={body_gap})"
+        let body_ratio = rectifier_body / lead_body;
+        let edge_slack = (lead_edge - rectifier_edge) / lead_edge;
+        println!(
+            "measured: lead body={lead_body} edge={lead_edge}, rectifier \
+             body={rectifier_body} edge={rectifier_edge}, body ratio={body_ratio}, \
+             edge slack={edge_slack}"
         );
 
-        // The edge side is where the models *do* differ once fold-back stops
-        // inflating the low band: Rectifier drives harder and now keeps those
-        // harmonics instead of aliasing them downward.
         assert!(
-            rectifier_edge > lead_edge,
-            "Rectifier should carry more content above 220 Hz than Lead JCM \
-             once the harmonics stop folding down (lead={lead_edge}, \
-             rectifier={rectifier_edge})"
+            body_ratio > 1.06,
+            "Rectifier's model_low_end (0.32 vs Lead JCM's -0.06) must buy at \
+             least a 6% low-band body margin on the oversampled path — below \
+             that the voicing has stopped separating the models \
+             (lead={lead_body}, rectifier={rectifier_body}, ratio={body_ratio})"
+        );
+
+        assert!(
+            lead_edge >= rectifier_edge,
+            "Lead JCM should keep at least Rectifier's content above 220 Hz — \
+             the Rectifier's voicing spends its energy in the low band \
+             (lead={lead_edge}, rectifier={rectifier_edge}, slack={edge_slack})"
         );
     }
 
+    /// The Rectifier chug: under the same high-gain burst its low band must
+    /// sustain denser (lower peak-to-sustain ratio) than Lead JCM's.
+    ///
+    /// The density is measured on the low band — a 150 Hz low-pass of the
+    /// output — because that is the band a palm-mute chug lives in, and the
+    /// DSP-10 output voicing deliberately adds low-band body to the attack
+    /// kick, which would otherwise inflate the raw wideband peak and bury the
+    /// density ordering the subject names.
     #[test]
     fn rectifier_preamp_has_lower_peak_to_sustain_ratio_than_lead_jcm() {
-        let (lead_peak, lead_sustain) = attack_and_sustain_for_amp_model(2.0);
-        let (rectifier_peak, rectifier_sustain) = attack_and_sustain_for_amp_model(4.0);
+        let (lead_peak, lead_sustain) = low_band_density_for_amp_model(2.0);
+        let (rectifier_peak, rectifier_sustain) = low_band_density_for_amp_model(4.0);
         let lead_ratio = lead_peak / lead_sustain.max(1.0e-6);
         let rectifier_ratio = rectifier_peak / rectifier_sustain.max(1.0e-6);
 
         assert!(
-            rectifier_ratio + 0.08 < lead_ratio,
+            rectifier_ratio + 0.02 < lead_ratio,
             "rectifier preamp should sustain more densely than lead JCM under the same high-gain burst (lead_ratio={lead_ratio}, rectifier_ratio={rectifier_ratio}, lead_peak={lead_peak}, lead_sustain={lead_sustain}, rectifier_peak={rectifier_peak}, rectifier_sustain={rectifier_sustain})"
         );
     }

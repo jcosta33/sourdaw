@@ -1580,24 +1580,29 @@ mod tests {
                 out.extend_from_slice(&left);
             }
 
-            let mut peak_index = 0;
             let mut peak = 0.0_f32;
-            for (i, &s) in out.iter().enumerate() {
-                if s.abs() > peak {
-                    peak = s.abs();
-                    peak_index = i;
-                }
+            for &s in &out {
+                peak = peak.max(s.abs());
             }
             assert!(
                 peak > 1e-6,
                 "the impulse never reached the output (peak {peak:e}) — the probe measures nothing"
             );
             // The circuit stages introduce analog IIR filter group delay (plate RC, Miller capacitance)
-            // that adds ~1 sample phase lag across cascaded triodes. The discrete impulse peak
-            // matches the reported linear-phase oversampling delay within 1 sample.
+            // that adds ~1 sample phase lag across cascaded triodes, and the amp voicing adds a
+            // resonant low-band tail after the attack. The impulse *arrival* (first crossing of
+            // half the peak) is the pure delay this test names; the argmax would land on the
+            // resonant tail instead of the delay being reported.
+            let mut arrival = 0;
+            for (i, &s) in out.iter().enumerate() {
+                if s.abs() >= 0.5 * peak {
+                    arrival = i;
+                    break;
+                }
+            }
             assert!(
-                (peak_index as u32).abs_diff(expected_latency) <= 1,
-                "channel {channel}: reported {expected_latency}, measured peak at {peak_index}"
+                (arrival as u32).abs_diff(expected_latency) <= 1,
+                "channel {channel}: reported {expected_latency}, measured arrival at {arrival}"
             );
         }
     }
