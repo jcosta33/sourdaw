@@ -11,7 +11,11 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { SEMANTIC_CLIP_MAX_BEATS, SEMANTIC_CLIP_MAX_END_BEAT } from '../../models/SemanticCommandList';
+import {
+    SEMANTIC_CLIP_MAX_BEATS,
+    SEMANTIC_CLIP_MAX_END_BEAT,
+    SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
+} from '../../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
     bridgeLlmToolCalls,
@@ -23,10 +27,14 @@ import {
 import { isValidParameterValue } from '../../transformers/llmActionStrategies/bridgeArgumentGuards';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
+import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
+import { type RetainedTransformCompilation } from '../applicationOwnedToolLoop';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
+import { getCompiledTransformTargetIds } from '../getCompiledTransformTargetIds';
+import { materializeTransformToolCalls } from '../materializeTransformToolCalls';
 import {
     type CompilerResolvedTargetOverride,
     validateArbitraryCommandListEvidence,
@@ -38,6 +46,7 @@ import {
     BATCH_LOCAL_BINDING_PATTERN,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
     PLAN_CREATED_OBJECT_COMMANDS,
+    PROJECT_OBJECT_CREATING_COMMANDS,
     BATCH_LOCAL_AUTOMATION_LANE_CAPABILITIES,
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
@@ -55,6 +64,7 @@ import {
     SPENT_CREATION_BUDGET_INFIX,
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
+import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
     getBassProcessingCopyPromptScope,
@@ -66,6 +76,7 @@ import {
     type DrumPreviewBranchesRequestScope,
 } from './getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
+import { getExplicitClipProtection } from './getExplicitlyProtectedClips';
 import {
     getMidiOverlapTransformPromptScope,
     type MidiOverlapTransformRequestScope,
@@ -120,6 +131,7 @@ import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseAc
 import { splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
+import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
@@ -132,6 +144,11 @@ type BridgeGroundedLlmToolCallsInput = {
     sectionSignatures?: readonly SectionPlanningSignature[];
     prompt: string;
     compilerEvidence?: ArbitraryCommandListEvidence;
+    transformProof?: {
+        revision: string;
+        creativeAuthorityId: string | null;
+        compilations: readonly RetainedTransformCompilation[];
+    };
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
     creativeAuthority?: CreativeRequestAuthority;
@@ -158,6 +175,8 @@ type GroundToolCallInput = {
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+    compilerExpandedTargets?: boolean;
+    compilerSetArguments?: readonly Readonly<Record<string, unknown>>[];
     resolvedTargetOverrides?: readonly CompilerResolvedTargetOverride[];
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
@@ -245,6 +264,7 @@ type ResolveActionPromptScopeInput = {
     assertedArguments: Readonly<Record<string, unknown>>;
     catalog: GroundingCatalog;
     compilerExpandedTargets?: boolean;
+    compilerSetArguments?: readonly Readonly<Record<string, unknown>>[];
     context: ProjectContext;
     prompt: string;
     plannedActionNames: readonly string[];
@@ -1040,6 +1060,73 @@ type PromptClauseScope = ActionPromptScope & {
     start: number;
 };
 
+function namesProjectTarget(
+    text: string,
+    context: ProjectContext,
+    arguments_?: readonly Readonly<Record<string, unknown>>[]
+): boolean {
+    const known = context.tracks.flatMap((track) => [
+        { id: track.id, name: track.name },
+        ...track.clips.map((clip) => ({ id: clip.id, name: clip.name })),
+        ...track.devices.map((device) => ({ id: device.id, name: device.type })),
+    ]);
+    return known.some(
+        (candidate) =>
+            (arguments_ === undefined ||
+                arguments_.some((argumentsValue) => Object.values(argumentsValue).includes(candidate.id))) &&
+            [candidate.id, candidate.name].some((reference) =>
+                new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'iu').test(text)
+            )
+    );
+}
+
+function extendCompiledTargetListScope(input: {
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    maskedPrompt: string;
+    prompt: string;
+    selectedScope: PromptClauseScope;
+    setArguments: readonly Readonly<Record<string, unknown>>[];
+}): PromptClauseScope {
+    const { catalog, context, maskedPrompt, prompt, selectedScope, setArguments } = input;
+    if (!namesProjectTarget(selectedScope.text, context, setArguments)) {
+        return selectedScope;
+    }
+    const clauses = getPromptClauses(prompt, maskedPrompt);
+    let end = selectedScope.end;
+    for (const clause of clauses) {
+        if (clause.start <= end) {
+            continue;
+        }
+        const separator = prompt.slice(end, clause.start).trim().toLocaleLowerCase();
+        if (separator !== 'and' && separator !== ',') {
+            break;
+        }
+        if (resolveClauseActionIntent(clause.masked, catalog) !== null) {
+            break;
+        }
+        if (
+            /\b(?:not|except|excluding|without|but|leave|leaving|keep|keeping|preserve|preserving)\b/iu.test(
+                clause.masked
+            )
+        ) {
+            break;
+        }
+        if (!namesProjectTarget(clause.text, context)) {
+            break;
+        }
+        end = clause.end;
+    }
+    return end === selectedScope.end
+        ? selectedScope
+        : {
+              ...selectedScope,
+              end,
+              text: prompt.slice(selectedScope.start, end),
+              masked: maskedPrompt.slice(selectedScope.start, end),
+          };
+}
+
 /** The names the same-action calls of a creation propose for the objects they create. */
 function getProposedCreationNames(
     actionName: string,
@@ -1172,6 +1259,7 @@ function resolveActionPromptScope({
     assertedArguments,
     catalog,
     compilerExpandedTargets = false,
+    compilerSetArguments = [],
     context,
     prompt,
     plannedActionNames,
@@ -1290,11 +1378,21 @@ function resolveActionPromptScope({
     if (!appliesOneExplicitScopeToCompilerExpansion && referenceSlotCount !== sameActionCallCount) {
         return null;
     }
-    const selectedScope = appliesOneExplicitScopeToCompilerExpansion
+    let selectedScope = appliesOneExplicitScopeToCompilerExpansion
         ? matchingScopes[0]
         : getScopeAtOrdinal(matchingScopes, actionOrdinal);
     if (!selectedScope) {
         return null;
+    }
+    if (compilerExpandedTargets) {
+        selectedScope = extendCompiledTargetListScope({
+            catalog,
+            context,
+            maskedPrompt,
+            prompt,
+            selectedScope,
+            setArguments: compilerSetArguments,
+        });
     }
     if (
         proposedNames.length > 0 &&
@@ -3455,10 +3553,25 @@ function resolveAgentReferenceArray({
     ) {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-    if (capability === 'editable-clip' && /\bselected clips\b/u.test(normalizePromptText(prompt))) {
-        const selectedIds = new Set(context.selectedClipIds);
+    if (
+        (capability === 'editable-clip' || capability === 'editable-midi-clip') &&
+        /\bselected(?: midi)? clips\b/u.test(normalizePromptText(scanPromptQuotedText(prompt).maskedText))
+    ) {
+        const selectedIds = new Set(getSelectedClipReferenceIds(context));
         const assertedIdSet = new Set(assertedIds);
-        if (selectedIds.size === assertedIdSet.size && [...selectedIds].every((id) => assertedIdSet.has(id))) {
+        if (
+            selectedIds.size > 0 &&
+            selectedIds.size === assertedIdSet.size &&
+            [...selectedIds].every(
+                (id) =>
+                    assertedIdSet.has(id) &&
+                    isAgentReferenceCapabilityCandidate({
+                        capability,
+                        context,
+                        id,
+                    })
+            )
+        ) {
             return { status: 'resolved', ids: [...assertedIds] };
         }
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
@@ -3491,8 +3604,10 @@ function resolveAgentReferenceArray({
             (track) =>
                 track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
         );
-    } else if (capability === 'editable-clip') {
-        candidates = context.tracks.flatMap((track) => track.clips);
+    } else if (capability === 'editable-clip' || capability === 'editable-midi-clip') {
+        candidates = context.tracks
+            .flatMap((track) => track.clips)
+            .filter((clip) => isAgentReferenceCapabilityCandidate({ capability, context, id: clip.id }));
     } else {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
@@ -3846,6 +3961,8 @@ function groundToolCall({
     resolvedTargetOverrides,
     sameActionAssertedArguments,
     sameActionCallCount,
+    compilerExpandedTargets,
+    compilerSetArguments,
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
     workflowCapabilityId,
@@ -3904,7 +4021,8 @@ function groundToolCall({
         actionOrdinal,
         assertedArguments: call.arguments,
         catalog,
-        compilerExpandedTargets: resolvedTargetOverrides !== undefined,
+        compilerExpandedTargets: compilerExpandedTargets || resolvedTargetOverrides !== undefined,
+        compilerSetArguments,
         context,
         prompt,
         plannedActionNames,
@@ -4008,6 +4126,29 @@ function groundToolCall({
             targetRule.argument === 'trackIds' &&
             hasExactTargetIdSet(assertedValue, wholeProjectVibeMixScope.targetIds)
         ) {
+            continue;
+        }
+        if (
+            compilerExpandedTargets &&
+            (targetRule.capability === 'editable-clip' || targetRule.capability === 'editable-midi-clip') &&
+            targetRule.cardinality !== 'many'
+        ) {
+            const groupTargetIds = (compilerSetArguments ?? []).map((arguments_) => arguments_[targetRule.argument]);
+            const set = resolveAgentReferenceArray({
+                assertedIds: groupTargetIds,
+                capability: targetRule.capability,
+                context,
+                prompt: targetPrompt,
+                risk: getAppActionExecutionPolicy(call.name).risk,
+            });
+            if (set.status === 'rejected' || typeof assertedValue !== 'string' || !set.ids.includes(assertedValue)) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Compiled target ${targetRule.argument} is not an exact request target set`
+                );
+            }
+            groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
         if (
@@ -4216,6 +4357,7 @@ function groundToolCall({
             continue;
         }
         const groundsSiblingReferences =
+            compilerExpandedTargets ||
             (call.name === 'setTrackOutput' && targetRule.argument === 'trackId') ||
             ((actionScope.referenceSlots ?? 1) > 1 && targetRule.promptRole !== 'destination');
         const bulkSiblingTargetIds = groundsSiblingReferences
@@ -4472,16 +4614,48 @@ export function bridgeGroundedLlmToolCalls({
     sectionSignatures = [],
     prompt,
     compilerEvidence,
+    transformProof,
     projectRevision,
     workflowCapabilityId,
     creativeAuthority,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    const transformCompilations = transformProof?.compilations ?? [];
+    const transformCalls = materializeTransformToolCalls(transformCompilations);
+    if (
+        (transformProof !== undefined &&
+            (transformProof.revision !== projectRevision ||
+                transformProof.creativeAuthorityId !== (creativeAuthority?.authorityId ?? null))) ||
+        !hasExactCanonicalToolCallOrder(transformCalls, calls.slice(0, transformCalls.length)) ||
+        transformCompilations.some((compilation) => compilation.revision !== projectRevision)
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Transform compilation does not match the captured batch and revision'),
+            ],
+        };
+    }
+    if (transformCalls.length > 0) {
+        const clipProtection = getExplicitClipProtection(prompt, context);
+        const protectedIds = new Set(
+            getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
+        );
+        const targetIds = getCompiledTransformTargetIds(transformCalls, context);
+        if (!clipProtection.complete || targetIds.some((id) => protectedIds.has(id))) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Transform compilation includes a protected or unresolved target'),
+                ],
+            };
+        }
+    }
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     let compilerActionCommandGraph: ActionCommandGraph | undefined;
     if (compilerEvidence !== undefined) {
         const compilerValidation = validateArbitraryCommandListEvidence({
             evidence: compilerEvidence,
-            calls,
+            calls: calls.slice(transformCalls.length),
             context,
             revision: projectRevision,
             creativeAuthority,
@@ -4489,13 +4663,29 @@ export function bridgeGroundedLlmToolCalls({
         if (compilerValidation.status === 'rejected') {
             return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };
         }
-        compilerTargetOverridesByCallIndex = compilerValidation.targetOverridesByCallIndex;
-        compilerActionCommandGraph = compilerValidation.actionCommandGraph;
+        compilerTargetOverridesByCallIndex = new Map(
+            [...compilerValidation.targetOverridesByCallIndex.entries()].map(([index, overrides]) => [
+                index + transformCalls.length,
+                overrides,
+            ])
+        );
+        compilerActionCommandGraph = {
+            dependenciesByActionIndex: [
+                ...transformCalls.map(() => []),
+                ...compilerValidation.actionCommandGraph.dependenciesByActionIndex.map((dependencies) =>
+                    dependencies.map((index) => index + transformCalls.length)
+                ),
+            ],
+            batchLocalBindings: compilerValidation.actionCommandGraph.batchLocalBindings.map((binding) => ({
+                ...binding,
+                producerActionIndex: binding.producerActionIndex + transformCalls.length,
+            })),
+        };
     }
     // These workflows expand provider calls into generated app-owned actions. Until they can rebuild an
     // action-aligned graph, compiler evidence cannot safely cross the partial-acceptance boundary.
     if (
-        compilerActionCommandGraph !== undefined &&
+        (compilerActionCommandGraph !== undefined || transformCalls.length > 0) &&
         (workflowCapabilityId === 'shared-vocal-fx-buses' ||
             workflowCapabilityId === 'drum-render-comparison' ||
             workflowCapabilityId === 'backing-vocal-plate')
@@ -5015,10 +5205,14 @@ export function bridgeGroundedLlmToolCalls({
         }
     }
     if (
-        compilerActionCommandGraph !== undefined &&
-        (compilerEvidence === undefined ||
-            compilerTargetOverridesByCallIndex === undefined ||
-            !hasExactCanonicalToolCallOrder(compilerEvidence.commands, effectiveCalls))
+        (compilerActionCommandGraph !== undefined || transformCalls.length > 0) &&
+        (!hasExactCanonicalToolCallOrder(transformCalls, effectiveCalls.slice(0, transformCalls.length)) ||
+            (compilerEvidence !== undefined &&
+                (compilerTargetOverridesByCallIndex === undefined ||
+                    !hasExactCanonicalToolCallOrder(
+                        compilerEvidence.commands,
+                        effectiveCalls.slice(transformCalls.length)
+                    ))))
     ) {
         return {
             actions: [],
@@ -5035,6 +5229,22 @@ export function bridgeGroundedLlmToolCalls({
         ...sidechainRouteDeviceAdmissions,
         ...getCompilerSidechainRouteDeviceAdmissions(effectiveCalls, compilerTargetOverridesByCallIndex),
     ];
+    if (
+        transformProof !== undefined &&
+        effectiveCalls.filter((call) => PROJECT_OBJECT_CREATING_COMMANDS.has(call.name)).length >
+            SEMANTIC_COMMAND_LIST_MAX_CREATIONS
+    ) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    0,
+                    '<batch>',
+                    `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`
+                ),
+            ],
+        };
+    }
     const collectedBindings = collectBatchLocalCreationBindings(effectiveCalls, context);
     if (collectedBindings.status === 'rejected') {
         return {
@@ -5042,12 +5252,89 @@ export function bridgeGroundedLlmToolCalls({
             rejections: [collectedBindings.rejection],
         };
     }
-    /**
-     * What the batch as a whole must show before any single call may take the plan-created object
-     * route. `compilerEvidence` is present only for a normalized plan, whose objective the plan
-     * contract already requires to be non-empty, so it is the plan signal rather than a second one.
-     */
-    const admitsPlanCreatedObjects = compilerEvidence !== undefined && hasHighLevelCreationEvidence(prompt);
+    if (transformCalls.length > 0) {
+        const graph = compilerActionCommandGraph ?? {
+            dependenciesByActionIndex: effectiveCalls.map((): number[] => []),
+            batchLocalBindings: [],
+        };
+        const dependenciesByActionIndex = graph.dependenciesByActionIndex.map((dependencies) => [...dependencies]);
+        const emittedIndexByKey = new Map<string, number>();
+        let index = 0;
+        for (const compilation of transformCompilations) {
+            for (const command of compilation.commands) {
+                const key = `${compilation.callId}:${command.key}`;
+                if (emittedIndexByKey.has(key)) {
+                    return {
+                        actions: [],
+                        rejections: [rejection(index, command.operation, 'Duplicate transform emission key')],
+                    };
+                }
+                const dependencies: number[] = [];
+                for (const dependencyKey of command.dependencyKeys) {
+                    const dependencyIndex = emittedIndexByKey.get(`${compilation.callId}:${dependencyKey}`);
+                    if (dependencyIndex === undefined || dependencyIndex >= index) {
+                        return {
+                            actions: [],
+                            rejections: [
+                                rejection(index, command.operation, 'Unknown or forward transform dependency'),
+                            ],
+                        };
+                    }
+                    dependencies.push(dependencyIndex);
+                }
+                dependenciesByActionIndex[index] = [...new Set(dependencies)].sort((left, right) => left - right);
+                emittedIndexByKey.set(key, index);
+                if (
+                    command.binding !== null &&
+                    collectedBindings.bindingsByCallIndex.get(index)?.binding !== command.binding
+                ) {
+                    return {
+                        actions: [],
+                        rejections: [
+                            rejection(index, command.operation, 'Transform binding does not match the batch producer'),
+                        ],
+                    };
+                }
+                index += 1;
+            }
+        }
+        if (index !== transformCalls.length || dependenciesByActionIndex.length !== effectiveCalls.length) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'Transform graph does not match the expanded batch')],
+            };
+        }
+        for (const [callIndex, call] of effectiveCalls.entries()) {
+            for (const value of Object.values(call.arguments)) {
+                if (typeof value !== 'string' || !value.startsWith('$')) {
+                    continue;
+                }
+                const producer = collectedBindings.bindingsByName.get(value.slice(1));
+                if (producer === undefined) {
+                    continue;
+                }
+                if (producer.callIndex >= callIndex) {
+                    return {
+                        actions: [],
+                        rejections: [rejection(callIndex, call.name, 'Forward batch-local dependency')],
+                    };
+                }
+                dependenciesByActionIndex[callIndex] = [
+                    ...new Set([...(dependenciesByActionIndex[callIndex] ?? []), producer.callIndex]),
+                ].sort((left, right) => left - right);
+            }
+        }
+        compilerActionCommandGraph = {
+            dependenciesByActionIndex,
+            batchLocalBindings: [...collectedBindings.bindingsByName.values()].map((binding) => ({
+                bindingId: `$${binding.binding}`,
+                producerActionIndex: binding.callIndex,
+                producerArgument: binding.producerArgument,
+            })),
+        };
+    }
+    const admitsPlanCreatedObjects =
+        (compilerEvidence !== undefined || transformProof !== undefined) && hasHighLevelCreationEvidence(prompt);
     // Decided once for the whole batch, because a creation budget is spent across calls rather than
     // inside one, and a later call may lean on a device an earlier admitted call created.
     const creativeAdmissionsByCallIndex =
@@ -5066,6 +5353,21 @@ export function bridgeGroundedLlmToolCalls({
         const actionOrdinal = effectiveCalls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
+        const valueRules = getExecutableAppActionGroundingRules(call.name)?.valueRules ?? [];
+        const compilerSetArguments =
+            index < transformCalls.length
+                ? transformCalls
+                      .filter(
+                          (candidate) =>
+                              candidate.name === call.name &&
+                              valueRules.every(
+                                  (rule) =>
+                                      canonicalJson(candidate.arguments[rule.argument]) ===
+                                      canonicalJson(call.arguments[rule.argument])
+                              )
+                      )
+                      .map((candidate) => candidate.arguments)
+                : undefined;
         const creativeAdmission = creativeAdmissionsByCallIndex?.get(index);
         let grounded: ToolCallResult | LlmActionRejection;
         if (
@@ -5094,6 +5396,8 @@ export function bridgeGroundedLlmToolCalls({
                 plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
                 sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
                 sameActionCallCount,
+                compilerExpandedTargets: index < transformCalls.length,
+                compilerSetArguments,
                 resolvedTargetOverrides: compilerTargetOverridesByCallIndex?.get(index),
                 visibleGroundedCalls: acceptedGroundedCalls,
                 visiblePlannedTrackCreations,

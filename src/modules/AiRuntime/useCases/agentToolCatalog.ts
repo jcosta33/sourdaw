@@ -1,5 +1,6 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
+import { getDeclarativeTransformDocumentSchema } from '#/modules/Command/useCases';
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
@@ -19,6 +20,7 @@ import {
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import {
@@ -47,6 +49,7 @@ export {
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 
 export const AGENT_CATALOG_CURSOR_MAX_LENGTH = 2048;
@@ -265,6 +268,12 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         getCatalogDiscoverySchema(),
         getCommandIndexSearchSchema(),
         tool(
+            TRANSFORM_COMPILE_TOOL_NAME,
+            'Compile a bounded declarative edit against the captured project snapshot. This is a preview: it does not mutate the project. Use the returned callId in command.batch.propose compiledCallIds to select its exact expanded commands.',
+            { document: getDeclarativeTransformDocumentSchema() },
+            ['document']
+        ),
+        tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
             `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
             {
@@ -304,6 +313,12 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     },
                 },
                 list: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
+                compiledCallIds: {
+                    type: 'array',
+                    maxItems: MAX_LLM_ACTIONS_PER_BATCH,
+                    uniqueItems: true,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
                 plan: {
                     type: 'object',
                     properties: {

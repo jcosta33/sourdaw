@@ -15,7 +15,8 @@ import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList
  * never empty for an item that produced at least one command.
  */
 export function deriveMatchSelectorPredicates(
-    compilerEvidence: ArbitraryCommandListEvidence | undefined
+    compilerEvidence: ArbitraryCommandListEvidence | undefined,
+    actionPositionOffset = 0
 ): SemanticCommandListMatchSelectorRecord[] {
     const actionPositionsByItemId = new Map(
         (compilerEvidence?.items ?? []).map((item) => [item.itemId, [...new Set(item.representativeCommandIndexes)]])
@@ -42,7 +43,7 @@ export function deriveMatchSelectorPredicates(
                     excludeIds: selector.predicate.excludeIds,
                     quantity: selector.predicate.quantity,
                     stableIds: [...selector.stableIds],
-                    actionPositions,
+                    actionPositions: actionPositions.map((position) => position + actionPositionOffset),
                 },
             ];
         }) ?? []

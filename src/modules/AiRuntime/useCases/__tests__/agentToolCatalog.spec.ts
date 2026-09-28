@@ -266,6 +266,7 @@ describe('agent tool catalog', () => {
             'agent.capabilities',
             'agent.catalog.discover',
             'agent.command-index.search',
+            'transform.compile',
             'device.factory-manifest.read',
             'command.batch.propose',
             'command.batch.decline',

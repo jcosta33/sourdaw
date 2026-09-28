@@ -49,9 +49,11 @@ import {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    type TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
+import { type executeTransformCompile } from './executeTransformCompile';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 
@@ -95,6 +97,13 @@ export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
 export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' | 'clarified';
 
+type TransformCompileResult = ReturnType<typeof executeTransformCompile>;
+export type RetainedTransformCompilation = {
+    callId: string;
+    revision: string;
+    commands: NonNullable<TransformCompileResult['commands']>;
+};
+
 export type ApplicationOwnedToolLoopOutcome =
     | {
           status: 'complete';
@@ -108,6 +117,7 @@ export type ApplicationOwnedToolLoopOutcome =
           turns: number;
           /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
           interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
+          compiledTransforms: readonly RetainedTransformCompilation[];
       }
     | {
           status: 'rejected';
@@ -173,6 +183,11 @@ type RunApplicationOwnedToolLoopInput = {
     measurement?: {
         toolName: string;
         execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<ApplicationToolReceipt>;
+    };
+    transform?: {
+        toolName: typeof TRANSFORM_COMPILE_TOOL_NAME;
+        revision: string;
+        execute: (call: ToolCallResult, context: MeasurementCallContext) => TransformCompileResult;
     };
 };
 
@@ -1064,31 +1079,62 @@ async function executeMeasurement(
  * One turn's reads, in call order. Only the turn's first measurement call executes: each renders
  * the project offline, so a later one in the same turn is refused without rendering.
  */
+type ExecutedRead = { receipt: ApplicationToolReceipt; commands: TransformCompileResult['commands'] };
+
 function executeTurnReads(input: {
     calls: readonly IdentifiedToolCall[];
     turn: number;
     loopId: string;
     measurement: RunApplicationOwnedToolLoopInput['measurement'];
+    transform: RunApplicationOwnedToolLoopInput['transform'];
     signal?: AbortSignal;
-}): Promise<ApplicationToolReceipt>[] {
+}): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
     const firstMeasurementIndex =
         measurement === undefined ? -1 : input.calls.findIndex(({ call }) => call.name === measurement.toolName);
     return input.calls.map(async ({ call, callId }, index) => {
+        if (input.transform !== undefined && call.name === input.transform.toolName) {
+            try {
+                return input.transform.execute(call, { callId, turn, loopId: input.loopId, signal: input.signal });
+            } catch {
+                return {
+                    commands: null,
+                    receipt: failureReceipt({
+                        callId,
+                        toolName: call.name,
+                        turn,
+                        code: 'tool-execution-failed',
+                        safeMessage: 'Transform compilation failed inside the application authority.',
+                        retryable: false,
+                    }),
+                };
+            }
+        }
         if (measurement === undefined || call.name !== measurement.toolName) {
-            return executeSafeRead(call, callId, turn);
+            return { receipt: executeSafeRead(call, callId, turn), commands: null };
         }
         if (index !== firstMeasurementIndex) {
-            return failureReceipt({
-                callId,
-                toolName: call.name,
-                turn,
-                code: 'measure-per-turn-limit',
-                safeMessage: 'Only one measurement runs per turn; request it again in a later turn.',
-                retryable: true,
-            });
+            return {
+                commands: null,
+                receipt: failureReceipt({
+                    callId,
+                    toolName: call.name,
+                    turn,
+                    code: 'measure-per-turn-limit',
+                    safeMessage: 'Only one measurement runs per turn; request it again in a later turn.',
+                    retryable: true,
+                }),
+            };
         }
-        return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
+        return {
+            commands: null,
+            receipt: await executeMeasurement(measurement, call, {
+                callId,
+                turn,
+                loopId: input.loopId,
+                signal: input.signal,
+            }),
+        };
     });
 }
 
@@ -1141,13 +1187,34 @@ function recordSearchedIntents(
 
 function validateCommandBatchProposal(
     call: ToolCallResult,
-    disclosedCommandSchemas: ReadonlyMap<string, string>
+    disclosedCommandSchemas: ReadonlyMap<string, string>,
+    compiledTransforms: ReadonlyMap<string, RetainedTransformCompilation>
 ): string | null {
     const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
     const list = isRecord(call.arguments.list) ? call.arguments.list : null;
     const hasStructuredList = list !== null && Array.isArray(list.items);
+    const references = call.arguments.compiledCallIds;
     if (
-        Object.keys(call.arguments).some((key) => key !== 'commands' && key !== 'list' && key !== 'plan') ||
+        references !== undefined &&
+        (!Array.isArray(references) ||
+            references.length === 0 ||
+            references.length > MAX_LLM_ACTIONS_PER_BATCH ||
+            !references.every(
+                (entry): entry is string =>
+                    typeof entry === 'string' && entry.length > 0 && entry.length <= MAX_CALL_ID_LENGTH
+            ) ||
+            new Set(references).size !== references.length ||
+            references.some((entry) => !compiledTransforms.has(entry)))
+    ) {
+        return 'Provider referenced an unknown, duplicate, or failed transform compilation.';
+    }
+    const selectedCount = Array.isArray(references)
+        ? references.reduce((count, callId) => count + (compiledTransforms.get(callId)?.commands.length ?? 0), 0)
+        : 0;
+    if (
+        Object.keys(call.arguments).some(
+            (key) => key !== 'commands' && key !== 'list' && key !== 'plan' && key !== 'compiledCallIds'
+        ) ||
         hasPrimitiveCommands === hasStructuredList ||
         (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
     ) {
@@ -1157,7 +1224,11 @@ function validateCommandBatchProposal(
         ? (call.arguments.commands as unknown[])
         : (list!.items as unknown[]);
     const commandLimit = hasPrimitiveCommands ? MAX_LLM_ACTIONS_PER_BATCH : SEMANTIC_COMMAND_LIST_MAX_ITEMS;
-    if (commands.length === 0 || commands.length > commandLimit) {
+    if (
+        commands.length + selectedCount === 0 ||
+        commands.length > commandLimit ||
+        commands.length + selectedCount > MAX_LLM_ACTIONS_PER_BATCH
+    ) {
         return 'Provider command proposal exceeds the command budget.';
     }
     for (const command of commands) {
@@ -1234,7 +1305,9 @@ function validateOneProposalPerTurn(calls: readonly { call: ToolCallResult }[]):
 
 function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
-    disclosedCommandSchemas: ReadonlyMap<string, string>
+    disclosedCommandSchemas: ReadonlyMap<string, string>,
+    compiledTransforms: ReadonlyMap<string, RetainedTransformCompilation>,
+    transformRevision: string | undefined
 ): ValidatedTerminalCalls {
     const declineValidation = validateDeclineIsAlone(calls);
     if (declineValidation.status === 'rejected') {
@@ -1248,9 +1321,19 @@ function validateCatalogTerminalCalls(
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
-        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
+        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas, compiledTransforms);
         if (rejection !== null) {
             return { status: 'rejected', reason: rejection };
+        }
+        const references = call.arguments.compiledCallIds;
+        if (
+            Array.isArray(references) &&
+            references.some(
+                (callId: unknown) =>
+                    typeof callId !== 'string' || compiledTransforms.get(callId)?.revision !== transformRevision
+            )
+        ) {
+            return { status: 'rejected', reason: 'Provider referenced a stale transform compilation.' };
         }
     }
     return declineValidation;
@@ -1521,6 +1604,7 @@ export async function runApplicationOwnedToolLoop(
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
+    const compiledTransforms = new Map<string, RetainedTransformCompilation>();
     const searchedIntents: string[] = [];
     let totalCalls = 0;
     let totalReceiptBytes = 0;
@@ -1688,6 +1772,7 @@ export async function runApplicationOwnedToolLoop(
                     receipts,
                     turns: turn,
                     interpretation: 'clarified',
+                    compiledTransforms: [],
                 };
             }
             const overBudget = admitTurnReceipts(
@@ -1731,6 +1816,7 @@ export async function runApplicationOwnedToolLoop(
             COMMAND_HISTORY_TOOL_NAME,
             RECIPE_DISCOVERY_TOOL_NAME,
             ...(input.measurement === undefined ? [] : [input.measurement.toolName]),
+            ...(input.transform === undefined ? [] : [input.transform.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(
@@ -1752,7 +1838,12 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        const terminalValidation = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
+        const terminalValidation = validateCatalogTerminalCalls(
+            terminalCalls,
+            disclosedCommandSchemas,
+            compiledTransforms,
+            input.transform?.revision
+        );
         if (terminalValidation.status === 'rejected') {
             return {
                 status: 'rejected',
@@ -1781,6 +1872,7 @@ export async function runApplicationOwnedToolLoop(
                 receipts,
                 turns: turn,
                 interpretation,
+                compiledTransforms: [...compiledTransforms.values()],
             };
         }
         if (isFinalTurn) {
@@ -1792,14 +1884,18 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const rawTurnReceipts = await Promise.all(
+        const executedReads = await Promise.all(
             executeTurnReads({
                 calls: safeReadCalls,
                 turn,
                 loopId: input.loopId,
                 measurement: input.measurement,
+                transform: input.transform,
                 signal: input.signal,
-            }).map(async (receipt) => boundReceipt(await receipt, limits.maxReceiptBytesPerCall))
+            })
+        );
+        const rawTurnReceipts = executedReads.map(({ receipt }) =>
+            boundReceipt(receipt, limits.maxReceiptBytesPerCall)
         );
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
@@ -1819,6 +1915,23 @@ export async function runApplicationOwnedToolLoop(
         const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+        }
+        for (const [index, executed] of executedReads.entries()) {
+            const admitted = turnReceipts[index];
+            if (
+                executed.commands === null ||
+                executed.commands === undefined ||
+                admitted?.status !== 'success' ||
+                admitted.revision === null ||
+                admitted.callId !== executed.receipt.callId
+            ) {
+                continue;
+            }
+            compiledTransforms.set(admitted.callId, {
+                callId: admitted.callId,
+                revision: admitted.revision,
+                commands: executed.commands,
+            });
         }
     }
 
