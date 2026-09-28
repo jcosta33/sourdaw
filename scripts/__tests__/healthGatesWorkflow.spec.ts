@@ -489,7 +489,6 @@ function runScopeScript(
                 EVENT: eventName,
                 BROWSER: 'false',
                 PROFILE: 'broad',
-                FULL: 'false',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -552,6 +551,10 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
 }
 
 function assertScopeContract(candidate: UnknownRecord): string {
+    const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
+        throw new Error('shared validation must expose only browser and affected profile inputs');
+    }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
         throw new Error('decide must run for every pull request');
@@ -582,11 +585,8 @@ function assertScopeContract(candidate: UnknownRecord): string {
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
     }
-    if (
-        recordAt(scope, 'env').PROFILE !== '${{ inputs.profile }}' ||
-        recordAt(scope, 'env').FULL !== '${{ inputs.force-full }}'
-    ) {
-        throw new Error('shared validation must consume the profile and force-full inputs');
+    if (recordAt(scope, 'env').PROFILE !== '${{ inputs.profile }}') {
+        throw new Error('shared validation must consume the affected profile input');
     }
     return stringAt(scope, 'run');
 }
@@ -2931,22 +2931,6 @@ describe('health gates workflow contract', () => {
             tooling: 'false',
         });
         expect(selectedPrValidationJobs(review)).toContain('build');
-        const forced = runScopeScript(scopeScript, 'pull_request', {
-            PROFILE: 'tooling',
-            FULL: 'true',
-            WEB: 'true',
-            UNCLASSIFIED: 'true',
-            BROWSER: 'true',
-        });
-        expect(forced).toMatchObject({
-            rust: 'true',
-            server: 'true',
-            e2e: 'true',
-            web: 'true',
-            code: 'true',
-            tooling: 'false',
-        });
-        expect(selectedPrValidationJobs(forced)).toContain('native-parity');
         const staticSteps = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
         for (const name of [
             'Script types',

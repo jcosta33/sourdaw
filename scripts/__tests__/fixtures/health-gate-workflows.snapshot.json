@@ -383,12 +383,6 @@
             "required": false,
             "default": "broad",
             "type": "string"
-          },
-          "force-full": {
-            "description": "Run the broad validation lane regardless of affected profile.",
-            "required": false,
-            "default": false,
-            "type": "boolean"
           }
         },
         "outputs": {
@@ -476,14 +470,13 @@
               "EVENT": "${{ github.event_name }}",
               "BROWSER": "${{ inputs.browser }}",
               "PROFILE": "${{ inputs.profile }}",
-              "FULL": "${{ inputs.force-full }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nif [ \"$FULL\" != \"true\" ] && [ \"$FULL\" != \"false\" ]; then\n  printf 'Invalid force-full verdict: %s\\n' \"$FULL\" >&2\n  exit 1\nfi\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ] && [ \"$FULL\" = \"false\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },

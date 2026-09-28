@@ -285,7 +285,6 @@ function runResolveScope(event, scopes) {
             EVENT: event,
             BROWSER: scopes.browser ?? 'false',
             PROFILE: scopes.profile ?? 'broad',
-            FULL: scopes.full ?? 'false',
             RUST: scopes.rust,
             SERVER: scopes.server,
             E2E: scopes.e2e,

@@ -15,11 +15,6 @@ on:
         required: false
         default: broad
         type: string
-      force-full:
-        description: Run the broad validation lane regardless of affected profile.
-        required: false
-        default: false
-        type: boolean
     outputs:
       heavy:
         description: Whether the caller's event admits the heavy lane.
@@ -220,7 +215,6 @@ jobs:
           EVENT: ${{ github.event_name }}
           BROWSER: ${{ inputs.browser }}
           PROFILE: ${{ inputs.profile }}
-          FULL: ${{ inputs.force-full }}
           # The retry attempt's verdict wins; its empty outputs (it never ran,
           # or it failed too) fall through to the first attempt's, and both
           # being empty leaves the value empty for the guard below to refuse.
@@ -243,10 +237,6 @@ jobs:
             docs|tooling|broad) ;;
             *) printf 'Invalid affected profile: %s\n' "$PROFILE" >&2; exit 1 ;;
           esac
-          if [ "$FULL" != "true" ] && [ "$FULL" != "false" ]; then
-            printf 'Invalid force-full verdict: %s\n' "$FULL" >&2
-            exit 1
-          fi
           heavy=false
           if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
           rust=$RUST
@@ -261,7 +251,7 @@ jobs:
           fi
           e2e=$BROWSER
           tooling=false
-          if [ "$EVENT" = "pull_request" ] && [ "$FULL" = "false" ]; then
+          if [ "$EVENT" = "pull_request" ]; then
             case "$PROFILE" in
               docs|tooling)
                 if [ "$BROWSER" != "false" ]; then
