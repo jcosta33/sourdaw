@@ -4801,6 +4801,19 @@ describe('the egress screen tells code from credentials', () => {
         }
     });
 
+    it("does not leak one run's probe judgment into a later run whose probe matches nothing", () => {
+        // Round-5 review of #4872. Two `[\w.-]` runs inside one rejected quoted value: the
+        // first run's probe (`aSecret1Xx=`) matches a credential-shaped value, and the second
+        // run's probe matches nothing at all — the `+` after `sas2` starts no gap or operator.
+        // The per-run memo must reset its value judgment when the probe is null; keeping the
+        // first run's judgment withholds this line on the stale verdict even though the line is
+        // ordinary code. The pinned binary (Gitleaks v8.30.1 with the repository's
+        // `.gitleaks.toml`) stays silent on it. The 16-character tail is composed at runtime
+        // for the same reason as the fixtures above.
+        const line = secretFixture("token = 'xx.aSecret1Xx=y_sas2+zz", 'Ab3dEf7h', 'Ij2lMn4p', "'");
+        expect(sensitiveContentReason(line)).toBeUndefined();
+    });
+
     it('screens a hundred-kilobyte one-line run of packed rejected assignments in near-linear time', () => {
         // A rejected match used to resume the scan at its value's start, so a line packing
         // repeated `key=` substrings re-consumed the whole remaining tail once per rejected
@@ -4836,6 +4849,28 @@ describe('the egress screen tells code from credentials', () => {
         const elapsedMs = performance.now() - startedAt;
         expect(reason).toBeUndefined();
         expect(elapsedMs).toBeLessThan(1_000);
+    });
+
+    it('screens an operator-dense rejected quoted value in linear time', () => {
+        // Round-5 review of #4872. Inside this rejected quoted value every one of the 2320
+        // `token=` units ends a `[\w.-]` run at an operatorish `=`, and the round-4 quoted-span
+        // probe re-matched its unbounded value group at each stop — over five hundred
+        // milliseconds here, growing x~4 per doubling, against six milliseconds on the round-3
+        // head. The probe inside a quoted span now carries the scanner's own value reach (the
+        // pinned generic rule's secret run is bounded at 150 characters, so a longer unbroken
+        // run is silent there), which bounds every stop's scan and makes the line linear again.
+        // The blob is filler — every interior value run is over that reach — so it is admitted,
+        // and shorter forms of it are admitted by the pinned binary too (checked at 6 and 20
+        // units). The bound fails the round-4 behavior with wide margin and is loose against
+        // the fixed scan.
+        const unit = secretFixture('token=', 'A'.repeat(100));
+        const line = secretFixture("token = '", unit.repeat(2_320), ".a'");
+        expect(line.length).toBeGreaterThanOrEqual(240_000);
+        const startedAt = performance.now();
+        const reason = sensitiveContentReason(line);
+        const elapsedMs = performance.now() - startedAt;
+        expect(reason).toBeUndefined();
+        expect(elapsedMs).toBeLessThan(250);
     });
 
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {

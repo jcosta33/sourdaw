@@ -137,6 +137,23 @@ const ASSIGNMENT_GAP_AND_VALUE = new RegExp(
     'iyu'
 );
 
+/**
+ * The same right half, probed inside a rejected *quoted* span, with the pinned scanner's own
+ * value reach: the generic rule's secret run is bounded (`{10,150}`), so an unbroken value run
+ * longer than 150 characters is silent there — no terminator is reachable from inside it — and
+ * the probe mirrors that bound. Without it, every operatorish stop inside a long quoted value
+ * re-read the whole remaining tail once per stop, which is quadratic on an operator-dense
+ * one-line blob (#4872 round 5). The bare branch gains a run-boundary lookahead so an over-long
+ * run fails outright instead of matching a 150-character prefix, where the unbounded form lets
+ * `after` read the run's 151st character as the boundary.
+ */
+const ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN = new RegExp(
+    `(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,150})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,150})(?![A-Za-z0-9+/_=.-])(?<after>[^\\s]?))`,
+    'iyu'
+);
+
 /** One character of the continuation between a secret-named key and its operator. */
 const KEY_CONTINUATION = /[\w.-]/u;
 
@@ -297,7 +314,11 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
  * fabricated relationship with, so the reach-past-`matchEnd` test does not apply either:
  * `'runtime.sessionToken2:<opaque>'` ends at the quote, exactly at `matchEnd`. The operator
  * pre-check still holds, because no gap or operator can start at a non-operator character in
- * either span kind.
+ * either span kind. And the probe runs with the scanner's own value reach
+ * (`ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN`): the pinned rule's secret run is bounded at 150
+ * characters, so a longer unbroken run is silent on the scanner, and bounding the value group
+ * keeps one stop's scan at that bound instead of re-reading the remaining tail — the unbounded
+ * form cost O(stops x tail) on an operator-dense quoted blob.
  */
 function probeAssignmentAt(text: string, stop: number, matchEnd: number, quotedSpan: boolean): RegExpExecArray | null {
     const insideSpan = stop < matchEnd;
@@ -313,8 +334,9 @@ function probeAssignmentAt(text: string, stop: number, matchEnd: number, quotedS
             return null;
         }
     }
-    ASSIGNMENT_GAP_AND_VALUE.lastIndex = stop;
-    const match = ASSIGNMENT_GAP_AND_VALUE.exec(text);
+    const probePattern = quotedSpan ? ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN : ASSIGNMENT_GAP_AND_VALUE;
+    probePattern.lastIndex = stop;
+    const match = probePattern.exec(text);
     if (match === null || !insideSpan || quotedSpan) {
         return match;
     }
@@ -382,7 +404,9 @@ function genuineInteriorKey(
  *   silences a de-stopworded variant that otherwise flags at 4.35 — and neither mechanism is
  *   modelled here (#4579). A rejected quoted value's interior is real text instead, terminated
  *   by the closing quote or an interior space, so a genuine assignment inside it is recognised
- *   wherever it ends.
+ *   wherever it ends — up to the scanner's own value reach: an unbroken run past the pinned
+ *   rule's 150-character bound is silent on the scanner, and the quoted-span probe stops
+ *   reading it there too.
  * - A bare value's interior key follows the probed operator, mirroring the scanner's shadowing.
  *   The scanner matches leftmost and consumes its terminator, so a space-`=` first assignment
  *   shadows a second one: the operator rides the `[\w.=-]` secret run or sits past the consumed
