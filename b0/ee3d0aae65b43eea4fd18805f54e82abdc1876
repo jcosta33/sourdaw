@@ -1,0 +1,36 @@
+src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts
+  h_beb54bf43b47b7 242-276
+src/modules/GrandBoule/models/__tests__/GrandBouleDeviceState.spec.ts
+  h_beb54bf43b47b7 44-76
+src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts
+  h_beb54bf43b47b7 12-27,29-36,73-92,97-99,151,154-157,172,175-186,199-210
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts
+  h_beb54bf43b47b7 3-19,22-29,36-48,61-80,84-86,89,91,93,99-123,132
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts
+  h_beb54bf43b47b7 3-19,21-28,36-48,83-102,105-107,110-113,116,118,124-136,140-160,179,185,195,205
+src/modules/GrandBoule/useCases/commitGrandBouleDeviceState.ts
+  h_beb54bf43b47b7 3,5-6,10,13
+src/modules/GrandBoule/useCases/dispatchGrandBouleMorphEdit.ts
+  h_beb54bf43b47b7 9,29
+src/modules/GrandBoule/useCases/findGrandBouleDevice.ts
+  h_beb54bf43b47b7 1-8
+src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts
+  h_beb54bf43b47b7 8,49,51-52
+src/modules/GrandBoule/useCases/projectGrandBoulePersistedState.ts
+  h_beb54bf43b47b7 1-18
+src/modules/GrandBoule/useCases/setGrandBouleTemperament.ts
+  h_beb54bf43b47b7 3,12-14,18,41-43,45-46
+src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts
+  h_beb54bf43b47b7 20-21,25,59-62,64,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b0ee3d0aae65b43eea4fd18805f54e82abdc1876",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
