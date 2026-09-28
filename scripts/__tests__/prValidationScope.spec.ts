@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
@@ -88,12 +88,33 @@ function fullInventory(inventory: readonly string[]): string[] {
 }
 
 afterEach(() => {
-    for (const folder of folders.splice(0)) {
-        rmSync(folder, { recursive: true, force: true });
+    try {
+        for (const folder of folders.splice(0)) {
+            rmSync(folder, { recursive: true, force: true });
+        }
+    } finally {
+        vi.unstubAllEnvs();
     }
 });
 
+beforeEach(() => {
+    vi.stubEnv('GIT_TRACE2_EVENT', '0');
+});
+
 describe('required affected verification', () => {
+    it('disables inherited Trace2 for disposable Git fixture children', () => {
+        const root = temporaryRoot();
+        execFileSync('git', ['init', '--quiet'], { cwd: root });
+
+        const result = spawnSync('git', ['-c', 'alias.trace2probe=!printf %s "$GIT_TRACE2_EVENT"', 'trace2probe'], {
+            cwd: root,
+            encoding: 'utf8',
+        });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toBe('0');
+    });
+
     it('runs browser verification inside the required PR Gate, never on approval', () => {
         const health = parse(readFileSync('.github/workflows/health-gates.yml', 'utf8'));
         const heavy = parse(readFileSync('.github/workflows/heavy-gates.yml', 'utf8'));
