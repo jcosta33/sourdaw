@@ -17,6 +17,7 @@
  * of the set so a wording or evidence change invalidates the responses it shaped.
  */
 
+import { isSavedProjectStateOrUndoPath, SAVED_PROJECT_STATE_APPLICABILITY_PATHS } from '../savedProjectStatePaths.ts';
 import { isNodeTestCollected, isPlaywrightCollected, isVitestCollected } from '../vitestCollectionPatterns.ts';
 
 import { semanticDigest } from './contracts.ts';
@@ -97,7 +98,6 @@ export const SEVERITY_DISPOSITION_TIMELINE: readonly RuleInvestigationCategory[]
 ];
 
 const TEST_PATHS = ['**/__tests__/', '**/*.spec.*', '**/*.test.*'] as const;
-const PROJECT_PATHS = ['src/modules/Project/', 'src/modules/Crdt/', 'src/modules/History/', 'src/app/'] as const;
 const REALTIME_PATHS = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
 const BOUNDARY_PATHS = ['src/modules/', 'src/infra/', 'src/helpers/', 'src/utils/', 'scripts/', 'electron/'] as const;
 const GATE_PATHS = ['.github/', 'scripts/healthGate', 'scripts/semanticReview', 'package.json'] as const;
@@ -342,8 +342,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'persisted_shape_changed_without_migration',
         version: '1',
         purpose: 'Whether a persisted shape changed without a migration.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
+        appliesTo: isSavedProjectStateOrUndoPath,
         requiredEvidence: ['before source', 'after source', 'migration or version contract'],
         instructions:
             'Does the change alter the shape of persisted project data — a field added, removed, renamed, or reinterpreted — without a migration, version bump, or reader that accepts both shapes?',
@@ -362,8 +362,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'mutation_outside_undo_path',
         version: '1',
         purpose: 'Whether project state can now change without an undo record.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
+        appliesTo: isSavedProjectStateOrUndoPath,
         requiredEvidence: ['before source', 'after source', 'undo contract'],
         instructions:
             'Does the change write project state through a path that does not record an undo entry — a direct store write, a mutation in a view, or an action that bypasses the recorded command path?',
@@ -382,8 +382,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'silent_data_loss_possible',
         version: '1',
         purpose: 'Whether user data can be lost without surfacing anything.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
+        appliesTo: isSavedProjectStateOrUndoPath,
         requiredEvidence: ['before source', 'after source'],
         instructions:
             'Can the change drop, overwrite, or fail to persist user data while reporting success — a swallowed error, a truncation, a default that replaces a stored value, or a write that discards its failure?',

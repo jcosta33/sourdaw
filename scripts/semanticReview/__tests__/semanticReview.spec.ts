@@ -6080,6 +6080,85 @@ describe('a fixture is not a test', () => {
     });
 });
 
+describe('saved-project-state applicability matrix', () => {
+    const PROJECT_STATE_RULE_IDS = [
+        'mutation_outside_undo_path',
+        'persisted_shape_changed_without_migration',
+        'silent_data_loss_possible',
+    ] as const;
+
+    // All three project-state rules share one applicability predicate, so each path must select all
+    // three or none; a single rule disagreeing reddens the matrix.
+    function selected(path: string): string[] {
+        return PROJECT_STATE_RULE_IDS.filter((id) => semanticRule(id).appliesTo(path));
+    }
+
+    it('selects exactly the paths that own saved-project state or undo', () => {
+        const matrix: ReadonlyArray<readonly [path: string, expected: boolean, why: string]> = [
+            // Owners, sourced from src/modules/CrdtDocument/AGENTS.md and the risk policy's own list.
+            [
+                'src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts',
+                true,
+                'CRDT persistence: IndexedDB increments and `.sdaw` bundle encoding',
+            ],
+            [
+                'src/modules/CrdtDocument/repositories/branchStateAuthority.ts',
+                true,
+                'durable branch-state authority: the one revisioned envelope',
+            ],
+            ['src/modules/CrdtDocument/models/ActionHistoryState.ts', true, 'semantic action history / undo'],
+            [
+                'src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts',
+                true,
+                'project load/save use case',
+            ],
+            ['src/modules/Project/repositories/project/writeProjectJson.ts', true, 'project load/save repository'],
+            ['src/app/project.sdaw', true, '`.sdaw` saved-project shape'],
+            ['src/app/bootstrap.ts', true, 'app bootstrap wiring the risk policy treats as undo-relevant'],
+            // Excluded, recorded with the reason each surface is left out.
+            [
+                'src/modules/Arrangement/presentations/views/TrackList.tsx',
+                false,
+                'presentation-only view; Arrangement edits route through Command undo, they do not own it',
+            ],
+            [
+                'src/modules/MIDI/useCases/quantizeNotes.ts',
+                false,
+                'MIDI/ documents no persisted-project or undo ownership',
+            ],
+            [
+                'src/modules/Command/stores/macroStore.ts',
+                false,
+                'Command/ macro surface owns neither persisted state nor undo; its undo files match the `undo` marker, not a bare prefix',
+            ],
+        ];
+        for (const [path, expected, why] of matrix) {
+            expect(selected(path), `${why}: ${path}`).toEqual(expected ? [...PROJECT_STATE_RULE_IDS] : []);
+        }
+    });
+
+    it('is case-insensitive, matching the risk predicate it shares', () => {
+        // Case decision: the shared predicate lowercases before matching, so a correctly cased
+        // `src/modules/CrdtDocument/...` path and a mis-cased variant both select the rules.
+        expect(selected('src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        expect(selected('src/modules/crdtdocument/repositories/crdtpersistence/saveincrementalstoidb.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+    });
+
+    it('reddens if CrdtDocument/ stops matching or a nonexistent Crdt/ prefix is restored', () => {
+        // `automergeRepository.ts` carries no other marker, so it matches only through the module name;
+        // dropping the `crdtdocument` match silently removes all three rules from the whole module.
+        expect(selected('src/modules/CrdtDocument/repositories/automergeRepository.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        // `src/modules/Crdt/` never existed; a path under it must match none of the three rules.
+        expect(selected('src/modules/Crdt/document.ts')).toEqual([]);
+    });
+});
+
 describe('the collection predicate uses the runner extension set', () => {
     it('collects only spec/test files with a runner code extension', () => {
         // The old predicate matched `\.(?:spec|test)\.[^.]+$`, so a `.spec.md` or `.spec.json` counted

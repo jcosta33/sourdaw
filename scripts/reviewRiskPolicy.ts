@@ -8,6 +8,7 @@
  */
 
 import { fail } from './prContract.ts';
+import { isSavedProjectStateOrUndoPath } from './savedProjectStatePaths.ts';
 
 import type { ReviewChangedPath } from './reviewDiffSummary.ts';
 
@@ -127,6 +128,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewShadowStatus.ts',
     'scripts/reviewerModelDiversity.ts',
     'scripts/rulesetHardening.ts',
+    'scripts/savedProjectStatePaths.ts',
     'scripts/stackedLanes.ts',
     'scripts/syncParentLane.ts',
     'scripts/testInstructionVocabulary.ts',
@@ -190,29 +192,10 @@ function nativeSecurityFindings(paths: readonly ReviewChangedPath[]): RiskFindin
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
 }
 
-/**
- * Saved-project integrity surfaces (#3377 AC-009 calibration, review repair): the persistence use
- * cases and the Project repositories tree — the layer that actually writes saved projects —
- * anchored as prefixes so a like-named path outside the Project module earns nothing.
- */
-const PROJECT_PERSISTENCE_PREFIXES = [
-    'src/modules/project/usecases/projectpersistence/',
-    'src/modules/project/repositories/',
-] as const;
-
-function isUndoPath(path: string): boolean {
-    const lower = path.toLowerCase();
-    return (
-        lower.includes('undo') ||
-        lower.includes('crdtdocument') ||
-        PROJECT_PERSISTENCE_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
-        lower.endsWith('.sdaw') ||
-        (lower.startsWith('src/app/') && lower.includes('bootstrap'))
-    );
-}
-
 function undoFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    const triggers = paths.filter((entry) => isUndoPath(entry.path)).map((entry) => `undo:${entry.path}`);
+    const triggers = paths
+        .filter((entry) => isSavedProjectStateOrUndoPath(entry.path))
+        .map((entry) => `undo:${entry.path}`);
     return triggers.length === 0 ? [] : [{ riskClass: 'undo', triggers }];
 }
 
