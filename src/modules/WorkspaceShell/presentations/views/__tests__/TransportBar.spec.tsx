@@ -524,6 +524,22 @@ describe('TransportBar', () => {
         expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
     });
 
+    it('does not steal focus to Stop when focus was outside TransportBar during a mode change', () => {
+        renderTransportBar();
+        const externalButton = document.createElement('button');
+        externalButton.setAttribute('aria-label', 'External footer action');
+        document.body.appendChild(externalButton);
+        externalButton.focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
+        externalButton.remove();
+    });
+
     it('keeps focus on a transport control that remains mounted during a mode change', () => {
         renderTransportBar();
         screen.getByRole('button', { name: 'Play' }).focus();

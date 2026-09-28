@@ -127,12 +127,21 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
             if (nextCompactMode === compactModeRef.current) {
                 return;
             }
+            const activeElement = document.activeElement;
+            const transportOwnsFocus =
+                activeElement instanceof Node &&
+                (moreContainerRef.current?.contains(activeElement) === true ||
+                    moreSurfaceRef.current?.contains(activeElement) === true ||
+                    (activeElement instanceof Element &&
+                        activeElement.closest(
+                            '[aria-label="Transport controls"], [aria-label="More transport controls"], [aria-label="Transport settings"], [aria-label="Project controls"], [aria-label="View and panel controls"], [aria-label="Punch recording settings"], [aria-label="Editing tools"], [aria-label="Solo mode"]'
+                        ) !== null));
             compactModeRef.current = nextCompactMode;
             if (moreOpenRef.current) {
                 moreOpenRef.current = false;
                 setMoreOpen(false);
             }
-            restoreFocusAfterModeChangeRef.current = true;
+            restoreFocusAfterModeChangeRef.current = transportOwnsFocus;
             setCompactMode(nextCompactMode);
         };
         window.addEventListener('resize', syncCompactMode);
