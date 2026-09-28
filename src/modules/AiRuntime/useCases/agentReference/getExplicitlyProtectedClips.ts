@@ -19,7 +19,7 @@ const protectionPattern = new RegExp(
     String.raw`\b${protectionVerb}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
     'giu'
 );
-const nextInstructionVerb = String.raw`(?:${protectionVerb}|set|change|adjust|add|create|make|mute|remove|delete)`;
+const nextInstructionVerb = String.raw`(?:${protectionVerb}|set|change|adjust|add|create|make|mute|remove|delete|rename|insert|move|copy|duplicate|trim|split|glue|stretch|quantize|transpose|normalize|fade|route|solo|arm)`;
 const nextInstruction = String.raw`(?:(?:and|then)\s+)*${nextInstructionVerb}\b`;
 const exclusionPattern = new RegExp(
     String.raw`\b(?:excluding|except)\s+(${protectionReferenceCharacter}+?)(?=${protectionClauseBoundary}|,\s*(?=${nextInstruction})|\s+(?=(?:and|then)\s+${nextInstruction})|$)`,
@@ -199,13 +199,23 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
                     clip.id === wholeIds[0] &&
                     (normalizePromptText(whole) === normalizePromptText(clip.name) || whole === clip.id)
             );
-        if (wholeIsLiteralName) {
+        const wholeIsQuoted =
+            scanPromptQuotedText(whole)
+                .maskedText.replaceAll(/["'“”‘’]/gu, '')
+                .trim().length === 0;
+        if (wholeIsLiteralName && wholeIsQuoted) {
             continue;
         }
-        for (const member of members) {
-            const memberIds = resolveProtectedClipIds(member, clips, context);
-            complete &&= memberIds.length > 0 || isTrackOnlyReference(member, context);
-            for (const clipId of memberIds) {
+        const resolvedMembers = members.map((member) => ({
+            ids: resolveProtectedClipIds(member, clips, context),
+            trackOnly: isTrackOnlyReference(member, context),
+        }));
+        if (wholeIsLiteralName && resolvedMembers.every((member) => member.ids.length === 0 && !member.trackOnly)) {
+            continue;
+        }
+        for (const member of resolvedMembers) {
+            complete &&= member.ids.length > 0 || member.trackOnly;
+            for (const clipId of member.ids) {
                 protectedIds.add(clipId);
             }
         }

@@ -4095,17 +4095,18 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
-    const planCreatedAdmission: PlanCreatedObjectAdmission = admitsPlanCreatedObjects
-        ? resolvePlanCreatedObjectAdmission({
-              batchLocalCreationBindings,
-              call,
-              declaredBatchLocalCreationBindings,
-              declaredBindingsByCallIndex,
-              groundingRules,
-              index,
-              prompt,
-          })
-        : { status: 'ordinary' };
+    const planCreatedAdmission: PlanCreatedObjectAdmission =
+        admitsPlanCreatedObjects || call.name === 'addNotes'
+            ? resolvePlanCreatedObjectAdmission({
+                  batchLocalCreationBindings,
+                  call,
+                  declaredBatchLocalCreationBindings,
+                  declaredBindingsByCallIndex,
+                  groundingRules,
+                  index,
+                  prompt,
+              })
+            : { status: 'ordinary' };
     if (planCreatedAdmission.status === 'rejected') {
         return rejection(index, call.name, planCreatedAdmission.reason);
     }
@@ -4116,7 +4117,7 @@ function groundToolCall({
     // because that slot is what the record says about the tracks this batch creates. The creative
     // authority governs every other call outright, and a read-only one governs them all: it read the
     // request as asking for nothing to change, so it refuses every writing command on either route.
-    const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
+    const admitsPlanCreatedObject = admitsPlanCreatedObjects && planCreatedAdmission.status === 'admitted';
     if (creativeAdmission?.status === 'rejected') {
         if (!admitsPlanCreatedObject || creativeAuthorityMode === 'read-only') {
             return rejection(index, call.name, creativeAdmission.reason);
@@ -4253,7 +4254,8 @@ function groundToolCall({
         if (
             compilerExpandedTargets &&
             (targetRule.capability === 'editable-clip' || targetRule.capability === 'editable-midi-clip') &&
-            targetRule.cardinality !== 'many'
+            targetRule.cardinality !== 'many' &&
+            !(typeof assertedValue === 'string' && assertedValue.startsWith('$'))
         ) {
             const groupTargetIds = (resolvedActionScope?.compilerGroupArguments ?? compilerSetArguments ?? []).map(
                 (arguments_) => arguments_[targetRule.argument]
@@ -4573,35 +4575,204 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
-function hasExplicitCreatedTargetIntent(input: {
+function namesCreatedObject(clause: PromptClause, name: string): boolean {
+    const normalizedName = normalizePromptText(name);
+    if (normalizedName.length === 0) {
+        return false;
+    }
+    const exactName = new RegExp(
+        `^${escapeRegExp(normalizedName)}(?=$| (?:on|in|from|at|for|with|that|which)\\b)`,
+        'u'
+    );
+    return [...clause.masked.matchAll(/\b(?:named|called)\b/giu)].some(
+        (match) =>
+            match.index !== undefined &&
+            exactName.test(normalizePromptText(clause.text.slice(match.index + match[0].length)))
+    );
+}
+
+const CREATED_OBJECT_NOUNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
+    addAutomationLane: /\b(?:automation )?lanes?\b/u,
+    addClip: /\bclips?\b/u,
+    addDevice: /\b(?:devices?|plugins?|effects?)\b/u,
+    addTrack: /\btracks?\b/u,
+    createBus: /\bbus(?:es)?\b/u,
+};
+
+function getCreatedObjectRequestIndexes(input: {
+    bindings: ReadonlyMap<number, BatchLocalCreationBinding>;
+    calls: readonly ToolCallResult[];
+    prompt: string;
+}): ReadonlySet<number> {
+    const authorized = new Set<number>();
+    const quoteScan = scanPromptQuotedText(input.prompt);
+    const clauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter((clause) =>
+        hasHighLevelCreationEvidence(clause.text)
+    );
+    for (const clause of clauses.filter((candidate) => /\b(?:named|called)\b/iu.test(candidate.masked))) {
+        const matching = [...input.bindings.entries()].find(
+            ([index, binding]) =>
+                !authorized.has(index) &&
+                input.calls[index]?.name === binding.actionType &&
+                CREATED_OBJECT_NOUNS[binding.actionType].test(normalizePromptText(clause.masked)) &&
+                namesCreatedObject(clause, binding.name)
+        );
+        if (matching) {
+            authorized.add(matching[0]);
+        }
+    }
+    for (const clause of clauses.filter((candidate) => !/\b(?:named|called)\b/iu.test(candidate.masked))) {
+        const normalized = normalizePromptText(clause.text);
+        const quantity = /\b(\d+) (?:\w+ ){0,2}(?:tracks?|clips?)\b/u.exec(normalized);
+        const slots = quantity ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS) : 1;
+        for (let slot = 0; slot < slots; slot += 1) {
+            const matching = [...input.bindings.entries()].find(
+                ([index, binding]) =>
+                    !authorized.has(index) &&
+                    input.calls[index]?.name === binding.actionType &&
+                    CREATED_OBJECT_NOUNS[binding.actionType].test(normalized)
+            );
+            if (!matching) {
+                break;
+            }
+            authorized.add(matching[0]);
+        }
+    }
+    return authorized;
+}
+
+function hasCompleteCreatedTargetReference(
+    clause: string,
+    binding: BatchLocalCreationBinding,
+    bindings: ReadonlyMap<string, BatchLocalCreationBinding>,
+    context: ProjectContext,
+    actionName: string
+): boolean {
+    const quoteScan = scanPromptQuotedText(clause);
+    if (!quoteScan.complete) {
+        return false;
+    }
+    const name = normalizePromptText(binding.name);
+    const kind = {
+        addAutomationLane: 'lane',
+        addClip: 'clip',
+        addDevice: 'device',
+        addTrack: 'track',
+        createBus: 'bus',
+    }[binding.actionType];
+    const reference = new RegExp(
+        `^(?:the )?(?:new )?${escapeRegExp(name)}` +
+            `(?: (?:midi|audio))?(?: ${kind})?(?=$| (?:at|from|with|on|in|to|for|by|starting|ending|between)\\b)`,
+        'u'
+    );
+    const anaphora = new RegExp(
+        `^(?:${CREATION_ANAPHORA_PATTERNS[binding.actionType].source}|(?:that|this) new ${kind}\\b)`,
+        'u'
+    );
+    const referenceTails = [...quoteScan.maskedText.matchAll(/\b(?:to|on|in|into|of|from|through)\b/giu)].flatMap(
+        (match) => (match.index === undefined ? [] : [normalizePromptText(clause.slice(match.index + match[0].length))])
+    );
+    const possibleReferences = referenceTails.filter((tail) =>
+        new RegExp(`^(?:the )?(?:new )?${escapeRegExp(name)}(?: |$)`, 'u').test(tail)
+    );
+    const hasExactReference = possibleReferences.length > 0 && possibleReferences.every((tail) => reference.test(tail));
+    if (actionName === 'addNotes') {
+        const firstTargetTail = referenceTails.find((tail) => !/^(?:beats?|bars?|measures?|\d+)\b/u.test(tail));
+        if (firstTargetTail === undefined || (!reference.test(firstTargetTail) && !anaphora.test(firstTargetTail))) {
+            return false;
+        }
+    }
+    const renameTails =
+        actionName === 'renameClip'
+            ? [...quoteScan.maskedText.matchAll(/\brename\b/giu)].flatMap((match) =>
+                  match.index === undefined ? [] : [normalizePromptText(clause.slice(match.index + match[0].length))]
+              )
+            : [];
+    const possibleRenameSources = renameTails.filter((tail) =>
+        new RegExp(`^(?:(?:the )?${escapeRegExp(name)}|clip (?:the )?${escapeRegExp(name)})(?: |$)`, 'u').test(tail)
+    );
+    const renameSource =
+        possibleRenameSources.length > 0 &&
+        possibleRenameSources.every((tail) =>
+            new RegExp(
+                `^(?:(?:the )?${escapeRegExp(name)}(?: (?:midi|audio))? clip|clip (?:the )?${escapeRegExp(name)})(?=$| (?:to|as)\\b)`,
+                'u'
+            ).test(tail)
+        );
+    if (possibleReferences.length > 0 && !hasExactReference) {
+        return false;
+    }
+    if (possibleRenameSources.length > 0 && !renameSource) {
+        return false;
+    }
+    if (hasExactReference || renameSource) {
+        const sameNameBindings = [...bindings.values()].filter(
+            (candidate) => candidate.actionType === binding.actionType && normalizePromptText(candidate.name) === name
+        );
+        const ownerTails = [...quoteScan.maskedText.matchAll(/\b(?:on|in)\b/giu)].flatMap((match) =>
+            match.index === undefined ? [] : [normalizePromptText(clause.slice(match.index + match[0].length))]
+        );
+        const namedOwners = context.tracks.filter((track) =>
+            ownerTails.some((tail) =>
+                new RegExp(`^(?:the )?(?:new )?${escapeRegExp(normalizePromptText(track.name))} track\\b`, 'u').test(
+                    tail
+                )
+            )
+        );
+        let parentTrackId = binding.parentTrackReference;
+        if (binding.actionType === 'addTrack' || binding.actionType === 'createBus') {
+            parentTrackId = binding.createdId;
+        } else if (parentTrackId?.startsWith('$')) {
+            parentTrackId = bindings.get(parentTrackId.slice(1))?.createdId;
+        }
+        if (namedOwners.length > 0) {
+            return namedOwners.length === 1 && namedOwners[0]?.id === parentTrackId;
+        }
+        return sameNameBindings.length === 1;
+    }
+    const sameKindBindings = [...bindings.values()].filter((candidate) => candidate.actionType === binding.actionType);
+    const firstTargetTail = referenceTails.find((tail) => !/^(?:beats?|bars?|measures?|\d+)\b/u.test(tail));
+    return sameKindBindings.length === 1 && firstTargetTail !== undefined && anaphora.test(firstTargetTail);
+}
+
+function getExplicitCreatedTargetIntent(input: {
     bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
+    context: ProjectContext;
     prompt: string;
-}): boolean {
+}): 'matched' | 'mismatched' | 'none' {
     const rules = getExecutableAppActionGroundingRules(input.call.name);
     if (!rules) {
-        return false;
+        return 'none';
     }
-    const targetNames = rules.targetRules.flatMap((rule) => {
+    const targetBindings = rules.targetRules.flatMap((rule) => {
         const value = input.call.arguments[rule.argument];
         if (typeof value !== 'string' || !value.startsWith('$')) {
             return [];
         }
         const binding = input.bindings.get(value.slice(1));
-        return binding ? [normalizePromptText(binding.name)] : [];
+        return binding ? [binding] : [];
     });
-    if (targetNames.length === 0) {
-        return false;
+    if (targetBindings.length === 0) {
+        return 'none';
     }
     const quoteScan = scanPromptQuotedText(input.prompt);
-    return getPromptClauses(input.prompt, quoteScan.maskedText).some((clause) => {
-        if (resolveClauseActionIntent(clause.masked, input.catalog)?.actionType !== input.call.name) {
-            return false;
-        }
-        const clauseText = ` ${normalizePromptText(clause.text)} `;
-        return targetNames.every((name) => clauseText.includes(` ${name} `));
-    });
+    const actionClauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter(
+        (clause) =>
+            resolveClauseActionIntent(clause.masked, input.catalog, input.call.name)?.actionType === input.call.name ||
+            (input.call.name === 'renameClip' && /\brename\b.*\bclip\b/iu.test(clause.masked))
+    );
+    if (actionClauses.length === 0) {
+        return 'none';
+    }
+    return actionClauses.some((clause) =>
+        targetBindings.every((binding) =>
+            hasCompleteCreatedTargetReference(clause.text, binding, input.bindings, input.context, input.call.name)
+        )
+    )
+        ? 'matched'
+        : 'mismatched';
 }
 
 type PromptActionRequest = {
@@ -5489,6 +5660,13 @@ export function bridgeGroundedLlmToolCalls({
         };
     }
     const hasCreationEvidence = hasHighLevelCreationEvidence(prompt);
+    const createdObjectRequestIndexes = hasCreationEvidence
+        ? getCreatedObjectRequestIndexes({
+              bindings: collectedBindings.bindingsByCallIndex,
+              calls: effectiveCalls,
+              prompt,
+          })
+        : new Set<number>();
     // Decided once for the whole batch, because a creation budget is spent across calls rather than
     // inside one, and a later call may lean on a device an earlier admitted call created.
     const creativeAdmissionsByCallIndex =
@@ -5523,8 +5701,17 @@ export function bridgeGroundedLlmToolCalls({
                       .map((candidate) => candidate.arguments)
                 : undefined;
         const creativeAdmission = creativeAdmissionsByCallIndex?.get(index);
+        const createdTargetIntent = getExplicitCreatedTargetIntent({
+            bindings: visibleBindings,
+            call,
+            catalog,
+            context: prospectiveContext,
+            prompt,
+        });
         let grounded: ToolCallResult | LlmActionRejection;
-        if (
+        if (!isBatchLocalCreationActionType(call.name) && createdTargetIntent === 'mismatched') {
+            grounded = rejection(index, call.name, 'Batch-local target is not grounded in the user request');
+        } else if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
@@ -5537,14 +5724,7 @@ export function bridgeGroundedLlmToolCalls({
                 actionOrdinal,
                 admitsPlanCreatedObjects:
                     hasCreationEvidence &&
-                    (index < transformCalls.length ||
-                        compilerEvidence !== undefined ||
-                        hasExplicitCreatedTargetIntent({
-                            bindings: visibleBindings,
-                            call,
-                            catalog,
-                            prompt,
-                        })),
+                    (createdObjectRequestIndexes.has(index) || createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,

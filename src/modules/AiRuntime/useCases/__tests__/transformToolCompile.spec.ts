@@ -375,39 +375,55 @@ describe('transform.compile planner tool', () => {
         expect(result.rejectionReason).toContain('protected or unresolved target');
     });
 
-    it.each([
-        [
-            'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
-            false,
-        ],
-        [
-            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
-            true,
-        ],
-    ])('scopes an ordinary note proposal beside selected transform emissions for %s', async (prompt, allowed) => {
+    it('keeps a later rename outside the exclusion while admitting both requested edits', async () => {
+        const context = {
+            ...CONTEXT,
+            tracks: [
+                {
+                    ...CONTEXT.tracks[0]!,
+                    clips: [
+                        {
+                            id: 'clip-bass-verse',
+                            name: 'Bass Verse',
+                            type: 'midi' as const,
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 4,
+                        },
+                        {
+                            id: 'clip-lead',
+                            name: 'Lead',
+                            type: 'midi' as const,
+                            startBeat: 8,
+                            endBeat: 16,
+                            noteCount: 4,
+                        },
+                    ],
+                },
+            ],
+            selectedClipId: 'clip-bass-verse',
+            selectedClipIds: ['clip-bass-verse'],
+        };
         const document = {
             ...DOCUMENT,
-            selectors: {},
+            selectors: { bass: { target: 'clip', where: { nameIncludes: 'Bass Verse' }, limit: 1 } },
             steps: [
                 {
-                    id: 'lead',
-                    kind: 'emit',
-                    operation: 'addTrack',
-                    binding: 'lead',
-                    arguments: { name: { literal: 'Lead' }, kind: { literal: 'midi' } },
-                },
-                {
-                    id: 'melody',
-                    kind: 'emit',
-                    operation: 'addClip',
-                    binding: 'melody',
-                    dependsOn: ['lead'],
-                    arguments: {
-                        trackId: { bindingRef: 'lead' },
-                        name: { literal: 'Melody' },
-                        startBeat: { literal: 0 },
-                        endBeat: { literal: 4 },
-                    },
+                    id: 'bass',
+                    kind: 'each',
+                    selector: 'bass',
+                    as: 'clip',
+                    body: [
+                        {
+                            id: 'velocity',
+                            kind: 'emit',
+                            operation: 'setAllVelocities',
+                            arguments: {
+                                clipId: { itemId: 'clip' },
+                                velocity: { literal: 90 },
+                            },
+                        },
+                    ],
                 },
             ],
         };
@@ -419,10 +435,7 @@ describe('transform.compile planner tool', () => {
                     {
                         id: 'catalog-1',
                         name: 'agent.catalog.discover',
-                        arguments: {
-                            category: 'command',
-                            names: ['addNotes'],
-                        },
+                        arguments: { category: 'command', names: ['renameClip'] },
                     },
                 ],
             })
@@ -430,33 +443,198 @@ describe('transform.compile planner tool', () => {
                 status: 'complete',
                 toolCalls: [
                     {
-                        id: 'propose-1',
+                        id: 'proposal-1',
                         name: 'command.batch.propose',
                         arguments: {
                             compiledCallIds: ['compile-1'],
                             commands: [
-                                {
-                                    name: 'addNotes',
-                                    arguments: {
-                                        clipId: '$melody',
-                                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
-                                    },
-                                },
+                                { name: 'renameClip', arguments: { clipId: 'clip-bass-verse', name: 'set 100' } },
                             ],
                         },
                     },
                 ],
             });
-        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
-        expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
-        if (allowed) {
-            expect(result.rejectionReason).toBeUndefined();
-            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
-        } else {
-            expect(result.actions).toEqual([]);
-            expect(result.rejectionReason).toContain('not grounded');
-        }
+        const result = await parsePromptToActions(
+            'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions.map((action) => action.type)).toEqual(['setAllVelocities', 'renameClip']);
+        expect(result.actions[0]).toMatchObject({ payload: { clipId: 'clip-bass-verse', velocity: 90 } });
+        expect(result.actions[1]).toMatchObject({ payload: { clipId: 'clip-bass-verse', name: 'set 100' } });
     });
+
+    it('rejects a compiled Chorus edit when an unquoted colliding exclusion has an unresolved member', async () => {
+        const context = {
+            ...CONTEXT,
+            tracks: [
+                {
+                    ...CONTEXT.tracks[0]!,
+                    clips: [
+                        {
+                            id: 'clip-chorus',
+                            name: 'Chorus',
+                            type: 'midi' as const,
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 4,
+                        },
+                        {
+                            id: 'clip-chorus-missing',
+                            name: 'Chorus and Missing',
+                            type: 'midi' as const,
+                            startBeat: 8,
+                            endBeat: 16,
+                            noteCount: 4,
+                        },
+                    ],
+                },
+            ],
+        };
+        const document = {
+            ...DOCUMENT,
+            selectors: { chorus: { target: 'clip', where: { nameIncludes: 'Chorus' }, limit: 1 } },
+            steps: [
+                {
+                    id: 'chorus',
+                    kind: 'emit',
+                    operation: 'setAllVelocities',
+                    arguments: {
+                        clipId: { literal: 'clip-chorus' },
+                        velocity: { literal: 90 },
+                    },
+                },
+            ],
+        };
+        planCalls(['compile-1'], document);
+        const result = await parsePromptToActions(
+            'set note velocities in Chorus MIDI clip to 90, excluding Chorus and Missing',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected or unresolved target');
+    });
+
+    it.each([
+        [
+            'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
+            false,
+            'Requested empty clip cannot receive proposed notes',
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            true,
+            null,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to "Melody"',
+            true,
+            null,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody MIDI clip',
+            true,
+            null,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody Pad',
+            false,
+            'Batch-local target is not grounded in the user request',
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody Pad with a label "to Melody"',
+            false,
+            'Batch-local target is not grounded in the user request',
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Other on Melody',
+            false,
+            'Batch-local target is not grounded in the user request',
+        ],
+    ])(
+        'scopes an ordinary note proposal beside selected transform emissions for %s',
+        async (prompt, allowed, rejection) => {
+            const document = {
+                ...DOCUMENT,
+                selectors: {},
+                steps: [
+                    {
+                        id: 'lead',
+                        kind: 'emit',
+                        operation: 'addTrack',
+                        binding: 'lead',
+                        arguments: { name: { literal: 'Lead' }, kind: { literal: 'midi' } },
+                    },
+                    {
+                        id: 'melody',
+                        kind: 'emit',
+                        operation: 'addClip',
+                        binding: 'melody',
+                        dependsOn: ['lead'],
+                        arguments: {
+                            trackId: { bindingRef: 'lead' },
+                            name: { literal: 'Melody' },
+                            startBeat: { literal: 0 },
+                            endBeat: { literal: 4 },
+                        },
+                    },
+                ],
+            };
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'compile-1',
+                            name: 'transform.compile',
+                            arguments: { document: JSON.stringify(document) },
+                        },
+                        {
+                            id: 'catalog-1',
+                            name: 'agent.catalog.discover',
+                            arguments: {
+                                category: 'command',
+                                names: ['addNotes'],
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'propose-1',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                compiledCallIds: ['compile-1'],
+                                commands: [
+                                    {
+                                        name: 'addNotes',
+                                        arguments: {
+                                            clipId: '$melody',
+                                            notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+            const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+            expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
+            if (allowed) {
+                expect(result.rejectionReason).toBeUndefined();
+                expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+            } else {
+                expect(result.actions).toEqual([]);
+                expect(result.rejectionReason).toContain(rejection);
+            }
+        }
+    );
 
     it('keeps original exclusions on ordinary calls mixed with selected transform emissions', async () => {
         const document = {
@@ -527,34 +705,132 @@ describe('transform.compile planner tool', () => {
         [
             'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
             false,
+            false,
+            'empty clip',
         ],
         [
             'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
             true,
+            false,
+            null,
         ],
-    ])('keeps a structured creation consumer within the request authority for %s', async (prompt, allowed) => {
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody Pad',
+            false,
+            false,
+            'Batch-local target is not grounded',
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            false,
+            true,
+            'Provider action is not grounded in the user request',
+        ],
+    ])(
+        'keeps a structured creation consumer within the request authority for %s',
+        async (prompt, allowed, extraProducer, rejection) => {
+            const commands = [
+                { id: 'lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    id: 'melody',
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$lead',
+                        name: 'Melody',
+                        startBeat: 0,
+                        endBeat: 4,
+                        binding: 'melody',
+                    },
+                    dependsOn: ['lead'],
+                },
+                {
+                    id: 'note',
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                    dependsOn: ['melody'],
+                },
+            ];
+            if (extraProducer) {
+                commands.unshift({
+                    id: 'sneaky',
+                    name: 'addTrack',
+                    arguments: { name: 'Sneaky', kind: 'midi', binding: 'sneaky' },
+                });
+            }
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'catalog-1',
+                            name: 'agent.catalog.discover',
+                            arguments: {
+                                category: 'command',
+                                names: ['addTrack', 'addClip', 'addNotes'],
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'propose-1',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                plan: {
+                                    semantic: { classification: 'simple', uncertainty: [] },
+                                    objective: 'Create a MIDI track and clip.',
+                                    constraints: [],
+                                    scope: {
+                                        targetIds: [],
+                                        targetRanges: [],
+                                        protectedTargetIds: [],
+                                        protectedRanges: [],
+                                    },
+                                    capabilityIds: ['addTrack', 'addClip', 'addNotes'],
+                                    assetIds: [],
+                                    alternatives: [],
+                                    validationStrategy: ['Check command targets.'],
+                                    stoppingConditions: ['Stop if revision changes.'],
+                                },
+                                list: { schemaVersion: 1, items: commands },
+                            },
+                        },
+                    ],
+                });
+            const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+            if (allowed) {
+                expect(result.rejectionReason).toBeUndefined();
+                expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+            } else {
+                expect(result.actions).toEqual([]);
+                expect(result.rejectionReason).toContain(rejection);
+            }
+        }
+    );
+
+    it.each([
+        ['Lead', true],
+        ['Bass', false],
+    ])('binds a structured consumer to its requested owner on %s', async (ownerName, allowed) => {
         const commands = [
             { id: 'lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+            { id: 'bass', name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
             {
                 id: 'melody',
                 name: 'addClip',
-                arguments: {
-                    trackId: '$lead',
-                    name: 'Melody',
-                    startBeat: 0,
-                    endBeat: 4,
-                    binding: 'melody',
-                },
                 dependsOn: ['lead'],
+                arguments: { trackId: '$lead', name: 'Melody', startBeat: 0, endBeat: 4, binding: 'melody' },
             },
             {
-                id: 'note',
+                id: 'notes',
                 name: 'addNotes',
-                arguments: {
-                    clipId: '$melody',
-                    notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
-                },
                 dependsOn: ['melody'],
+                arguments: { clipId: '$melody', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
             },
         ];
         vi.mocked(generateToolPlanningOutcome)
@@ -564,10 +840,7 @@ describe('transform.compile planner tool', () => {
                     {
                         id: 'catalog-1',
                         name: 'agent.catalog.discover',
-                        arguments: {
-                            category: 'command',
-                            names: ['addTrack', 'addClip', 'addNotes'],
-                        },
+                        arguments: { category: 'command', names: ['addTrack', 'addClip', 'addNotes'] },
                     },
                 ],
             })
@@ -575,18 +848,18 @@ describe('transform.compile planner tool', () => {
                 status: 'complete',
                 toolCalls: [
                     {
-                        id: 'propose-1',
+                        id: 'proposal-1',
                         name: 'command.batch.propose',
                         arguments: {
                             plan: {
                                 semantic: { classification: 'simple', uncertainty: [] },
-                                objective: 'Create a MIDI track and clip.',
+                                objective: 'Create named tracks and add notes to the Melody clip.',
                                 constraints: [],
                                 scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
                                 capabilityIds: ['addTrack', 'addClip', 'addNotes'],
                                 assetIds: [],
                                 alternatives: [],
-                                validationStrategy: ['Check command targets.'],
+                                validationStrategy: ['Check owner and target.'],
                                 stoppingConditions: ['Stop if revision changes.'],
                             },
                             list: { schemaVersion: 1, items: commands },
@@ -594,13 +867,23 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             });
-        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+        const result = await parsePromptToActions(
+            `create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new Lead track from beat 0 to beat 4; add notes to Melody on ${ownerName} track`,
+            CONTEXT,
+            undefined,
+            'revision-transform-1'
+        );
         if (allowed) {
             expect(result.rejectionReason).toBeUndefined();
-            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+            expect(result.actions.map((action) => action.type)).toEqual([
+                'addTrack',
+                'addTrack',
+                'addClip',
+                'addNotes',
+            ]);
         } else {
             expect(result.actions).toEqual([]);
-            expect(result.rejectionReason).toContain('empty clip');
+            expect(result.rejectionReason).toContain('Batch-local target is not grounded');
         }
     });
 
@@ -1182,6 +1465,161 @@ describe('transform.compile planner tool', () => {
         ]);
         expect(result.actionCommandGraph?.dependenciesByActionIndex).toEqual([[], [], []]);
         expect(result.matchSelectorPredicates?.[0]?.actionPositions).toEqual([2]);
+    });
+
+    it('rejects an extra selected-transform creation beside an authorized structured creation chain', async () => {
+        const document = {
+            ...DOCUMENT,
+            selectors: {},
+            steps: [
+                {
+                    id: 'sneaky',
+                    kind: 'emit',
+                    operation: 'addTrack',
+                    binding: 'sneaky',
+                    arguments: { name: { literal: 'Sneaky' }, kind: { literal: 'midi' } },
+                },
+            ],
+        };
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+                    {
+                        id: 'catalog-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['addTrack', 'addClip', 'addNotes'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'proposal-1',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            compiledCallIds: ['compile-1'],
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Create Lead and Melody with notes.',
+                                constraints: [],
+                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                                capabilityIds: ['addTrack', 'addClip', 'addNotes'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Check command targets.'],
+                                stoppingConditions: ['Stop if revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'lead',
+                                        name: 'addTrack',
+                                        arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
+                                    },
+                                    {
+                                        id: 'melody',
+                                        name: 'addClip',
+                                        arguments: {
+                                            trackId: '$lead',
+                                            name: 'Melody',
+                                            startBeat: 0,
+                                            endBeat: 4,
+                                            binding: 'melody',
+                                        },
+                                        dependsOn: ['lead'],
+                                    },
+                                    {
+                                        id: 'notes',
+                                        name: 'addNotes',
+                                        arguments: {
+                                            clipId: '$melody',
+                                            notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                                        },
+                                        dependsOn: ['melody'],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+        const result = await parsePromptToActions(
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            CONTEXT,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('Provider value name does not match the user request');
+    });
+
+    it.each([
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then rename Melody clip to Harmony',
+            true,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then rename clip Melody to Harmony',
+            true,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4',
+            false,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then rename Melody Pad clip to Harmony',
+            false,
+        ],
+    ])('scopes a selected-transform consumer of its own creation for %s', async (prompt, allowed) => {
+        const document = {
+            ...DOCUMENT,
+            selectors: {},
+            steps: [
+                {
+                    id: 'lead',
+                    kind: 'emit',
+                    operation: 'addTrack',
+                    binding: 'lead',
+                    arguments: { name: { literal: 'Lead' }, kind: { literal: 'midi' } },
+                },
+                {
+                    id: 'melody',
+                    kind: 'emit',
+                    operation: 'addClip',
+                    binding: 'melody',
+                    dependsOn: ['lead'],
+                    arguments: {
+                        trackId: { bindingRef: 'lead' },
+                        name: { literal: 'Melody' },
+                        startBeat: { literal: 0 },
+                        endBeat: { literal: 4 },
+                    },
+                },
+                {
+                    id: 'rename',
+                    kind: 'emit',
+                    operation: 'renameClip',
+                    dependsOn: ['melody'],
+                    arguments: { clipId: { bindingRef: 'melody' }, name: { literal: 'Harmony' } },
+                },
+            ],
+        };
+        planCalls(['compile-1'], document);
+        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+        expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
+        if (allowed) {
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'renameClip']);
+            expect(result.actionCommandGraph?.dependenciesByActionIndex).toEqual([[], [0], [1]]);
+        } else {
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('not grounded');
+        }
     });
 
     it('preserves every emitted dependency and binding producer in the approval graph', async () => {

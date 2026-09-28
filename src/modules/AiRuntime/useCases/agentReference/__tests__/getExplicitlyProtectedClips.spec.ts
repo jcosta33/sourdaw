@@ -233,6 +233,37 @@ describe('getExplicitlyProtectedClips', () => {
         ).toBe(false);
     });
 
+    it.each([
+        'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
+        'set note velocities in Bass Verse to 90, excluding Lead and then rename Bass Verse to "set 100"',
+        'set note velocities in Bass Verse to 90, excluding Lead; rename Bass Verse to "set 100"',
+    ])('ends an exclusion at a following rename instruction for %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context)).toEqual({
+            clips: [{ id: lead.id, name: lead.name }],
+            complete: true,
+        });
+    });
+
+    it('keeps whole-name protection and unresolved list members together', () => {
+        const chorus = createClip('clip-chorus', 'Chorus');
+        const wholeName = createClip('clip-chorus-and-missing', 'Chorus and Missing');
+        const chorusContext = {
+            ...context,
+            tracks: [createTrack('track-chorus', 'Chorus', [chorus, wholeName])],
+        };
+        expect(getExplicitClipProtection('set Chorus to 90, excluding Chorus and Missing', chorusContext)).toEqual({
+            clips: [
+                { id: chorus.id, name: chorus.name },
+                { id: wholeName.id, name: wholeName.name },
+            ],
+            complete: false,
+        });
+        expect(getExplicitClipProtection('set Chorus to 90, excluding "Chorus and Missing"', chorusContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: true,
+        });
+    });
+
     it('treats quoted exclusion words as names and keeps quoted excluded names literal', () => {
         expect(getProtectedClips('rename Lead to "excluding Bass Verse"')).toEqual([]);
         expect(getProtectedClips('set Verse to 90, excluding "Rock and Roll"')).toContainEqual({
