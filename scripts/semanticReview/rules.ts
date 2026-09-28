@@ -701,8 +701,8 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         name: 'ci',
         concurrentRequests: 4,
         // Bytes and the deadline are the binding guards; the attempt count exists only to bound a
-        // runaway retry loop, so it sits four times above the `maxTotalSubmittedBytes /
-        // maxStatePlusQuestionBytes` = 128 requests the byte guard can admit. An attempt cap below that
+        // runaway retry loop, so it sits three times above the `maxTotalSubmittedBytes /
+        // maxStatePlusQuestionBytes` = 171 requests the byte guard can admit. An attempt cap below that
         // figure binds first and starves a plan whose byte budget is barely touched.
         maxAttempts: 512,
         maxRetriesPerRequest: 1,
@@ -711,20 +711,23 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         attemptTimeoutMs: 20_000,
         // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
         overallDeadlineMs: 600_000,
-        // Economizing here buys nothing: the run that motivated these numbers submitted 115210 bytes for
-        // an estimated $0.0014, about 1.3 cents per MiB, so 16 MiB is roughly 20 cents and exists to
-        // bound a runaway rather than to ration ordinary coverage. The state and request limits are the
-        // sizes the ci verify sub-profile already proves the provider accepts, so a scan unit no longer
-        // loses its own regions to a state budget that was sized for a fraction of what one request
-        // costs.
-        maxRequestBytes: 160 * 1024,
-        maxStatePlusQuestionBytes: 128 * 1024,
+        // The provider's context window, not spend, is what binds the state budget: on the first run at
+        // 128 KiB states, requests of 130,104 and 130,895 bytes were both answered
+        // `400 max_tokens_exceeded` while a 130,723-byte request was answered. 96 KiB is 24,576
+        // estimated tokens by the `bytes / 4` proxy, which over-estimates — that run reported 1,000,954
+        // estimated against 941,550 actual — and keeps every request under the window. The total is
+        // still sized from cost: 115210 bytes were estimated at $0.0014, about 1.3 cents per MiB, so
+        // 16 MiB is roughly 20 cents and exists to bound a runaway rather than to ration coverage.
+        maxRequestBytes: 128 * 1024,
+        maxStatePlusQuestionBytes: 96 * 1024,
         maxTotalSubmittedBytes: 16 * 1024 * 1024,
         contextExpansionPasses: 1,
         verify: {
             maxRegionBytes: 96 * 1024,
-            maxStatePlusQuestionBytes: 128 * 1024,
-            maxRequestBytes: 160 * 1024,
+            // The same window bound as the scan budgets: a verify request must not be able to send a
+            // state the provider refuses, whatever the scan profile permits.
+            maxStatePlusQuestionBytes: 96 * 1024,
+            maxRequestBytes: 128 * 1024,
             maxTotalSubmittedBytes: 2 * 1024 * 1024,
         },
     },

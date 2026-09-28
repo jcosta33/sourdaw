@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { AuthenticationError, RateLimitError } from '@typesafe-ai/sdk';
+import { AuthenticationError, BadRequestError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -4921,6 +4921,36 @@ describe('provider adapter', () => {
         expect(attempts).toBe(1);
     });
 
+    it('classifies a provider context-window rejection as a per-request size refusal', async () => {
+        // The provider answers a request past its context window with a 400 whose body names
+        // `max_tokens_exceeded`. Reading that as `invalid_response` reported a malformed response for a
+        // request that was simply too large, and sent the next reader looking at the answer schema. It is
+        // the same per-request refusal the budget controller raises, so it carries the same code, stays
+        // terminal, and keeps the provider's own message.
+        let attempts = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                attempts += 1;
+                throw new BadRequestError(400, { detail: { error_type: 'max_tokens_exceeded' } }, new Headers());
+            },
+        };
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxRetriesPerRequest: 3 };
+        const assessment = assessUnit({
+            port: provider,
+            cache: new MapCache(),
+            budget: createBudgetController(profile),
+            profile,
+            deadline: Date.now() + 60_000,
+            state: {},
+            questions: {},
+            requestedModel: TYPESAFE_MODEL,
+            signal: new AbortController().signal,
+        });
+        await expect(assessment).rejects.toMatchObject({ code: 'request_too_large' });
+        await expect(assessment).rejects.toThrow(/max_tokens_exceeded/u);
+        expect(attempts).toBe(1);
+    });
+
     it('rejects a returned model that is not the pinned model', async () => {
         // AC-11: an unexpected returned model is refused, never accepted.
         const provider = constantProvider(0.1, {
@@ -5005,6 +5035,11 @@ describe('budget profiles', () => {
     it('ships profiles whose limits are internally consistent', () => {
         for (const profile of Object.values(SEMANTIC_BUDGET_PROFILES)) {
             expect(() => assertBudgetProfile(profile)).not.toThrow();
+            // The scan budgets bind the same way as the verify budgets below: a state at the scan
+            // ceiling must fit one request, or the planner would reserve against a budget the provider
+            // refuses whatever the profile says.
+            expect(profile.maxStatePlusQuestionBytes).toBeLessThanOrEqual(profile.maxRequestBytes);
+            expect(profile.maxRequestBytes).toBeLessThanOrEqual(profile.maxTotalSubmittedBytes);
             // The verify budgets bind in turn: a region the collector admits must fit one request's
             // state budget, and one request the run's total, or the profile configures a collection
             // that can never be sent.

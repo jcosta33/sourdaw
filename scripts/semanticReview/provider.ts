@@ -107,6 +107,12 @@ export function createSdkProviderPort(input: { apiKey: string; model?: string })
 export const TYPESAFE_SDK_VERSION_FOR_CACHE = TYPESAFE_SDK_VERSION;
 
 /**
+ * The provider's own word for a request past its context window, echoed in the body it returns with a
+ * 400. Reading that body keeps a size refusal from being reported as a malformed response.
+ */
+const REQUEST_TOO_LARGE_PROVIDER_TOKEN = 'max_tokens_exceeded';
+
+/**
  * Normalizes a provider failure into the internal taxonomy. Transient codes may be retried by the
  * adapter; everything else is terminal, including authentication, invalid requests, and aborts.
  */
@@ -124,6 +130,13 @@ export function classifyProviderError(error: unknown): { code: SemanticFailureCo
         return { code: 'timeout', transient: true };
     }
     if (error instanceof BadRequestError || error instanceof UnprocessableEntityError) {
+        // A request past the context window is a per-request size refusal, exactly as the budget
+        // controller's own per-request branch is, and terminal: rerolling the same bytes cannot fit.
+        // This reads the provider's error body, so a changed body shape degrades back to
+        // `invalid_response` — a less specific code for a real failure, never a wrong one.
+        if (error.message.includes(REQUEST_TOO_LARGE_PROVIDER_TOKEN)) {
+            return { code: 'request_too_large', transient: false };
+        }
         return { code: 'invalid_response', transient: false };
     }
     if (error instanceof NotFoundError) {
