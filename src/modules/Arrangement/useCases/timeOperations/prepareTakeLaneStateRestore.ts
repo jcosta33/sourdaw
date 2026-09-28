@@ -13,8 +13,10 @@ import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
  * defensive comping primitives — reconcile against live state, no-op on
  * nothing to do — so a diverged store degrades to a partial restore rather
  * than a conflict. Retirement and re-key move disjoint takes (a removed clip's
- * takes are verbatim in both re-key sides), so the two legs of one direction
- * cannot interfere.
+ * takes are verbatim in both re-key sides). Their region halves share a doomed
+ * region (#4841 rides only the re-key's before side), but converge in either
+ * order through the two legs' overlap refusals, as the paragraph on
+ * `prepareTakeLaneStateRestore` spells out.
  */
 function applyTakeLaneTransitionPlan(plan: TakeLaneTransitionPlan): boolean {
     if (plan.appliedEffect === 'restore') {
@@ -48,10 +50,14 @@ function revertTakeLaneTransitionPlan(plan: TakeLaneTransitionPlan): boolean {
  * there is something to do. Apply and revert are the comping module's
  * defensive primitives, which reconcile against live state rather than
  * conflicting on it, and each is one atomic store write, so a failed apply
- * leaves nothing to recover. The retirement leg always runs before the re-key
- * leg: a region the retirement owns rides only the re-key's before side
- * (#4841), so on the restore direction the re-key leg re-adds it only after
- * the survivor's region has moved off its span.
+ * leaves nothing to recover. A region the retirement owns rides only the
+ * re-key's before side (#4841), so both legs can bring it back — and they
+ * converge in either order rather than depending on one. Run the retirement
+ * leg first (as both directions do here) and its overlap refusal defers the
+ * doomed region while the survivor's region still holds the freed span; the
+ * re-key leg then re-adds it after moving the survivor off. Run the re-key
+ * leg first and it re-adds the doomed region itself — the retirement leg's
+ * refusal then dedupes, because a same-span region overlaps itself.
  */
 export function prepareTakeLaneStateRestore(plan: TakeLaneTransitionPlan): {
     name: string;

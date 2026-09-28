@@ -90,9 +90,12 @@ function reconcileTransitionTakes(
 
 /**
  * Merge the additions into the kept live regions — both sorted by start — in
- * one linear walk: an addition that overlaps a region already retained, live
- * or re-added, is refused. That is the non-overlap law the store itself keeps,
- * so a comp authored after the capture is never displaced by the replay.
+ * one linear walk: an addition that overlaps a kept region is refused. That is
+ * the non-overlap law the store itself keeps, so a comp authored after the
+ * capture is never displaced by the replay. Collision with the last merged
+ * region needs no check: the while loop only passes kept regions ending at or
+ * before the addition's start, and lawful additions — the plan validator
+ * re-checks every side — are themselves sorted and non-overlapping.
  */
 function mergeRegionsRefusingOverlaps(kept: readonly CompRegion[], additions: readonly CompRegion[]): CompRegion[] {
     const merged: CompRegion[] = [];
@@ -103,10 +106,6 @@ function mergeRegionsRefusingOverlaps(kept: readonly CompRegion[], additions: re
             keptIndex++;
         }
         let collides = false;
-        const previous = merged[merged.length - 1];
-        if (previous && regionsOverlap(previous, addition)) {
-            collides = true;
-        }
         for (
             let scan = keptIndex;
             !collides && scan < kept.length && kept[scan]!.startBeat < addition.endBeat;

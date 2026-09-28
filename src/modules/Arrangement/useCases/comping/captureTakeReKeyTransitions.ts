@@ -96,7 +96,11 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * the re-keyed right one) and a window at most one piece, so the second piece
  * is the only mint, over a base id the source take's id makes unique. Deriving
  * it from the take id and the deleted span keeps a replayed redo re-minting
- * the same id, exactly like the clip identities it replays.
+ * the same id, exactly like the clip identities it replays. Uniqueness rests
+ * on take ids being unique — true for every lane an app route mints, but not
+ * enforced by the store's sanitize: two takes sharing an id on corrupt
+ * hydrated state would mint colliding fragment ids here, an accepted
+ * divergence on state no route produces.
  */
 function buildTakeFragments(
     take: Take,
@@ -197,7 +201,8 @@ function mapLaneRegions(
     lane: TakeLane,
     takesById: ReadonlyMap<string, Take>,
     fragmentsBySourceTakeId: ReadonlyMap<string, TakeFragmentMap[]>,
-    removedClipIds: ReadonlySet<string>
+    removedClipIds: ReadonlySet<string>,
+    deleteStartBeat: number
 ): LaneRegionMapping {
     const mapping: LaneRegionMapping = { regionsBefore: [], regionsAfter: [], regionsChanged: false };
     for (const region of lane.activeCompRegions) {
@@ -219,11 +224,30 @@ function mapLaneRegions(
         const fragments = take ? fragmentsBySourceTakeId.get(take.id) : undefined;
         if (!fragments) {
             // The take's clip was untouched (or the region names a take the
-            // lane does not hold, which only an unsanitized write can produce):
-            // the region rides both sides verbatim, so the reconcile never
-            // moves it.
+            // lane does not hold, which only an unsanitized write can
+            // produce), so the region rides the before side verbatim — the
+            // lane genuinely held it, and the restore leg puts exactly it
+            // back. The after side cannot carry it verbatim: a region wider
+            // than its take is a shape the store tolerates, and its overhang
+            // can reach into the deleted span, where it would overlap the
+            // regions remapped onto the freed span — leaving the after side
+            // unlawful for the plan's own validator. Clamp it to the span's
+            // left edge instead; a region starting at or past the span claims
+            // only material the operation deleted or rehomed, so it is
+            // dropped from the after side.
             mapping.regionsBefore.push(region);
-            mapping.regionsAfter.push(region);
+            if (region.endBeat <= deleteStartBeat) {
+                mapping.regionsAfter.push(region);
+                continue;
+            }
+            mapping.regionsChanged = true;
+            if (region.startBeat < deleteStartBeat) {
+                mapping.regionsAfter.push({
+                    startBeat: region.startBeat,
+                    endBeat: deleteStartBeat,
+                    takeId: region.takeId,
+                });
+            }
             continue;
         }
         const mapped = mapRegionThroughFragments(region, fragments);
@@ -266,6 +290,10 @@ function mapLaneRegions(
  * outright belongs to the paired retirement (#4520): it rides the before side
  * verbatim — so the restore leg can put it back — but never the after side,
  * where it would collide with a survivor's remapped region on the freed span.
+ * A region whose take's clip was untouched rides the before side verbatim too,
+ * but the after side clamps it to the deleted span's left edge: the store
+ * tolerates a region wider than its take, and the overhang could otherwise
+ * reach into the freed span and overlap the regions remapped onto it.
  * The derived sides keep the store's exactness law by
  * construction: the lane's regions start sorted and non-overlapping, each
  * region's fragments stay in window order, and the per-side deltas are uniform
@@ -287,13 +315,22 @@ export function captureTakeReKeyTransitions(
         if (!windows) {
             continue;
         }
+        // Take ids are unique on every lane an app route can produce
+        // (`createTake` mints a fresh UUID per take), which is what makes this
+        // index a faithful per-id lookup. The store's sanitize does not
+        // dedupe, so corrupt hydrated or merged state could hold duplicates:
+        // the Map then keeps the last entry where a linear scan would find
+        // the first, and two duplicate takes splitting would mint colliding
+        // fragment ids — an accepted divergence on state no route produces,
+        // reconciled by id like every other take write.
         const takesById = new Map(lane.takes.map((take) => [take.id, take]));
         const takeMapping = mapLaneTakes(lane, groupWindowsByClipId(windows), input);
         const regionMapping = mapLaneRegions(
             lane,
             takesById,
             takeMapping.fragmentsBySourceTakeId,
-            input.removedClipIds
+            input.removedClipIds,
+            input.deleteStartBeat
         );
         if (!takeMapping.takesChanged && !regionMapping.regionsChanged) {
             continue;

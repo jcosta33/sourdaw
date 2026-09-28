@@ -446,4 +446,83 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         expect(liveLane().takes).toEqual([takeA, takeB]);
         expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: takeB.id }]);
     });
+
+    it('clamps a stale region overhanging the deleted span instead of letting it swallow the remapped survivor', () => {
+        // The stale region is wider than its take — a shape the store
+        // tolerates — and overhangs the deleted span, while a sibling clip
+        // ripples left across it. Carried verbatim it would overlap the
+        // survivor's remapped region, leaving the after side unlawful for the
+        // plan's own validator: undo would throw on the invalid inverse.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'survivor', startBeat: 8, endBeat: 12 }),
+        ]);
+        const staleTake = createTake('stale-host', 'Stale host', 0, 2);
+        const survivorTake = createTake('survivor', 'Survivor', 8, 12);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [staleTake, survivorTake],
+            activeCompRegions: [
+                { startBeat: 0, endBeat: 6, takeId: staleTake.id },
+                { startBeat: 8, endBeat: 12, takeId: survivorTake.id },
+            ],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        // The stale region keeps only its beats left of the span; the
+        // survivor's region lands whole on the freed span.
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: staleTake.id },
+            { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
+        ]);
+
+        const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
+        transaction.undo();
+
+        // The before side carried the stale region verbatim, so undo restores
+        // it exactly — overhang included.
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 6, takeId: staleTake.id },
+            { startBeat: 8, endBeat: 12, takeId: survivorTake.id },
+        ]);
+
+        transaction.redo();
+
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: staleTake.id },
+            { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
+        ]);
+    });
+
+    it('records no re-key transition for a lane whose only take and region retire with their clip', () => {
+        // The lane's only take comps a clip the span fully removes, while a
+        // sibling clip ripples left. The retirement leg owns the doomed take
+        // and region wholesale: the re-key capture must not emit a transition
+        // for this lane.
+        setTracks([
+            createClip({ id: 'doomed', startBeat: 2, endBeat: 6 }),
+            createClip({ id: 'survivor', startBeat: 8, endBeat: 12 }),
+        ]);
+        const doomedTake = createTake('doomed', 'Doomed', 2, 6);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [doomedTake],
+            activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: doomedTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: unknown } | null;
+        expect(slot).not.toBeNull();
+        expect(slot?.reKeyedLanes ?? []).toEqual([]);
+    });
 });
