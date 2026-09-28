@@ -2159,10 +2159,11 @@ describe('package scripts and gitignore', () => {
      * `case require(spec):`, `class X extends require(spec) {}`, and a statement-start call before an
      * ASI block all close the parenthesis with `{` or `:` and are calls. The declaration-context rule
      * reads the name's position — `function`, a method position, or a parameter position — and refuses
-     * them. The block case pins only the statement-start form: a function body whose first statement
-     * is the call and whose second is a block (`function load() { require(spec) { run(); } }`) is
-     * indistinguishable from an object method by this token look, and stays filed as #4818 beside the
-     * callee-bound and regex-lost shapes.
+     * them. The block case pins the statement-start form; a call inside a brace a statement block
+     * provably opens (`function load() { require(spec)\n{ run(); } }`) is refused by the same rule
+     * since #4835, while a brace after a `:` or an `=>` stays undecided there: a labeled block, an
+     * arrow body, and a type literal at an annotation or an arrow's return type all put a member
+     * behind it.
      */
     it.each([
         {

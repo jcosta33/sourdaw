@@ -349,6 +349,1282 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A loader's member is the same loader one indirection further out: `load.resolve` through a
+     * bound `load`, and `require.bind(null)` whose result is the loader it was bound from. Both
+     * initializers bound the name and both calls loaded a module the scan admitted (#4835). Whitespace
+     * or a comment before the `.` changes nothing, so `load .resolve`, `load` newline `.resolve`, and
+     * a block comment before `.resolve` read as `load.resolve`. Whitespace, a line break, or a block
+     * comment after the `.` is skipped the same way, so `load. resolve`, `load.` newline `resolve`,
+     * and a `load.` followed by a block comment and `resolve` read as `load.resolve` too. The boundary
+     * cases pin the limits: a member on a name that reaches no loader, an unmodelled member, a
+     * `resolve` that is itself called, and a `.bind(…)` that is then called or read as a member are not
+     * the loader.
+     */
+    it('collects a load reached through a member of a bound loader', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load.resolve;\nr(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load\n.resolve;\nr(spec);')).toEqual(
+            ['require(...)']
+        );
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load .resolve;\nr(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(
+            snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load /*x*/ .resolve;\nr(spec);')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load. resolve;\nr(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load.\nresolve;\nr(spec);')).toEqual(
+            ['require(...)']
+        );
+        expect(
+            snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load./*c*/resolve;\nr(spec);')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const load = require.bind(null);\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require.bind(null)();\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require.bind(null).foo;\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const r = require.resolve;\nr(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const load = other;\nconst r = load.resolve;\nr(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load.foo;\nr(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers("const load = require.resolve('./yaml');")).toEqual([]);
+    });
+
+    /**
+     * A name a default or a class field binds is the loader exactly as a declarator's is: the parameter
+     * default, the destructuring default, and the shorthand entry that reads a class field's loader
+     * back from an instance of the declaring class each reached a computed load the scan admitted
+     * (#4835). The boundary cases pin the limits: an argument list's assignment binds nothing, a class
+     * field alone binds no local, a shorthand read-back from an unrelated source object binds nothing,
+     * a same-named field in another class does not drop a real binding, and a shadowing declaration
+     * inside a nested function is that declaration.
+     *
+     * The read-back binds only an instance field of the class its constructor name resolves to in
+     * scope. A `static` field sits on the constructor, not on the instance, so it binds nothing; a
+     * same-named class in a nested scope owns the name there, so its non-loader field decides and the
+     * outer class cannot; a subclass and a local holding an instance reach the field the instance
+     * really carries, and each is a load.
+     */
+    it('collects a load a default or a class field binds the loader by', () => {
+        expect(snapshotComputedDynamicSpecifiers('function f(load = require) { load(spec); }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const { load = require } = opts;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass J { loader = something; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('g(load = require);\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class H { loader = require; }\nloader(spec);')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class H { loader = other; }\nconst { loader } = new H();\nloader(spec);')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst { loader } = options;\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { load = require; }\nfunction f() { let load = other; return load(spec); }'
+            )
+        ).toEqual([]);
+        // A static field is not on the instance, so `new H()` carries no loader to read back; the
+        // sibling row is the one that witnesses the same-name static field not overwriting the
+        // instance's own field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { static loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; static loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // The nested `class H` shadows the outer one where the read-back resolves, and its field is
+        // `other`, so no loader is read back.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction build() {\n  class H { loader = other; }\n  const { loader } = new H();\n  loader(spec);\n}'
+            )
+        ).toEqual([]);
+        // A subclass inherits the field, and a local holding an instance reads it back, so each is a load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H {}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst h = new H();\nconst { loader } = h;\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // An aliased constructor (`const C = H`) is not resolved, so the read-back keeps the merge
+        // base's reading and stays in the contract's undecided list.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst C = H;\nconst { loader } = new C();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A class expression's name is bound only inside its own expression, so it does not shadow the
+        // real class declaration the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class H { loader = other; };\nclass H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A subclass's own field, method, or getter of a name shadows the parent's field of that name,
+        // so each is not a load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader = other; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { get loader() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A local bound to an instance in one scope does not bind a read-back of the same name in a
+        // sibling scope. The second function only references `h`, so the scope-chain filter alone is
+        // what keeps the outer instance from resolving here.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction a() { const h = new H(); return h; }\nfunction b() { const { loader } = h; loader(spec); }'
+            )
+        ).toEqual([]);
+        // A nested redeclaration or a reassignment of a local to a non-instance shadows the instance
+        // binding, so neither read-back reaches the loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst h = new H();\nfunction f() { const h = options; const { loader } = h; loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nlet h = new H();\nh = options;\nconst { loader } = h;\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A private field and an index signature declare no public `loader` property, so the parent's
+        // field is still reached; a string-literal computed member does declare one, so it shadows it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { #loader = other; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { ["loader"]() { return other; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A template-literal computed member also declares the member, so it shadows the parent's field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`loader`]() { return 1; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A field literally named a modifier is the member itself, not a modifier, so it is a load.
+        expect(
+            snapshotComputedDynamicSpecifiers('class H { get = require; }\nconst { get } = new H();\nget(spec);')
+        ).toEqual(['require(...)']);
+        // A local binding of the class name shadows the class, in both directions: a plain value binds
+        // nothing, and a class expression binds its own loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const H = Object; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; }\nfunction f() { const H = class { loader = require; }; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A class declared after the read-back is registered first, so the read-back reaches it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function make() { const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual(['require(...)']);
+        // An optional/definite marker and a type annotation between the name and `=` still name a
+        // loader field, and the module the field loads is what the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader?: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader!: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `declare` field emits nothing at runtime, so it does not shadow the parent's loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { declare loader: NodeRequire; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A constructor parameter property binds an own instance field, so it shadows a parent's field of
+        // that name and a read-back through the instance reaches the parameter's own value. A parameter
+        // property with no initializer is an own member with no value, a `private readonly` spelling is
+        // the same member, and a loader-valued parameter property is the loader the read-back binds.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public loader: unknown) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(private readonly loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { constructor(public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter with no modifier binds a local rather than a property, so it declares no instance
+        // field and the parent's loader-valued field is still the one the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A field value is read only at the class body's own member position, so a parameter list, a
+        // binding pattern, and a field initializer declare no field however their defaults read: the
+        // instance carries nothing of the kind, and the merge base's reading stands.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = null; constructor(loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader() { return other; } run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { set loader(v) {} run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { get loader() { return other; } run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; x = (function (loader = require) { return 1; })(); }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A `}` a regex body holds does not carry the walk past the method body's `{` to the class
+        // body's, so the assignment in the parameter is no member position and the method still
+        // shadows the base's field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class X {\n  m(loader: unknown) { const r = /}/; loader = require; }\n  loader() { return other; }\n}\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A member body is a balanced region the member-position walk crosses whole, so a real field
+        // declared after a method or an accessor is still a member and still carries its loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  m() {}\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  get x() { return 1; }\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class { m() {} loader = require; };\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `}` a regex body holds is the literal's character rather than a delimiter, so the walk
+        // crosses the literal whole and a real field after a method that holds one is still a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  m() { const r = /}/; }\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class { m() { const r = /}/; } loader = require; };\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // An unbalanced delimiter in a regex initializer is the literal's character too, so the walk
+        // still reaches the class body's own `{` and the next field is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /(/;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /)/;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /(/;\n  y = 1;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A division slash starts no literal, so two of them never pair across a real delimiter: the
+        // walk still reaches the class body's own `{` and the field after the division is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const a = 1 / 2; class H { x = 3 / 4; loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { x = f(a / b); y = c / d; loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `/` after a control keyword's header or after `else` opens a regex rather than dividing, so
+        // the `}` it holds is the literal's character: the class body does not close early and the
+        // assignment inside the method is no member position. The same shapes without a loader field
+        // report nothing either way.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); loader = require; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { if (a) {} else /}/; loader = require; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { if (a) {} else /}/; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A member named after a keyword the set holds is an expression end, so the `/` after it
+        // divides rather than opening a literal: these readings can only come from the member guard.
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.return / require(spec) / 2; } }')).toEqual(
+            ['require(...)']
+        );
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#do / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        // A member named after `else`, which is judged on its own, and the optional and keyword-named
+        // spellings that reach no set entry: each keeps the division and reports the load.
+        expect(
+            snapshotComputedDynamicSpecifiers('class K { m() { return this.default / require(spec) / 2; } }')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.else / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj?.if / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#if / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        // A regex after a keyword stays a regex when a dot or an identifier on an earlier line precedes
+        // the keyword: the member judgement is adjacency-bound, so `1.` above `typeof` and `b` above
+        // `return` each belong to their own line's expression rather than naming the keyword a member.
+        // A dot does NOT part them, so `obj.` newline `else` is still the member it spells.
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "function g() { const a = b\n return /[']/\n}\nconst load = require\nload(spec);"
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = obj.\nelse / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // Only a `.`, an optional chain's `.`, or a `#` immediately before a keyword names a member: a
+        // bare identifier ending the previous token is not member access, so `in` after `e` is the
+        // operator and the `/` opens a regex instead of dividing.
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\ne in/}/*\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        // A dot following a digit run is a numeric literal's point only when that run holds no other
+        // dot, so the second dot of `1.1.` is member access and the `/` after `else` divides, on one
+        // line and across a break alike, while `1.` above `typeof` stays a point and the regex keeps
+        // the load.
+        expect(snapshotComputedDynamicSpecifiers('const r = 1.1.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1.1.\nelse / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // A dot after a digit run is a numeric literal's point only when that run is a bare decimal's
+        // integer part. A run that continues an identifier (`x1`, `item2`, `a1`) or that is a number's
+        // exponent (`1e3`) or radix digits (`0x11`, `0o17`, `0b11`) is not one, so the dot is member
+        // access and the `/` after the keyword divides rather than opening a regex that hides the load.
+        expect(snapshotComputedDynamicSpecifiers('const r = x1.instanceof / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = item2.in / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = a1.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1e3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0x11.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0o17.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0b11.else / require(spec) / y;')).toEqual(['require(...)']);
+        // A signed exponent and an identifier-start tail carry the same judgements, so each keeps the
+        // member dot.
+        expect(snapshotComputedDynamicSpecifiers('const r = 1e+3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1e-3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = _1.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = $1.else / require(spec) / y;')).toEqual(['require(...)']);
+        // A numeric separator keeps the run a plain decimal's integer part (`1_000.`, `1_0.`), and a
+        // `+` after an identifier ending in `e` is an operator rather than an exponent sign (`mode+3.`).
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1_000.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1_0.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = mode+3.else /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        // The uppercase exponent and radix markers are their letter case, so each keeps the member dot.
+        expect(snapshotComputedDynamicSpecifiers('const r = 1E+3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1E3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0X11.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0O17.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0B11.else / require(spec) / y;')).toEqual(['require(...)']);
+        // A separator inside a radix literal's digits is still that literal's digits, not a bare
+        // decimal's, so the dot is member access and the load behind the division is reported.
+        expect(snapshotComputedDynamicSpecifiers('const r = 0x1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0b1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0o1_7.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // The uppercase radix markers carry the same judgement, so each keeps the member dot.
+        expect(snapshotComputedDynamicSpecifiers('const r = 0X1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0O1_7.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0B1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // An unmatched quote after a division ends at the line terminator instead of swallowing the file,
+        // so the load on the next lines is still scanned — for `0x1_1.` before a keyword and for the
+        // other radix spellings alike.
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.instanceof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.return /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.in /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0o1_7.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0b1_1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
+        // is no comment close: the regex after it keeps its region and the field below is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { const ratio = total/* bytes *//typeof /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A regex whose body ends in `*` closes with a slash the plain backward walk reads as a comment
+        // close only where a `/*` opener stands; a `/ab*/` whose span holds no unclosed brace crosses
+        // correctly, so the field below stays a member whose read-back reports the load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { const re = /ab*/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  /* lead */ re = /ab*/;\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { /* c */ const re = /ab*/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A read-back through a subclass reaches the parent's loader field across the same regex.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base {\n  m() { /* c */ const re = /ab*/; }\n  loader = require;\n}\nclass D extends Base {}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `/ab*/` after a block comment whose span to the slash crosses a method body's unclosed `{`
+        // is the one the walk cannot place: the mis-placed field is not registered, so a method-local
+        // `loader = require` never passes for the class's own `loader` method.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const spec = './x';\nclass D {\n  /* note */\n  loader(_spec?: unknown): void {}\n  m(): void {\n    const re = /ab*/;\n    void re;\n    let loader: (s: string) => void;\n    loader = require;\n    loader(spec);\n  }\n}\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        // The bail skips only the binding its mis-placement condemns: an unrelated method-local `other`
+        // does not discard the genuinely declared `loader`, and neither does the same method without it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; /* c */ m() { const re = /ab*/; other = require; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; /* c */ m() { const re = /ab*/; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The bail's scan stops at the field's own name, so a field declared before a method whose body
+        // holds the same regex is still registered rather than condemned by the later member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; m() { /* c */ if (x) { const re = /ab*/; } } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The bail fires only for a star-ending regex: a non-star regex in the same span keeps the load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { m() { /* c */ if (x) { const re = /ab/; } } loader = require; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A quoted member name is read as its own member, not the identifier inside the quotes, so the
+        // later field still enters the member set and shadows the parent's — or reports its own loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { "a" = other; loader = other; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = other }\nclass H extends Base { "a" = other; loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { try /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { try { a(); } finally /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter property is read, and its own modifier run is what decides it: the loader default
+        // reaches the read-back, while the same declaration without modifiers binds a local instead.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { constructor(public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A comparison in an earlier parameter's default nests nothing, so the parameter after it is
+        // still read: its own field shadows the parent's, and its loader default is the loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public loader = null) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // The same comparison leaves the parameter's own loader initializer the only source of the
+        // reading: this class has no parent, so nothing but that initializer can report the load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { constructor(public a = b < c, public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The splitter keeps reading parameters past that comparison, so a parameter property declared
+        // after two such defaults is still the own field that shadows the parent's.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public z = 1, public loader = null) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A class-scoped parameter default binds its local exactly as the top-level form does, so the
+        // call through the parameter is the load the scan admits.
+        expect(snapshotComputedDynamicSpecifiers('class H { m(loader = require) { loader(spec); } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('function f(loader = require) { loader(spec); }')).toEqual([
+            'require(...)',
+        ]);
+        // A class name inside a parameter's default or annotation names a value or a type, not the
+        // parameter, so it does not shadow the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x = H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter whose own name is the class name shadows it, whichever order the class is declared in.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function f(H) { const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function f() { const H = Object; const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual([]);
+        // A class name in any annotation tail after the parameter's own name names a type or a value,
+        // never the binding, so the class is still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: string | H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: A & H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: keyof H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: typeof H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: T extends H ? A : B) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: () => H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter binds in its own function body, so a sibling parameter of the class name does
+        // not shadow the class at the top level where the read-back stands.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction g(H) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function g(H) {}\nclass H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `for (… of/in …)` binding and a `var` hoisted to its function body bind the class name,
+        // shadowing the class there.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (let H in xs) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { { var H = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A loop binding lives only inside the loop, so a read-back written before or after it, or after
+        // a loop inside a function, still reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst { loader } = new H();\nloader(spec);\nfor (const H of xs) {}'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (const H of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A `var` inside a nested function hoists to the nearest function body, so it neither shadows
+        // the outer function nor leaks its own class expression there.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { function g() { var H = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; }\nfunction f() { function g() { var H = class { loader = require; }; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A nested function declaration and a destructured parameter bind the class name, shadowing it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); function H() {} loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f([H]) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A default value and a property key inside a destructured parameter name a value or a key,
+        // never the binding, so the class is still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ x = H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ H: y }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A destructured variable binds the class name in the declaration's scope, however the entry is
+        // spelled — renamed, shorthand, rest, or a nested pattern — so none reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { x: H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { let { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { ...H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { a: { H } } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A computed property key reads the class name as an expression, not a binding, so the class is
+        // still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { [H]: y } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A name bound only by a comma-separated declarator or by an assignment pattern stays undecided:
+        // `const a = 1, { H } = opts` and `({ H } = opts)` read the name as the class, so a construction
+        // through it still reports the load rather than resolving the pattern.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const a = 1, { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A nested parameter pattern binds the class name in the function body, and a renamed, rest, or
+        // modifier parameter binds it too.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ a: { H } }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ x: H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ ...H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(public H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(private H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(protected H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(readonly H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        // An expression-bodied arrow scopes its parameter to the arrow: a read-back inside its body sees
+        // the parameter, and one outside it reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => H;\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => ({ loader } = new H());\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => (() => ({ loader } = new H()))();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A `var` in a `for` header hoists to its function, so a read-back before or after the loop
+        // reaches the loop variable rather than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var H of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); loader(spec); for (var H of xs) {} }'
+            )
+        ).toEqual([]);
+        // A binding pattern in a `for`/`for await` header takes the loop's scope, so a read-back after it
+        // reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const { H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const [H] of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const { x: H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor await (const { H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // An unbraced loop body is not modelled, so its binding keeps the declaration's own scope and a
+        // read-back written after or inside it keeps the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) log(H);\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) (() => { const { loader } = new H(); loader(spec); })();'
+            )
+        ).toEqual([]);
+        // A `var` pattern in a loop header hoists to its function, so a read-back after or before it
+        // reaches the loop variable rather than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var { H } of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var [H] of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); loader(spec); for (var { H } of xs) {} }'
+            )
+        ).toEqual([]);
+        // A `using` declarator in a loop header takes the loop's scope, so a read-back after it reaches
+        // the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (using H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor await (using H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (using H in xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `using` declaration binds the class name to something other than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { using H = other; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // An arrow whose body the walk can bound does not leak its parameter: a conditional's `:` ends
+        // the body, so the read-back in the other branch reaches the class; an arrow ended by automatic
+        // semicolon insertion cannot be bounded and keeps the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst v = cond ? (H) => H : ({ loader } = new H());\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => H\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A decorator makes the class unmodelled, so a read-back through it keeps the merge base's
+        // reading — on a member in either direction, and on a declaration whatever the decorator
+        // spelling, its arguments, or a modifier after it. The shadow's own field is a loader, so only
+        // the bail keeps these two declarations at the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { @ns.dec loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { @ns.dec loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @dec class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @a.b.c(1) class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A parenthesised decorator `@(expr)` decorates the class as the other spellings do, so it
+        // marks the class unmodelled too — on a declaration and on an expression alike, whatever
+        // expression it wraps. Each shadow's own field is a loader, so only the bail keeps these at
+        // the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec) class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const X = @(dec) class H { loader = require; }; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(x => y) class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec) class H { loader = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const X = @(dec) class H { loader = other; }; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A static block makes the class unmodelled, so the members after it keep the base reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { static {} loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A decorated `require` member declares the name, so the parameter list is not a loader call.
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @dec require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { @dec(arg) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @ns.dec require(spec) {} }')).toEqual([]);
+        // The decorator walk closes over the chain rather than one more spelling: a group after a name
+        // and a name after a group are each another segment, so a decorator that ends in a call of a
+        // parenthesised expression does not leave its `)` read as the member's own parameter list.
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @(dec)(arg) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @dec(1)(2) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @(dec) require(spec) {} }')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec)(arg) class H { loader = console.log; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A `using` loader declaration stays undecided, so the name binds no loader.
+        expect(snapshotComputedDynamicSpecifiers('using load = require;\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('await using load = require;\nload(spec);')).toEqual([]);
+        // A statically computed member name is recorded but its loader value is not, so the read-back
+        // keeps the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { ['loader'] = require; }\nconst { loader } = new H();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { [`loader`] = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A computed member name that is not a static string literal — a variable, a concatenation, an
+        // interpolated template — names a property the reader cannot spell out, so it makes the class
+        // unmodelled and a read-back through it keeps the merge base's reading, rather than the member
+        // being skipped silently and the parent's loader inherited. The parent carries the
+        // loader-valued `loader` field, so the bail is the only reason the read-back is refused.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const key = 'loader';\nclass H { loader = require; }\nclass D extends H { [key] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { loader = require; }\nclass D extends H { ['lo' + 'ader'] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`${key}`] = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // The parent carries the loader-valued field, so this read-back is refused by the bail alone
+        // rather than by the member walk declining a computed name it resolves to a static literal.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const key = 'loader';\nclass H { loader = require; }\nclass D extends H { [key] = require; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        // A member name written with a unicode escape is the character it names rather than the
+        // characters it is spelled with, so the reader cannot read it exactly: the class is unmodelled
+        // and the read-back through it keeps the merge base's reading, on an identifier, a string
+        // literal, and a template literal alike. The escape-less control shadows the same field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { \\u006coader = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loade\\u0072 = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { loader = require; }\nclass D extends H { ['\\u006coader'] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`\\u006coader`] = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+    });
+
+    /**
+     * An erased assertion on the initializer changes nothing at run time, so the loader behind it is
+     * the loader: the angle-bracket assertion the binding pass never looked past bound the name and
+     * its call loaded a module the scan admitted (#4835). The control pins that an assertion on a name
+     * that reaches no loader binds nothing.
+     */
+    it('collects a load a loader bound through an erased assertion reaches', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = <NodeRequire>require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = <NodeRequire>other;\nload(spec);')).toEqual([]);
+    });
+
+    /**
+     * A `{` admits a member only where it opens a body that can hold one. A function body, a nested
+     * block, and a control header's body hold statements, so the `require(spec)` before the block is a
+     * call and its computed specifier is refused; the merge base read the brace as a method position
+     * and admitted the load (#4835). The controls pin the bodies that really do hold members — object
+     * literal, class, interface, and type literal — and a class whose header carries a type-parameter
+     * list and a parenthesised heritage clause is still a class, while the brace after a `:` or an `=>`
+     * that also stands in a type literal stays undecided.
+     */
+    it('collects a load whose parameter list opens on a block-opening brace', () => {
+        expect(snapshotComputedDynamicSpecifiers('function load() { require(spec)\n{ run(); } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('{ require(spec)\n{ run(); } }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('if (ok) { require(spec)\n{ run(); } }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const o = { require(spec) { run(); } };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { require(spec) { run(); } }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C<T> extends (B) { require(spec) { run(); } }')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class Mix<T> extends (Mixin(Base)) { require(spec) { run(); } }')
+        ).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('interface I { require(spec: string): void; }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('type T = { require(spec: string): void };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const o = { a: { require(spec) { run(); } } };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('type F = () => { require(spec: string): void };')).toEqual([]);
+    });
+
+    /**
+     * A `<` or `>` in a class or type header is not a balanced delimiter, so a function type's `=>` and
+     * a cast's `new () => B` in the header cannot open a depth the walk never closes. Counting them as
+     * delimiters left the walk above depth zero and refused a header that declares no load, while the
+     * merge base admitted each (#4835). A type-parameter list on the declared name still crosses —
+     * `class C<T> extends (B)` above — as one balanced region, so an object type, a conditional type,
+     * or a generic call inside the list cannot reach the fallthrough either, and a class whose parent
+     * carries such a list still declares the field a read-back inherits.
+     */
+    it('admits a class or type header whose heritage holds an arrow', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'type ModuleApi = (() => void) & { version: string; require(spec: string): void; };'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class C extends (B as new () => B) { require(spec: string) { run(); } }')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C extends (mixin(B) as new () => B) { x = 1; require(spec: string) { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends { a: string }> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends U extends V ? X : Y> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C<T extends Mixin<{ a: string }>> { x = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        // The parent's type-parameter list is crossed, so the field the subclass inherits is registered.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H<T extends { a: string }> { loader = require; }\nclass D extends H<string> {}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // Every balanced `<…>` region the walk meets is crossed, so an object, conditional, or nested
+        // argument in a heritage or implements clause does not reach the fallthrough.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C extends Base<{ a: string }> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C implements I<V extends W ? X : Y> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C extends Base<Map<string, { a: string }>> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+    });
+
+    /**
+     * The `else`, `do`, `try`, and `finally` keywords open statement blocks, so the `{` after each holds
+     * statements and the `require(spec)` before a nested block is a call rather than a member — the
+     * merge base read it as a method position and admitted the load (#4835). Each word form is pinned
+     * separately so the exclusion is witnessed: replacing it with `return true` admits exactly the
+     * `{` after the word.
+     */
+    it('refuses a load whose parameter list opens on a block after else, do, try, or finally', () => {
+        expect(snapshotComputedDynamicSpecifiers('if (x) {} else { require(spec)\n{ run(); } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('do { require(spec)\n{ run(); } } while (x);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('try { require(spec)\n{ run(); } } finally {}')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('try {} finally { require(spec)\n{ run(); } }')).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    /**
+     * Regrouping a wrapped callee changes nothing: `((require))(spec)` reaches the loader that
+     * `(require)(spec)` reaches, and the merge base's one paren of tolerance admitted the load (#4835).
+     * The controls pin that only whole groupings are stripped — `pass(require)(spec)` is an argument
+     * list and `(f(require))(spec)` wraps a call's result — so neither is the loader.
+     */
+    it('collects a load a double-parenthesised callee reaches', () => {
+        expect(snapshotComputedDynamicSpecifiers('((require))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('(((require)))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('((0, require))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('pass(require)(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('(f(require))(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('this.#m(require)(spec);')).toEqual([]);
+    });
+
+    /**
      * A name declared again in a nested function, class, or parameter list is that declaration, not the
      * loader bound outside it, so the binding is dropped and the nested call keeps the merge base's
      * reading (#4828). The bare bound name still resolves, which is what separates the two.
