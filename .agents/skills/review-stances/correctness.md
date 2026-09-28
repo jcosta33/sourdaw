@@ -56,8 +56,25 @@ carries it in addition.
   directions, because a shape it wrongly refuses is a command that cannot run and a shape it wrongly
   accepts is a check that did not happen; a case that pins the refused forms states the bound and
   hands the fix off, it does not close the defect.
+- Where a component decides whether a downstream consumer will accept its output — a reservation, a
+  quota, a fitted payload, a receipt — measure the admitted unit with the _consumer's_ own
+  expression, re-derived from the consumer's source. Two expressions of one budget stay
+  self-consistent for as long as each is tested against itself, and the divergence shows up as a
+  refusal at the consumer that the producer believes it paid for.
+- For every refusal a change adds or moves, state which units it stops and which reason each stopped
+  unit records. A failure that is a property of one unit but is read as a property of the run
+  reports every later unit under a cause that never happened, and the volume of that report hides
+  the single unit that actually failed.
 
 ## Lessons from escapes
+
+### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
+
+PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at thirteen fitted regions — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported the other 36 as `budget-exhausted-before-admission`.
+
+Blind spot: review checked the reservation's arithmetic and each refusal's code in isolation. Nothing measured a planned unit with the sender's own expression, and nothing asked which units a refusal stops or whether the reason it records names what happened — so two self-consistent expressions, and a per-unit failure reported as run-wide exhaustion, survived every round until someone ran the command against a real pull request and read the report's own arithmetic.
+
+Probe that would have caught it: plan the change under review, then measure the deepest unit the planner admits with the provider's own expression (`JSON.stringify({state, questions})`) against the profile's own ceiling — a positive overage is the finding, and the fitted-region count that produces it is the reproduction to keep. Then drive a plan whose middle unit trips each refusal and assert which units are never attempted and what reason each records.
 
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
