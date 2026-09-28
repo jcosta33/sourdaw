@@ -53,6 +53,51 @@ describe('deviceReadinessDiagnostics', () => {
         });
     });
 
+    it('keeps an active wait outcome after diagnostic eviction but cancels it on replacement or reset', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'early',
+            deviceType: 'fermenter',
+            requiresContent: false,
+        });
+        const firstWait = deviceReadinessDiagnostics.captureWaitState(token);
+        const overlappingWait = deviceReadinessDiagnostics.captureWaitState(token);
+        try {
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            for (let index = 0; index < 256; index++) {
+                const unrelated = deviceReadinessDiagnostics.begin({
+                    deviceId: `unrelated-${String(index)}`,
+                    deviceType: 'fermenter',
+                    requiresContent: false,
+                });
+                deviceReadinessDiagnostics.markGraphReady({ token: unrelated });
+            }
+            expect(deviceReadinessDiagnostics.getWaitState(token).status).toBe('cancelled');
+            expect(firstWait.read().status).toBe('ready');
+            expect(overlappingWait.read().status).toBe('ready');
+
+            deviceReadinessDiagnostics.begin({ deviceId: 'early', deviceType: 'fermenter', requiresContent: false });
+            expect(firstWait.read().status).toBe('cancelled');
+            expect(overlappingWait.read().status).toBe('cancelled');
+
+            const current = deviceReadinessDiagnostics.begin({
+                deviceId: 'current',
+                deviceType: 'fermenter',
+                requiresContent: false,
+            });
+            const currentWait = deviceReadinessDiagnostics.captureWaitState(current);
+            try {
+                deviceReadinessDiagnostics.markGraphReady({ token: current });
+                deviceReadinessDiagnostics.reset();
+                expect(currentWait.read().status).toBe('cancelled');
+            } finally {
+                currentWait.release();
+            }
+        } finally {
+            firstWait.release();
+            overlappingWait.release();
+        }
+    });
+
     it('does not mark a content-backed device playable until its content is ready', () => {
         const token = deviceReadinessDiagnostics.begin({
             deviceId: 'levain-1',

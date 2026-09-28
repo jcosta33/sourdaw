@@ -2297,77 +2297,86 @@ class AudioEngineImpl implements AudioEngine {
             return { status: 'ready', devices: [] };
         }
 
-        const capturedLoads = [...this.trackNodes.values()]
-            .flatMap((trackNode) => trackNode.capturePendingDeviceLoads())
-            .filter(({ promise }) => capturedPromises.has(promise));
-        const lastKnownStage = new Map(
-            capturedLoads.map(({ token }) => [token.tokenId, this.deviceReadinessDiagnostics.getWaitState(token).stage])
+        const pendingLoads = [...this.trackNodes.values()].flatMap((trackNode) =>
+            trackNode.capturePendingDeviceLoads()
         );
-        const waitStartedAtMs = Date.now();
-        const allSettled = Promise.allSettled(capturedPromises).then(() => true);
+        const capturedLoads = pendingLoads
+            .filter(({ promise }) => capturedPromises.has(promise))
+            .map((load) => ({ ...load, observation: this.deviceReadinessDiagnostics.captureWaitState(load.token) }));
+        try {
+            const lastKnownStage = new Map(
+                capturedLoads.map(({ token, observation }) => [token.tokenId, observation.read().stage])
+            );
+            const waitStartedAtMs = Date.now();
+            const allSettled = Promise.allSettled(capturedPromises).then(() => true);
 
-        while (true) {
-            const pending = capturedLoads.filter(({ promise }) => this.pendingDevicePromises.has(promise));
-            if (pending.length === 0) {
-                break;
+            while (true) {
+                const pending = capturedLoads.filter(({ promise }) => this.pendingDevicePromises.has(promise));
+                if (pending.length === 0) {
+                    break;
+                }
+
+                const now = Date.now();
+                const expired = new Set<Promise<unknown>>();
+                let nextDeadline = Number.POSITIVE_INFINITY;
+                for (const load of pending) {
+                    const state = load.observation.read();
+                    if (state.stage !== null) {
+                        lastKnownStage.set(load.token.tokenId, state.stage);
+                    }
+                    const deadline = Math.max(waitStartedAtMs, state.lastActivityAtMs) + timeoutMs;
+                    if (deadline <= now) {
+                        expired.add(load.promise);
+                    } else {
+                        nextDeadline = Math.min(nextDeadline, deadline);
+                    }
+                }
+                if (expired.size > 0) {
+                    logger.warn(`[AudioEngine] Device loading timed out (${expired.size} pending)`);
+                    for (const trackNode of this.trackNodes.values()) {
+                        trackNode.timeoutPendingDeviceLoads(expired);
+                    }
+                    continue;
+                }
+
+                let timeoutId: ReturnType<typeof setTimeout> | undefined;
+                const settled = await Promise.race([
+                    allSettled,
+                    new Promise<false>((resolve) => {
+                        timeoutId = setTimeout(() => resolve(false), Math.max(0, nextDeadline - now));
+                    }),
+                ]);
+                if (timeoutId !== undefined) {
+                    clearTimeout(timeoutId);
+                }
+                if (settled) {
+                    break;
+                }
+            }
+            for (const promise of capturedPromises) {
+                this.pendingDevicePromises.delete(promise);
             }
 
-            const now = Date.now();
-            const expired = new Set<Promise<unknown>>();
-            let nextDeadline = Number.POSITIVE_INFINITY;
-            for (const load of pending) {
-                const state = this.deviceReadinessDiagnostics.getWaitState(load.token);
-                if (state.stage !== null) {
-                    lastKnownStage.set(load.token.tokenId, state.stage);
-                }
-                const deadline = Math.max(waitStartedAtMs, state.lastActivityAtMs) + timeoutMs;
-                if (deadline <= now) {
-                    expired.add(load.promise);
-                } else {
-                    nextDeadline = Math.min(nextDeadline, deadline);
-                }
+            const devices = capturedLoads.map(({ token, observation }) => {
+                const state = observation.read();
+                return {
+                    deviceId: token.deviceId,
+                    status: state.status === 'pending' ? ('cancelled' as const) : state.status,
+                    stage: state.status === 'ready' ? null : (state.stage ?? lastKnownStage.get(token.tokenId) ?? null),
+                };
+            });
+            let status: AudioDeviceWaitResult['status'] = 'ready';
+            if (devices.some((device) => device.status === 'failed')) {
+                status = 'failed';
+            } else if (devices.some((device) => device.status === 'cancelled')) {
+                status = 'cancelled';
             }
-            if (expired.size > 0) {
-                logger.warn(`[AudioEngine] Device loading timed out (${expired.size} pending)`);
-                for (const trackNode of this.trackNodes.values()) {
-                    trackNode.timeoutPendingDeviceLoads(expired);
-                }
-                continue;
-            }
-
-            let timeoutId: ReturnType<typeof setTimeout> | undefined;
-            const settled = await Promise.race([
-                allSettled,
-                new Promise<false>((resolve) => {
-                    timeoutId = setTimeout(() => resolve(false), Math.max(0, nextDeadline - now));
-                }),
-            ]);
-            if (timeoutId !== undefined) {
-                clearTimeout(timeoutId);
-            }
-            if (settled) {
-                break;
+            return { status, devices };
+        } finally {
+            for (const load of capturedLoads) {
+                load.observation.release();
             }
         }
-        for (const promise of capturedPromises) {
-            this.pendingDevicePromises.delete(promise);
-        }
-
-        const devices = capturedLoads.map(({ token }) => {
-            const state = this.deviceReadinessDiagnostics.getWaitState(token);
-            return {
-                deviceId: token.deviceId,
-                status: state.status === 'pending' ? ('cancelled' as const) : state.status,
-                stage: state.status === 'ready' ? null : (state.stage ?? lastKnownStage.get(token.tokenId) ?? null),
-            };
-        });
-        let status: AudioDeviceWaitResult['status'] = 'ready';
-        if (devices.some((device) => device.status === 'failed')) {
-            status = 'failed';
-        } else if (devices.some((device) => device.status === 'cancelled')) {
-            status = 'cancelled';
-        }
-        return { status, devices };
     }
 
     public wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {

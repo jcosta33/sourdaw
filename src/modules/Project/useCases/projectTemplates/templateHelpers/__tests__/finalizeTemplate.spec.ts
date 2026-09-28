@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/useCases';
 
+import {
+    projectLoadEpoch,
+    runProjectLoadTransaction,
+} from '../../../projectPersistence/helpers/runProjectLoadTransaction';
 import { finalizeTemplate } from '../finalizeTemplate';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +15,9 @@ const mocks = vi.hoisted(() => ({
     syncArrangement: vi.fn(),
     waitForDevices: vi.fn(),
     notifyUser: vi.fn(),
+    cancelPendingAudioBufferImport: vi.fn(),
+    leaveCollaborationSession: vi.fn(),
+    whenProjectIdentityTransitionDependenciesConfigured: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
@@ -35,6 +42,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyRuntimeGraphDelta: vi.fn(),
     audioEngine: {},
     cacheAudioBuffer: vi.fn(),
+    cancelPendingAudioBufferImport: mocks.cancelPendingAudioBufferImport,
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
@@ -90,6 +98,12 @@ vi.mock('#/modules/Routing/useCases', () => ({
 }));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../../../demoProjects/demoUtils/syncArrangement', () => ({ syncArrangement: mocks.syncArrangement }));
+vi.mock('../../../projectPersistence/projectIdentityTransitionDependencies', () => ({
+    projectIdentityTransitionDependencies: { leaveCollaborationSession: mocks.leaveCollaborationSession },
+}));
+vi.mock('../../../projectPersistence/whenProjectIdentityTransitionDependenciesConfigured', () => ({
+    whenProjectIdentityTransitionDependenciesConfigured: mocks.whenProjectIdentityTransitionDependenciesConfigured,
+}));
 
 describe('finalizeTemplate', () => {
     beforeEach(() => {
@@ -135,6 +149,10 @@ describe('finalizeTemplate', () => {
     });
 
     it('keeps committed template truth and reports failed devices without throwing', async () => {
+        mocks.whenProjectIdentityTransitionDependenciesConfigured.mockResolvedValue(undefined);
+        const currentProject = runProjectLoadTransaction();
+        await expect(currentProject.prepare()).resolves.toBe(true);
+        expect(currentProject.activate()).toBe(true);
         mocks.waitForDevices.mockResolvedValue({
             status: 'failed',
             devices: [{ deviceId: 'levain-1', status: 'failed', stage: 'content' }],
@@ -158,5 +176,56 @@ describe('finalizeTemplate', () => {
 
         expect(mocks.setTrackState).toHaveBeenCalledOnce();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not warn for a failed template cohort after a newer project supersedes it', async () => {
+        mocks.whenProjectIdentityTransitionDependenciesConfigured.mockResolvedValue(undefined);
+        const readiness = Promise.withResolvers<{
+            status: 'failed';
+            devices: [{ deviceId: string; status: 'failed'; stage: 'content' }];
+        }>();
+        mocks.waitForDevices.mockReturnValue(readiness.promise);
+
+        const templateA = runProjectLoadTransaction();
+        await expect(templateA.prepare()).resolves.toBe(true);
+        expect(templateA.activate()).toBe(true);
+        const releaseTemplateA = await projectLoadEpoch.acquireRuntimeTransition();
+        const completionA = finalizeTemplate({ tracks: [] });
+        const failedReadiness: {
+            status: 'failed';
+            devices: [{ deviceId: string; status: 'failed'; stage: 'content' }];
+        } = {
+            status: 'failed',
+            devices: [{ deviceId: 'levain-a', status: 'failed', stage: 'content' }],
+        };
+        let releaseProjectB: Promise<() => void> | null = null;
+        try {
+            await vi.waitFor(() => expect(mocks.waitForDevices).toHaveBeenCalledOnce());
+
+            const projectB = runProjectLoadTransaction();
+            await expect(projectB.prepare()).resolves.toBe(true);
+            expect(projectB.activate()).toBe(true);
+            let projectBEnteredRuntimeTransition = false;
+            releaseProjectB = projectLoadEpoch.acquireRuntimeTransition().then((release) => {
+                projectBEnteredRuntimeTransition = true;
+                return release;
+            });
+
+            expect(templateA.isCurrent()).toBe(false);
+            expect(projectB.isCurrent()).toBe(true);
+
+            readiness.resolve(failedReadiness);
+            await completionA;
+
+            expect(projectBEnteredRuntimeTransition).toBe(false);
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        } finally {
+            readiness.resolve(failedReadiness);
+            releaseTemplateA();
+            if (releaseProjectB) {
+                (await releaseProjectB)();
+            }
+            await completionA;
+        }
     });
 });

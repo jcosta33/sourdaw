@@ -10,6 +10,12 @@ export type DeviceReadinessFailureStage = 'node' | 'graph' | 'content' | 'runtim
 
 type DeviceReadinessStatus = 'node-pending' | 'graph-pending' | 'content-pending' | 'ready' | 'failed';
 
+type DeviceWaitState = {
+    status: 'ready' | 'pending' | 'failed' | 'cancelled';
+    stage: DeviceReadinessFailureStage | null;
+    lastActivityAtMs: number;
+};
+
 type TimingAccumulator = {
     samples: number;
     totalMs: number;
@@ -98,8 +104,16 @@ class DeviceReadinessDiagnosticsCollector {
     private requestToPlayableReadyMs = createTimingAccumulator();
     private readonly records = new Map<string, DeviceReadinessRecord>();
     private readonly terminalOrder = new Set<string>();
+    private readonly waitCaptures = new Set<{
+        token: DeviceReadinessToken;
+        record: DeviceReadinessRecord | null;
+        invalidated: boolean;
+    }>();
 
     reset(): void {
+        for (const capture of this.waitCaptures) {
+            capture.invalidated = true;
+        }
         this.generation++;
         this.requested = 0;
         this.nodeReady = 0;
@@ -122,6 +136,7 @@ class DeviceReadinessDiagnosticsCollector {
         requiresContent: boolean;
         atMs?: number;
     }): DeviceReadinessToken {
+        this.invalidateWaitCaptures((capture) => capture.token.deviceId === input.deviceId);
         const previous = this.records.get(input.deviceId);
         if (previous && isPending(previous.status)) {
             this.cancelled++;
@@ -220,6 +235,7 @@ class DeviceReadinessDiagnosticsCollector {
         }
         if (input.outcome === 'cancelled') {
             this.cancelled++;
+            this.invalidateWaitCaptures((capture) => capture.token === input.token);
             this.deleteRecord(input.token.deviceId);
             return;
         }
@@ -256,6 +272,7 @@ class DeviceReadinessDiagnosticsCollector {
     }
 
     cancel(token: DeviceReadinessToken): void {
+        this.invalidateWaitCaptures((capture) => capture.token === token);
         const record = this.currentRecord(token);
         if (!record) {
             return;
@@ -281,15 +298,29 @@ class DeviceReadinessDiagnosticsCollector {
         return 'pending';
     }
 
-    getWaitState(token: DeviceReadinessToken): {
-        status: 'ready' | 'pending' | 'failed' | 'cancelled';
-        stage: DeviceReadinessFailureStage | null;
-        lastActivityAtMs: number;
-    } {
+    getWaitState(token: DeviceReadinessToken): DeviceWaitState {
         const record = this.currentRecord(token);
         if (!record) {
             return { status: 'cancelled', stage: null, lastActivityAtMs: 0 };
         }
+        return this.waitStateForRecord(record);
+    }
+
+    captureWaitState(token: DeviceReadinessToken): { read: () => DeviceWaitState; release: () => void } {
+        const capture = { token, record: this.currentRecord(token), invalidated: false };
+        this.waitCaptures.add(capture);
+        return {
+            read: () =>
+                capture.invalidated || !capture.record
+                    ? { status: 'cancelled', stage: null, lastActivityAtMs: 0 }
+                    : this.waitStateForRecord(capture.record),
+            release: () => {
+                this.waitCaptures.delete(capture);
+            },
+        };
+    }
+
+    private waitStateForRecord(record: DeviceReadinessRecord): DeviceWaitState {
         let stage: DeviceReadinessFailureStage | null = null;
         if (record.status === 'failed') {
             stage = record.failureStage;
@@ -348,6 +379,14 @@ class DeviceReadinessDiagnosticsCollector {
             return null;
         }
         return record;
+    }
+
+    private invalidateWaitCaptures(matches: (capture: { token: DeviceReadinessToken }) => boolean): void {
+        for (const capture of this.waitCaptures) {
+            if (matches(capture)) {
+                capture.invalidated = true;
+            }
+        }
     }
 
     private markPlayable(record: DeviceReadinessRecord, atMs: number): void {

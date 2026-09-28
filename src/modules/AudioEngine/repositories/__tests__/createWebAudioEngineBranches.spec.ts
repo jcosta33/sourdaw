@@ -748,6 +748,115 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 vi.useRealTimers();
             }
         });
+
+        it('retains captured ready and failed outcomes while peers settle and another wait overlaps', async () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(0);
+            try {
+                engine.ensureTrackStrip('t1');
+                const trackNode = getMockTrackNode(engine, 't1');
+                const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
+                    .pendingDevicePromises;
+                const collector = (
+                    engine as unknown as {
+                        deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+                    }
+                ).deviceReadinessDiagnostics;
+                const ready = Promise.withResolvers<void>();
+                const failed = Promise.withResolvers<void>();
+                const delayed = Promise.withResolvers<void>();
+                const readyToken = collector.begin({
+                    deviceId: 'ready-early',
+                    deviceType: 'levain',
+                    requiresContent: true,
+                });
+                const failedToken = collector.begin({
+                    deviceId: 'failed-early',
+                    deviceType: 'crumbs',
+                    requiresContent: true,
+                });
+                const delayedToken = collector.begin({
+                    deviceId: 'delayed',
+                    deviceType: 'levain',
+                    requiresContent: true,
+                });
+                collector.markGraphReady({ token: readyToken });
+                collector.markGraphReady({ token: failedToken });
+                collector.markGraphReady({ token: delayedToken });
+                set.add(ready.promise);
+                set.add(failed.promise);
+                set.add(delayed.promise);
+                trackNode.capturePendingDeviceLoads.mockImplementation(() => {
+                    const loads = [];
+                    if (set.has(ready.promise)) {
+                        loads.push({ promise: ready.promise, token: readyToken });
+                    }
+                    if (set.has(failed.promise)) {
+                        loads.push({ promise: failed.promise, token: failedToken });
+                    }
+                    if (set.has(delayed.promise)) {
+                        loads.push({ promise: delayed.promise, token: delayedToken });
+                    }
+                    return loads;
+                });
+                trackNode.timeoutPendingDeviceLoads.mockImplementation((expired: Set<Promise<unknown>>) => {
+                    if (expired.has(failed.promise)) {
+                        collector.markFailed({ token: failedToken, stage: 'content' });
+                        set.delete(failed.promise);
+                        failed.resolve();
+                    }
+                });
+
+                const firstWait = (
+                    engine as unknown as {
+                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
+                    }
+                ).waitForDevices(10000);
+                collector.markContentSettled({ token: readyToken, outcome: 'ready' });
+                set.delete(ready.promise);
+                ready.resolve();
+                await vi.advanceTimersByTimeAsync(9_990);
+                collector.markContentProgress({ token: delayedToken, epoch: 1, progress: 0.5 });
+                await vi.advanceTimersByTimeAsync(20);
+                expect(collector.getWaitState(readyToken).status).toBe('ready');
+                expect(collector.getWaitState(failedToken).status).toBe('failed');
+
+                const secondWait = (
+                    engine as unknown as {
+                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
+                    }
+                ).waitForDevices(10000);
+                for (let index = 0; index < 256; index++) {
+                    const token = collector.begin({
+                        deviceId: `completed-${String(index)}`,
+                        deviceType: 'fermenter',
+                        requiresContent: false,
+                    });
+                    collector.markGraphReady({ token });
+                }
+                expect(collector.getWaitState(readyToken).status).toBe('cancelled');
+                expect(collector.getWaitState(failedToken).status).toBe('cancelled');
+
+                collector.markContentSettled({ token: delayedToken, outcome: 'ready' });
+                set.delete(delayed.promise);
+                delayed.resolve();
+
+                await expect(secondWait).resolves.toMatchObject({
+                    status: 'ready',
+                    devices: [{ deviceId: 'delayed', status: 'ready', stage: null }],
+                });
+                await expect(firstWait).resolves.toMatchObject({
+                    status: 'failed',
+                    devices: [
+                        { deviceId: 'ready-early', status: 'ready', stage: null },
+                        { deviceId: 'failed-early', status: 'failed', stage: 'content' },
+                        { deviceId: 'delayed', status: 'ready', stage: null },
+                    ],
+                });
+            } finally {
+                vi.useRealTimers();
+            }
+        });
     });
 
     // ── scheduleOscillator onended: the index splice path (idx >= 0).
