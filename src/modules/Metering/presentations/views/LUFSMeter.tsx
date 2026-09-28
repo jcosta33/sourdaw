@@ -23,6 +23,9 @@ type LUFSMeterProps = {
     target?: number;
 };
 
+/** BS.1770-4 momentary block: 400 ms of programme, the granularity the meters change at. */
+const MOMENTARY_BLOCK_SECONDS = 0.4;
+
 export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS }: LUFSMeterProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const momentaryRef = useRef<MomentaryLUFS | null>(null);
@@ -70,6 +73,44 @@ export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS 
             right: Float32Array<ArrayBuffer>;
         } | null = null;
 
+        // The tap offers only its newest fftSize samples per frame while the
+        // audio clock moves further between frames, so pushing per frame
+        // would feed the meters a fraction of the programme and stretch the
+        // 400 ms momentary window over seconds of wall time. Reads accumulate
+        // here and whole 400 ms blocks are handed to the meter instead.
+        const blockFrames = Math.round(MOMENTARY_BLOCK_SECONDS * getAudioSampleRate());
+        let pendingLeft = new Float32Array(0);
+        let pendingRight = new Float32Array(0);
+        let pendingFrames = 0;
+
+        /** Append one tap read; push a block once 400 ms of programme is held. */
+        const pushAccumulatedBlock = (left: Float32Array<ArrayBuffer>, right: Float32Array<ArrayBuffer>): boolean => {
+            const frameCount = Math.min(left.length, right.length);
+            const needed = pendingFrames + frameCount;
+            if (needed > pendingLeft.length) {
+                // Mirrors the tap buffers: reallocated only if the analyser grows.
+                const grownLeft = new Float32Array(needed);
+                grownLeft.set(pendingLeft);
+                pendingLeft = grownLeft;
+                const grownRight = new Float32Array(needed);
+                grownRight.set(pendingRight);
+                pendingRight = grownRight;
+            }
+            pendingLeft.set(left.subarray(0, frameCount), pendingFrames);
+            pendingRight.set(right.subarray(0, frameCount), pendingFrames);
+            pendingFrames += frameCount;
+            if (pendingFrames < blockFrames) {
+                return false;
+            }
+            // A read never carries a whole block — fftSize stays far below
+            // 400 ms of samples — so exactly one block can be pending here.
+            momentary.push(pendingLeft.subarray(0, blockFrames), pendingRight.subarray(0, blockFrames));
+            pendingLeft.copyWithin(0, blockFrames, pendingFrames);
+            pendingRight.copyWithin(0, blockFrames, pendingFrames);
+            pendingFrames -= blockFrames;
+            return true;
+        };
+
         const draw = (): void => {
             const { left: leftAnalyser, right: rightAnalyser } = getMasterStereoAnalysers();
             if (!tapData || tapData.left.length !== leftAnalyser.fftSize) {
@@ -84,11 +125,12 @@ export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS 
             leftAnalyser.getFloatTimeDomainData(leftData);
             rightAnalyser.getFloatTimeDomainData(rightData);
 
-            momentary.push(leftData, rightData);
+            const released = pushAccumulatedBlock(leftData, rightData);
             const mom = momentary.value;
-            // The short-term and integrated windows join once the 400 ms window
-            // holds programme; before that its energy is a part-silence ramp.
-            if (momentary.filled) {
+            // The short-term and integrated windows join per whole 400 ms
+            // block; a frame that releases none must not re-push the window's
+            // previous block.
+            if (released) {
                 shortTermRef.current.push(momentary.energy);
                 integratedRef.current.push(mom);
             }

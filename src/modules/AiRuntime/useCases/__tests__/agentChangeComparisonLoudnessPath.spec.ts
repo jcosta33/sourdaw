@@ -55,8 +55,15 @@ const mocks = vi.hoisted(() => ({
     hasLiveNativeGraphSession: vi.fn<() => boolean>(),
 }));
 
-/** Peak amplitude of the reference tone, and the tap's phase advance through it. */
-const tap = { amplitude: 10 ** (-23 / 20), phase: 0 };
+/**
+ * Peak amplitude of the reference tone, the tap's phase advance through it,
+ * and the sample the tone gates off at (infinity: continuous programme).
+ */
+const tap = { amplitude: 10 ** (-23 / 20), phase: 0, gateAtSample: Number.POSITIVE_INFINITY };
+
+/** One programme sample: the reference tone before the gate, silence after. */
+const sampleAt = (sample: number): number =>
+    sample < tap.gateAtSample ? tap.amplitude * Math.sin((2 * Math.PI * 1000 * sample) / 48000) : 0;
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     // The real barrel: the comparison must read the production MomentaryLUFS
@@ -68,7 +75,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         fftSize: 256,
         getFloatTimeDomainData: (arr: Float32Array) => {
             for (let index = 0; index < arr.length; index++) {
-                arr[index] = tap.amplitude * Math.sin((2 * Math.PI * 1000 * (tap.phase + index)) / 48000);
+                arr[index] = sampleAt(tap.phase + index);
             }
             // Both channels must carry the same segment, so only the second
             // read (the sampler reads left, then right) advances the tone.
@@ -125,6 +132,7 @@ beforeEach(() => {
     mocks.setMasterComparisonTrimDb.mockReturnValue({ appliedDb: 0, limited: false });
     mocks.hasLiveNativeGraphSession.mockReturnValue(false);
     tap.phase = 0;
+    tap.gateAtSample = Number.POSITIVE_INFINITY;
     doubles.undoHistoryStore.set({ past: [{ id: 'e1', groupId: GROUP_ID }], future: [] });
     doubles.transportStore.set({ isPlaying: true });
     doubles.aiActionHistoryStore.set({ groups: [makeGroup()], panelOpen: false });
@@ -142,14 +150,30 @@ describe('agentChangeComparison loudness path', () => {
     it('records the reference tone at -23.0 LUFS through the real K-weighted metering', async () => {
         await agentChangeComparison.start({ groupId: GROUP_ID });
 
-        // 75 ticks fill the 400 ms momentary window (256 samples per tick at
-        // 48 kHz); eight 400 ms blocks of four ticks each then cover the
-        // three-second short-term window and record the side.
-        vi.advanceTimersByTime(120 * 100);
+        // 75 ticks accumulate one whole 400 ms block (256 samples per read at
+        // 48 kHz); eight whole blocks then cover the three-second short-term
+        // window and record the side.
+        vi.advanceTimersByTime(600 * 100);
 
         const view = getAgentChangeComparisonView();
         expect(view.active?.measurement).toBe('web-master');
         expect(view.active?.loudness.b).toBeCloseTo(-23, 1);
         expect(view.active?.matchDb).toBeNull();
+    });
+
+    // The window is three seconds of programme, not of tap ticks: 0.2 s of
+    // tone then silence leaves the correct window at the energy mean
+    // 10·log10(1/16) below the tone (-35.0), while a sampler that trusts a
+    // block per tick records the figure still sitting in its first smeared
+    // 400 ms window (-26) — nine loudness units apart.
+    it('reads the short-term window over whole blocks of programme the tap cadence used to smear', async () => {
+        tap.gateAtSample = 9_600;
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+
+        vi.advanceTimersByTime(600 * 100);
+
+        const view = getAgentChangeComparisonView();
+        expect(view.active?.measurement).toBe('web-master');
+        expect(view.active?.loudness.b).toBeCloseTo(-35, 0);
     });
 });

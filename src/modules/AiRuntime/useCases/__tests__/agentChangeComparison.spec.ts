@@ -173,11 +173,11 @@ function reverted(): UndoStateDouble {
 }
 
 /**
- * Ticks that carry one side to a trusted reading: 75 ticks fill the momentary
- * meter's 400 ms window (256 samples per tap read at 48 kHz), then eight 400 ms
- * blocks of four ticks each cover the three-second short-term window.
+ * Ticks that carry one side to a trusted reading: 75 ticks accumulate one
+ * whole 400 ms block (256 samples per tap read at 48 kHz), and eight whole
+ * blocks cover the three-second short-term window.
  */
-const TICKS_PER_TRUSTED_READING = 107;
+const TICKS_PER_TRUSTED_READING = 600;
 
 /**
  * The amplitude whose stereo chunk reads `lufs` through the metering doubles:
@@ -410,18 +410,18 @@ describe('agentChangeComparison loudness match', () => {
         expect(trimCalls().at(-1)).toBe(0);
     });
 
-    // T10. Turns red if the readings reach the accumulator at the 100 ms tick
-    // rate: its eight 400 ms blocks would then hold the last 800 ms of the side
-    // rather than its three seconds, and the quiet opening would be recorded as
-    // the loud ending — -10 instead of the mean of what the side played.
+    // T10. Turns red if a block reaches the accumulator without carrying a
+    // whole 400 ms of programme: its eight blocks would then be tick-sized,
+    // and the quiet opening would still be sitting in the window when the
+    // trusted reading lands — recorded loud where the whole side was quiet.
     it('reads a side over its whole window rather than over its tail', async () => {
         await agentChangeComparison.start({ groupId: GROUP_ID });
 
-        // 75 ticks fill the momentary window and contribute no blocks; then six
-        // blocks at -30 and two at -10 make the trusted reading the energy mean
-        // of the whole three seconds.
-        sample(-30, 75 + 24);
-        sample(-10, 8);
+        // 450 ticks at -30 make six whole blocks; 150 more at -10 make the
+        // final two, so the trusted reading is the energy mean of the whole
+        // three seconds the side played.
+        sample(-30, 450);
+        sample(-10, 150);
 
         expect(getAgentChangeComparisonView().active?.loudness.b).toBeCloseTo(-15.89, 2);
     });

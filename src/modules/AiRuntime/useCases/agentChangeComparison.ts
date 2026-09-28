@@ -61,11 +61,8 @@ export type AgentChangeComparisonToggle =
 /** How often the master tap is read. Ten readings a second is the rate the LUFS meter already runs at. */
 const SAMPLE_INTERVAL_MS = 100;
 
-/**
- * Ticks between the block energies that reach the short-term accumulator. Four
- * 100 ms ticks are the 400 ms of programme one BS.1770 block measures.
- */
-const TICKS_PER_BLOCK = 4;
+/** BS.1770-4 momentary block: 400 ms of programme, the granularity the meters change at. */
+const MOMENTARY_BLOCK_SECONDS = 0.4;
 
 /**
  * Blocks one side contributes before its loudness is trusted. Eight 400 ms
@@ -82,14 +79,63 @@ type StereoChunk = { left: Float32Array; right: Float32Array };
 
 type LoudnessSampler = { readStereoChunks: () => StereoChunk };
 
+/**
+ * Collects tap reads and releases a whole 400 ms block into the momentary
+ * meter once that much programme is held.
+ *
+ * The tap offers only its newest `fftSize` samples per tick while the audio
+ * clock moves further between ticks, so pushing per tick would feed the meter
+ * a fraction of the programme and stretch its 400 ms window over seconds of
+ * wall time. A tick's read never carries a whole block, so `feed` releases at
+ * most one per call.
+ */
+class MomentaryBlockFeeder {
+    private readonly blockFrames: number;
+    private readonly sink: (left: Float32Array, right: Float32Array) => void;
+    private pendingLeft = new Float32Array(0);
+    private pendingRight = new Float32Array(0);
+    private pendingFrames = 0;
+
+    constructor(blockFrames: number, sink: (left: Float32Array, right: Float32Array) => void) {
+        this.blockFrames = blockFrames;
+        this.sink = sink;
+    }
+
+    feed(left: Float32Array, right: Float32Array): boolean {
+        const frameCount = Math.min(left.length, right.length);
+        const needed = this.pendingFrames + frameCount;
+        if (needed > this.pendingLeft.length) {
+            // Held across ticks, and regrown only if the analyser's fftSize
+            // grows mid-comparison.
+            const grownLeft = new Float32Array(needed);
+            grownLeft.set(this.pendingLeft);
+            this.pendingLeft = grownLeft;
+            const grownRight = new Float32Array(needed);
+            grownRight.set(this.pendingRight);
+            this.pendingRight = grownRight;
+        }
+        this.pendingLeft.set(left.subarray(0, frameCount), this.pendingFrames);
+        this.pendingRight.set(right.subarray(0, frameCount), this.pendingFrames);
+        this.pendingFrames += frameCount;
+        if (this.pendingFrames < this.blockFrames) {
+            return false;
+        }
+        this.sink(this.pendingLeft.subarray(0, this.blockFrames), this.pendingRight.subarray(0, this.blockFrames));
+        this.pendingLeft.copyWithin(0, this.blockFrames, this.pendingFrames);
+        this.pendingRight.copyWithin(0, this.blockFrames, this.pendingFrames);
+        this.pendingFrames -= this.blockFrames;
+        return true;
+    }
+}
+
 type ComparisonRuntime = {
     sampler: LoudnessSampler;
     ticker: ReturnType<typeof setInterval>;
     /** Reset whenever a side becomes current, so one side's window never carries the other's programme. */
     momentary: MomentaryLUFS;
     meter: ShortTermLUFS;
+    feeder: MomentaryBlockFeeder;
     blocksOnSide: number;
-    ticksSinceBlock: number;
     unsubscribe: () => void;
 };
 
@@ -200,14 +246,22 @@ function applyMatchTrim(session: AgentChangeComparisonSession): void {
     recordAgentChangeComparisonMatchLimited(limited);
 }
 
+function createSideFeeder(): MomentaryBlockFeeder {
+    return new MomentaryBlockFeeder(Math.round(MOMENTARY_BLOCK_SECONDS * getAudioSampleRate()), (left, right) => {
+        runtime?.momentary.push(left, right);
+    });
+}
+
 function resetSideMeter(): void {
     if (!runtime) {
         return;
     }
     runtime.momentary = new MomentaryLUFS(getAudioSampleRate());
     runtime.meter = new ShortTermLUFS();
+    // A fresh feeder drops the previous side's half-accumulated programme,
+    // which must not open the new side's first block.
+    runtime.feeder = createSideFeeder();
     runtime.blocksOnSide = 0;
-    runtime.ticksSinceBlock = 0;
 }
 
 function loudnessOnSide(session: AgentChangeComparisonSession, side: AgentChangeComparisonSide): number | null {
@@ -231,18 +285,10 @@ function sampleOnce(): void {
         return;
     }
 
-    // Every tick feeds the momentary meter the tap's newest chunks; only every
-    // fourth one contributes a block, which is the rate the window is sized in.
-    runtime.ticksSinceBlock += 1;
+    // Whole 400 ms blocks reach the momentary meter, released from the
+    // accumulating feeder only once a full block of programme has been read.
     const chunks = runtime.sampler.readStereoChunks();
-    runtime.momentary.push(chunks.left, chunks.right);
-    if (runtime.ticksSinceBlock < TICKS_PER_BLOCK) {
-        return;
-    }
-    runtime.ticksSinceBlock = 0;
-    // Blocks join the window only once the 400 ms momentary window holds
-    // programme; before that its energy is a part-silence ramp, not a level.
-    if (!runtime.momentary.filled) {
+    if (!runtime.feeder.feed(chunks.left, chunks.right)) {
         return;
     }
     runtime.meter.push(runtime.momentary.energy);
@@ -316,8 +362,8 @@ function startSampling(): void {
         }, SAMPLE_INTERVAL_MS),
         momentary: new MomentaryLUFS(getAudioSampleRate()),
         meter: new ShortTermLUFS(),
+        feeder: createSideFeeder(),
         blocksOnSide: 0,
-        ticksSinceBlock: 0,
         unsubscribe: () => {
             unsubscribeUndo();
             unsubscribeHistory();

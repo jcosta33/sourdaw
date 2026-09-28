@@ -117,6 +117,27 @@ describe('sweepAbandonedRecordingTempFilesOnce', () => {
         expect(root.files.has('rec-tmp-live-take.pcm')).toBe(true);
     });
 
+    // The sweep awaits the directory between entries, so a session starting on
+    // the same first-use tick registers while the enumeration is still
+    // walking. Its file is on disk before the sweep begins but held by no
+    // session yet; only a live test per entry can spare it.
+    it('spares a session that registers while the enumeration is still walking', async () => {
+        const root = new FakeRecordingRoot();
+        root.files.set('rec-tmp-crashed-take.pcm', { kind: 'file' });
+        root.files.set('rec-tmp-late-session.pcm', { kind: 'file' });
+        install_recording_storage(root);
+
+        const originalRemove = root.removeEntry.bind(root);
+        root.removeEntry = (name: string) =>
+            originalRemove(name).then(() => {
+                activeSessions.set('track-late', make_live_session('track-late', 'rec-tmp-late-session.pcm'));
+            });
+
+        sweep();
+        await vi.waitFor(() => expect(root.removed).toEqual(['rec-tmp-crashed-take.pcm']));
+        expect(root.files.has('rec-tmp-late-session.pcm')).toBe(true);
+    });
+
     it('finds nothing to do when OPFS is unavailable', async () => {
         install_recording_storage(null);
 

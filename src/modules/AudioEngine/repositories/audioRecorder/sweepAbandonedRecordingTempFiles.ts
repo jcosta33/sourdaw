@@ -28,6 +28,21 @@ export function sweepAbandonedRecordingTempFilesOnce(): void {
 
 let sweepStarted = false;
 
+/**
+ * Whether `name` is the temp file of a session this run holds right now.
+ * Tested per entry rather than snapshotted before the loop: the enumeration
+ * awaits the directory between entries, and a session registering mid-sweep
+ * owns a name a pre-iteration snapshot would have missed.
+ */
+function isLiveSessionName(name: string): boolean {
+    for (const session of activeSessions.values()) {
+        if (session.tempFile === name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 async function sweep(): Promise<string[]> {
     if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
         return [];
@@ -36,12 +51,11 @@ async function sweep(): Promise<string[]> {
     if (typeof Reflect.get(root, Symbol.asyncIterator) !== 'function') {
         return [];
     }
-    const liveNames = new Set(Array.from(activeSessions.values(), (session) => session.tempFile));
     const removed: string[] = [];
     for await (const [name, handle] of root as AsyncIterable<
         [string, FileSystemFileHandle | FileSystemDirectoryHandle]
     >) {
-        if (handle.kind !== 'file' || !RECORDING_TEMP_FILE_PATTERN.test(name) || liveNames.has(name)) {
+        if (handle.kind !== 'file' || !RECORDING_TEMP_FILE_PATTERN.test(name) || isLiveSessionName(name)) {
             continue;
         }
         try {
