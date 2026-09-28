@@ -223,7 +223,7 @@ function argument(value: unknown): TransformArgument | null {
     return null;
 }
 
-function eachStep(value: Record<string, unknown>, depth: number): TransformStep | null {
+function eachStep(value: Record<string, unknown>, depth: number, id: string): TransformStep | null {
     if (
         value.kind === 'each' &&
         keys(value, ['id', 'kind', 'selector', 'as', 'body']) &&
@@ -236,7 +236,7 @@ function eachStep(value: Record<string, unknown>, depth: number): TransformStep 
             return null;
         }
         return {
-            id: value.id,
+            id,
             kind: 'each',
             selector: value.selector,
             as: value.as,
@@ -246,7 +246,7 @@ function eachStep(value: Record<string, unknown>, depth: number): TransformStep 
     return null;
 }
 
-function whenStep(value: Record<string, unknown>, depth: number): TransformStep | null {
+function whenStep(value: Record<string, unknown>, depth: number, id: string): TransformStep | null {
     if (value.kind === 'when' && keys(value, ['id', 'kind', 'condition', 'then']) && Array.isArray(value.then)) {
         const parsedCondition = condition(value.condition);
         const then = value.then.map((member) => step(member, depth + 1));
@@ -254,7 +254,7 @@ function whenStep(value: Record<string, unknown>, depth: number): TransformStep 
             return null;
         }
         return {
-            id: value.id,
+            id,
             kind: 'when',
             condition: parsedCondition,
             then: then.filter((member): member is TransformStep => member !== null),
@@ -263,7 +263,7 @@ function whenStep(value: Record<string, unknown>, depth: number): TransformStep 
     return null;
 }
 
-function emitStep(value: Record<string, unknown>): TransformStep | null {
+function emitStep(value: Record<string, unknown>, id: string): TransformStep | null {
     if (
         value.kind !== 'emit' ||
         !keys(value, ['id', 'kind', 'operation', 'arguments'], ['binding', 'dependsOn']) ||
@@ -289,7 +289,7 @@ function emitStep(value: Record<string, unknown>): TransformStep | null {
         parsedArguments[name] = parsed;
     }
     const emitted: Extract<TransformStep, { kind: 'emit' }> = {
-        id: value.id,
+        id,
         kind: 'emit',
         operation: value.operation,
         arguments: parsedArguments,
@@ -307,13 +307,14 @@ function step(value: unknown, depth = 1): TransformStep | null {
     if (!record(value) || depth > DECLARATIVE_TRANSFORM_MAX_STEP_DEPTH || !label(value.id)) {
         return null;
     }
+    const id = value.id;
     if (value.kind === 'each') {
-        return eachStep(value, depth);
+        return eachStep(value, depth, id);
     }
     if (value.kind === 'when') {
-        return whenStep(value, depth);
+        return whenStep(value, depth, id);
     }
-    return emitStep(value);
+    return emitStep(value, id);
 }
 
 function validSelectorHeader(value: Record<string, unknown>): value is Record<string, unknown> & {
