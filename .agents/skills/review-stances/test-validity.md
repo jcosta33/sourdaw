@@ -78,6 +78,14 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
+
+The trusted-write closure spec walked all 13 command graphs in one Vitest case. Each walk independently proved its command's exact closure, but the accumulated work took 5547 ms against the default 5000 ms case timeout and failed the CI shard. The failure was test granularity, not evidence that a command graph was wrong.
+
+Blind spot: independent obligations shared one per-test deadline, so their cumulative cost could fail the aggregate case without identifying a slow command by its own named result.
+
+Probe that would have caught it: when a spec repeats an independent invariant across a registered population, probe the cumulative work under the actual default deadline. Keep each population member as a named parameterized case with its own fresh inputs and deadline, preserve a mutation-discriminating assertion for every member, and do not raise the shared timeout to mask aggregate work.
+
 ### 2026-09-26 — a startup bridge crossing left the desktop-runtime call list stale (escaped via PR #4568)
 
 PR #4568 (commit `a0aa4c1f18`) added `clearInheritedRetrospectiveCaptureArm()` to `src/app/main.tsx`,

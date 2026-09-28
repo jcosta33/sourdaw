@@ -214,13 +214,12 @@ describe('planReviewRisk', () => {
      * never statically imports, reddens this check. Classification stays with the union-wide checks
      * above, which already cover every declared path.
      */
-    it('should pin each command closure to its entry static local imports, per command', () => {
-        const readSource = readRepositorySource();
-
-        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
-            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+    it.each(Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[])(
+        'should pin the %s command closure to its entry static local imports, per command',
+        (command) => {
+            assertDeclaredClosure(command, trustedDependencyGraphs[command], readRepositorySource());
         }
-    });
+    );
 
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from
