@@ -381,7 +381,7 @@ describe('project license', () => {
         const report = readFileSync(reportPath, 'utf8');
         writeFileSync(
             reportPath,
-            report.replace('cargo:automerge@0.11.0 | MIT |', 'cargo:automerge@0.11.0 | MIT OR Apache-2.0 |')
+            report.replace('cargo:automerge@0.12.0 | MIT |', 'cargo:automerge@0.12.0 | MIT OR Apache-2.0 |')
         );
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
@@ -391,7 +391,7 @@ describe('project license', () => {
         writeCargoInventoryFixture(root);
         const reportPath = join(root, DEPENDENCY_LICENSE_REPORT_PATH);
         const report = readFileSync(reportPath, 'utf8');
-        const automerge = /^cargo:automerge@0\.11\.0 \| MIT \| ([^|]+) \| Cargo\.lock$/mu.exec(report)?.[1];
+        const automerge = /^cargo:automerge@0\.12\.0 \| MIT \| ([^|]+) \| Cargo\.lock$/mu.exec(report)?.[1];
         expect(automerge).toBeDefined();
         writeFileSync(
             reportPath,
