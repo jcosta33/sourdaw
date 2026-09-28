@@ -700,13 +700,16 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        // The deadline is the guard that ends a real run. The ci profile's retained scan reports measure
-        // 0.217-0.291 s per attempt at about 21.5 KB per request, and PR #4884's 42-unit run is the
-        // slowest observed at 0.62 s per attempt (42 attempts in 26 s), so 600 s carries roughly two
-        // thousand attempts at the slow rate. The 16 MiB total binds only for a plan far larger than its
-        // share of it, and the attempt count is a backstop above both: 6144 attempts would need 0.098 s
-        // each to fit inside the deadline, faster than any observed call, so it cannot end a run the
-        // deadline would have continued. The floor the byte guard implies is 171 maximal requests.
+        // Which guard ends a run depends on the request size, and the deadline is first for realistic
+        // ones. The retained ci-profile reports measure 0.217-0.291 s per attempt, and PR #4884's own run
+        // submitted 1,863,741 bytes over 42 requests, an average of 44,375 bytes each: at the fastest
+        // measured rate the deadline carries about 2,765 attempts, or about 123 MB at that average, before
+        // the 128 MiB total could bind. Smaller requests move the crossover further out; a plan of very
+        // large ones reaches the total first — 762 one-hunk units of 22,074 bytes ended at 15.98 MiB
+        // after 164.7 s, where the old 16 MiB total, not the deadline, was the guard. The total's worst
+        // case is about $1.63 a run at the measured 1.3 cents per MiB. The 6144-attempt backstop sits
+        // above both: it would need 0.098 s per attempt to fit inside the deadline, faster than any
+        // observed call, and the floor the byte guard implies is 1,366 maximal requests.
         maxAttempts: 6144,
         maxRetriesPerRequest: 1,
         // One attempt may spend the whole state budget.
@@ -719,12 +722,12 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         // proxy, which runs slightly under the provider's own count — that run reported 930,965
         // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
         // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
-        // answered. The total is still sized from cost: 115210 bytes were estimated at $0.0014, about
-        // 1.3 cents per MiB, so 16 MiB is roughly 20 cents and exists to bound a runaway rather than to
-        // ration coverage.
+        // answered. The total above is bounded by cost rather than by coverage: 128 MiB is about $1.63 at
+        // the measured 1.3 cents per MiB, and it exists to bound a runaway plan rather than to ration the
+        // ordinary one.
         maxRequestBytes: 128 * 1024,
         maxStatePlusQuestionBytes: 96 * 1024,
-        maxTotalSubmittedBytes: 16 * 1024 * 1024,
+        maxTotalSubmittedBytes: 128 * 1024 * 1024,
         contextExpansionPasses: 1,
         verify: {
             maxRegionBytes: 96 * 1024,

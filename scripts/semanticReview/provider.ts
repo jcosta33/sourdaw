@@ -610,6 +610,14 @@ async function attemptWithRetries(input: {
                 failureCode: classified.code,
                 bytes: input.bytes,
             });
+            // The attempt is given whatever is left of the deadline when there is less than its own
+            // timeout, so an attempt the clock ended surfaces as the abort or connection error that
+            // truncation produced. The run's clock decides here: filing that unit under `timeout` or
+            // `provider_unavailable` would name its own request as the cause of a run-level stop and hide
+            // the deadline that ended the run.
+            if (input.now() >= input.deadline) {
+                refuse('deadline_elapsed', 'the overall assessment deadline elapsed while the attempt was in flight');
+            }
             if (!classified.transient) {
                 refuse(classified.code, `TypeSafe assessment failed: ${message}`);
             }

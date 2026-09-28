@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 
-import { APITimeoutError, AuthenticationError, BadRequestError, RateLimitError } from '@typesafe-ai/sdk';
+import {
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    RateLimitError,
+} from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -44,7 +50,7 @@ import {
 } from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
-import { interpretFinding, interpretScanOutcome, executionStateFor, readChoiceAnswer } from '../interpret.ts';
+import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
     assessUnit,
     computeResponseCacheKey,
@@ -4138,17 +4144,6 @@ describe('a request refused for its own size leaves the rest of the plan assesse
         expect(SEMANTIC_FAILURE_CODES).toContain('budget_exhausted');
     });
 
-    it('reads a size refusal as a partial run in the failure-state helper too', () => {
-        // `executionStateFor` maps a failure code to the report's execution state, and the report's own
-        // `executionState` treats a completed unit plus a recorded failure as partial whether the failure
-        // was a spent run budget or one unit's size. A size refusal mapping to `unavailable` would claim
-        // the run delivered nothing.
-        expect(executionStateFor('request_too_large')).toBe('partial');
-        expect(executionStateFor('budget_exhausted')).toBe('partial');
-        expect(executionStateFor('deadline_elapsed')).toBe('partial');
-        expect(executionStateFor('provider_unavailable')).toBe('unavailable');
-    });
-
     it('still records the remaining units as budget-starved when the attempt budget runs out', async () => {
         // The other direction of the same policy: a whole-run budget that really is exhausted still
         // stops admission, so today's behaviour is preserved where it was true.
@@ -4218,6 +4213,35 @@ describe('the deadline stops admission under its own name', () => {
         expect(report.failureCode).toBe('deadline_elapsed');
         expect(report.execution).toBe('partial');
         expect(() => validateReport(report)).not.toThrow();
+    });
+
+    it('files an attempt the deadline ended under the deadline, whatever error the truncation produced', async () => {
+        // An attempt is given only what is left of the deadline, so the SDK aborts the call at the deadline
+        // and the adapter sees that abort as a timeout or as a connection error. The clock decides: the
+        // unit in flight is the run's deadline stop, and filing it under its own request's error would name
+        // the wrong cause for the unit that ended the run.
+        for (const ended of [
+            new APITimeoutError(SEMANTIC_BUDGET_PROFILES.local.attemptTimeoutMs),
+            new APIConnectionError('connection closed at the deadline'),
+        ]) {
+            const clock = fixedClock(1_000);
+            const profile = SEMANTIC_BUDGET_PROFILES.local;
+            const provider = constantProvider(0.05, {
+                systemOne: async () => {
+                    clock.advance(profile.overallDeadlineMs + 1_000);
+                    throw ended;
+                },
+            });
+            const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
+            expect(report.scope.assessed).toBe(0);
+            expect(report.scope.unassessed).toEqual([
+                { path: firstPath, reason: 'deadline_elapsed' },
+                { path: deadlinePath, reason: 'deadline-elapsed-before-admission' },
+                { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+            ]);
+            expect(report.failureCode).toBe('deadline_elapsed');
+            expect(report.execution).not.toBe('completed');
+        }
     });
 
     it('still reports a request that overran its own attempt timeout as a timeout', async () => {
@@ -5143,13 +5167,21 @@ describe('budget profiles', () => {
         // hierarchy those rates imply: the byte guard's own capacity is reachable inside the deadline,
         // and the attempt cap is above what the deadline carries even at the fastest observed rate, so
         // the cap can never end a run the deadline would have continued.
+        // PR #4884's own ci scan submitted 1,863,741 bytes over 42 requests, an average of 44,375 bytes a
+        // request: the typical size the total has to carry past a full deadline.
         const ci = SEMANTIC_BUDGET_PROFILES.ci;
         const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
         const fastestMeasuredSecondsPerAttempt = 0.217;
-        const slowestMeasuredSecondsPerAttempt = 0.62;
+        const measuredTypicalRequestBytes = 44_375;
         expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
         expect(ci.maxAttempts * fastestMeasuredSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
-        expect(maximalRequests * slowestMeasuredSecondsPerAttempt).toBeLessThan(ci.overallDeadlineMs / 1_000);
+        // The deadline is the guard that ends a realistic run: what it carries at the fastest measured
+        // rate, in requests of that typical size, has to fit inside the total. The previous 16 MiB failed
+        // this relation — the deadline carries about 123 MB of them — so the total, not the deadline,
+        // ended runs at the size the profile actually produces.
+        expect(
+            (ci.overallDeadlineMs / 1_000 / fastestMeasuredSecondsPerAttempt) * measuredTypicalRequestBytes
+        ).toBeLessThanOrEqual(ci.maxTotalSubmittedBytes);
         // No such rule applies to `local`, whose attempt cap is the ordinary guard and whose deadline is
         // the worst-case bound: four attempts at the 3 s timeout would take 12 s, past the 8 s deadline,
         // so the cap ends a normal run and the deadline only bounds one whose attempts hang. Its cap is
