@@ -1,0 +1,29 @@
+src/app/__tests__/projectNativeDeviceState.spec.ts
+  s_fe7d9519d0226e::t_12d0c3a1a43d7a 3,7-12,30,32-37,58-138
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts
+  s_ed5aa36a3ba357::t_12fc48cfe599c8 164-170,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
