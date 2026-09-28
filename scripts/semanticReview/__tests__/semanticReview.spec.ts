@@ -4646,6 +4646,63 @@ describe('the egress screen tells code from credentials', () => {
         expect(elapsedMs).toBeLessThan(2_000);
     });
 
+    it('withholds a later same-line assignment whose value is bare key material or sits against the rejected value', () => {
+        // The quoted #4872 repros generalise: the scanner flags the same line when the second
+        // value is bare key material, when the second operator touches the rejected value's end
+        // (the rejected bare run absorbs the `=`), and when the operator is a colon. It also
+        // flags `aSecret = …` — an interior key reached without any rejection at all, so no
+        // rescan-side boundary may silence it. Every expectation here was checked against the
+        // pinned binary: Gitleaks v8.30.1 with the repository's `.gitleaks.toml` flags each
+        // line as generic-api-key.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const dotted = secretFixture('A1b2C3d4', 'E5f6G7h8', '.secret');
+        for (const line of [
+            secretFixture('token = ', dotted, ' = ', value),
+            secretFixture('auth = ', dotted, ' = ', value),
+            secretFixture('token = ', dotted, "= '", value, "'"),
+            secretFixture('token = x.secret:', "'", value, "'"),
+            secretFixture('token = aSecret = ', "'", value, "'"),
+            secretFixture('token = aSecret = ', value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+    });
+
+    it('does not fabricate an assignment out of the middle of a rejected value', () => {
+        // Resuming the scan inside the rejected value re-reads its interior as key material:
+        // `credentials.sessionToken` holds `credential` and `Token`, and the line's second `=`
+        // then pairs them with a trailing reference, withholding a benign line the parent and
+        // the pinned binary both admit. Every line here is ordinary code — a member access or
+        // an identifier reference, never key material — and the pinned binary stays silent on
+        // each.
+        for (const line of [
+            'token = credentials.sessionToken = runtimeSessionToken2',
+            'token = session.token=runtimeSessionToken2',
+            'auth = request.auth=bearerTokenRefV2',
+            'token = api.token=v2/v3/compat/endpoint',
+            'auth = credentials.sessionAuth = runtimeSessionAuth2',
+            'token = client.token=sessionTokenV2',
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+    });
+
+    it('screens a hundred-kilobyte one-line run of packed rejected assignments in near-linear time', () => {
+        // A rejected match used to resume the scan at its value's start, so a line packing
+        // repeated `key=` substrings re-consumed the whole remaining tail once per rejected
+        // match: ~305ms at 110KB and over a minute at 1MB, against the parent's ~5ms — and the
+        // egress screen runs before any byte cap, so one minified bundle hunk stalled it. The
+        // bound is tight against that curve and loose against the linear scan, which takes a
+        // few milliseconds here. A shorter form of this line is admitted by the pinned binary.
+        const line = secretFixture('token = ', 'a.secret='.repeat(12_200), 'x');
+        expect(line.length).toBeGreaterThanOrEqual(100_000);
+        const startedAt = performance.now();
+        const reason = sensitiveContentReason(line);
+        const elapsedMs = performance.now() - startedAt;
+        expect(reason).toBeUndefined();
+        expect(elapsedMs).toBeLessThan(250);
+    });
+
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
         // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
         // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a
