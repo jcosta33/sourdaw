@@ -1,0 +1,24 @@
+scripts/checkBarrelMockCoverage.ts
+  h_beb54bf43b47b7 239-268
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_beb54bf43b47b7 564-619
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  h_beb54bf43b47b7 1-386
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  h_beb54bf43b47b7 148-154,183-185,304,443-468
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  h_beb54bf43b47b7 1-321
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 337-338,342,360-403,428-432,452-459,496,661-669,676,682,692-697,785-794,815-823
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "149fa881c0ad4ae4b149e7790120e520a9400574",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
