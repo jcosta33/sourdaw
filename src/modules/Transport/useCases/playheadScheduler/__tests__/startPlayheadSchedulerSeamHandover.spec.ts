@@ -145,6 +145,13 @@ const panicYeastRuntimeSpy = vi.hoisted(() => vi.fn<() => Promise<void>>(() => P
  */
 type RecordedSourceStart = { at: number; args: unknown[]; requestedAt: number };
 const recordedSourceStarts = vi.hoisted(() => [] as RecordedSourceStart[]);
+/**
+ * Third observation point: every `stop` the fence (or any teardown) puts on a
+ * scheduled source, with the clock reading at which it was asked. The seam
+ * fence's whole contract is the instant it stops at.
+ */
+type RecordedSourceStop = { at: number; requestedAt: number };
+const recordedSourceStops = vi.hoisted(() => [] as RecordedSourceStop[]);
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
@@ -173,7 +180,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         start: (...args: unknown[]) => {
             recordedSourceStarts.push({ at: args[0] as number, args, requestedAt: ctxTime.now });
         },
-        stop: () => {},
+        stop: (...args: unknown[]) => {
+            recordedSourceStops.push({ at: args[0] as number, requestedAt: ctxTime.now });
+        },
         onended: null,
     }),
     getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => (bufferId === 'frozen-buf' ? { duration: 8 } : null),
@@ -292,6 +301,7 @@ describe('startPlayheadScheduler seam handover', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         recordedSourceStarts.length = 0;
+        recordedSourceStops.length = 0;
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         tempoMapStoreState.value = { changes: [] };
         midiStoreState.value = { notesByClipId: {}, probabilitySeed: 1 };
@@ -429,5 +439,31 @@ describe('startPlayheadScheduler seam handover', () => {
         // loop length apart.
         expect(recordedSourceStarts[1]!.at).toBeCloseTo(LOOP_SECONDS, 3);
         expect(recordedSourceStarts[2]!.at).toBeCloseTo(2 * LOOP_SECONDS, 3);
+    });
+
+    it('fences the sounding sources exactly at the seam instant, stopping nothing else early', async () => {
+        // The seam fence cuts the sources that must not sound past the seam AT
+        // the seam instant. Degenerating the fence to an immediate stop (the
+        // teardown semantic: one 5 ms ramp after the current clock) keeps every
+        // start green — the starts are future-anchored either way — so the
+        // instant itself is the pinned observable.
+        trackStoreState.value = { tracks: [frozenAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await runUntilWraps(worker, 2);
+
+        // Exactly one fence per seam — nothing else stops a scheduled source in
+        // a steady looping session — and each stop lands on the seam instant
+        // itself, not one grain after the clock.
+        expect(recordedSourceStops).toHaveLength(2);
+        expect(recordedSourceStops[0]!.at).toBeCloseTo(LOOP_SECONDS, 3);
+        expect(recordedSourceStops[1]!.at).toBeCloseTo(2 * LOOP_SECONDS, 3);
     });
 });

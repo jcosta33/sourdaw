@@ -334,10 +334,12 @@ export function startPlayheadScheduler(): void {
         // would never re-emit them at the new rate. Loop-wrap already clears the
         // Set; this covers the edit-while-playing case. Re-emit by clearing the
         // dedup Sets and tearing down the stale-aligned active sources, exactly as
-        // the wrap path does — without moving the playhead or the metronome.
+        // the wrap path does. A pending seam is re-anchored on the dying pass
+        // (below); otherwise the playhead and the metronome stay where they are.
         const loopSignature = loopSignatureOf(current);
         const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
         const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
+        let rackDiscontinuity = false;
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
@@ -355,7 +357,50 @@ export function startPlayheadScheduler(): void {
             // re-opens exactly the window that was just cut, at the new rate.
             // The metronome is unaffected: it dedups on its own `lastBeat` and
             // on already-fired click times, neither of which this touches.
-            schedulerSession.lastScheduledBeat = schedulerSession.accumulatedPosition - REEMIT_EPSILON_BEATS;
+            //
+            // A pending loop seam is anchored against the map this edit just
+            // replaced: its seam instant, its dying-pass anchor, and the
+            // incoming pass's negative-phase integration all describe the old
+            // timeline. Keeping it publishes the old anchor under the new map
+            // and strands the scheduler in negative phase once the stale
+            // instant passes; rewinding the high-water mark onto the
+            // negative-phase position below would re-open the emission window
+            // at the incoming phase, so the dying pass's remaining material —
+            // just cut by the teardown — would never re-emit. Re-anchor on the
+            // dying pass instead: integrate its anchored position to `now`
+            // through the NEW map and resume there. That keeps the published
+            // clock inside [loopStart, loopEnd] and re-emits the dying window
+            // exactly as an ordinary tick would have before the seam was
+            // detected. An edit that lands after the stale seam instant has
+            // already carried the pass boundary — fall through to an ordinary
+            // wrap.
+            if (schedulerSession.pendingSeam !== null) {
+                const { anchorAudioTime, anchorPosition } = schedulerSession.pendingSeam;
+                schedulerSession.pendingSeam = null;
+                const dyingPositionNow = beatAtSecondsFromAnchor(
+                    changes,
+                    anchorPosition,
+                    now - anchorAudioTime,
+                    current.tempo
+                );
+                if (current.isLooping && current.loopEnd > current.loopStart && dyingPositionNow >= current.loopEnd) {
+                    stageLoopWrapTakes(current);
+                    const loopLength = current.loopEnd - current.loopStart;
+                    schedulerSession.accumulatedPosition =
+                        current.loopStart + positiveModulo(dyingPositionNow - current.loopStart, loopLength);
+                    // The gate is inclusive at its lower bound, so `loopStart`
+                    // exactly — the same anchor the wrap paths use.
+                    schedulerSession.lastScheduledBeat = current.loopStart;
+                    resetMetronomeBeat(schedulerSession.accumulatedPosition);
+                    advanceSchedulerDiscontinuityEpoch();
+                    rackDiscontinuity = true;
+                } else {
+                    schedulerSession.accumulatedPosition = dyingPositionNow;
+                    schedulerSession.lastScheduledBeat = dyingPositionNow - REEMIT_EPSILON_BEATS;
+                }
+            } else {
+                schedulerSession.lastScheduledBeat = schedulerSession.accumulatedPosition - REEMIT_EPSILON_BEATS;
+            }
         }
 
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
@@ -380,7 +425,11 @@ export function startPlayheadScheduler(): void {
         // transport started". A relocation restarts the window at its
         // destination, so re-anchor this alongside `lastScheduledBeat`.
         let tickStartPosition = schedulerSession.accumulatedPosition;
-        let rackDiscontinuity = false;
+        // The dying pass's own window opening. The seam branch below repoints
+        // `tickStartPosition` at the incoming pass's `loopStart`, but a punch
+        // decided on a seam tick belongs to the dying pass and anchors on the
+        // window that was open when its region was crossed.
+        const dyingTickStartPosition = tickStartPosition;
 
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
         // The horizon used to DETECT the seam. The emitted window is derived
@@ -400,6 +449,14 @@ export function startPlayheadScheduler(): void {
             current.isLooping &&
             current.loopEnd > current.loopStart &&
             schedulerSession.accumulatedPosition < current.loopEnd;
+        // The scheduled seam hands a pass over one look-ahead early, so it can
+        // only serve a region longer than that look-ahead: in a shorter one the
+        // horizon crosses again the moment the wrapped position rises clear of
+        // loopEnd minus the look-ahead, and the seam branch re-arms on
+        // consecutive ticks — advancing the discontinuity epoch and panicking
+        // the rack many times per physical wrap. Such regions keep the old
+        // post-crossing wrap: exactly one discontinuity per boundary.
+        const seamCapableRegion = current.loopEnd - current.loopStart > lookAheadBeats;
 
         if (insideLoopRegion && newPosition >= current.loopEnd) {
             // Late wrap: the playhead itself crossed loopEnd this tick. Only
@@ -436,7 +493,7 @@ export function startPlayheadScheduler(): void {
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             schedulerSession.pendingSeam = null;
-        } else if (insideLoopRegion && horizonUpTo >= current.loopEnd) {
+        } else if (insideLoopRegion && seamCapableRegion && horizonUpTo >= current.loopEnd) {
             // #4656 — scheduled seam: the look-ahead horizon reaches the seam
             // while the playhead is still short of it. Wrap the scheduling
             // window, not the playhead. The old code ran the horizon past
@@ -472,7 +529,6 @@ export function startPlayheadScheduler(): void {
                 beatAtSecondsFromAnchor(changes, current.loopStart, horizonAudioTime - seamAudioTime, current.tempo)
             );
 
-            stageLoopWrapTakes(current);
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
             tickStartPosition = current.loopStart;
@@ -602,19 +658,28 @@ export function startPlayheadScheduler(): void {
         );
 
         const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
+        // On a scheduled-seam tick the audible transport is still finishing the
+        // dying pass, so the punch checks scan its position — the same window a
+        // non-seam tick would scan — rather than the incoming pass's
+        // negative-phase position. And because no later tick ever revisits the
+        // dying pass's last look-ahead band, a punch-out the dying pass reaches
+        // before the seam instant is due at the seam instant itself.
+        const punchScanBeat = seam ? seam.passPosition : newPosition;
+        const punchScanWindowStart = seam ? dyingTickStartPosition : tickStartPosition;
+        const punchOutDueAtSeam = seam !== null && current.punchOutBeat <= seam.passUpTo;
         if (
             current.punchInEnabled &&
             !current.isRecording &&
             !schedulerSession.punchRecordingActive &&
             hasArmedTracks &&
             current.punchInBeat < current.punchOutBeat &&
-            newPosition >= current.punchInBeat &&
+            punchScanBeat >= current.punchInBeat &&
             // Upper bound. Without it, starting playback past the region fires
             // punch-in and punch-out on the same tick: a full-width clip and
             // take are stamped across [punchInBeat, punchOutBeat) and captured
             // nothing. Punching in only makes sense while the region is still
             // ahead of the tick's end.
-            newPosition < current.punchOutBeat
+            punchScanBeat < current.punchOutBeat
         ) {
             schedulerSession.punchRecordingActive = true;
             // Anchor the punched clip where capture actually begins. The tick is
@@ -624,11 +689,12 @@ export function startPlayheadScheduler(): void {
             // the region the capture begins at the entry beat instead, and
             // anchoring at `punchInBeat` would displace the take backwards by
             // the whole distance already covered, leaving the tail silent.
-            // `tickStartPosition` is the window's own opening beat, so the max
-            // of the two is the first beat this recording can contain.
-            // `startRecording`'s default (the transport store's playhead) is
-            // wrong on both paths — nothing writes it during playback.
-            const punchAnchorBeat = Math.max(current.punchInBeat, tickStartPosition);
+            // `punchScanWindowStart` is the scanned pass's own window opening
+            // beat, so the max of the two is the first beat this recording can
+            // contain. `startRecording`'s default (the transport store's
+            // playhead) is wrong on both paths — nothing writes it during
+            // playback.
+            const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
             const clips = startRecording(punchAnchorBeat);
             updateTransportState({ isRecording: true });
 
@@ -716,7 +782,16 @@ export function startPlayheadScheduler(): void {
             }
         }
 
-        if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
+        // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
+        // last look-ahead band — above where it stands at the seam tick but at
+        // or below where the seam instant lands it. The crossing will happen
+        // before the seam and no later tick scans that band, so the punch-out
+        // is due at the seam instant and fires here.
+        if (
+            schedulerSession.punchRecordingActive &&
+            current.punchInEnabled &&
+            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam)
+        ) {
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
             // running it first would capture the pre-finalization anchor — a
@@ -737,6 +812,15 @@ export function startPlayheadScheduler(): void {
         }
 
         if (seam) {
+            // Staged here rather than in the detection branch, after the punch
+            // checks above: a punch-out due at the seam instant finalizes its
+            // recording this tick, and a take staged before that finalization
+            // would name the punch clip with a full pass span it never
+            // recorded. A recording that continues across the seam — no punch
+            // out, or a punch-out past the loop end — still gets its pass-span
+            // take here, so the staging moment moves but the staged takes do
+            // not.
+            stageLoopWrapTakes(current);
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
