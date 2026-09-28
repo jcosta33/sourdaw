@@ -211,6 +211,43 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    it('carries exclusion clauses across later instructions and resolves each list member', () => {
+        const prompt = 'excluding Lead and Bass Verse, set another clip velocity; set Verse to 100';
+        expect(getProtectedClips(prompt)).toEqual(
+            expect.arrayContaining([
+                { id: lead.id, name: lead.name },
+                { id: bassVerse.id, name: bassVerse.name },
+            ])
+        );
+        expect(getProtectedClips('set Verse to 90, excluding Lead; set Bass Verse to 100')).toContainEqual({
+            id: lead.id,
+            name: lead.name,
+        });
+        expect(getProtectedClips('set Verse to 90 except Lead; set Bass Verse to 100')).toContainEqual({
+            id: lead.id,
+            name: lead.name,
+        });
+        expect(
+            getExplicitClipProtection('set Verse to 90, excluding Lead and Missing; set Bass Verse to 100', context)
+                .complete
+        ).toBe(false);
+    });
+
+    it('treats quoted exclusion words as names and keeps quoted excluded names literal', () => {
+        expect(getProtectedClips('rename Lead to "excluding Bass Verse"')).toEqual([]);
+        expect(getProtectedClips('set Verse to 90, excluding "Rock and Roll"')).toContainEqual({
+            id: rockAndRoll.id,
+            name: rockAndRoll.name,
+        });
+    });
+
+    it.each(['set Verse to 90, excluding', 'set Verse to 90, excluding; set Lead to 100'])(
+        'marks an unfinished exclusion incomplete for %s',
+        (prompt) => {
+            expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
+        }
+    );
+
     it.each([
         ['leave Verse.1 unchanged', dottedName],
         ['leave "Verse.1" unchanged', dottedName],

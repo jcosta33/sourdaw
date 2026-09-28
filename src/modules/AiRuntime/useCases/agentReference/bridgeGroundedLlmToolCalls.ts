@@ -3891,6 +3891,21 @@ function validatePlanCreatedNotes(
     return validateNotesWithinClipWindow(notes, { endBeat: clipSpanBeats, startBeat: 0 }, 'Plan-created note');
 }
 
+function hasEmptyClipRestriction(prompt: string, clipName: string): boolean {
+    const quoted = scanPromptQuotedText(prompt);
+    const clauses = getPromptClauses(prompt, quoted.maskedText);
+    const emptyClip = /\b(?:empty|blank)\s+(?:\w+\s+){0,2}clips?\b|\bclips?\s+(?:without|with no)\s+notes\b/iu;
+    const normalizedClipName = normalizePromptText(clipName);
+    return clauses.some((clause) => {
+        if (!emptyClip.test(clause.masked)) {
+            return false;
+        }
+        const normalizedClause = normalizePromptText(clause.text);
+        const namedClip = /\b(?:named|called)\b/iu.test(clause.masked);
+        return !namedClip || ` ${normalizedClause} `.includes(` ${normalizedClipName} `);
+    });
+}
+
 /**
  * The plan-created object route. A creative request never names the objects a plan invents, so the
  * per-action name and beat evidence can never be satisfied — but the authority that evidence
@@ -3905,6 +3920,7 @@ function resolvePlanCreatedObjectAdmission({
     declaredBindingsByCallIndex,
     groundingRules,
     index,
+    prompt,
 }: {
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
@@ -3912,6 +3928,7 @@ function resolvePlanCreatedObjectAdmission({
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     groundingRules: GroundingRules;
     index: number;
+    prompt: string;
 }): PlanCreatedObjectAdmission {
     if (!PLAN_CREATED_OBJECT_COMMANDS.has(call.name)) {
         return { status: 'ordinary' };
@@ -3930,6 +3947,13 @@ function resolvePlanCreatedObjectAdmission({
             declaredBatchLocalCreationBindings
         );
         if (reference.status === 'resolved') {
+            if (
+                call.name === 'addNotes' &&
+                reference.binding.actionType === 'addClip' &&
+                hasEmptyClipRestriction(prompt, reference.binding.name)
+            ) {
+                return { status: 'rejected', reason: 'Requested empty clip cannot receive proposed notes' };
+            }
             targetClipSpanBeats ??= reference.binding.createdClipSpanBeats;
             batchLocalTargetCount += 1;
             continue;
@@ -4079,6 +4103,7 @@ function groundToolCall({
               declaredBindingsByCallIndex,
               groundingRules,
               index,
+              prompt,
           })
         : { status: 'ordinary' };
     if (planCreatedAdmission.status === 'rejected') {
@@ -4548,6 +4573,37 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
+function hasExplicitCreatedTargetIntent(input: {
+    bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    call: ToolCallResult;
+    catalog: GroundingCatalog;
+    prompt: string;
+}): boolean {
+    const rules = getExecutableAppActionGroundingRules(input.call.name);
+    if (!rules) {
+        return false;
+    }
+    const targetNames = rules.targetRules.flatMap((rule) => {
+        const value = input.call.arguments[rule.argument];
+        if (typeof value !== 'string' || !value.startsWith('$')) {
+            return [];
+        }
+        const binding = input.bindings.get(value.slice(1));
+        return binding ? [normalizePromptText(binding.name)] : [];
+    });
+    if (targetNames.length === 0) {
+        return false;
+    }
+    const quoteScan = scanPromptQuotedText(input.prompt);
+    return getPromptClauses(input.prompt, quoteScan.maskedText).some((clause) => {
+        if (resolveClauseActionIntent(clause.masked, input.catalog)?.actionType !== input.call.name) {
+            return false;
+        }
+        const clauseText = ` ${normalizePromptText(clause.text)} `;
+        return targetNames.every((name) => clauseText.includes(` ${name} `));
+    });
+}
+
 type PromptActionRequest = {
     actionType: string;
     cancelled: boolean;
@@ -4734,12 +4790,12 @@ export function bridgeGroundedLlmToolCalls({
             ],
         };
     }
-    if (transformCalls.length > 0) {
+    if (transformCalls.length > 0 || compilerEvidence !== undefined) {
         const clipProtection = getExplicitClipProtection(prompt, context);
         const protectedIds = new Set(
             getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
         );
-        const targetIds = getCompiledTransformTargetIds(transformCalls, context);
+        const targetIds = getCompiledTransformTargetIds(calls, context);
         if (!clipProtection.complete || targetIds.some((id) => protectedIds.has(id))) {
             return {
                 actions: [],
@@ -5432,8 +5488,7 @@ export function bridgeGroundedLlmToolCalls({
             })),
         };
     }
-    const admitsPlanCreatedObjects =
-        (compilerEvidence !== undefined || transformProof !== undefined) && hasHighLevelCreationEvidence(prompt);
+    const hasCreationEvidence = hasHighLevelCreationEvidence(prompt);
     // Decided once for the whole batch, because a creation budget is spent across calls rather than
     // inside one, and a later call may lean on a device an earlier admitted call created.
     const creativeAdmissionsByCallIndex =
@@ -5480,7 +5535,16 @@ export function bridgeGroundedLlmToolCalls({
         } else {
             grounded = groundToolCall({
                 actionOrdinal,
-                admitsPlanCreatedObjects,
+                admitsPlanCreatedObjects:
+                    hasCreationEvidence &&
+                    (index < transformCalls.length ||
+                        compilerEvidence !== undefined ||
+                        hasExplicitCreatedTargetIntent({
+                            bindings: visibleBindings,
+                            call,
+                            catalog,
+                            prompt,
+                        })),
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,

@@ -319,6 +319,291 @@ describe('transform.compile planner tool', () => {
         ]);
     });
 
+    it('refuses a compiled batch when a later clause edits a clip excluded by the original request', async () => {
+        const context = {
+            ...CONTEXT,
+            tracks: [
+                {
+                    ...CONTEXT.tracks[0]!,
+                    clips: [
+                        ...CONTEXT.tracks[0]!.clips,
+                        {
+                            id: 'clip-bridge',
+                            name: 'Bridge',
+                            type: 'midi' as const,
+                            startBeat: 16,
+                            endBeat: 24,
+                            noteCount: 4,
+                        },
+                    ],
+                },
+            ],
+        };
+        const document = {
+            ...DOCUMENT,
+            selectors: {
+                verse: { target: 'clip', where: { nameIncludes: 'Verse' }, limit: 1 },
+                chorus: { target: 'clip', where: { nameIncludes: 'Chorus' }, limit: 1 },
+                bridge: { target: 'clip', where: { nameIncludes: 'Bridge' }, limit: 1 },
+            },
+            steps: (['verse', 'chorus', 'bridge'] as const).map((selector) => ({
+                id: `${selector}-each`,
+                kind: 'each',
+                selector,
+                as: 'clip',
+                body: [
+                    {
+                        id: `${selector}-emit`,
+                        kind: 'emit',
+                        operation: 'setAllVelocities',
+                        arguments: {
+                            clipId: { itemId: 'clip' },
+                            velocity: { literal: selector === 'bridge' ? 100 : 90 },
+                        },
+                    },
+                ],
+            })),
+        };
+        planCalls(['compile-1'], document);
+        const result = await parsePromptToActions(
+            'set note velocities in Verse and Chorus MIDI clips to 90, excluding Chorus; set note velocities in Bridge MIDI clip to 100',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected or unresolved target');
+    });
+
+    it.each([
+        [
+            'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
+            false,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            true,
+        ],
+    ])('scopes an ordinary note proposal beside selected transform emissions for %s', async (prompt, allowed) => {
+        const document = {
+            ...DOCUMENT,
+            selectors: {},
+            steps: [
+                {
+                    id: 'lead',
+                    kind: 'emit',
+                    operation: 'addTrack',
+                    binding: 'lead',
+                    arguments: { name: { literal: 'Lead' }, kind: { literal: 'midi' } },
+                },
+                {
+                    id: 'melody',
+                    kind: 'emit',
+                    operation: 'addClip',
+                    binding: 'melody',
+                    dependsOn: ['lead'],
+                    arguments: {
+                        trackId: { bindingRef: 'lead' },
+                        name: { literal: 'Melody' },
+                        startBeat: { literal: 0 },
+                        endBeat: { literal: 4 },
+                    },
+                },
+            ],
+        };
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+                    {
+                        id: 'catalog-1',
+                        name: 'agent.catalog.discover',
+                        arguments: {
+                            category: 'command',
+                            names: ['addNotes'],
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            compiledCallIds: ['compile-1'],
+                            commands: [
+                                {
+                                    name: 'addNotes',
+                                    arguments: {
+                                        clipId: '$melody',
+                                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            });
+        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+        expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
+        if (allowed) {
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        } else {
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('not grounded');
+        }
+    });
+
+    it('keeps original exclusions on ordinary calls mixed with selected transform emissions', async () => {
+        const document = {
+            ...DOCUMENT,
+            selectors: { verse: { target: 'clip', where: { nameIncludes: 'Verse' }, limit: 1 } },
+            steps: [
+                {
+                    id: 'verse',
+                    kind: 'each',
+                    selector: 'verse',
+                    as: 'clip',
+                    body: [
+                        {
+                            id: 'velocity',
+                            kind: 'emit',
+                            operation: 'setAllVelocities',
+                            arguments: {
+                                clipId: { itemId: 'clip' },
+                                velocity: { literal: 90 },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+                    {
+                        id: 'catalog-1',
+                        name: 'agent.catalog.discover',
+                        arguments: {
+                            category: 'command',
+                            names: ['setAllVelocities'],
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'proposal-1',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            compiledCallIds: ['compile-1'],
+                            commands: [
+                                { name: 'setAllVelocities', arguments: { clipId: 'clip-chorus', velocity: 100 } },
+                            ],
+                        },
+                    },
+                ],
+            });
+        const result = await parsePromptToActions(
+            'set note velocities in Verse MIDI clip to 90, excluding Chorus; set note velocities in Chorus MIDI clip to 100',
+            CONTEXT,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.applicationToolReceipts?.[0]).toMatchObject({ status: 'success' });
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected or unresolved target');
+    });
+
+    it.each([
+        [
+            'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
+            false,
+        ],
+        [
+            'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
+            true,
+        ],
+    ])('keeps a structured creation consumer within the request authority for %s', async (prompt, allowed) => {
+        const commands = [
+            { id: 'lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+            {
+                id: 'melody',
+                name: 'addClip',
+                arguments: {
+                    trackId: '$lead',
+                    name: 'Melody',
+                    startBeat: 0,
+                    endBeat: 4,
+                    binding: 'melody',
+                },
+                dependsOn: ['lead'],
+            },
+            {
+                id: 'note',
+                name: 'addNotes',
+                arguments: {
+                    clipId: '$melody',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                },
+                dependsOn: ['melody'],
+            },
+        ];
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-1',
+                        name: 'agent.catalog.discover',
+                        arguments: {
+                            category: 'command',
+                            names: ['addTrack', 'addClip', 'addNotes'],
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Create a MIDI track and clip.',
+                                constraints: [],
+                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                                capabilityIds: ['addTrack', 'addClip', 'addNotes'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Check command targets.'],
+                                stoppingConditions: ['Stop if revision changes.'],
+                            },
+                            list: { schemaVersion: 1, items: commands },
+                        },
+                    },
+                ],
+            });
+        const result = await parsePromptToActions(prompt, CONTEXT, undefined, 'revision-transform-1');
+        if (allowed) {
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        } else {
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('empty clip');
+        }
+    });
+
     it('refuses a compiled set that omits or adds a named clip', async () => {
         const oneClip = {
             ...DOCUMENT,
