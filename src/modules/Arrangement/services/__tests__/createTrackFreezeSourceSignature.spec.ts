@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
-import { type Clip } from '../../models/Track';
+import { type Clip, type DeviceStateChunk } from '../../models/Track';
 import { createTrackFreezeSourceSignature } from '../createTrackFreezeSourceSignature';
 
 function signatureOf(clip: Clip): string {
@@ -152,20 +152,117 @@ describe('createTrackFreezeSourceSignature', () => {
     // The offline render hydrates a built-in device from its `deviceState`
     // chunk (Grand Boule's temperament and preset voicing ride it through
     // `prepareOfflineGrandBoule`), so a chunk edit must move the signature
-    // even though `parameterValues` is untouched.
+    // even though `parameterValues` is untouched. The chunks carry the full
+    // morph leaves: a Grand Boule chunk without them decodes to wholesale
+    // defaults, and two wholesale-default chunks must not sign differently.
     it('changes when a device deviceState chunk carries a different temperament', () => {
         const device = { id: 'd1', type: 'grand-boule', parameterValues: {}, bypassed: false };
+        const morph = {
+            modelA: 'balanced-grand',
+            modelB: 'clear-grand',
+            morphPosition: 0,
+            layerBalance: 0,
+            enabled: false,
+        };
 
         const werckmeister = createTrackFreezeSourceSignature({
             clips: [],
-            devices: [{ ...device, deviceState: { version: 1, data: { temperament: 1 } } }],
+            devices: [{ ...device, deviceState: { version: 1, data: { ...morph, temperament: 1 } } }],
         });
         const kirnberger = createTrackFreezeSourceSignature({
             clips: [],
-            devices: [{ ...device, deviceState: { version: 1, data: { temperament: 2 } } }],
+            devices: [{ ...device, deviceState: { version: 1, data: { ...morph, temperament: 2 } } }],
         });
 
         expect(werckmeister).not.toBe(kirnberger);
+    });
+
+    // A chunk saved before #4727 carried the morph leaves only, and the
+    // decoder folds the absent tuning/voicing leaves to the defaults the
+    // project sounded. Any later device-state commit (an edit, or its undo)
+    // writes those defaults back as present leaves — the raw chunks differ,
+    // but the render hydrates both identically, so the signature must not
+    // flip a frozen track stale (round-2 finding: once per edit-undo cycle).
+    it('signs a legacy absent-leaf chunk and its defaulted-present rewrite identically', () => {
+        const device = { id: 'd1', type: 'grand-boule', parameterValues: {}, bypassed: false };
+        const legacy: DeviceStateChunk = {
+            version: 1,
+            data: {
+                modelA: 'balanced-grand',
+                modelB: 'clear-grand',
+                morphPosition: 0,
+                layerBalance: 0,
+                enabled: false,
+            },
+        };
+        const defaultedPresent: DeviceStateChunk = {
+            version: 1,
+            data: {
+                ...legacy.data,
+                temperament: 0,
+                hammerHardness: 0,
+                velocityCurve: 1,
+                stereoWidth: 0.6,
+                toneTilt: 0,
+            },
+        };
+
+        const legacySignature = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: legacy }],
+        });
+        const rewrittenSignature = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: defaultedPresent }],
+        });
+
+        expect(legacySignature).toBe(rewrittenSignature);
+    });
+
+    // A chunk that fails the Grand Boule schema hydrates as wholesale
+    // defaults (`readGrandBouleDeviceState`'s fallback), so every rejected
+    // chunk signs as the default projection — an undo of an edit on such a
+    // chunk flips project truth to the defaulted form without changing what
+    // the render plays.
+    it('signs chunks that fail the Grand Boule decode as the default projection', () => {
+        const device = { id: 'd1', type: 'grand-boule', parameterValues: {}, bypassed: false };
+
+        const corruptSignature = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { temperament: 9 } } }],
+        });
+        const foreignVersionSignature = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 2, data: { temperament: 9 } } }],
+        });
+
+        expect(corruptSignature).toBe(foreignVersionSignature);
+    });
+
+    // The canonicalization keys on the device type, the discriminator the
+    // offline hydration dispatches on: another native device's chunk carries
+    // its own schema and keeps hashing raw.
+    it('hashes a foreign device chunk raw instead of decoding it as Grand Boule state', () => {
+        const device = { id: 'd1', type: 'fermenter', parameterValues: {}, bypassed: false };
+
+        const absent = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { modelA: 'balanced-grand' } } }],
+        });
+        const folded = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [
+                {
+                    ...device,
+                    deviceState: {
+                        version: 1,
+                        data: { modelA: 'balanced-grand', temperament: 0, velocityCurve: 1 },
+                    },
+                },
+            ],
+        });
+
+        expect(absent).not.toBe(folded);
     });
 
     it('is independent of deviceState key insertion order', () => {

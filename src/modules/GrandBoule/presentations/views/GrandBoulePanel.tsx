@@ -689,7 +689,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     <SectionCard title="Touch" detail="Velocity curve shaping.">
                         <Knob
                             value={parameters.velocityCurve}
-                            onChange={(value) => setGrandBouleVelocityCurve({ engine, store, exponent: value })}
+                            onChange={(value, isTransient) =>
+                                setGrandBouleVelocityCurve({ deviceId, engine, store, exponent: value, isTransient })
+                            }
                             label="Curve"
                             min={0.5}
                             max={2}
