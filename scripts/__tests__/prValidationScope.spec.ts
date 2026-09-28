@@ -70,6 +70,7 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
 const folders: string[] = [];
+let callerTrace2Event: string | undefined;
 
 function temporaryRoot(): string {
     const folder = mkdtempSync(join(tmpdir(), 'pr-validation-scope-'));
@@ -87,17 +88,20 @@ function fullInventory(inventory: readonly string[]): string[] {
         .sort();
 }
 
-afterEach(() => {
+function cleanupTemporaryRoots(remove: typeof rmSync = rmSync): void {
     try {
         for (const folder of folders.splice(0)) {
-            rmSync(folder, { recursive: true, force: true });
+            remove(folder, { recursive: true, force: true });
         }
     } finally {
         vi.unstubAllEnvs();
     }
-});
+}
+
+afterEach(() => cleanupTemporaryRoots());
 
 beforeEach(() => {
+    callerTrace2Event = process.env.GIT_TRACE2_EVENT;
     vi.stubEnv('GIT_TRACE2_EVENT', '0');
 });
 
@@ -113,6 +117,22 @@ describe('required affected verification', () => {
 
         expect(result.status, result.stderr).toBe(0);
         expect(result.stdout).toBe('0');
+    });
+
+    it('restores the caller Trace2 setting and propagates cleanup errors', () => {
+        const root = temporaryRoot();
+        const cleanupError = new Error('fixture cleanup failed');
+
+        try {
+            expect(() =>
+                cleanupTemporaryRoots(() => {
+                    throw cleanupError;
+                })
+            ).toThrow(cleanupError);
+            expect(process.env.GIT_TRACE2_EVENT).toBe(callerTrace2Event);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('runs browser verification inside the required PR Gate, never on approval', () => {
