@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparison.spec.ts
+  s_ed5aa36a3ba357::t_e68933fdd3529c 6-10,50-78,83-84,96,98,103-104,112-114,122-137,176-178,180-189,191,193,215,420-423
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_ed5aa36a3ba357::t_4a6c4d1d126b9d 39,58-60,125-129,142,175,191-193,203
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_ed5aa36a3ba357::t_383e0dac656623 33-35,80,109-137
+src/modules/Project/useCases/importSclFile.ts
+  s_ed5aa36a3ba357::t_cfeaa506f7b2cd 41-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6a490e4d032da6da5abc0235516a19b26317c94a",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
