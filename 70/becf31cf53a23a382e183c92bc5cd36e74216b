@@ -1,0 +1,84 @@
+src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts
+  h_beb54bf43b47b7 3-4,7-10,14-25,29-32,37-49,53-64,69-70,76-97,107-115,118-119,125-126,132-134,151-182
+src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignatureClipEdits.spec.ts
+  h_beb54bf43b47b7 1-27
+src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts
+  h_beb54bf43b47b7 1-30,32,41-88,92
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_beb54bf43b47b7 426-431
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts
+  h_beb54bf43b47b7 4,269-271,273,280-297
+src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts
+  h_beb54bf43b47b7 99-100,160-162,165-166,193,195-197,286-287,290-292,294-297,303-304,308-309,312,315,320,325-336,341-344,426-466
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_beb54bf43b47b7 367
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineMix.ts
+  h_beb54bf43b47b7 93
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  h_beb54bf43b47b7 89-96,160,258-263
+src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts
+  h_beb54bf43b47b7 11-15,18,38-42
+src/modules/GrandBoule/handlers/handleSetGrandBouleDeviceState.ts
+  h_beb54bf43b47b7 8,17
+src/modules/GrandBoule/models/GrandBouleDeviceState.ts
+  h_beb54bf43b47b7 2,6-32,48-52,56-65,70-80,84-98,113-139
+src/modules/GrandBoule/models/__tests__/GrandBouleDeviceState.spec.ts
+  h_beb54bf43b47b7 6,10,12-21,24-25,28-38,40-44,51-63,66-70
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  h_beb54bf43b47b7 341-343
+src/modules/GrandBoule/stores/grandBouleStore.ts
+  h_beb54bf43b47b7 12,28-30,32
+src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts
+  h_beb54bf43b47b7 24-32,47-51,62-66
+src/modules/GrandBoule/useCases/__tests__/grandBouleTemperamentPresetDropped.spec.ts
+  h_beb54bf43b47b7 1-144
+src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts
+  h_beb54bf43b47b7 12-17,57,109-144
+src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts
+  h_beb54bf43b47b7 3-5,15-20,38-41,101,114-143,162,170-174,192
+src/modules/GrandBoule/useCases/__tests__/reconcileGrandBouleDeviceStateFromProject.spec.ts
+  h_beb54bf43b47b7 10,22-24,33,44-45,58,62,69,73,80
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts
+  h_beb54bf43b47b7 1,3-13,16-26,29-50,53-58
+src/modules/GrandBoule/useCases/captureOfflineGrandBoule.ts
+  h_beb54bf43b47b7 1-3,14-31,35,37
+src/modules/GrandBoule/useCases/commitGrandBouleDeviceState.ts
+  h_beb54bf43b47b7 5-9,13,20-21
+src/modules/GrandBoule/useCases/dispatchGrandBouleMorphEdit.ts
+  h_beb54bf43b47b7 28-32
+src/modules/GrandBoule/useCases/hydrateGrandBouleMorphStateFromProject.ts
+  h_beb54bf43b47b7 4,15,18-29,31
+src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts
+  h_beb54bf43b47b7 7-8,13-19,47-54
+src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts
+  h_beb54bf43b47b7 6-8,12-14,19-23,36,40-46
+src/modules/GrandBoule/useCases/reconcileGrandBouleDeviceStateFromProject.ts
+  h_beb54bf43b47b7 7,22-25,35-37
+src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts
+  h_beb54bf43b47b7 112-121
+src/modules/GrandBoule/useCases/setGrandBouleTemperament.ts
+  h_beb54bf43b47b7 3-4,10-12,15,37-43
+src/modules/GrandBoule/useCases/syncGrandBouleVoicingToEngine.ts
+  h_beb54bf43b47b7 1-32
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts
+  h_beb54bf43b47b7 1-188
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  h_beb54bf43b47b7 125
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  h_beb54bf43b47b7 1-204
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_beb54bf43b47b7 407-418,421,423
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 496-506,511-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "70becf31cf53a23a382e183c92bc5cd36e74216b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
