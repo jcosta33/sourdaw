@@ -8,7 +8,7 @@
  */
 
 import { fail } from './prContract.ts';
-import { isSavedProjectStateOrUndoPath } from './savedProjectStatePaths.ts';
+import { isUndoPath } from './savedProjectStatePaths.ts';
 
 import type { ReviewChangedPath } from './reviewDiffSummary.ts';
 
@@ -193,9 +193,7 @@ function nativeSecurityFindings(paths: readonly ReviewChangedPath[]): RiskFindin
 }
 
 function undoFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    const triggers = paths
-        .filter((entry) => isSavedProjectStateOrUndoPath(entry.path))
-        .map((entry) => `undo:${entry.path}`);
+    const triggers = paths.filter((entry) => isUndoPath(entry.path)).map((entry) => `undo:${entry.path}`);
     return triggers.length === 0 ? [] : [{ riskClass: 'undo', triggers }];
 }
 

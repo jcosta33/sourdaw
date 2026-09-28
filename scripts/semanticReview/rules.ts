@@ -17,7 +17,7 @@
  * of the set so a wording or evidence change invalidates the responses it shaped.
  */
 
-import { isSavedProjectStateOrUndoPath, SAVED_PROJECT_STATE_APPLICABILITY_PATHS } from '../savedProjectStatePaths.ts';
+import { isPersistedProjectStatePath, SAVED_PROJECT_STATE_DIGEST_ENTRIES } from '../savedProjectStatePaths.ts';
 import { isNodeTestCollected, isPlaywrightCollected, isVitestCollected } from '../vitestCollectionPatterns.ts';
 
 import { semanticDigest } from './contracts.ts';
@@ -72,7 +72,11 @@ export type SemanticRule = {
     readonly version: string;
     /** The plain statement of what the question is for, so a reader can audit the wording. */
     readonly purpose: string;
-    /** Path prefixes a change must touch for the rule to be applicable; part of the rules digest. */
+    /**
+     * The digest-facing encoding of the applicability surface; part of the rules digest. For the
+     * project-state rules this is the lossless matcher encodings from `savedProjectStatePaths.ts`,
+     * not a rendered glob, so a matcher edit that changes what the rule matches changes the digest.
+     */
     readonly applicabilityPaths: readonly string[];
     readonly appliesTo: (path: string) => boolean;
     readonly requiredEvidence: readonly string[];
@@ -342,8 +346,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'persisted_shape_changed_without_migration',
         version: '1',
         purpose: 'Whether a persisted shape changed without a migration.',
-        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
-        appliesTo: isSavedProjectStateOrUndoPath,
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source', 'migration or version contract'],
         instructions:
             'Does the change alter the shape of persisted project data — a field added, removed, renamed, or reinterpreted — without a migration, version bump, or reader that accepts both shapes?',
@@ -362,8 +366,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'mutation_outside_undo_path',
         version: '1',
         purpose: 'Whether project state can now change without an undo record.',
-        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
-        appliesTo: isSavedProjectStateOrUndoPath,
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source', 'undo contract'],
         instructions:
             'Does the change write project state through a path that does not record an undo entry — a direct store write, a mutation in a view, or an action that bypasses the recorded command path?',
@@ -382,8 +386,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'silent_data_loss_possible',
         version: '1',
         purpose: 'Whether user data can be lost without surfacing anything.',
-        applicabilityPaths: SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
-        appliesTo: isSavedProjectStateOrUndoPath,
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source'],
         instructions:
             'Can the change drop, overwrite, or fail to persist user data while reporting success — a swallowed error, a truncation, a default that replaces a stored value, or a write that discards its failure?',

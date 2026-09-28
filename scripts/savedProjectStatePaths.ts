@@ -1,91 +1,100 @@
 /**
- * One classification of "this path owns saved-project state or undo", shared by the review risk
- * policy (`reviewRiskPolicy.ts`, which derives the `undo` risk class) and the semantic review's three
- * project-state rules (`semanticReview/rules.ts`). Keeping the predicate in one module is what stops
- * the two from disagreeing: the risk policy lowercased and matched the real owners, while the semantic
- * rules matched a case-sensitive prefix list that named two directories that do not exist
- * (`src/modules/Crdt/`, `src/modules/History/`) and missed the module that does (`CrdtDocument/`).
+ * One surface registry for saved-project state and undo, shared by the review risk policy
+ * (`reviewRiskPolicy.ts`) and the semantic review's three project-state rules
+ * (`semanticReview/rules.ts`), so the two can no longer disagree about which paths carry that
+ * responsibility. The registry holds each surface once, tagged with the view(s) it belongs to:
  *
- * Case decision: classification is case-insensitive. The predicate lowercases the path before
- * matching, so a correctly cased `src/modules/CrdtDocument/...` path selects the project-state rules
- * and a mis-cased variant selects them too. This keeps the risk policy's existing, tested behaviour;
- * the semantic rules adopt it instead of their former case-sensitive `startsWith`.
+ * - `undo` — the risk policy's `undo` risk class. Its scope is unchanged from the policy's original
+ *   predicate, except that the `undo` marker now matches a path word rather than a bare substring
+ *   (a false-positive correction: `crumbsAllSoundOff.ts` no longer matches).
+ * - `persisted-state` — the three project-state rules. It is the `undo` view plus the Project
+ *   module's persisted-shape, migration, repair, and persisted-slot owners and the composition-root
+ *   files that wire them.
  *
- * `SAVED_PROJECT_STATE_MATCHERS` is the single source of truth: the predicate below folds over it,
- * and the digest-facing `SAVED_PROJECT_STATE_APPLICABILITY_PATHS` renders from it, so editing one
- * matcher changes both what the rules match and the rules digest together, never one without the
- * other.
+ * Both predicates fold over the same registry, and the rules digest is a lossless encoding of each
+ * persisted-state matcher (kind plus every field) rather than a rendered glob, so editing a matcher
+ * changes what the rules match and the digest together, never one without the other.
+ *
+ * Case decision: matching is case-insensitive. The path is lowercased before substring, prefix,
+ * suffix, and exact matches, and the `wordPrefix` match searches the lowercased path while reading
+ * word boundaries off the original casing (so a camelCase boundary still counts). A correctly cased
+ * and a mis-cased path classify alike.
  */
 
-/** One shape the predicate implements, matched against the lowercased path. */
+/** One shape a matcher implements. */
 export type SavedProjectStateMatcher =
+    | { readonly kind: 'wordPrefix'; readonly value: string }
     | { readonly kind: 'substring'; readonly value: string }
     | { readonly kind: 'prefix'; readonly value: string }
     | { readonly kind: 'suffix'; readonly value: string }
-    | { readonly kind: 'prefixAndSubstring'; readonly prefix: string; readonly substring: string };
+    | { readonly kind: 'prefixAndSubstring'; readonly prefix: string; readonly substring: string }
+    | { readonly kind: 'exact'; readonly value: string };
+
+export type SavedProjectStateScope = 'undo' | 'persisted-state';
+
+export type SavedProjectStateSurface = {
+    readonly matcher: SavedProjectStateMatcher;
+    readonly scopes: readonly SavedProjectStateScope[];
+};
 
 function assertUnreachableMatcher(matcher: never): never {
     throw new Error(`unhandled saved-project-state matcher kind: ${JSON.stringify(matcher)}`);
 }
 
-/**
- * The surfaces that own saved-project state or undo, from their sources.
- *
- * - `undo` anywhere (case-insensitive): a path whose name declares undo ownership — the Command
- *   module's undo engine, CrdtDocument's action history, or any other undo action.
- * - `crdtdocument` anywhere (case-insensitive): the full `src/modules/CrdtDocument/` module, whose
- *   `AGENTS.md` documents Automerge persistence, `.sdaw` bundle encoding in
- *   `repositories/crdtPersistence/`, durable branch-state authority, and semantic action
- *   history/undo, with the invariant that every persistent write goes through `mutateCrdtDoc`.
- * - the project-persistence use cases and repositories the risk policy lists (#3377 AC-009
- *   calibration, review repair): the persistence use cases and the Project repositories tree — the
- *   layer that actually writes saved projects — anchored as prefixes so a like-named path outside
- *   the Project module earns nothing.
- * - a `.sdaw` suffix: the saved-project bundle shape.
- * - a `src/app/` path naming `bootstrap`: the composition-root wiring the risk policy treats as
- *   undo-relevant.
- *
- * Deliberately left out, with no persisted-project or undo ownership documented in their own
- * `AGENTS.md`: `MIDI/` and `Arrangement/` (presentation and editing, not persistence), and the rest
- * of `Project/` outside its persistence layer. `Command/` is not added as a whole-module prefix: its
- * `AGENTS.md` documents undo ownership, and its undo files are covered by the `undo` substring
- * marker, while its macro/idempotency surfaces own neither.
- */
-export const SAVED_PROJECT_STATE_MATCHERS: readonly SavedProjectStateMatcher[] = [
-    { kind: 'substring', value: 'undo' },
-    { kind: 'substring', value: 'crdtdocument' },
-    { kind: 'prefix', value: 'src/modules/project/usecases/projectpersistence/' },
-    { kind: 'prefix', value: 'src/modules/project/repositories/' },
-    { kind: 'suffix', value: '.sdaw' },
-    { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
-];
+function isAsciiLower(char: string): boolean {
+    return char >= 'a' && char <= 'z';
+}
 
-/** The digest-facing `applicabilityPaths` string one matcher renders to. */
-export function renderSavedProjectStateApplicabilityPath(matcher: SavedProjectStateMatcher): string {
-    switch (matcher.kind) {
-        case 'substring':
-            return `**/*${matcher.value}*`;
-        case 'prefix':
-            return matcher.value;
-        case 'suffix':
-            return `**/*${matcher.value}`;
-        case 'prefixAndSubstring':
-            return `${matcher.prefix}*${matcher.substring}*`;
-        default:
-            return assertUnreachableMatcher(matcher);
-    }
+function isAsciiUpper(char: string): boolean {
+    return char >= 'A' && char <= 'Z';
+}
+
+function isAsciiDigit(char: string): boolean {
+    return char >= '0' && char <= '9';
+}
+
+function isSeparator(char: string): boolean {
+    return char === '/' || char === '-' || char === '_' || char === '.' || char === ' ';
 }
 
 /**
- * The surfaces the predicate admits, rendered in the shape the three project-state rules already use
- * for `applicabilityPaths`. Derived from `SAVED_PROJECT_STATE_MATCHERS`, never written beside it.
+ * A word starts at the beginning of the path, after a segment separator (`/ - _ .` or a space), or at
+ * a camelCase boundary (lowercase to uppercase, or a letter/digit transition). `wordPrefix` matches a
+ * value only at such a start, so `undo` matches `undoLastAction` and `getUndoRedoHandlers` but not the
+ * `soundOff` of `crumbsAllSoundOff` (whose `undo` begins mid-word).
  */
-export const SAVED_PROJECT_STATE_APPLICABILITY_PATHS: readonly string[] = SAVED_PROJECT_STATE_MATCHERS.map(
-    renderSavedProjectStateApplicabilityPath
-);
+function isWordStartChar(path: string, index: number): boolean {
+    if (index === 0) {
+        return true;
+    }
+    const previous = path[index - 1]!;
+    const current = path[index]!;
+    if (isSeparator(previous)) {
+        return true;
+    }
+    if (isAsciiLower(previous) && isAsciiUpper(current)) {
+        return true;
+    }
+    return isAsciiDigit(previous) !== isAsciiDigit(current);
+}
 
-function matchesMatcher(lower: string, matcher: SavedProjectStateMatcher): boolean {
+function matchesWordPrefix(path: string, value: string): boolean {
+    const lower = path.toLowerCase();
+    let index = lower.indexOf(value);
+    while (index !== -1) {
+        if (isWordStartChar(path, index)) {
+            return true;
+        }
+        index = lower.indexOf(value, index + 1);
+    }
+    return false;
+}
+
+function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolean {
+    const lower = path.toLowerCase();
     switch (matcher.kind) {
+        case 'wordPrefix':
+            return matchesWordPrefix(path, matcher.value);
         case 'substring':
             return lower.includes(matcher.value);
         case 'prefix':
@@ -94,13 +103,115 @@ function matchesMatcher(lower: string, matcher: SavedProjectStateMatcher): boole
             return lower.endsWith(matcher.value);
         case 'prefixAndSubstring':
             return lower.startsWith(matcher.prefix) && lower.includes(matcher.substring);
+        case 'exact':
+            return lower === matcher.value;
         default:
             return assertUnreachableMatcher(matcher);
     }
 }
 
-/** Whether a path owns saved-project state or undo. */
-export function isSavedProjectStateOrUndoPath(path: string): boolean {
-    const lower = path.toLowerCase();
-    return SAVED_PROJECT_STATE_MATCHERS.some((matcher) => matchesMatcher(lower, matcher));
+/**
+ * The single surface registry.
+ *
+ * Persisted-state owners, from their sources:
+ * - `undo` (word): a path whose name declares undo ownership — the Command module's undo engine and
+ *   undo tree, CrdtDocument's action history, and any other undo action.
+ * - `crdtdocument` (substring): the full `src/modules/CrdtDocument/` module, whose `AGENTS.md`
+ *   documents Automerge persistence, `.sdaw` bundle encoding, durable branch-state authority, and
+ *   semantic action history/undo, with every persistent write routed through `mutateCrdtDoc`.
+ * - the project-persistence use cases and repositories the risk policy lists (#3377 AC-009
+ *   calibration): the layer that actually writes saved projects.
+ * - `.sdaw`: the saved-project bundle shape.
+ * - the `src/app/` bootstrap surface and the composition files that wire persisted state
+ *   (`main.tsx`, `registerDependencies.ts`, `resolveAppComposition.ts`).
+ * - `migration`, `repairprojectdata`, `projectdata`: the canonical `.sourdaw` schema and version
+ *   contract (`ProjectData.ts`), its migrations (`VcaTrackMigration.ts` and other modules' legacy
+ *   migrations), and its repair (`repairProjectData`, `handleRepairProjectData`).
+ * - `projectstore`, `arrangementstore`, `productionbrief`, the `recentProjects/` use cases: the
+ *   persisted CRDT slots (`projectStore`'s durable `projectMeta` keys, `arrangementStore`'s
+ *   `arrangements` slot, the `productionBrief` durable key) and the recent-projects persistence.
+ *
+ * Deliberately not matched, with no persisted-project or undo ownership documented in their own
+ * `AGENTS.md`: `MIDI/` and `Arrangement/` beyond their migration files, `Command/` beyond its undo
+ * files, the Project module's presentation views, semantic queries, templates and demo projects, and
+ * the rest of `src/app/` (router, query client, error handlers, native device state) that does not
+ * wire persisted state.
+ */
+export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] = [
+    { matcher: { kind: 'wordPrefix', value: 'undo' }, scopes: ['undo', 'persisted-state'] },
+    { matcher: { kind: 'substring', value: 'crdtdocument' }, scopes: ['undo', 'persisted-state'] },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/project/usecases/projectpersistence/' },
+        scopes: ['undo', 'persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/project/repositories/' },
+        scopes: ['undo', 'persisted-state'],
+    },
+    { matcher: { kind: 'suffix', value: '.sdaw' }, scopes: ['undo', 'persisted-state'] },
+    {
+        matcher: { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
+        scopes: ['undo', 'persisted-state'],
+    },
+    { matcher: { kind: 'wordPrefix', value: 'migration' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'substring', value: 'repairprojectdata' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'wordPrefix', value: 'projectdata' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'wordPrefix', value: 'productionbrief' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'wordPrefix', value: 'projectstore' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'wordPrefix', value: 'arrangementstore' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/project/usecases/recentprojects/' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/app/main.tsx' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/app/registerdependencies.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/app/resolveappcomposition.ts' }, scopes: ['persisted-state'] },
+];
+
+function matchersFor(scope: SavedProjectStateScope): readonly SavedProjectStateMatcher[] {
+    return SAVED_PROJECT_STATE_SURFACES.filter((surface) => surface.scopes.includes(scope)).map(
+        (surface) => surface.matcher
+    );
 }
+
+/** Whether a path owns undo — the risk policy's `undo` risk class. */
+export function isUndoPath(path: string): boolean {
+    return matchersFor('undo').some((matcher) => matchesMatcher(path, matcher));
+}
+
+/** Whether a path owns persisted project state — the three project-state rules' scope. */
+export function isPersistedProjectStatePath(path: string): boolean {
+    return matchersFor('persisted-state').some((matcher) => matchesMatcher(path, matcher));
+}
+
+/**
+ * A lossless digest encoding of one matcher: its kind and every field. Two matchers that would render
+ * the same glob — a `.sdaw` suffix versus a wildcard prefix — still encode differently, so a matcher
+ * edit that changes what the predicate matches necessarily changes the rules digest.
+ */
+export function renderSavedProjectStateMatcherDigest(matcher: SavedProjectStateMatcher): string {
+    switch (matcher.kind) {
+        case 'wordPrefix':
+            return `wordPrefix:${matcher.value}`;
+        case 'substring':
+            return `substring:${matcher.value}`;
+        case 'prefix':
+            return `prefix:${matcher.value}`;
+        case 'suffix':
+            return `suffix:${matcher.value}`;
+        case 'prefixAndSubstring':
+            return `prefixAndSubstring:${matcher.prefix}\u0000${matcher.substring}`;
+        case 'exact':
+            return `exact:${matcher.value}`;
+        default:
+            return assertUnreachableMatcher(matcher);
+    }
+}
+
+/**
+ * The digest input for the three project-state rules: the lossless encodings of the persisted-state
+ * matchers, in registry order. `computeRulesDigest` folds this list into the question identity.
+ */
+export const SAVED_PROJECT_STATE_DIGEST_ENTRIES: readonly string[] = matchersFor('persisted-state').map(
+    renderSavedProjectStateMatcherDigest
+);

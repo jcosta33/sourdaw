@@ -12,9 +12,9 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
-    renderSavedProjectStateApplicabilityPath,
-    SAVED_PROJECT_STATE_APPLICABILITY_PATHS,
-    SAVED_PROJECT_STATE_MATCHERS,
+    renderSavedProjectStateMatcherDigest,
+    SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+    SAVED_PROJECT_STATE_SURFACES,
 } from '../../savedProjectStatePaths.ts';
 import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
@@ -6098,32 +6098,32 @@ describe('saved-project-state applicability matrix', () => {
         return PROJECT_STATE_RULE_IDS.filter((id) => semanticRule(id).appliesTo(path));
     }
 
-    it('derives the digest-facing paths one-to-one from the matcher list', () => {
-        // Both the predicate and the rules digest render from SAVED_PROJECT_STATE_MATCHERS, so adding,
-        // removing, or changing a matcher changes the digest input. This pins that correspondence: a
-        // matcher without a rendered entry, or a rendered entry with no matcher, reddens.
-        const matchers = SAVED_PROJECT_STATE_MATCHERS;
-        const rendered = SAVED_PROJECT_STATE_APPLICABILITY_PATHS;
-        expect(rendered).toHaveLength(matchers.length);
-        expect(new Set(rendered).size).toBe(matchers.length);
-        for (const matcher of matchers) {
-            expect(rendered).toContain(renderSavedProjectStateApplicabilityPath(matcher));
+    it('digests a lossless encoding of every persisted-state matcher', () => {
+        // A matcher edit that changes what the predicate matches must change the digest. The digest
+        // entries are the matcher kinds plus every field, so two matchers that would render the same
+        // glob still encode differently.
+        expect(renderSavedProjectStateMatcherDigest({ kind: 'suffix', value: '.sdaw' })).not.toBe(
+            renderSavedProjectStateMatcherDigest({ kind: 'prefix', value: '**/*.sdaw' })
+        );
+        expect(renderSavedProjectStateMatcherDigest({ kind: 'wordPrefix', value: 'undo' })).not.toBe(
+            renderSavedProjectStateMatcherDigest({ kind: 'substring', value: 'undo' })
+        );
+        // The three rules' digest input is exactly the lossless encoding of the persisted-state
+        // matchers, in registry order; adding, removing, or editing a matcher changes this list.
+        const persistedMatchers = SAVED_PROJECT_STATE_SURFACES.filter((surface) =>
+            surface.scopes.includes('persisted-state')
+        ).map((surface) => surface.matcher);
+        expect(SAVED_PROJECT_STATE_DIGEST_ENTRIES).toEqual(persistedMatchers.map(renderSavedProjectStateMatcherDigest));
+        expect(SAVED_PROJECT_STATE_DIGEST_ENTRIES).toHaveLength(persistedMatchers.length);
+        for (const id of PROJECT_STATE_RULE_IDS) {
+            expect(semanticRule(id).applicabilityPaths).toEqual(SAVED_PROJECT_STATE_DIGEST_ENTRIES);
         }
-        // The rendered shape the rules already used for applicabilityPaths, so a render change that
-        // silently reshapes the digest input is also a redden.
-        expect(rendered).toEqual([
-            '**/*undo*',
-            '**/*crdtdocument*',
-            'src/modules/project/usecases/projectpersistence/',
-            'src/modules/project/repositories/',
-            '**/*.sdaw',
-            'src/app/*bootstrap*',
-        ]);
     });
 
     it('selects exactly the paths that own saved-project state or undo', () => {
         const matrix: ReadonlyArray<readonly [path: string, expected: boolean, why: string]> = [
-            // Owners, sourced from src/modules/CrdtDocument/AGENTS.md and the risk policy's own list.
+            // Owners, sourced from src/modules/CrdtDocument/AGENTS.md, src/modules/Project/AGENTS.md,
+            // and the risk policy's own list.
             [
                 'src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts',
                 true,
@@ -6142,27 +6142,64 @@ describe('saved-project-state applicability matrix', () => {
             ],
             ['src/modules/Project/repositories/project/writeProjectJson.ts', true, 'project load/save repository'],
             ['src/app/project.sdaw', true, '`.sdaw` saved-project shape'],
-            ['src/app/bootstrap.ts', true, 'app bootstrap wiring the risk policy treats as undo-relevant'],
+            ['src/app/bootstrap.ts', true, 'app bootstrap wiring'],
+            // Restored persisted-state owners (#4902 finding 1).
+            ['src/modules/Project/models/ProjectData.ts', true, 'canonical `.sourdaw` schema + version contract'],
+            ['src/modules/Project/models/VcaTrackMigration.ts', true, 'VCA-track migration'],
+            ['src/modules/Project/useCases/repairProjectData.ts', true, 'project-data repair'],
+            ['src/modules/Project/handlers/project/handleRepairProjectData.ts', true, 'project-data repair handler'],
+            ['src/modules/Project/stores/projectStore.ts', true, 'persisted `projectMeta` CRDT slot'],
+            ['src/modules/Project/stores/arrangementStore.ts', true, 'persisted `arrangements` CRDT slot'],
+            ['src/modules/Project/models/ProductionBrief.ts', true, 'persisted `productionBrief` durable key'],
+            ['src/modules/Project/useCases/recentProjects/addToRecentProjects.ts', true, 'recent-project persistence'],
+            ['src/app/registerDependencies.ts', true, 'composition root wiring'],
+            ['src/app/resolveAppComposition.ts', true, 'composition root wiring'],
+            ['src/app/main.tsx', true, 'composition root wiring'],
             // Excluded, recorded with the reason each surface is left out.
             [
                 'src/modules/Arrangement/presentations/views/TrackList.tsx',
                 false,
-                'presentation-only view; Arrangement edits route through Command undo, they do not own it',
+                'presentation-only view; owns no persisted state or undo record',
             ],
             [
                 'src/modules/MIDI/useCases/quantizeNotes.ts',
                 false,
-                'MIDI/ documents no persisted-project or undo ownership',
+                'MIDI/ documents no persisted-project or undo ownership (its migration file is matched, not the module)',
             ],
             [
                 'src/modules/Command/stores/macroStore.ts',
                 false,
-                'Command/ macro surface owns neither persisted state nor undo; its undo files match the `undo` marker, not a bare prefix',
+                'Command/ macro surface owns neither persisted state nor undo; its undo files match the `undo` word, not a bare prefix',
+            ],
+            [
+                'src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts',
+                false,
+                '`soundOff` contains `undo` only mid-word; it owns neither persisted state nor an undo record',
+            ],
+            [
+                'scripts/repairReviewFinding.ts',
+                false,
+                'review-repair script, not project-data repair; `repair` alone is not the marker',
+            ],
+            [
+                'src/modules/Project/presentations/views/RecentProjectsMenu.tsx',
+                false,
+                'recent-projects presentation view; the `recentProjects/` use cases are the owner, not the menu',
             ],
         ];
         for (const [path, expected, why] of matrix) {
             expect(selected(path), `${why}: ${path}`).toEqual(expected ? [...PROJECT_STATE_RULE_IDS] : []);
         }
+    });
+
+    it('matches undo as a path word, at a segment start or camelCase boundary', () => {
+        // Real undo owners keep matching; the mid-word `undo` of `soundOff` does not.
+        expect(selected('src/modules/Command/useCases/undo.ts')).toEqual([...PROJECT_STATE_RULE_IDS]);
+        expect(selected('src/modules/AiRuntime/useCases/aiPanelActions/undoLastAction.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        expect(selected('src/modules/Command/handlers/undoRedo/handleRedo.ts')).toEqual([...PROJECT_STATE_RULE_IDS]);
+        expect(selected('src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts')).toEqual([]);
     });
 
     it('is case-insensitive, matching the risk predicate it shares', () => {
