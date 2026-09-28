@@ -1,0 +1,22 @@
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 11,131,196-198
+scripts/savedProjectStatePaths.ts
+  h_beb54bf43b47b7 1-66
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 6083-6161
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 20,345-346,365-366,385-386
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 170,238,274,311,345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "33174180201670bd53f137522c36e91ca5fedef7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
