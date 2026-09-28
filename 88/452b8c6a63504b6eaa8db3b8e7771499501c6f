@@ -1,0 +1,22 @@
+scripts/__tests__/prValidationScope.spec.ts
+  s_fe7d9519d0226e::t_7f90c53aa2cec3 6,91-96,105-117
+  s_fe7d9519d0226e::t_ec06b0867179c0 100-103
+.agents/skills/review-stances/test-validity.md
+  s_fe7d9519d0226e::t_464a2168344154 545-557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "88452b8c6a63504b6eaa8db3b8e7771499501c6f",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
