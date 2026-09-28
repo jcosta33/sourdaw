@@ -6137,6 +6137,19 @@ describe('saved-project-state applicability matrix', () => {
                 renderSavedProjectStateMatcherDigest(right)
             );
         }
+        // A renderer that collapses two kinds onto one encoding — e.g. rendering `exact` under the
+        // `prefix` encoding — leaves `computeRulesDigest()` byte-identical across a kind edit, so a
+        // stored assessment replays against a changed scope. One matcher of each of the six kinds
+        // sharing one value, with the six encodings asserted pairwise distinct, reddens that.
+        const oneOfEachKind: readonly SavedProjectStateMatcher[] = [
+            { kind: 'wordPrefix', value: 'undo' },
+            { kind: 'substring', value: 'undo' },
+            { kind: 'prefix', value: 'undo' },
+            { kind: 'suffix', value: 'undo' },
+            { kind: 'prefixAndSubstring', prefix: 'undo', substring: 'undo' },
+            { kind: 'exact', value: 'undo' },
+        ];
+        expect(new Set(oneOfEachKind.map(renderSavedProjectStateMatcherDigest)).size).toBe(6);
         // The three rules' digest input is exactly the lossless encoding of the persisted-state
         // matchers, in registry order; adding, removing, or editing a matcher changes this list.
         const persistedMatchers = SAVED_PROJECT_STATE_SURFACES.filter((surface) =>
@@ -6235,6 +6248,16 @@ describe('saved-project-state applicability matrix', () => {
                 'src/modules/Project/useCases/setTrackCanonicalRole.ts',
                 true,
                 'routes a canonical-role change into the persisted production brief',
+            ],
+            [
+                'src/modules/Project/useCases/acceptCreativeIntent.ts',
+                true,
+                'builds `nextBrief` and dispatches `setProductionBrief`, which writes `projectStore`',
+            ],
+            [
+                'src/modules/Project/useCases/unlockProjectScopedBrief.ts',
+                true,
+                'removes the brief lock through `setProductionBrief`, which writes `projectStore`',
             ],
             [
                 'src/modules/Project/handlers/projectTemplate/handleCreateProjectFromTemplate.ts',

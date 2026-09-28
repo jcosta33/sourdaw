@@ -134,7 +134,8 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  *   none of the markers above: the `useCases/arrangement/` snapshot/edit use cases (which write
  *   `arrangementStore` and clear undo history), the metadata and tuning writers (`setProjectKeyRoot`,
  *   `setProjectScaleName`, `importSclFile`, `finishProjectLoading`, `reportProjectLoadFailure`,
- *   `createFreshProjectMetadata`, `setTrackCanonicalRole`), the project-template handler
+ *   `createFreshProjectMetadata`, `setTrackCanonicalRole`), the production-brief writers
+ *   (`acceptCreativeIntent`, `unlockProjectScopedBrief`), the project-template handler
  *   (`handleCreateProjectFromTemplate`), the persisted-store barrel
  *   (`stores/index.ts`), and the composition-root handler-map registration
  *   (`src/app/getProductionCommandHandlerMaps.ts`).
@@ -159,8 +160,7 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  * files, the Project module's presentation views (`presentations/views/`), its semantic queries
  * (`semanticProjectQueries`, `semanticProjectIndex`, `semanticRangeOverlap`,
  * `getSemanticProjectIndexDiagnostics`, `parseSemanticProjectQueryInput`, the `SemanticProjectQuery`
- * model), its creative-brief admission and read surfaces (`acceptCreativeIntent`,
- * `collectProtectedScopes`, `getProjectScopedBriefLock`, `unlockProjectScopedBrief`,
+ * model), its creative-brief read surfaces (`collectProtectedScopes`, `getProjectScopedBriefLock`,
  * `isProjectWideScope`, `getDurableProjectOwnerId`, `getCanonicalTrackRole`,
  * `getCanonicalTrackRoleOptions`, the `CanonicalTrackRole` model), its agent discovery and
  * agent-facing query surfaces (`services/agentDiscovery/`, `useCases/agentDiscovery/`,
@@ -241,6 +241,14 @@ export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] =
     },
     {
         matcher: { kind: 'exact', value: 'src/modules/project/usecases/settrackcanonicalrole.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/acceptcreativeintent.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/project/usecases/unlockprojectscopedbrief.ts' },
         scopes: ['persisted-state'],
     },
     {
