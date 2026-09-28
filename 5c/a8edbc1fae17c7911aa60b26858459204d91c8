@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_fe7d9519d0226e::t_77db2cb72b7396 35-62,116-128,136-145,149-153,156-162,170,176-210
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_fe7d9519d0226e::t_53bb7f1aed120a 93-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5ca8edbc1fae17c7911aa60b26858459204d91c8",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
