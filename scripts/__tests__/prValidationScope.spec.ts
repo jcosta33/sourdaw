@@ -70,7 +70,7 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
 const folders: string[] = [];
-let callerTrace2Event: string | undefined;
+const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
 function temporaryRoot(): string {
     const folder = mkdtempSync(join(tmpdir(), 'pr-validation-scope-'));
@@ -101,7 +101,6 @@ function cleanupTemporaryRoots(remove: typeof rmSync = rmSync): void {
 afterEach(() => cleanupTemporaryRoots());
 
 beforeEach(() => {
-    callerTrace2Event = process.env.GIT_TRACE2_EVENT;
     vi.stubEnv('GIT_TRACE2_EVENT', '0');
 });
 
