@@ -72,14 +72,34 @@ import {
     type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
-import { regionCost } from './fit.ts';
+import { regionFitsRequest } from './fit.ts';
 import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
+import {
+    CREDENTIAL_SHAPED_WITHHELD_CODE,
+    nothingSentReason,
+    SENSITIVE_PATH_WITHHELD_CODE,
+    withheldRegionCarriesContract,
+    withheldRegionReason,
+    type WithheldRegionCause,
+} from './withheldReasons.ts';
 
 export { compareByPath, compareLexicographic } from './evidenceOrdering.ts';
 export type { LineRange } from './slicing.ts';
 export { isContractCarryingContent, isContractCarryingPath } from './contractCarrying.ts';
+
+/** The scope-exclusion code the content screen records in `excluded`: the path contributed no unit and was skipped whole. Only the scan emits it, because only the scan plans units. */
+const CREDENTIAL_SHAPED_EXCLUSION_CODE = 'credential-shaped-content-excluded';
+
+export {
+    CREDENTIAL_SHAPED_WITHHELD_CODE,
+    nothingSentReason,
+    SENSITIVE_PATH_WITHHELD_CODE,
+    withheldRegionCarriesContract,
+    withheldRegionReason,
+};
+export type { WithheldRegionCause };
 
 export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
 
@@ -303,22 +323,6 @@ function regionFor(port: SemanticSourcePort, revisionSha: string, path: string):
 }
 
 /**
- * The scope-exclusion code the content screen records in `excluded`, and the withheld-scope code it
- * records in `truncated`. They are two vocabularies, not two spellings of one: an exclusion says the
- * path contributed no unit and was skipped whole, while a withheld code says why the reference never
- * left the machine. Only the scan records an exclusion, because only it plans units; both routes record
- * the withheld code, and `CREDENTIAL_SHAPED_WITHHELD_CODE` is shared so one withheld reference cannot
- * read two reasons.
- */
-const CREDENTIAL_SHAPED_EXCLUSION_CODE = 'credential-shaped-content-excluded';
-
-/** The content screen's withheld cause, emitted by the scan's admission and by verify's finding evidence. */
-export const CREDENTIAL_SHAPED_WITHHELD_CODE = 'evidence-withheld-credential-shaped';
-
-/** The path screen's withheld cause, emitted by both routes for a path the sensitive-path list covers. */
-export const SENSITIVE_PATH_WITHHELD_CODE = 'evidence-withheld-sensitive-path';
-
-/**
  * Records the side of a withheld region against its owning changed file, or globally for context.
  */
 function recordWithheldSide(
@@ -402,41 +406,6 @@ function admitSide(
     }
 }
 
-export type WithheldRegionCause = 'region' | 'request' | 'total' | 'hunk-beyond-file';
-
-/** The withheld-region code each cause emits, so every cause shares one vocabulary. */
-function withheldCauseCode(cause: WithheldRegionCause): string {
-    if (cause === 'region') {
-        return 'region-exceeds-per-region-budget';
-    }
-    if (cause === 'request') {
-        // The region fits the per-region ceiling; the request that would carry it — the state plus the
-        // questions, whose text depends on which regions are supplied — does not fit the per-request
-        // state ceiling. Naming the per-region code here would describe a budget no admitted region can
-        // exceed.
-        return 'request-exceeds-state-budget';
-    }
-    if (cause === 'total') {
-        return 'total-evidence-budget-exhausted';
-    }
-    return 'hunk-beyond-file';
-}
-
-/**
- * Whether a withheld region carries the contract class, from its own side and the contract-carrying
- * classification of that side.
- *
- * A context region always does: it is a document read at the contract source revision, supplied as
- * context because a rule declared it needs a contract, so its own path and content never decide its
- * class. Every other region reads the classification of the side the region comes from. Both routes
- * name a withheld reference through this one rule, so the same reference reads the same reason
- * whichever route produced it — a caller-supplied context path that no contract-carrying
- * classification covers is still named contract on both.
- */
-export function withheldRegionCarriesContract(side: EvidenceSide, classifiedContractCarrying: boolean): boolean {
-    return side === 'context' || classifiedContractCarrying;
-}
-
 /**
  * Whether a region belongs to a contract-carrying path, decided from the path and content of the side
  * the region comes from. Contract-context regions carry no changed path and are always contract.
@@ -448,33 +417,6 @@ function isContractCarryingRegion(
     const sides = request.changedPath === undefined ? undefined : contractCarryingSides.get(request.changedPath);
     const side = request.side === 'before' ? sides?.before : sides?.after;
     return withheldRegionCarriesContract(request.side, side ?? false);
-}
-
-/**
- * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code that
- * names why the region was not sent — `region-exceeds-per-region-budget` for one over the per-region
- * ceiling, `request-exceeds-state-budget` for one the request carrying it cannot fit beside the regions
- * already kept, `total-evidence-budget-exhausted` for one the run's total could not take, or
- * `hunk-beyond-file` for one naming lines this revision does not hold — and `contract` joins the side
- * qualifier for a region `withheldRegionCarriesContract` classifies contract, so the same withheld
- * reference reads the same whichever route produced it. Every other region keeps the plain
- * `<code> (<side>)` form.
- *
- * Two causes carry no side qualifier, because each is decided before a region has a side class to join:
- * `CREDENTIAL_SHAPED_WITHHELD_CODE`, which the scan's admission and verify's finding evidence both emit,
- * and `SENSITIVE_PATH_WITHHELD_CODE`, which the path screen emits on both. Neither is the
- * scope-exclusion code `credential-shaped-content-excluded`: that code is recorded only in `excluded`,
- * by the scan alone, because only the scan plans units and an exclusion is what the planner skips on.
- *
- * The qualifier names the region's own content class — the side's `contractCarrying` classification, or
- * the contract-context class — and never the admission tier. A source a contract-carrying spec covers
- * ranks in that spec's tier and a contract-needing file ranks above the context its rules charge, yet
- * both are recorded with the plain side form because their own content carries no contract. The tier is
- * the order admission attempts the record in, not a property of what was withheld.
- */
-export function withheldRegionReason(contractCarrying: boolean, side: string, cause: WithheldRegionCause): string {
-    const base = withheldCauseCode(cause);
-    return contractCarrying ? `${base} (${side}, contract)` : `${base} (${side})`;
 }
 
 /**
@@ -542,13 +484,12 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         return;
     }
     // The gate costs what the request fitter charges, not the raw bytes: JSON escapes every newline, so a
-    // region over the ceiling raw is over it by more serialized, and one under it raw can still be over
-    // it serialized. Costing raw here admitted regions the fitter then had to drop — the collector and the
-    // request disagreed about the same region — and the identifier is built first because the cost
-    // includes it, exactly as the fitter's does.
-    const candidate = makeReference(request, raw, state.ordinal);
-    const serializedBytes = regionCost(candidate, raw);
-    if (serializedBytes > state.limits.maxRegionBytes) {
+    // region over the ceiling raw is over it by more serialized, and one under it raw can still be over it
+    // serialized. Costing raw here admitted regions the fitter then had to drop — the collector and the
+    // request disagreed about the same region. The measure is the one `regionFitsRequest` defines, which
+    // the planner's predicate and the ranking charge also read, so all three agree about what a request
+    // can carry.
+    if (!regionFitsRequest({ path: request.path, side: request.side, content: raw }, state.limits.maxRegionBytes)) {
         state.truncated.push({
             path: request.path,
             reason: withheldReason(request, label, 'region', state.contractCarryingSides),
@@ -574,6 +515,7 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         return;
     }
     state.totalBytes += bytes;
+    const candidate = makeReference(request, raw, state.ordinal);
     state.references.push(candidate);
     state.contents.set(candidate.evidenceId, raw);
     state.identityToEvidenceId.set(identity, candidate.evidenceId);
@@ -830,12 +772,13 @@ export function collectEvidence(input: {
     const contractContextContent = new Map<string, string>();
     const contractContexts = Array.from(contextPaths).map((path) => {
         const raw = regionFor(input.port, input.contractSourceSha, path);
-        if (raw !== undefined) {
-            contractContextContent.set(path, raw);
+        if (raw === undefined) {
+            return { path, admissionBytes: 0 };
         }
+        contractContextContent.set(path, raw);
         return {
             path,
-            admissionBytes: raw === undefined ? 0 : chargeableRegionBytes(raw, input.limits.maxRegionBytes),
+            admissionBytes: chargeableRegionBytes({ path, side: 'context' }, raw, input.limits.maxRegionBytes),
         };
     });
     const units = admissionUnits(

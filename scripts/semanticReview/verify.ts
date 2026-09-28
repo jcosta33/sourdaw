@@ -34,6 +34,7 @@ import {
     evidenceSidePrefix,
     isContractCarryingContent,
     isSensitivePath,
+    nothingSentReason,
     SENSITIVE_PATH_WITHHELD_CODE,
     withheldRegionCarriesContract,
     withheldRegionReason,
@@ -448,9 +449,9 @@ async function assessOneFinding(input: {
             limitations: set.limitations,
             truncated: set.truncated,
             fromCache: false,
-            // Nothing survived collection: the evidence itself was inadmissible, which is what this reason
-            // names.
-            unassessedReason: 'no-admissible-evidence',
+            // Nothing survived collection, and the reason comes from why: a size gate withheld every
+            // region, or the evidence was never admissible at all.
+            unassessedReason: nothingSentReason(set.truncated),
         };
     }
     // What the collector admitted is not yet what one request can carry: the state ceiling bounds the

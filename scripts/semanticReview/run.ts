@@ -27,6 +27,7 @@ import {
     collectEvidence,
     compareByPath,
     exclusionReason,
+    nothingSentReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
     type SemanticChangedFile,
@@ -246,9 +247,16 @@ export function planUnits(
         if (own.length === 0) {
             // Context regions alone would otherwise make a wholly-withheld file count as assessed.
             // One exclusion per path: collection may already have excluded it, and a second entry
-            // would break the manifest's own arithmetic.
+            // would break the manifest's own arithmetic. The reason comes from why the collector
+            // withheld the file's sides — the size gate or inadmissibility — and a side's region is
+            // keyed to the path it was read from, which for a before side is the previous path.
             if (!excludedPaths.has(file.path)) {
-                excluded.push({ path: file.path, reason: 'no-admissible-evidence' });
+                excluded.push({
+                    path: file.path,
+                    reason: nothingSentReason(
+                        set.truncated.filter((entry) => entry.path === file.path || entry.path === file.previousPath)
+                    ),
+                });
             }
             continue;
         }

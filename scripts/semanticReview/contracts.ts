@@ -43,16 +43,20 @@ export const SEMANTIC_FAILURE_CODES = [
     'context_collection_failed',
     'budget_exhausted',
     /**
-     * One unit's request is larger than a per-request limit. That limit is a property of the unit, not
-     * of the run: the refusal is recorded against that unit alone and the plan keeps admitting. Only a
-     * run-level stop ends a run — a spent attempt or byte budget, or an elapsed deadline — and each of
-     * those carries its own code rather than reusing this one.
+     * One unit's request is larger than a per-request limit, at either of the two points the adapter
+     * checks one: the state plus its questions, before the attempt is admitted, or the whole body,
+     * including the model, when that attempt reserves its bytes. A limit of that shape is a property of
+     * the unit, not of the run: the refusal is recorded against that unit alone and the plan keeps
+     * admitting. Only a run-level stop ends a run — a spent attempt or byte budget, or an elapsed
+     * deadline — and each of those carries its own code rather than reusing this one.
      */
     'request_too_large',
     /**
-     * The overall assessment deadline elapsed before the next attempt. A property of the run rather than
-     * of the unit: the units still queued were never attempted, so admission stops and they are recorded
-     * with the deadline's own reason instead of each reading as a request that timed out.
+     * The run's overall deadline ended an assessment, at either of the two points the adapter checks it:
+     * before the next attempt, so that unit was never attempted, or while an attempt was in flight, so
+     * that unit was attempted and the clock cut it short — an attempt gets only the time the deadline
+     * leaves it. Both sites refuse it on the unit they ended, and admission then stops: the units still
+     * queued behind it were never reached at all and carry the deadline's admission reason instead.
      */
     'deadline_elapsed',
     'stale_context',

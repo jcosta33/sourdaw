@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import {
     APIConnectionError,
@@ -9,6 +11,7 @@ import {
 } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
+import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
     e2eSpecPattern,
     isNodeTestCollected,
@@ -42,6 +45,7 @@ import {
 import {
     admissionBytesBySide,
     admissionUnits,
+    plannedUnitPaths,
     classifyContractCarryingSides,
     compareAdmissionUnits,
     readChangedContents,
@@ -112,6 +116,8 @@ function secretFixture(...parts: readonly string[]): string {
 function flipCase(value: string): string {
     return value.replaceAll(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
+
+const repositoryRoot = resolve(import.meta.dirname, '../../..');
 
 const HEAD = 'a'.repeat(40);
 const MERGE_BASE = 'b'.repeat(40);
@@ -1351,8 +1357,11 @@ describe('contract-carrying admission', () => {
         const probeBPath = 'scripts/semanticReview/probeB.ts';
         const probeCPath = 'scripts/semanticReview/probeC.ts';
 
-        const coverSide = padded(16_160, workflowLine, coverImports);
-        const otherSide = padded(16_058, workflowLine);
+        // Both sides are sized under the serialized measure the charge and the gate share — raw bytes
+        // undercount them by the escaping and the reference's own fields — while keeping the pair's figure
+        // above the unrelated specs'.
+        const coverSide = padded(16_000, workflowLine, coverImports);
+        const otherSide = padded(15_700, workflowLine);
         const files = [
             changedFile(coverSpecPath),
             ...otherSpecPaths.map((path) => changedFile(path)),
@@ -1389,7 +1398,7 @@ describe('contract-carrying admission', () => {
         });
         const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
         const refIndex = (path: string): number => set.references.findIndex((reference) => reference.path === path);
-        // The pair's 16,160-byte figure sits above the unrelated specs' 16,058, so the unrelated specs are
+        // The pair's 16,000-byte figure sits above the unrelated specs' 15,700, so the unrelated specs are
         // admitted ahead of the 9,000-byte source rather than behind it.
         expect(refIndex(otherSpecPaths[0] ?? '')).toBeLessThan(refIndex(probeBPath));
         // And the source still plans: the total admits its unit after the unrelated specs instead of starving it.
@@ -2003,14 +2012,6 @@ describe('contract-carrying admission', () => {
         expect(set.truncated).toEqual([
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (before, contract)' },
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (after, contract)' },
-            // The copy's empty source side carries no content and still costs its identifier and fields
-            // serialized, so a 40-byte ceiling withholds it; its own path draws no contract, so it reads
-            // the plain form like the covered source it becomes.
-            {
-                path: 'scripts/semanticReview/empty-vocabulary.ts',
-                reason: 'region-exceeds-per-region-budget (before)',
-            },
-            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
             {
                 path: 'scripts/semanticReview/__tests__/vocabulary.spec.ts',
                 reason: 'region-exceeds-per-region-budget (before, contract)',
@@ -2023,6 +2024,14 @@ describe('contract-carrying admission', () => {
                 path: '.agents/decisions/README.md',
                 reason: 'region-exceeds-per-region-budget (context, contract)',
             },
+            // The copy's empty source side carries no content and still costs its identifier and fields
+            // serialized, so a 40-byte ceiling withholds it; its own path draws no contract, so it reads
+            // the plain form like the covered source it becomes.
+            {
+                path: 'scripts/semanticReview/empty-vocabulary.ts',
+                reason: 'region-exceeds-per-region-budget (before)',
+            },
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
         ]);
     });
 
@@ -4076,7 +4085,29 @@ describe('the scan collector gates a region on the cost the request fitter charg
         // And the planner agrees with the collector: no unit claims evidence the request cannot carry.
         const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
         expect(units).toHaveLength(0);
-        expect(excluded).toContainEqual({ path, reason: 'no-admissible-evidence' });
+        // The reason names the size, not inadmissibility: the evidence was admissible and the request
+        // had no room for it.
+        expect(excluded).toContainEqual({ path, reason: 'no-evidence-region-within-budget' });
+    });
+    it('keeps the planner predicate and the ranking charge on the measure admission gates with', () => {
+        // The three consumers of the ceiling used to measure differently: admission cost the serialized
+        // reference while the planner's predicate and the ranking charge read raw bytes. A region like
+        // this one — 96,100 bytes raw, 99,451 serialized in the thread's fixture — was therefore withheld
+        // by admission while its path was still planned and its raw bytes still counted, and the
+        // default-contract charge was gated on that phantom. All three now read `regionFitsRequest`.
+        const path = 'src/modules/Project/a.ts';
+        const region = 'const sample_line = 1;\n'.repeat(5_000);
+        const raw = Buffer.byteLength(region, 'utf8');
+        const serialized = scanRegionCost(path, region);
+        const ceiling = raw + Math.floor((serialized - raw) / 2);
+        // The premise: the raw bytes fit the ceiling and the serialized cost does not.
+        expect(raw).toBeLessThanOrEqual(ceiling);
+        expect(serialized).toBeGreaterThan(ceiling);
+        const contents = new Map([[path, { after: region }]]);
+        expect(plannedUnitPaths([changedFile(path)], contents, new Map(), ceiling, new Set())).toEqual(new Set());
+        expect(admissionBytesBySide([changedFile(path)], contents, new Map(), ceiling, MERGE_BASE, HEAD)).toEqual(
+            new Map([[path, { before: 0, after: 0 }]])
+        );
     });
 });
 
@@ -5240,6 +5271,45 @@ describe('budget profiles', () => {
             expect(profile.verify.maxStatePlusQuestionBytes).toBeLessThanOrEqual(profile.verify.maxRequestBytes);
             expect(profile.verify.maxRequestBytes).toBeLessThanOrEqual(profile.verify.maxTotalSubmittedBytes);
         }
+    });
+
+    it('pins every profile constant a comment reasons about, beside its evidence', () => {
+        // A number whose comment makes a claim no test holds is a comment that can drift: mutating the
+        // state ceiling from 96 to 128 KiB, the request ceiling from 128 to 192 KiB, the deadline from 600
+        // to 900 s or the attempt timeout from 20 to 5 s left every relation in this file green. Each pin
+        // is the value its comment reasons about.
+        const ci = SEMANTIC_BUDGET_PROFILES.ci;
+        // The window bound: the retained boundary that motivated it refused requests of 130,104 and
+        // 130,895 bytes while a 130,723-byte request was answered, so 96 KiB — 24,576 estimated tokens by
+        // the `bytes / 4` proxy — stays under the window. A larger value is a request the provider may
+        // refuse, which is the defect this ceiling repaired.
+        expect(ci.maxStatePlusQuestionBytes).toBe(96 * 1024);
+        expect(ci.maxRequestBytes).toBe(128 * 1024);
+        // Ten minutes, and the job's own timeout is what the comment compares it to: the workflow states
+        // it, so the claim is read from there rather than asserted.
+        expect(ci.overallDeadlineMs).toBe(600_000);
+        const workflow = readFileSync(join(repositoryRoot, ADVISORY_WORKFLOW_PATH), 'utf8');
+        const jobTimeoutMinutes = Number(/timeout-minutes:\s*(\d+)/u.exec(workflow)?.[1]);
+        expect(Number.isSafeInteger(jobTimeoutMinutes)).toBe(true);
+        expect(ci.overallDeadlineMs).toBeLessThan(jobTimeoutMinutes * 60_000);
+        // One attempt may spend the whole state budget, and this is the timeout that lets it: two orders
+        // above the slowest retained call (1.13 s), so a slow call is the provider's to finish.
+        expect(ci.attemptTimeoutMs).toBe(20_000);
+        expect(ci.attemptTimeoutMs / 1_000).toBeGreaterThan(1.13);
+        expect(ci.maxAttempts).toBe(6144);
+        expect(ci.maxRetriesPerRequest).toBe(1);
+        expect(ci.concurrentRequests).toBe(4);
+        expect(ci.contextExpansionPasses).toBe(1);
+        expect(ci.maxTotalSubmittedBytes).toBe(384 * 1024 * 1024);
+        // The verify block's own comment claims the scan window bound, so its state ceiling is that bound.
+        expect(ci.verify.maxStatePlusQuestionBytes).toBe(ci.maxStatePlusQuestionBytes);
+        expect(ci.verify.maxRequestBytes).toBe(ci.maxRequestBytes);
+        // `local`'s numbers are the ones its rationale in this file names: four attempts at a 3 s timeout
+        // would take 12 s, past its 8 s deadline, which is why its cap is the ordinary guard there.
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        expect(local.maxAttempts).toBe(4);
+        expect(local.attemptTimeoutMs).toBe(3_000);
+        expect(local.overallDeadlineMs).toBe(8_000);
     });
 
     it('sizes the ci attempt backstop above the byte guard it backs up', () => {
@@ -8995,7 +9065,8 @@ describe('verify withholds a region over the per-region budget', () => {
                     entry.reason === 'region-exceeds-per-region-budget (after)'
             )
         ).toBe(true);
-        expect(report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+        // The only cause was the region's size, so the reason names the size, not inadmissibility.
+        expect(report.scope.unassessed[0]?.reason).toBe('no-evidence-region-within-budget');
     });
 
     it('names an oversized contract-carrying reference with the shared contract qualifier', async () => {
@@ -9134,7 +9205,8 @@ describe('verify withholds a region over the per-region budget', () => {
             )
         ).toBe(true);
         expect(report.failureCode).toBeUndefined();
-        expect(report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+        // The only cause was the region's size, so the reason names the size, not inadmissibility.
+        expect(report.scope.unassessed[0]?.reason).toBe('no-evidence-region-within-budget');
     });
 
     it('sends and judges a region whose serialized size fits the budget', async () => {
@@ -9443,7 +9515,8 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
         expect(report.scope.truncated).toEqual([
             { path: 'src/modules/Project/a.ts', reason: 'region-exceeds-per-region-budget (after)' },
         ]);
-        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
+        // The region was admissible and too large for the request, so the reason names the size.
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
         expect(report.failureCode).toBeUndefined();
     });
 

@@ -44,6 +44,48 @@ export function regionCost(reference: EvidenceReference, content: string): numbe
 }
 
 /**
+ * One region as the pre-admission measure reads it: the fields every caller holds before admission has
+ * minted the rest.
+ */
+export type RequestRegion = {
+    readonly path: string;
+    readonly side: EvidenceSide;
+    readonly content: string;
+};
+
+/**
+ * The bytes one region costs the request that carries it, as admission, the planner's "will this file
+ * produce a unit" predicate and the ranking charge all read it.
+ *
+ * Those three have to agree about whether a request can carry a region, and they run at different points:
+ * the predicate before admission, the charge during it, admission itself. Only the path, the side and the
+ * content are known to all three — admission mints the identifier and derives the bounds, and a whole
+ * side and a hunk of it differ in both — so this measure fixes every derived field at its shortest form:
+ * the first identifier admission can mint, a sha and a digest of the length every real one has, and the
+ * first line's bounds. It is the payload cost up to the few bytes those fields' real values add, and it is
+ * the one bound the three share, rather than three approximations that disagree at the ceiling.
+ */
+export function regionRequestBytes(region: RequestRegion): number {
+    return regionCost(
+        {
+            evidenceId: 'a1',
+            revisionSha: '0'.repeat(40),
+            path: region.path,
+            side: region.side,
+            startLine: 1,
+            endLine: 1,
+            contentHash: '0'.repeat(64),
+        },
+        region.content
+    );
+}
+
+/** Whether one region can be carried by a request at all: the one gate admission, the planner predicate and the charge share. */
+export function regionFitsRequest(region: RequestRegion, maxRegionBytes: number): boolean {
+    return regionRequestBytes(region) <= maxRegionBytes;
+}
+
+/**
  * Fits one unit's regions inside the per-request state budget.
  *
  * A region that does not fit is dropped, counted, and its side recorded, so the questions that
