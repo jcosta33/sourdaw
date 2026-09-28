@@ -145,7 +145,9 @@ describe('transform.compile Command approval', () => {
         vi.mocked(generateToolPlanningOutcome)
             .mockResolvedValueOnce({
                 status: 'complete',
-                toolCalls: [{ id: 'compile-1', name: 'transform.compile', arguments: { document } }],
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+                ],
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -243,7 +245,11 @@ describe('transform.compile Command approval', () => {
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
-                    { id: 'compile-creation', name: 'transform.compile', arguments: { document: creationDocument } },
+                    {
+                        id: 'compile-creation',
+                        name: 'transform.compile',
+                        arguments: { document: JSON.stringify(creationDocument) },
+                    },
                 ],
             })
             .mockResolvedValueOnce({

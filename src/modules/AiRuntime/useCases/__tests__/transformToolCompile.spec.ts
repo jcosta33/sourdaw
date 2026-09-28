@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { projectAnthropicStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema';
+import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeTransformCompile } from '../executeTransformCompile';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
+
+import { eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),
@@ -108,7 +112,9 @@ function planCalls(selected: string[] = ['compile-1'], document: unknown = DOCUM
     vi.mocked(generateToolPlanningOutcome)
         .mockResolvedValueOnce({
             status: 'complete',
-            toolCalls: [{ id: 'compile-1', name: 'transform.compile', arguments: { document } }],
+            toolCalls: [
+                { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+            ],
         })
         .mockResolvedValueOnce({
             status: 'complete',
@@ -132,6 +138,144 @@ describe('transform.compile planner tool', () => {
 
     it('publishes the application-owned transform compiler to planning providers', () => {
         expect(APPLICATION_OWNED_TOOL_SCHEMAS.map((schema) => schema.function.name)).toContain('transform.compile');
+    });
+
+    it('accepts one JSON-text wire document and rejects an object-shaped wire document', () => {
+        const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');
+        const compile = (document: unknown) =>
+            executeTransformCompile({
+                call: { name: 'transform.compile', arguments: { document } },
+                callId: 'wire-document',
+                turn: 1,
+                snapshot,
+            });
+        expect(compile(JSON.stringify(DOCUMENT)).receipt.status).toBe('success');
+        expect(compile(DOCUMENT).receipt).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments' },
+        });
+    });
+
+    it('admits the full nested JSON text through both hosted projections and the ordinary proposal route', async () => {
+        const schema = APPLICATION_OWNED_TOOL_SCHEMAS.find((tool) => tool.function.name === 'transform.compile');
+        expect(schema).toBeDefined();
+        if (!schema) {
+            throw new Error('Expected transform.compile in the application-owned catalog');
+        }
+        const document = {
+            ...DOCUMENT,
+            assertions: [
+                {
+                    condition: {
+                        cmp: 'lt',
+                        left: { node: 'const', quantity: { unit: 'count', value: 0 } },
+                        right: { node: 'var', name: 'velocity' },
+                    },
+                    message: 'Velocity must be positive.',
+                },
+            ],
+        };
+        for (const project of [projectAnthropicStrictToolSchema, projectOpenAiStrictToolSchema]) {
+            const wire = project(schema);
+            const parameters = wire.function.parameters;
+            expect(parameters.properties.document).toMatchObject({ type: 'string' });
+            const { protocol, request } = readyRequest({
+                operation: 'tools',
+                tools: [{ name: wire.function.name, description: wire.function.description, parameters }],
+            });
+            const accepted = protocol.start(request);
+            expect(() =>
+                accepted.push(
+                    eventEnvelope(request, 0, {
+                        type: 'tool-call',
+                        call: {
+                            id: 'compile-text',
+                            name: 'transform.compile',
+                            arguments: { document: JSON.stringify(document) },
+                        },
+                    })
+                )
+            ).not.toThrow();
+            const admitted = accepted.finish(finishEnvelope(request, 1, { reason: 'stop' }));
+            expect(admitted.output.toolCalls).toHaveLength(1);
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: admitted.output.toolCalls })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'propose-1',
+                            name: 'command.batch.propose',
+                            arguments: { commands: [], compiledCallIds: ['compile-text'] },
+                        },
+                    ],
+                });
+            const planned = await parsePromptToActions(
+                'set note velocities in the selected MIDI clips to 90',
+                CONTEXT,
+                undefined,
+                'revision-transform-1'
+            );
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(planned.actions).toHaveLength(2);
+            const rejected = protocol.start(request);
+            expect(() =>
+                rejected.push(
+                    eventEnvelope(request, 0, {
+                        type: 'tool-call',
+                        call: { id: 'compile-object', name: 'transform.compile', arguments: { document } },
+                    })
+                )
+            ).toThrow(/arguments/i);
+        }
+        expect(
+            executeTransformCompile({
+                call: { name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
+                callId: 'full-document',
+                turn: 1,
+                snapshot: projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1'),
+            }).receipt.status
+        ).toBe('success');
+        const advertised = schema.function.parameters.properties.document;
+        const exampleMarker = 'Valid complete document JSON text: ';
+        if (
+            typeof advertised !== 'object' ||
+            advertised === null ||
+            !('description' in advertised) ||
+            typeof advertised.description !== 'string'
+        ) {
+            throw new Error('Expected transform document guidance in the catalog');
+        }
+        expect(advertised.description).toContain(exampleMarker);
+        const exampleText = advertised.description.slice(
+            advertised.description.indexOf(exampleMarker) + exampleMarker.length
+        );
+        expect(
+            executeTransformCompile({
+                call: { name: 'transform.compile', arguments: { document: exampleText } },
+                callId: 'advertised-example',
+                turn: 1,
+                snapshot: projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1'),
+            }).receipt.status
+        ).toBe('success');
+    });
+
+    it('refuses malformed, duplicate-key, and oversized JSON text before compilation', () => {
+        const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');
+        const duplicateName = JSON.stringify(DOCUMENT).replace(
+            '"name":"set-selected-velocities"',
+            '"name":"wrong","na\\u006de":"set-selected-velocities"'
+        );
+        for (const source of ['{', duplicateName, ' '.repeat(1_024 * 1_024 + 1)]) {
+            const result = executeTransformCompile({
+                call: { name: 'transform.compile', arguments: { document: source } },
+                callId: 'bad-json',
+                turn: 1,
+                snapshot,
+            });
+            expect(result.commands).toBeNull();
+            expect(result.receipt).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
+        }
     });
 
     it('returns exact expanded commands in a receipt and carries selected emissions into one approval batch', async () => {
@@ -432,7 +576,7 @@ describe('transform.compile planner tool', () => {
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
-                    { id: 'compile-1', name: 'transform.compile', arguments: { document: DOCUMENT } },
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
                     {
                         id: 'catalog-1',
                         name: 'agent.catalog.discover',
@@ -823,7 +967,9 @@ describe('transform.compile planner tool', () => {
         vi.mocked(generateToolPlanningOutcome)
             .mockResolvedValueOnce({
                 status: 'complete',
-                toolCalls: [{ id: 'compile-1', name: 'transform.compile', arguments: { document: DOCUMENT } }],
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
+                ],
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -852,7 +998,11 @@ describe('transform.compile planner tool', () => {
 
     it('does not retain an over-budget receipt as a successful compilation and refuses stale references', async () => {
         const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');
-        const compileCall = { id: 'compile-1', name: 'transform.compile', arguments: { document: DOCUMENT } };
+        const compileCall = {
+            id: 'compile-1',
+            name: 'transform.compile',
+            arguments: { document: JSON.stringify(DOCUMENT) },
+        };
         const proposalCall = {
             name: 'command.batch.propose',
             arguments: { commands: [], compiledCallIds: ['compile-1'] },
@@ -916,7 +1066,7 @@ describe('transform.compile planner tool', () => {
         const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');
         const compile = (document: unknown) =>
             executeTransformCompile({
-                call: { name: 'transform.compile', arguments: { document } },
+                call: { name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
                 callId: 'bounded',
                 turn: 1,
                 snapshot,
@@ -1023,7 +1173,7 @@ describe('transform.compile planner tool', () => {
         }
         const call = {
             name: 'transform.compile',
-            arguments: { document: { ...DOCUMENT, steps } },
+            arguments: { document: JSON.stringify({ ...DOCUMENT, steps }) },
         };
         const result = executeTransformCompile({
             call,
