@@ -15,6 +15,7 @@ import {
     buildRevisionContext,
     computeContextDigest,
     semanticDigest,
+    SEMANTIC_FAILURE_CODES,
     SemanticFailure,
     type EvidenceReference,
     type EvidenceSide,
@@ -79,6 +80,8 @@ import {
     isMissedAssessmentExclusion,
     planUnits,
     runScan,
+    unitStatePlusQuestionBytes,
+    type SemanticUnitPlan,
 } from '../run.ts';
 import { sensitiveContentReason } from '../sensitive.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
@@ -2165,7 +2168,7 @@ describe('contract-carrying admission', () => {
         const readerPath = 'src/modules/Project/undo.ts';
         const hunkLines = 2;
         const hunkChars = 8_180;
-        const hunkCount = 64; // ~1.047 MB of before side, within one document of the ci total budget
+        const hunkCount = 64; // ~1.047 MB of before side, within one document of the total it binds against
         const lines = hunkLines * hunkCount;
         const bulk = `${'x'.repeat(hunkChars)}\n`.repeat(lines);
         const beforeHunks: { startLine: number; endLine: number }[] = [];
@@ -2178,7 +2181,15 @@ describe('contract-carrying admission', () => {
             '| [0003](0003-engine-owned-plugin-runtime-owner.md) | decision text that names one owner |\n'.repeat(95);
         const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
         for (const profileName of ['local', 'ci'] as const) {
-            const profile = SEMANTIC_BUDGET_PROFILES[profileName];
+            const shipped = SEMANTIC_BUDGET_PROFILES[profileName];
+            // This fixture's bulk is sized to bind against a 1 MiB total, which the local profile's
+            // 96 KiB already is. The ci profile's total is now 16 MiB, and would carry the bulk whole, so
+            // the total is held at the figure the fixture binds against rather than inflating the
+            // fixture text to 16 MiB; the claim under test is the ranking, never one profile's total.
+            const profile = {
+                ...shipped,
+                maxTotalSubmittedBytes: Math.min(shipped.maxTotalSubmittedBytes, 1024 * 1024),
+            };
             const files = [changedFile(legacyPath, { added: 1, deleted: lines }), changedFile(readerPath)];
             const source = fakeSource({
                 files,
@@ -3870,6 +3881,282 @@ describe('unit planning', () => {
     });
 });
 
+/**
+ * A cap small enough that the saturation search stays cheap, and independent of the shipped profile
+ * numbers. It has to clear the planner's reservation for these paths — about 4.7 KiB — by enough for
+ * the fifteen-region case to be admissible at all, since that reserve is spent before any evidence is;
+ * 16 KiB leaves about 11.7 KiB of evidence, so the fixture spends a few KiB per unit rather than the
+ * shipped profile's hundreds.
+ */
+const SATURATION_CAP = 16_384;
+
+/**
+ * A synthetic added file whose after side is sliced into `regions` single-line hunks. The last line
+ * carries `padding` filler bytes, and JSON escapes none of them, so the unit's own serialized
+ * evidence grows one byte per padding byte and the fitter's admission boundary can be bisected.
+ */
+function paddedRegionSource(
+    path: string,
+    regions: number,
+    padding: number
+): { file: SemanticChangedFile; content: string; hunks: PathHunks } {
+    const lines = Array.from({ length: regions }, (_unused, index) => {
+        const body = index === regions - 1 ? 'p'.repeat(padding) : `value${String(index)}`;
+        return `export const line${String(index)} = '${body}';\n`;
+    });
+    return {
+        file: changedFile(path, { kind: 'added', added: regions, deleted: 0 }),
+        content: lines.join(''),
+        hunks: {
+            path,
+            before: [],
+            after: Array.from({ length: regions }, (_unusedLine, index) => ({
+                startLine: index + 1,
+                endLine: index + 1,
+            })),
+        },
+    };
+}
+
+type PaddedSource = ReturnType<typeof paddedRegionSource>;
+
+/** The evidence set one or more synthetic added files admit, under lifted collector ceilings. */
+function paddedEvidence(sources: readonly PaddedSource[]): SemanticEvidenceSet {
+    return collectEvidence({
+        port: fakeSource({
+            files: sources.map((source) => source.file),
+            hunks: new Map(sources.map((source) => [source.file.path, source.hunks])),
+            blobs: Object.fromEntries(sources.map((source) => [`${HEAD}:${source.file.path}`, source.content])),
+        }),
+        mergeBaseSha: MERGE_BASE,
+        headSha: HEAD,
+        contractSourceSha: MERGE_BASE,
+        // The collector's own ceilings are lifted, so the only budget in play is the per-request one.
+        limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+    });
+}
+
+/** The units these synthetic files plan to, in plan order. */
+function paddedUnits(sources: readonly PaddedSource[], cap: number): SemanticUnitPlan[] {
+    const { units } = planUnits(
+        sources.map((source) => source.file),
+        paddedEvidence(sources),
+        cap
+    );
+    return units;
+}
+
+/**
+ * The deepest padding at which `path` still carries all `regions` of its own evidence, searched with
+ * the rest of the sources present at their current padding.
+ *
+ * The boundary is the planner's own reservation: the admitted evidence spends the evidence budget
+ * exactly, so a reservation that under-counts the request envelope has no slack to hide behind here.
+ * The search runs inside the plan rather than per file because the collector's region ids are global
+ * ordinals — a unit among company carries a longer id than the same unit alone, so a fixture sized in
+ * isolation would leave exactly the slack that makes this check pass for the wrong reason.
+ */
+function deepestPadding(sources: readonly PaddedSource[], path: string, regions: number, cap: number): number {
+    const admittedWhole = (padding: number): boolean => {
+        const candidate = sources.map((source) =>
+            source.file.path === path ? paddedRegionSource(path, regions, padding) : source
+        );
+        return paddedUnits(candidate, cap).find((unit) => unit.path === path)?.evidence.own.length === regions;
+    };
+    let low = 0;
+    let high = cap;
+    while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (admittedWhole(middle)) {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    return low;
+}
+
+/** One synthetic plan's files, each filled to its own admission boundary in plan order. */
+function saturatedSources(
+    layout: readonly { readonly path: string; readonly regions: number }[],
+    cap: number
+): PaddedSource[] {
+    let sources = layout.map((entry) => paddedRegionSource(entry.path, entry.regions, 0));
+    for (const entry of layout) {
+        const padding = deepestPadding(sources, entry.path, entry.regions, cap);
+        sources = sources.map((source) =>
+            source.file.path === entry.path ? paddedRegionSource(entry.path, entry.regions, padding) : source
+        );
+    }
+    return sources;
+}
+
+describe('a planned unit measures inside the request budget the provider enforces', () => {
+    it('keeps the unit the planner admits at its own reservation boundary inside the cap', () => {
+        // Red before the repair, with the measured overage: the reservation was a hand-rolled wrapper
+        // that omitted the outer braces and the `state`/`questions` key names — 23 bytes of envelope,
+        // of which the old wrapper already counted the 2-byte empty evidence map it replaced — so the
+        // deepest unit the planner admitted measured `cap + 22 - fittedRegions` bytes and the provider
+        // refused the very unit the plan had admitted.
+        const path = 'src/modules/AudioEngine/live.ts';
+        const overages = [1, 15].map((regions) => {
+            const sources = saturatedSources([{ path, regions }], SATURATION_CAP);
+            const unit = paddedUnits(sources, SATURATION_CAP).find((candidate) => candidate.path === path);
+            if (unit === undefined) {
+                throw new Error(`the planner admitted no unit for ${String(regions)} saturated region(s)`);
+            }
+            expect(unit.evidence.own).toHaveLength(regions);
+            // Exactly the provider's own measurement: `{state, questions}` against the profile limit.
+            return { regions, overBy: Math.max(0, unitStatePlusQuestionBytes(unit) - SATURATION_CAP) };
+        });
+        expect(overages).toEqual([
+            { regions: 1, overBy: 0 },
+            { regions: 15, overBy: 0 },
+        ]);
+    });
+
+    it('keeps every unit of a multi-unit plan inside the cap, not only the saturated one', () => {
+        const layout = [
+            { path: 'src/modules/AudioEngine/live.ts', regions: 1 },
+            { path: 'src/modules/AudioEngine/schedule.ts', regions: 2 },
+            { path: 'src/modules/Project/store.ts', regions: 3 },
+            { path: 'src/modules/Project/undo.ts', regions: 5 },
+        ];
+        const units = paddedUnits(saturatedSources(layout, SATURATION_CAP), SATURATION_CAP);
+        expect([...units.map((unit) => unit.path)].sort()).toEqual([...layout.map((entry) => entry.path)].sort());
+        expect(
+            units.map((unit) => ({
+                path: unit.path,
+                overBy: Math.max(0, unitStatePlusQuestionBytes(unit) - SATURATION_CAP),
+            }))
+        ).toEqual(layout.map((entry) => ({ path: entry.path, overBy: 0 })));
+        // The fixture spends the cap, so the invariant is load-bearing rather than slack.
+        expect(Math.max(...units.map((unit) => unitStatePlusQuestionBytes(unit)))).toBeGreaterThan(
+            SATURATION_CAP - 1_024
+        );
+    });
+
+    it('keeps a unit whole at the shipped ci cap that the old 24 KiB cap had to cut', () => {
+        // The scan cap is what decides whether a unit's own regions are sent at all. A unit whose own
+        // evidence runs about 31 KiB is cut by the old 24 KiB state budget and carried whole by the
+        // larger ci cap, so the measured before-and-after is the region count the fitter keeps, not an
+        // assumption about either number.
+        const path = 'src/modules/AudioEngine/live.ts';
+        const regions = 4;
+        const sources = [paddedRegionSource(path, regions, 30_000)];
+        const cut = paddedUnits(sources, 24 * 1024).find((unit) => unit.path === path);
+        if (cut === undefined) {
+            throw new Error('the old state budget excluded the unit outright instead of cutting it');
+        }
+        expect(cut.evidence.own.length).toBeGreaterThan(0);
+        expect(cut.evidence.own.length).toBeLessThan(regions);
+        const whole = paddedUnits(sources, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes).find(
+            (unit) => unit.path === path
+        );
+        if (whole === undefined) {
+            throw new Error('the shipped ci state budget excluded the unit it should carry whole');
+        }
+        expect(whole.evidence.own).toHaveLength(regions);
+        expect(
+            unitStatePlusQuestionBytes(whole) - SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes
+        ).toBeLessThanOrEqual(0);
+    });
+});
+
+describe('a request refused for its own size leaves the rest of the plan assessed', () => {
+    // Path order decides which unit is which: `aaa` is assessed first, `mmm` is the one refused, and
+    // `zzz` is the unit the old whole-run reading starved.
+    const firstPath = 'src/modules/AudioEngine/aaa.ts';
+    const refusedPath = 'src/modules/AudioEngine/mmm.ts';
+    const lastPath = 'src/modules/AudioEngine/zzz.ts';
+    const layout = [
+        { path: firstPath, regions: 1 },
+        { path: refusedPath, regions: 1 },
+        { path: lastPath, regions: 1 },
+    ];
+
+    /**
+     * The request envelope carries the model on top of the state and questions the planner reserves, so
+     * a unit planned at the state cap has a body over a `maxRequestBytes` that sits just above that cap.
+     * That is the reachable per-request refusal: the planner now admits no unit the state cap itself
+     * would refuse, and the refusal still belongs to that one unit.
+     */
+    const refusalProfile: SemanticBudgetProfile = {
+        ...SEMANTIC_BUDGET_PROFILES.ci,
+        maxStatePlusQuestionBytes: SATURATION_CAP,
+        maxRequestBytes: SATURATION_CAP + 16,
+        maxTotalSubmittedBytes: 1024 * 1024,
+    };
+
+    /**
+     * The plan runs through `runScan`'s own collection, so the unit the refusal test needs saturated is
+     * the one saturated inside this three-file plan — the unit ids the collector mints depend on the
+     * whole set, exactly as the production run's do. The other two units stay small, so the refusal
+     * lands on the middle unit alone.
+     */
+    function fixtureSource(): SemanticSourcePort {
+        const bare = layout.map((entry) => paddedRegionSource(entry.path, entry.regions, 0));
+        const padding = deepestPadding(bare, refusedPath, 1, SATURATION_CAP);
+        const sources = bare.map((source) =>
+            source.file.path === refusedPath ? paddedRegionSource(refusedPath, 1, padding) : source
+        );
+        return fakeSource({
+            files: sources.map((source) => source.file),
+            hunks: new Map(sources.map((source) => [source.file.path, source.hunks])),
+            blobs: Object.fromEntries(sources.map((source) => [`${HEAD}:${source.file.path}`, source.content])),
+        });
+    }
+
+    it('assesses the units after a per-request size refusal instead of blaming the run budget', async () => {
+        const base = scanPorts(constantProvider(0.05), fixtureSource(), fixedClock(1_000));
+        const { report } = await runScan({
+            ...base,
+            profile: refusalProfile,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        expect(report.scope.eligible).toBe(3);
+        expect(report.scope.assessed).toBe(2);
+        // The refused unit carries its own per-request code, and the unit after it is genuinely assessed:
+        // a signal for its path is the evidence that the plan continued rather than that it was counted.
+        expect(report.scope.unassessed).toEqual([{ path: refusedPath, reason: 'request_too_large' }]);
+        expect(report.signals.some((signal) => signal.path === lastPath)).toBe(true);
+        expect(report.scope.unassessed.some((entry) => entry.reason === 'budget-exhausted-before-admission')).toBe(
+            false
+        );
+        expect(report.failureCode).toBe('request_too_large');
+        // `executionState` reads a partial run from a completed unit plus a recorded failure, so a
+        // per-request refusal does not turn the whole run unavailable.
+        expect(report.execution).toBe('partial');
+        expect(() => validateReport(report)).not.toThrow();
+    });
+
+    it('names the per-request refusal as a failure code of its own', () => {
+        // The code has to be known to the report and to the context projection, or a refused unit reads
+        // as an unrecognized reason; the whole-run budgets keep `budget_exhausted`, which is what
+        // `budget-exhausted-before-admission` is reserved for.
+        expect(SEMANTIC_FAILURE_CODES).toContain('request_too_large');
+        expect(SEMANTIC_FAILURE_CODES).toContain('budget_exhausted');
+    });
+
+    it('still records the remaining units as budget-starved when the attempt budget runs out', async () => {
+        // The other direction of the same policy: a whole-run budget that really is exhausted still
+        // stops admission, so today's behaviour is preserved where it was true.
+        const base = scanPorts(constantProvider(0.05), fixtureSource(), fixedClock(1_000));
+        const { report } = await runScan({
+            ...base,
+            profile: { ...refusalProfile, maxAttempts: 1 },
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toEqual([
+            { path: refusedPath, reason: 'budget_exhausted' },
+            { path: lastPath, reason: 'budget-exhausted-before-admission' },
+        ]);
+        expect(report.failureCode).toBe('budget_exhausted');
+        expect(report.execution).toBe('partial');
+    });
+});
+
 describe('request carriage follows the order admission handed the unit', () => {
     /** What the fitter charges one region: the planner's own measure, read from the production function. */
     function charge(set: SemanticEvidenceSet, reference: EvidenceReference): number {
@@ -4674,7 +4961,9 @@ describe('provider adapter', () => {
         const profile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxRequestBytes: 100, maxTotalSubmittedBytes: 1_000 };
         const budget = createBudgetController(profile);
         const refused = budget.reserve(101);
-        expect('refused' in refused && refused.refused).toBe('budget_exhausted');
+        // The per-request limit belongs to the unit the request is for, so it carries its own code: the
+        // whole-run budgets this controller also enforces are the only refusals that stop admission.
+        expect('refused' in refused && refused.refused).toBe('request_too_large');
     });
 
     it('invalidates the response cache when the model or question changes', () => {
@@ -4723,6 +5012,21 @@ describe('budget profiles', () => {
             expect(profile.verify.maxStatePlusQuestionBytes).toBeLessThanOrEqual(profile.verify.maxRequestBytes);
             expect(profile.verify.maxRequestBytes).toBeLessThanOrEqual(profile.verify.maxTotalSubmittedBytes);
         }
+    });
+
+    it('sizes the ci attempt backstop above the byte guard it backs up', () => {
+        // Total submitted bytes and the overall deadline are the ci profile's binding guards; the
+        // attempt count exists only to bound a runaway retry loop. The byte guard cannot admit more
+        // than `maxTotalSubmittedBytes / maxStatePlusQuestionBytes` maximal requests, so an attempt cap
+        // below that figure binds first and stops a plan that still has both bytes and time, reporting
+        // the remaining units as `budget-exhausted-before-admission` for a budget never spent.
+        const ci = SEMANTIC_BUDGET_PROFILES.ci;
+        const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
+        expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
+        // No such rule applies to `local`: its binding guard is its 8 s deadline, which elapses before
+        // four attempts at a 3 s timeout could, so raising its attempt count would change nothing.
+        const local = SEMANTIC_BUDGET_PROFILES.local;
+        expect(local.overallDeadlineMs).toBeLessThanOrEqual(local.maxAttempts * local.attemptTimeoutMs);
     });
 });
 
@@ -6634,7 +6938,11 @@ describe('partial-side evidence drop', () => {
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
 
-        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        // The oversized hunk has to be over whatever cap this fixture plans under, and the shipped ci
+        // cap is deliberately no longer small enough to cut a 44 KiB region: CI now sends it. The
+        // local cap still binds, and the claim under test is the fitter's dropped-side bookkeeping, not
+        // any particular profile's number.
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
         const unit = units[0];
         expect(unit).toBeDefined();
         // One after hunk survives, so the old predicate would have called the side present.

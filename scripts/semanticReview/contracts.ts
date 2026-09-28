@@ -42,6 +42,12 @@ export const SEMANTIC_FAILURE_CODES = [
     'model_mismatch',
     'context_collection_failed',
     'budget_exhausted',
+    /**
+     * One unit's request is larger than a per-request limit. That limit is a property of the unit, not
+     * of the run, so this refusal is recorded against that unit alone and never stops admission; only
+     * `budget_exhausted` — the run's attempt and total-byte budgets — does.
+     */
+    'request_too_large',
     'stale_context',
     'unsupported_scope',
     'sensitive_content_excluded',

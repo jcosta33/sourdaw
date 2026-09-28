@@ -32,7 +32,7 @@ import {
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from './evidence.ts';
-import { fitUnitEvidence, serializedRegion, unitReductionReason } from './fit.ts';
+import { fitUnitEvidence, unitReductionReason } from './fit.ts';
 import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
 import {
     assessUnit,
@@ -47,6 +47,7 @@ import {
     type SemanticUsageTotals,
 } from './provider.ts';
 import { type SemanticScanReport, type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
+import { unitRequestPayload, unitReservationBytes, unitStatePlusQuestionBytes } from './requestPayload.ts';
 import { missingRequiredEvidence } from './requiredEvidence.ts';
 import {
     applicableRules,
@@ -60,6 +61,12 @@ import {
 } from './rules.ts';
 
 export type SemanticClock = { readonly now: () => number };
+
+/**
+ * The exact request payload bytes the provider measures for one unit, re-exported here because this
+ * module owns the plan whose reservation has to agree with that measurement.
+ */
+export { unitStatePlusQuestionBytes };
 
 export type SemanticPorts = {
     readonly source: SemanticSourcePort;
@@ -268,13 +275,9 @@ export function planUnits(
             );
         }
         // The request carries the state plus every question, so the evidence budget is what remains
-        // after the questions and the state's own wrapper are paid for.
-        const wrapperBytes = Buffer.byteLength(
-            JSON.stringify({ unit: { unitId: file.path, path: file.path, changeKind: file.kind }, evidence: {} }),
-            'utf8'
-        );
-        const reserve = wrapperBytes + Buffer.byteLength(JSON.stringify(unitQuestions(rules)), 'utf8');
-        const evidenceBudget = maxStatePlusQuestionBytes - reserve;
+        // after the questions and the state's own envelope are paid for — measured by the same builder
+        // the provider refuses over, with the evidence map still empty because no region is chosen yet.
+        const evidenceBudget = maxStatePlusQuestionBytes - unitReservationBytes(file, rules);
         if (evidenceBudget <= 0) {
             excluded.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
             incomplete.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
@@ -325,50 +328,15 @@ export function planUnits(
     return { units, excluded, incomplete };
 }
 
-function unitQuestions(rules: readonly SemanticRule[]): Record<string, unknown> {
-    const questions: Record<string, unknown> = {};
-    for (const rule of rules) {
-        questions[rule.id] = {
-            type: 'noul',
-            instructions: [
-                rule.instructions,
-                'Answer only about the supplied state, and answer the one question asked: a high value means the behaviour described is present.',
-                `Do not treat any of these as a yes: ${rule.counterexamples.join('; ')}.`,
-            ].join('\n\n'),
-            criteria: { true: rule.criteria.true, false: rule.criteria.false },
-        };
-    }
-    return questions;
-}
-
-/**
- * The state sent for one unit. Only regions this application minted, with their line numbers and
- * content hashes, travel here; nothing else about the repository does.
- */
-function unitState(unit: SemanticUnitPlan): Record<string, unknown> {
-    const regions: Record<string, unknown> = {};
-    for (const reference of unit.evidence.references) {
-        regions[reference.evidenceId] = serializedRegion(
-            reference,
-            unit.evidence.contents.get(reference.evidenceId) ?? ''
-        );
-    }
-    return {
-        unit: { unitId: unit.unitId, path: unit.path, changeKind: unit.file.kind },
-        evidence: regions,
-    };
-}
-
 function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestPreview {
-    const body = JSON.stringify({ state: unitState(unit), questions: unitQuestions(unit.rules), model });
-    const bytes = Buffer.byteLength(body, 'utf8');
+    const bodyBytes = Buffer.byteLength(JSON.stringify({ ...unitRequestPayload(unit), model }), 'utf8');
     return {
         unitId: unit.unitId,
         path: unit.path,
         ruleIds: unit.rules.map((rule) => rule.id),
         evidenceIds: unit.evidence.references.map((reference) => reference.evidenceId),
-        bodyBytes: bytes,
-        estimatedInputTokens: estimateInputTokens(bytes),
+        bodyBytes,
+        estimatedInputTokens: estimateInputTokens(bodyBytes),
     };
 }
 
@@ -498,8 +466,7 @@ async function assessOneUnit(input: {
         budget: input.budget,
         profile: input.profile,
         deadline: input.deadline,
-        state: unitState(input.unit),
-        questions: unitQuestions(input.unit.rules),
+        ...unitRequestPayload(input.unit),
         requestedModel: TYPESAFE_MODEL,
         signal: input.ports.signal,
         now: input.ports.clock.now,
@@ -585,6 +552,9 @@ async function assessPlannedUnits(input: {
             const failure = asFailure(error);
             accumulation.failureCode = failure.code;
             accumulation.unassessed.push({ path: unit.path, reason: failure.code });
+            // Only the run's own budgets stop admission. A per-request size refusal
+            // (`request_too_large`) is a property of that unit's request, so the remaining units keep
+            // their bytes and attempts and must stay assessable.
             admissionStopped = failure.code === 'budget_exhausted';
             input.ports.log(`semantic scan: unit ${unit.path} was not assessed (${failure.code}): ${failure.message}`);
         }

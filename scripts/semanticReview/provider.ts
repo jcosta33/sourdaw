@@ -279,9 +279,12 @@ export function createBudgetController(profile: SemanticBudgetProfile): Semantic
                     reason: `total submitted byte budget ${String(profile.maxTotalSubmittedBytes)} exhausted`,
                 };
             }
+            // The two budgets above belong to the run and stop admission when they are spent. This one
+            // belongs to the unit: it says nothing about the bytes and attempts the rest of the plan
+            // still has, so its own code keeps the caller admitting the remaining units.
             if (bytes > profile.maxRequestBytes) {
                 return {
-                    refused: 'budget_exhausted',
+                    refused: 'request_too_large',
                     reason: `request of ${String(bytes)} bytes exceeds the ${String(profile.maxRequestBytes)}-byte request limit`,
                 };
             }
@@ -483,10 +486,13 @@ export async function assessUnit(input: {
     }
 
     const bytes = cachedBytes;
+    // A per-request size limit is a property of this unit, exactly as the controller's own
+    // per-request branch is: the refusal is recorded against the unit and the run keeps its remaining
+    // units assessable, so it must not share the whole-run budget's code.
     const stateBytes = Buffer.byteLength(canonicalBytes({ state: input.state, questions: input.questions }), 'utf8');
     if (stateBytes > input.profile.maxStatePlusQuestionBytes) {
         refuse(
-            'budget_exhausted',
+            'request_too_large',
             `state plus longest question is ${String(stateBytes)} bytes, over the ${String(input.profile.maxStatePlusQuestionBytes)}-byte limit`
         );
     }

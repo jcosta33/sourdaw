@@ -1041,6 +1041,35 @@ describe('semantic review context', () => {
         ]);
     });
 
+    it('keeps a per-request size refusal as a known scope reason', () => {
+        // A failed unit reaches this projection through its reason string, and anything the projection
+        // does not recognize is normalised to `unrecognized-reason`. The per-request refusal is a
+        // failure code of its own, so the scanned head keeps the exact reason a unit was withheld for.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/modules/Project/big.ts', reason: 'request_too_large' }],
+                            truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.unassessed).toEqual([{ path: 'src/modules/Project/big.ts', reason: 'request_too_large' }]);
+    });
+
     it('normalises a parameterised reason with an unknown or duplicated qualifier term', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
