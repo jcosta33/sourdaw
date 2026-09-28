@@ -103,6 +103,58 @@ describe('projectNativeDeviceState', () => {
         });
     });
 
+    it('lets the live store win when its voicing diverges from the chunk', () => {
+        // Store-wins is the capture's precedence: the store holds what the
+        // user hears right now, including a preview mid-drag, while the chunk
+        // only catches up at commit. A peer's commit never reconciles the
+        // local store (#4894), so after one the two genuinely diverge until
+        // reload or node recreation — and the projection still follows the
+        // store, the same source the live web carrier plays from.
+        const deviceId = 'grand-boule-divergent';
+        const store = createGrandBouleStore(deviceId);
+        const state = createDefaultGrandBouleState();
+        store.set({
+            ...state,
+            temperament: 1,
+            parameters: {
+                ...state.parameters,
+                hammerHardness: 0.5,
+                velocityCurve: 1.4,
+                stereoWidth: 0.7,
+                toneTilt: 0.2,
+            },
+        });
+        // A chunk carrying a different temperament and voicing — what a peer
+        // or an older save would hold while the local store is stale.
+        const deviceState = {
+            version: 1,
+            data: {
+                modelA: 'balanced-grand',
+                modelB: 'clear-grand',
+                morphPosition: 0.3,
+                layerBalance: 0,
+                enabled: true,
+                temperament: 3,
+                hammerHardness: -0.5,
+                velocityCurve: 0.75,
+                stereoWidth: 0.2,
+                toneTilt: -0.8,
+            },
+        };
+
+        const projected = projectNativeDeviceState({ deviceId, deviceType: 'grand-boule', deviceState });
+
+        expect(projected).toEqual({
+            temperament: 1,
+            hammer_hardness: 0.5,
+            tone_tilt: 0.2,
+            stereo_width: 0.7,
+            velocity_curve: 1.4,
+            sustain_threshold: 0.15,
+            cc_smoothing_ms: 5,
+        });
+    });
+
     it('rejects a chunk with an invalid temperament to the wholesale default', () => {
         // The decoder's contract: a temperament leaf outside the six-value
         // vocabulary corrupts the whole chunk, so the fold restores Equal and
@@ -146,6 +198,31 @@ describe('projectNativeDeviceState', () => {
         });
 
         expect(projected).toBeNull();
+    });
+
+    it('projects exactly the calibration keys for a calibrated store with no chunk', () => {
+        // The chunkless branch must carry the calibration alone. Folding the
+        // five default voicing keys into it stays green across every chunked
+        // case, so this pins the branch's exact shape — the two calibration
+        // keys and nothing else.
+        const deviceId = 'grand-boule-chunkless';
+        const store = createGrandBouleStore(deviceId);
+        const state = createDefaultGrandBouleState();
+        store.set({
+            ...state,
+            midiCalibration: { ...state.midiCalibration, sustainThreshold: 0.6, ccSmoothingMs: 40 },
+        });
+
+        const projected = projectNativeDeviceState({
+            deviceId,
+            deviceType: 'grand-boule',
+            deviceState: undefined,
+        });
+
+        expect(projected).toEqual({
+            sustain_threshold: 0.6,
+            cc_smoothing_ms: 40,
+        });
     });
 
     it('answers null for a toaster device with no committed deviceState', () => {

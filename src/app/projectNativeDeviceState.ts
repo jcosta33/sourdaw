@@ -75,11 +75,14 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // calibrated half-pedal edge (#4302) and on the saved tuning and voicing,
     // not the DSP's Equal/neutral defaults. The chunk is decoded through
     // `captureOfflineGrandBoule`, the same capture the offline render restores
-    // from, so a rebuilt body and a bounce agree by construction; it reads the
-    // live store for the voicing when one exists — every voicing write commits
-    // the chunk through the same action, and a peer's commit reconciles the
-    // store — so the two sources only part across a window the module already
-    // treats as a stale mirror. The five snake_case names are the DSP's own
+    // from, so a rebuilt body and a bounce agree by construction; the capture
+    // prefers the live store's voicing when one exists, which keeps the rebuilt
+    // native body, the live web carrier, and the export capture in agreement —
+    // all three derive from that one capture — and lets a Play during a drag
+    // hear the previewed value. The store and the chunk part only across the
+    // stale-mirror window `projectGrandBoulePersistedState` documents: a
+    // peer's commit does not reconcile the local store (#4894); reload or node
+    // recreation closes it. The five snake_case names are the DSP's own
     // `set_param` vocabulary (`GrandBouleEngine::set_param`,
     // `crates/daw-dsp/src/grand_boule/engine.rs`), the same names
     // `prepareOfflineGrandBoule` posts; the `temperament` write rides as a
