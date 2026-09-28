@@ -123,6 +123,68 @@ const SECRET_ASSIGNMENT = new RegExp(
     'giu'
 );
 
+/** A key name occurrence, searched for inside a rejected assignment's value span. */
+const SECRET_KEY_SEARCH = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'giu');
+
+/**
+ * The assignment's right half — the gap, operator, and value of SECRET_ASSIGNMENT unchanged —
+ * anchored (`y`) where a candidate key's `[\w.-]` continuation stops inside a rejected value.
+ */
+const ASSIGNMENT_GAP_AND_VALUE = new RegExp(
+    `(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    'iyu'
+);
+
+/**
+ * The same right half, probed inside a rejected *quoted* span, mirroring the pinned scanner's
+ * two-branch value reach at this screen's own sixteen-character floor. The generic rule's
+ * secret group is `[\w.=-]{10,150}` — bounded, and its mandatory trailing terminator is
+ * unreachable from inside a longer run, so an unbroken run in that alphabet past 150 characters
+ * is genuinely silent on the scanner — or `[a-z0-9][a-z0-9+/]{11,}={0,3}` — unbounded, so a
+ * pure base64-alphabet run flags at any length (#4872 round 6: the round-5 revision kept only
+ * the bounded half and admitted scanner-flagged secrets past it). The probe therefore pairs each
+ * of its value classes with the second branch: a branch-2 scan ends at the first character
+ * outside its alphabet — an operatorish `=`, `.`, `_`, `-`, or a delimiter — so one stop's work
+ * stays proportional to the distance to the next operator rather than to the remaining tail,
+ * which is what keeps an operator-dense one-line blob linear without capping the branch (#4872
+ * round 5). The bare branch also takes the scanner's trailing terminator in place of the
+ * round-5 run-boundary lookahead. The terminator implies the boundary, and the swap changes one
+ * verdict class in the scanner's direction: a value cut by a character that is neither a run
+ * character nor a scanner terminator (a comma, say) still matched under the lookahead and was
+ * withheld there, while the scanner is silent on the line — the terminator form admits it
+ * (#4872 round 7; the comma-cut pin in the spec holds that verdict). Both forms block the
+ * over-long prefix read; the choice between them is pinned there, not by the prefix pin.
+ */
+const ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN = new RegExp(
+    `(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,150}|[A-Za-z0-9][A-Za-z0-9+/]{15,}={0,3})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,150}|[A-Za-z0-9][A-Za-z0-9+/]{15,}={0,3})(?=['"\\x60\\s;]|\\\\[nr]|$)(?<after>[^\\s]?))`,
+    'iyu'
+);
+
+/** One character of the continuation between a secret-named key and its operator. */
+const KEY_CONTINUATION = /[\w.-]/u;
+
+/**
+ * One character that makes a key name mid-token on its left edge: a letter or a digit, so
+ * `Token` inside `sessionToken` is interior, but `_` still separates — `api_secret` is the
+ * dominant snake_case secret-naming vocabulary, not a token embedding.
+ */
+const LETTER_OR_DIGIT = /[A-Za-z0-9]/u;
+
+/**
+ * The first character of an operator that breaks the scanner's first match at a rejected value's
+ * end. `=` rides the scanner's `[\w.=-]` secret run, and a quote, whitespace, or `;` terminates
+ * the match, so either form keeps the first match standing and the span is never re-read. A `:`,
+ * `,`, `>`, `|`, or `?` is neither a secret-run character nor a terminator: the match fails
+ * there, and the scanner re-matches from inside the run with no left boundary on the key. A
+ * glued `=>` breaks the match one character later — the run absorbs the `=`, and the `>` is
+ * again neither — so that pair is recognised at the call site alongside this class.
+ */
+const FIRST_MATCH_BREAKING_OPERATOR = /[:>|?,]/u;
+
 /** A vendor-shaped key, given as the parts its prefix is assembled from and the shape that follows. */
 type VendorShape = {
     readonly reason: string;
@@ -241,18 +303,235 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
     return !PLACEHOLDER_VALUE.test(value);
 }
 
-/** The first secret-named assignment whose value is shaped like a credential, if any. */
-function secretAssignmentReason(text: string): string | undefined {
-    for (const match of text.matchAll(SECRET_ASSIGNMENT)) {
-        const quoted = match.groups?.quoted !== undefined;
-        const value = match.groups?.quoted ?? match.groups?.bare;
-        if (value === undefined) {
-            continue;
+/**
+ * The gap, operator, and value anchored at `stop`, when they can form a genuine second
+ * assignment for a rejected value ending at `matchEnd`.
+ *
+ * An operator strictly inside a rejected *bare* span pairs the candidate key with text the
+ * rejected match already read as its value, so it is fabricated — unless the probed value is
+ * quoted, because a quote cannot appear inside the unquoted run: the longest operator is four
+ * characters (`:::=`, from `:{1,3}=`) and the quoted branch's opening window reaches a quote at
+ * most four characters past the operator, so a quote reaching past the span is reachable only
+ * within eight characters of its end. Anything else inside the span is the bare class's `+`,
+ * `/`, or `=`, where no gap or operator can start. At or past the span's end the right half is
+ * genuine by position, and a match whose value ends inside the span is fabricated — the bare
+ * run cannot cross the span's end, so that test needs no lookahead of its own.
+ *
+ * A rejected *quoted* span reads differently: its content class admits operators and dotted
+ * names, so an operator deep inside it is genuine text rather than absorbed bare-run material,
+ * and the eight-character window does not apply. The span's end is its terminator — the closing
+ * quote, left unconsumed, or an interior space — a boundary the interior assignment has no
+ * fabricated relationship with, so the reach-past-`matchEnd` test does not apply either:
+ * `'runtime.sessionToken2:<opaque>'` ends at the quote, exactly at `matchEnd`. The operator
+ * pre-check still holds, because no gap or operator can start at a non-operator character in
+ * either span kind. And the probe mirrors the scanner's two-branch value reach
+ * (`ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN`): a `[\w.=-]` run past the first branch's
+ * 150-character bound is silent on the scanner — no terminator is reachable from inside it —
+ * while a pure base64-alphabet run rides the unbounded second branch and flags at any length,
+ * so the probe bounds the first and mirrors the second. One stop's scan still ends at the bound
+ * or the next run boundary instead of re-reading the remaining tail — the wholly unbounded form
+ * cost O(stops x tail) on an operator-dense quoted blob.
+ */
+function probeAssignmentAt(text: string, stop: number, matchEnd: number, quotedSpan: boolean): RegExpExecArray | null {
+    const insideSpan = stop < matchEnd;
+    if (insideSpan && !/[\s'"\x60]/.test(text.charAt(stop))) {
+        const operatorish =
+            text[stop] === '=' ||
+            text[stop] === '>' ||
+            text[stop] === ':' ||
+            text[stop] === '|' ||
+            text[stop] === '?' ||
+            text[stop] === ',';
+        if (!operatorish || (!quotedSpan && matchEnd - stop > 8)) {
+            return null;
         }
-        const after = quoted ? '' : (match.groups?.after ?? '');
-        if (looksLikeCredentialValue(value, after, quoted)) {
+    }
+    const probePattern = quotedSpan ? ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN : ASSIGNMENT_GAP_AND_VALUE;
+    probePattern.lastIndex = stop;
+    const match = probePattern.exec(text);
+    if (match === null || !insideSpan || quotedSpan) {
+        return match;
+    }
+    const after = match.groups?.quoted === undefined ? (match.groups?.after ?? '') : '';
+    return stop + match[0].length - after.length > matchEnd ? match : null;
+}
+
+/** The value a probe matched, with the bare class's trailing boundary character. */
+function probeValue(match: RegExpExecArray): { quoted: boolean; value: string; after: string } {
+    const quotedValue = match.groups?.quoted;
+    if (quotedValue !== undefined) {
+        return { quoted: true, value: quotedValue, after: '' };
+    }
+    return { quoted: false, value: match.groups?.bare ?? '', after: match.groups?.after ?? '' };
+}
+
+/**
+ * Whether a key found inside the rejected value's span starts a genuine assignment there. A
+ * quoted value reads as a value by construction, so any interior key counts. For a bare value
+ * the answer follows the probed operator, mirroring the scanner's shadowing: while the operator
+ * keeps the scanner's first match standing — a space-`=` form, riding the secret run or sitting
+ * past the consumed terminator — the key must still start strictly inside the span after a
+ * character that is neither a letter nor a digit, because the scanner never re-reads the span
+ * and a mid-token key is the screen's own fabrication there. Once the operator breaks that
+ * match — a glued `=>` included, whose `>` fails the match one character after the run
+ * absorbed the `=` — the scanner re-matches from inside the run with no left boundary, so any
+ * interior key counts — mid-token (`Token` in `sessionToken2`) or spanning the value's own
+ * start (`credential` in `credentialABCDEFGH:`).
+ */
+function genuineInteriorKey(
+    text: string,
+    keyIndex: number,
+    valueStart: number,
+    quoted: boolean,
+    probeBreaksFirstMatch: boolean
+): boolean {
+    if (quoted || probeBreaksFirstMatch) {
+        return true;
+    }
+    return keyIndex > valueStart && !LETTER_OR_DIGIT.test(text.charAt(keyIndex - 1));
+}
+
+/**
+ * The reason a rejected assignment still hides a genuine second assignment inside its value
+ * span, if it does.
+ *
+ * Resuming the whole rule at the rejected value's start (#4872) found that assignment, but it
+ * re-consumed the remaining tail once per rejected match — quadratic on a one-line minified
+ * hunk — and it re-read the value's interior as key material, so
+ * `token = credentials.sessionToken = runtimeSessionToken2` was withheld on the `Token` inside
+ * `sessionToken` while the parent and the pinned scanner stayed silent. This scan keeps the
+ * rescan and bounds it:
+ *
+ * - Only the rejected value's own span is searched for keys, one run of `[\w.-]` continuation
+ *   characters probed once, and a position that yields no operator ends the search for every
+ *   key before it — no key name crosses such a position — so the scan stays linear in the span.
+ * - For a rejected bare value the operator and value must reach past the rejected match's end
+ *   (`probeAssignmentAt`), so the second operator of the `session.token=` chain — absorbed by
+ *   the bare value class inside the span — is not re-read as an assignment. The same absorption
+ *   admits a packed `token = A1b2….secret=<opaque>`: no gap around the second operator leaves
+ *   the whole run one bare value, so no interior pair ever forms. The parent admitted those
+ *   lines too. The pinned scanner flags the packed run through its entropy gate (5.27 against
+ *   the 3.5 floor) and silences the benign chain through its stopword allowlist — the chain's
+ *   entropy is above the floor too at 3.57, and each of `session`, `runtime`, `token` alone
+ *   silences a de-stopworded variant that otherwise flags at 4.35 — and neither mechanism is
+ *   modelled here (#4579). A rejected quoted value's interior is real text instead, terminated
+ *   by the closing quote or an interior space, so a genuine assignment inside it is recognised
+ *   wherever it ends — up to the scanner's own value reach: a `[\w.=-]` run past the pinned
+ *   rule's 150-character first-branch bound is silent on the scanner, a pure base64-alphabet
+ *   run rides the rule's unbounded second branch, and the quoted-span probe mirrors both.
+ * - A bare value's interior key follows the probed operator, mirroring the scanner's shadowing.
+ *   The scanner matches leftmost and consumes its terminator, so a space-`=` first assignment
+ *   shadows a second one: the operator rides the `[\w.=-]` secret run or sits past the consumed
+ *   terminator, and the span is never re-read — the pinned benign chains
+ *   (`token = credentials.sessionToken = runtimeSessionToken2`) stay silent. For those forms the
+ *   key must start strictly inside the span after a
+ *   character that is neither a letter nor a digit — the `.secret` of the dotted #4872 run, or
+ *   the `_secret` of snake_case (`api_secret`), since `_` separates names rather than embedding
+ *   them. That leaves out the value-spanning key (`credential` in `credentials.sessionToken = …`,
+ *   at the value's own start) and mid-token keys (`Token` in `sessionToken`), which pair a
+ *   fabricated operator with an identifier-shaped value. But an operator that is neither a
+ *   secret-run character nor a terminator — `:`, `,`, `>`, `|`, `?` — breaks the scanner's
+ *   first match, which then re-matches from inside the run and flags the interior assignment
+ *   with no left boundary: the mid-token `Token` of `runtime.sessionToken2: <opaque>` counts,
+ *   and so does a key spanning the value's own start. A glued `=>` breaks the match one
+ *   character later — the `=` rides the run and the `>` fails it — so
+ *   `runtime.sessionToken2=> <opaque>` counts too. A quoted run reads as a value by
+ *   construction, so a quoted value counts from any interior key either way, word-embedded or
+ *   not — `token = xx.aSecretLongerName = '<value>'` stays withheld.
+ */
+function rejectedValueAssignmentReason(
+    text: string,
+    valueStart: number,
+    matchEnd: number,
+    quotedSpan: boolean
+): string | undefined {
+    let searchFrom = valueStart;
+    // The probe past a candidate key is shared by every candidate whose continuation ends at
+    // the same stop, so it — and the value judgment, which depends only on the probe — is
+    // computed once per `[\w.-]` run rather than once per key.
+    let probedFrom = -1;
+    let probeStop = -1;
+    let probeMatch: RegExpExecArray | null = null;
+    let probeQuoted = false;
+    let probeCredentialShaped = false;
+    let probeBreaksFirstMatch = false;
+    for (;;) {
+        SECRET_KEY_SEARCH.lastIndex = searchFrom;
+        const key = SECRET_KEY_SEARCH.exec(text);
+        if (key === null || key.index >= matchEnd) {
+            return undefined;
+        }
+        const keyEnd = key.index + key[0].length;
+        if (keyEnd > matchEnd) {
+            return undefined;
+        }
+        if (keyEnd < probedFrom || keyEnd > probeStop) {
+            probedFrom = keyEnd;
+            probeStop = keyEnd;
+            while (probeStop < matchEnd && KEY_CONTINUATION.test(text.charAt(probeStop))) {
+                probeStop += 1;
+            }
+            probeMatch = probeAssignmentAt(text, probeStop, matchEnd, quotedSpan);
+            probeBreaksFirstMatch =
+                probeStop < matchEnd &&
+                (FIRST_MATCH_BREAKING_OPERATOR.test(text.charAt(probeStop)) ||
+                    (text.charAt(probeStop) === '=' && text.charAt(probeStop + 1) === '>'));
+            if (probeMatch === null) {
+                probeQuoted = false;
+                probeCredentialShaped = false;
+            } else {
+                const probed = probeValue(probeMatch);
+                probeQuoted = probed.quoted;
+                probeCredentialShaped = looksLikeCredentialValue(probed.value, probed.after, probed.quoted);
+            }
+        }
+        if (
+            probeCredentialShaped &&
+            genuineInteriorKey(text, key.index, valueStart, probeQuoted, probeBreaksFirstMatch)
+        ) {
             return 'a secret-named key assigned a credential-shaped value';
         }
+        searchFrom = probeMatch === null ? probeStop + 1 : key.index + 1;
+    }
+}
+
+/**
+ * The first secret-named assignment whose value is shaped like a credential, if any.
+ *
+ * A rejected match still consumed its whole span: in `token = A1b2….secret = '…'` the dotted run
+ * is read as a member access, and resuming past it never evaluated the assignment that follows
+ * on the same line, so the pinned scanner flagged the line while the screen admitted it
+ * (#4872). A rejection therefore probes the rejected value's span for one more genuine
+ * assignment (`rejectedValueAssignmentReason`) and resumes the scan at the rejected match's
+ * end. The resumption point always sits past the rejected match's start, because the key name
+ * and the operator are at least four characters between them, so rejected match starts
+ * strictly increase and the scan terminates; each accepted match returns, and an exhausted scan
+ * ends the loop.
+ */
+function secretAssignmentReason(text: string): string | undefined {
+    SECRET_ASSIGNMENT.lastIndex = 0;
+    let match = SECRET_ASSIGNMENT.exec(text);
+    while (match !== null) {
+        const quoted = match.groups?.quoted !== undefined;
+        const value = match.groups?.quoted ?? match.groups?.bare;
+        if (value !== undefined) {
+            const after = quoted ? '' : (match.groups?.after ?? '');
+            if (looksLikeCredentialValue(value, after, quoted)) {
+                return 'a secret-named key assigned a credential-shaped value';
+            }
+            const matchEnd = match.index + match[0].length;
+            const reason = rejectedValueAssignmentReason(
+                text,
+                matchEnd - value.length - after.length,
+                matchEnd,
+                quoted
+            );
+            if (reason !== undefined) {
+                return reason;
+            }
+            SECRET_ASSIGNMENT.lastIndex = matchEnd;
+        }
+        match = SECRET_ASSIGNMENT.exec(text);
     }
     return undefined;
 }
