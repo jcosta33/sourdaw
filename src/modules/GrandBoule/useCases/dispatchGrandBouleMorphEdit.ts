@@ -25,5 +25,9 @@ export function dispatchGrandBouleMorphEdit(input: {
         input.store.set({ ...state, morph: input.nextMorph });
         return;
     }
-    commitGrandBouleDeviceState(input.deviceId, input.nextMorph);
+    commitGrandBouleDeviceState(input.deviceId, {
+        morph: input.nextMorph,
+        temperament: state.temperament,
+        parameters: state.parameters,
+    });
 }

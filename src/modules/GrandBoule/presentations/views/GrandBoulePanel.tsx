@@ -338,7 +338,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                         size="bare"
                                         key={preset.id}
                                         type="button"
-                                        onClick={() => loadGrandBoulePreset({ engine, store, presetId: preset.id })}
+                                        onClick={() =>
+                                            loadGrandBoulePreset({ deviceId, engine, store, presetId: preset.id })
+                                        }
                                         className={`grand-boule-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-neutral-400/40 bg-neutral-300/10'

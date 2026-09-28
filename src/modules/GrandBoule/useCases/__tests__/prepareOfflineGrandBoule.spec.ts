@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toGrandBouleDeviceState } from '../../models/GrandBouleDeviceState';
+import { type GrandBoulePersistedState, toGrandBouleDeviceState } from '../../models/GrandBouleDeviceState';
+import { type GrandBouleMorphState } from '../../models/GrandBouleMorphState';
+import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
 import { projectGrandBouleMorphState } from '../../models/ProjectGrandBouleMorphState';
 import {
     createGrandBouleStore,
@@ -9,6 +11,12 @@ import {
 } from '../../stores/grandBouleStore';
 import { captureOfflineGrandBoule } from '../captureOfflineGrandBoule';
 import { prepareOfflineGrandBoule } from '../prepareOfflineGrandBoule';
+
+const NEUTRAL_PARAMETERS = createNeutralPresetParameters();
+
+function persisted(morph: GrandBouleMorphState): GrandBoulePersistedState {
+    return { morph, temperament: 0, parameters: NEUTRAL_PARAMETERS };
+}
 
 describe('prepareOfflineGrandBoule', () => {
     beforeEach(() => {
@@ -27,7 +35,10 @@ describe('prepareOfflineGrandBoule', () => {
         original.midiCalibration.sustainThreshold = 0.61;
         original.midiCalibration.ccSmoothingMs = 41;
         createGrandBouleStore('same-id').set(original);
-        const captured = captureOfflineGrandBoule({ deviceId: 'same-id', deviceState: toGrandBouleDeviceState(morph) });
+        const captured = captureOfflineGrandBoule({
+            deviceId: 'same-id',
+            deviceState: toGrandBouleDeviceState(persisted(morph)),
+        });
         original.midiCalibration.sustainThreshold = 0.02;
         createGrandBouleStore('same-id').set(createDefaultGrandBouleState());
         const postMessage = vi.fn();
@@ -87,7 +98,7 @@ describe('prepareOfflineGrandBoule', () => {
 
         prepareOfflineGrandBoule({
             deviceId: 'grand-boule-offline-no-store',
-            deviceState: toGrandBouleDeviceState(snapshotMorph),
+            deviceState: toGrandBouleDeviceState(persisted(snapshotMorph)),
             port: { postMessage } as unknown as MessagePort,
         });
 
@@ -98,6 +109,36 @@ describe('prepareOfflineGrandBoule', () => {
         expect(posted).not.toEqual(
             projectGrandBouleMorphState(liveMorph).map((parameter) => ({ type: 'param', ...parameter }))
         );
+    });
+
+    it('posts the store temperament and preset voicing after the morph ones', () => {
+        const deviceId = 'grand-boule-offline-voiced';
+        const state = createDefaultGrandBouleState();
+        createGrandBouleStore(deviceId).set({
+            ...state,
+            temperament: 2,
+            parameters: { hammerHardness: 0.4, velocityCurve: 0.85, stereoWidth: 0.7, toneTilt: 0.35 },
+        });
+        const morph = {
+            modelA: 'mellow-grand',
+            modelB: 'singing-grand',
+            morphPosition: 0.4,
+            layerBalance: 0.2,
+            enabled: true,
+        };
+        const postMessage = vi.fn();
+
+        prepareOfflineGrandBoule({
+            deviceId,
+            deviceState: toGrandBouleDeviceState(persisted(morph)),
+            port: { postMessage } as unknown as MessagePort,
+        });
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'temperament', index: 2 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'hammer_hardness', value: 0.4 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'tone_tilt', value: 0.35 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'stereo_width', value: 0.7 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'velocity_curve', value: 0.85 });
     });
 
     it('posts the calibration params after the morph ones for a calibrated store', () => {
@@ -118,7 +159,7 @@ describe('prepareOfflineGrandBoule', () => {
 
         prepareOfflineGrandBoule({
             deviceId,
-            deviceState: toGrandBouleDeviceState(morph),
+            deviceState: toGrandBouleDeviceState(persisted(morph)),
             port: { postMessage } as unknown as MessagePort,
         });
 
@@ -126,6 +167,11 @@ describe('prepareOfflineGrandBoule', () => {
         const morphMessages = projectGrandBouleMorphState(morph).map((parameter) => ({ type: 'param', ...parameter }));
         expect(posted).toEqual([
             ...morphMessages,
+            { type: 'temperament', index: 0 },
+            { type: 'param', name: 'hammer_hardness', value: NEUTRAL_PARAMETERS.hammerHardness },
+            { type: 'param', name: 'tone_tilt', value: NEUTRAL_PARAMETERS.toneTilt },
+            { type: 'param', name: 'stereo_width', value: NEUTRAL_PARAMETERS.stereoWidth },
+            { type: 'param', name: 'velocity_curve', value: NEUTRAL_PARAMETERS.velocityCurve },
             { type: 'param', name: 'sustain_threshold', value: 0.6 },
             { type: 'param', name: 'cc_smoothing_ms', value: 40 },
         ]);
@@ -143,7 +189,7 @@ describe('prepareOfflineGrandBoule', () => {
 
         prepareOfflineGrandBoule({
             deviceId: 'grand-boule-offline-untouched',
-            deviceState: toGrandBouleDeviceState(morph),
+            deviceState: toGrandBouleDeviceState(persisted(morph)),
             port: { postMessage } as unknown as MessagePort,
         });
 

@@ -9,6 +9,12 @@ import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngine
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { loadGrandBoulePreset } from '../loadGrandBoulePreset';
 
+const mocks = vi.hoisted(() => ({
+    commit: vi.fn(),
+}));
+
+vi.mock('../commitGrandBouleDeviceState', () => ({ commitGrandBouleDeviceState: mocks.commit }));
+
 const gbStoreCell = vi.hoisted(() => ({
     value: null as GrandBouleState | null,
     set: vi.fn(),
@@ -48,6 +54,7 @@ describe('loadGrandBoulePreset', () => {
     beforeEach(() => {
         gbStoreCell.value = null;
         gbStoreCell.set.mockClear();
+        mocks.commit.mockClear();
     });
 
     it('should return false when preset id is unknown', () => {
@@ -99,5 +106,41 @@ describe('loadGrandBoulePreset', () => {
         expect(setParam).toHaveBeenCalledWith({ name: 'tone_tilt', value: params.toneTilt });
         expect(setParam).toHaveBeenCalledWith({ name: 'stereo_width', value: params.stereoWidth });
         expect(setParam).toHaveBeenCalledWith({ name: 'velocity_curve', value: params.velocityCurve });
+        expect(mocks.commit).not.toHaveBeenCalled();
+    });
+
+    it('commits the preset voicing to project truth when the caller names the device', () => {
+        const params = { hammerHardness: 0.4, velocityCurve: 0.85, stereoWidth: 0.7, toneTilt: 0.35 };
+        vi.mocked(findBuiltinGrandBoulePreset).mockReturnValue({
+            id: 'grand-boule-bright',
+            name: 'Bright Crust',
+            description: '',
+            parameters: params,
+        });
+
+        const morph = createDefaultMorphState();
+        gbStoreCell.value = {
+            config: createDefaultGrandBouleConfig(),
+            parameters: createNeutralPresetParameters(),
+            pedals: { sustain: 0, unaCorda: false, sostenuto: false },
+            midiCalibration: createDefaultMidiCalibration(),
+            perNoteOverrides: new Map(),
+            morph,
+            temperament: 3,
+        };
+
+        const { handle } = fakeEngine();
+
+        expect(
+            loadGrandBoulePreset({
+                deviceId: 'grand-1',
+                engine: handle,
+                store: gbStoreCell as never,
+                presetId: 'grand-boule-bright',
+            })
+        ).toBe(true);
+
+        expect(mocks.commit).toHaveBeenCalledTimes(1);
+        expect(mocks.commit).toHaveBeenCalledWith('grand-1', { morph, temperament: 3, parameters: params });
     });
 });

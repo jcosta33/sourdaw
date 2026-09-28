@@ -86,6 +86,14 @@ export type ScheduleTrackClipsInput = {
     midi: NonNullable<MidiStoreState>;
     trackInputNode: GainNode;
     trackGainNode: GainNode;
+    /**
+     * The strip's pre-fader tap — where a frozen buffer enters so its
+     * pre-fader sends keep feeding their buses (#4591), exactly as live
+     * replay does (`scheduleFrozenTrack`). Callers that leave it unset keep
+     * the buffer on the fader, which nothing taps in a render without bus
+     * sends.
+     */
+    trackPreFaderTap?: GainNode;
     trackPanNode: StereoPannerNode;
     sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     destination: AudioNode;
@@ -149,6 +157,7 @@ export async function scheduleTrackClips({
     midi,
     trackInputNode,
     trackGainNode,
+    trackPreFaderTap,
     trackPanNode,
     sendAutomationParams,
     destination,
@@ -246,7 +255,12 @@ export async function scheduleTrackClips({
             if (remaining > 0) {
                 const source = offlineCtx.createBufferSource();
                 source.buffer = frozenBuf;
-                source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
+                // The device chain is in the samples, so trackInputNode stays
+                // bypassed — but the buffer enters at the pre-fader tap, as
+                // live replay does (#4591): the tap sits upstream of every
+                // pre-fader send, so the buses keep their feed, and of the
+                // fader, so the direct path is unchanged.
+                source.connect(trackPreFaderTap ?? trackGainNode);
                 source.start(when, bufferOffset, remaining);
                 if (when + remaining > tallyStartSeconds) {
                     tally?.scheduledBuffers.push(frozenBuf);

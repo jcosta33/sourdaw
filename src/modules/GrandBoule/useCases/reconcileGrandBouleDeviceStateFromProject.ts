@@ -4,6 +4,7 @@ import { applyGrandBouleMorphState } from './applyGrandBouleMorphState';
 import { syncMidiCalibrationToEngine } from './calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
 import { hydrateGrandBouleMorphStateFromProject } from './hydrateGrandBouleMorphStateFromProject';
 import { resolveGrandBouleEngine } from './resolveGrandBouleEngine';
+import { syncGrandBouleVoicingToEngine } from './syncGrandBouleVoicingToEngine';
 
 /**
  * Apply authoritative project state to session state and a ready live engine.
@@ -18,6 +19,10 @@ import { resolveGrandBouleEngine } from './resolveGrandBouleEngine';
  * from the store's defaults (via `projectGrandBouleCalibrationToNativePatch`)
  * while its web node stayed on the DSP's raw defaults, splitting the two
  * carriers in the uncalibrated case exactly as #4302 did in the calibrated one.
+ *
+ * The temperament and preset voicing the hydration restores ride the same
+ * push (`syncGrandBouleVoicingToEngine`, #4727), so a reloaded piano is tuned
+ * and voiced like the project that was saved, not like the DSP's defaults.
  */
 export function reconcileGrandBouleDeviceStateFromProject(deviceId: string): void {
     const morph = hydrateGrandBouleMorphStateFromProject(deviceId);
@@ -27,6 +32,8 @@ export function reconcileGrandBouleDeviceStateFromProject(deviceId: string): voi
     const engine = resolveGrandBouleEngine({ deviceId });
     if (engine.isReady()) {
         applyGrandBouleMorphState(engine, morph);
-        syncMidiCalibrationToEngine({ engine, store: createGrandBouleStore(deviceId) });
+        const store = createGrandBouleStore(deviceId);
+        syncGrandBouleVoicingToEngine({ engine, store });
+        syncMidiCalibrationToEngine({ engine, store });
     }
 }
