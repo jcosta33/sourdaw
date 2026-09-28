@@ -4111,21 +4111,32 @@ describe('the scan collector gates a region on the cost the request fitter charg
         // sitting exactly on the ceiling.
         const path = 'src/modules/Project/a.ts';
         const content = 'const sample = 1;\n';
-        const exact = regionCost(
-            {
-                evidenceId: 'a1',
-                revisionSha: '0'.repeat(40),
-                path,
-                side: 'after',
-                startLine: 1,
-                endLine: 1,
-                contentHash: '0'.repeat(64),
-            },
-            content
-        );
-        expect(regionRequestBytes({ path, side: 'after', content })).toBe(exact);
-        expect(regionFitsRequest({ path, side: 'after', content }, exact)).toBe(true);
-        expect(regionFitsRequest({ path, side: 'after', content }, exact - 1)).toBe(false);
+        // Every side the measure carries, at the same content: `before`, `after` and `context` are different
+        // lengths, so a measure that fixed the field would under-count one side and admit a region over the
+        // ceiling by a byte or two.
+        for (const side of ['before', 'after', 'context'] as const) {
+            const exact = regionCost(
+                {
+                    evidenceId: 'a1',
+                    revisionSha: '0'.repeat(40),
+                    path,
+                    side,
+                    startLine: 1,
+                    endLine: 1,
+                    contentHash: '0'.repeat(64),
+                },
+                content
+            );
+            expect(regionRequestBytes({ path, side, content })).toBe(exact);
+            expect(regionFitsRequest({ path, side, content }, exact)).toBe(true);
+            expect(regionFitsRequest({ path, side, content }, exact - 1)).toBe(false);
+        }
+        // The three costs are distinct, which is what makes the field observable.
+        expect(
+            new Set(
+                (['before', 'after', 'context'] as const).map((side) => regionRequestBytes({ path, side, content }))
+            ).size
+        ).toBe(3);
     });
 
     it('withholds a region whose raw bytes fit the ceiling but whose serialized cost does not', () => {
@@ -4201,6 +4212,40 @@ describe('the scan collector gates a region on the cost the request fitter charg
         const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
         expect(units).toHaveLength(0);
         expect(excluded).toEqual([{ path, reason: 'no-admissible-evidence' }]);
+    });
+
+    it('reads each file its own withheld record rather than the whole run', () => {
+        // The filter is the file's own entries. A run where one file's only cause is size and another's is
+        // not must not let the second file's cause decide the first file's reason.
+        const sizedPath = 'src/modules/Project/aaa.ts';
+        const missingPath = 'src/modules/Project/zzz.ts';
+        const files = [
+            changedFile(sizedPath, { added: 1, deleted: 1 }),
+            changedFile(missingPath, { added: 1, deleted: 1 }),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${sizedPath}`]: 'x'.repeat(900),
+                    [`${HEAD}:${sizedPath}`]: 'y'.repeat(900),
+                    // The second file's sides are unreadable, which is not a size cause.
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 200, maxTotalBytes: 1_000_000 },
+        });
+        expect(set.truncated.map((entry) => `${entry.path}:${entry.reason}`)).toEqual([
+            'src/modules/Project/aaa.ts:region-exceeds-per-region-budget (before)',
+            'src/modules/Project/aaa.ts:region-exceeds-per-region-budget (after)',
+            'src/modules/Project/zzz.ts:evidence-unavailable-at-revision',
+            'src/modules/Project/zzz.ts:evidence-unavailable-at-revision',
+        ]);
+        const { excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(excluded).toContainEqual({ path: sizedPath, reason: 'no-evidence-region-within-budget' });
+        expect(excluded).toContainEqual({ path: missingPath, reason: 'no-admissible-evidence' });
     });
 
     it('reads the whole withheld record when it chooses the nothing-sent reason', () => {
@@ -4542,17 +4587,21 @@ describe('the deadline stops admission under its own name', () => {
 
     it('files an attempt the deadline ended under the deadline, whatever error the truncation produced', async () => {
         // An attempt is given only what is left of the deadline, so the SDK aborts the call at the deadline
-        // and the adapter sees that abort as a timeout or as a connection error. The clock decides: the
-        // unit in flight is the run's deadline stop, and filing it under its own request's error would name
-        // the wrong cause for the unit that ended the run.
+        // and the adapter sees that abort as a timeout, a connection error, or — a provider that answers as
+        // the clock lands on the deadline — a terminal rejection. The clock decides in every case: the unit
+        // in flight is the run's deadline stop, and filing it under its own request's error would name the
+        // wrong cause for the unit that ended the run.
         for (const ended of [
             new APITimeoutError(SEMANTIC_BUDGET_PROFILES.local.attemptTimeoutMs),
             new APIConnectionError('connection closed at the deadline'),
+            new BadRequestError(400, { detail: { error_type: 'max_tokens_exceeded' } }, new Headers()),
         ]) {
             const clock = fixedClock(1_000);
             const profile = SEMANTIC_BUDGET_PROFILES.local;
+            let calls = 0;
             const provider = constantProvider(0.05, {
                 systemOne: async () => {
+                    calls += 1;
                     clock.advance(profile.overallDeadlineMs + 1_000);
                     throw ended;
                 },
@@ -4566,7 +4615,75 @@ describe('the deadline stops admission under its own name', () => {
             ]);
             expect(report.failureCode).toBe('deadline_elapsed');
             expect(report.execution).not.toBe('completed');
+            // The deadline ended the run, so the units after the one in flight were never attempted.
+            expect(calls).toBe(1);
         }
+    });
+
+    it('files an attempt that lands exactly on the deadline under the deadline', async () => {
+        // The boundary the comparison reads: the attempt is handed exactly what remains, so the clock can
+        // land on the deadline rather than past it. At the tie the run is over — filing the unit in flight
+        // under its own error and admitting the next unit is the misattribution this code exists to
+        // prevent — and one millisecond earlier the same error stays that unit's own cause.
+        const tie = fixedClock(1_000);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        let tieCalls = 0;
+        const tieProvider = constantProvider(0.05, {
+            systemOne: async () => {
+                tieCalls += 1;
+                tie.advance(profile.overallDeadlineMs);
+                throw new APITimeoutError(profile.attemptTimeoutMs);
+            },
+        });
+        const atTheTie = await runScan(scanPorts(tieProvider, deadlineSource(), tie));
+        expect(atTheTie.report.scope.assessed).toBe(0);
+        expect(atTheTie.report.scope.unassessed).toEqual([
+            { path: firstPath, reason: 'deadline_elapsed' },
+            { path: deadlinePath, reason: 'deadline-elapsed-before-admission' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+        ]);
+        expect(atTheTie.report.failureCode).toBe('deadline_elapsed');
+        expect(tieCalls).toBe(1);
+
+        const before = fixedClock(1_000);
+        const beforeProvider = constantProvider(0.05, {
+            systemOne: async () => {
+                before.advance(profile.overallDeadlineMs - 1);
+                throw new APITimeoutError(profile.attemptTimeoutMs);
+            },
+        });
+        const justBefore = await runScan(scanPorts(beforeProvider, deadlineSource(), before));
+        // One millisecond of run time is left, so the first unit's own failure is its own: a timeout, and
+        // admission continues until the next attempt finds the deadline spent.
+        expect(justBefore.report.scope.unassessed[0]).toEqual({ path: firstPath, reason: 'timeout' });
+        expect(justBefore.report.failureCode).toBe('deadline_elapsed');
+    });
+
+    it('refuses the next attempt when the clock has exactly spent the deadline', async () => {
+        // The pre-attempt check's boundary: an attempt that lands the clock exactly on the deadline leaves
+        // nothing for the next one, which reads the deadline rather than being handed a zero timeout it
+        // cannot use. One millisecond short it is still attempted, which is the case above.
+        const clock = fixedClock(1_000);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        let calls = 0;
+        const provider = constantProvider(0.05, {
+            systemOne: async ({ questions }) => {
+                calls += 1;
+                clock.advance(profile.overallDeadlineMs);
+                const answers: Record<string, unknown> = {};
+                for (const key of Object.keys(questions)) {
+                    answers[key] = { type: 'noul', noul: 0.05 };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        });
+        const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toEqual([
+            { path: deadlinePath, reason: 'deadline_elapsed' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+        ]);
+        expect(calls).toBe(1);
     });
 
     it('still reports a request that overran its own attempt timeout as a timeout', async () => {
