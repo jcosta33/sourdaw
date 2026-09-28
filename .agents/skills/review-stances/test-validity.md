@@ -542,3 +542,16 @@ PR #931 tested point delegation with a mocked unlinked writer, and PR #4392 test
 For a point-command change, dispatch through real Command and CRDT-backed Automation state, then inspect the raw
 document, owning projection, undo history, and `getAutomationValueAtBeat`. A handler-call or stored-value assertion
 cannot prove the sampler will use the point.
+
+### 2026-09-28 — disposable Git fixtures inherited asynchronous Trace2 writes (escaped via PR #4854)
+
+PR #4854 added disposable Git fixtures whose child commands inherited `GIT_TRACE2_EVENT`; its event writer could
+outlive a Git command and race `rmSync` with `ENOTEMPTY`.
+
+Blind spot: the fixture checked Git's validation result but never checked whether an external writer remained active
+while the temporary tree was removed.
+
+Probe that would have caught it: run a real Git child under a supplied inherited Trace2 target and prove the fixture
+disables tracing for that child (or that the target receives no child events); keep environment restoration in a
+`finally` that runs even when recursive cleanup throws. A parent-process environment assertion or a mocked Git child
+does not prove the external writer is isolated.
