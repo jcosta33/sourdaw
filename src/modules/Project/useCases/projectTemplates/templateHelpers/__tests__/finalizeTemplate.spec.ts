@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
     setTrackState: vi.fn(),
     syncArrangement: vi.fn(),
     waitForDevices: vi.fn(),
+    notifyUser: vi.fn(),
 }));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
@@ -94,7 +97,7 @@ describe('finalizeTemplate', () => {
     });
 
     it('commits sidechain truth before yielding for device readiness', async () => {
-        const readiness = Promise.withResolvers<void>();
+        const readiness = Promise.withResolvers<{ status: 'ready'; devices: [] }>();
         mocks.waitForDevices.mockReturnValue(readiness.promise);
         const trigger = createTrack({ id: 'trigger', name: 'Trigger', kind: 'audio' });
         const target = createTrack({ id: 'target', name: 'Target', kind: 'audio' });
@@ -105,13 +108,14 @@ describe('finalizeTemplate', () => {
         });
 
         expect(mocks.addSidechainRoute).toHaveBeenCalledWith('trigger', 'target', 'compressor', 'sc-comp-threshold');
-        readiness.resolve();
+        readiness.resolve({ status: 'ready', devices: [] });
         await completion;
 
         expect(mocks.setTrackState).toHaveBeenCalledOnce();
         expect(mocks.addSidechainRoute).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
         expect(mocks.waitForDevices).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
 
         const trackPublicationOrder = mocks.setTrackState.mock.invocationCallOrder[0];
         const sidechainTruthOrder = mocks.addSidechainRoute.mock.invocationCallOrder[0];
@@ -128,5 +132,31 @@ describe('finalizeTemplate', () => {
         expect(sidechainTruthOrder).toBeGreaterThan(trackPublicationOrder);
         expect(stripConstructionOrder).toBeGreaterThan(sidechainTruthOrder);
         expect(readinessOrder).toBeGreaterThan(stripConstructionOrder);
+    });
+
+    it('keeps committed template truth and reports failed devices without throwing', async () => {
+        mocks.waitForDevices.mockResolvedValue({
+            status: 'failed',
+            devices: [{ deviceId: 'levain-1', status: 'failed', stage: 'content' }],
+        });
+        const track = createTrack({ id: 'track-1', name: 'Samples', kind: 'midi' });
+
+        await expect(finalizeTemplate({ tracks: [track] })).resolves.toBeUndefined();
+
+        expect(mocks.setTrackState).toHaveBeenCalledOnce();
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning');
+    });
+
+    it('does not report an obsolete cancelled cohort over the current project', async () => {
+        mocks.waitForDevices.mockResolvedValue({
+            status: 'cancelled',
+            devices: [{ deviceId: 'levain-1', status: 'cancelled', stage: null }],
+        });
+
+        await finalizeTemplate({ tracks: [] });
+
+        expect(mocks.setTrackState).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

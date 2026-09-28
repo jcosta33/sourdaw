@@ -32,6 +32,7 @@ import {
 
 import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
+import { reportDeviceReadiness } from '../../projectTemplates/templateHelpers/reportDeviceReadiness';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -2334,5 +2335,5 @@ export async function demo5_NebulaDrift(): Promise<void> {
     projectStore.set(projectMetadata);
 
     ensureTrackStrips();
-    await waitForDevices();
+    reportDeviceReadiness(await waitForDevices());
 }

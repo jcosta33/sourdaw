@@ -59,6 +59,12 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
+
+The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
+
+Probe: drive real decoded-file completions to every captured consumer at 39/161 just before the old deadline, then finish all 161 and require five worklet-acknowledged ready results without rollback. In the same fixture, leave one peer stalled for its own full inactivity window while another progresses, and require only the stalled peer to fail. Hold the final worklet acknowledgement to prove decoded completion alone never means ready; make a committed template report current failure without changing project identity, while obsolete cancellation stays silent.
+
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
 PR #805 replaced one MIDI event tail with a global note tail and per-channel expression tails. Its first review caught unrelated-channel expression delayed by a pending note, but the revised note-off still waited only on the global note tail. A pending note-on followed by pressure, CC74, bend and release therefore committed the note before the last gestures reached it; the next note on that member channel could start before the old bend finished.

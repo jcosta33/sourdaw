@@ -9,6 +9,7 @@ import {
     type AudioEngineTopologyTestHarness,
 } from './createAudioEngineTopologyTestHarness';
 
+import type { createDeviceReadinessDiagnostics } from '../../engine/deviceReadinessDiagnostics';
 import type { AudioEngine } from '../../models/AudioEngineState';
 
 /**
@@ -59,6 +60,7 @@ vi.mock('../../engine/TrackNode', () => ({
         });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
         timeoutPendingDeviceLoads = vi.fn();
+        capturePendingDeviceLoads = vi.fn(() => []);
         // default-destination / route-output hooks the adjustment runtime reads.
         defaultDestinationNode: ReturnType<typeof makeNode>;
         getDefaultDestination = vi.fn(() => this.defaultDestinationNode);
@@ -136,6 +138,7 @@ type MockTrackNode = {
     routeOutput: ReturnType<typeof vi.fn>;
     cancelAutomationRamps: () => void;
     timeoutPendingDeviceLoads: ReturnType<typeof vi.fn>;
+    capturePendingDeviceLoads: ReturnType<typeof vi.fn>;
 };
 
 function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
@@ -641,20 +644,109 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             const capturedPromise = new Promise(() => {});
             const replacementPromise = new Promise(() => {});
             set.add(capturedPromise);
+            const collector = (
+                engine as unknown as {
+                    deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+                }
+            ).deviceReadinessDiagnostics;
+            const token = collector.begin({ deviceId: 'captured', deviceType: 'crumbs', requiresContent: true });
+            collector.markGraphReady({ token });
+            trackNode.capturePendingDeviceLoads.mockReturnValue([{ promise: capturedPromise, token }]);
+            trackNode.timeoutPendingDeviceLoads.mockImplementation(() => {
+                collector.markFailed({ token, stage: 'content' });
+                set.delete(capturedPromise);
+            });
             const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
             const waiting = (
-                engine as unknown as { waitForDevices: (timeoutMs: number) => Promise<void> }
+                engine as unknown as {
+                    waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
+                }
             ).waitForDevices(10);
             set.add(replacementPromise);
             await vi.advanceTimersByTimeAsync(11);
 
-            await expect(waiting).resolves.toBeUndefined();
+            await expect(waiting).resolves.toMatchObject({
+                status: 'failed',
+                devices: [{ deviceId: 'captured', status: 'failed', stage: 'content' }],
+            });
             expect(set).toEqual(new Set([replacementPromise]));
             expect(trackNode.timeoutPendingDeviceLoads).toHaveBeenCalledExactlyOnceWith(new Set([capturedPromise]));
             expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('timed out'));
             warnSpy.mockRestore();
             vi.useRealTimers();
+        });
+
+        it('expires a stalled device while another captured device continues making content progress', async () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(0);
+            try {
+                engine.ensureTrackStrip('t1');
+                const trackNode = getMockTrackNode(engine, 't1');
+                const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> })
+                    .pendingDevicePromises;
+                const collector = (
+                    engine as unknown as {
+                        deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+                    }
+                ).deviceReadinessDiagnostics;
+                const stalled = Promise.withResolvers<void>();
+                const progressing = Promise.withResolvers<void>();
+                const stalledToken = collector.begin({
+                    deviceId: 'stalled',
+                    deviceType: 'crumbs',
+                    requiresContent: true,
+                });
+                const progressingToken = collector.begin({
+                    deviceId: 'progressing',
+                    deviceType: 'levain',
+                    requiresContent: true,
+                });
+                collector.markGraphReady({ token: stalledToken });
+                collector.markGraphReady({ token: progressingToken });
+                set.add(stalled.promise);
+                set.add(progressing.promise);
+                trackNode.capturePendingDeviceLoads.mockReturnValue([
+                    { promise: stalled.promise, token: stalledToken },
+                    { promise: progressing.promise, token: progressingToken },
+                ]);
+                trackNode.timeoutPendingDeviceLoads.mockImplementation((expired: Set<Promise<unknown>>) => {
+                    if (expired.has(stalled.promise)) {
+                        collector.markFailed({ token: stalledToken, stage: 'content' });
+                        set.delete(stalled.promise);
+                        stalled.resolve();
+                    }
+                    if (expired.has(progressing.promise)) {
+                        collector.markFailed({ token: progressingToken, stage: 'content' });
+                        set.delete(progressing.promise);
+                        progressing.resolve();
+                    }
+                });
+
+                const waiting = (
+                    engine as unknown as {
+                        waitForDevices: (timeoutMs: number) => ReturnType<AudioEngine['waitForDevices']>;
+                    }
+                ).waitForDevices(10000);
+                await vi.advanceTimersByTimeAsync(9_990);
+                collector.markContentProgress({ token: progressingToken, epoch: 1, progress: 39 / 161 });
+                await vi.advanceTimersByTimeAsync(20);
+
+                expect(trackNode.timeoutPendingDeviceLoads).toHaveBeenCalledExactlyOnceWith(new Set([stalled.promise]));
+                expect(collector.getWaitState(progressingToken).status).toBe('pending');
+                collector.markContentSettled({ token: progressingToken, outcome: 'ready' });
+                set.delete(progressing.promise);
+                progressing.resolve();
+                await expect(waiting).resolves.toMatchObject({
+                    status: 'failed',
+                    devices: [
+                        { deviceId: 'stalled', status: 'failed', stage: 'content' },
+                        { deviceId: 'progressing', status: 'ready', stage: null },
+                    ],
+                });
+            } finally {
+                vi.useRealTimers();
+            }
         });
     });
 
@@ -1108,22 +1200,38 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     describe('waitForDevices normal completion', () => {
         it('awaits pending devices that resolve and clear before the deadline', async () => {
             const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> }).pendingDevicePromises;
+            engine.ensureTrackStrip('t1');
+            const trackNode = getMockTrackNode(engine, 't1');
+            const collector = (
+                engine as unknown as {
+                    deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+                }
+            ).deviceReadinessDiagnostics;
+            const token = collector.begin({ deviceId: 'captured', deviceType: 'crumbs', requiresContent: true });
+            collector.markGraphReady({ token });
             // A pending device promise that, on resolution, removes itself from
             // the set — mirroring how a real device-load completion clears its
             // entry so the loop's size check eventually reaches 0.
             const pending = new Promise<void>((resolve) => {
                 queueMicrotask(() => {
+                    collector.markContentSettled({ token, outcome: 'ready' });
                     set.delete(pending);
                     resolve();
                 });
             });
             set.add(pending);
+            trackNode.capturePendingDeviceLoads.mockReturnValue([{ promise: pending, token }]);
 
             // The loop enters (size > 0), deadline not exceeded (L978 else arm),
             // awaits the promise which resolves and self-removes, then size == 0.
             await expect(
-                (engine as unknown as { waitForDevices: (t: number) => Promise<void> }).waitForDevices(5000)
-            ).resolves.toBeUndefined();
+                (
+                    engine as unknown as { waitForDevices: (t: number) => ReturnType<AudioEngine['waitForDevices']> }
+                ).waitForDevices(5000)
+            ).resolves.toMatchObject({
+                status: 'ready',
+                devices: [{ deviceId: 'captured', status: 'ready', stage: null }],
+            });
             expect(set.size).toBe(0);
         });
     });

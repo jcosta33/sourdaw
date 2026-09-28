@@ -5,6 +5,7 @@ import { ensureTrackStrips } from '#/modules/Transport/useCases';
 import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
 
 import { commitVcaGroups } from './commitVcaGroups';
+import { reportDeviceReadiness } from './reportDeviceReadiness';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { VcaGroupHandle } from './createVca';
@@ -40,5 +41,5 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
     ensureTrackStrips();
 
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
-    await waitForDevices();
+    reportDeviceReadiness(await waitForDevices());
 }

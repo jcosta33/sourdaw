@@ -78,6 +78,12 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-28 — an elapsed-time readiness test omitted the real progress producer
+
+The existing timeout cases exercised stalled Crumbs loads and captured-generation isolation, but no check drove Levain's decoded-bank progress into all five live TrackNodes across the 10-second boundary. A green timeout test therefore could not distinguish a healthy cold bank from a stall. PR #3982's review explicitly scoped out progressing-load policy and caller-visible outcomes; the test gap is the missing #3318 acceptance probe, not a failed #3982 cohort oracle.
+
+Probe: use the real decoded-bank producer and sink/descriptor route, assert each captured device receives its own increasing completion callback, then cross the old deadline, finish the finite bank, and require five token-matched worklet acknowledgements. Reverting progress forwarding or the per-device renewal must redden that case. Independently hold one final acknowledgement and one stalled peer, and assert typed failure rather than treating promise settlement or decoded bytes as playable readiness.
+
 ### 2026-09-26 — a startup bridge crossing left the desktop-runtime call list stale (escaped via PR #4568)
 
 PR #4568 (commit `a0aa4c1f18`) added `clearInheritedRetrospectiveCaptureArm()` to `src/app/main.tsx`,

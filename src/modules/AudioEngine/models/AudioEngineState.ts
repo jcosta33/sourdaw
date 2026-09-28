@@ -115,6 +115,15 @@ export type AudioEngineDeviceReadinessDiagnostics = {
     }>;
 };
 
+export type AudioDeviceWaitResult = Readonly<{
+    status: 'ready' | 'failed' | 'cancelled';
+    devices: readonly Readonly<{
+        deviceId: string;
+        status: 'ready' | 'failed' | 'cancelled';
+        stage: 'node' | 'graph' | 'content' | 'runtime' | null;
+    }>[];
+}>;
+
 export type AudioProcessorLifecycleState = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
 
 export type AudioEngineDiagnostics = {
@@ -589,7 +598,7 @@ export type AudioEngine = {
     refreshSidechainAlignment(
         keyDelayFor: (route: { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }) => number
     ): void;
-    waitForDevices(): Promise<void>;
+    waitForDevices(): Promise<AudioDeviceWaitResult>;
     /**
      * Publish the playhead to the worklet readers. `positionSeconds` is the same
      * instant as `beat`, integrated through the tempo map by the caller that

@@ -57,6 +57,7 @@ export type AudioDeviceRuntimeSink = {
         deviceId: string;
         device: LevainRuntimeDevice;
         port?: MessagePort;
+        onProgress?: (epoch: number, progress: number) => void;
     }) => Promise<DeviceContentLoadOutcome>;
     unregisterLevainDevice: (deviceId: string) => void;
     setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;

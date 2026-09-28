@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 
@@ -74,6 +74,51 @@ describe('deviceReadinessDiagnostics', () => {
             graphToContentReadyMs: 21,
             requestToPlayableReadyMs: 35,
         });
+    });
+
+    it('renews only genuine progress for the current content phase and bank epoch', () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(1_000);
+            const staleToken = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain-1',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            const token = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain-1',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            const initialActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+
+            vi.setSystemTime(2_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 1 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(initialActivity);
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            const graphActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+
+            vi.setSystemTime(3_000);
+            deviceReadinessDiagnostics.markContentProgress({ token: staleToken, epoch: 1, progress: 1 / 161 });
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 0.01 });
+            const firstProgressActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+            expect(firstProgressActivity).toBe(3_000);
+            expect(firstProgressActivity).toBeGreaterThan(graphActivity);
+
+            vi.setSystemTime(4_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 0.01 });
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 0, progress: 0.9 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(firstProgressActivity);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 1 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(4_000);
+
+            deviceReadinessDiagnostics.markContentSettled({ token, outcome: 'ready' });
+            vi.setSystemTime(5_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 2 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).status).toBe('ready');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('records a zero graph-to-content wait when content is ready before graph connection', () => {
