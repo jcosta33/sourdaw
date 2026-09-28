@@ -138,19 +138,25 @@ const ASSIGNMENT_GAP_AND_VALUE = new RegExp(
 );
 
 /**
- * The same right half, probed inside a rejected *quoted* span, with the pinned scanner's own
- * value reach: the generic rule's secret run is bounded (`{10,150}`), so an unbroken value run
- * longer than 150 characters is silent there — no terminator is reachable from inside it — and
- * the probe mirrors that bound. Without it, every operatorish stop inside a long quoted value
- * re-read the whole remaining tail once per stop, which is quadratic on an operator-dense
- * one-line blob (#4872 round 5). The bare branch gains a run-boundary lookahead so an over-long
- * run fails outright instead of matching a 150-character prefix, where the unbounded form lets
- * `after` read the run's 151st character as the boundary.
+ * The same right half, probed inside a rejected *quoted* span, mirroring the pinned scanner's
+ * two-branch value reach at this screen's own sixteen-character floor. The generic rule's
+ * secret group is `[\w.=-]{10,150}` — bounded, and its mandatory trailing terminator is
+ * unreachable from inside a longer run, so an unbroken run in that alphabet past 150 characters
+ * is genuinely silent on the scanner — or `[a-z0-9][a-z0-9+/]{11,}={0,3}` — unbounded, so a
+ * pure base64-alphabet run flags at any length (#4872 round 6: the round-5 revision kept only
+ * the bounded half and admitted scanner-flagged secrets past it). The probe therefore pairs each
+ * of its value classes with the second branch: a branch-2 scan ends at the first character
+ * outside its alphabet — an operatorish `=`, `.`, `_`, `-`, or a delimiter — so one stop's work
+ * stays proportional to the distance to the next operator rather than to the remaining tail,
+ * which is what keeps an operator-dense one-line blob linear without capping the branch (#4872
+ * round 5). The bare branch also takes the scanner's trailing terminator in place of the
+ * run-boundary lookahead: the terminator implies the boundary, and a value cut by an expression
+ * character no longer matches — the value judgment rejected those anyway, so no verdict changes.
  */
 const ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN = new RegExp(
     `(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
-        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,150})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
-        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,150})(?![A-Za-z0-9+/_=.-])(?<after>[^\\s]?))`,
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,150}|[A-Za-z0-9][A-Za-z0-9+/]{15,}={0,3})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,150}|[A-Za-z0-9][A-Za-z0-9+/]{15,}={0,3})(?=['"\\x60\\s;]|\\\\[nr]|$)(?<after>[^\\s]?))`,
     'iyu'
 );
 
@@ -314,11 +320,13 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
  * fabricated relationship with, so the reach-past-`matchEnd` test does not apply either:
  * `'runtime.sessionToken2:<opaque>'` ends at the quote, exactly at `matchEnd`. The operator
  * pre-check still holds, because no gap or operator can start at a non-operator character in
- * either span kind. And the probe runs with the scanner's own value reach
- * (`ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN`): the pinned rule's secret run is bounded at 150
- * characters, so a longer unbroken run is silent on the scanner, and bounding the value group
- * keeps one stop's scan at that bound instead of re-reading the remaining tail — the unbounded
- * form cost O(stops x tail) on an operator-dense quoted blob.
+ * either span kind. And the probe mirrors the scanner's two-branch value reach
+ * (`ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN`): a `[\w.=-]` run past the first branch's
+ * 150-character bound is silent on the scanner — no terminator is reachable from inside it —
+ * while a pure base64-alphabet run rides the unbounded second branch and flags at any length,
+ * so the probe bounds the first and mirrors the second. One stop's scan still ends at the bound
+ * or the next run boundary instead of re-reading the remaining tail — the wholly unbounded form
+ * cost O(stops x tail) on an operator-dense quoted blob.
  */
 function probeAssignmentAt(text: string, stop: number, matchEnd: number, quotedSpan: boolean): RegExpExecArray | null {
     const insideSpan = stop < matchEnd;
@@ -404,9 +412,9 @@ function genuineInteriorKey(
  *   silences a de-stopworded variant that otherwise flags at 4.35 — and neither mechanism is
  *   modelled here (#4579). A rejected quoted value's interior is real text instead, terminated
  *   by the closing quote or an interior space, so a genuine assignment inside it is recognised
- *   wherever it ends — up to the scanner's own value reach: an unbroken run past the pinned
- *   rule's 150-character bound is silent on the scanner, and the quoted-span probe stops
- *   reading it there too.
+ *   wherever it ends — up to the scanner's own value reach: a `[\w.=-]` run past the pinned
+ *   rule's 150-character first-branch bound is silent on the scanner, a pure base64-alphabet
+ *   run rides the rule's unbounded second branch, and the quoted-span probe mirrors both.
  * - A bare value's interior key follows the probed operator, mirroring the scanner's shadowing.
  *   The scanner matches leftmost and consumes its terminator, so a space-`=` first assignment
  *   shadows a second one: the operator rides the `[\w.=-]` secret run or sits past the consumed

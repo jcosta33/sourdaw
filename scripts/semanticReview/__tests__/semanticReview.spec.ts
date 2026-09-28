@@ -4856,9 +4856,11 @@ describe('the egress screen tells code from credentials', () => {
         // `token=` units ends a `[\w.-]` run at an operatorish `=`, and the round-4 quoted-span
         // probe re-matched its unbounded value group at each stop — over five hundred
         // milliseconds here, growing x~4 per doubling, against six milliseconds on the round-3
-        // head. The probe inside a quoted span now carries the scanner's own value reach (the
-        // pinned generic rule's secret run is bounded at 150 characters, so a longer unbroken
-        // run is silent there), which bounds every stop's scan and makes the line linear again.
+        // head. The probe inside a quoted span now mirrors the scanner's two-branch value
+        // reach: this blob's runs are `[\w.=-]` material that sails past the first branch's
+        // 150-character bound with no terminator reachable, and they fail the second branch
+        // because an interior `=` is not trailing padding — so each stop's scan ends within one
+        // unit and the line is linear again.
         // The blob is filler — every interior value run is over that reach — so it is admitted,
         // and shorter forms of it are admitted by the pinned binary too (checked at 6 and 20
         // units). The bound fails the round-4 behavior with wide margin and is loose against
@@ -4866,6 +4868,138 @@ describe('the egress screen tells code from credentials', () => {
         const unit = secretFixture('token=', 'A'.repeat(100));
         const line = secretFixture("token = '", unit.repeat(2_320), ".a'");
         expect(line.length).toBeGreaterThanOrEqual(240_000);
+        const startedAt = performance.now();
+        const reason = sensitiveContentReason(line);
+        const elapsedMs = performance.now() - startedAt;
+        expect(reason).toBeUndefined();
+        expect(elapsedMs).toBeLessThan(250);
+    });
+
+    it("withholds an interior assignment whose value rides the scanner's unbounded base64 branch", () => {
+        // Round-6 review of #4872. The round-5 cap's premise — a secret run past 150 characters
+        // is silent on the scanner — holds only for the pinned rule's first secret branch
+        // (`[\w.=-]{10,150}`), whose mandatory trailing terminator is unreachable from inside a
+        // longer run. The second branch (`[a-z0-9][a-z0-9+/]{11,}={0,3}`) is unbounded, so a
+        // pure base64-alphabet run flags at any length, and the capped probe admitted each of
+        // these lines that round 4's unbounded probe had withheld. Every expectation was checked
+        // against the pinned binary: Gitleaks v8.30.1 with the repository's `.gitleaks.toml`
+        // flags all four lines as generic-api-key — the interior assignment as the match, secret
+        // lengths 151, 200, 160, and 151 at entropies 4.99, 5.00, 3.75, and 4.99 against the 3.5
+        // floor. The sixteen-character floor and the value judgment still apply; only the
+        // probe's reach changes. The values are composed at runtime for the same reason as the
+        // fixtures above.
+        const value32 = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const hexDigit = secretFixture('a1b2c3d4', 'e5f6a7b8');
+        const run151 = secretFixture(value32.repeat(4), value32.slice(0, 23));
+        const run200 = secretFixture(value32.repeat(6), value32.slice(0, 8));
+        const hex160 = hexDigit.repeat(10);
+        expect(run151).toHaveLength(151);
+        expect(run200).toHaveLength(200);
+        expect(hex160).toHaveLength(160);
+        for (const line of [
+            secretFixture("token = 'aaaa.secret=", run151, "'"),
+            secretFixture("token = 'aaaa.secret=", run200, "'"),
+            secretFixture("token = 'aaaa.secret=", hex160, "'"),
+            secretFixture('token = "xx.longer.token2: ', "'", run151, "' rest", '"'),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+    });
+
+    it("bounds the quoted-span probe's bare branch at the scanner's 150-character run", () => {
+        // Round-6 review of #4872. The pinned rule's first secret branch — `[\w.=-]{10,150}`
+        // with a mandatory trailing terminator — flags a run in its alphabet at 149 and 150
+        // characters but stays silent at 151, where no prefix of the run ends at a terminator.
+        // These runs carry an `_` every eleventh character, outside the second branch's base64
+        // alphabet, so the first branch alone decides: Gitleaks v8.30.1 with the repository's
+        // `.gitleaks.toml` flags the two shorter lines as generic-api-key (secret lengths 149
+        // and 150, entropy 4.50 against the 3.5 floor) and stays silent on the 151-character
+        // line. The probe's bare branch agrees at all three lengths; widening its cap past the
+        // run would read the 151-character line's prefix and withhold it. The runs are composed
+        // at runtime for the same reason as the fixtures above.
+        const pair = secretFixture('a1B2c3D4e5F', '_', 'g6H7i8J9k0L', '_');
+        const run149 = secretFixture(pair.repeat(6), pair.slice(0, 5));
+        const run150 = secretFixture(pair.repeat(6), pair.slice(0, 6));
+        const run151 = secretFixture(pair.repeat(6), pair.slice(0, 7));
+        expect(run149).toHaveLength(149);
+        expect(run150).toHaveLength(150);
+        expect(run151).toHaveLength(151);
+        expect(sensitiveContentReason(secretFixture("token = 'x.token2:", run149, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture("token = 'x.token2:", run150, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture("token = 'x.token2:", run151, "'"))).toBeUndefined();
+    });
+
+    it("bounds the quoted-span probe's quoted branch at the scanner's 150-character run", () => {
+        // Round-6 review of #4872. The same boundary on the probe's quoted branch: the interior
+        // assignment's value sits in its own quotes, and the pinned binary's verdicts are the
+        // first branch's again — Gitleaks v8.30.1 with the repository's `.gitleaks.toml` flags
+        // the 149- and 150-character lines as generic-api-key (secret lengths 149 and 150,
+        // entropy 4.50) and stays silent on the 151-character line, whose underscore-fragmented
+        // run rides neither branch. Widening the quoted branch's cap past the run would read its
+        // prefix and withhold it. The runs are composed at runtime for the same reason as the
+        // fixtures above.
+        const pair = secretFixture('a1B2c3D4e5F', '_', 'g6H7i8J9k0L', '_');
+        const run149 = secretFixture(pair.repeat(6), pair.slice(0, 5));
+        const run150 = secretFixture(pair.repeat(6), pair.slice(0, 6));
+        const run151 = secretFixture(pair.repeat(6), pair.slice(0, 7));
+        expect(
+            sensitiveContentReason(secretFixture('token = "xx.longer.token2: ', "'", run149, "' rest", '"'))
+        ).toBeDefined();
+        expect(
+            sensitiveContentReason(secretFixture('token = "xx.longer.token2: ', "'", run150, "' rest", '"'))
+        ).toBeDefined();
+        expect(
+            sensitiveContentReason(secretFixture('token = "xx.longer.token2: ', "'", run151, "' rest", '"'))
+        ).toBeUndefined();
+    });
+
+    it("does not read a run's prefix as a bounded value when the run continues", () => {
+        // Round-6 review of #4872. A 150-character pure-alphanumeric run glued to a sixteen-
+        // character tail is one 167-character `[\w.=-]` run, and the pinned binary stays silent
+        // on the line: the first branch's 150-character prefix ends mid-run at no terminator,
+        // and the second branch's trailing-`=` padding must end at a terminator rather than a
+        // letter (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`). Without the probe's
+        // terminator requirement the bare branch matches the run's first 150 characters as the
+        // value, and the line is withheld. The run is composed at runtime for the same reason as
+        // the fixtures above.
+        const value32 = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const run150 = secretFixture(value32.repeat(4), value32.slice(0, 22));
+        expect(run150).toHaveLength(150);
+        const line = secretFixture("token = 'xx.token=", run150, '=zz', 'Ab3dEf7h', 'Ij2lMn4p', "'");
+        expect(sensitiveContentReason(line)).toBeUndefined();
+    });
+
+    it("still withholds a bare span's interior quoted assignment past the quoted-span probe's reach", () => {
+        // Round-6 review of #4872. The 200-character run inside the interior quotes rides
+        // neither scanner branch — over the first branch's 150-character bound, and an `_` every
+        // eleventh character keeps it out of the second branch's alphabet — so the pinned binary
+        // stays silent on the line (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`;
+        // the first match is also silenced by the scanner's stopword allowlist). The withhold is
+        // the accepted over-withhold of a quoted value, which reads as a value by construction —
+        // the policy the round-4 pin above records. Routing a rejected bare span's probe through
+        // the bounded quoted-span probe would admit the line; the bare span keeps the unbounded
+        // probe. The run is composed at runtime for the same reason as the fixtures above.
+        const pair = secretFixture('a1B2c3D4e5F', '_', 'g6H7i8J9k0L', '_');
+        const run200 = secretFixture(pair.repeat(8), pair.slice(0, 8));
+        expect(run200).toHaveLength(200);
+        const line = secretFixture("token = credentials.sessionToken = '", run200, "'");
+        expect(sensitiveContentReason(line)).toBeDefined();
+    });
+
+    it('screens a base64-dense rejected quoted value in linear time', () => {
+        // Round-6 review of #4872. Every one of the 1160 units is a `token=` operator followed
+        // by a 200-character pure-alphanumeric run — the second scanner branch's own alphabet,
+        // which the probe now mirrors without a cap. One stop's second-branch scan still ends at
+        // the next unit's `=` — not trailing padding while a letter follows it — and the first
+        // branch ends at its own 150-character bound, so each stop's work is bounded by one unit
+        // rather than the remaining tail and the line stays linear. The blob is filler — no
+        // interior probe matches — so it is admitted, and a shorter form (six units) is silent
+        // on the pinned binary (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`). The
+        // bound fails a per-stop re-read of the tail with wide margin and is loose against the
+        // fixed scan. The unit is composed at runtime for the same reason as the fixtures above.
+        const unit = secretFixture('token=', 'a1B2c3D4e5F6g7H8j9K0'.repeat(10));
+        const line = secretFixture("token = '", unit.repeat(1_160), ".a'");
+        expect(line.length).toBeGreaterThanOrEqual(230_000);
         const startedAt = performance.now();
         const reason = sensitiveContentReason(line);
         const elapsedMs = performance.now() - startedAt;
