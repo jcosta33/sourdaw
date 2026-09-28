@@ -34,25 +34,31 @@ use shadow::grand_boule::voice::{
 use shadow::grinder::engine::GrinderEngine as ReferenceGrinderEngine;
 use shadow::modal_string::ModalString as ReferenceModalString;
 
+/// Re-measured after the #4652 retune (model_low_end now applies as a
+/// post-cascade tilt) changed the routed-amp renders; the F9 optimized-vs-
+/// reference equivalence assertions are unaffected.
 const SERIAL_CONTRACT: Contract = Contract {
-    peak: 0.515_945_196_151_733_4,
-    rms: 0.143_552_243_153_985_2,
+    peak: 0.413_314_908_742_904_66,
+    rms: 0.127_314_075_827_954_2,
     projections: [
-        -0.040_942_879_282_910_294,
-        -0.010_198_204_019_696_426,
-        -0.039_743_450_272_362_35,
-        0.004_656_999_393_152_554,
+        -0.016_821_476_993_660_34,
+        -0.053_213_211_488_197_444,
+        -0.033_021_906_742_922_64,
+        -0.006_870_575_184_761_154,
     ],
 };
 
+/// Re-measured after the #4652 retune (model_low_end now applies as a
+/// post-cascade tilt) changed the routed-amp renders; the F9 optimized-vs-
+/// reference equivalence assertions are unaffected.
 const DUAL_AMP_CONTRACT: Contract = Contract {
-    peak: 0.603_328_943_252_563_5,
-    rms: 0.164_024_649_460_511_65,
+    peak: 0.555_105_924_606_323_2,
+    rms: 0.162_676_552_366_149_47,
     projections: [
-        -0.024_683_128_235_638_934,
-        -0.055_704_666_543_982_664,
-        0.005_817_914_126_775_449,
-        -0.013_701_024_808_456_948,
+        -0.037_050_784_169_214_666,
+        -0.065_291_104_234_155_02,
+        -0.010_820_701_284_012_085,
+        -0.034_990_896_067_520_844,
     ],
 };
 

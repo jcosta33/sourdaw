@@ -89,7 +89,6 @@ vi.mock('../../engine/TrackNode', () => ({
                 removeMidiFx: vi.fn<(...args: unknown[]) => void>(),
                 updateMidiFxParam: vi.fn<(...args: unknown[]) => void>(),
                 updateMidiFxBypass: vi.fn<(...args: unknown[]) => void>(),
-                registerTuningTable: vi.fn<(...args: unknown[]) => void>(),
                 dispose: vi.fn<(...args: unknown[]) => void>(),
             };
             trackNodeInstances.push({ trackId: id, mocks: this.mocks });
@@ -158,9 +157,6 @@ vi.mock('../../engine/TrackNode', () => ({
         }
         updateMidiFxBypass(...args: unknown[]) {
             this.mocks.updateMidiFxBypass!(...args);
-        }
-        registerTuningTable(...args: unknown[]) {
-            this.mocks.registerTuningTable!(...args);
         }
         dispose() {
             this.mocks.dispose!();
@@ -702,16 +698,6 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         engine.syncKneadState('t1', { 'clip-1': { shift: 2 } });
 
         expect(updateState).toHaveBeenCalledWith({ 'clip-1': { shift: 2 } });
-    });
-
-    it('fans the tuning table out to every live track strip', () => {
-        engine.ensureTrackStrip('t1');
-        engine.ensureTrackStrip('t2');
-
-        engine.registerTuningTable([440, 466.16]);
-
-        expect(trackMocks('t1').registerTuningTable).toHaveBeenCalledWith([440, 466.16]);
-        expect(trackMocks('t2').registerTuningTable).toHaveBeenCalledWith([440, 466.16]);
     });
 
     it('setTrackOutput forwards the routing target to the strip', () => {

@@ -522,32 +522,33 @@ GitHub accepts `skipped` required checks and prefers the newest same-name run, s
 skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
 
 - `.github/workflows/health-gates.yml` answers to `pull_request` alone and mints `Gate`. Its `gate`
-  job carries `!cancelled()` and no other predicate: any predicate that can be
-  false is the hole. Do not add a trigger to this file, and do not rename `gate`.
+  job and its assertion step carry `always()` so cancellation cannot skip the verdict.
+  Its assertion requires successful scope, validation and affected checks, plus the exact
+  selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a trigger to this file, and do not rename `gate`.
 - `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
   `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
   reviewed head as Git objects and never checks out or executes it, and it mints the non-required
   `Semantic review` check. Its whole trust boundary is pinned by
   `scripts/semanticReviewWorkflowContract.ts`
   ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
-- `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, unit matrix,
-  build, Rust, natives, smoke set, secret scan, dependency review — shared by both gate workflows
-  so one definition does not drift.
-- `.github/workflows/heavy-gates.yml` owns the review event and the jobs that cannot fit a push
-  budget — the E2E matrix, the Browser AI hardware proof, CodeQL, the full-history secret scan;
-  its summary `HeavyGate` is deliberately not ruleset-required.
+- `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
+  native checks, scoped smoke, PR diff secret scanning and dependency review once per PR.
+- `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
+  Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`.
+  Approving reviews start no duplicate suite. CodeQL has a separately permissioned required
+  job in `health-gates.yml`; full-history secret scanning remains in the nightly.
 - `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
   nightly failure report. It is the only production web deploy — `vercel.json` disables the Git
   integration, so reaching `main` deploys nothing by itself.
 
 No job outside `health-gates.yml` may be named `Gate`.
 
-`unit` decides `Gate` for web-scope runs. E2E never runs on pull requests; including it in `Gate`
-would claim always-skipped coverage. It decides `HeavyGate` on approving-review runs and gates the
-nightly train. The required approval triggers the heavy lane, but no required check waits for its
-verdict; enforcement awaits arming `deliver`'s required-CI admission, leaving the ruleset alone
-with CI merge authority while that is advisory. The old ban on PR-editable workflows holding
-merge authority is superseded: review must catch heads weakening their own gates.
+`scripts/prValidationScope.ts` records the affected browser plan with reasons. Product changes,
+including presentation surfaces, select smoke and the complete browser suite; direct browser spec
+changes select those specs. Deleted and renamed paths retain their old effects. Documentation and
+explicitly known review tooling avoid browser runs. Required selected jobs must succeed, and scope
+resolution or missing evidence fails closed. Nightly remains the unconditional full-load gate.
+The ruleset requires the single `Gate`; review must catch heads weakening their own workflow.
 
 Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.
 
@@ -622,8 +623,7 @@ grow the PR.
 
 Before merge, the orchestrator independently reads the current diff and confirms specified
 behavior, tests observing their claimed subjects, and every accepted finding repaired rather than
-silenced — green `Gate` and advisory `HeavyGate` do not prove these, and the advisory status
-raises this duty. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
+silenced — green `Gate` proves only the checks and scopes it actually observed. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
 every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
 run checks; locally format changed files and stage rewrites.
 

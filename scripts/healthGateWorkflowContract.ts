@@ -45,29 +45,26 @@ export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-wo
 
 export const WORKFLOW_FILE_INVENTORY_KEY = 'workflowFileInventory';
 
-// A matrix shard list no pin reads can shrink, and the unsharded portion of
-// the suite simply never runs: every shard in the list reports green because
-// each one ran. Both suites pin their full shard inventory.
+// The full nightly train and required unit suite retain their fixed shards.
+// The pull-request browser matrix is generated from a validated affected plan.
 export const UNIT_SHARDS = [1, 2, 3, 4] as const;
 export const E2E_SHARDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 
 export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly number[]]> = [
     ['validation.yml', 'unit', UNIT_SHARDS],
-    ['heavy-gates.yml', 'e2e', E2E_SHARDS],
     ['nightly.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'e2e', E2E_SHARDS],
 ];
 
 // A job-level `permissions` block reshapes one leg's token away from the
 // workflow-level pin, and no pin read it: `contents: write` on a validation
-// leg would hand every pull request a token that can push. The heavy and
-// nightly files keep their own exact job-level pins (CodeQL, the nightly
-// reporter); these files must grant nothing. The semantic-review file is
+// leg would hand every pull request a token that can push. The required
+// CodeQL job has a separately pinned SARIF upload permission; these files
+// must grant nothing. The semantic-review file is
 // absent because its coverage job carries a deliberate `contents: read`, and
 // `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
 // beside the assessment job's own ban.
 export const JOB_LEVEL_PERMISSION_FREE_FILES = [
-    'health-gates.yml',
     'validation.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
@@ -129,8 +126,11 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
+        scope: ['Checkout', 'Set up Node', 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
-        gate: ['Require every job to have succeeded or been skipped'],
+        affected: null,
+        codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
+        gate: ['Require selected checks to succeed'],
     },
     'validation.yml': {
         decide: [
@@ -190,7 +190,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'heavy-gates.yml': {
-        validation: null,
         e2e: [
             ...SETUP_PNPM_NODE,
             'Install Playwright browsers',
@@ -200,14 +199,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
-        codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
-        secrets: [
-            'Checkout trusted scanner',
-            'Checkout scan target',
-            'Validate secret scanner positive control',
-            'Scan history for secrets',
-        ],
-        'heavy-gate': ['Require every job to have succeeded or been skipped'],
+        'heavy-gate': ['Require selected browser jobs to succeed'],
     },
     'semantic-review.yml': {
         assess: [
@@ -325,6 +317,7 @@ export type ConditionalStepPin = Readonly<{
 const SHARD_FAIL = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 const BLOB_UPLOAD = '${{ !cancelled() }}';
 const ALWAYS = 'always()';
+const ALWAYS_EXPRESSION = '${{ always() }}';
 const WASM_SELECT = "steps.plan.outputs.selected == 'true'";
 const DEPLOY_CRED = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 const DEPLOY_RUN = `${DEPLOY_CRED} && steps.production.outputs.deploy == 'true'`;
@@ -339,6 +332,8 @@ const pin = (workflow: string, job: string, step: string, condition: string): Co
 });
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
+    pin('heavy-gates.yml', 'heavy-gate', 'Require selected browser jobs to succeed', ALWAYS_EXPRESSION),
     ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
         (step) => pin('wasm-artifacts.yml', 'build-artifacts', step, WASM_SELECT)
     ),

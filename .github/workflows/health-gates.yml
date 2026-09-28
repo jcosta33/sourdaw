@@ -1,42 +1,8 @@
 name: Health gates
 
-# This workflow exists so that nobody has to run these checks on their own
-# machine. Several agents working in parallel lanes cannot each run a repository
-# -wide typecheck, lint, or test suite without exhausting the machine they share
-# and stalling one another. Everything that costs real resources belongs here,
-# in `heavy-gates.yml`, or in `nightly.yml`.
-#
-# It has exactly one trigger, and that is load-bearing rather than incidental.
-# `Gate` is a required status check on `main`, and GitHub counts a check run
-# whose conclusion is `skipped` as satisfying a required check while preferring
-# the most recent run of that name. So any event that can reach this file and
-# legitimately skip `gate` can mint a passing `Gate` over a red head. A
-# `pull_request_review` trigger did exactly that: a comment-only review skipped
-# every job, minted `Gate` as `skipped`, and flipped the required check to
-# satisfied on a head whose earlier `Gate` had failed. The fix is structural
-# rather than conditional — the review event lives in `heavy-gates.yml`, which
-# mints `HeavyGate` and never `Gate`, and the schedule and dispatch events live
-# in `nightly.yml`, which mints no summary check at all. Do not add a trigger
-# here, and do not name a job in either of those files `Gate`.
-#
-# The validation legs themselves live in `validation.yml`, called from here and
-# from the heavy workflow so there is one definition of them rather than two.
-#
-# `gate` is the stable summary and the required check. It depends on the
-# validation call, whose aggregate result is a failure when any leg inside it
-# failed and a success when each either succeeded or was legitimately skipped.
-# `codeql`, `secrets`, the end-to-end matrix and the Browser AI hardware proof
-# are deliberately not here: they are heavy-lane jobs that never ran on a
-# pull-request push, so every `Gate` that listed them listed jobs that were
-# always `skipped`. Their enforcement lives in `heavy-gates.yml` and, when it is
-# armed, in `deliver`'s required-CI admission. A required check from a workflow
-# skipped by trigger-level path, branch, or commit-message filters remains
-# pending; `gate` only makes conditional job skips resolve. Do not rename
-# `gate`.
-#
-# Runners are standard GitHub-hosted labels only. Public repositories bill
-# nothing for those; larger and GPU runners bill even here.
-
+# Only pull_request may mint Gate. GitHub accepts skipped required checks, so
+# approval, schedule and dispatch must never create another Gate on this head.
+# Every selected check finishes before this required aggregate can succeed.
 on:
   pull_request:
 
@@ -45,43 +11,104 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # One in-flight validation per pull request; a newer push cancels the older
-  # run because its answer is about a head nobody will merge.
   group: health-gates-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Plan required checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      browser: ${{ steps.plan.outputs.browser }}
+      browser-ai: ${{ steps.plan.outputs.browser-ai }}
+      codeql: ${{ steps.plan.outputs.codeql }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - name: Plan affected checks
+        id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/prValidationScope.ts plan
+      - name: Upload scope manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-validation-scope
+          path: pr-validation-scope.json
+          if-no-files-found: error
+          retention-days: 7
+
   validation:
     name: Validation
+    needs: scope
     uses: ./.github/workflows/validation.yml
+    with:
+      browser: ${{ needs.scope.outputs.browser == 'true' }}
+
+  affected:
+    name: Affected workflows
+    # Run browser and hardware checks only after the faster required validation succeeds.
+    needs: [scope, validation]
+    uses: ./.github/workflows/heavy-gates.yml
+    with:
+      matrix: ${{ needs.scope.outputs.matrix }}
+      browser-ai: ${{ needs.scope.outputs.browser-ai == 'true' }}
+
+  codeql:
+    name: CodeQL
+    needs: scope
+    if: needs.scope.outputs.codeql == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
 
   gate:
-    # Named distinctly from the workflow so the stable summary is unambiguous in
-    # the checks list. Renaming it breaks the ruleset that requires it.
     name: Gate
-    # `!cancelled()` is the whole condition, and it has to stay that way. Any
-    # predicate that can be false here lets this job skip, and a skipped `Gate`
-    # reads to GitHub as a passing required check. This workflow answers only to
-    # `pull_request`, so there is no event for such a predicate to discriminate
-    # on anyway.
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     needs:
+      - scope
       - validation
+      - affected
+      - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every job to have succeeded or been skipped
+      - name: Require selected checks to succeed
+        if: ${{ always() }}
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          printf '%s\n' "$RESULTS"
-          failed=$(printf '%s' "$RESULTS" | jq -r '
-            to_entries[]
-            | select(.value.result != "success" and .value.result != "skipped")
-            | "\(.key): \(.value.result)"')
-          if [ -n "$failed" ]; then
-            printf 'failing jobs:\n%s\n' "$failed"
-            exit 1
-          fi
-          printf 'every job succeeded or was skipped\n'
+          printf '%s' "$RESULTS" | jq -e '
+            (keys | sort) == ["affected", "codeql", "scope", "validation"] and
+            .scope.result == "success" and .validation.result == "success" and .affected.result == "success" and
+            (.scope.outputs.browser == "true" or .scope.outputs.browser == "false") and
+            (.scope.outputs["browser-ai"] == "true" or .scope.outputs["browser-ai"] == "false") and
+            (if .scope.outputs.codeql == "true" then .codeql.result == "success"
+             elif .scope.outputs.codeql == "false" then .codeql.result == "skipped"
+             else false end)'

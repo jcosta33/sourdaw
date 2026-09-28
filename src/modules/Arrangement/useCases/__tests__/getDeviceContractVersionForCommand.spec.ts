@@ -78,7 +78,10 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's
     // arpeggiator never read them, so they move to per-processor commands.
     yeast: 'descriptor-v1:f319bc9b',
-    crust: 'descriptor-v1:aa02b972',
+    // Crust's channel-link guidance restates the limiter's linked-target rule
+    // (#4742): link_transient carries the catch of a one-sided peak,
+    // link_release the recovery.
+    crust: 'descriptor-v1:51804822',
     'builtin-crumbs': 'descriptor-v1:b99d022e',
     'grand-boule': 'descriptor-v1:93d1562a',
     knead: 'descriptor-v1:f8e350da',

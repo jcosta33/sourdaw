@@ -1,11 +1,42 @@
 use crate::primitives::flush_denormal;
 
+/// Longest distance the delay tap may travel per sample, in samples of delay
+/// per sample of audio (issue #4648). A tap moving Δ samples/sample plays the
+/// buffer at rate 1 − Δ, so 0.5 keeps a time change inside a pitch bend of
+/// [0.5, 1.5] — at most an octave down on lengthening, a fifth up on
+/// shortening, never a freeze or a reversal. Past about an octave a sweep
+/// stops reading as tape and starts reading as a defect. Being a
+/// samples-per-sample bound, the ceiling is pitch rather than wall-clock: a
+/// glide takes as long as the distance needs, and the same move takes the
+/// same seconds at every sample rate.
+///
+/// Deliberately not the crate's one-pole smoother (`SmoothedParam`, the
+/// voice's portamento): its first step is proportional to the remaining
+/// distance, and for a read position the step *is* the playback rate, so
+/// gliding 200→800 ms at a 30 ms time constant would move the tap ~126
+/// samples on the first sample — playback rate ≈ −125, a violent reverse
+/// sweep — while capping that first step at 0.5 would need a multi-second
+/// time constant. A crossfade between the old and new taps was the
+/// alternative; it buys click-freedom without the bend, at two taps and an
+/// equal-power ramp per channel, where tape-echo convention is to bend.
+const MAX_TAP_SLEW: f32 = 0.5;
+
 /// Stereo ping-pong delay effect.
 pub struct StereoDelay {
     buffer_l: Vec<f32>,
     buffer_r: Vec<f32>,
     write_pos: usize,
     sample_rate: f32,
+    /// Effective delay length the taps read, glided toward the block's
+    /// target at `MAX_TAP_SLEW` (issue #4648). Feeds `read_interp`, whose
+    /// fractional interpolation covers the sub-sample remainder, so the
+    /// glide and the fractional read compose instead of each smoothing a
+    /// different part of the same jump.
+    current_delay_samples: f32,
+    /// The glide starts from the first target it is handed, not from the
+    /// zero seed: `new()` does not know the opening time, and sweeping up
+    /// from 0 would postpone the first echo by the whole ramp.
+    glide_seeded: bool,
 }
 
 impl StereoDelay {
@@ -17,12 +48,17 @@ impl StereoDelay {
             buffer_r: vec![0.0; max_samples],
             write_pos: 0,
             sample_rate,
+            current_delay_samples: 0.0,
+            glide_seeded: false,
         }
     }
 
     /// Longest interval before buffered energy can reappear; not the total decay time.
     pub fn max_tail_gap_samples(&self, time_ms: f32) -> u64 {
-        let delay_samples = time_ms.clamp(10.0, 2000.0) * 0.001 * self.sample_rate;
+        let target = time_ms.clamp(10.0, 2000.0) * 0.001 * self.sample_rate;
+        // While a time change is still gliding, the tap reads lengths between
+        // the old setting and this one, so the longer of the two governs.
+        let delay_samples = target.max(self.current_delay_samples);
         delay_samples.ceil() as u64 + 1
     }
 
@@ -53,15 +89,31 @@ impl StereoDelay {
         let time_ms = time_ms.clamp(10.0, 2000.0);
         let feedback = feedback.clamp(0.0, 0.95);
         let mix = mix.clamp(0.0, 1.0);
-        let delay_samples = time_ms * 0.001 * self.sample_rate;
         let max_delay = self.buffer_l.len() as f32 - 1.0;
-        let delay_samples = delay_samples.min(max_delay).max(1.0);
+        let target_delay = (time_ms * 0.001 * self.sample_rate).min(max_delay).max(1.0);
+        if !self.glide_seeded {
+            self.current_delay_samples = target_delay;
+            self.glide_seeded = true;
+        }
         let dry = 1.0 - mix;
 
         let block_size = left.len().min(right.len());
         for i in 0..block_size {
-            let dl = Self::read_interp(&self.buffer_l, self.write_pos, delay_samples);
-            let dr = Self::read_interp(&self.buffer_r, self.write_pos, delay_samples);
+            // Glide the effective length toward the target (law: MAX_TAP_SLEW).
+            // The remaining distance is always a difference of two clamped
+            // lengths, so the gliding length stays inside [1, max_delay].
+            let remaining = target_delay - self.current_delay_samples;
+            self.current_delay_samples = if remaining.abs() <= MAX_TAP_SLEW {
+                // Snap the sub-slew remainder: a ≤0.5-sample move is one more
+                // bounded step, and settling exactly prevents an endless
+                // sub-sample dither.
+                target_delay
+            } else {
+                self.current_delay_samples + remaining.signum() * MAX_TAP_SLEW
+            };
+
+            let dl = Self::read_interp(&self.buffer_l, self.write_pos, self.current_delay_samples);
+            let dr = Self::read_interp(&self.buffer_r, self.write_pos, self.current_delay_samples);
 
             // Ping-pong: left input feeds right delay, right input feeds left delay
             self.buffer_l[self.write_pos] = left[i] + dr * feedback;

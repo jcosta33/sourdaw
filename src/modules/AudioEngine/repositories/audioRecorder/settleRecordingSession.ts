@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
 import { activeSessions, type RecordingResult, type RecordingSession } from './recordingSession';
+import { removeRecordingTempFile } from './removeRecordingTempFile';
 import { terminateRecordingWorker } from './terminateRecordingWorker';
 
 export function settleRecordingSession(session: RecordingSession, result: RecordingResult): boolean {
@@ -21,6 +22,7 @@ export function settleRecordingSession(session: RecordingSession, result: Record
     } finally {
         terminateRecordingWorker(session);
         cleanupNodesForRecordingSession(session);
+        removeRecordingTempFile(session);
         if (activeSessions.get(trackId) === session) {
             activeSessions.delete(trackId);
         }

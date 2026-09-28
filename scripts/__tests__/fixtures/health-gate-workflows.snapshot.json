@@ -22,25 +22,122 @@
       "cancel-in-progress": true
     },
     "jobs": {
+      "scope": {
+        "name": "Plan required checks",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "outputs": {
+          "matrix": "${{ steps.plan.outputs.matrix }}",
+          "browser": "${{ steps.plan.outputs.browser }}",
+          "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
+          "codeql": "${{ steps.plan.outputs.codeql }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Plan affected checks",
+            "id": "plan",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+            },
+            "run": "node scripts/prValidationScope.ts plan"
+          },
+          {
+            "name": "Upload scope manifest",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "pr-validation-scope",
+              "path": "pr-validation-scope.json",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
       "validation": {
         "name": "Validation",
-        "uses": "./.github/workflows/validation.yml"
+        "needs": "scope",
+        "uses": "./.github/workflows/validation.yml",
+        "with": {
+          "browser": "${{ needs.scope.outputs.browser == 'true' }}"
+        }
+      },
+      "affected": {
+        "name": "Affected workflows",
+        "needs": [
+          "scope",
+          "validation"
+        ],
+        "uses": "./.github/workflows/heavy-gates.yml",
+        "with": {
+          "matrix": "${{ needs.scope.outputs.matrix }}",
+          "browser-ai": "${{ needs.scope.outputs.browser-ai == 'true' }}"
+        }
+      },
+      "codeql": {
+        "name": "CodeQL",
+        "needs": "scope",
+        "if": "needs.scope.outputs.codeql == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "permissions": {
+          "contents": "read",
+          "security-events": "write",
+          "actions": "read"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Initialise CodeQL",
+            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "with": {
+              "languages": "javascript-typescript",
+              "queries": "security-extended"
+            }
+          },
+          {
+            "name": "Analyse",
+            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+          }
+        ]
       },
       "gate": {
         "name": "Gate",
-        "if": "${{ !cancelled() }}",
+        "if": "${{ always() }}",
         "needs": [
-          "validation"
+          "scope",
+          "validation",
+          "affected",
+          "codeql"
         ],
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 5,
         "steps": [
           {
-            "name": "Require every job to have succeeded or been skipped",
+            "name": "Require selected checks to succeed",
+            "if": "${{ always() }}",
             "env": {
               "RESULTS": "${{ toJSON(needs) }}"
             },
-            "run": "set -euo pipefail\nprintf '%s\\n' \"$RESULTS\"\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[]\n  | select(.value.result != \"success\" and .value.result != \"skipped\")\n  | \"\\(.key): \\(.value.result)\"')\nif [ -n \"$failed\" ]; then\n  printf 'failing jobs:\\n%s\\n' \"$failed\"\n  exit 1\nfi\nprintf 'every job succeeded or was skipped\\n'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
       }
@@ -49,53 +146,37 @@
   "heavy-gates.yml": {
     "name": "Heavy gates",
     "on": {
-      "pull_request_review": {
-        "types": [
-          "submitted"
-        ]
+      "workflow_call": {
+        "inputs": {
+          "matrix": {
+            "description": "Validated explicit E2E file groups; an empty include list selects none.",
+            "required": true,
+            "type": "string"
+          },
+          "browser-ai": {
+            "description": "Whether affected dependencies require hardware WebGPU proof.",
+            "required": true,
+            "type": "boolean"
+          }
+        }
       }
     },
     "permissions": {
       "contents": "read",
       "pull-requests": "read"
     },
-    "concurrency": {
-      "group": "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}",
-      "cancel-in-progress": false
-    },
     "env": {
       "NODE_VERSION": "24.19.0"
     },
     "jobs": {
-      "validation": {
-        "name": "Validation",
-        "if": "github.event.review.state == 'approved'",
-        "uses": "./.github/workflows/validation.yml"
-      },
       "e2e": {
-        "name": "End-to-end ${{ matrix.shard }}/12",
-        "needs": "validation",
-        "if": "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
+        "name": "Affected end-to-end ${{ matrix.id }}",
+        "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 60,
         "strategy": {
           "fail-fast": false,
-          "matrix": {
-            "shard": [
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9,
-              10,
-              11,
-              12
-            ]
-          }
+          "matrix": "${{ fromJSON(inputs.matrix) }}"
         },
         "steps": [
           {
@@ -132,13 +213,16 @@
           {
             "name": "Run shard",
             "id": "run_shard",
-            "run": "pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob"
+            "env": {
+              "E2E_SPECS": "${{ toJSON(matrix.specs) }}"
+            },
+            "run": "node scripts/prValidationScope.ts run"
           },
           {
             "name": "Report shard failure",
             "if": "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}",
             "env": {
-              "SHARD": "${{ matrix.shard }}"
+              "SHARD": "${{ matrix.id }}"
             },
             "run": "printf '::warning title=End-to-end shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### End-to-end shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
           },
@@ -147,9 +231,10 @@
             "if": "${{ !cancelled() }}",
             "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "with": {
-              "name": "e2e-blob-${{ matrix.shard }}",
+              "name": "e2e-blob-${{ matrix.id }}",
               "path": "blob-report/",
-              "retention-days": 7
+              "retention-days": 7,
+              "if-no-files-found": "error"
             }
           }
         ]
@@ -207,15 +292,15 @@
             "with": {
               "name": "playwright-report",
               "path": "playwright-report/",
-              "retention-days": 7
+              "retention-days": 7,
+              "if-no-files-found": "error"
             }
           }
         ]
       },
       "browser-ai-webgpu": {
         "name": "Browser AI WebGPU admission",
-        "needs": "validation",
-        "if": "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
+        "if": "inputs.browser-ai",
         "runs-on": "macos-14",
         "timeout-minutes": 30,
         "steps": [
@@ -256,100 +341,26 @@
           }
         ]
       },
-      "codeql": {
-        "name": "CodeQL",
-        "needs": "validation",
-        "if": "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 45,
-        "permissions": {
-          "contents": "read",
-          "security-events": "write",
-          "actions": "read"
-        },
-        "steps": [
-          {
-            "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-          },
-          {
-            "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
-            "with": {
-              "languages": "javascript-typescript",
-              "queries": "security-extended"
-            }
-          },
-          {
-            "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
-          }
-        ]
-      },
-      "secrets": {
-        "name": "Secret scan",
-        "needs": "validation",
-        "if": "needs.validation.outputs.heavy == 'true'",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 30,
-        "env": {
-          "GITLEAKS_VERSION": "8.30.1",
-          "GITLEAKS_SHA256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-        },
-        "steps": [
-          {
-            "name": "Checkout trusted scanner",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.base.sha || github.sha }}",
-              "path": "trusted-scanner",
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout scan target",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.head.sha || github.sha }}",
-              "path": "scan-target",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Validate secret scanner positive control",
-            "working-directory": "${{ github.workspace }}",
-            "env": {
-              "GITLEAKS_EXPECTED_LEAK_EXIT_CODE": 79
-            },
-            "run": "set -euo pipefail\numask 077\npositive_control_repo=$(mktemp -d \"$RUNNER_TEMP/gitleaks-positive-control.XXXXXX\")\ntrap 'rm -rf \"$positive_control_repo\"' EXIT\n\ngit -C \"$positive_control_repo\" init --initial-branch=main\ngit -C \"$positive_control_repo\" config user.email sourdaw-ci@example.invalid\ngit -C \"$positive_control_repo\" config user.name 'Sourdaw CI'\nsynthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')\nmkdir -p \"$positive_control_repo/public/wasm\"\nprintf 'aws_access_key_id = \"%s\" // gitleaks:allow\\n' \\\n  \"$synthetic_access_key\" > \"$positive_control_repo/public/wasm/fixture.js\"\ncat > \"$positive_control_repo/.gitleaks.toml\" <<'GITLEAKS_CONFIG'\ntitle = \"Untrusted suppression fixture\"\n\n[extend]\nuseDefault = true\n\n[allowlist]\ndescription = \"Would suppress every finding if target-root config were loaded\"\nregexes = ['''.*''']\nGITLEAKS_CONFIG\ngit -C \"$positive_control_repo\" add public/wasm/fixture.js .gitleaks.toml\ngit -C \"$positive_control_repo\" commit -m 'add synthetic secret fixture'\n\nset +e\nGITLEAKS_EXIT_CODE=\"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n  sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$positive_control_repo/.git\"\npositive_control_status=$?\nset -e\n\nif [ \"$positive_control_status\" -ne \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" ]; then\n  printf 'expected Gitleaks positive control to exit %s, got %s\\n' \\\n    \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n    \"$positive_control_status\" >&2\n  exit 1\nfi\n"
-          },
-          {
-            "name": "Scan history for secrets",
-            "working-directory": "${{ github.workspace }}",
-            "run": "sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$GITHUB_WORKSPACE/scan-target/.git\""
-          }
-        ]
-      },
       "heavy-gate": {
         "name": "HeavyGate",
-        "if": "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
+        "if": "${{ always() }}",
         "needs": [
-          "validation",
           "e2e",
-          "browser-ai-webgpu",
-          "codeql",
-          "secrets"
+          "e2e-report",
+          "browser-ai-webgpu"
         ],
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 5,
         "steps": [
           {
-            "name": "Require every job to have succeeded or been skipped",
+            "name": "Require selected browser jobs to succeed",
+            "if": "${{ always() }}",
             "env": {
-              "RESULTS": "${{ toJSON(needs) }}"
+              "RESULTS": "${{ toJSON(needs) }}",
+              "MATRIX": "${{ inputs.matrix }}",
+              "BROWSER_AI": "${{ inputs.browser-ai }}"
             },
-            "run": "set -euo pipefail\nprintf '%s\\n' \"$RESULTS\"\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[]\n  | select(.value.result != \"success\" and .value.result != \"skipped\")\n  | \"\\(.key): \\(.value.result)\"')\nif [ -n \"$failed\" ]; then\n  printf 'failing jobs:\\n%s\\n' \"$failed\"\n  exit 1\nfi\nprintf 'every job succeeded or was skipped\\n'\n"
+            "run": "set -euo pipefail\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\ncase \"$BROWSER_AI\" in\n  true) hardware=success ;;\n  false) hardware=skipped ;;\n  *) printf 'missing Browser AI scope\\n' >&2; exit 1 ;;\nesac\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" --arg hardware \"$hardware\" '\n  (keys | sort) == [\"browser-ai-webgpu\", \"e2e\", \"e2e-report\"] and\n  .e2e.result == $selected and .[\"e2e-report\"].result == $selected and\n  .[\"browser-ai-webgpu\"].result == $hardware'\n"
           }
         ]
       }
@@ -359,6 +370,13 @@
     "name": "Validation",
     "on": {
       "workflow_call": {
+        "inputs": {
+          "browser": {
+            "description": "Whether the affected plan requires browser smoke.",
+            "required": true,
+            "type": "boolean"
+          }
+        },
         "outputs": {
           "heavy": {
             "description": "Whether the caller's event admits the heavy lane.",
@@ -399,7 +417,6 @@
         "name": "Decide scope",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 5,
-        "if": "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
         "outputs": {
           "heavy": "${{ steps.scope.outputs.heavy }}",
           "rust": "${{ steps.scope.outputs.rust }}",
@@ -438,13 +455,14 @@
             "id": "scope",
             "env": {
               "EVENT": "${{ github.event_name }}",
+              "BROWSER": "${{ inputs.browser }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },

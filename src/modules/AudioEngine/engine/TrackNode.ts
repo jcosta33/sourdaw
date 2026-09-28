@@ -285,20 +285,6 @@ export class TrackNode {
         }
     }
 
-    public registerTuningTable(frequencies: number[]): void {
-        for (const dn of this.strip.deviceNodes) {
-            // Knead is a relative pitch-shift editor, not a tuned instrument: its
-            // WASM KneadInstance exposes only set_shift_semitones and has no
-            // tuning-table consumer (the kneadProcessor 'param' handler acts on
-            // 'shift_semitones' alone, so a posted 'tuning-table' was silently
-            // dropped in the worklet). Do not post a param Knead cannot consume —
-            // forward the table only to instruments that have a tuning input.
-            if (dn.fermenterControls) {
-                dn.fermenterControls.setParam('tuning-table', frequencies);
-            }
-        }
-    }
-
     public setGain(gain: number): void {
         this.strip.faderNode.gain.setTargetAtTime(clampFaderGain(gain), this.deps.context.currentTime, 0.01);
     }

@@ -273,12 +273,17 @@ fn grinder_rig_capture_level(engine_mode: f32, fat: bool) -> Level {
 }
 
 /// Peak and RMS for each amp model at the fixed operating point above.
+///
+/// Re-measured 2026-09-27 in one pass after the #4652 preamp separation
+/// retune: `model_low_end` now applies as a post-cascade tilt, which moved the
+/// rendered level of the cascade models; Custom re-measured identically to its
+/// previous pin. The bands are unchanged.
 const GRINDER_EXPECTED: [(&str, f32, f32, f32); 6] = [
-    ("Clean Twin", CLEAN_TWIN, 0.26114, 0.07575),
-    ("Crunch JCM", CRUNCH_JCM, 0.59377, 0.16143),
-    ("Lead JCM", LEAD_JCM, 0.44016, 0.14457),
-    ("AC30 Top Boost", AC30_TOP_BOOST, 0.47949, 0.13736),
-    ("Rectifier", RECTIFIER, 0.73044, 0.24670),
+    ("Clean Twin", CLEAN_TWIN, 0.32048, 0.08850),
+    ("Crunch JCM", CRUNCH_JCM, 0.56680, 0.15322),
+    ("Lead JCM", LEAD_JCM, 0.51507, 0.17631),
+    ("AC30 Top Boost", AC30_TOP_BOOST, 0.53186, 0.14945),
+    ("Rectifier", RECTIFIER, 0.64292, 0.21389),
     ("Custom", CUSTOM, 0.82409, 0.16959),
 ];
 
@@ -340,7 +345,9 @@ fn grinder_separates_its_clean_and_high_gain_models_at_the_engine_output() {
     assert_within_db(
         "Grinder Rectifier-over-Clean-Twin RMS ratio",
         ratio,
-        3.2568,
+        // Re-measured 2026-09-27 with the #4652 retune; the tilt lifted Clean
+        // Twin more than Rectifier at this operating point.
+        2.41687,
         2.0,
     );
 }

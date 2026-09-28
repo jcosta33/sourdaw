@@ -600,31 +600,48 @@ const REVIEW_RUN_START = '2026-08-29T10:05:00Z';
 const LATER_RUN_START = '2026-08-29T10:10:00Z';
 
 const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
+const VALIDATION_WORKFLOW_SOURCE = readFileSync(
+    join(import.meta.dirname, '../../.github/workflows/validation.yml'),
+    'utf8'
+);
 
 /**
- * The workflow the gate's one need calls, read from the same relative `uses` path the launcher
- * reads at the pinned commit. Keyed by that literal path because that is how the summary carries it.
+ * The workflows called by Gate dependencies, read from the same relative `uses` paths the launcher
+ * reads at the pinned commit. Keyed by those literal paths because that is how the summary carries them.
  */
 const LIVE_CALLED_SOURCES: Record<string, string> = {
-    './.github/workflows/validation.yml': readFileSync(
-        join(import.meta.dirname, '../../.github/workflows/validation.yml'),
+    './.github/workflows/validation.yml': VALIDATION_WORKFLOW_SOURCE,
+    './.github/workflows/heavy-gates.yml': readFileSync(
+        join(import.meta.dirname, '../../.github/workflows/heavy-gates.yml'),
         'utf8'
     ),
 };
 
-/**
- * Derived from the live workflows with the `yaml` package rather than copied out of them. A pinned
- * list says what the names were on the day it was written: this repository gated on twelve jobs
- * while the copy here still named eleven, and the missing one was invisible precisely because
- * nothing compared the two. Deriving it means promoting a job into the gate — or moving the legs
- * behind the validation lane, where GitHub reports them as `Validation / <name>` — updates these
- * fixtures with the workflows.
- */
+/** The required-mode examples use a static matrix, which that dormant parser can expand exactly. */
+const STATIC_REQUIRED_WORKFLOW_SOURCE = [
+    'name: Health gates',
+    'on:',
+    '  pull_request:',
+    'jobs:',
+    '  validation:',
+    '    name: Validation',
+    '    uses: ./.github/workflows/validation.yml',
+    '  gate:',
+    '    name: Gate',
+    '    needs: validation',
+].join('\n');
+
+const STATIC_CALLED_SOURCES = { './.github/workflows/validation.yml': VALIDATION_WORKFLOW_SOURCE };
+
+/** Derived independently from the static workflow and the validation lane's declared matrix. */
 const gatingCheckNames: ReadonlySet<string> = new Set(
-    parserGatingCheckNames(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES)
+    parserGatingCheckNames(STATIC_REQUIRED_WORKFLOW_SOURCE, STATIC_CALLED_SOURCES)
 );
 
-const gatingSkipAliases: ReadonlyMap<string, string> = parserSkipAliases(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
+const gatingSkipAliases: ReadonlyMap<string, string> = parserSkipAliases(
+    STATIC_REQUIRED_WORKFLOW_SOURCE,
+    STATIC_CALLED_SOURCES
+);
 
 /**
  * A tolerated cancelled-check shape: every cancelled name succeeded again on the same commit,
@@ -6713,6 +6730,36 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('checks:'))).not.toEqual([]);
     });
 
+    it('carries the live affected workflow without consulting its runtime matrix under advisory admission', async () => {
+        const liveSummary = JSON.parse(await gateWorkflowSummary(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES)) as {
+            called: Record<string, { jobs?: Record<string, unknown> }>;
+        };
+        expect(Object.keys(liveSummary.called).sort()).toEqual([
+            './.github/workflows/heavy-gates.yml',
+            './.github/workflows/validation.yml',
+        ]);
+        expect(liveSummary.called['./.github/workflows/heavy-gates.yml']?.jobs).toHaveProperty('e2e');
+        const runtimeMatrixRefusal = await refusalErrorFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
+        const { port, calls } = fakePort({ gateRequiredCheckNames: runtimeMatrixRefusal });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('gate-required-check-names');
+
+        const blocked = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            gateRequiredCheckNames: runtimeMatrixRefusal,
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+        expect(() => deliverPullRequest(42, blocked.port)).toThrow(
+            'PR #42 merge state is BLOCKED on required check(s): Gate'
+        );
+        expect(blocked.calls).not.toContain('gate-required-check-names');
+        expect(blocked.calls).not.toContain('merge:42:head');
+    });
+
     it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
         initializeDeliveryLockRepository(root);
@@ -7576,7 +7623,7 @@ describe('pull-request delivery', () => {
 
     /**
      * The rule serves the legs `Gate` needs that carry a job-level `if:` on `decide`'s scope output,
-     * which the fixtures below derive from the live workflow rather than list. The unit shards are
+     * which the fixtures below derive from a static workflow rather than list. The unit shards are
      * not among `Gate`'s needs, and a skipped matrix job reports under its unexpanded template name
      * rather than a shard name, so this rule cannot decide a shard either way. A scope-gated leg is
      * skipped by the workflow's own path-filter decision, re-evaluated on the current diff, and a
@@ -7630,7 +7677,7 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The live shape of `Validation / Dependency review` — the dependency scan reporting through the
+     * The static shape of `Validation / Dependency review` — the dependency scan reporting through the
      * validation lane — when a cancelled attempt is followed only by later skips. `Gate` passes on
      * `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not one either.
      * `Gate` needs that leg through the lane, which is why `deliver` refused PR #2795's head when
@@ -9306,19 +9353,25 @@ describe('gating check names', () => {
     });
 
     /**
-     * The set this repository's own workflows produce, compared against the `yaml` package reading
-     * the same files. A hand-copied expectation here would only restate whatever the gate derived;
-     * comparing with an independent parse is what makes a divergence fail. The gate's one need is the
-     * validation lane, so both sides resolve through it to the `Validation / <name>` checks GitHub
-     * reports for the called workflow's jobs.
+     * The dormant required-mode reader still derives the same static check names as an independent
+     * YAML parse. The live affected lane has a runtime matrix that cannot be expanded from workflow
+     * source alone, so it is tested as an explicit refusal below.
      */
-    it('derives the same gating set from the live workflow as the yaml package does', async () => {
-        const expected = parserGatingCheckNames(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
+    it('derives the same static gating set as the yaml package does', async () => {
+        const expected = parserGatingCheckNames(STATIC_REQUIRED_WORKFLOW_SOURCE, STATIC_CALLED_SOURCES);
 
-        expect([...(await gatingNamesFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES))].sort()).toEqual(
+        expect([...(await gatingNamesFor(STATIC_REQUIRED_WORKFLOW_SOURCE, STATIC_CALLED_SOURCES))].sort()).toEqual(
             [...expected].sort()
         );
         expect(expected.length).toBeGreaterThan(0);
+    });
+
+    it('refuses to invent check names for the live affected runtime matrix', async () => {
+        expect(await refusalFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES)).toBe(
+            'Error: the e2e job in ./.github/workflows/heavy-gates.yml declares its matrix as ' +
+                'the expression ${{ fromJSON(inputs.matrix) }}, so the names GitHub reports for its jobs ' +
+                'cannot be derived from the workflow'
+        );
     });
 
     /**
@@ -9327,7 +9380,7 @@ describe('gating check names', () => {
      * `Validation / Dependency review` — and `Nightly failure report`, which it does not.
      */
     it('gates on the dependency scan and not on the nightly report in this repository', async () => {
-        const names = await gatingNamesFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
+        const names = await gatingNamesFor(STATIC_REQUIRED_WORKFLOW_SOURCE, STATIC_CALLED_SOURCES);
 
         expect(names.has('Validation / Dependency review')).toBe(true);
         expect(names.has('Nightly failure report')).toBe(false);
