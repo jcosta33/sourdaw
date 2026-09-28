@@ -1,0 +1,71 @@
+scripts/__tests__/semanticReviewContext.spec.ts
+  s_ed5aa36a3ba357::t_0e9db116db2029 1044-1072
+  s_fe7d9519d0226e::t_9b905e827eac5f 1073-1107,1129,1140
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_563b97e373295b 28,96-97,2268,2273-2276,3975-4011,4033-4105,4370-4535,5546-5548,5603,5668,5677-5678,5687,5706-5708,7619-7623
+  s_ed5aa36a3ba357::t_60d1c7a4ae2842 5476-5505,5590-5594
+  s_fe7d9519d0226e::t_f9d97ca2e10d72 4536-4587,4689-4711,5702-5705,9777-9819,9847,9885-9938
+  s_ed5aa36a3ba357::t_6e842a00c20851 5-11,60,4588-4589,4594-4596,4598-4600,4602-4603,4605-4617,4620-4622,5695,5697
+  s_ed5aa36a3ba357::t_7c2f25e76c03ea 27,37,487-492,523-529,2251-2255,2269-2272,2588-2593,2596,3149-3151,3153,3751-3754,4012-4032,4106,4142-4168,4345-4346,4368-4369,5681-5686,5692-5694,9851-9881
+  h_beb54bf43b47b7 2-3,14,49,121-122,1406-1410,1447,2073-2080,4114-4139,4169-4172,4217-4250,4267-4270,4310-4347,4348-4366,4590-4593,4597,4601,4604,4618-4619,4623-4688,5604-5619,5651,5652-5667,9421-9422,9454-9486,9702-9703,9941-9973,10080-10081
+  s_ed5aa36a3ba357::t_f9463452c70552 58,124-129,134-141,4107-4113,4140-4141,4257-4266,4283-4309,5620-5622,5639-5646,9425-9453,9525-9565,9974-10008
+scripts/semanticReview/provider.ts
+  s_ed5aa36a3ba357::t_3750ed18b66bcb 109,113-115,134-135,139-141
+  s_ed5aa36a3ba357::t_523ca325c7f329 613-620
+scripts/semanticReview/rules.ts
+  s_ed5aa36a3ba357::t_0573ea07dc2e1e 722-723,741-744
+  s_ed5aa36a3ba357::t_4dda6ae8249ad6 703-706,721,730-737
+  s_ed5aa36a3ba357::t_5e077f5940476b 713-717,724-729,788-792
+scripts/semanticReview/candidateFindings.ts
+  s_ed5aa36a3ba357::t_562349f637402d 1-141
+scripts/semanticReview/interpret.ts
+  s_ed5aa36a3ba357::t_a692a766190ebb 12
+scripts/semanticReview/admissionBytes.ts
+  h_beb54bf43b47b7 1-15,17-206
+scripts/semanticReview/contracts.ts
+  h_beb54bf43b47b7 46-51,55-59
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 75,79-86,92-103,487-492,521,778-779,781,784
+  s_ed5aa36a3ba357::t_b387bb9dce9346 503-507
+scripts/semanticReview/evidenceOrdering.ts
+  h_beb54bf43b47b7 49-52,60-69,71,74,76-79,184-186,192-196,216-223,235-237
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 46-87
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 30,250-252,254-259
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 37,452-454
+  s_ed5aa36a3ba357::t_8974fdb5f7bb81 474-477
+scripts/semanticReview/withheldReasons.ts
+  h_beb54bf43b47b7 1-60,70-71,73-115
+  s_ed5aa36a3ba357::t_674144ce5e5cf7 61-69,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "75f128d25ebd54787280da1ff66044aacc7f1b6a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
