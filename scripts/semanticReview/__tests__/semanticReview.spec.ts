@@ -5160,28 +5160,32 @@ describe('budget profiles', () => {
     });
 
     it('sizes the ci attempt backstop above the byte guard it backs up', () => {
-        // Measured attempt rates for the ci profile. The fast end, 0.217-0.291 s per attempt at about
-        // 21.5 KB per request, comes from the profile's retained scan reports — submittedBytes and
-        // networkAttempts against each report's own startedAt/completedAt. The slow end, 0.62 s per
-        // attempt, comes from PR #4884's 42-unit run: 42 attempts in 26 s. The relations below pin the
-        // hierarchy those rates imply: the byte guard's own capacity is reachable inside the deadline,
-        // and the attempt cap is above what the deadline carries even at the fastest observed rate, so
-        // the cap can never end a run the deadline would have continued.
-        // PR #4884's own ci scan submitted 1,863,741 bytes over 42 requests, an average of 44,375 bytes a
-        // request: the typical size the total has to carry past a full deadline.
+        // Each figure comes from a retained report under `.agents/semantic-review/`, the only basis a spec
+        // can verify: the CI artifacts behind the earlier 0.217-0.291 s figure are public but not kept
+        // locally. Fastest retained rate: report fef405f0's 8 network attempts in 2.53 s, 0.31625 s an
+        // attempt. Typical request size: report 784380a1's 1,863,741 submitted bytes over 19 network
+        // attempts, 98,092 bytes a request — never over its 42 assessed units, because its 23 cache hits
+        // submitted nothing. The relations pin the hierarchy those figures imply: the attempt cap is above
+        // what the deadline carries even at the fastest retained rate, and the deadline's own capacity, at
+        // the typical request size and at the largest request the profile admits, fits inside the total.
         const ci = SEMANTIC_BUDGET_PROFILES.ci;
         const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
-        const fastestMeasuredSecondsPerAttempt = 0.217;
-        const measuredTypicalRequestBytes = 44_375;
+        const fastestRetainedSecondsPerAttempt = 0.31625;
+        const measuredTypicalRequestBytes = 98_092;
         expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
-        expect(ci.maxAttempts * fastestMeasuredSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
-        // The deadline is the guard that ends a realistic run: what it carries at the fastest measured
-        // rate, in requests of that typical size, has to fit inside the total. The previous 16 MiB failed
-        // this relation — the deadline carries about 123 MB of them — so the total, not the deadline,
-        // ended runs at the size the profile actually produces.
+        expect(ci.maxAttempts * fastestRetainedSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
         expect(
-            (ci.overallDeadlineMs / 1_000 / fastestMeasuredSecondsPerAttempt) * measuredTypicalRequestBytes
+            (ci.overallDeadlineMs / 1_000 / fastestRetainedSecondsPerAttempt) * measuredTypicalRequestBytes
         ).toBeLessThanOrEqual(ci.maxTotalSubmittedBytes);
+        // The same relation at the largest request the profile admits, so the deadline is first for every
+        // request size rather than only the measured average.
+        expect(
+            (ci.overallDeadlineMs / 1_000 / fastestRetainedSecondsPerAttempt) * ci.maxRequestBytes
+        ).toBeLessThanOrEqual(ci.maxTotalSubmittedBytes);
+        // The figures this case first carried failed this relation twice over: 0.217 s an attempt at a
+        // 44,375-byte typical request — 1,863,741 divided by 42 assessed units instead of 19 attempts —
+        // put the deadline's capacity at 122,695,853 bytes against the 16,777,216-byte total then shipped,
+        // and the corrected 98,092-byte request still exceeded the 128 MiB total that replaced it.
         // No such rule applies to `local`, whose attempt cap is the ordinary guard and whose deadline is
         // the worst-case bound: four attempts at the 3 s timeout would take 12 s, past the 8 s deadline,
         // so the cap ends a normal run and the deadline only bounds one whose attempts hang. Its cap is

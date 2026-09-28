@@ -462,11 +462,14 @@ function isContractCarryingRegion(
 }
 
 /**
- * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code —
- * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
- * `contract` joins the side qualifier for a region `withheldRegionCarriesContract` classifies contract,
- * so the same withheld reference reads the same whichever route produced it. Every other region keeps
- * the plain `<code> (<side>)` form.
+ * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code that
+ * names why the region was not sent — `region-exceeds-per-region-budget` for one over the per-region
+ * ceiling, `request-exceeds-state-budget` for one the request carrying it cannot fit beside the regions
+ * already kept, `total-evidence-budget-exhausted` for one the run's total could not take, or
+ * `hunk-beyond-file` for one naming lines this revision does not hold — and `contract` joins the side
+ * qualifier for a region `withheldRegionCarriesContract` classifies contract, so the same withheld
+ * reference reads the same whichever route produced it. Every other region keeps the plain
+ * `<code> (<side>)` form.
  *
  * Two causes carry no side qualifier, because each is decided before a region has a side class to join:
  * `CREDENTIAL_SHAPED_WITHHELD_CODE`, which the scan's admission and verify's finding evidence both emit,

@@ -700,16 +700,10 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        // Which guard ends a run depends on the request size, and the deadline is first for realistic
-        // ones. The retained ci-profile reports measure 0.217-0.291 s per attempt, and PR #4884's own run
-        // submitted 1,863,741 bytes over 42 requests, an average of 44,375 bytes each: at the fastest
-        // measured rate the deadline carries about 2,765 attempts, or about 123 MB at that average, before
-        // the 128 MiB total could bind. Smaller requests move the crossover further out; a plan of very
-        // large ones reaches the total first — 762 one-hunk units of 22,074 bytes ended at 15.98 MiB
-        // after 164.7 s, where the old 16 MiB total, not the deadline, was the guard. The total's worst
-        // case is about $1.63 a run at the measured 1.3 cents per MiB. The 6144-attempt backstop sits
-        // above both: it would need 0.098 s per attempt to fit inside the deadline, faster than any
-        // observed call, and the floor the byte guard implies is 1,366 maximal requests.
+        // The attempt count is a backstop above both real guards, sized above what the deadline can carry
+        // at the fastest retained rate — report fef405f0's 8 attempts in 2.53 s, 0.316 s each, about 1,897
+        // attempts in 600 s. It would take 0.098 s an attempt to fit this cap inside the deadline, faster
+        // than any retained call, and the total's own floor is 4,096 maximal requests.
         maxAttempts: 6144,
         maxRetriesPerRequest: 1,
         // One attempt may spend the whole state budget.
@@ -722,12 +716,21 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         // proxy, which runs slightly under the provider's own count — that run reported 930,965
         // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
         // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
-        // answered. The total above is bounded by cost rather than by coverage: 128 MiB is about $1.63 at
-        // the measured 1.3 cents per MiB, and it exists to bound a runaway plan rather than to ration the
-        // ordinary one.
+        // answered.
         maxRequestBytes: 128 * 1024,
         maxStatePlusQuestionBytes: 96 * 1024,
-        maxTotalSubmittedBytes: 128 * 1024 * 1024,
+        // Measured against the retained ci scans, the deadline is the guard that ends a real run, and it
+        // is first for every request size this profile admits. The retained rates run 0.316-0.974 s per
+        // attempt — duration over network attempts, from fef405f0's 8 attempts in 2.53 s to 364ccd54's 4
+        // in 3.895 s — and the retained report 784380a1 submitted 1,863,741 bytes over 19 attempts, 98,092
+        // bytes a request. Its assessed units are not the denominator: 23 of its 42 were cache hits, and a
+        // cache hit submits nothing. At the fastest retained rate the deadline carries about 1,897
+        // attempts, or 177 MiB at that request size and 237 MiB at the 128 KiB request ceiling, so this
+        // total can only take over where attempts run faster than any retained call — which is what a
+        // runaway guard is for. Its worst case is about $5.52 a run, from the retained cost range of
+        // 1.04-1.44 cents per MiB (lowest a79a12b8's 3.98 MB run, highest 1e3b55b7's 141 KB one), and it
+        // never rations an ordinary run: those cost cents.
+        maxTotalSubmittedBytes: 384 * 1024 * 1024,
         contextExpansionPasses: 1,
         verify: {
             maxRegionBytes: 96 * 1024,
