@@ -2580,6 +2580,20 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
             cursor = skipClassBodyRegion(source, cursor, close - 1);
             continue;
         }
+        if (source[cursor] === "'" || source[cursor] === '"' || isDecimalDigit(source[cursor])) {
+            const literal = readLiteralClassMemberName(source, cursor, close - 1);
+            if (literal !== undefined) {
+                entry.members.add(literal.name);
+                cursor = literal.next;
+                continue;
+            }
+            // A quoted or numeric name the reader cannot spell out — an escape or an unmatched quote —
+            // is outside the model, so the class's members are unreliable: mark it unmodelled and skip
+            // the member whole.
+            entry.unmodelled = true;
+            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
         const head = readClassMemberHead(source, cursor, close - 1);
         if (head === undefined) {
             cursor = skipClassBodyRegion(source, cursor, close - 1);
@@ -2726,6 +2740,77 @@ function readComputedMemberName(source: string, open: number, end: number): { na
             ? skipClassMethodMember(source, afterName, end)
             : skipClassFieldMember(source, afterName, end);
     return { name: value.value, next };
+}
+
+/**
+ * The name a quoted or numeric literal class member at `start` declares, with the position after the
+ * member, or `undefined` when `start` opens neither or the name carries an escape the reader cannot
+ * spell. A quoted or numeric name is not an identifier, so `readWordForward` would read the text inside
+ * the quotes (or the digits) as a word and mis-place the member; read the literal whole so its field is
+ * skipped and later members still enter the member set.
+ */
+function readLiteralClassMemberName(
+    source: string,
+    start: number,
+    end: number
+): { name: string; next: number } | undefined {
+    const quote = source[start];
+    let value: ReadSpecifier | undefined;
+    if (quote === "'" || quote === '"') {
+        value = readQuotedValue(source, start, quote);
+    } else if (isDecimalDigit(quote)) {
+        value = readNumericLiteralValue(source, start);
+    } else {
+        return undefined;
+    }
+    if (value === undefined) {
+        return undefined;
+    }
+    // A literal written with an escape names a property the reader cannot spell out, so it declines the
+    // name exactly as `readComputedMemberName` declines an escaped computed literal.
+    if (source.slice(start, value.end).includes('\\')) {
+        return undefined;
+    }
+    const afterName = skipWhitespace(source, value.end);
+    const next =
+        source[afterName] === '(' || source[afterName] === '<' || source[afterName] === '?'
+            ? skipClassMethodMember(source, afterName, end)
+            : skipClassFieldMember(source, afterName, end);
+    return { name: value.value, next };
+}
+
+/**
+ * The numeric literal beginning at `index`, as its source text, or `undefined` when `index` holds no
+ * decimal digit. The reader spans a decimal integer with separators, an optional fraction, and an
+ * optional exponent — enough to name a numeric class member (`1`, `1_0.5`, `1e3`).
+ */
+function readNumericLiteralValue(source: string, index: number): ReadSpecifier | undefined {
+    if (!isDecimalDigit(source[index])) {
+        return undefined;
+    }
+    let cursor = index;
+    while (cursor < source.length && (isDecimalDigit(source[cursor]) || source[cursor] === '_')) {
+        cursor += 1;
+    }
+    if (source[cursor] === '.' && isDecimalDigit(source[cursor + 1])) {
+        cursor += 1;
+        while (cursor < source.length && (isDecimalDigit(source[cursor]) || source[cursor] === '_')) {
+            cursor += 1;
+        }
+    }
+    if (source[cursor] === 'e' || source[cursor] === 'E') {
+        let exponent = cursor + 1;
+        if (source[exponent] === '+' || source[exponent] === '-') {
+            exponent += 1;
+        }
+        if (isDecimalDigit(source[exponent])) {
+            cursor = exponent;
+            while (cursor < source.length && isDecimalDigit(source[cursor])) {
+                cursor += 1;
+            }
+        }
+    }
+    return { value: source.slice(index, cursor), end: cursor };
 }
 
 /** Whitespace, comments, and the separators that can stand between class body members. */
@@ -4671,7 +4756,7 @@ function isIdentifierContinue(character: string | undefined): boolean {
     );
 }
 
-function isLineTerminator(character: string): boolean {
+function isLineTerminator(character: string | undefined): boolean {
     return character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029';
 }
 
@@ -5122,6 +5207,11 @@ function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
         }
         if (character === quote) {
             return cursor + 1;
+        }
+        // An unmatched quote is a broken literal that cannot span a line; stop at the terminator so the
+        // rest of the file after it is still scanned rather than being swallowed to the end.
+        if (isLineTerminator(character)) {
+            return cursor;
         }
         cursor += 1;
     }

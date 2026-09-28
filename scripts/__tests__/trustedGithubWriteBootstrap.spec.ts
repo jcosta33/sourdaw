@@ -832,6 +832,37 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('const r = 0o1_7.else / require(spec) / y;')).toEqual([
             'require(...)',
         ]);
+        // The uppercase radix markers carry the same judgement, so each keeps the member dot.
+        expect(snapshotComputedDynamicSpecifiers('const r = 0X1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0O1_7.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0B1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // An unmatched quote after a division ends at the line terminator instead of swallowing the file,
+        // so the load on the next lines is still scanned — for `0x1_1.` before a keyword and for the
+        // other radix spellings alike.
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.instanceof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.return /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0x1_1.in /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0o1_7.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 0b1_1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
         // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
         // is no comment close: the regex after it keeps its region and the field below is a member.
         expect(
@@ -888,6 +919,24 @@ describe('snapshotImportSpecifiers', () => {
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class D { loader = require; m() { /* c */ if (x) { const re = /ab*/; } } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The bail fires only for a star-ending regex: a non-star regex in the same span keeps the load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { m() { /* c */ if (x) { const re = /ab/; } } loader = require; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A quoted member name is read as its own member, not the identifier inside the quotes, so the
+        // later field still enters the member set and shadows the parent's — or reports its own loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { "a" = other; loader = other; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = other }\nclass H extends Base { "a" = other; loader = require; }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
         // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
