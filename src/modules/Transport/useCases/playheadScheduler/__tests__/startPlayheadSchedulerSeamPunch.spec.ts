@@ -24,6 +24,15 @@ const midiStoreState: {
     value: { notesByClipId: Record<string, unknown[]>; probabilitySeed: number } | null;
 } = { value: null };
 const ctxTime = { now: 0 };
+/**
+ * Audio-clock instants of the punch state machine's open and close calls, so a
+ * test can assert the capture span between them — the same-tick empty-take
+ * defect shows up as a zero span, not as a missing call.
+ */
+const punchClock = {
+    start: [] as number[],
+    stop: [] as number[],
+};
 
 const audioContextStub = {
     sampleRate: 48000,
@@ -102,8 +111,13 @@ vi.mock('#/modules/Automation/useCases', () => ({
  */
 vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: vi.fn(),
-    startRecording: vi.fn((): { trackId: string; id: string }[] => []),
-    stopRecording: vi.fn(),
+    startRecording: vi.fn(() => {
+        punchClock.start.push(ctxTime.now);
+        return [] as { trackId: string; id: string }[];
+    }),
+    stopRecording: vi.fn(() => {
+        punchClock.stop.push(ctxTime.now);
+    }),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
@@ -195,6 +209,14 @@ const LOOP_BEATS = 4;
 const PASSES = 3;
 const PUNCH_IN_BEAT = 3.5;
 const PUNCH_OUT_BEAT = 3.9;
+/**
+ * A punch region whose IN crossing lands exactly on the first scheduled-seam
+ * tick. The scan strides 0.14 beats per tick (0.07 s at 120 BPM), so the scan
+ * reads 3.78 on the tick before the seam tick and 3.92 on the seam tick itself
+ * — the first tick whose scan sits inside [3.85, 3.95) is the seam tick.
+ */
+const PUNCH_IN_ON_SEAM_BEAT = 3.85;
+const PUNCH_OUT_ON_SEAM_BEAT = 3.95;
 
 function armedAudioTrack(): unknown {
     return { id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch', clips: [] };
@@ -257,6 +279,8 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
         // Module-global metronome dedup state; carried between tests otherwise.
         metronomeSchedulingState.lastBeat = -1;
         metronomeSchedulingState.firedClickTimes.clear();
+        punchClock.start.length = 0;
+        punchClock.stop.length = 0;
         ctxTime.now = 0;
         schedulerTickSequence = 0;
         disposePlayheadScheduler();
@@ -316,6 +340,61 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
             .mock.calls.filter(([atBeat]) => atBeat !== undefined && Math.abs(atBeat - PUNCH_OUT_BEAT) < 1e-6);
         expect(punchOuts).toHaveLength(PASSES);
         // The recording is closed for good: no unbounded punch left running.
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // The punch-in crossing lands ON the seam tick itself: the punch-in gate
+    // scans the dying pass's position, which first sits inside the region on
+    // that very tick, so the recording opens on the seam tick. The seam-tick
+    // punch-out shortcut (`punchOutDueAtSeam`) only asked whether a seam exists
+    // and the punch-out beat sits inside the dying band — always true — so the
+    // same tick that opened the recording also finalized it: an empty take, and
+    // the exact failure the punch-in gate's upper bound names for the non-seam
+    // path. The shortcut must only be due for a recording that was already open
+    // when the tick began; a punch-in opened on the seam tick captures across
+    // the seam and finalizes on a later scan crossing — here the next pass's
+    // seam tick, giving a real capture span of one pass instead of zero.
+    it('does not finalize the recording in the same tick its punch-in opened on the seam tick', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_ON_SEAM_BEAT,
+            punchOutBeat: PUNCH_OUT_ON_SEAM_BEAT,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+
+        // Pass 1's seam tick: the scan crosses into the region and the punch-in
+        // opens there, anchored at the region start.
+        await runUntilWraps(worker, 1);
+        const punchIns = vi
+            .mocked(startRecording)
+            .mock.calls.filter(
+                ([anchorBeat]) => anchorBeat !== undefined && Math.abs(anchorBeat - PUNCH_IN_ON_SEAM_BEAT) < 1e-6
+            );
+        expect(punchIns).toHaveLength(1);
+        expect(punchClock.start).toHaveLength(1);
+        expect(punchClock.start[0]).toBeCloseTo(TICK_SECONDS * 28, 3);
+        // The recording is still open: the seam-tick punch-out shortcut must not
+        // swallow the take it just opened. On the unfixed head this is already
+        // length 1 — the same tick's empty finalization.
+        expect(punchClock.stop).toHaveLength(0);
+
+        // Pass 2 runs out: the punch-out crossing of the dying band is behind
+        // the seam now, so the recording captures across the wrap and finalizes
+        // on pass 2's own seam tick — a real span, one full pass long.
+        await runUntilWraps(worker, 1);
+        // Let the last seam tick's scheduling work settle.
+        await runTick(worker);
+        expect(punchClock.start).toHaveLength(1);
+        expect(punchClock.stop).toHaveLength(1);
+        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 56, 3);
+        expect(punchClock.stop[0]! - punchClock.start[0]!).toBeCloseTo(TICK_SECONDS * 28, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 });

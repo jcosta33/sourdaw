@@ -317,6 +317,14 @@ export function startPlayheadScheduler(): void {
         }
 
         const now = ctx.currentTime;
+        // The previous tick's clock instant, before the overwrite below. A
+        // pending seam re-anchors on it (below): the main integration then
+        // carries the re-anchored position across this tick's own `deltaSec`,
+        // landing exactly on `now`. Integrating the anchor all the way to `now`
+        // first counted the previous-tick-to-now span twice — notes re-emitted
+        // after the edit fired one grain early and the loop wrapped one grain
+        // early.
+        const previousTickTime = schedulerSession.lastTickTime;
         // Clamp the per-tick advance: a suspended/resumed context leaps `now`
         // forward by the whole gap, which would skip every event in between.
         const rawDeltaSec = now - schedulerSession.lastTickTime;
@@ -367,27 +375,35 @@ export function startPlayheadScheduler(): void {
             // negative-phase position below would re-open the emission window
             // at the incoming phase, so the dying pass's remaining material —
             // just cut by the teardown — would never re-emit. Re-anchor on the
-            // dying pass instead: integrate its anchored position to `now`
-            // through the NEW map and resume there. That keeps the published
-            // clock inside [loopStart, loopEnd] and re-emits the dying window
-            // exactly as an ordinary tick would have before the seam was
-            // detected. An edit that lands after the stale seam instant has
-            // already carried the pass boundary — fall through to an ordinary
-            // wrap.
+            // dying pass instead: integrate its anchored position to the
+            // PREVIOUS tick's instant through the NEW map and resume there —
+            // the main integration below then advances it by this tick's
+            // `deltaSec` onto `now`, exactly as an ordinary tick would have
+            // before the seam was detected. Integrating the anchor all the way
+            // to `now` counted the previous-tick-to-now span twice: notes
+            // re-emitted after the edit fired one grain early and the loop
+            // wrapped one grain early. That keeps the published clock inside
+            // [loopStart, loopEnd]. An edit that lands after the stale seam
+            // instant has already carried the pass boundary — fall through to
+            // an ordinary wrap.
             if (schedulerSession.pendingSeam !== null) {
                 const { anchorAudioTime, anchorPosition } = schedulerSession.pendingSeam;
                 schedulerSession.pendingSeam = null;
-                const dyingPositionNow = beatAtSecondsFromAnchor(
+                const dyingPositionAtPreviousTick = beatAtSecondsFromAnchor(
                     changes,
                     anchorPosition,
-                    now - anchorAudioTime,
+                    previousTickTime - anchorAudioTime,
                     current.tempo
                 );
-                if (current.isLooping && current.loopEnd > current.loopStart && dyingPositionNow >= current.loopEnd) {
+                if (
+                    current.isLooping &&
+                    current.loopEnd > current.loopStart &&
+                    dyingPositionAtPreviousTick >= current.loopEnd
+                ) {
                     stageLoopWrapTakes(current);
                     const loopLength = current.loopEnd - current.loopStart;
                     schedulerSession.accumulatedPosition =
-                        current.loopStart + positiveModulo(dyingPositionNow - current.loopStart, loopLength);
+                        current.loopStart + positiveModulo(dyingPositionAtPreviousTick - current.loopStart, loopLength);
                     // The gate is inclusive at its lower bound, so `loopStart`
                     // exactly — the same anchor the wrap paths use.
                     schedulerSession.lastScheduledBeat = current.loopStart;
@@ -395,8 +411,8 @@ export function startPlayheadScheduler(): void {
                     advanceSchedulerDiscontinuityEpoch();
                     rackDiscontinuity = true;
                 } else {
-                    schedulerSession.accumulatedPosition = dyingPositionNow;
-                    schedulerSession.lastScheduledBeat = dyingPositionNow - REEMIT_EPSILON_BEATS;
+                    schedulerSession.accumulatedPosition = dyingPositionAtPreviousTick;
+                    schedulerSession.lastScheduledBeat = dyingPositionAtPreviousTick - REEMIT_EPSILON_BEATS;
                 }
             } else {
                 schedulerSession.lastScheduledBeat = schedulerSession.accumulatedPosition - REEMIT_EPSILON_BEATS;
@@ -666,7 +682,15 @@ export function startPlayheadScheduler(): void {
         // before the seam instant is due at the seam instant itself.
         const punchScanBeat = seam ? seam.passPosition : newPosition;
         const punchScanWindowStart = seam ? dyingTickStartPosition : tickStartPosition;
-        const punchOutDueAtSeam = seam !== null && current.punchOutBeat <= seam.passUpTo;
+        // The punch checks below may open a recording this tick, so read the
+        // recording state BEFORE that block runs. A punch-out is due at the seam
+        // only for a recording that was already open when the tick began — the
+        // same law that keeps an ordinary tick from opening and finalizing a
+        // punch in one pass, where the scan beat cannot be both inside the
+        // region and past its end. Ungated, a punch-in whose crossing lands on
+        // the seam tick was finalized empty in the same tick, every pass.
+        const recordingOpenAtTickStart = schedulerSession.punchRecordingActive;
+        const punchOutDueAtSeam = seam !== null && recordingOpenAtTickStart && current.punchOutBeat <= seam.passUpTo;
         if (
             current.punchInEnabled &&
             !current.isRecording &&

@@ -373,14 +373,18 @@ describe('startPlayheadScheduler seam vs mid-playback edit', () => {
         // The dying remainder's note — sitting inside the window the edit's
         // teardown cut — still fires after the edit: re-emitted once at its
         // original grid time and once by the re-anchored window, and nothing
-        // more (no re-emission storm).
+        // more (no re-emission storm). The re-anchored window opens at the
+        // PREVIOUS tick's dying position (t≈1.97 s), so the main integration
+        // lands the re-emission on the note's exact grid time under the new
+        // map: 3.95 beats at 60 BPM is t≈1.99 s. Anchoring at the tick's own
+        // `now` instead double-counted the last grain and fired it at t≈1.98.
         const dying = scheduled.filter((note) => note.pitch === DYING_NOTE_PITCH);
         expect(dying.map((note) => note.time).sort((left, right) => left - right)).toEqual([
             expect.any(Number),
             expect.any(Number),
         ]);
         expect(dying[0]!.time).toBeCloseTo(1.975, 3);
-        expect(dying[1]!.time).toBeCloseTo(1.98, 3);
+        expect(dying[1]!.time).toBeCloseTo(1.99, 3);
         expect(scheduled).toHaveLength(2);
     });
 });
