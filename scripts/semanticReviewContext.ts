@@ -235,6 +235,7 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'no-applicable-rule',
     'no-admissible-evidence',
     'budget-exhausted-before-admission',
+    'deadline-elapsed-before-admission',
     'evidence-withheld',
     'evidence-withheld-sensitive-path',
     'evidence-withheld-credential-shaped',
@@ -255,6 +256,7 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
 const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
+    'request-exceeds-state-budget',
     'total-evidence-budget-exhausted',
     'contract-evidence-withheld',
     'unit-evidence-reduced-below-request-budget',

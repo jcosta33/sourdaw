@@ -104,7 +104,11 @@ export const StatusBar = (): ReactElement => {
             }
             const activeElement = document.activeElement;
             const footerOwnsFocus = activeElement instanceof Node && footerRef.current?.contains(activeElement);
-            const moreOwnsFocus = activeElement instanceof Node && moreSurfaceRef.current?.contains(activeElement);
+            const moreOwnsFocus =
+                activeElement instanceof Node &&
+                (moreSurfaceRef.current?.contains(activeElement) === true ||
+                    (activeElement instanceof Element &&
+                        activeElement.closest('[aria-label="More application status"]') !== null));
             const projectLinksOwnFocus =
                 activeElement instanceof Node && projectLinksContentRef.current?.contains(activeElement);
             if (footerOwnsFocus || moreOwnsFocus || projectLinksOwnFocus) {

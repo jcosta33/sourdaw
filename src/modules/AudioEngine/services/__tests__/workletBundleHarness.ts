@@ -140,7 +140,7 @@ async function bundleProcessor(entryPath: string): Promise<string> {
                 load(id: string) {
                     if (id === RESOLVED_VIRTUAL_ENTRY_ID) {
                         const workletImport = JSON.stringify(`${entryPath}?worker&url`);
-                        return `import workletUrl from ${workletImport};\nexport default workletUrl;\n`;
+                        return `import workletUrl from ${workletImport};\nvoid workletUrl;\nexport default workletUrl;\n`;
                     }
                     return null;
                 },
@@ -150,7 +150,10 @@ async function bundleProcessor(entryPath: string): Promise<string> {
             write: false,
             minify: false,
             target: 'esnext',
-            rollupOptions: { input: VIRTUAL_ENTRY_ID },
+            rollupOptions: {
+                input: VIRTUAL_ENTRY_ID,
+                preserveEntrySignatures: 'strict',
+            },
         },
     });
 
