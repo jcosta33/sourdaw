@@ -97,7 +97,6 @@ export function compareByPath(left: { readonly path: string }, right: { readonly
 /** The contract-carrying classification of one changed path's two sides, decided per side from that side's own path and content. */
 export type ContractCarryingSides = { readonly before: boolean; readonly after: boolean };
 
-/** The side of a changed file the collector admits as one unit. */
 /**
  * Classifies each changed path's sides from the path and content the side itself carries: the
  * pre-change path's before content for the before side, and the post-change path's after content for

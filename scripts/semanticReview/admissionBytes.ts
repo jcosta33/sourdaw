@@ -13,6 +13,7 @@ import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 import type { EvidenceSide } from './contracts.ts';
 import type { PathHunks, SemanticChangedFile, SemanticSourcePort } from './evidence.ts';
 
+/** The side of a changed file the collector admits as one unit. */
 export type AdmissionSide = 'before' | 'after';
 
 export type AdmissionSideBytes = { readonly before: number; readonly after: number };

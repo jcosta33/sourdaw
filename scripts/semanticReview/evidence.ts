@@ -500,8 +500,10 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
         return;
     }
-    // The total still charges the raw bytes that leave the machine, which is the figure the run's byte
-    // budget is stated in; only the per-region gate is the fitter's measure.
+    // Two budgets bound what leaves the machine, measured at different layers and in different units:
+    // this one bounds the raw bytes the collector admits, while the profile's `maxTotalSubmittedBytes`
+    // bounds the serialized request bodies the budget controller submits, so a run can reach that ceiling
+    // without this total having withheld anything. Only the per-region gate is the fitter's own measure.
     const bytes = Buffer.byteLength(raw, 'utf8');
     if (state.totalBytes + bytes > state.limits.maxTotalBytes) {
         state.truncated.push({
