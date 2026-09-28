@@ -47,6 +47,7 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.onStopRequested = null;
     schedulerSession.lastTempoMapChanges = null;
     schedulerSession.lastLoopSignature = '';
+    schedulerSession.pendingSeamAudioTime = null;
     resetMetronomeBeat(0);
     disposeAudioClipScheduling();
 }

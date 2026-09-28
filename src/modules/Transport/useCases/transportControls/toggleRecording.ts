@@ -95,19 +95,34 @@ async function beginActualRecording(
                     // rate of one sample per second makes its coordinate seconds.
                     const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
                     const anchorSeconds = secondsBetweenBeats(tempoChanges, 0, recClip.startBeat, defaultTempo);
-                    const newStartBeat = Math.max(
-                        0,
-                        samplesToBeat(tempoChanges, anchorSeconds - offsetSeconds, defaultTempo, 1)
-                    );
-                    const startSeconds = secondsBetweenBeats(tempoChanges, 0, newStartBeat, defaultTempo);
-                    const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
+                    // The buffer's first sample was captured at this timeline
+                    // position: the anchor beat, rewound by the latency the
+                    // musician heard it through (and, on a stopped transport,
+                    // the roll the capture waited through).
+                    const originSeconds = anchorSeconds - offsetSeconds;
+                    const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
+                    // A take recorded from the top of the song has its origin
+                    // before beat 0. Clamping the clip to the timeline must not
+                    // take the media with it: the clip starts at 0 and its
+                    // content offset skips the pre-origin samples, so
+                    // `startBeat - audioOffsetBeats` stays on the capture's
+                    // true origin — the media-origin law #2050 introduced for
+                    // punched takes (#4662).
+                    const startBeat = Math.max(0, originBeat);
+                    const audioOffsetBeats = startBeat - originBeat;
+                    const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
 
                     const recordedClip = {
                         ...recClip,
                         audioBufferId: bufferId,
-                        startBeat: newStartBeat,
+                        startBeat,
                         endBeat: exactEndBeat,
                     };
+                    // Absent when the origin is on or after beat 0, so an
+                    // ordinary take commits without an offset field.
+                    if (audioOffsetBeats > 0) {
+                        recordedClip.audioOffsetBeats = audioOffsetBeats;
+                    }
                     // The provisional clip and take the recorder opened are
                     // committed as ONE history entry here, once the capture has
                     // completed. A capture that never reaches this branch never
