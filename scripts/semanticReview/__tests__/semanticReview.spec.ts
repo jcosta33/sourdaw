@@ -4219,6 +4219,10 @@ describe('the scan collector gates a region on the cost the request fitter charg
                 { path: 'a', reason: 'request-exceeds-state-budget (after)' },
             ])
         ).toBe('no-evidence-region-within-budget');
+        // The context form the vocabulary emits carries the contract qualifier, and the family reads it.
+        expect(nothingSentReason([{ path: 'a', reason: 'region-exceeds-per-region-budget (context, contract)' }])).toBe(
+            'no-evidence-region-within-budget'
+        );
         expect(
             nothingSentReason([
                 { path: 'a', reason: 'region-exceeds-per-region-budget (after)' },
@@ -4256,6 +4260,44 @@ describe('the scan collector gates a region on the cost the request fitter charg
         const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
         expect(units).toHaveLength(0);
         expect(excluded).toEqual([{ path, reason: 'no-evidence-region-within-budget' }]);
+    });
+
+    it('reads a previous-path cause when it chooses the nothing-sent reason', () => {
+        // A rename's before side is keyed to its previous path. With that side credential-shaped and the
+        // after side only over the region ceiling, the record is mixed and the reason is inadmissibility; a
+        // filter reading the file's own path alone would see the size cause by itself and claim the size,
+        // which is the claim the fitter's empty case was just repaired for.
+        const previousPath = 'src/modules/Project/old.ts';
+        const path = 'src/modules/Project/renamed.ts';
+        const files = [changedFile(path, { kind: 'renamed', previousPath, added: 1, deleted: 1 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${previousPath}`]: secretFixture(
+                        'const key = ',
+                        "'",
+                        'AKIA',
+                        'IOSFODNN7EXAM',
+                        'PLE',
+                        "'",
+                        ';\n'
+                    ),
+                    [`${HEAD}:${path}`]: 'y'.repeat(900),
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 200, maxTotalBytes: 1_000_000 },
+        });
+        expect(set.truncated.map((entry) => entry.reason)).toEqual([
+            'evidence-withheld-credential-shaped',
+            'region-exceeds-per-region-budget (after)',
+        ]);
+        const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(units).toHaveLength(0);
+        expect(excluded).toContainEqual({ path, reason: 'no-admissible-evidence' });
     });
 
     it('keeps the planner predicate and the ranking charge on the measure admission gates with', () => {
@@ -9292,6 +9334,39 @@ describe('verify withholds a region over the per-region budget', () => {
         expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
     });
 
+    it('names a context-side size refusal as the size, contract qualifier and all', async () => {
+        // The vocabulary's context form is `region-exceeds-per-region-budget (context, contract)`, and the
+        // route that carries it is this one: a rule that matched the change sides alone, or that required
+        // the reason to end at the side, would call a withheld contract document inadmissible.
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const path = 'AGENTS.md';
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${MERGE_BASE}:${path}`]: '# AGENTS.md contract\n'.repeat(60) },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 200 }),
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [{ path, side: 'context', startLine: 1, endLine: Number.MAX_SAFE_INTEGER }],
+                },
+            ],
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([
+            { path, reason: 'region-exceeds-per-region-budget (context, contract)' },
+        ]);
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
+    });
+
     it('names the size only when the verify record has no other cause', async () => {
         // The verify route's mixed state: the first reference is over the region ceiling and the second
         // names a revision the file does not hold. The whole-record read keeps the reason inadmissible; a
@@ -9744,6 +9819,39 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
             expect(assessment?.disposition).toBe('needs_more_evidence');
             expect(assessment?.reasoning).toContain(`${oversizePath} (request-exceeds-state-budget (after))`);
         }
+    });
+
+    it('carries a payload that exactly fills the state ceiling, and not one byte more', async () => {
+        // The comparison's direction is load-bearing at the tie. The calibration measures the body the
+        // request actually submits, and the payload is that body without the model the adapter adds.
+        const path = 'src/modules/Project/a.ts';
+        const region = 'const sample_line = 1;\n'.repeat(400);
+        const blobs = { [`${HEAD}:${path}`]: region };
+        const measured = await verifyWith({
+            provider: decisiveVerifyProvider(),
+            profile: profileWithVerifyBudget({ maxStatePlusQuestionBytes: 64 * 1_024 }),
+            blobs,
+        });
+        const payload =
+            measured.report.usage.submittedBytes - Buffer.byteLength(`,"model":"${TYPESAFE_MODEL}"`, 'utf8');
+        expect(payload).toBeGreaterThan(0);
+
+        const exact = await verifyWith({
+            provider: decisiveVerifyProvider(),
+            profile: profileWithVerifyBudget({ maxStatePlusQuestionBytes: payload }),
+            blobs,
+        });
+        expect(exact.report.scope.truncated).toHaveLength(0);
+        expect(exact.report.scope.assessed).toBe(1);
+
+        // One byte less and the same region is the request's size, not the evidence's.
+        const short = await verifyWith({
+            provider: decisiveVerifyProvider(),
+            profile: profileWithVerifyBudget({ maxStatePlusQuestionBytes: payload - 1 }),
+            blobs,
+        });
+        expect(short.report.scope.truncated).toEqual([{ path, reason: 'request-exceeds-state-budget (after)' }]);
+        expect(short.report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
     });
 
     it('keeps the region it reaches first when the state budget fits only one', async () => {
