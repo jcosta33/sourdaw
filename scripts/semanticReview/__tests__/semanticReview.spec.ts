@@ -15,6 +15,7 @@ import {
     renderSavedProjectStateMatcherDigest,
     SAVED_PROJECT_STATE_DIGEST_ENTRIES,
     SAVED_PROJECT_STATE_SURFACES,
+    type SavedProjectStateMatcher,
 } from '../../savedProjectStatePaths.ts';
 import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
@@ -6108,6 +6109,34 @@ describe('saved-project-state applicability matrix', () => {
         expect(renderSavedProjectStateMatcherDigest({ kind: 'wordPrefix', value: 'undo' })).not.toBe(
             renderSavedProjectStateMatcherDigest({ kind: 'substring', value: 'undo' })
         );
+        // A renderer that drops a field must redden the case: for every kind, changing each field
+        // changes the rendered encoding. Otherwise a matcher-field edit moves `appliesTo` while
+        // `computeRulesDigest()` stays byte-identical, replaying a stored assessment against a changed
+        // scope. Probe each field in turn.
+        const fieldCases: ReadonlyArray<
+            readonly [label: string, left: SavedProjectStateMatcher, right: SavedProjectStateMatcher]
+        > = [
+            ['wordPrefix.value', { kind: 'wordPrefix', value: 'undo' }, { kind: 'wordPrefix', value: 'redo' }],
+            ['substring.value', { kind: 'substring', value: 'undo' }, { kind: 'substring', value: 'redo' }],
+            ['prefix.value', { kind: 'prefix', value: 'src/a/' }, { kind: 'prefix', value: 'src/b/' }],
+            ['suffix.value', { kind: 'suffix', value: '.sdaw' }, { kind: 'suffix', value: '.sourdaw' }],
+            [
+                'prefixAndSubstring.prefix',
+                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
+                { kind: 'prefixAndSubstring', prefix: 'src/infra/', substring: 'bootstrap' },
+            ],
+            [
+                'prefixAndSubstring.substring',
+                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
+                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'handlers' },
+            ],
+            ['exact.value', { kind: 'exact', value: 'src/a.ts' }, { kind: 'exact', value: 'src/b.ts' }],
+        ];
+        for (const [label, left, right] of fieldCases) {
+            expect(renderSavedProjectStateMatcherDigest(left), label).not.toBe(
+                renderSavedProjectStateMatcherDigest(right)
+            );
+        }
         // The three rules' digest input is exactly the lossless encoding of the persisted-state
         // matchers, in registry order; adding, removing, or editing a matcher changes this list.
         const persistedMatchers = SAVED_PROJECT_STATE_SURFACES.filter((surface) =>
@@ -6223,6 +6252,127 @@ describe('saved-project-state applicability matrix', () => {
                 true,
                 'all-lowercase project-data repair spelling, selected only by the `repairprojectdata` substring matcher',
             ],
+            // Template and demo writers whose own sources write persisted CRDT slots or replace the
+            // saved project (#4902 finding 1): the whole subtree is not matched, only these writers.
+            [
+                'src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts',
+                true,
+                'replaces the saved project and resets the CRDT-backed stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts',
+                true,
+                'writes `projectStore` metadata and resets arrangement/transport/chord/groove stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts',
+                true,
+                'template builder runs `initProject` then `finalizeTemplate`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/addMarkers.ts',
+                true,
+                'writes the CRDT-backed `markerStore`',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/demoUtils/syncArrangement.ts',
+                true,
+                'writes the persisted `arrangementStore` arrangements slot',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts',
+                true,
+                'writes track, MIDI, transport, automation, marker, tempo-map and project stores',
+            ],
+            // ProjectVersioning persisted-shape and snapshot/restore owners (#4902 finding 2).
+            ['src/modules/ProjectVersioning/models/ProjectVersion.ts', true, 'version/snapshot/branch persisted shape'],
+            [
+                'src/modules/ProjectVersioning/stores/versionControlStore.ts',
+                true,
+                'persists `sourdaw-version-control` state',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/captureSnapshot.ts',
+                true,
+                'serializes active project state into a snapshot',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts',
+                true,
+                'hydrates track, marker, transport, MIDI and automation stores',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/createProjectVersion.ts',
+                true,
+                'captures a snapshot and writes a stored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/branching/deleteBranch.ts',
+                true,
+                'deletes a stored version branch',
+            ],
+            // One matrix row witnesses each remaining persisted-state matcher, so the surface-drop
+            // sweep reddens the matrix for every matcher (#4902 acceptance).
+            [
+                'src/modules/Project/useCases/projectTemplates/templateDefinitions/applyProjectTemplate.ts',
+                true,
+                'app-action template entry; its create() writes the template persisted slots',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/addSections.ts',
+                true,
+                'writes the CRDT-backed `markerStore` sections',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/setChordProgression.ts',
+                true,
+                'writes the CRDT-backed `chordTrackStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/setGroove.ts',
+                true,
+                'writes the CRDT-backed `grooveTemplateStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts',
+                true,
+                'commits template tracks into `trackStore` and `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/commitVcaGroups.ts',
+                true,
+                'commits VCA groups and track state through the Arrangement stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/configureYeastArpeggiator.ts',
+                true,
+                'writes the CRDT-backed Yeast rack',
+            ],
+            [
+                'src/modules/ProjectVersioning/handlers/versionControl/handleCreateProjectVersion.ts',
+                true,
+                'routes a version creation into the persisted version-control store',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/tagging/tagVersion.ts',
+                true,
+                'writes a stored version tag',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/restoreVersion.ts',
+                true,
+                'hydrates a stored snapshot and records the restored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/autoSaveVersion.ts',
+                true,
+                'creates an autosave stored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/queries/setAutoSaveInterval.ts',
+                true,
+                'writes the persisted autosave interval',
+            ],
             // Excluded, recorded with the reason each surface is left out.
             [
                 'src/modules/Arrangement/presentations/views/TrackList.tsx',
@@ -6253,6 +6403,31 @@ describe('saved-project-state applicability matrix', () => {
                 'src/modules/Project/presentations/views/RecentProjectsMenu.tsx',
                 false,
                 'recent-projects presentation view; the `recentProjects/` use cases are the owner, not the menu',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts',
+                false,
+                'pure in-memory device factory; writes no store',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templatePreviews/previewLoops.ts',
+                false,
+                'template preview-loop data; no persisted write',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/demoUtils/note.ts',
+                false,
+                'pure in-memory note builder; writes no store',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/queries/getVersionHistory.ts',
+                false,
+                'read-only version-history query; no persisted write',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/getActiveCheckpointOwnerId.ts',
+                false,
+                'read-only owner-id read from `projectStore`; writes nothing',
             ],
         ];
         for (const [path, expected, why] of matrix) {

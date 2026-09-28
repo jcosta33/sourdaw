@@ -138,6 +138,21 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  *   (`handleCreateProjectFromTemplate`), the persisted-store barrel
  *   (`stores/index.ts`), and the composition-root handler-map registration
  *   (`src/app/getProductionCommandHandlerMaps.ts`).
+ * - `projectversioning`: the ProjectVersioning module's persisted-shape and snapshot/restore owners —
+ *   the `stores/versionControlStore.ts` `sourdaw-version-control` localStorage slot and its
+ *   `stores/index.ts` barrel, `models/ProjectVersion.ts` (the version/snapshot/branch shape), the
+ *   `snapshotHelpers/captureSnapshot.ts` serializer and `snapshotHelpers/restoreSnapshot.ts` hydrator
+ *   (which writes the track, marker, transport, MIDI and automation stores), the version lifecycle
+ *   (`createProjectVersion`, `restoreVersion`, `autoSaveVersion`), branching (`createVersionBranch`,
+ *   `switchBranch`, `deleteBranch`), tagging (`tagVersion`, `removeTag`), the `setAutoSaveInterval`
+ *   writer, and the three version-control handlers that route those mutations.
+ * - the Project module's template and demo writers, whose own sources write persisted CRDT slots or
+ *   replace the saved project: the `templateFiles/` builders (each runs `initProject` then
+ *   `finalizeTemplate`), the `templateDefinitions/createFromTemplate.ts` replacement and the
+ *   `templateDefinitions/applyProjectTemplate.ts` app-action entry, the writing `templateHelpers/`
+ *   (`initProject`, `addMarkers`, `addSections`, `setChordProgression`, `setGroove`,
+ *   `finalizeTemplate`, `commitVcaGroups`, `configureYeastArpeggiator`), and the demo writers
+ *   `demoUtils/syncArrangement.ts` and `nebulaDrift/createNebulaDriftDemo.ts`.
  *
  * Deliberately not matched, with no persisted-project or undo ownership documented in their own
  * `AGENTS.md`: `MIDI/` and `Arrangement/` beyond their migration files, `Command/` beyond its undo
@@ -152,11 +167,21 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  * `queryAgentDiscovery`, `parseAgentDiscoveryInput`, `agentCapabilityDiscoveryPort`,
  * `agentAssetFileBoundary`, `getAgentProjectModelContract`, `getProjectProtocolContracts`,
  * `createBoundedRevisionToken`, the `AgentDiscoveryQuery` and `AgentProjectModelContract` models),
- * its templates and demo content (`useCases/projectTemplates/`, `useCases/demoProjects/`, and the
- * `ProjectTemplateTypes` and `DemoProjectTypes` models), its session-scoped stores
+ * its template registry and read surfaces (`useCases/projectTemplates/templateDefinitions/helpers.ts`
+ * and `getTemplates.ts`), the pure in-memory track/device factories in
+ * `useCases/projectTemplates/templateHelpers/` (`buildDevice`, `createAudioTrack`,
+ * `createInstrumentTrack`, `createBus`, `createFolder`, `createVca`, `addSend`,
+ * `attachSidechainCompressor`, `addDeviceChain`, `setMasterChain`), the template preview data
+ * (`useCases/projectTemplates/templatePreviews/previewLoops.ts`), the demo in-memory builders
+ * (`useCases/demoProjects/demoUtils/applyPreset.ts`, `createMidiClip.ts`, `note.ts`), the
+ * `ProjectTemplateTypes` and `DemoProjectTypes` models, its session-scoped stores
  * (`missingMediaStore`, `projectLoadFailureStore`), its read-only barrels and handler assembly
  * (`events/index.ts`, `useCases/index.ts`, `getProjectHandlers`), its file dialog and runtime
- * detection (`fileDialog`, `isNativeProjectRuntimeAvailable`), and the rest of `src/app/` (router,
+ * detection (`fileDialog`, `isNativeProjectRuntimeAvailable`), ProjectVersioning's read-only
+ * version queries (`useCases/versionControl/queries/getBranchCount`, `getCurrentBranchName`,
+ * `getVersionCount`, `getVersionHistory`) and its `snapshotHelpers/getActiveCheckpointOwnerId`
+ * read, ProjectVersioning's handler-map assembly (`getVersionControlHandlers`) and
+ * `useCases/index.ts` barrel (it owns no presentations), and the rest of `src/app/` (router,
  * query client, error handlers, notification bus, native device state, browser display, agent
  * production-readiness and protocol manifest, startup error surfaces) that wires no persisted state.
  */
@@ -230,6 +255,156 @@ export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] =
     { matcher: { kind: 'exact', value: 'src/app/registerdependencies.ts' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'exact', value: 'src/app/resolveappcomposition.ts' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'exact', value: 'src/app/getproductioncommandhandlermaps.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/project/usecases/projecttemplates/templatefiles/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatedefinitions/createfromtemplate.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatedefinitions/applyprojecttemplate.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/initproject.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/addmarkers.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/addsections.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/setchordprogression.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/setgroove.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/finalizetemplate.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/commitvcagroups.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/projecttemplates/templatehelpers/configureyeastarpeggiator.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/demoprojects/demoutils/syncarrangement.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/project/usecases/demoprojects/nebuladrift/createnebuladriftdemo.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/projectversioning/stores/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/projectversioning/handlers/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/projectversioning/usecases/versioncontrol/branching/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefix', value: 'src/modules/projectversioning/usecases/versioncontrol/tagging/' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/projectversioning/models/projectversion.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/createprojectversion.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/restoreversion.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/autosaveversion.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/snapshothelpers/capturesnapshot.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/snapshothelpers/restoresnapshot.ts',
+        },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: {
+            kind: 'exact',
+            value: 'src/modules/projectversioning/usecases/versioncontrol/queries/setautosaveinterval.ts',
+        },
+        scopes: ['persisted-state'],
+    },
 ];
 
 function matchersFor(scope: SavedProjectStateScope): readonly SavedProjectStateMatcher[] {
