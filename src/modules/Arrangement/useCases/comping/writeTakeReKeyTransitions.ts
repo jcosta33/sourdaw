@@ -1,8 +1,9 @@
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
-import { takesWithLiveClips } from './takesWithLiveClips';
 
 export type TakeReKeyWriteDirection = 'apply' | 'restore';
 
@@ -37,29 +38,38 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
  * retirement removes: it is verbatim in both captures) is never touched here,
  * and a take the transition never heard of — a collaborator's write that
  * landed after the capture — survives untouched.
+ *
+ * `requireLiveClipIds` answers the liveness question, computing the
+ * project-wide clip-id set on first use and caching it for the rest of the
+ * write: a reconcile that only moves or drops takes never triggers the scan.
  */
 function reconcileTransitionTakes(
     live: readonly Take[],
     fromTakes: readonly Take[],
-    toTakes: readonly Take[]
+    toTakes: readonly Take[],
+    requireLiveClipIds: () => ReadonlySet<string>
 ): readonly Take[] {
     const fromIds = new Set(fromTakes.map((take) => take.id));
+    const fromById = new Map(fromTakes.map((take) => [take.id, take]));
     const toById = new Map(toTakes.map((take) => [take.id, take]));
     const liveById = new Map(live.map((take) => [take.id, take]));
     const modifiedIds = new Set<string>();
     for (const target of toTakes) {
-        const source = fromTakes.find((take) => take.id === target.id);
+        const source = fromById.get(target.id);
         if (source && isModifiedByTransition(target, source)) {
             modifiedIds.add(target.id);
         }
     }
-    const liveClipTakeIds = new Set(takesWithLiveClips(toTakes).map((take) => take.id));
+    let liveClipIds: ReadonlySet<string> | null = null;
 
     const reconciled: Take[] = [];
     for (const target of toTakes) {
         const liveTake = liveById.get(target.id);
         if (!liveTake) {
-            if (liveClipTakeIds.has(target.id)) {
+            if (liveClipIds === null) {
+                liveClipIds = requireLiveClipIds();
+            }
+            if (liveClipIds.has(target.clipId)) {
                 reconciled.push(structuredClone(target));
             }
             continue;
@@ -76,6 +86,42 @@ function reconcileTransitionTakes(
         }
     }
     return reconciled;
+}
+
+/**
+ * Merge the additions into the kept live regions — both sorted by start — in
+ * one linear walk: an addition that overlaps a region already retained, live
+ * or re-added, is refused. That is the non-overlap law the store itself keeps,
+ * so a comp authored after the capture is never displaced by the replay.
+ */
+function mergeRegionsRefusingOverlaps(kept: readonly CompRegion[], additions: readonly CompRegion[]): CompRegion[] {
+    const merged: CompRegion[] = [];
+    let keptIndex = 0;
+    for (const addition of additions) {
+        while (keptIndex < kept.length && kept[keptIndex]!.endBeat <= addition.startBeat) {
+            merged.push(kept[keptIndex]!);
+            keptIndex++;
+        }
+        let collides = false;
+        const previous = merged[merged.length - 1];
+        if (previous && regionsOverlap(previous, addition)) {
+            collides = true;
+        }
+        for (
+            let scan = keptIndex;
+            !collides && scan < kept.length && kept[scan]!.startBeat < addition.endBeat;
+            scan++
+        ) {
+            if (regionsOverlap(kept[scan]!, addition)) {
+                collides = true;
+            }
+        }
+        if (!collides) {
+            merged.push(addition);
+        }
+    }
+    merged.push(...kept.slice(keptIndex));
+    return merged;
 }
 
 /**
@@ -96,21 +142,12 @@ function reconcileTransitionRegions(
     const toKeys = new Set(toRegions.map(regionKey));
     const liveTakeIds = new Set(takes.map((take) => take.id));
 
-    const reconciled = live.filter((region) => !fromKeys.has(regionKey(region)) || toKeys.has(regionKey(region)));
-    for (const region of toRegions) {
-        if (fromKeys.has(regionKey(region))) {
-            continue;
-        }
-        if (region.endBeat <= region.startBeat || !liveTakeIds.has(region.takeId)) {
-            continue;
-        }
-        if (reconciled.some((existing) => regionsOverlap(existing, region))) {
-            continue;
-        }
-        reconciled.push(region);
-    }
-    reconciled.sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
-    return reconciled;
+    const kept = live.filter((region) => !fromKeys.has(regionKey(region)) || toKeys.has(regionKey(region)));
+    const additions = toRegions.filter(
+        (region) =>
+            !fromKeys.has(regionKey(region)) && region.endBeat > region.startBeat && liveTakeIds.has(region.takeId)
+    );
+    return mergeRegionsRefusingOverlaps(kept, additions);
 }
 
 function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
@@ -148,14 +185,15 @@ function regionsMatch(left: readonly CompRegion[], right: readonly CompRegion[])
 function reconcileLaneTransition(
     lane: TakeLane,
     transition: TakeReKeyLaneTransition,
-    direction: TakeReKeyWriteDirection
+    direction: TakeReKeyWriteDirection,
+    requireLiveClipIds: () => ReadonlySet<string>
 ): TakeLane | null {
     const fromTakes = direction === 'apply' ? transition.takesBefore : transition.takesAfter;
     const toTakes = direction === 'apply' ? transition.takesAfter : transition.takesBefore;
     const fromRegions = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
     const toRegions = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
 
-    const takes = reconcileTransitionTakes(lane.takes, fromTakes, toTakes);
+    const takes = reconcileTransitionTakes(lane.takes, fromTakes, toTakes, requireLiveClipIds);
     const regions = reconcileTransitionRegions(lane.activeCompRegions, fromRegions, toRegions, takes);
     if (takesMatch(lane.takes, takes) && regionsMatch(lane.activeCompRegions, regions)) {
         return null;
@@ -181,6 +219,23 @@ export function writeTakeReKeyTransitions(
         return;
     }
 
+    // The clip ids currently in the project, collected once per write and only
+    // when some lane actually re-adds a take: the per-take liveness checks
+    // share one scan instead of rebuilding per-track clip lists per take.
+    let liveClipIds: Set<string> | null = null;
+    const requireLiveClipIds = (): ReadonlySet<string> => {
+        if (liveClipIds === null) {
+            const collected = new Set<string>();
+            for (const track of getTrackStoreState()?.tracks ?? []) {
+                for (const clipId of collectTrackClipIds(track)) {
+                    collected.add(clipId);
+                }
+            }
+            liveClipIds = collected;
+        }
+        return liveClipIds;
+    };
+
     const lanes = [...state.lanes];
     let changed = false;
     for (const transition of transitions) {
@@ -193,7 +248,7 @@ export function writeTakeReKeyTransitions(
         if (targetIndex === -1) {
             continue;
         }
-        const reconciled = reconcileLaneTransition(lanes[targetIndex]!, transition, direction);
+        const reconciled = reconcileLaneTransition(lanes[targetIndex]!, transition, direction, requireLiveClipIds);
         if (reconciled) {
             lanes[targetIndex] = reconciled;
             changed = true;

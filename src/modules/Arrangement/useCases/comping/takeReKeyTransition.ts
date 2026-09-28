@@ -40,6 +40,18 @@ export type TakeReKeyClipWindow = {
  * across the round trip. Takes the operation did not touch (including takes
  * the paired retirement removes) appear identically on both sides, so the
  * reconcile never moves them.
+ *
+ * One asymmetry: regions owned by the paired retirement — their take names a
+ * clip the operation removes outright — ride `regionsBefore` verbatim but are
+ * excluded from `regionsAfter`. The retirement leg owns their removal (#4520),
+ * and carrying them on the after side would let a doomed region collide with a
+ * survivor's remapped region on the freed span: the lane's first-held region
+ * would destroy the other (#4841). On the before side they are the lane's
+ * honest pre-operation state, and their presence lets the restore leg put them
+ * back once the survivor's region has moved off the span — the retirement's
+ * own restore runs while the survivor still occupies it and refuses the
+ * overlap. Doomed takes still ride both sides verbatim — takes are keyed by id
+ * and carry no span law, so the duplicate is harmless.
  */
 export type TakeReKeyLaneTransition = {
     laneIndex: number;

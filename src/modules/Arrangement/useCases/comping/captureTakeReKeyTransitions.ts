@@ -30,120 +30,42 @@ type TakeFragmentMap = {
 };
 
 /**
- * The portion of [startBeat, endBeat) outside the deleted span, mapped through
- * the surviving windows of the range's clip. Material inside the deletion has
- * no window and never reappears; a portion no window covers — stale take or
- * region geometry the clip never carried — is dropped rather than left to
+ * The portion of [startBeat, endBeat) covered by the surviving windows of the
+ * range's clip, mapped to the post-delete timeline. Window membership alone
+ * settles survival: the routes cut their windows at the deleted span, so no
+ * window straddles it, and a portion no window covers — deleted material, or
+ * stale take geometry the clip never carried — is dropped rather than left to
  * overhang.
  */
 function mapRangeThroughWindows(
     startBeat: number,
     endBeat: number,
-    windows: readonly TakeReKeyClipWindow[],
-    deleteStartBeat: number,
-    deleteEndBeat: number
+    windows: readonly TakeReKeyClipWindow[]
 ): MappedPiece[] {
     const pieces: MappedPiece[] = [];
     for (const window of windows) {
-        const deltaBeats = window.targetStartBeat - window.sourceStartBeat;
         const overlapStart = Math.max(startBeat, window.sourceStartBeat);
         const overlapEnd = Math.min(endBeat, window.sourceEndBeat);
-        // A genuine window never straddles the deleted span — the route's own
-        // geometry cut it there — but a stale range handed to this derivation
-        // can: the deleted material is gone no matter what it overlaps, so the
-        // span comes out of the overlap before the shift applies.
-        const survivingRanges: [number, number][] = [];
-        const leftEnd = Math.min(overlapEnd, deleteStartBeat);
-        if (overlapStart < leftEnd) {
-            survivingRanges.push([overlapStart, leftEnd]);
+        if (overlapStart >= overlapEnd) {
+            continue;
         }
-        const rightStart = Math.max(overlapStart, deleteEndBeat);
-        if (rightStart < overlapEnd) {
-            survivingRanges.push([rightStart, overlapEnd]);
-        }
-        for (const [rangeStart, rangeEnd] of survivingRanges) {
-            pieces.push({
-                startBeat: rangeStart + deltaBeats,
-                endBeat: rangeEnd + deltaBeats,
-                targetClipId: window.targetClipId,
-                preImageStartBeat: rangeStart,
-                preImageEndBeat: rangeEnd,
-                deltaBeats,
-            });
-        }
+        const deltaBeats = window.targetStartBeat - window.sourceStartBeat;
+        pieces.push({
+            startBeat: overlapStart + deltaBeats,
+            endBeat: overlapEnd + deltaBeats,
+            targetClipId: window.targetClipId,
+            preImageStartBeat: overlapStart,
+            preImageEndBeat: overlapEnd,
+            deltaBeats,
+        });
     }
     return pieces;
-}
-
-function mintFragmentTakeId(
-    takeId: string,
-    deleteStartBeat: number,
-    deleteEndBeat: number,
-    usedIds: Set<string>
-): string {
-    const baseId = `${takeId}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
-    let candidate = baseId;
-    let suffix = 1;
-    while (usedIds.has(candidate)) {
-        candidate = `${baseId}:${suffix}`;
-        suffix += 1;
-    }
-    usedIds.add(candidate);
-    return candidate;
 }
 
 function areSameTakeGeometry(take: Take, piece: MappedPiece): boolean {
     return piece.targetClipId === take.clipId && piece.startBeat === take.startBeat && piece.endBeat === take.endBeat;
 }
 
-function regionsOverlap(left: CompRegion, right: CompRegion): boolean {
-    return left.startBeat < right.endBeat && right.startBeat < left.endBeat;
-}
-
-/**
- * Keep the store's exactness law on the derived regions — sorted by start,
- * non-overlapping, every region naming a take the lane still holds. The
- * derivation is monotone by construction, so this pass only absorbs stale
- * caller-side geometry (a region wider than its take, a take whose span ends
- * inside the deletion).
- */
-function normalizeDerivedRegions(regions: readonly CompRegion[], takeIds: ReadonlySet<string>): CompRegion[] {
-    const sorted = [...regions].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
-    const retained: CompRegion[] = [];
-    for (const region of sorted) {
-        if (region.endBeat <= region.startBeat || !takeIds.has(region.takeId)) {
-            continue;
-        }
-        const previous = retained[retained.length - 1];
-        if (previous && regionsOverlap(previous, region)) {
-            continue;
-        }
-        retained.push(region);
-    }
-    return retained;
-}
-
-/**
- * Read-only half of the take re-key: how one delete-time operation moves every
- * take and comp region on the tracks it rewrites, captured before any store
- * publishes (#4841).
- *
- * A take follows its clip's surviving windows: the deleted span's portion is
- * gone, the rest lands where the operation put the clip — re-keyed onto the
- * migration target when the clip survives under a fresh id, split into one
- * take per fragment when the clip splits (the left fragment keeps the take's
- * id, matching the split convention that the left half keeps the clip id),
- * shifted or trimmed in place when the clip keeps its id. `sourceOffsetBeats`
- * rides along untouched: the fragment clips carry the consumed head in their
- * own offset fields, so the take's pass offset means the same as before.
- * A take whose whole span the deletion consumed is dropped — its material is
- * no longer in the arrangement — and every capture rides the transition record
- * so undo puts it back.
- *
- * Comp regions map through their take's fragments, re-pointing at the fragment
- * take, so a region never keeps advancing the comp cursor over material its
- * take no longer covers.
- */
 type LaneTakeMapping = {
     takesAfter: Take[];
     fragmentsBySourceTakeId: Map<string, TakeFragmentMap[]>;
@@ -169,24 +91,25 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
 /**
  * One take's surviving pieces as fragment takes and the region-mapping view of
  * the same split. The leftmost fragment keeps the take's id — the split
- * convention — so regions naming it keep resolving, and the minted fragment
- * ids derive deterministically from the take id and the deleted span: a
- * replayed redo re-mints the same ids, exactly like the clip identities it
- * replays.
+ * convention — so regions naming it keep resolving. A take mints at most one
+ * id: its clip contributes at most two windows (its own surviving fragment and
+ * the re-keyed right one) and a window at most one piece, so the second piece
+ * is the only mint, over a base id the source take's id makes unique. Deriving
+ * it from the take id and the deleted span keeps a replayed redo re-minting
+ * the same id, exactly like the clip identities it replays.
  */
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
     deleteStartBeat: number,
-    deleteEndBeat: number,
-    usedTakeIds: Set<string>
+    deleteEndBeat: number
 ): { fragmentTakes: Take[]; fragments: TakeFragmentMap[] } {
     const fragmentTakes: Take[] = [];
     const fragments: TakeFragmentMap[] = [];
     for (const [pieceIndex, piece] of pieces.entries()) {
         let fragmentTakeId = take.id;
         if (pieceIndex !== 0) {
-            fragmentTakeId = mintFragmentTakeId(take.id, deleteStartBeat, deleteEndBeat, usedTakeIds);
+            fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
         fragmentTakes.push({
             ...take,
@@ -208,8 +131,7 @@ function buildTakeFragments(
 function mapLaneTakes(
     lane: TakeLane,
     windowsByClipId: ReadonlyMap<string, TakeReKeyClipWindow[]>,
-    input: CaptureTakeReKeyTransitionsInput,
-    usedTakeIds: Set<string>
+    input: CaptureTakeReKeyTransitionsInput
 ): LaneTakeMapping {
     const mapping: LaneTakeMapping = {
         takesAfter: [],
@@ -228,13 +150,7 @@ function mapLaneTakes(
             mapping.takesAfter.push(take);
             continue;
         }
-        const pieces = mapRangeThroughWindows(
-            take.startBeat,
-            take.endBeat,
-            takeWindows,
-            input.deleteStartBeat,
-            input.deleteEndBeat
-        );
+        const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
             mapping.takesAfter.push(take);
             continue;
@@ -245,8 +161,7 @@ function mapLaneTakes(
             take,
             pieces,
             input.deleteStartBeat,
-            input.deleteEndBeat,
-            usedTakeIds
+            input.deleteEndBeat
         );
         mapping.takesAfter.push(...fragmentTakes);
         mapping.fragmentsBySourceTakeId.set(take.id, fragments);
@@ -272,36 +187,92 @@ function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeF
     return mapped;
 }
 
+type LaneRegionMapping = {
+    regionsBefore: CompRegion[];
+    regionsAfter: CompRegion[];
+    regionsChanged: boolean;
+};
+
 function mapLaneRegions(
     lane: TakeLane,
+    takesById: ReadonlyMap<string, Take>,
     fragmentsBySourceTakeId: ReadonlyMap<string, TakeFragmentMap[]>,
     removedClipIds: ReadonlySet<string>
-): { regionsAfter: CompRegion[]; regionsChanged: boolean } {
-    const regionsAfter: CompRegion[] = [];
-    let regionsChanged = false;
+): LaneRegionMapping {
+    const mapping: LaneRegionMapping = { regionsBefore: [], regionsAfter: [], regionsChanged: false };
     for (const region of lane.activeCompRegions) {
-        const take = lane.takes.find((candidate) => candidate.id === region.takeId);
+        const take = takesById.get(region.takeId);
+        if (take && removedClipIds.has(take.clipId)) {
+            // The retirement leg owns this region's removal (#4520), so it
+            // never reaches regionsAfter: carried there it would collide with
+            // a survivor's remapped region on the freed span, and whichever
+            // the lane held first would destroy the other (#4841). It still
+            // rides regionsBefore — the lane genuinely held it — so the
+            // restore leg can put it back once the survivor's region has moved
+            // off the span (the retirement's own restore runs while the
+            // survivor still occupies it and refuses the overlap). No
+            // regionsChanged: a lane whose only change is this region belongs
+            // to the retirement leg alone.
+            mapping.regionsBefore.push(region);
+            continue;
+        }
         const fragments = take ? fragmentsBySourceTakeId.get(take.id) : undefined;
-        if (!take || removedClipIds.has(take.clipId) || !fragments) {
-            regionsAfter.push(region);
+        if (!fragments) {
+            // The take's clip was untouched (or the region names a take the
+            // lane does not hold, which only an unsanitized write can produce):
+            // the region rides both sides verbatim, so the reconcile never
+            // moves it.
+            mapping.regionsBefore.push(region);
+            mapping.regionsAfter.push(region);
             continue;
         }
         const mapped = mapRegionThroughFragments(region, fragments);
+        mapping.regionsBefore.push(region);
         if (
             mapped.length === 1 &&
             mapped[0]!.takeId === region.takeId &&
             mapped[0]!.startBeat === region.startBeat &&
             mapped[0]!.endBeat === region.endBeat
         ) {
-            regionsAfter.push(region);
+            mapping.regionsAfter.push(region);
             continue;
         }
-        regionsChanged = true;
-        regionsAfter.push(...mapped);
+        mapping.regionsChanged = true;
+        mapping.regionsAfter.push(...mapped);
     }
-    return { regionsAfter, regionsChanged };
+    return mapping;
 }
 
+/**
+ * Read-only half of the take re-key: how one delete-time operation moves every
+ * take and comp region on the tracks it rewrites, captured before any store
+ * publishes (#4841).
+ *
+ * A take follows its clip's surviving windows: the deleted span's portion is
+ * gone, the rest lands where the operation put the clip — re-keyed onto the
+ * migration target when the clip survives under a fresh id, split into one
+ * take per fragment when the clip splits (the left fragment keeps the take's
+ * id, matching the split convention that the left half keeps the clip id),
+ * shifted or trimmed in place when the clip keeps its id. `sourceOffsetBeats`
+ * rides along untouched: the fragment clips carry the consumed head in their
+ * own offset fields, so the take's pass offset means the same as before.
+ * A take whose whole span the deletion consumed is dropped — its material is
+ * no longer in the arrangement — and every capture rides the transition record
+ * so undo puts it back.
+ *
+ * Comp regions map through their take's fragments, re-pointing at the fragment
+ * take, so a region never keeps advancing the comp cursor over material its
+ * take no longer covers. A region whose take's clip the operation removes
+ * outright belongs to the paired retirement (#4520): it rides the before side
+ * verbatim — so the restore leg can put it back — but never the after side,
+ * where it would collide with a survivor's remapped region on the freed span.
+ * The derived sides keep the store's exactness law by
+ * construction: the lane's regions start sorted and non-overlapping, each
+ * region's fragments stay in window order, and the per-side deltas are uniform
+ * (left material keeps its beats; everything right of the span shifts by the
+ * same amount), so the mapped sides come out sorted, non-overlapping, and
+ * naming only takes the same side holds.
+ */
 export function captureTakeReKeyTransitions(
     input: CaptureTakeReKeyTransitionsInput
 ): readonly TakeReKeyLaneTransition[] {
@@ -310,33 +281,31 @@ export function captureTakeReKeyTransitions(
         return [];
     }
 
-    const usedTakeIds = new Set<string>();
-    for (const lane of state.lanes) {
-        for (const take of lane.takes) {
-            usedTakeIds.add(take.id);
-        }
-    }
-
     const transitions: TakeReKeyLaneTransition[] = [];
     for (const [laneIndex, lane] of state.lanes.entries()) {
         const windows = input.windowsByTrackId.get(lane.trackId);
         if (!windows) {
             continue;
         }
-        const takeMapping = mapLaneTakes(lane, groupWindowsByClipId(windows), input, usedTakeIds);
-        const regionMapping = mapLaneRegions(lane, takeMapping.fragmentsBySourceTakeId, input.removedClipIds);
+        const takesById = new Map(lane.takes.map((take) => [take.id, take]));
+        const takeMapping = mapLaneTakes(lane, groupWindowsByClipId(windows), input);
+        const regionMapping = mapLaneRegions(
+            lane,
+            takesById,
+            takeMapping.fragmentsBySourceTakeId,
+            input.removedClipIds
+        );
         if (!takeMapping.takesChanged && !regionMapping.regionsChanged) {
             continue;
         }
-        const takeIdsAfter = new Set(takeMapping.takesAfter.map((take) => take.id));
         transitions.push({
             laneIndex,
             laneId: lane.id,
             trackId: lane.trackId,
             takesBefore: lane.takes,
             takesAfter: takeMapping.takesAfter,
-            regionsBefore: lane.activeCompRegions,
-            regionsAfter: normalizeDerivedRegions(regionMapping.regionsAfter, takeIdsAfter),
+            regionsBefore: regionMapping.regionsBefore,
+            regionsAfter: regionMapping.regionsAfter,
         });
     }
     return transitions;

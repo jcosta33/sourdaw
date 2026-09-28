@@ -48,7 +48,10 @@ function revertTakeLaneTransitionPlan(plan: TakeLaneTransitionPlan): boolean {
  * there is something to do. Apply and revert are the comping module's
  * defensive primitives, which reconcile against live state rather than
  * conflicting on it, and each is one atomic store write, so a failed apply
- * leaves nothing to recover.
+ * leaves nothing to recover. The retirement leg always runs before the re-key
+ * leg: a region the retirement owns rides only the re-key's before side
+ * (#4841), so on the restore direction the re-key leg re-adds it only after
+ * the survivor's region has moved off its span.
  */
 export function prepareTakeLaneStateRestore(plan: TakeLaneTransitionPlan): {
     name: string;
