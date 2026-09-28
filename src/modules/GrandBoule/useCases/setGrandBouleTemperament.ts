@@ -1,6 +1,6 @@
 import { type Store } from '#/infra/store/types';
 
-import { type GrandBoulePersistedState, type TemperamentIndex } from '../models/GrandBouleDeviceState';
+import { type TemperamentIndex } from '../models/GrandBouleDeviceState';
 import { type GrandBouleState } from '../stores/grandBouleStore';
 /**
  * Set the historical temperament for the Grand Boule piano.
@@ -9,10 +9,13 @@ import { type GrandBouleState } from '../stores/grandBouleStore';
  * new temperament on their next note-on — already-sounding voices keep their
  * current tuning until re-triggered. The pick is committed to project truth
  * through the same undoable device-state action a morph edit rides (#4727),
- * so a reload and an offline render keep the tuning the live piano plays.
+ * so a reload and an offline render keep the tuning the live piano plays;
+ * the untouched morph and voicing leaves ride along from the project chunk,
+ * not the session store mirror.
  */
 
 import { commitGrandBouleDeviceState } from './commitGrandBouleDeviceState';
+import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 import { resolveGrandBouleEngine } from './resolveGrandBouleEngine';
 
 type SetGrandBouleTemperamentInput = {
@@ -35,10 +38,10 @@ export function setGrandBouleTemperament(input: SetGrandBouleTemperamentInput): 
     const engine = resolveGrandBouleEngine({ deviceId: input.deviceId });
     engine.setTemperament({ index: input.temperament });
 
-    const persisted: GrandBoulePersistedState = {
-        morph: state.morph,
+    const projectState = projectGrandBoulePersistedState(input.deviceId);
+    commitGrandBouleDeviceState(input.deviceId, {
+        morph: projectState.morph,
         temperament: input.temperament,
-        parameters: state.parameters,
-    };
-    commitGrandBouleDeviceState(input.deviceId, persisted);
+        parameters: projectState.parameters,
+    });
 }

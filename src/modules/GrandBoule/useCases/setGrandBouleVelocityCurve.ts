@@ -1,6 +1,5 @@
 import { type Store } from '#/infra/store/types';
 
-import { type GrandBoulePersistedState } from '../models/GrandBouleDeviceState';
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../stores/grandBouleStore';
 /**
@@ -18,10 +17,12 @@ import { type GrandBouleState } from '../stores/grandBouleStore';
  * store, making persistence order-dependent. A drag is one edit, not ninety:
  * the transient half previews on the session store and the engine, and the
  * commit lands once on release, the cadence every other drag-committing knob
- * on this panel uses.
+ * on this panel uses. The settle owns the velocityCurve leaf; the untouched
+ * leaves ride along from the project chunk, not the session store mirror.
  */
 
 import { commitGrandBouleDeviceState } from './commitGrandBouleDeviceState';
+import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 
 type SetGrandBouleVelocityCurveInput = {
     /** Device id — the address project truth and the undo entry are keyed by. */
@@ -55,13 +56,13 @@ export function setGrandBouleVelocityCurve(input: SetGrandBouleVelocityCurveInpu
         return;
     }
 
-    const persisted: GrandBoulePersistedState = {
-        morph: state.morph,
-        temperament: state.temperament,
+    const projectState = projectGrandBoulePersistedState(input.deviceId);
+    commitGrandBouleDeviceState(input.deviceId, {
+        morph: projectState.morph,
+        temperament: projectState.temperament,
         parameters: {
-            ...state.parameters,
+            ...projectState.parameters,
             velocityCurve: clamped,
         },
-    };
-    commitGrandBouleDeviceState(input.deviceId, persisted);
+    });
 }

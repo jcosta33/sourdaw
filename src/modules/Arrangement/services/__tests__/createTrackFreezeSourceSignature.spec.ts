@@ -239,6 +239,41 @@ describe('createTrackFreezeSourceSignature', () => {
         expect(corruptSignature).toBe(foreignVersionSignature);
     });
 
+    // A `null` temperament leaf is present-but-invalid: the projection
+    // rejects the chunk (absent defaults, `null` rejects — the `??`-less
+    // check), and a rejected chunk hydrates as wholesale defaults, so it
+    // signs as the default projection while a valid temperament discriminates.
+    it('signs a null-temperament chunk as the default projection', () => {
+        const device = { id: 'd1', type: 'grand-boule', parameterValues: {}, bypassed: false };
+        const leaves = {
+            modelA: 'mellow-grand',
+            modelB: 'singing-grand',
+            morphPosition: 0.73,
+            layerBalance: -0.25,
+            enabled: true,
+            hammerHardness: 0.4,
+            velocityCurve: 0.85,
+            stereoWidth: 0.7,
+            toneTilt: 0.35,
+        };
+
+        const nullTemperament = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { ...leaves, temperament: null } } }],
+        });
+        const rejected = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 2, data: { ...leaves, temperament: 1 } } }],
+        });
+        const valid = createTrackFreezeSourceSignature({
+            clips: [],
+            devices: [{ ...device, deviceState: { version: 1, data: { ...leaves, temperament: 1 } } }],
+        });
+
+        expect(nullTemperament).toBe(rejected);
+        expect(nullTemperament).not.toBe(valid);
+    });
+
     // The canonicalization keys on the device type, the discriminator the
     // offline hydration dispatches on: another native device's chunk carries
     // its own schema and keeps hashing raw.

@@ -9,11 +9,31 @@ import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngine
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { loadGrandBoulePreset } from '../loadGrandBoulePreset';
 
-const mocks = vi.hoisted(() => ({
-    commit: vi.fn(),
-}));
+/**
+ * The load owns the four voicing leaves only. The session store is a mirror
+ * another peer's device-state action can leave behind, so the untouched morph
+ * and temperament leaves must come from the project chunk — a store stale
+ * against the chunk would otherwise revert the chunk's tuning on a preset pick.
+ */
 
-vi.mock('../commitGrandBouleDeviceState', () => ({ commitGrandBouleDeviceState: mocks.commit }));
+const mocks = vi.hoisted(() => {
+    const trackStore: { value: unknown } = { value: undefined };
+    return {
+        executeAppAction: vi.fn((_action: unknown) => Promise.resolve(undefined)),
+        executeUserAppAction: vi.fn((_action: unknown) => Promise.resolve(undefined)),
+        trackStore,
+        reconcile: vi.fn(),
+    };
+});
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
+}));
+vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
+    reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,
+}));
 
 const gbStoreCell = vi.hoisted(() => ({
     value: null as GrandBouleState | null,
@@ -50,11 +70,33 @@ vi.mock('../../repositories/findBuiltinGrandBoulePreset', () => ({
     findBuiltinGrandBoulePreset: vi.fn(),
 }));
 
+function projectChunk(data: Record<string, unknown>): void {
+    mocks.trackStore.value = {
+        tracks: [
+            {
+                devices: [
+                    { id: 'grand-1', type: 'grand-boule', parameterValues: {}, deviceState: { version: 1, data } },
+                ],
+            },
+        ],
+    };
+}
+
+function dispatchedAfter(): Record<string, unknown> | undefined {
+    const [action] = mocks.executeAppAction.mock.calls.at(-1) ?? [];
+    if (action === undefined) {
+        return undefined;
+    }
+    return (action as { payload: { after: { data: Record<string, unknown> } } }).payload.after.data;
+}
+
 describe('loadGrandBoulePreset', () => {
     beforeEach(() => {
         gbStoreCell.value = null;
         gbStoreCell.set.mockClear();
-        mocks.commit.mockClear();
+        mocks.executeAppAction.mockClear();
+        mocks.reconcile.mockClear();
+        mocks.trackStore.value = undefined;
     });
 
     it('should return false when preset id is unknown', () => {
@@ -106,10 +148,13 @@ describe('loadGrandBoulePreset', () => {
         expect(setParam).toHaveBeenCalledWith({ name: 'tone_tilt', value: params.toneTilt });
         expect(setParam).toHaveBeenCalledWith({ name: 'stereo_width', value: params.stereoWidth });
         expect(setParam).toHaveBeenCalledWith({ name: 'velocity_curve', value: params.velocityCurve });
-        expect(mocks.commit).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
-    it('commits the preset voicing to project truth when the caller names the device', () => {
+    // A store stale against the chunk must not revert the chunk's untouched
+    // leaves: the load sources morph and temperament from the fresh chunk and
+    // writes only the voicing it owns, so the chunk's tuning survives a pick.
+    it('commits the preset voicing with the untouched leaves the project chunk holds', () => {
         const params = { hammerHardness: 0.4, velocityCurve: 0.85, stereoWidth: 0.7, toneTilt: 0.35 };
         vi.mocked(findBuiltinGrandBoulePreset).mockReturnValue({
             id: 'grand-boule-bright',
@@ -118,16 +163,27 @@ describe('loadGrandBoulePreset', () => {
             parameters: params,
         });
 
-        const morph = createDefaultMorphState();
         gbStoreCell.value = {
             config: createDefaultGrandBouleConfig(),
             parameters: createNeutralPresetParameters(),
             pedals: { sustain: 0, unaCorda: false, sostenuto: false },
             midiCalibration: createDefaultMidiCalibration(),
             perNoteOverrides: new Map(),
-            morph,
+            morph: createDefaultMorphState(),
             temperament: 3,
         };
+        projectChunk({
+            modelA: 'mellow-grand',
+            modelB: 'singing-grand',
+            morphPosition: 0.4,
+            layerBalance: -0.2,
+            enabled: true,
+            temperament: 1,
+            hammerHardness: 0.3,
+            velocityCurve: 1.25,
+            stereoWidth: 0.8,
+            toneTilt: -0.4,
+        });
 
         const { handle } = fakeEngine();
 
@@ -140,7 +196,17 @@ describe('loadGrandBoulePreset', () => {
             })
         ).toBe(true);
 
-        expect(mocks.commit).toHaveBeenCalledTimes(1);
-        expect(mocks.commit).toHaveBeenCalledWith('grand-1', { morph, temperament: 3, parameters: params });
+        expect(dispatchedAfter()).toEqual({
+            modelA: 'mellow-grand',
+            modelB: 'singing-grand',
+            morphPosition: 0.4,
+            layerBalance: -0.2,
+            enabled: true,
+            temperament: 1,
+            hammerHardness: 0.4,
+            velocityCurve: 0.85,
+            stereoWidth: 0.7,
+            toneTilt: 0.35,
+        });
     });
 });

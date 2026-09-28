@@ -1,23 +1,16 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
-import {
-    type GrandBoulePersistedState,
-    readGrandBouleDeviceState,
-    toGrandBouleDeviceState,
-} from '../models/GrandBouleDeviceState';
+import { type GrandBoulePersistedState, toGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
 
+import { findGrandBouleDevice } from './findGrandBouleDevice';
+import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBouleDeviceStateFromProject';
 
 export function commitGrandBouleDeviceState(deviceId: string, state: GrandBoulePersistedState): void {
-    const device = trackStore.value?.tracks
-        .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.grandBoule);
-    if (!device) {
+    if (!findGrandBouleDevice(deviceId)) {
         return;
     }
-    const before = toGrandBouleDeviceState(readGrandBouleDeviceState(device.deviceState));
+    const before = toGrandBouleDeviceState(projectGrandBoulePersistedState(deviceId));
     const after = toGrandBouleDeviceState(state);
     if (JSON.stringify(before) === JSON.stringify(after)) {
         reconcileGrandBouleDeviceStateFromProject(deviceId);

@@ -44,6 +44,39 @@ describe('GrandBouleDeviceState', () => {
         });
     });
 
+    // A `null` leaf is present, not absent: the temperament check only folds
+    // `undefined`, so `null` is a present value outside 0..5 and rejects the
+    // chunk like any other corruption.
+    it('rejects a chunk whose temperament leaf is null', () => {
+        expect(
+            fromGrandBouleDeviceState({
+                version: GRAND_BOULE_DEVICE_STATE_VERSION,
+                data: { ...savedData, temperament: null },
+            })
+        ).toBeNull();
+    });
+
+    // The voicing leaves fold through `??`, so `null` lands on the neutral
+    // default exactly like an absent leaf instead of rejecting the chunk.
+    it('folds null voicing leaves to the neutral defaults on decode', () => {
+        expect(
+            fromGrandBouleDeviceState({
+                version: GRAND_BOULE_DEVICE_STATE_VERSION,
+                data: {
+                    ...savedData,
+                    hammerHardness: null,
+                    velocityCurve: null,
+                    stereoWidth: null,
+                    toneTilt: null,
+                },
+            })
+        ).toEqual({
+            morph: savedState.morph,
+            temperament: savedState.temperament,
+            parameters: createNeutralPresetParameters(),
+        });
+    });
+
     it('rejects removed aliases and restores the neutral default for invalid saved state', () => {
         expect(
             fromGrandBouleDeviceState({

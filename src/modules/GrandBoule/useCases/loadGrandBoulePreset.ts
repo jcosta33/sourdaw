@@ -5,6 +5,7 @@ import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHan
 import { type GrandBouleState } from '../stores/grandBouleStore';
 
 import { commitGrandBouleDeviceState } from './commitGrandBouleDeviceState';
+import { projectGrandBoulePersistedState } from './projectGrandBoulePersistedState';
 
 type LoadGrandBoulePresetInput = {
     engine: GrandBouleEngineHandle;
@@ -45,9 +46,10 @@ export function loadGrandBoulePreset(input: LoadGrandBoulePresetInput): boolean 
     engine.setParam({ name: 'velocity_curve', value: p.velocityCurve });
 
     if (input.deviceId !== undefined) {
+        const projectState = projectGrandBoulePersistedState(input.deviceId);
         commitGrandBouleDeviceState(input.deviceId, {
-            morph: state.morph,
-            temperament: state.temperament,
+            morph: projectState.morph,
+            temperament: projectState.temperament,
             parameters: { ...preset.parameters },
         });
     }
