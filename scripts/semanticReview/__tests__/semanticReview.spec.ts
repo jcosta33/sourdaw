@@ -4958,10 +4958,14 @@ describe('the egress screen tells code from credentials', () => {
         // character tail is one 167-character `[\w.=-]` run, and the pinned binary stays silent
         // on the line: the first branch's 150-character prefix ends mid-run at no terminator,
         // and the second branch's trailing-`=` padding must end at a terminator rather than a
-        // letter (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`). Without the probe's
-        // terminator requirement the bare branch matches the run's first 150 characters as the
-        // value, and the line is withheld. The run is composed at runtime for the same reason as
-        // the fixtures above.
+        // letter (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`). On this head the
+        // terminator requirement is what stops the bare branch reading the run's first 150
+        // characters as the value and withholding the line — dropping it turns this pin red
+        // (mutation-verified). The round-5 run-boundary lookahead blocks the prefix too, so
+        // this pin does not choose between the two guards; the comma-cut pin below does — the
+        // lookahead also fires at characters the scanner treats as neither run character nor
+        // terminator, withholding scanner-silent lines. The run is composed at runtime for the
+        // same reason as the fixtures above.
         const value32 = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
         const run150 = secretFixture(value32.repeat(4), value32.slice(0, 22));
         expect(run150).toHaveLength(150);
@@ -5005,6 +5009,53 @@ describe('the egress screen tells code from credentials', () => {
         const elapsedMs = performance.now() - startedAt;
         expect(reason).toBeUndefined();
         expect(elapsedMs).toBeLessThan(250);
+    });
+
+    it("withholds an interior value that sits exactly at the probe's sixteen-character floor", () => {
+        // Round-7 review of #4872. The pinned binary flags this line as generic-api-key: the
+        // outer quoted run is one 25-character `[\w.=-]` secret to the scanner (entropy 4.56
+        // against the 3.5 floor). The screen's outer judgment rejects that run as a member
+        // access, so the withhold comes from the interior probe alone — and the interior value
+        // is sixteen characters of pure base64 alphabet, exactly the floor on both of the bare
+        // branch's value alternatives. Shifting both floors up by one character admits the line
+        // while the scanner still flags it (mutation-verified); each alternative alone still
+        // matches if only the other's floor shifts. The value is composed at runtime for the
+        // same reason as the fixtures above.
+        const value16 = secretFixture('Ab3dEf7h', 'Ij2lMn4p');
+        expect(value16).toHaveLength(16);
+        const line = secretFixture("token = 'x.secret=", value16, "'");
+        expect(sensitiveContentReason(line)).toBeDefined();
+    });
+
+    it('withholds an interior branch-2 value whose trailing padding ends the run', () => {
+        // Round-7 review of #4872. The interior value is 151 characters of pure base64 alphabet
+        // closed by `=` padding: past the first scanner branch's 150-character bound, and
+        // reachable only through the second branch's trailing-padding allowance — without
+        // `={0,3}` the padding character is no terminator, the second branch fails, and the
+        // first is bound out, so the probe admits the line (mutation-verified). The pinned
+        // binary flags it as generic-api-key — the interior assignment as the match, secret
+        // length 152 with the padding, entropy 5.02 against the 3.5 floor. The run is composed
+        // at runtime for the same reason as the fixtures above.
+        const value32 = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const run151 = secretFixture(value32.repeat(4), value32.slice(0, 23));
+        expect(run151).toHaveLength(151);
+        const line = secretFixture("token = 'x.token2:", run151, "='");
+        expect(sensitiveContentReason(line)).toBeDefined();
+    });
+
+    it('admits an interior value cut by a comma, matching the scanner', () => {
+        // Round-7 review of #4872. A comma is neither a `[\w.=-]` run character nor a scanner
+        // terminator, so the interior value is cut at twenty characters and the pinned binary
+        // stays silent on the line (Gitleaks v8.30.1 with the repository's `.gitleaks.toml`).
+        // The round-5 run-boundary lookahead passes on a comma, so the lookahead form still
+        // matches the value and withholds the line; the terminator form admits it, agreeing
+        // with the scanner. Both guards block the over-long prefix read pinned above — this
+        // line is what pins the choice between them. The value is composed at runtime for the
+        // same reason as the fixtures above.
+        const value20 = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5t');
+        expect(value20).toHaveLength(20);
+        const line = secretFixture("token = 'xx.secret=", value20, ",y rest'");
+        expect(sensitiveContentReason(line)).toBeUndefined();
     });
 
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {

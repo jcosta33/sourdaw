@@ -150,8 +150,12 @@ const ASSIGNMENT_GAP_AND_VALUE = new RegExp(
  * stays proportional to the distance to the next operator rather than to the remaining tail,
  * which is what keeps an operator-dense one-line blob linear without capping the branch (#4872
  * round 5). The bare branch also takes the scanner's trailing terminator in place of the
- * run-boundary lookahead: the terminator implies the boundary, and a value cut by an expression
- * character no longer matches — the value judgment rejected those anyway, so no verdict changes.
+ * round-5 run-boundary lookahead. The terminator implies the boundary, and the swap changes one
+ * verdict class in the scanner's direction: a value cut by a character that is neither a run
+ * character nor a scanner terminator (a comma, say) still matched under the lookahead and was
+ * withheld there, while the scanner is silent on the line — the terminator form admits it
+ * (#4872 round 7; the comma-cut pin in the spec holds that verdict). Both forms block the
+ * over-long prefix read; the choice between them is pinned there, not by the prefix pin.
  */
 const ASSIGNMENT_GAP_AND_VALUE_IN_QUOTED_SPAN = new RegExp(
     `(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
