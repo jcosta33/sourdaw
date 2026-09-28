@@ -1,0 +1,21 @@
+scripts/savedProjectStatePaths.ts
+  s_fe7d9519d0226e::t_16a20294896196 2-5,7-12,14-21,24,26,30-38,44-59,61-64,66-79,81-94,96-97,99,101,103,105-107,114-138,140-175,177-192,194-195,197,199,201,203-205,211-217
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_fe7d9519d0226e::t_0f7b34c18c87a6 15-17,6101-6119,6125-6126,6145-6157,6162,6167,6172-6187,6195-6204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca3a993d223e18f2a8ccec03187e09a966571ee4",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
