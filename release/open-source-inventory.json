@@ -165,8 +165,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a5cb12b58fed4034460230dcb84c32e7e5c672ed28eccd85622d9534681ec320:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:da30bd822bec6327f956411b5946fb57dbb43078a2faeb440e95f80237885685:release/dependency-license-proofs.json"
+                "sha256:3ec7adee4b3a003b14c7204d9fdff3dfde09d8921699d0916c07f463a44a93db:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:57d2371363050a7258f138d8f07675570e9dc6d26e9737122197a89bdbd261a1:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -276,7 +276,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:0ecb1f7d17e6e2d4374b62d12289ba9ab95a7ead7cbe69700ac82da8f9bccaac",
+                "sha256:04b40b1b15a49b66872c09e179b2c4c5891ec1918aea7d1b32fc618b97bce590",
                 "sha256:9e491a9c1d3f49b0555fc2ea8bc3b7ae3854d734a6e3c4a6a645a93ed73a7a00"
             ],
             "licenses": [
@@ -399,7 +399,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e",
+                "sha256:793c0980912bb6b487593835b8e34d1c33ef18a1dfcea197c24625d0498a7a4e",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1737,7 +1737,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "105d26cdf7a0c16fbb0c7f61389a8176f069717113a8e84f6206ff108c3fcdd9"
+            "sha256": "b20e19e351e5c7b24cb3531bbf3fedbe1ec2060108009eeadaf6bf19e33ddb97"
         },
         {
             "path": "server/package.json",
@@ -1749,7 +1749,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "0ecb1f7d17e6e2d4374b62d12289ba9ab95a7ead7cbe69700ac82da8f9bccaac"
+            "sha256": "04b40b1b15a49b66872c09e179b2c4c5891ec1918aea7d1b32fc618b97bce590"
         },
         {
             "path": "Cargo.toml",
@@ -1757,7 +1757,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e"
+            "sha256": "793c0980912bb6b487593835b8e34d1c33ef18a1dfcea197c24625d0498a7a4e"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",

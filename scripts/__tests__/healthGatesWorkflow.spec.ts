@@ -61,6 +61,7 @@ const SCOPE_OUTPUT_REFERENCES = {
     e2e: '${{ steps.scope.outputs.e2e }}',
     web: '${{ steps.scope.outputs.web }}',
     code: '${{ steps.scope.outputs.code }}',
+    tooling: '${{ steps.scope.outputs.tooling }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
 // An approving review validates the same pull-request head under a different
@@ -152,6 +153,7 @@ const VALIDATION_JOBS = [
     'lint',
     'boundaries',
     'unit',
+    'tooling-unit',
     'smoke',
     'build',
     'rust',
@@ -160,6 +162,7 @@ const VALIDATION_JOBS = [
     'native-parity',
     'dependency-review',
     'pr-secrets',
+    'validation-gate',
 ] as const;
 const HEAVY_GATE_MEMBERS = ['e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
@@ -440,12 +443,12 @@ function assertWorkflowPermissions(candidate: UnknownRecord): void {
 function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const scope = jobAt(candidate, 'scope');
     const outputs = recordAt(scope, 'outputs');
-    for (const name of ['matrix', 'browser', 'browser-ai', 'codeql']) {
+    for (const name of ['profile', 'matrix', 'browser', 'browser-ai', 'codeql']) {
         if (outputs[name] !== `\${{ steps.plan.outputs.${name} }}`) {
             throw new Error(`required scope must export ${name} from its plan`);
         }
     }
-    if (Object.keys(outputs).length !== 4) {
+    if (Object.keys(outputs).length !== 5) {
         throw new Error('required scope must export exactly the selected checks');
     }
     const checkout = recordAt(stepNamed(scope, 'Checkout'), 'with');
@@ -485,6 +488,7 @@ function runScopeScript(
                 ...process.env,
                 EVENT: eventName,
                 BROWSER: 'false',
+                PROFILE: 'broad',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -512,7 +516,45 @@ function runScopeScript(
     }
 }
 
+function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownRecord = validationWorkflow): string[] {
+    const code = outputs.code === 'true';
+    const web = outputs.web === 'true';
+    const rust = outputs.rust === 'true';
+    const server = outputs.server === 'true';
+    const e2e = outputs.e2e === 'true';
+    const tooling = outputs.tooling === 'true';
+    const selected: Record<string, boolean> = {
+        [CODE_CONDITION]: code,
+        "needs.decide.outputs.web == 'true'": web,
+        "needs.decide.outputs.tooling == 'true'": tooling,
+        [SMOKE_CONDITION]: e2e,
+        "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'": rust || server,
+        "needs.decide.outputs.rust == 'true'": rust,
+        [NATIVE_PARITY_CONDITION]: rust || web,
+        [PULL_REQUEST_PAYLOAD_CONDITION]: true,
+    };
+    return Object.entries(recordAt(candidate, 'jobs'))
+        .filter(([id, value]) => {
+            if (id === 'validation-gate') {
+                return false;
+            }
+            const condition = asRecord(value, `validation job ${id}`).if;
+            if (condition === undefined) {
+                return true;
+            }
+            if (typeof condition !== 'string' || !(condition in selected)) {
+                throw new Error(`Unrecognized validation job condition: ${id}: ${JSON.stringify(condition)}`);
+            }
+            return selected[condition];
+        })
+        .map(([id]) => id);
+}
+
 function assertScopeContract(candidate: UnknownRecord): string {
+    const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
+        throw new Error('shared validation must expose only browser and affected profile inputs');
+    }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
         throw new Error('decide must run for every pull request');
@@ -529,7 +571,7 @@ function assertScopeContract(candidate: UnknownRecord): string {
     const callerOutputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'outputs');
     const exportedNames = Object.keys(callerOutputs).sort();
     if (JSON.stringify(exportedNames) !== JSON.stringify(Object.keys(SCOPE_OUTPUT_REFERENCES).sort())) {
-        throw new Error('validation.yml must export exactly the six scope outputs to its callers');
+        throw new Error('validation.yml must export exactly the seven scope outputs to its callers');
     }
     for (const name of exportedNames) {
         if (recordAt(callerOutputs, name).value !== `\${{ jobs.decide.outputs.${name} }}`) {
@@ -542,6 +584,9 @@ function assertScopeContract(candidate: UnknownRecord): string {
     }
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
+    }
+    if (recordAt(scope, 'env').PROFILE !== '${{ inputs.profile }}') {
+        throw new Error('shared validation must consume the affected profile input');
     }
     return stringAt(scope, 'run');
 }
@@ -716,7 +761,8 @@ function assertNightlyScopeContract(candidate: UnknownRecord): string {
         throw new Error('nightly decide must run on every scheduled and dispatched run');
     }
     const outputs = recordAt(decide, 'outputs');
-    for (const [name, reference] of Object.entries(SCOPE_OUTPUT_REFERENCES)) {
+    for (const name of Object.keys(FORCED_SCOPE_OUTPUTS)) {
+        const reference = `\${{ steps.scope.outputs.${name} }}`;
         if (outputs[name] !== reference) {
             throw new Error(`nightly decide ${name} output must expose steps.scope.outputs.${name}`);
         }
@@ -1300,7 +1346,10 @@ function assertJobGraph(set: WorkflowSet): void {
     if (jobAt(health, 'validation').if !== undefined) {
         throw new Error('required validation must run on every pull request');
     }
-    if (recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}") {
+    if (
+        recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
+        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}'
+    ) {
         throw new Error('required browser smoke must consume the affected scope');
     }
     const browserInput = recordAt(recordAt(recordAt(set.validation, 'on'), 'workflow_call'), 'inputs');
@@ -1363,8 +1412,11 @@ function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
         if (step['continue-on-error'] !== undefined) {
             throw new Error(`${label} device write boundary census must not continue on error`);
         }
-        if (step.if !== undefined) {
-            throw new Error(`${label} device write boundary census must stay unconditional`);
+        const expectedCondition = label.startsWith('validation.yml')
+            ? "needs.decide.outputs.tooling != 'true'"
+            : undefined;
+        if (step.if !== expectedCondition) {
+            throw new Error(`${label} device write boundary census must retain its scope condition`);
         }
     }
 }
@@ -2720,6 +2772,7 @@ describe('health gates workflow contract', () => {
             e2e: 'false',
             web: 'false',
             code: 'false',
+            tooling: 'false',
         });
         const nightlyScope = assertNightlyScopeContract(nightly);
         expect(runScopeScript(nightlyScope, 'schedule')).toEqual(FORCED_SCOPE_OUTPUTS);
@@ -2744,7 +2797,7 @@ describe('health gates workflow contract', () => {
         const unexportedHeavy = asRecord(structuredClone(validationWorkflow), 'unexported heavy validationWorkflow');
         delete recordAt(recordAt(recordAt(unexportedHeavy, 'on'), 'workflow_call'), 'outputs').heavy;
         expect(() => assertScopeContract(unexportedHeavy)).toThrow(
-            'validation.yml must export exactly the six scope outputs to its callers'
+            'validation.yml must export exactly the seven scope outputs to its callers'
         );
     });
 
@@ -2761,6 +2814,7 @@ describe('health gates workflow contract', () => {
             e2e: 'true',
             web: 'true',
             code: 'true',
+            tooling: 'false',
         });
         expect(runScopeScript(scopeScript, 'pull_request', { WEB: 'true' })).toMatchObject({
             rust: 'false',
@@ -2813,6 +2867,102 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('uses the affected profile to skip app jobs for known tooling and agent documentation', () => {
+        const scopeScript = assertScopeContract(validationWorkflow);
+        const tooling = runScopeScript(scopeScript, 'pull_request', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            UNCLASSIFIED: 'true',
+            BROWSER: 'false',
+        });
+        expect(tooling).toEqual({
+            heavy: 'false',
+            rust: 'false',
+            server: 'false',
+            e2e: 'false',
+            web: 'false',
+            code: 'true',
+            tooling: 'true',
+        });
+        expect(selectedPrValidationJobs(tooling)).toEqual([
+            'decide',
+            'static',
+            'lint',
+            'boundaries',
+            'tooling-unit',
+            'dependency-review',
+            'pr-secrets',
+        ]);
+        const docs = runScopeScript(scopeScript, 'pull_request', {
+            PROFILE: 'docs',
+            UNCLASSIFIED: 'true',
+            BROWSER: 'false',
+        });
+        expect(docs).toEqual({
+            heavy: 'false',
+            rust: 'false',
+            server: 'false',
+            e2e: 'false',
+            web: 'false',
+            code: 'false',
+            tooling: 'false',
+        });
+        expect(selectedPrValidationJobs(docs)).toEqual(['decide', 'static', 'dependency-review', 'pr-secrets']);
+        expect(() =>
+            runScopeScript(scopeScript, 'pull_request', {
+                PROFILE: 'tooling',
+                WEB: 'true',
+                BROWSER: 'true',
+            })
+        ).toThrow('Narrow profile conflicts with browser selection');
+        const review = runScopeScript(scopeScript, 'pull_request_review', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            UNCLASSIFIED: 'true',
+            BROWSER: 'true',
+        });
+        expect(review).toMatchObject({
+            heavy: 'true',
+            rust: 'true',
+            server: 'true',
+            e2e: 'true',
+            web: 'true',
+            code: 'true',
+            tooling: 'false',
+        });
+        expect(selectedPrValidationJobs(review)).toContain('build');
+        const staticSteps = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
+        for (const name of [
+            'Script types',
+            'Format',
+            'Release inventory',
+            'Release proof',
+            'Agent delivery scripts',
+            'Health gate infrastructure',
+        ]) {
+            expect(stepNamed(jobAt(validationWorkflow, 'static'), name).if).toBeUndefined();
+        }
+        for (const name of [
+            'App types',
+            'Test types',
+            'End-to-end types',
+            'Desktop shell types',
+            'Command argument schemas',
+            'Test collection scope',
+            'Barrel mock coverage',
+            'Device write boundary census',
+        ]) {
+            expect(stepNamed(jobAt(validationWorkflow, 'static'), name).if).toBe(
+                "needs.decide.outputs.tooling != 'true'"
+            );
+        }
+        expect(staticSteps).toHaveLength(STEP_INVENTORY['validation.yml']!.static!.length);
+        expect(jobAt(validationWorkflow, 'tooling-unit').if).toBe("needs.decide.outputs.tooling == 'true'");
+        expect(stringAt(stepNamed(jobAt(validationWorkflow, 'tooling-unit'), 'Run script suite'), 'run')).toBe(
+            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+        );
+    });
+
     it('retries a transient changed-paths API failure and refuses to resolve an empty verdict', () => {
         expect(() => assertDecideFilterRetryContract(validationWorkflow)).not.toThrow();
 
@@ -2827,6 +2977,7 @@ describe('health gates workflow contract', () => {
             e2e: 'false',
             web: 'false',
             code: 'false',
+            tooling: 'false',
         });
         for (const [name] of PATHS_FILTER_VERDICT_ENV) {
             expect(() => runScopeScript(scopeScript, 'pull_request', { [name]: '' })).toThrow('No scope verdict');
@@ -2991,7 +3142,7 @@ describe('health gates workflow contract', () => {
         const conditionalCensus = cloneWorkflows('conditional device census');
         stepNamed(jobAt(conditionalCensus.validation, 'static'), DEVICE_WRITE_BOUNDARY_CENSUS_STEP).if = false;
         expect(() => assertJobGraph(conditionalCensus)).toThrow(
-            'validation.yml static device write boundary census must stay unconditional'
+            'validation.yml static device write boundary census must retain its scope condition'
         );
 
         const widenedSummary = cloneWorkflows('widened summary');
@@ -3562,6 +3713,40 @@ describe('health gates workflow contract', () => {
         expect(() =>
             assertGateContract(conditionalHeavyGateGuard, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)
         ).toThrow('the heavy-gate guard step must run after cancellation');
+    });
+
+    it('makes the selected tooling unit job mandatory in the validation result', () => {
+        const gate = jobAt(validationWorkflow, 'validation-gate');
+        expect(gate.if).toBe(GATE_CONDITION);
+        expect(arrayAt(gate, 'needs')).toEqual(VALIDATION_JOBS.filter((job) => job !== 'validation-gate'));
+        expect(gate['continue-on-error']).toBeUndefined();
+        const step = stepNamed(gate, 'Require selected validation jobs to succeed');
+        expect(step.if).toBe(GATE_CONDITION);
+        expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+        const script = stringAt(step, 'run');
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            UNCLASSIFIED: 'true',
+            BROWSER: 'false',
+        });
+        const selected = new Set(selectedPrValidationJobs(scope));
+        const results: Record<string, { result: string; outputs?: UnknownRecord }> = Object.fromEntries(
+            VALIDATION_JOBS.filter((job) => job !== 'validation-gate').map((job) => [
+                job,
+                { result: selected.has(job) ? 'success' : 'skipped' },
+            ])
+        );
+        results.decide = { result: 'success', outputs: scope };
+        const run = (value: unknown) => runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true' });
+        expect(run(results)).toBe(0);
+        for (const outcome of ['failure', 'cancelled', 'skipped'] as const) {
+            expect(run({ ...results, 'tooling-unit': { result: outcome } })).not.toBe(0);
+        }
+        const missing = { ...results };
+        delete missing['tooling-unit'];
+        expect(run(missing)).not.toBe(0);
+        expect(run({ ...results, unit: { result: 'success' } })).not.toBe(0);
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {

@@ -107,7 +107,7 @@
         "wasm:verify": "node scripts/verify-wasm-artifacts.ts"
     },
     "dependencies": {
-        "@automerge/automerge": "^3.4.1",
+        "@automerge/automerge": "^3.5.0",
         "@breezystack/lamejs": "1.2.7",
         "@grame/faustwasm": "0.16.7",
         "@mlc-ai/web-llm": "^0.2.84",
@@ -158,7 +158,7 @@
         "@typesafe-ai/sdk": "0.6.0",
         "@typescript/native": "npm:typescript@^7.0.2",
         "@vitejs/plugin-react": "^6.1.1",
-        "@vitest/coverage-v8": "^4.1.11",
+        "@vitest/coverage-v8": "^5.0.2",
         "@webgpu/types": "^0.1.74",
         "babel-plugin-react-compiler": "^1.0.0",
         "dependency-cruiser": "^18.4.0",
@@ -186,7 +186,7 @@
         "typescript": "npm:@typescript/typescript6@^6.0.2",
         "typescript-eslint": "^8.70.1",
         "vite": "^8.3.1",
-        "vitest": "^4.1.11",
+        "vitest": "^5.0.2",
         "yaml": "2.9.1"
     }
 }

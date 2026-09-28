@@ -6,8 +6,8 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e
-- pnpm-lock.yaml sha256:0ecb1f7d17e6e2d4374b62d12289ba9ab95a7ead7cbe69700ac82da8f9bccaac
+- Cargo.lock sha256:793c0980912bb6b487593835b8e34d1c33ef18a1dfcea197c24625d0498a7a4e
+- pnpm-lock.yaml sha256:04b40b1b15a49b66872c09e179b2c4c5891ec1918aea7d1b32fc618b97bce590
 - server/package-lock.json sha256:9e491a9c1d3f49b0555fc2ea8bc3b7ae3854d734a6e3c4a6a645a93ed73a7a00
 
 Package inventory: 353 npm, 321 Cargo
@@ -20,7 +20,7 @@ cargo:audio-codec-algorithms@0.8.1 | 0BSD OR Apache-2.0 | sha256:39741fbd828e4f9
 cargo:audioadapter@5.0.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
 cargo:audioadapter-buffers@5.2.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
 cargo:audioadapter-sample@5.2.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
-cargo:automerge@0.11.0 | MIT | sha256:8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:automerge@0.12.0 | MIT | sha256:8c4e35af130863e9321d3d1f75b031d7ba392200810c4281d24c9baa39c6e497,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:aws-lc-rs@1.18.0 | ISC AND (Apache-2.0 OR ISC) | sha256:b50b376e7d24a0598488b730c3034ffcd0b58dd36c0913a24b9903a3cfd04bf7 | Cargo.lock
 cargo:aws-lc-sys@0.44.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) | sha256:43e358d7b6eb109d0f51f7b3a090fd82607965767c25fadee39e922475de2061,sha256:728536b4160e051f86d7c9c388f704866b3d512cd7df97ac3516c65279523c4e,sha256:977c541bd25ffe36975dde25c028c0cd15ddf3d08243983b58e8a6a3d9447523 | Cargo.lock
 cargo:base64@0.22.1 | MIT OR Apache-2.0 | sha256:0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -333,7 +333,7 @@ cargo:zerovec@0.11.8 | Unicode-3.0 | sha256:f367c1b8e1aa262435251e442901da4607b4
 cargo:zerovec-derive@0.11.5 | Unicode-3.0 | sha256:f367c1b8e1aa262435251e442901da4607b4650e0e63a026f5044473ecfb90f2 | Cargo.lock
 cargo:zlib-rs@0.6.7 | Zlib | sha256:e72111c52b7d96ebe25348dee19f0744f444d3c95ae6b1ecb6ccaecc5bce05ba | Cargo.lock
 cargo:zmij@1.0.23 | MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3 | Cargo.lock
-npm:@automerge/automerge@3.4.1 | MIT | sha256:1d5508a457f48bb2aee6eaad4492dd06e8d9dd36284719ecdc5b443408166368 | pnpm-lock.yaml
+npm:@automerge/automerge@3.5.0 | MIT | sha256:1d5508a457f48bb2aee6eaad4492dd06e8d9dd36284719ecdc5b443408166368 | pnpm-lock.yaml
 npm:@breezystack/lamejs@1.2.7 | LGPL-3.0 | sha256:cd144ca132e3842b01f5ed2d6f3a32141e24a1cc15e115aa5f19a2294ce0a379,sha256:ed3eebc0831f4da7a7a75585782a18d3363643357da55fb59b3de96d06362374 | pnpm-lock.yaml
 npm:@floating-ui/core@1.8.0 | MIT | sha256:0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce | pnpm-lock.yaml
 npm:@floating-ui/dom@1.8.0 | MIT | sha256:0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce | pnpm-lock.yaml
@@ -611,7 +611,7 @@ npm:p-try@2.2.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57e
 npm:parse-entities@4.0.2 | MIT | sha256:5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b | pnpm-lock.yaml
 npm:path-exists@4.0.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
 npm:path-parse@1.0.7 | MIT | sha256:3f4609137f65070541b9214300ea0d640af8192857de0eeb2b03403003d9228a | pnpm-lock.yaml
-npm:picomatch@4.0.5 | MIT | sha256:d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9 | pnpm-lock.yaml
+npm:picomatch@4.0.7 | MIT | sha256:d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9 | pnpm-lock.yaml
 npm:pitchy@4.1.0 | MIT | sha256:3dd8c40c5b5a0ee4c79be3ecd0499e8fefebf002ebcff4170c419168278f97cd | pnpm-lock.yaml
 npm:platform@1.3.6 | MIT | sha256:4a161ebed4f1ef933e16ccfa00d86c718703f5d015a9987ea7ce1bb72a43cd22 | pnpm-lock.yaml
 npm:pngjs@5.0.0 | MIT | sha256:176b07a18c0bb3836aaeb61088fd0bf11a38f66e6f15e3fbda85faa225250d6e | pnpm-lock.yaml
@@ -4110,7 +4110,7 @@ SOFTWARE.
 ===== sha256:1d5508a457f48bb2aee6eaad4492dd06e8d9dd36284719ecdc5b443408166368 =====
 Evidence labels: LICENSE
 Packages:
-- npm:@automerge/automerge@3.4.1
+- npm:@automerge/automerge@3.5.0
 
 MIT License
 
@@ -18034,54 +18034,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ===== end sha256:8bb1b50b0e5c9399ae33bd35fab2769010fa6c14e8860c729a52295d84896b7a =====
-===== sha256:8c7516d4b27b1e495be5e38b612298b63de48d05f49cdac94f70f3cd70f8864b =====
-Evidence labels: LICENSE-MIT
-Packages:
-- cargo:zeroize@1.9.0
-
-Copyright (c) 2018-2026 The RustCrypto Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-===== end sha256:8c7516d4b27b1e495be5e38b612298b63de48d05f49cdac94f70f3cd70f8864b =====
-===== sha256:8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c =====
+===== sha256:8c4e35af130863e9321d3d1f75b031d7ba392200810c4281d24c9baa39c6e497 =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
-- cargo:automerge@0.11.0
+- cargo:automerge@0.12.0
 
 Sourdaw assembled dependency license record
 
-Package: cargo:automerge@0.11.0
-Locked source: https://crates.io/api/v1/crates/automerge/0.11.0/download
-Locked revision: sha256:c1b59cbd9e7685a1ac6bf6046ddcd8acb550fa5bf03c09f6c1056728a742b40d
+Package: cargo:automerge@0.12.0
+Locked source: https://crates.io/api/v1/crates/automerge/0.12.0/download
+Locked revision: sha256:2fb849130973a7808a167887f56b1e8bdc36b9b541542602dcb337f34aecf47b
 Declared license: MIT
 Selected SPDX terms: MIT
 
 The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
 
-===== installed package metadata Cargo.toml sha256:2389cf65ff9ee752ff067b72e42ae6a797b5dfa0fb1c49c68af3707a2913f052 =====
+===== installed package metadata Cargo.toml sha256:76abda0b11410528d8b72e81aaaf1fcec4fdb53eaf0a2323e77c055be3760d26 =====
 # THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
 #
 # When uploading crates to the registry Cargo will automatically
@@ -18097,7 +18065,7 @@ The resolved package omits a retained legal file. This record combines hash-pinn
 edition = "2021"
 rust-version = "1.90.0"
 name = "automerge"
-version = "0.11.0"
+version = "0.12.0"
 build = false
 autolib = false
 autobins = false
@@ -18110,7 +18078,6 @@ license = "MIT"
 repository = "https://github.com/automerge/automerge"
 
 [features]
-optree-visualisation = ["dot"]
 slow_path_assertions = ["hexane/slow_path_assertions"]
 utf16-indexing = []
 utf8-indexing = []
@@ -18176,10 +18143,6 @@ path = "tests/text_encoding.rs"
 
 [dependencies.cfg-if]
 version = "1.0"
-
-[dependencies.dot]
-version = "0.1.4"
-optional = true
 
 [dependencies.flate2]
 version = "^1.0.22"
@@ -18300,7 +18263,39 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end canonical SPDX MIT =====
 
-===== end sha256:8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c =====
+===== end sha256:8c4e35af130863e9321d3d1f75b031d7ba392200810c4281d24c9baa39c6e497 =====
+===== sha256:8c7516d4b27b1e495be5e38b612298b63de48d05f49cdac94f70f3cd70f8864b =====
+Evidence labels: LICENSE-MIT
+Packages:
+- cargo:zeroize@1.9.0
+
+Copyright (c) 2018-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+===== end sha256:8c7516d4b27b1e495be5e38b612298b63de48d05f49cdac94f70f3cd70f8864b =====
 ===== sha256:8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18 =====
 Evidence labels: LICENSE
 Packages:
@@ -20258,7 +20253,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 Evidence labels: LICENSE, LICENSE-APACHE
 Packages:
 - cargo:atomic-waker@1.1.2
-- cargo:automerge@0.11.0
+- cargo:automerge@0.12.0
 - cargo:base64@0.22.1
 - cargo:bitflags@2.13.1
 - cargo:bumpalo@3.20.3
@@ -26915,7 +26910,7 @@ Packages:
 ===== sha256:d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9 =====
 Evidence labels: LICENSE
 Packages:
-- npm:picomatch@4.0.5
+- npm:picomatch@4.0.7
 
 The MIT License (MIT)
 
