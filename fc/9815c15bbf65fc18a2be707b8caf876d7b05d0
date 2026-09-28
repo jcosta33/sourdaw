@@ -1,0 +1,38 @@
+src/modules/Command/useCases/getDeclarativeTransformDocumentSchema.ts
+  s_ed5aa36a3ba357::t_035c68823c0e7d 13-42,44-51,53-61,63,65-84
+src/modules/AiRuntime/useCases/executeTransformCompile.ts
+  s_ed5aa36a3ba357::t_67b1e7e16dc693 3-5,9,46-55
+  s_ed5aa36a3ba357::t_44b9f8cf0b779c 1-2
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_ed5aa36a3ba357::t_23ade087948f8e 13,159,199-220
+  s_ed5aa36a3ba357::t_5b105ac1bfeaca 239-240,249,253-260
+  s_ed5aa36a3ba357::t_23380056bb22b9 241-248
+  s_ed5aa36a3ba357::t_4c70eaf0d21868 579,970-972,1001-1005,1069,1176
+  s_ed5aa36a3ba357::t_07e88435fc4a19 143-156,279-280
+  s_ed5aa36a3ba357::t_5272ac13b81d0f 115-117,191-195,250-252
+  s_ed5aa36a3ba357::t_0819674d0a897e 4-5,157-158,160-190,196-198,221-238,261-278
+  s_ed5aa36a3ba357::t_3dee15ba07445f 14
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  s_ed5aa36a3ba357::t_4c70eaf0d21868 148-150,248-250
+  s_ed5aa36a3ba357::t_7374de3279e1ab 251-252
+src/modules/AiRuntime/transformers/parseUniqueKeyJson.ts
+  s_ed5aa36a3ba357::t_957ba8250793ff 1-43
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  s_ed5aa36a3ba357::t_957ba8250793ff 6,42,55,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fc9815c15bbf65fc18a2be707b8caf876d7b05d0",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
