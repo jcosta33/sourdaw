@@ -19,8 +19,10 @@ const protectionPattern = new RegExp(
     String.raw`\b${protectionVerb}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
     'giu'
 );
+const nextInstructionVerb = String.raw`(?:${protectionVerb}|set|change|adjust|add|create|make|mute|remove|delete)`;
+const nextInstruction = String.raw`(?:(?:and|then)\s+)*${nextInstructionVerb}\b`;
 const exclusionPattern = new RegExp(
-    String.raw`\b(?:excluding|except)\s+(${protectionReferenceCharacter}+?)(?=${protectionClauseBoundary}|,\s*(?=(?:(?:and\s+)?then\s+)?(?:set|change|adjust|add|create|make|mute|remove|delete)\b)|\s+(?=(?:and\s+)?then\s+(?:set|change|adjust|add|create|make|mute|remove|delete)\b)|$)`,
+    String.raw`\b(?:excluding|except)\s+(${protectionReferenceCharacter}+?)(?=${protectionClauseBoundary}|,\s*(?=${nextInstruction})|\s+(?=(?:and|then)\s+${nextInstruction})|$)`,
     'giu'
 );
 const emptyProtectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+unchanged\b`, 'iu');
@@ -137,6 +139,14 @@ function resolveProtectedClipIds(reference: string, clips: readonly ProjectClip[
         return selectedClipIds;
     }
 
+    const normalizedReference = normalizePromptText(reference);
+    const literalClipIds = clips
+        .filter((clip) => normalizePromptText(clip.name) === normalizedReference || clip.id === reference.trim())
+        .map((clip) => clip.id);
+    if (literalClipIds.length > 0) {
+        return literalClipIds;
+    }
+
     const clipIds = new Set(clips.map((clip) => clip.id));
     const resolvedIds = new Set<string>();
     for (const clip of clips) {
@@ -158,6 +168,17 @@ function resolveProtectedClipIds(reference: string, clips: readonly ProjectClip[
         }
     }
     return [...resolvedIds];
+}
+
+function isTrackOnlyReference(reference: string, context: ProjectContext): boolean {
+    const maskedReference = scanPromptQuotedText(reference).maskedText;
+    if (/\btracks?\b/iu.test(maskedReference) && !/\bclips?\b/iu.test(maskedReference)) {
+        return true;
+    }
+    const normalizedReference = normalizePromptText(reference);
+    return context.tracks.some(
+        (track) => normalizedReference === normalizePromptText(track.name) || reference.trim() === track.id
+    );
 }
 
 export function getExplicitClipProtection(prompt: string, context: ProjectContext): ExplicitClipProtection {
@@ -183,7 +204,7 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
         }
         for (const member of members) {
             const memberIds = resolveProtectedClipIds(member, clips, context);
-            complete &&= memberIds.length > 0;
+            complete &&= memberIds.length > 0 || isTrackOnlyReference(member, context);
             for (const clipId of memberIds) {
                 protectedIds.add(clipId);
             }

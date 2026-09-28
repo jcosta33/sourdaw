@@ -9,6 +9,7 @@ import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import { getExplicitClipProtection } from '../agentReference/getExplicitlyProtectedClips';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
@@ -837,6 +838,7 @@ describe('parsePromptToActions', () => {
         const result = await parsePromptToActions(prompt, context, undefined, 'revision-bulk-protections');
         const protectedTargetIds = ['track-bass-frozen', 'track-guitar'];
 
+        expect(getExplicitClipProtection(prompt, context)).toEqual({ clips: [], complete: true });
         expect(result.rejectionReason).toBeUndefined();
         expect(result.providerProposal?.scope.targetIds).toEqual(result.providerKnownTargetIds);
         expect(result.providerProposal?.scope.protectedTargetIds).toEqual(protectedTargetIds);

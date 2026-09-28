@@ -241,6 +241,28 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    it('leaves track-only restrictions to their owning protection scope', () => {
+        expect(
+            getExplicitClipProtection(
+                'insert a compressor on bass tracks, excluding frozen tracks, and keep Guitar unchanged',
+                {
+                    ...context,
+                    tracks: [...context.tracks, createTrack('track-guitar-only', 'Guitar', [])],
+                }
+            )
+        ).toEqual({ clips: [], complete: true });
+        expect(getExplicitClipProtection('set Verse to 90, excluding Missing clip', context).complete).toBe(false);
+        expect(
+            getExplicitClipProtection('set Verse to 90, excluding frozen tracks and Missing clip', context).complete
+        ).toBe(false);
+        expect(
+            getExplicitClipProtection('keep Lead unchanged', {
+                ...context,
+                tracks: [...context.tracks, createTrack('track-lead', 'Lead', [])],
+            }).clips
+        ).toContainEqual({ id: lead.id, name: lead.name });
+    });
+
     it.each(['set Verse to 90, excluding', 'set Verse to 90, excluding; set Lead to 100'])(
         'marks an unfinished exclusion incomplete for %s',
         (prompt) => {
