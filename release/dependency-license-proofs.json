@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e",
+        "cargoLockSha256": "793c0980912bb6b487593835b8e34d1c33ef18a1dfcea197c24625d0498a7a4e",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -13,7 +13,7 @@
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
-                "sha256": "4cbe88e8b009d05714fff2d0526daac8cc44074ce91814b26b2583f92f8cdc6c"
+                "sha256": "97a754635ae2859bab8902e36cd7479f9131908b3472cae65522f5d484469b4c"
             },
             {
                 "path": "crates/daw-core/Cargo.toml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "f5a59317eef1bbd1d96a3731119f10b8f402fee3a6cbefe952e1ea1c4fe0fc30"
+                "sha256": "b20e19e351e5c7b24cb3531bbf3fedbe1ec2060108009eeadaf6bf19e33ddb97"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -322,7 +322,7 @@
             },
             {
                 "name": "automerge",
-                "version": "0.11.0",
+                "version": "0.12.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [
@@ -334,7 +334,7 @@
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "2389cf65ff9ee752ff067b72e42ae6a797b5dfa0fb1c49c68af3707a2913f052"
+                        "sha256": "76abda0b11410528d8b72e81aaaf1fcec4fdb53eaf0a2323e77c055be3760d26"
                     }
                 ],
                 "reportedLegalFiles": [
@@ -344,7 +344,7 @@
                     },
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c"
+                        "sha256": "8c4e35af130863e9321d3d1f75b031d7ba392200810c4281d24c9baa39c6e497"
                     }
                 ]
             },
@@ -7871,14 +7871,14 @@
                 ]
             }
         },
-        "cargo:automerge@0.11.0": {
-            "source": "https://crates.io/api/v1/crates/automerge/0.11.0/download",
-            "revision": "sha256:c1b59cbd9e7685a1ac6bf6046ddcd8acb550fa5bf03c09f6c1056728a742b40d",
+        "cargo:automerge@0.12.0": {
+            "source": "https://crates.io/api/v1/crates/automerge/0.12.0/download",
+            "revision": "sha256:2fb849130973a7808a167887f56b1e8bdc36b9b541542602dcb337f34aecf47b",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "2389cf65ff9ee752ff067b72e42ae6a797b5dfa0fb1c49c68af3707a2913f052"
+                        "sha256": "76abda0b11410528d8b72e81aaaf1fcec4fdb53eaf0a2323e77c055be3760d26"
                     }
                 ],
                 "licenses": [

@@ -107,7 +107,7 @@
         "wasm:verify": "node scripts/verify-wasm-artifacts.ts"
     },
     "dependencies": {
-        "@automerge/automerge": "^3.4.1",
+        "@automerge/automerge": "^3.5.0",
         "@breezystack/lamejs": "1.2.7",
         "@grame/faustwasm": "0.16.7",
         "@mlc-ai/web-llm": "^0.2.84",
