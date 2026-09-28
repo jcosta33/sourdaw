@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/comping/takeReKeyTransition.ts
+  s_fe7d9519d0226e::t_e74f739f65146f 43-54
+src/modules/Arrangement/useCases/timeOperations/prepareTakeLaneStateRestore.ts
+  s_fe7d9519d0226e::t_5224c66446b46f 51-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b178b146d17c6b4d754281436badc0fe0caff47",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
