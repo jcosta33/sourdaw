@@ -4688,6 +4688,55 @@ describe('the egress screen tells code from credentials', () => {
         }
     });
 
+    it("withholds an interior assignment whose operator breaks the scanner's first match", () => {
+        // Round-2 review of #4872. The scanner matches leftmost and consumes its terminator, so a
+        // space-`=` first assignment shadows a second one: the operator rides the `[\w.=-]` secret
+        // run or sits past the consumed terminator, and the span is never re-read. A `:`, `,`,
+        // `>`, `|`, or `?` is neither a secret-run character nor a terminator, so the first match
+        // breaks there and the scanner re-matches from inside the rejected run, flagging the
+        // interior assignment with no left boundary on the key — mid-token, or spanning the
+        // value's own start. The screen kept its left-edge guard for every operator and admitted
+        // each of the first eleven lines. Every expectation was checked against the pinned
+        // binary: Gitleaks v8.30.1 with the repository's `.gitleaks.toml` flags each withheld
+        // line as generic-api-key with the interior assignment as the match, and stays silent on
+        // each admitted one — the admitted colon and walrus forms carry a space before the
+        // operator, the terminator that shadows them, and the quote and semicolon are terminators
+        // too. The 32-character value is composed at runtime for the same reason as the fixtures
+        // above.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('password = runtime.sessionToken2: ', value),
+            secretFixture('token = credentials.sessionToken: ', value),
+            secretFixture('xsecret = runtime.sessionToken2, ', value),
+            secretFixture('mySecret2 = runtime.sessionToken2:=', value),
+            secretFixture('password = a1a1a1a1a1a1a1a1.xsecret, ', value),
+            secretFixture('secret = a1a1a1a1a1a1a1a1.xsecret, ', value),
+            secretFixture('password = runtime.sessionToken2> ', value),
+            secretFixture('password = runtime.sessionToken2|| ', value),
+            secretFixture('password = runtime.sessionToken2?= ', value),
+            secretFixture('password = runtime.sessionToken2::= ', value),
+            secretFixture('token = credentialABCDEFGH: ', value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        for (const line of [
+            secretFixture('password = runtime.sessionToken2 : ', value),
+            secretFixture('password = runtime.sessionToken2 := ', value),
+            secretFixture('token = credentials.sessionToken = ', value),
+            secretFixture('token = runtime.sessionToken2 = ', value),
+            secretFixture("password = runtime.sessionToken2' = ", value),
+            secretFixture('password = runtime.sessionToken2;= ', value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+        // Packed against the value with no gap, the second operator rides the bare value class
+        // and no interior pair ever forms, so the screen stays admitted; only the pinned
+        // scanner's entropy gate separates that run from a benign chain — a gate this module
+        // deliberately does not model (#4579). The pinned binary flags this line.
+        const dotted = secretFixture('A1b2C3d4', 'E5f6G7h8', '.secret');
+        expect(sensitiveContentReason(secretFixture('token = ', dotted, '=', value))).toBeUndefined();
+    });
+
     it('screens a hundred-kilobyte one-line run of packed rejected assignments in near-linear time', () => {
         // A rejected match used to resume the scan at its value's start, so a line packing
         // repeated `key=` substrings re-consumed the whole remaining tail once per rejected
@@ -4702,6 +4751,27 @@ describe('the egress screen tells code from credentials', () => {
         const elapsedMs = performance.now() - startedAt;
         expect(reason).toBeUndefined();
         expect(elapsedMs).toBeLessThan(250);
+    });
+
+    it('screens a key-dense continuation run whose terminal probe matches in linear time', () => {
+        // The rejected value here is one `[\w.-]` continuation run carrying ten thousand `Token`
+        // keys, and the probe past its end (` = <opaque>`) matches a credential-shaped value, so
+        // the rescan visits every key instead of skipping the run. The probe memo — one
+        // `probeAssignmentAt` per run — is the only thing keeping that visit linear: recomputing
+        // the probe per key re-scans the remaining continuation per key, which measures over five
+        // seconds here against under ten milliseconds with the memo. The left-edge guard rejects
+        // each mid-token `Token`, so the line is admitted; a shorter form of it is admitted by the
+        // pinned binary too. The bound separates the two measurements with wide margin on both
+        // sides. The 32-character value is composed at runtime for the same reason as the
+        // fixtures above.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const line = secretFixture('token = ', 'sessionToken'.repeat(10_000), ' = ', value);
+        expect(line.length).toBeGreaterThanOrEqual(120_000);
+        const startedAt = performance.now();
+        const reason = sensitiveContentReason(line);
+        const elapsedMs = performance.now() - startedAt;
+        expect(reason).toBeUndefined();
+        expect(elapsedMs).toBeLessThan(1_000);
     });
 
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {

@@ -147,6 +147,15 @@ const KEY_CONTINUATION = /[\w.-]/u;
  */
 const LETTER_OR_DIGIT = /[A-Za-z0-9]/u;
 
+/**
+ * The first character of an operator that breaks the scanner's first match at a rejected value's
+ * end. `=` rides the scanner's `[\w.=-]` secret run, and a quote, whitespace, or `;` terminates
+ * the match, so either form keeps the first match standing and the span is never re-read. A `:`,
+ * `,`, `>`, `|`, or `?` is neither a secret-run character nor a terminator: the match fails
+ * there, and the scanner re-matches from inside the run with no left boundary on the key.
+ */
+const FIRST_MATCH_BREAKING_OPERATOR = /[:>|?,]/u;
+
 /** A vendor-shaped key, given as the parts its prefix is assembled from and the shape that follows. */
 type VendorShape = {
     readonly reason: string;
@@ -312,11 +321,27 @@ function probeValue(match: RegExpExecArray): { quoted: boolean; value: string; a
 
 /**
  * Whether a key found inside the rejected value's span starts a genuine assignment there. A
- * quoted value reads as a value by construction, so any interior key counts; a bare value
- * counts only past the span's own start and a left edge that is neither letter nor digit.
+ * quoted value reads as a value by construction, so any interior key counts. For a bare value
+ * the answer follows the probed operator, mirroring the scanner's shadowing: while the operator
+ * keeps the scanner's first match standing — a space-`=` form, riding the secret run or sitting
+ * past the consumed terminator — the key must still start strictly inside the span after a
+ * character that is neither a letter nor a digit, because the scanner never re-reads the span
+ * and a mid-token key is the screen's own fabrication there. Once the operator breaks that
+ * match, the scanner re-matches from inside the run with no left boundary, so any interior key
+ * counts — mid-token (`Token` in `sessionToken2`) or spanning the value's own start
+ * (`credential` in `credentialABCDEFGH:`).
  */
-function genuineInteriorKey(text: string, keyIndex: number, valueStart: number, quoted: boolean): boolean {
-    return quoted || (keyIndex > valueStart && !LETTER_OR_DIGIT.test(text.charAt(keyIndex - 1)));
+function genuineInteriorKey(
+    text: string,
+    keyIndex: number,
+    valueStart: number,
+    quoted: boolean,
+    probeBreaksFirstMatch: boolean
+): boolean {
+    if (quoted || probeBreaksFirstMatch) {
+        return true;
+    }
+    return keyIndex > valueStart && !LETTER_OR_DIGIT.test(text.charAt(keyIndex - 1));
 }
 
 /**
@@ -340,16 +365,23 @@ function genuineInteriorKey(text: string, keyIndex: number, valueStart: number, 
  *   one bare value, so no interior pair ever forms. The parent admitted those lines too, and
  *   only the pinned scanner's entropy gate separates them from the benign chain — a gate this
  *   module deliberately does not model (#4579).
- * - A bare value counts only for a key that starts strictly inside the span after a character
- *   that is neither a letter nor a digit — the `.secret` of the dotted #4872 run, or the
- *   `_secret` of snake_case (`api_secret`), since `_` separates names rather than embedding
- *   them. That leaves out the value-spanning key
- *   (`credential` in `credentials.sessionToken = …`, at the value's own start) and mid-token
- *   keys (`Token` in `sessionToken`), which pair a fabricated operator with an
- *   identifier-shaped value the scanner's entropy gate rejects; it accepts that a bare secret
- *   under such a key is not a realistic chained assignment. A quoted run reads as a value by
- *   construction, so a quoted value counts from any interior key, word-embedded or not —
- *   `token = xx.aSecretLongerName = '<value>'` stays withheld.
+ * - A bare value's interior key follows the probed operator, mirroring the scanner's shadowing.
+ *   The scanner matches leftmost and consumes its terminator, so a space-`=` first assignment
+ *   shadows a second one: the operator rides the `[\w.=-]` secret run or sits past the consumed
+ *   terminator, and the span is never re-read — the pinned benign chains
+ *   (`token = credentials.sessionToken = runtimeSessionToken2`) stay silent. For those forms the
+ *   key must start strictly inside the span after a
+ *   character that is neither a letter nor a digit — the `.secret` of the dotted #4872 run, or
+ *   the `_secret` of snake_case (`api_secret`), since `_` separates names rather than embedding
+ *   them. That leaves out the value-spanning key (`credential` in `credentials.sessionToken = …`,
+ *   at the value's own start) and mid-token keys (`Token` in `sessionToken`), which pair a
+ *   fabricated operator with an identifier-shaped value. But an operator that is neither a
+ *   secret-run character nor a terminator — `:`, `,`, `>`, `|`, `?` — breaks the scanner's
+ *   first match, which then re-matches from inside the run and flags the interior assignment
+ *   with no left boundary: the mid-token `Token` of `runtime.sessionToken2: <opaque>` counts,
+ *   and so does a key spanning the value's own start. A quoted run reads as a value by
+ *   construction, so a quoted value counts from any interior key either way, word-embedded or
+ *   not — `token = xx.aSecretLongerName = '<value>'` stays withheld.
  */
 function rejectedValueAssignmentReason(text: string, valueStart: number, matchEnd: number): string | undefined {
     let searchFrom = valueStart;
@@ -358,6 +390,7 @@ function rejectedValueAssignmentReason(text: string, valueStart: number, matchEn
     let probedFrom = -1;
     let probeStop = -1;
     let probeMatch: RegExpExecArray | null = null;
+    let probeBreaksFirstMatch = false;
     for (;;) {
         SECRET_KEY_SEARCH.lastIndex = searchFrom;
         const key = SECRET_KEY_SEARCH.exec(text);
@@ -375,12 +408,13 @@ function rejectedValueAssignmentReason(text: string, valueStart: number, matchEn
                 probeStop += 1;
             }
             probeMatch = probeAssignmentAt(text, probeStop, matchEnd);
+            probeBreaksFirstMatch = probeStop < matchEnd && FIRST_MATCH_BREAKING_OPERATOR.test(text.charAt(probeStop));
         }
         if (probeMatch !== null) {
             const { quoted, value, after } = probeValue(probeMatch);
             if (
                 looksLikeCredentialValue(value, after, quoted) &&
-                genuineInteriorKey(text, key.index, valueStart, quoted)
+                genuineInteriorKey(text, key.index, valueStart, quoted, probeBreaksFirstMatch)
             ) {
                 return 'a secret-named key assigned a credential-shaped value';
             }
