@@ -532,6 +532,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // every `compileAgentRiskApproval` reference with it; censused below.
         // 'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': removed (0),
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        // Count provenance: import, Parameters/ReturnType projections, and call
+        // lower a validated transform into command descriptions; no device write.
+        'src/modules/AiRuntime/useCases/executeTransformCompile.ts': 4,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
@@ -557,6 +560,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // projection, extracted from recordAgentRunReceiptSaga (#3052). Pure
         // receipt projection; no device hydration or write.
         'src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts': 2,
+        // Count provenance: type-only compiler import and Parameters projection
+        // shape a copied planning snapshot; no device or project write.
+        'src/modules/AiRuntime/useCases/projectDeclarativeTransformSnapshot.ts': 2,
         // Count provenance: 0 in code, was 5 — prompt plan materialization and
         // explain-response streaming were extracted to agentRequestOrchestration
         // (#2973, #2975), taking every `compileAgentActionExecution` and
@@ -583,7 +589,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
-        'src/modules/Command/useCases/index.ts': 4,
+        // Count provenance: two new matches are the pure transform compiler's
+        // function export and module path; the earlier four remain unchanged.
+        'src/modules/Command/useCases/index.ts': 6,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
