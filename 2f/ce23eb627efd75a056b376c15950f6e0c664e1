@@ -1,0 +1,41 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_ed5aa36a3ba357::t_b496f2789dba2a 751-859
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 6,44,46
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_b496f2789dba2a 2300-2301,2305-2311,2313-2317,2319-2332,2334-2339,2341-2353,2355-2357,2360-2372
+  s_ed5aa36a3ba357::t_4e36e81882b0b3 2303-2304,2374-2377
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  s_ed5aa36a3ba357::t_b0181a2b0f3450 4,7-10
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 3,11
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 35,2339-2340
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 111
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  s_ed5aa36a3ba357::t_e8051f9fa62c53 56-100
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_ed5aa36a3ba357::t_e5d8b9171fc557 13-18,107-111,114-116,139,238,275,301,306-323,384-390
+  s_ed5aa36a3ba357::t_30e7c4b0192e3a 391
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_ed5aa36a3ba357::t_3d2b6f672c06a1 5-8,152-155
+  s_ed5aa36a3ba357::t_7bc9401d1ee8fb 194-197,200
+  s_ed5aa36a3ba357::t_5fde34f4e13e5d 18-20,45,101-106,180-193,198-199,201-229
+  s_ed5aa36a3ba357::t_e0e00bee574e33 230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2fce23eb627efd75a056b376c15950f6e0c664e1",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
