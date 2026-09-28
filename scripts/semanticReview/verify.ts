@@ -423,12 +423,13 @@ async function assessOneFinding(input: {
     readonly budget: SemanticBudgetController;
     readonly deadline: number;
 }): Promise<{
-    /** Absent when nothing admissible could be collected; the limitations then carry the reason. */
+    /** Absent when nothing could be sent; `unassessedReason` then carries why. */
     assessment: FindingAssessment | undefined;
     returnedModel: string | undefined;
     limitations: readonly string[];
     truncated: readonly SemanticScopeExclusion[];
     fromCache: boolean;
+    unassessedReason: string;
 }> {
     const set = collectFindingEvidence({
         port: input.ports.source,
@@ -447,6 +448,9 @@ async function assessOneFinding(input: {
             limitations: set.limitations,
             truncated: set.truncated,
             fromCache: false,
+            // Nothing survived collection: the evidence itself was inadmissible, which is what this reason
+            // names.
+            unassessedReason: 'no-admissible-evidence',
         };
     }
     // What the collector admitted is not yet what one request can carry: the state ceiling bounds the
@@ -466,6 +470,10 @@ async function assessOneFinding(input: {
             limitations,
             truncated,
             fromCache: false,
+            // The evidence was admissible: what would not fit is the request carrying it. Naming the size
+            // and not admissibility is the difference between a finding the run could not read and one no
+            // request had room for.
+            unassessedReason: 'no-evidence-region-within-budget',
         };
     }
     assertEvidenceIntegrity(fitted.references);
@@ -503,6 +511,7 @@ async function assessOneFinding(input: {
         limitations,
         truncated,
         fromCache: result.fromCache,
+        unassessedReason: '',
     };
 }
 
@@ -543,7 +552,7 @@ async function assessFindings(input: {
             accumulation.limitations.push(...outcome.limitations);
             accumulation.truncated.push(...outcome.truncated);
             if (outcome.assessment === undefined) {
-                accumulation.unassessed.push({ path: finding.findingId, reason: 'no-admissible-evidence' });
+                accumulation.unassessed.push({ path: finding.findingId, reason: outcome.unassessedReason });
                 continue;
             }
             accumulation.assessments.push(outcome.assessment);

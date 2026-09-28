@@ -72,6 +72,7 @@ import {
     type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
+import { regionCost } from './fit.ts';
 import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
@@ -237,18 +238,6 @@ export function exclusionReason(file: SemanticChangedFile): string | undefined {
         return 'no-text-change';
     }
     return undefined;
-}
-
-/**
- * Whether a region can be supplied at all.
- *
- * A region is supplied whole or not at all. Supplying a prefix was the earlier policy, and a prefix
- * of a side of a change answers nothing about that side: the questions that needed it scored a
- * fragment while the report said the region had been sent. A region that does not fit is omitted and
- * named, so the questions requiring it report the evidence as not supplied.
- */
-function regionFits(text: string, maxBytes: number): boolean {
-    return Buffer.byteLength(text, 'utf8') <= maxBytes;
 }
 
 type RegionRequest = {
@@ -552,7 +541,14 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
         return;
     }
-    if (!regionFits(raw, state.limits.maxRegionBytes)) {
+    // The gate costs what the request fitter charges, not the raw bytes: JSON escapes every newline, so a
+    // region over the ceiling raw is over it by more serialized, and one under it raw can still be over
+    // it serialized. Costing raw here admitted regions the fitter then had to drop — the collector and the
+    // request disagreed about the same region — and the identifier is built first because the cost
+    // includes it, exactly as the fitter's does.
+    const candidate = makeReference(request, raw, state.ordinal);
+    const serializedBytes = regionCost(candidate, raw);
+    if (serializedBytes > state.limits.maxRegionBytes) {
         state.truncated.push({
             path: request.path,
             reason: withheldReason(request, label, 'region', state.contractCarryingSides),
@@ -563,6 +559,8 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
         return;
     }
+    // The total still charges the raw bytes that leave the machine, which is the figure the run's byte
+    // budget is stated in; only the per-region gate is the fitter's measure.
     const bytes = Buffer.byteLength(raw, 'utf8');
     if (state.totalBytes + bytes > state.limits.maxTotalBytes) {
         state.truncated.push({
@@ -576,12 +574,11 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         return;
     }
     state.totalBytes += bytes;
-    const reference = makeReference(request, raw, state.ordinal);
-    state.references.push(reference);
-    state.contents.set(reference.evidenceId, raw);
-    state.identityToEvidenceId.set(identity, reference.evidenceId);
+    state.references.push(candidate);
+    state.contents.set(candidate.evidenceId, raw);
+    state.identityToEvidenceId.set(identity, candidate.evidenceId);
     if (request.changedPath !== undefined) {
-        state.attribution.set(reference.evidenceId, new Set([request.changedPath]));
+        state.attribution.set(candidate.evidenceId, new Set([request.changedPath]));
     }
     state.ordinal += 1;
 }

@@ -44,8 +44,9 @@ export const SEMANTIC_FAILURE_CODES = [
     'budget_exhausted',
     /**
      * One unit's request is larger than a per-request limit. That limit is a property of the unit, not
-     * of the run, so this refusal is recorded against that unit alone and never stops admission; only
-     * `budget_exhausted` — the run's attempt and total-byte budgets — does.
+     * of the run: the refusal is recorded against that unit alone and the plan keeps admitting. Only a
+     * run-level stop ends a run — a spent attempt or byte budget, or an elapsed deadline — and each of
+     * those carries its own code rather than reusing this one.
      */
     'request_too_large',
     /**

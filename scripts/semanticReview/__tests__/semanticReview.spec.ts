@@ -21,6 +21,7 @@ import {
     buildRevisionContext,
     computeContextDigest,
     semanticDigest,
+    semanticTextDigest,
     SEMANTIC_FAILURE_CODES,
     SemanticFailure,
     type EvidenceReference,
@@ -30,6 +31,7 @@ import {
 import { EGRESS_VENDOR_SHAPES, RESIDUAL_RULES, VENDOR_KEY_NAMES } from '../egressVendorShapes.ts';
 import {
     collectEvidence,
+    evidenceSidePrefix,
     exclusionReason,
     isContractCarryingPath,
     type PathHunks,
@@ -430,7 +432,12 @@ describe('contract-carrying admission', () => {
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
-            limits: { maxRegionBytes: Buffer.byteLength(bulk, 'utf8'), maxTotalBytes: Buffer.byteLength(bulk, 'utf8') },
+            // The region ceiling is the serialized measure, so it is sized from the side it must admit;
+            // the total stays the raw-byte guard the run states it in.
+            limits: {
+                maxRegionBytes: scanRegionCost('aaa/bulk.ts', bulk),
+                maxTotalBytes: Buffer.byteLength(bulk, 'utf8'),
+            },
             contractPaths: ['AGENTS.md'],
         });
         expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:context']);
@@ -461,7 +468,13 @@ describe('contract-carrying admission', () => {
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
-            limits: { maxRegionBytes: contextBytes, maxTotalBytes: contextBytes },
+            limits: {
+                maxRegionBytes: Math.max(
+                    scanRegionCost('AGENTS.md', context, 'context'),
+                    scanRegionCost('scripts/__tests__/closure.spec.ts', specSide)
+                ),
+                maxTotalBytes: contextBytes,
+            },
             contractPaths: ['AGENTS.md'],
         });
         expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
@@ -1990,6 +2003,13 @@ describe('contract-carrying admission', () => {
         expect(set.truncated).toEqual([
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (before, contract)' },
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            // The copy's empty source side carries no content and still costs its identifier and fields
+            // serialized, so a 40-byte ceiling withholds it; its own path draws no contract, so it reads
+            // the plain form like the covered source it becomes.
+            {
+                path: 'scripts/semanticReview/empty-vocabulary.ts',
+                reason: 'region-exceeds-per-region-budget (before)',
+            },
             { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
             {
                 path: 'scripts/semanticReview/__tests__/vocabulary.spec.ts',
@@ -2173,8 +2193,11 @@ describe('contract-carrying admission', () => {
         const legacyPath = 'scripts/legacy.ts';
         const readerPath = 'src/modules/Project/undo.ts';
         const hunkLines = 2;
-        const hunkChars = 8_180;
-        const hunkCount = 64; // ~1.047 MB of before side, within one document of the total it binds against
+        // The ceiling is the serialized measure, so a hunk has to stay under it serialized — two lines of
+        // this size plus the escaping and the reference's fields — or the region gate withholds it before
+        // the total can.
+        const hunkChars = 8_000;
+        const hunkCount = 65; // ~1.040 MB of before side, within one document of the total it binds against
         const lines = hunkLines * hunkCount;
         const bulk = `${'x'.repeat(hunkChars)}\n`.repeat(lines);
         const beforeHunks: { startLine: number; endLine: number }[] = [];
@@ -2188,10 +2211,10 @@ describe('contract-carrying admission', () => {
         const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
         for (const profileName of ['local', 'ci'] as const) {
             const shipped = SEMANTIC_BUDGET_PROFILES[profileName];
-            // This fixture's bulk is sized to bind against a 1 MiB total, which the local profile's
-            // 96 KiB already is. The ci profile's total is now 16 MiB, and would carry the bulk whole, so
-            // the total is held at the figure the fixture binds against rather than inflating the
-            // fixture text to 16 MiB; the claim under test is the ranking, never one profile's total.
+            // This fixture's bulk is sized to bind against a 1 MiB total, which the local profile's own
+            // total already is. The shipped ci total carries the bulk whole, so the total is held at the
+            // figure the fixture binds against rather than inflating the fixture text to match whichever
+            // total the profile ships: the claim under test is the ranking, never one profile's number.
             const profile = {
                 ...shipped,
                 maxTotalSubmittedBytes: Math.min(shipped.maxTotalSubmittedBytes, 1024 * 1024),
@@ -2507,14 +2530,15 @@ describe('contract-carrying admission', () => {
         // The planned-unit predicate is a pre-admission proxy, not a promise that a request carries the
         // unit: it asks the planner's own criteria — the screen keeps the path, the rules admit it, a side
         // mints a region — and admission cannot know a unit's serialized request budget. The one side here
-        // is 15,001 B, under the 16,384 B per-region ceiling, so a region is minted and the gate charges
-        // the document the unit's rules declared; serialized it is about 15,200 B, over every request
-        // budget that remains, so the fitter keeps no own region, the document's 16,150 B fits none either,
-        // and the planner excludes the unit as `no-evidence-region-within-budget` with nothing sent. The
-        // charge is the residual this case pins; predicting the fitter is not the predicate's job.
+        // is 15,000 B raw, about 15,150 B serialized, under the 16,384 B per-region ceiling, so a region is
+        // minted and the gate charges the document the unit's rules declared; the document is 14,400 B raw,
+        // about 15,745 B serialized, also under the ceiling but over every request budget that remains, so
+        // the fitter keeps no own region, the document fits none either, and the planner excludes the unit
+        // as `no-evidence-region-within-budget` with nothing sent. The charge is the residual this case
+        // pins; predicting the fitter is not the predicate's job.
         const path = 'src/modules/Project/undo.ts';
         const side = `${'x'.repeat(14_999)}\n`; // 15,000 B raw
-        const readme = '# Decisions\n'.repeat(1_334); // 14,674 B raw
+        const readme = '# Decisions\n'.repeat(1_200); // 14,400 B raw, under the serialized ceiling
         const files = [changedFile(path, { added: 1, deleted: 1 })];
         const set = collectEvidence({
             port: fakeSource({
@@ -3067,8 +3091,11 @@ describe('contract-carrying admission', () => {
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
+            // The ceiling is the serialized measure: the two material hunks sit under it — a 15-byte line
+            // costs about 150 bytes once its fields and identifier are counted — and the oversized one is
+            // over it, which is the premise the ranking reads.
             limits: {
-                maxRegionBytes: 100,
+                maxRegionBytes: 300,
                 maxTotalBytes: materialBytes + competitorBytes - 1,
             },
         });
@@ -3666,7 +3693,10 @@ describe('admission ordering follows the side that carries the contract', () => 
 describe('contract classification follows each side on both routes', () => {
     const closureImport = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
     const largeFiller = 'const large = 1;\n'.repeat(200);
-    const limits = { maxRegionBytes: 100, maxTotalBytes: 8_192 };
+    // The ceiling is the serialized measure the gate charges: a 15-byte source line costs about 256 bytes
+    // once its identifier, fields and escaping are counted, so the small after sides fit and the fat
+    // closure-carrying sides, an order of magnitude larger, do not.
+    const limits = { maxRegionBytes: 300, maxTotalBytes: 8_192 };
 
     async function verifyWithheldReason(
         reference: { path: string; side: 'before' | 'after' | 'context' },
@@ -3924,6 +3954,27 @@ function paddedRegionSource(
     };
 }
 
+/**
+ * The serialized cost one whole-file region carries: the measure the scan collector's per-region gate
+ * charges, with the identifier, fields and content the region is minted with. Raw bytes undercount it —
+ * JSON escapes every newline and the reference's own fields are charged too — which is how fixtures sized
+ * in raw bytes ended up over a ceiling they were meant to sit under.
+ */
+function scanRegionCost(path: string, content: string, side: EvidenceSide = 'after'): number {
+    return regionCost(
+        {
+            evidenceId: `${evidenceSidePrefix(side)}1`,
+            revisionSha: side === 'after' ? HEAD : MERGE_BASE,
+            path,
+            side,
+            startLine: 1,
+            endLine: Math.max(1, content.split('\n').length),
+            contentHash: semanticTextDigest(content),
+        },
+        content
+    );
+}
+
 type PaddedSource = ReturnType<typeof paddedRegionSource>;
 
 /** The evidence set one or more synthetic added files admit, under lifted collector ceilings. */
@@ -3996,6 +4047,38 @@ function saturatedSources(
     }
     return sources;
 }
+
+describe('the scan collector gates a region on the cost the request fitter charges', () => {
+    it('withholds a region whose raw bytes fit the ceiling but whose serialized cost does not', () => {
+        // The collector costed raw bytes while the fitter charged serialized ones, so this region was
+        // admitted by admission and then dropped by the request fit: the two disagreed about the same
+        // region, and the run counted evidence it could not send. JSON escapes every newline, so the gap
+        // is one byte a line and grows with the file.
+        const path = 'src/modules/Project/a.ts';
+        const region = 'const sample_line = 1;\n'.repeat(200);
+        const raw = Buffer.byteLength(region, 'utf8');
+        const serialized = scanRegionCost(path, region);
+        // The ceiling sits between the two measures, which is the whole disagreement.
+        const ceiling = raw + Math.floor((serialized - raw) / 2);
+        expect(raw).toBeLessThanOrEqual(ceiling);
+        expect(serialized).toBeGreaterThan(ceiling);
+
+        const files = [changedFile(path, { kind: 'added', added: 200, deleted: 0 })];
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs: { [`${HEAD}:${path}`]: region } }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: ceiling, maxTotalBytes: 1_000_000 },
+        });
+        expect(set.references).toHaveLength(0);
+        expect(set.truncated).toEqual([{ path, reason: 'region-exceeds-per-region-budget (after)' }]);
+        // And the planner agrees with the collector: no unit claims evidence the request cannot carry.
+        const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(units).toHaveLength(0);
+        expect(excluded).toContainEqual({ path, reason: 'no-admissible-evidence' });
+    });
+});
 
 describe('a planned unit measures inside the request budget the provider enforces', () => {
     it('keeps the unit the planner admits at its own reservation boundary inside the cap', () => {
@@ -5172,13 +5255,20 @@ describe('budget profiles', () => {
         const maximalRequests = Math.ceil(ci.maxTotalSubmittedBytes / ci.maxStatePlusQuestionBytes);
         const fastestRetainedSecondsPerAttempt = 0.31625;
         const measuredTypicalRequestBytes = 98_092;
+        // The literals are pinned, and each to the retained report named above: a slower rate, a smaller
+        // request size or a larger total would all leave the relation below trivially true, which is how
+        // it stopped reddening the values it was written to catch.
+        expect(fastestRetainedSecondsPerAttempt).toBe(2.53 / 8);
+        expect(measuredTypicalRequestBytes).toBe(Math.round(1_863_741 / 19));
+        expect(ci.maxTotalSubmittedBytes).toBe(384 * 1024 * 1024);
         expect(ci.maxAttempts).toBeGreaterThanOrEqual(maximalRequests);
         expect(ci.maxAttempts * fastestRetainedSecondsPerAttempt).toBeGreaterThan(ci.overallDeadlineMs / 1_000);
         expect(
             (ci.overallDeadlineMs / 1_000 / fastestRetainedSecondsPerAttempt) * measuredTypicalRequestBytes
         ).toBeLessThanOrEqual(ci.maxTotalSubmittedBytes);
-        // The same relation at the largest request the profile admits, so the deadline is first for every
-        // request size rather than only the measured average.
+        // The same relation at the provider's request ceiling, which no admitted request reaches: the state
+        // ceiling caps a planned body near 98 KiB, so this is a conservative bound rather than a size the
+        // profile can actually send.
         expect(
             (ci.overallDeadlineMs / 1_000 / fastestRetainedSecondsPerAttempt) * ci.maxRequestBytes
         ).toBeLessThanOrEqual(ci.maxTotalSubmittedBytes);
@@ -9192,8 +9282,37 @@ describe('the verify pass runs on the profile-owned verify budgets', () => {
         expect(report.limitations).toContain(
             `finding evidence ${path} (after) was not supplied: the request carrying it exceeds the per-request state budget`
         );
-        // Not lost to its own size: the run records why nothing was sent, and records no size failure.
-        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
+        // Not lost to its own size, and not mislabelled either: the evidence was admissible and the request
+        // had no room for it, which is what `no-evidence-region-within-budget` names.
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
+        expect(report.failureCode).toBeUndefined();
+    });
+
+    it('names the request size when a region at the region ceiling empties the finding', async () => {
+        // The boundary case: the region gate admits a region at its exact serialized ceiling, and the
+        // questions then leave no room for it in the state ceiling. Before the fitter existed the same
+        // region was sent and judged; with the fit it was dropped and the finding was recorded
+        // `no-admissible-evidence`, which says the evidence was inadmissible when it was admissible.
+        const path = 'src/modules/Project/a.ts';
+        const region = regionCostingExactly(path, SEMANTIC_BUDGET_PROFILES.ci.verify.maxRegionBytes);
+        expect(wholeFileRegionCost(path, region)).toBe(SEMANTIC_BUDGET_PROFILES.ci.verify.maxRegionBytes);
+
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a region the request cannot carry');
+            },
+        };
+        const { report } = await verifyWith({
+            provider,
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+            blobs: { [`${HEAD}:${path}`]: region },
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.assessed).toBe(0);
+        expect(report.scope.truncated).toEqual([{ path, reason: 'request-exceeds-state-budget (after)' }]);
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-evidence-region-within-budget' }]);
         expect(report.failureCode).toBeUndefined();
     });
 

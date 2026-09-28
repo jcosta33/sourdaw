@@ -710,19 +710,23 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         attemptTimeoutMs: 20_000,
         // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
         overallDeadlineMs: 600_000,
-        // The provider's context window, not spend, is what binds the state budget: on the run at 128 KiB
-        // states, requests of 130,104 and 130,895 bytes were both answered `400 max_tokens_exceeded`
-        // while a 130,723-byte request was answered. 96 KiB is 24,576 estimated tokens by the `bytes / 4`
+        // The provider's context window, not spend, is what binds the state budget. That boundary was
+        // measured from a dry-run plan export of the run that hit it — the request bodies that plan would
+        // have sent, read while reviewing it and not kept in the retained sidecar set: requests of 130,104
+        // and 130,895 bytes were both answered `400 max_tokens_exceeded` while a 130,723-byte request was
+        // answered. 96 KiB is 24,576 estimated tokens by the `bytes / 4`
         // proxy, which runs slightly under the provider's own count — that run reported 930,965
         // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
         // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
         // answered.
         maxRequestBytes: 128 * 1024,
         maxStatePlusQuestionBytes: 96 * 1024,
-        // Measured against the retained ci scans, the deadline is the guard that ends a real run, and it
-        // is first for every request size this profile admits. The retained rates run 0.316-0.974 s per
-        // attempt — duration over network attempts, from fef405f0's 8 attempts in 2.53 s to 364ccd54's 4
-        // in 3.895 s — and the retained report 784380a1 submitted 1,863,741 bytes over 19 attempts, 98,092
+        // Measured against the retained scans, the deadline is the guard that ends a real run, and it is
+        // first for every request size this profile admits. Rates are duration over network attempts: the
+        // retained ci reports run 0.316-0.974 s per attempt — fastest fef405f0's 8 attempts in 2.53 s,
+        // slowest ci call 364ccd54's 4 in 3.895 s — and the retained corpus reaches 1.13 s on 9f33b0a0's
+        // single local attempt, so 0.974 is the ci slow end and not a corpus bound. The retained report
+        // 784380a1 submitted 1,863,741 bytes over 19 attempts, 98,092
         // bytes a request. Its assessed units are not the denominator: 23 of its 42 were cache hits, and a
         // cache hit submits nothing. At the fastest retained rate the deadline carries about 1,897
         // attempts, or 177 MiB at that request size and 237 MiB at the 128 KiB request ceiling, so this
@@ -781,8 +785,11 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
     if (!Number.isSafeInteger(profile.contextExpansionPasses) || profile.contextExpansionPasses < 0) {
         throw new Error(`budget profile ${profile.name} contextExpansionPasses must be zero or more`);
     }
-    // A region the collector admits must fit one request's state budget, and one request the run's
-    // total, or the profile configures a collection that can never be sent.
+    // The chain of ceilings is what this enforces: a request fits the run's total, a verify region fits
+    // the verify state ceiling, and that state ceiling fits the verify request, which fits its total. It
+    // says nothing about the question reserve, so a region at the verify region ceiling can still be
+    // withheld by the request fit, which names it with its own reason — the limitation, not this check,
+    // reports that.
     if (
         profile.maxRequestBytes > profile.maxTotalSubmittedBytes ||
         profile.verify.maxRegionBytes > profile.verify.maxStatePlusQuestionBytes ||
