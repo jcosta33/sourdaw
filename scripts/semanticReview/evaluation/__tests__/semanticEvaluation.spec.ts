@@ -3,15 +3,23 @@
  *
  * Everything here is deterministic: the corpus is read from disk, the fixtures are planned with a stub
  * source port, and the provider is a stub that answers from a table. No Git revision is resolved and no
- * network call is made — the live run against the real provider is `pnpm review:semantic:eval:live`,
+ * network call is made — the live run against the real provider is `pnpm review:semantic:evaluate`,
  * deliberately outside this suite.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { assertEvaluationIsOptIn, exitCodeFor, parseEvaluationArgs } from '../../../semanticReviewEvaluation.ts';
+import {
+    assertEvaluationIsOptIn,
+    exitCodeFor,
+    parseEvaluationArgs,
+    writeEvaluationOutcomes,
+} from '../../../semanticReviewEvaluation.ts';
+import { measureCheckout, readEvaluationOutcome } from '../../../semanticReviewMeasurement.ts';
 import { changedLineFacts, type UnitChangedLineFacts } from '../../changeFacts.ts';
 import { SemanticFailure } from '../../contracts.ts';
 import { createMemoryCache, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
@@ -34,6 +42,7 @@ import {
     type EvaluationFixturePlan,
 } from '../runEvaluation.ts';
 
+import type { MeasurementMachine } from '../../../semanticReviewMeasurement/contracts.ts';
 import type { SemanticSourcePort } from '../../evidence.ts';
 
 const PROFILE = SEMANTIC_BUDGET_PROFILES.ci;
@@ -205,6 +214,23 @@ function planForAll(): (fixture: EvaluationFixture) => EvaluationFixturePlan {
         };
     };
 }
+
+/** The machine identity the measurement record carries; this case reads the fixtures it recorded, not it. */
+const MEASUREMENT_MACHINE: MeasurementMachine = {
+    checkoutGitSha: 'f'.repeat(40),
+    workingTree: 'clean',
+    host: { platform: 'darwin', release: '25.5.0', arch: 'arm64', cores: 12 },
+    loadAverage1m: 0.5,
+};
+
+/** The temp roots a case writes an outcome file into, removed so a failure cannot leave one behind. */
+const outcomeRoots: string[] = [];
+
+afterEach(() => {
+    for (const root of outcomeRoots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
+});
 
 async function evaluateWith(corpus: EvaluationCorpus, provider: SemanticProviderPort) {
     return await runEvaluation({
@@ -581,6 +607,38 @@ describe('the opt-in runner', () => {
         expect(rendered).toContain('2/4 labelled expectations held');
         expect(rendered).toContain('the labelled expectation did NOT hold (an unasked question counts as not held)');
         expect(rendered).toContain('probability 0.020, no_signal, no_additional_recommendation');
+    });
+});
+
+describe('the outcome file the measurement command reads', () => {
+    it('should write the runner result the measurement reader accepts, end to end', async () => {
+        // The two commands are one contract: the runner writes the file, `pnpm review:semantic:measure
+        // --evaluation` reads it. A case that only fed the reader a hand-built object let the runner wrap
+        // its result in an envelope the reader refused, so this one takes the bytes the runner writes and
+        // hands them to the reader's own entry point.
+        const corpus = shippedCorpus();
+        const result = await evaluateWith(corpus, stubProvider(() => 0.02).port);
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-evaluation-outcomes-'));
+        outcomeRoots.push(root);
+        const outcomePath = join(root, 'outcomes.json');
+        // The command's own write, not a copy of it: the envelope that broke this contract lived in the
+        // call site, so a case that serialized the result itself would not have seen it.
+        writeEvaluationOutcomes(outcomePath, result);
+
+        const onDisk = JSON.parse(readFileSync(outcomePath, 'utf8')) as Record<string, unknown>;
+        expect(Object.keys(onDisk)).toContain('outcomes');
+        expect(readEvaluationOutcome(outcomePath)).toHaveLength(corpus.fixtures.length);
+
+        const record = measureCheckout({
+            root,
+            evaluationOutcomePath: outcomePath,
+            strict: false,
+            detail: 'runs',
+            measuredAt: '2026-09-29T12:00:00.000Z',
+            machine: MEASUREMENT_MACHINE,
+        });
+        expect(record.acrossRuns.runCountByKind).toEqual({ 'evaluation-fixture': corpus.fixtures.length });
+        expect(record.sources.evaluationFixturesRead).toBe(corpus.fixtures.length);
     });
 });
 

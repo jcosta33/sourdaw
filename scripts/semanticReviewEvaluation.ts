@@ -30,6 +30,7 @@ import {
     fixtureEvaluationRevision,
     renderEvaluation,
     runEvaluation,
+    serializeEvaluationOutcomes,
     type EvaluationFixturePlan,
     type SemanticEvaluationResult,
 } from './semanticReview/evaluation/runEvaluation.ts';
@@ -210,6 +211,15 @@ function exitCodeForFailure(code: SemanticFailureCode): number {
 }
 
 /**
+ * Writes the outcome file the measurement command reads. Exported so the suite drives the same write the
+ * entry point does: a case that serialized the result itself would stay green if this call site wrapped it
+ * in an envelope again, which is exactly how the two commands came to disagree.
+ */
+export function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResult): void {
+    writeFileSync(outPath, serializeEvaluationOutcomes(result));
+}
+
+/**
  * A label that did not hold, or a scope that was not delivered, is not an exit-zero run. Exported so the
  * suite can pin that a negative the provider fires is reported as not held and exits nonzero, instead of
  * trusting the entry point's own reading of the same value.
@@ -250,10 +260,10 @@ async function main(): Promise<number> {
         });
         console.log(renderEvaluation(result));
         if (parsed.outPath !== undefined) {
-            writeFileSync(
-                parsed.outPath,
-                `${JSON.stringify({ format: 'semantic-evaluation-outcomes-v1', result }, null, 4)}\n`
-            );
+            // The measurement reader reads this file as the result itself, so the writer writes exactly
+            // that: an envelope here left `pnpm review:semantic:measure --evaluation` refusing the file
+            // this command had just written.
+            writeEvaluationOutcomes(parsed.outPath, result);
             console.log(`outcomes: ${parsed.outPath}`);
         }
         return exitCodeFor(result);

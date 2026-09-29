@@ -359,6 +359,18 @@ function renderFixture(fixture: EvaluationFixtureOutcome): string[] {
     return lines;
 }
 
+/**
+ * The exact bytes the outcome file holds: the result itself, with its `outcomes` array at the top level.
+ *
+ * This is the shape the measurement reader reads — `readEvaluationOutcome` documents the runner's file as
+ * its `SemanticEvaluationResult`, or the fixture array itself — so the writer and the reader agree on one
+ * contract rather than the writer wrapping the result in an envelope nothing else unwrapped. The reader
+ * validates every field it needs and refuses by name, which is what makes a shape change visible here.
+ */
+export function serializeEvaluationOutcomes(result: SemanticEvaluationResult): string {
+    return `${JSON.stringify(result, null, 4)}\n`;
+}
+
 /** The runner's report: every fixture's request content and raw outcome, and nothing that reads as a verdict. */
 export function renderEvaluation(result: SemanticEvaluationResult): string {
     const header = [
