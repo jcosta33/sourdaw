@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ed5aa36a3ba357::t_a528f7cd7daca8 33,707-720,1141-1150,1152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8f2ef126882844acd785a40714fce0b1739688f9",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
