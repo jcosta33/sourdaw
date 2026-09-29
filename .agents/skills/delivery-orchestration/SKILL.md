@@ -358,6 +358,27 @@ missing field. It is folded into the canonical record beside
 in it have different digests, and records persisted before the field existed
 keep replaying byte-identically.
 
+A fired signal may be answered with a typed outcome instead of the literal
+citation token: the optional `signalDispositions` list carries one entry per
+fired signal — the signal's `ruleId` and `path`, a `disposition` of
+`confirmed-and-fixed`, `confirmed-existing`, `false-positive`,
+`insufficient-evidence`, or `not-investigated`, and an optional bounded
+single-line `artifact` reference — an issue number or URL, a reviewer finding,
+a repair commit, or a regression test path. Every disposition disposes of the
+signal it names, so a round records what it found without agreeing with the
+assessment, and the literal token keeps working. An entry matches by that exact
+rule-and-path pair rather than by the space-joined citation text, and a
+free-text citation disposes wherever it names the signal — trailing
+punctuation never blocks it — unless another fired signal's longer citation
+contains that occurrence, wherever inside it the token sits, so a longer fired
+path's token never disposes a shorter one. The read is structural: an
+unknown token, an entry naming a signal the delivered record did not fire, two
+entries for one signal, or any entry when the record delivered nothing
+(`no-assessment`) is refused; no disposition requires a posted comment or an
+issue. The list is folded into the canonical record beside `assessmentImpact`
+and covered by `dossierDigest`, and a record persisted before it existed keeps
+replaying byte-identically.
+
 When the bundle's `semantic-ci.json` records a delivered assessment that withheld
 any scope entry or left any question unresolved, `review:publish` refuses a fresh
 publication unless the dossier cites the assessment or declares it ignored.

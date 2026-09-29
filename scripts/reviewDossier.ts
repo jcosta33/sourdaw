@@ -27,8 +27,10 @@ import {
     headDigestOf,
     readAssessmentIgnoredReason,
     readAssessmentImpact,
+    readSignalDispositions,
     reviewDossierEventDigest,
     type AssessmentImpact,
+    type ReviewDossierSignalDisposition,
 } from './reviewDossierChain.ts';
 import {
     REVIEW_REASSESSED_EVENT_KEYS,
@@ -42,10 +44,15 @@ export {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
     REVIEW_DOSSIER_MAX_BYTES,
+    SIGNAL_DISPOSITIONS,
+    SIGNAL_DISPOSITION_MEMBERSHIP,
     authorizedEvidenceDigest,
+    readSignalDisposition,
     reviewDossierEventDigest,
     serializeReviewDossier,
     type AssessmentImpact,
+    type ReviewDossierSignalDisposition,
+    type SignalDisposition,
 } from './reviewDossierChain.ts';
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
@@ -128,6 +135,16 @@ export type ReviewDossier = {
      * authority.
      */
     assessmentIgnoredReason?: string;
+    /**
+     * The round's typed outcome for each fired semantic signal, one entry per signal, or undefined on
+     * a record persisted before the field existed (the same historical tolerance `assessmentImpact`
+     * gets). Each entry names the signal's rule and path and carries one of the five dispositions; the
+     * optional `artifact` links what supports the outcome. It records what became of a signal the
+     * assessment fired — never agreement with it — and no entry is a verdict, an approval, or merge
+     * authority. Whether an entry names a signal the delivered assessment actually fired is the
+     * publication gate's check; this field's own shape is all the record validates.
+     */
+    signalDispositions?: ReviewDossierSignalDisposition[];
     headDigest: string;
     dossierDigest: string;
 };
@@ -550,11 +567,22 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
     // `assessmentImpact` is required of the input and of newly assembled records, but a record
     // persisted before the field existed carries none: carry it out of the key-set check it would
     // otherwise fail, and read it only when present so a historical digest keeps verifying.
-    // `assessmentIgnoredReason` shares the same historical tolerance: a pre-field record omits it.
+    // `assessmentIgnoredReason` and `signalDispositions` share the same historical tolerance: a
+    // pre-field record omits them, and an explicitly empty disposition list stays distinct from an
+    // absent one so a record that carries it reserializes byte-identically.
     const assessmentImpact = 'assessmentImpact' in value ? readAssessmentImpact(value.assessmentImpact) : undefined;
     const assessmentIgnoredReason =
         'assessmentIgnoredReason' in value ? readAssessmentIgnoredReason(value.assessmentIgnoredReason) : undefined;
-    const { assessmentImpact: _optional, assessmentIgnoredReason: _optionalReason, ...requiredKeys } = value;
+    let signalDispositions: ReviewDossierSignalDisposition[] | undefined;
+    if ('signalDispositions' in value) {
+        signalDispositions = readSignalDispositions(value.signalDispositions, 'review dossier signalDispositions');
+    }
+    const {
+        assessmentImpact: _optional,
+        assessmentIgnoredReason: _optionalReason,
+        signalDispositions: _optionalDispositions,
+        ...requiredKeys
+    } = value;
     assertExactKeys(requiredKeys, DOSSIER_KEYS, 'dossier');
     if (value.format !== REVIEW_DOSSIER_FORMAT) {
         fail(`review dossier format must be ${REVIEW_DOSSIER_FORMAT}, found ${describeValue(value.format)}`);
@@ -579,6 +607,7 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
         ),
         assessmentImpact,
         assessmentIgnoredReason,
+        signalDispositions,
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -621,6 +650,8 @@ export function assembleReviewDossier(input: {
     recommendation: 'approve' | 'request-changes';
     assessmentImpact: AssessmentImpact;
     assessmentIgnoredReason?: string;
+    /** One typed outcome per fired signal; absent when the round records none. */
+    signalDispositions?: readonly ReviewDossierSignalDisposition[];
 }): ReviewDossier {
     const callerEvents = input.events.map((event, index) => readEventRecord(event, `event ${index}`, false).event);
     const payload: DossierPayload = {
@@ -642,6 +673,12 @@ export function assembleReviewDossier(input: {
     };
     if (input.assessmentIgnoredReason !== undefined) {
         payload.assessmentIgnoredReason = readAssessmentIgnoredReason(input.assessmentIgnoredReason);
+    }
+    if (input.signalDispositions !== undefined) {
+        payload.signalDispositions = readSignalDispositions(
+            input.signalDispositions,
+            'review dossier signalDispositions'
+        );
     }
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);

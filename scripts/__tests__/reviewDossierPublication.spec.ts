@@ -7,7 +7,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
-import { ASSESSMENT_IMPACTS, buildDossier } from '../reviewDossierChain.ts';
+import { ASSESSMENT_IMPACTS, SIGNAL_DISPOSITIONS, buildDossier } from '../reviewDossierChain.ts';
 import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
@@ -46,6 +46,12 @@ const EVIDENCE = [
 ];
 
 const LIMITATION = 'the native audio path is not exercised on this head';
+
+/** A fired signal's identity as the delivered record projects it, for the typed-outcome fixtures. */
+const FIRED_SIGNAL = {
+    ruleId: 'admission_branch_completes_without_asserting',
+    path: 'src/modules/audio/take.test.ts',
+} as const;
 
 const CORRECTNESS_STANCE: ReviewDossierStanceInput = {
     stance: 'correctness',
@@ -324,6 +330,42 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         label: 'a credential-shaped assessment ignored reason',
         value: { ...INPUT, assessmentIgnoredReason: `ghp_${'A'.repeat(24)}` },
         message: /input assessmentIgnoredReason value at index 0 contains a GitHub token/,
+    },
+    {
+        label: 'a non-array signal disposition list',
+        value: { ...INPUT, signalDispositions: 'none' },
+        message: /input signalDispositions must be an array/,
+    },
+    {
+        label: 'an unknown signal disposition token',
+        value: {
+            ...INPUT,
+            signalDispositions: [{ ...FIRED_SIGNAL, disposition: 'fixed' }],
+        },
+        message:
+            /input signalDispositions\[0\]\.disposition must be confirmed-and-fixed, confirmed-existing, false-positive, insufficient-evidence or not-investigated/,
+    },
+    {
+        label: 'a credential-shaped signal disposition artifact',
+        value: {
+            ...INPUT,
+            signalDispositions: [
+                { ...FIRED_SIGNAL, disposition: 'confirmed-and-fixed', artifact: `ghp_${'A'.repeat(24)}` },
+            ],
+        },
+        message: /input signalDispositions\[0\]\.artifact value at index 0 contains a GitHub token/,
+    },
+    {
+        label: 'two signal disposition entries for one signal',
+        value: {
+            ...INPUT,
+            signalDispositions: [
+                { ...FIRED_SIGNAL, disposition: 'false-positive' },
+                { ...FIRED_SIGNAL, disposition: 'not-investigated' },
+            ],
+        },
+        message:
+            /input signalDispositions\[1\] repeats the signal already recorded at index 0: admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts/,
     },
 ];
 
@@ -906,6 +948,56 @@ describe('buildReviewDossier', () => {
         expect(without.dossier.dossierDigest).not.toBe(withReason.dossier.dossierDigest);
         expect(serializeReviewDossier(parseReviewDossier(JSON.parse(withReason.canonical)))).toBe(withReason.canonical);
         expect(parseReviewDossier(JSON.parse(withReason.canonical)).assessmentIgnoredReason).toBe(REASON);
+    });
+
+    it.each(SIGNAL_DISPOSITIONS)(
+        'carries a %s signal disposition from the input form into the canonical record',
+        (token) => {
+            const entries: ReviewDossierInput['signalDispositions'] = [
+                { ...FIRED_SIGNAL, disposition: token, artifact: '#4441' },
+            ];
+            const result = buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, signalDispositions: entries },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+            expect(result.dossier.signalDispositions).toEqual([
+                { ...FIRED_SIGNAL, disposition: token, artifact: '#4441' },
+            ]);
+            expect(parseReviewDossier(JSON.parse(result.canonical)).signalDispositions).toEqual([
+                { ...FIRED_SIGNAL, disposition: token, artifact: '#4441' },
+            ]);
+        }
+    );
+
+    it('covers the typed dispositions in the digest and replays a head that carries them unchanged', () => {
+        const build = (signalDispositions?: ReviewDossierInput['signalDispositions']) =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, signalDispositions },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+        const without = build();
+        const recorded = build([{ ...FIRED_SIGNAL, disposition: 'false-positive' }]);
+
+        expect(without.dossier.signalDispositions).toBeUndefined();
+        expect(without.dossier.dossierDigest).not.toBe(recorded.dossier.dossierDigest);
+        expect(without.canonical).not.toContain('signalDispositions');
+        const replayed = buildReviewDossier({
+            plan: PLAN,
+            raw: JSON.parse(recorded.canonical),
+            discarded: [],
+            comments: [COMMENT],
+            recommendation: 'request-changes',
+        });
+        expect(replayed.fromPersisted).toBe(true);
+        expect(replayed.canonical).toBe(recorded.canonical);
     });
 
     it('keeps the accepted-finding ids positional, matching the comments array', () => {
