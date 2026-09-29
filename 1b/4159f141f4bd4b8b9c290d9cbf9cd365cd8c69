@@ -1,0 +1,22 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_fe7d9519d0226e::t_ad1b953ecc60cc 572-580
+  s_fe7d9519d0226e::t_72a2c728999045 556-571,581
+AGENTS.md
+  s_fe7d9519d0226e::t_ad1b953ecc60cc 343-345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1b4159f141f4bd4b8b9c290d9cbf9cd365cd8c69",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
