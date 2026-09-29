@@ -1,0 +1,14 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 139,226,506,1264-1270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "87c73d42142d7f081378c466e23a90a9a9db3898",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
