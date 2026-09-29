@@ -482,6 +482,8 @@ async function assessOneUnit(input: {
             kind: unit.file.kind,
             rule,
             passes: unit.evidence.passes,
+            unitOwn: unit.evidence.own,
+            unitContext: unit.evidence.context,
             ownDroppedSides: unit.evidence.ownDroppedSides,
             contextDroppedSides: unit.evidence.contextDroppedSides,
         });
@@ -501,6 +503,8 @@ async function assessOneUnit(input: {
                 kind: unit.file.kind,
                 rule,
                 pass: entry.pass,
+                unitOwn: unit.evidence.own,
+                unitContext: unit.evidence.context,
                 ownDroppedSides: unit.evidence.ownDroppedSides,
                 contextDroppedSides: unit.evidence.contextDroppedSides,
             })

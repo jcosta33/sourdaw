@@ -93,26 +93,67 @@ export function composeUnitPasses(
     };
 }
 
+/** The sides a pass does not carry in full: the unit's dropped sides plus any side it carries only in part. */
+function effectiveDroppedSides(
+    passRegions: readonly EvidenceReference[],
+    unitRegions: readonly EvidenceReference[],
+    unitDroppedSides: ReadonlySet<EvidenceSide>
+): Set<EvidenceSide> {
+    const dropped = new Set<EvidenceSide>(unitDroppedSides);
+    const unitIdsBySide = new Map<EvidenceSide, Set<string>>();
+    for (const region of unitRegions) {
+        let ids = unitIdsBySide.get(region.side);
+        if (ids === undefined) {
+            ids = new Set();
+            unitIdsBySide.set(region.side, ids);
+        }
+        ids.add(region.evidenceId);
+    }
+    const passIdsBySide = new Map<EvidenceSide, Set<string>>();
+    for (const region of passRegions) {
+        let ids = passIdsBySide.get(region.side);
+        if (ids === undefined) {
+            ids = new Set();
+            passIdsBySide.set(region.side, ids);
+        }
+        ids.add(region.evidenceId);
+    }
+    // A pass's regions are a subset of the unit's, so a side whose ids it holds in full has an equal
+    // id count; fewer ids means the side's regions live partly in other passes and this pass did not
+    // supply the whole side.
+    for (const [side, unitIds] of unitIdsBySide) {
+        const passIds = passIdsBySide.get(side);
+        if (passIds === undefined || passIds.size < unitIds.size) {
+            dropped.add(side);
+        }
+    }
+    return dropped;
+}
+
 /**
- * The required-evidence tokens one pass lacks, read from that pass's own regions alone. The unit's
- * dropped sides are supplied because a side the collector or the partitioner dropped is not supplied
- * by any pass, however many of its regions a pass still carries; a side whose regions live in a
- * different pass is absent from this pass's own set and therefore missing from it too.
+ * The required-evidence tokens one pass lacks. A side is supplied only when this pass carries every
+ * one of the unit's regions of that side: a side spread across several passes is not supplied by any
+ * of them, exactly as a side the fitter dropped is not supplied at all. The unit's dropped sides and
+ * full per-side region sets come from the caller, so the measure never reads a side from a fragment.
  */
 export function passMissingEvidence(input: {
     readonly kind: SemanticChangedFile['kind'];
     readonly rule: SemanticRule;
     readonly pass: { readonly own: readonly EvidenceReference[]; readonly context: readonly EvidenceReference[] };
+    readonly unitOwn: readonly EvidenceReference[];
+    readonly unitContext: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
 }): string[] {
+    const ownDropped = effectiveDroppedSides(input.pass.own, input.unitOwn, input.ownDroppedSides);
+    const contextDropped = effectiveDroppedSides(input.pass.context, input.unitContext, input.contextDroppedSides);
     return missingRequiredEvidence(
         input.rule,
         input.pass.own,
         input.pass.context,
         input.kind,
-        input.ownDroppedSides,
-        input.contextDroppedSides
+        ownDropped,
+        contextDropped
     );
 }
 
@@ -133,6 +174,8 @@ export function choosePassIndexForRule(input: {
         readonly own: readonly EvidenceReference[];
         readonly context: readonly EvidenceReference[];
     }[];
+    readonly unitOwn: readonly EvidenceReference[];
+    readonly unitContext: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
 }): number {
@@ -145,6 +188,8 @@ export function choosePassIndexForRule(input: {
         kind: input.kind,
         rule: input.rule,
         pass: first,
+        unitOwn: input.unitOwn,
+        unitContext: input.unitContext,
         ownDroppedSides: input.ownDroppedSides,
         contextDroppedSides: input.contextDroppedSides,
     }).length;
@@ -157,6 +202,8 @@ export function choosePassIndexForRule(input: {
             kind: input.kind,
             rule: input.rule,
             pass,
+            unitOwn: input.unitOwn,
+            unitContext: input.unitContext,
             ownDroppedSides: input.ownDroppedSides,
             contextDroppedSides: input.contextDroppedSides,
         });

@@ -122,11 +122,14 @@ function reference(evidenceId: string, side: EvidenceSide, path = 'src/a.ts'): E
 /**
  * A modified test file whose after side is `count` single-line hunks. The after side is deliberately
  * large enough to exceed one request, so the unit's own regions split into more than one pass while
- * every region stays under the per-region ceiling and therefore travels.
+ * every region stays under the per-region ceiling and therefore travels. An optional marker replaces
+ * one later hunk with a distinctive line, so a case can place the deciding content in a pass the
+ * any-region measure would otherwise ignore.
  */
 function bigHunkedTestFile(
     count: number,
-    width: number
+    width: number,
+    marker?: { readonly index: number; readonly text: string }
 ): {
     readonly file: SemanticChangedFile;
     readonly before: string;
@@ -138,6 +141,9 @@ function bigHunkedTestFile(
         { length: count },
         (_unused, index) => `export const value${String(index)} = '${'x'.repeat(width)}';\n`
     );
+    if (marker !== undefined) {
+        rows[marker.index] = `${marker.text}\n`;
+    }
     return {
         file: changedFile(path, { added: count, deleted: 1 }),
         before: 'it("before", () => {});\n',
@@ -146,6 +152,21 @@ function bigHunkedTestFile(
             path,
             before: [{ startLine: 1, endLine: 1 }],
             after: rows.map((_row, index) => ({ startLine: index + 1, endLine: index + 1 })),
+        },
+    };
+}
+
+/** A provider that answers high when the state carries a region whose content contains `marker`. */
+function markerProvider(marker: string): SemanticProviderPort {
+    return {
+        systemOne: async ({ state, questions }) => {
+            const evidence = (state as { evidence?: Record<string, { content?: string }> }).evidence ?? {};
+            const sawMarker = Object.values(evidence).some((region) => region.content?.includes(marker));
+            const answers: Record<string, unknown> = {};
+            for (const key of Object.keys(questions)) {
+                answers[key] = { type: 'noul', noul: sawMarker ? 0.9 : 0.05 };
+            }
+            return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 100, output_tokens: 0 } };
         },
     };
 }
@@ -188,7 +209,7 @@ describe('multi-pass evidence transport', () => {
         expect(unit?.evidence.passes.flatMap((pass) => pass.references).length).toBe(own.length);
     });
 
-    it('assesses a unit with all of it: no missing evidence and the stored record names its passes', async () => {
+    it('carries a unit whole across passes and only certifies a rule whose required set one pass holds in full', async () => {
         const fixture = bigHunkedTestFile(80, 160);
         const result = await runScan({
             ...scanInput(
@@ -210,16 +231,15 @@ describe('multi-pass evidence transport', () => {
         const stored = result.storedResponses[0];
         expect(stored).toBeDefined();
         expect(stored?.passes.length).toBeGreaterThanOrEqual(2);
-        // No question reports the unit's own before/after test source missing: every own region was
-        // carried across the passes, so no own-side token is unsupplied for want of a region.
-        for (const ruleId of stored?.ruleIds ?? []) {
-            const missing = stored?.missingEvidence[ruleId] ?? [];
-            expect(missing).not.toContain('before test source');
-            expect(missing).not.toContain('after test source');
-        }
-        expect(stored?.missingEvidence.assertion_deleted ?? []).toEqual([]);
-        // Nothing was truncated for want of a region.
+        // Every minted region (1 before hunk + 80 after hunks) is carried across the passes.
+        expect(result.previews[0]?.evidenceIds.length).toBe(81);
+        // Nothing was truncated for want of a region: the run names no request-budget reduction.
         expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-'))).toBe(false);
+        // The after side spans passes, so no single pass holds the whole required set for a rule that
+        // needs both sides: it is reported insufficient rather than certified from a fragment.
+        expect(stored?.missingEvidence.assertion_deleted).toContain('after test source');
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'assertion_deleted');
+        expect(signal?.outcome).toBe('insufficient_context');
     });
 
     it('binds the response cache to the pass composition', async () => {
@@ -353,6 +373,36 @@ describe('multi-pass evidence transport', () => {
 });
 
 describe('the merge reports the answering pass missing evidence', () => {
+    it('reports an 80-hunk after side split across passes as insufficient context, naming the side', async () => {
+        // The deciding assertion lives in a later after hunk. The any-region measure would treat pass 1
+        // (before plus the first after hunks, marker absent) as carrying the after side and score a
+        // decisive no_signal while the marker hunk travelled in a later, ignored pass. A pass supplies
+        // the after side only when it carries all 80 hunks, so the rule must name the side missing.
+        const marker = 'expect(savedState).toBeDefined(); // DECIDING_ASSERTION';
+        const fixture = bigHunkedTestFile(80, 160, { index: 60, text: marker });
+        const result = await runScan({
+            ...scanInput(
+                markerProvider(marker),
+                fakeSource(
+                    [fixture.file],
+                    {
+                        [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
+                        [`${HEAD}:${fixture.file.path}`]: fixture.after,
+                    },
+                    new Map([[fixture.file.path, fixture.hunks]])
+                ),
+                fixedClock(1_000)
+            ),
+            profile: MULTI_PASS_PROFILE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'assertion_deleted');
+        expect(signal?.outcome).toBe('insufficient_context');
+        expect(signal?.missingEvidence).toContain('after test source');
+        const stored = result.storedResponses[0];
+        expect(stored?.missingEvidence.assertion_deleted).toContain('after test source');
+    });
+
     it('reports a rule whose required sides are split across passes as insufficient context', async () => {
         // `audio_thread_allocation` needs both `before source` and `after source`. Sized so the before
         // side and the after side each fit one request but together exceed it, they land in different
@@ -406,12 +456,14 @@ describe('the merge reports the answering pass missing evidence', () => {
 
 describe('merge rule', () => {
     it('picks the earliest pass that carries the required evidence', () => {
-        // For an added test file, `assertion_deleted` requires only the after test source, so two passes
-        // that each carry an after region both supply it. The tie is broken by the earliest pass.
+        // For an added test file, `assertion_deleted` requires only the after test source. Two passes
+        // each carrying one of the unit's two after regions are tied (neither carries the whole side),
+        // so the tie is broken by the earliest pass.
         const rule = semanticRule('assertion_deleted');
+        const afterRegions = [reference('a1', 'after'), reference('a2', 'after')];
         const passes = [
-            { own: [reference('a1', 'after')], context: [] },
-            { own: [reference('a2', 'after')], context: [] },
+            { own: [afterRegions[0]!], context: [] },
+            { own: [afterRegions[1]!], context: [] },
         ];
         const droppedSides = new Set<EvidenceSide>();
         expect(
@@ -419,11 +471,13 @@ describe('merge rule', () => {
                 kind: 'added',
                 rule,
                 passes,
+                unitOwn: afterRegions,
+                unitContext: [],
                 ownDroppedSides: droppedSides,
                 contextDroppedSides: droppedSides,
             })
         ).toBe(0);
-        // A pass without the required side loses to one that has it, whatever the order.
+        // A pass without the required side loses to one that has the whole side, whatever the order.
         expect(
             choosePassIndexForRule({
                 kind: 'added',
@@ -432,6 +486,8 @@ describe('merge rule', () => {
                     { own: [reference('b1', 'before')], context: [] },
                     { own: [reference('a2', 'after')], context: [] },
                 ],
+                unitOwn: [reference('b1', 'before'), reference('a2', 'after')],
+                unitContext: [],
                 ownDroppedSides: droppedSides,
                 contextDroppedSides: droppedSides,
             })
