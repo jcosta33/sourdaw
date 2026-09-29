@@ -92,10 +92,13 @@ export function parseCandidateFindings(value: unknown, label: string): Candidate
             if (startLine === undefined || endLine === undefined) {
                 refuse('unsupported_scope', `${refLabel} must name startLine and endLine`);
             }
-            assertLineRange(startLine, endLine, refLabel);
+            // A non-numeric bound is the caller's malformed scope, so it is refused here rather than
+            // falling through to `assertLineRange`, which files a non-safe-integer under
+            // `context_collection_failed` and would make this `unsupported_scope` message unreachable.
             if (typeof startLine !== 'number' || typeof endLine !== 'number') {
                 refuse('unsupported_scope', `${refLabel} must name a numeric startLine and endLine`);
             }
+            assertLineRange(startLine, endLine, refLabel);
             return { path, side, startLine, endLine };
         });
         if (evidenceReferences.length === 0) {
@@ -115,14 +118,24 @@ export function parseCandidateFindings(value: unknown, label: string): Candidate
             finding.allegedObservedBehavior = record.allegedObservedBehavior;
         }
         if (Array.isArray(record.reproductionReferences)) {
-            finding.reproductionReferences = (record.reproductionReferences as unknown[]).map((entry) => {
-                const ref = entry as Record<string, unknown>;
-                return {
-                    path: typeof ref.path === 'string' ? ref.path : '',
-                    note: typeof ref.note === 'string' ? ref.note : '',
-                    verifiedExecution: ref.verifiedExecution === true,
-                };
-            });
+            finding.reproductionReferences = (record.reproductionReferences as unknown[]).map(
+                (entry, referenceIndex) => {
+                    const refLabel = `${at}.reproductionReferences[${String(referenceIndex)}]`;
+                    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+                        refuse('unsupported_scope', `${refLabel} must be an object`);
+                    }
+                    const ref = entry as Record<string, unknown>;
+                    const path = ref.path;
+                    if (typeof path !== 'string' || path.trim() === '') {
+                        refuse('unsupported_scope', `${refLabel}.path must be a non-empty string`);
+                    }
+                    return {
+                        path,
+                        note: typeof ref.note === 'string' ? ref.note : '',
+                        verifiedExecution: ref.verifiedExecution === true,
+                    };
+                }
+            );
         }
         if (typeof record.claimedImpactCategory === 'string') {
             finding.claimedImpactCategory = record.claimedImpactCategory;

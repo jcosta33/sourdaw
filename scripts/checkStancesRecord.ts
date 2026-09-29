@@ -43,9 +43,14 @@ import { fileURLToPath } from 'node:url';
 
 import { fail } from './prContract.ts';
 import { parseReviewStancesRecord } from './reviewDossierPublication.ts';
+import { TYPESAFE_MODEL } from './semanticReview/provider.ts';
 
 export const TYPESAFE_STANCES_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
-export const TYPESAFE_STANCES_MODEL = 'jev-latest';
+/**
+ * The scan provider's versioned model pin, not a moving alias: aliasing the scan's own constant means
+ * this checker follows a pin bump there instead of drifting from it while its literal is never checked.
+ */
+export const TYPESAFE_STANCES_MODEL = TYPESAFE_MODEL;
 export const TYPESAFE_API_KEY_ENV = 'TYPESAFE_API_KEY';
 export const DEFAULT_STANCES_THRESHOLD = 0.5;
 
@@ -331,6 +336,9 @@ async function requestStancesVerdicts(body: StancesCheckBody, apiKey: string): P
 export function readStancesCheckAnswers(payload: unknown): unknown {
     if (!isRecord(payload) || !isRecord(payload.answers)) {
         fail(`TypeSafe response must carry an answers object, found ${describeValue(payload)}`);
+    }
+    if (payload.model !== TYPESAFE_STANCES_MODEL) {
+        fail(`TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found ${describeValue(payload.model)}`);
     }
     return payload.answers;
 }
