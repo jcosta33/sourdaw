@@ -750,7 +750,7 @@ describe('signal identity at publication', () => {
         );
     });
 
-    it('disposes a shorter path from a whole citation that ends the text or the clause', () => {
+    it('disposes a shorter path from a citation that ends the text', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
                 dossierWith('limitation-only', {
@@ -762,6 +762,66 @@ describe('signal identity at publication', () => {
         ).toThrow(
             /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\/extra\)/u
         );
+    });
+
+    it('disposes a shorter path from a citation that ends a clause', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(SHORTER)}, and the round checked nothing further`,
+                    ],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\/extra\)/u
+        );
+    });
+
+    it('disposes a period-terminated citation of the signal it names', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(SHORTER)}. The round checked nothing further.`,
+                    ],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\/extra\)/u
+        );
+    });
+
+    it('disposes a period-terminated citation from a discarded finding and a stance admission', () => {
+        const limitationOnly = dossierWith('limitation-only', {
+            limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
+        });
+
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the fired rule is disposed of in a discarded finding',
+                    discarded: [
+                        {
+                            finding: `${firedSignalCitationToken(SHORTER)}.`,
+                            stance: 'correctness',
+                            reason: 'the flagged path is the deliberate escape',
+                        },
+                    ],
+                }),
+                coverageWith([SHORTER]),
+                EXPECTED
+            )
+        ).not.toThrow();
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(limitationOnly, coverageWith([SHORTER]), EXPECTED, [
+                `the stance probed ${firedSignalCitationToken(SHORTER)}.`,
+            ])
+        ).not.toThrow();
     });
 
     it('refuses an entry for a pair the record did not fire when two pairs join to one citation token', () => {

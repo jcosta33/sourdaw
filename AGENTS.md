@@ -216,8 +216,9 @@ carrying the same evidence-value safety rules as every other recorded value. A t
 of the signal it names whatever disposition it records, and the literal token keeps working, so a
 round is never forced to agree with the model or to write prose to dismiss a false alarm. Entries match
 a fired signal by its exact `ruleId` and `path` pair, never by their space-joined citation text, and a
-free-text citation disposes only as a whole citation — a token that merely prefixes a longer path's
-citation names that longer signal. Validation
+free-text citation disposes wherever it names that signal — prose after it, punctuation included,
+never blocks it — unless another fired signal's longer citation continues at that same position, where
+the token names that longer signal instead. Validation
 is structural only: an unknown disposition token, an entry naming a signal the delivered assessment
 did not fire, two entries for one signal, or any entry when the record delivered nothing
 (`no-assessment`) is refused, and no disposition requires a posted comment or an issue — a

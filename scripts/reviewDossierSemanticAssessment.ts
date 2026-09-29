@@ -45,9 +45,10 @@
  * distinct. Two checks are coverage-relative, because only the delivered record knows what fired: an
  * entry naming a signal the assessment did not fire is refused, and a record that delivered nothing
  * (`no-assessment`) refuses any entry at all — the round cannot record outcomes for signals that were
- * never delivered. The free-text citation token is likewise whole-citation only: it disposes of a
- * signal when it ends the text or is followed by a character no repository path continues with, so a
- * token that is merely the prefix of a longer path's citation names that longer signal instead.
+ * never delivered. The free-text citation token disposes of its signal wherever the text carries that
+ * citation, whatever prose follows it — a period, a comma, or a semicolon never blocks it — and only
+ * another fired signal's longer citation continuing at that same position displaces it, so a token
+ * that is merely the prefix of a longer fired path's citation names that longer signal instead.
  */
 
 import { fail } from './prContract.ts';
@@ -253,19 +254,31 @@ function firedSignalIdentity(signal: { readonly ruleId: string; readonly path: s
 }
 
 /**
- * The characters that can continue a repository path. A citation followed by one of them belongs to a
- * longer path — the token `semantic-signal rule src/a.ts` sits inside `semantic-signal rule
- * src/a.ts/extra` — and so names a different signal. Only a citation that ends the text or is
- * followed by any other character (whitespace, punctuation, a closing quote) is a whole citation.
+ * Whether another fired signal's longer citation continues `token` at `index`, which makes that
+ * occurrence the longer signal's rather than this one's. Exactness is decided against the delivered
+ * record's own fired set, never against a character class: a path continues with a letter or a dot
+ * just as a sentence continues with a period, so a class that refuses a dot blocks the ordinary
+ * sentence-final citation. Only a longer citation the record actually fired, continuing at that
+ * exact position, displaces the shorter signal's own token.
  */
-const PATH_CONTINUATION = /^[A-Za-z0-9._~+/@-]$/u;
+function extendsAnotherFiredSignal(
+    text: string,
+    index: number,
+    token: string,
+    firedTokens: readonly string[]
+): boolean {
+    return firedTokens.some((other) => other !== token && other.startsWith(token) && text.startsWith(other, index));
+}
 
-/** Whether `text` carries `token` as a whole citation, never as the prefix of a longer path's. */
-function citesWholeCitation(text: string, token: string): boolean {
+/**
+ * Whether `text` carries `token` as a citation of this signal: an occurrence counts when no other
+ * fired signal's longer citation continues at its position, and every other character after it —
+ * a period, a semicolon, a comma, whitespace, the end of the text — is prose the round wrote.
+ */
+function citesFiredSignal(text: string, token: string, firedTokens: readonly string[]): boolean {
     let index = text.indexOf(token);
     while (index !== -1) {
-        const following = text[index + token.length];
-        if (following === undefined || !PATH_CONTINUATION.test(following)) {
+        if (!extendsAnotherFiredSignal(text, index, token, firedTokens)) {
             return true;
         }
         index = text.indexOf(token, index + 1);
@@ -347,11 +360,12 @@ function assertFiredSignalsDisposed(
         return;
     }
     const citations = firedSignalCitations(dossier, stanceAdmissions);
+    const firedTokens = coverage.firedSignals.map((signal) => firedSignalCitationToken(signal));
     const recorded = new Set((dossier.signalDispositions ?? []).map((entry) => firedSignalIdentity(entry)));
     const undisposed = coverage.firedSignals.filter(
         (signal) =>
             !recorded.has(firedSignalIdentity(signal)) &&
-            !citations.some((text) => citesWholeCitation(text, firedSignalCitationToken(signal)))
+            !citations.some((text) => citesFiredSignal(text, firedSignalCitationToken(signal), firedTokens))
     );
     if (undisposed.length === 0) {
         return;
