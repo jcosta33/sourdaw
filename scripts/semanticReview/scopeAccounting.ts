@@ -152,22 +152,43 @@ const SCOPE_STATE_NAMES = [
 ] as const satisfies readonly (keyof SemanticScopeStates)[];
 
 /**
- * Holds the excluded and unassessed lists to one record per path. A path is planned once, excluded once,
- * and omitted once, so a repeated record is malformed on its own — and each list hides a contradiction
- * from a reader that takes one record per path: two reasons that disagree about whether an assessment
- * was owed, or two classes for the same omission. The scope's arithmetic cannot see either duplicate:
- * the omitted one moves `assessed` and `eligible` together and still balances, and the excluded one is
- * balanced by raising `discovered`, which the report publishes no independent path list to refute. The
- * collector keeps its own exclusions to one entry per path by the same rule. `truncated` is left alone:
- * it legitimately carries one record per withheld region, so a path repeats there for a reason.
+ * The scope's record invariant, stated once: a path is excluded once, omitted once, and never both.
+ *
+ * A path is planned once, so its record is one entry in one list. A repeat inside a list is malformed on
+ * its own and hides a contradiction from a reader that takes one record per path — two reasons that
+ * disagree about whether an assessment was owed, or two classes for the same omission. A path in both
+ * lists is worse: the exclusion says nothing was owed while the omission says an assessment was owed and
+ * missed, so the four omission states stop being mutually exclusive and a path-keyed consumer reads both
+ * for one path.
+ *
+ * Neither defect is visible to the scope arithmetic: the omitted duplicate moves `assessed` and
+ * `eligible` together, the excluded one is balanced by raising `discovered`, and a cross-list entry is
+ * balanced by raising `eligible` with it. Both are refused here, before the totals are compared and
+ * whatever the planned order carries — a report written before that field existed publishes no order for
+ * the order and ledger checks to read, and the invariant has to hold for it too. The collector keeps its
+ * own exclusions to one entry per path by the same rule.
+ *
+ * `truncated` is deliberately outside this invariant: it records regions rather than units, so a path
+ * repeats there for every withheld region, and a withheld path is legitimately both excluded and
+ * truncated. Paths are compared as exact strings — the collector publishes git-canonical paths, so two
+ * spellings of one path are not a shape a report can produce — and canonicalisation is out of scope.
  */
-export function assertOneRecordPerPath(
+export function assertEachPathRecordedOnce(
     excluded: readonly SemanticScopeExclusion[],
     unassessed: readonly SemanticScopeExclusion[],
     label: string
 ): void {
     assertDistinctPaths(excluded, 'excluded', label);
     assertDistinctPaths(unassessed, 'unassessed', label);
+    const excludedPaths = new Set(excluded.map((entry) => entry.path));
+    for (const entry of unassessed) {
+        if (excludedPaths.has(entry.path)) {
+            refuse(
+                'invalid_response',
+                `${label} records ${entry.path} as excluded and as unassessed; a path is either owed nothing or planned and omitted, never both`
+            );
+        }
+    }
 }
 
 function assertDistinctPaths(entries: readonly SemanticScopeExclusion[], list: string, label: string): void {

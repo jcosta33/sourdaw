@@ -946,6 +946,34 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         ).toThrow(/records crates\/daw-dsp\/src\/big\.rs as unassessed more than once/);
     });
 
+    it('refuses a path recorded as excluded and as unassessed in the same report', async () => {
+        // The exclusion says nothing was owed while the omission says an assessment was owed and missed, so
+        // the four omission states stop being mutually exclusive and a path-keyed consumer reads both for
+        // one path. The forged report carries no planned order — the shape the validator keeps accepting for
+        // historical bundles — so the order and ledger checks never run, and the scope arithmetic is kept
+        // balanced by raising `eligible` with the added omission. Only the record invariant refutes it.
+        const report = await scannedFourStates();
+        const states = report.scope.states;
+        if (states === undefined) {
+            throw new Error('the run published no totals, so the case would assert nothing');
+        }
+        const orderless = { ...report, scope: { ...report.scope, requestOrder: undefined } };
+        // The orderless shape is legitimate on its own: a stored report written before the field existed.
+        expect(() => validateReport(orderless)).not.toThrow();
+        expect(() =>
+            validateReport({
+                ...orderless,
+                scope: {
+                    ...orderless.scope,
+                    discovered: orderless.scope.discovered + 1,
+                    eligible: orderless.scope.eligible + 1,
+                    unassessed: [...orderless.scope.unassessed, { path: EXCLUDED_PATH, reason: 'budget_exhausted' }],
+                    states: { ...states, omittedForBudgetOrDeadline: states.omittedForBudgetOrDeadline + 1 },
+                },
+            })
+        ).toThrow(/records docs\/README\.md as excluded and as unassessed/);
+    });
+
     it('refuses a path the scope records as excluded more than once', async () => {
         // One record says nothing was owed and the other says an assessment was owed and missed, and a
         // reader taking one record per path sees only the last. `discovered` and the totals are raised with
