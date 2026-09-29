@@ -21,7 +21,6 @@ import {
 import {
     countBy,
     emptyNotAskedReasons,
-    emptyScopeStates,
     mergeCounts,
     sortedCounts,
     type EvidenceCompleteness,
@@ -433,7 +432,9 @@ export function aggregateEvaluationFixture(input: {
         },
         outcomeAccounting: {
             publishedStates: null,
-            derivedFromEntries: emptyScopeStates(),
+            // A fixture outcome records what was asked and what came back; it carries no scope ledger,
+            // so this is null rather than a ledger of zeros.
+            derivedFromEntries: null,
             unassessedReasons: {},
             excludedReasons: {},
         },
@@ -457,7 +458,36 @@ export function emptyRecordExtras(): RecordExtras {
     return { notAskedByRule: {}, signalsByRule: {}, limitationsByText: {} };
 }
 
-/** Folds one report's rule and limitation vocabularies into the set-wide ones. */
+/**
+ * Folds one evaluation fixture's rule and limitation vocabularies into the set-wide ones.
+ *
+ * A fixture reaches the across-run totals as a run of its own, so its rules and texts must reach the
+ * set-wide vocabularies too: the fixture outcome carries the same facts in its own fields, and leaving
+ * them out publishes a run whose signals count but whose rules are recorded nowhere.
+ */
+export function addFixtureExtras(extras: RecordExtras, fixture: EvaluationFixtureOutcome): RecordExtras {
+    return {
+        notAskedByRule: mergeCounts(
+            extras.notAskedByRule,
+            countBy(fixture.rulesNotAsked, (entry) => entry.ruleId)
+        ),
+        signalsByRule: mergeCounts(
+            extras.signalsByRule,
+            countBy(fixture.outcomes, (outcome) => outcome.ruleId)
+        ),
+        limitationsByText: mergeCounts(
+            extras.limitationsByText,
+            countBy([...new Set(fixture.limitations)], (text) => text)
+        ),
+    };
+}
+
+/**
+ * Folds one report's rule and limitation vocabularies into the set-wide ones.
+ *
+ * A limitation text is counted once per run however often that run repeated it, so the published count
+ * is the number of runs that recorded the text rather than the number of times it appears.
+ */
 export function addReportExtras(extras: RecordExtras, report: SemanticReport): RecordExtras {
     if (!isScanReport(report)) {
         return {

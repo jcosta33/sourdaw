@@ -104,11 +104,33 @@ function repeatedWarnings(runs: readonly MeasurementRun[]): RepeatedWarning[] {
     return repeated.sort((left, right) => left.prNumber - right.prNumber || left.path.localeCompare(right.path));
 }
 
+/**
+ * One round per (pull request, head), however many artifacts name it.
+ *
+ * The normal flow stores a scan and a verification sidecar under one head, so both runs match the same
+ * dossier; summing each run's rounds would count that head's draws and findings twice. The identity is
+ * the pair the dossier binds, not the path it happens to sit at.
+ */
+function distinctRounds(runs: readonly MeasurementRun[]): ReviewRoundSummary[] {
+    const byHead = new Map<string, ReviewRoundSummary>();
+    for (const run of runs) {
+        for (const round of run.reviewRounds) {
+            const key = `${String(round.pr)}\u0000${round.headSha}`;
+            const seen = byHead.get(key);
+            if (seen === undefined || round.path.localeCompare(seen.path) < 0) {
+                byHead.set(key, round);
+            }
+        }
+    }
+    return [...byHead.values()];
+}
+
 function sumDossiers(runs: readonly MeasurementRun[]): AcrossRuns['reviewRounds'] {
-    const dossiers = runs.flatMap((run) => run.reviewRounds);
+    const dossiers = distinctRounds(runs);
     const total = (pick: (round: ReviewRoundSummary) => number): number =>
         dossiers.reduce((sum, round) => sum + pick(round), 0);
     return {
+        heads: dossiers.length,
         dossiers: dossiers.length,
         stanceDraws: total((round) => round.stanceDraws),
         findingsAccepted: total((round) => round.findingsAccepted),
@@ -227,21 +249,33 @@ function sumEvidence(runs: readonly MeasurementRun[]): EvidenceTotals {
 }
 
 function sumOutcomes(runs: readonly MeasurementRun[]): {
-    derived: SemanticScopeStates;
-    published: SemanticScopeStates;
+    derived: SemanticScopeStates | null;
+    derivedRuns: number;
+    published: SemanticScopeStates | null;
     publishedRuns: number;
 } {
     const derived = emptyScopeStates();
     const published = emptyScopeStates();
+    let derivedRuns = 0;
     let publishedRuns = 0;
     for (const run of runs) {
-        addStates(derived, run.outcomeAccounting.derivedFromEntries);
+        // Null is an artifact that cannot report the ledger, never a ledger of zeros; the counts below
+        // are what keeps an absent ledger from reading as a run that omitted nothing.
+        if (run.outcomeAccounting.derivedFromEntries !== null) {
+            addStates(derived, run.outcomeAccounting.derivedFromEntries);
+            derivedRuns += 1;
+        }
         if (run.outcomeAccounting.publishedStates !== null) {
             addStates(published, run.outcomeAccounting.publishedStates);
             publishedRuns += 1;
         }
     }
-    return { derived, published, publishedRuns };
+    return {
+        derived: derivedRuns === 0 ? null : derived,
+        derivedRuns,
+        published: publishedRuns === 0 ? null : published,
+        publishedRuns,
+    };
 }
 
 function sumWallClock(runs: readonly MeasurementRun[]): { wallClockMs: number; wallClockRuns: number } {
@@ -277,10 +311,16 @@ function acrossRuns(runs: readonly MeasurementRun[], extras: RecordExtras): Acro
     return {
         runCount: runs.length,
         runCountByKind: countBy(runs, (run) => run.artifact.kind),
+        executionStates: countBy(runs, (run) => run.execution),
+        failureCodes: countBy(
+            runs.filter((run) => run.failureCode !== null),
+            (run) => run.failureCode ?? undefined
+        ),
         usage: sumUsage(runs),
         wallClockMs: wallClock.wallClockMs,
         wallClockRuns: wallClock.wallClockRuns,
         derivedOutcomeStates: outcomes.derived,
+        derivedOutcomeRuns: outcomes.derivedRuns,
         publishedOutcomeStates: outcomes.published,
         publishedOutcomeRuns: outcomes.publishedRuns,
         ruleCoverage: {
@@ -411,6 +451,20 @@ function gapFigures(runs: readonly MeasurementRun[], detail: MeasurementDetail):
             reason: `${String(noPr)} run(s) name no pull request, so a signal repeated across their heads cannot be attributed to one pull request`,
         });
     }
+    const withoutLedger = runs.filter((run) => run.outcomeAccounting.derivedFromEntries === null).length;
+    if (withoutLedger > 0) {
+        figures.push({
+            figure: gapFigure(detail, 'runs[].outcomeAccounting.derivedFromEntries', 'acrossRuns.derivedOutcomeStates'),
+            reason: `${String(withoutLedger)} artifact(s) carry no scope ledger — an evaluation outcome reports what a fixture asked and what came back, not which units were omitted — so the omission totals here are over the runs that do, and acrossRuns.derivedOutcomeRuns names how many those are`,
+        });
+    }
+    const withoutContext = runs.filter((run) => run.context.repository === null).length;
+    if (withoutContext > 0) {
+        figures.push({
+            figure: gapFigure(detail, 'runs[].context', 'acrossRuns.runCountByKind'),
+            reason: `${String(withoutContext)} evaluation fixture(s) carry no revision context: the outcome file records the rules a fixture asked about, not the repository or head it was run over`,
+        });
+    }
     const withoutDossier = runs.reduce((sum, run) => sum + (run.signalOutcome?.firedSignalsWithoutDossier ?? 0), 0);
     if (withoutDossier > 0) {
         figures.push({
@@ -452,19 +506,25 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
     'runs[].wallClock': "the stored report's own #startedAt and #completedAt, stated as the run's own span",
     'runs[].usage': "the stored report's own #usage block plus #scope.cacheHits",
     'runs[].ruleCoverage':
-        'scan.json #signals[].{path,ruleId,missingEvidence}, #scope.requestOrder[].ruleIds, and #scope.unassessed[].reason; not computable for a verification run, which assesses findings rather than rule applicability',
+        "scan.json #signals[].{path,ruleId,missingEvidence}, #scope.requestOrder[].ruleIds, and #scope.unassessed[].reason; an evaluation outcome's #rulesAsked and #rulesNotAsked[].missingEvidence; not computable for a verification run, which assesses findings rather than rule applicability",
     'runs[].evidenceCompleteness':
         'scan.json #signals[].missingEvidence and #scope.truncated[].reason; verification.json #findingAssessments[].disposition; an evaluation outcome has no truncation ledger',
     'runs[].outcomeAccounting':
-        'scan.json #scope.states as published, and #scope.{excluded,unassessed} re-derived here by the same function the report validator holds the published block to',
+        'scan.json #scope.states as published, and #scope.{excluded,unassessed} re-derived here by the same function the report validator holds the published block to; both null for an artifact that carries no scope ledger, which is named in notComputable rather than shown as zeros',
     'runs[].signalOutcome':
-        'scan.json #signals[].disposition, and .agents/review-bundles/<pr>-<head>/dossier.json #signalDispositions or a literal semantic-signal token',
+        "scan.json #signals[].disposition or an evaluation outcome's #outcomes[].disposition, and .agents/review-bundles/<pr>-<head>/dossier.json #signalDispositions or a literal semantic-signal token",
     'runs[].findingOutcome': 'verification.json #findingAssessments[].{disposition,escalate}',
     'runs[].reviewRounds':
         '.agents/review-bundles/<pr>-<head>/dossier.json #events, #recommendation, #assessmentImpact',
     'runs[].labelledExpectationHeld':
         "the evaluation runner's own #expectedConcernHeld per fixture: a count of labelled expectations that held, over the rules under test, never an accuracy figure",
-    acrossRuns: 'the sum of the same figure over every run whose artifact carried it',
+    acrossRuns:
+        'the sum of the same figure over every run whose artifact carried it; a figure no artifact carried is null and is named in notComputable, and the runs that did carry it are counted beside it',
+    'acrossRuns.executionStates':
+        "each run artifact's own #execution, counted: a partial, unavailable, cancelled or skipped run is named here rather than reading as completed",
+    'acrossRuns.failureCodes': "each run artifact's own #failureCode, counted over the runs that carry one",
+    'acrossRuns.reviewRounds':
+        'dossiers deduplicated by (pull request, head) before summing: a head with both a scan and a verification sidecar is one round, and acrossRuns.reviewRounds.heads names how many distinct heads those are',
     'acrossRuns.wallClockMs': "the sum of the runs' own spans, over the runs that recorded one",
     'acrossRuns.repeatedWarnings':
         'the same (ruleId, path) fired on more than one distinct head of one pull request, keyed by repository and pull request number',

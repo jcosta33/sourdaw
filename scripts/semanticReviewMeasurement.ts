@@ -27,6 +27,7 @@ import { parseReviewDossier, type ReviewDossier } from './reviewDossier.ts';
 import { SEMANTIC_SIDECAR_DIRECTORY } from './semanticReview/contracts.ts';
 import { parseReportJson, type SemanticReport, type SemanticUsageReport } from './semanticReview/report.ts';
 import {
+    addFixtureExtras,
     addReportExtras,
     aggregateEvaluationFixture,
     aggregateStoredReport,
@@ -34,12 +35,14 @@ import {
 } from './semanticReviewMeasurement/artifacts.ts';
 import {
     type EvaluationFixtureOutcome,
+    type AcrossRuns,
     type MeasurementDetail,
     type MeasurementMachine,
     type MeasurementRecord,
     type MeasurementRun,
     type MeasurementSources,
     type RecordExtras,
+    type SemanticScopeStates,
     type SkippedArtifact,
     type StoredDossier,
 } from './semanticReviewMeasurement/contracts.ts';
@@ -420,7 +423,11 @@ export function readMeasurementInputs(input: {
     });
     const fixtures = input.evaluationOutcomePath === null ? [] : readEvaluationOutcome(input.evaluationOutcomePath);
     const runs = [...stored.runs];
+    let extras = stored.extras;
     for (const fixture of fixtures) {
+        // A fixture is a run like any other: its rules, texts and signals reach the set-wide
+        // vocabularies through the same fold the stored reports use.
+        extras = addFixtureExtras(extras, fixture);
         runs.push(
             aggregateEvaluationFixture({
                 artifact: {
@@ -435,7 +442,7 @@ export function readMeasurementInputs(input: {
     return {
         runs,
         skippedArtifacts: skipped,
-        extras: stored.extras,
+        extras,
         sources: {
             sidecarRoot: input.sidecarRoot,
             sidecarRootPresent: existsSync(input.sidecarRoot),
@@ -447,6 +454,33 @@ export function readMeasurementInputs(input: {
             evaluationFixturesRead: fixtures.length,
         },
     };
+}
+
+/** A count record as `name n, name n`, so a summary line names each state rather than a total. */
+function describeCounts(counts: Readonly<Record<string, number>>): string {
+    const entries = Object.entries(counts).map(([name, count]) => `${name} ${String(count)}`);
+    if (entries.length === 0) {
+        return 'none recorded';
+    }
+    return entries.join(', ');
+}
+
+/**
+ * The omission totals and where they came from. A record whose artifacts carry no scope ledger says so
+ * instead of printing a row of zeros that reads as a run which omitted nothing.
+ */
+function describeOutcomeStates(across: AcrossRuns): string {
+    if (across.publishedOutcomeRuns > 0 && across.publishedOutcomeStates !== null) {
+        return `outcome states (published by ${String(across.publishedOutcomeRuns)} run(s)): ${describeStates(across.publishedOutcomeStates)}`;
+    }
+    if (across.derivedOutcomeRuns > 0 && across.derivedOutcomeStates !== null) {
+        return `outcome states (derived from ${String(across.derivedOutcomeRuns)} run(s)): ${describeStates(across.derivedOutcomeStates)}`;
+    }
+    return 'outcome states: no artifact read carries a scope ledger';
+}
+
+function describeStates(states: SemanticScopeStates): string {
+    return `notApplicable ${String(states.notApplicable)}, excludedWithAssessmentOwed ${String(states.excludedWithAssessmentOwed)}, missingRequiredEvidence ${String(states.missingRequiredEvidence)}, omittedForBudgetOrDeadline ${String(states.omittedForBudgetOrDeadline)}, providerFailure ${String(states.providerFailure)}, dryRun ${String(states.dryRun)}`;
 }
 
 function mebibytes(bytes: number): string {
@@ -465,7 +499,6 @@ function mebibytes(bytes: number): string {
  */
 export function renderMeasurementSummary(record: MeasurementRecord): string {
     const { acrossRuns: across, sources } = record;
-    const states = across.publishedOutcomeRuns > 0 ? across.publishedOutcomeStates : across.derivedOutcomeStates;
     const wallClockSeconds = (across.wallClockMs / 1000).toFixed(1);
     const lines = [
         `semantic review measurement — ${record.format} — ${record.measuredAt}`,
@@ -479,13 +512,15 @@ export function renderMeasurementSummary(record: MeasurementRecord): string {
             .map(([reason, count]) => `${reason} ${String(count)}`)
             .join(', ')})`,
         `evidence: ${String(across.evidence.unitsMissingRequiredEvidence)} unit(s) missing required evidence, ${String(across.evidence.truncatedRegions)} truncated region(s) over ${String(across.evidence.truncatedPaths)} path(s)`,
-        `outcome states: notApplicable ${String(states.notApplicable)}, excludedWithAssessmentOwed ${String(states.excludedWithAssessmentOwed)}, missingRequiredEvidence ${String(states.missingRequiredEvidence)}, omittedForBudgetOrDeadline ${String(states.omittedForBudgetOrDeadline)}, providerFailure ${String(states.providerFailure)}, dryRun ${String(states.dryRun)}`,
+        describeOutcomeStates(across),
+        `execution states: ${describeCounts(across.executionStates)}`,
+        `failure codes: ${describeCounts(across.failureCodes)}`,
         `usage: ${String(across.usage.networkAttempts)} network attempt(s), ${mebibytes(across.usage.submittedBytes)} submitted, ${String(across.usage.actualInputTokens)} input token(s), ~$${across.usage.estimatedCostUsd.toFixed(4)}, ${String(across.usage.cacheHits)} cache hit(s)`,
         `wall clock: ${wallClockSeconds} s over ${String(across.wallClockRuns)} run(s), from their own startedAt/completedAt`,
         `signals: ${String(across.signals.total)} (${Object.entries(across.signals.byDisposition)
             .map(([disposition, count]) => `${disposition} ${String(count)}`)
             .join(', ')})`,
-        `review rounds: ${String(across.reviewRounds.dossiers)} dossier(s), ${String(across.reviewRounds.stanceDraws)} draw(s), ${String(across.reviewRounds.findingsAccepted)} finding(s) accepted, ${String(across.reviewRounds.findingsDiscarded)} discarded`,
+        `review rounds: ${String(across.reviewRounds.heads)} head(s) with a dossier, ${String(across.reviewRounds.stanceDraws)} draw(s), ${String(across.reviewRounds.findingsAccepted)} finding(s) accepted, ${String(across.reviewRounds.findingsDiscarded)} discarded`,
         `dispositions: ${String(across.signalDispositions.recorded)} recorded, ${String(across.signalDispositions.dismissedFiredSignals)} fired signal(s) dismissed, ${String(across.signalDispositions.undismissedFiredSignals)} undismissed on heads with a dossier, ${String(across.signalDispositions.withoutDossier)} on heads with none`,
         `repeated warnings: ${String(across.repeatedWarnings.length)} (ruleId, path) pair(s) flagged on more than one head of one pull request`,
     ];

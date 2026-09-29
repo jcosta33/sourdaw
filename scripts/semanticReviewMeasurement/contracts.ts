@@ -78,7 +78,12 @@ export type EvidenceCompleteness = {
  */
 export type OutcomeAccounting = {
     readonly publishedStates: SemanticScopeStates | null;
-    readonly derivedFromEntries: SemanticScopeStates;
+    /**
+     * Null when the artifact carries no scope ledger at all — an evaluation outcome reports answers,
+     * not which units were omitted. Null is not a state of zero: a zero would read as a run that
+     * omitted nothing.
+     */
+    readonly derivedFromEntries: SemanticScopeStates | null;
     readonly unassessedReasons: Readonly<Record<string, number>>;
     readonly excludedReasons: Readonly<Record<string, number>>;
 };
@@ -275,12 +280,19 @@ export type RepeatedWarning = {
 export type AcrossRuns = {
     readonly runCount: number;
     readonly runCountByKind: Readonly<Record<string, number>>;
+    /** How many runs ended in each execution state, so a partial run never reads as a completed one. */
+    readonly executionStates: Readonly<Record<string, number>>;
+    /** How many runs carry each failure code; empty when no run recorded one. */
+    readonly failureCodes: Readonly<Record<string, number>>;
     readonly usage: RunUsage;
     /** The sum of the runs' own spans, over the runs that recorded one. */
     readonly wallClockMs: number;
     readonly wallClockRuns: number;
-    readonly derivedOutcomeStates: SemanticScopeStates;
-    readonly publishedOutcomeStates: SemanticScopeStates;
+    /** Null when no artifact read carries a scope ledger; `derivedOutcomeRuns` says how many do. */
+    readonly derivedOutcomeStates: SemanticScopeStates | null;
+    readonly derivedOutcomeRuns: number;
+    /** Null when no artifact read publishes omission totals; `publishedOutcomeRuns` says how many do. */
+    readonly publishedOutcomeStates: SemanticScopeStates | null;
     readonly publishedOutcomeRuns: number;
     readonly ruleCoverage: {
         readonly applicableRules: number;
@@ -319,6 +331,8 @@ export type AcrossRuns = {
         readonly withoutDossier: number;
     };
     readonly reviewRounds: {
+        /** Distinct (pull request, head) pairs with a stored dossier, so one head counts one round. */
+        readonly heads: number;
         readonly dossiers: number;
         readonly stanceDraws: number;
         readonly findingsAccepted: number;

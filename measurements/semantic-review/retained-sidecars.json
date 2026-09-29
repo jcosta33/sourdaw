@@ -1,9 +1,9 @@
 {
     "format": "semantic-review-measurement-v1",
     "schemaVersion": 1,
-    "measuredAt": "2026-09-29T20:41:54.397Z",
+    "measuredAt": "2026-09-29T21:01:30.165Z",
     "machine": {
-        "checkoutGitSha": "f699e8459b06da3914a10e040a66eb6f83e1b4a0",
+        "checkoutGitSha": "a3476d823930e563e0d0ab48489d8e9d6cf2755f",
         "workingTree": "dirty",
         "host": {
             "platform": "darwin",
@@ -11,11 +11,14 @@
             "arch": "arm64",
             "cores": 12
         },
-        "loadAverage1m": 6.85
+        "loadAverage1m": 6.83
     },
     "advisory": "This record measures what the advisory semantic review cost and what its artifacts returned. A returned probability is a model answer, never an accuracy figure; a question no request asked is counted as not asked, never as a correct negative.",
     "fieldSources": {
-        "acrossRuns": "the sum of the same figure over every run whose artifact carried it",
+        "acrossRuns": "the sum of the same figure over every run whose artifact carried it; a figure no artifact carried is null and is named in notComputable, and the runs that did carry it are counted beside it",
+        "acrossRuns.executionStates": "each run artifact's own #execution, counted: a partial, unavailable, cancelled or skipped run is named here rather than reading as completed",
+        "acrossRuns.failureCodes": "each run artifact's own #failureCode, counted over the runs that carry one",
+        "acrossRuns.reviewRounds": "dossiers deduplicated by (pull request, head) before summing: a head with both a scan and a verification sidecar is one round, and acrossRuns.reviewRounds.heads names how many distinct heads those are",
         "acrossRuns.wallClockMs": "the sum of the runs' own spans, over the runs that recorded one",
         "acrossRuns.repeatedWarnings": "the same (ruleId, path) fired on more than one distinct head of one pull request, keyed by repository and pull request number",
         "acrossRuns.evidence.limitationsByText": "each run artifact's own #limitations, one entry per distinct text with the number of runs that recorded it",
@@ -32,7 +35,7 @@
         "reviewBundleRootPresent": true,
         "evaluationOutcomePath": null,
         "storedRunsRead": 108,
-        "dossiersRead": 445,
+        "dossiersRead": 447,
         "evaluationFixturesRead": 0,
         "detail": "aggregate",
         "note": "retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact"
@@ -43,6 +46,15 @@
         "runCountByKind": {
             "scan": 67,
             "verification": 41
+        },
+        "executionStates": {
+            "completed": 42,
+            "partial": 57,
+            "unavailable": 9
+        },
+        "failureCodes": {
+            "budget_exhausted": 18,
+            "invalid_response": 1
         },
         "usage": {
             "networkAttempts": 856,
@@ -66,14 +78,8 @@
             "providerFailure": 2,
             "dryRun": 0
         },
-        "publishedOutcomeStates": {
-            "notApplicable": 0,
-            "excludedWithAssessmentOwed": 0,
-            "missingRequiredEvidence": 0,
-            "omittedForBudgetOrDeadline": 0,
-            "providerFailure": 0,
-            "dryRun": 0
-        },
+        "derivedOutcomeRuns": 108,
+        "publishedOutcomeStates": null,
         "publishedOutcomeRuns": 0,
         "ruleCoverage": {
             "applicableRules": 9039,
@@ -522,11 +528,12 @@
             "withoutDossier": 2
         },
         "reviewRounds": {
-            "dossiers": 102,
-            "stanceDraws": 315,
-            "findingsAccepted": 243,
-            "findingsDiscarded": 147,
-            "reviewsPublished": 102
+            "heads": 61,
+            "dossiers": 61,
+            "stanceDraws": 198,
+            "findingsAccepted": 148,
+            "findingsDiscarded": 90,
+            "reviewsPublished": 61
         },
         "labelledExpectations": null,
         "repeatedWarnings": [

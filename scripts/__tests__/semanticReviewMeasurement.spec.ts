@@ -25,7 +25,7 @@ import {
 } from '../semanticReview/contracts.ts';
 import { parseReportJson } from '../semanticReview/report.ts';
 import { buildScopeStates, type SemanticScopeStates } from '../semanticReview/scopeAccounting.ts';
-import { measureCheckout, parseCommandLine } from '../semanticReviewMeasurement.ts';
+import { measureCheckout, parseCommandLine, renderMeasurementSummary } from '../semanticReviewMeasurement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 import type {
@@ -78,6 +78,9 @@ type ScanFixtureInput = {
     readonly cacheHits?: number;
     readonly startedAt?: string;
     readonly completedAt?: string;
+    /** Forcing the state is how a case pins an unavailable or cancelled run the fixture cannot derive. */
+    readonly execution?: string;
+    readonly failureCode?: string;
 };
 
 function revisionInputs(prNumber: number | undefined, headSha: string): SemanticRevisionInputs {
@@ -161,7 +164,7 @@ function scanFixture(input: ScanFixtureInput): unknown {
             ruleIds: [...entry.ruleIds],
         }));
     }
-    return {
+    const report: Record<string, unknown> = {
         schemaVersion: SEMANTIC_REPORT_FORMAT,
         mode: 'scan',
         runId: `run-${input.headSha.slice(0, 8)}`,
@@ -176,7 +179,7 @@ function scanFixture(input: ScanFixtureInput): unknown {
         completedAt: input.completedAt ?? '2026-09-20T10:00:05.000Z',
         // Truncated evidence or an omission means the scope was not fully assessed, which `completed`
         // cannot claim; the fixture derives the state the way the run's own decision does.
-        execution: truncated.length > 0 || unassessed.length > 0 ? 'partial' : 'completed',
+        execution: input.execution ?? (truncated.length > 0 || unassessed.length > 0 ? 'partial' : 'completed'),
         scope,
         limitations: listOf(input.limitations),
         usage: {
@@ -192,6 +195,128 @@ function scanFixture(input: ScanFixtureInput): unknown {
         },
         publication: { state: 'not_requested' },
         signals: input.signals.map(signalRecord),
+    };
+    if (input.failureCode !== undefined) {
+        report.failureCode = input.failureCode;
+    }
+    return report;
+}
+
+/** A verification report the shipped validator admits, for a head a scan and a verify both cover. */
+function verificationFixture(headSha: string, prNumber?: number): unknown {
+    return {
+        schemaVersion: SEMANTIC_REPORT_FORMAT,
+        mode: 'verify',
+        runId: `verify-${headSha.slice(0, 8)}`,
+        context: contextFor(prNumber, headSha),
+        requestedModel: 'jev-1.13.0',
+        returnedModels: ['jev-1.13.0'],
+        sdkVersion: 'typesafe-sdk-1',
+        rulesDigest: 'a'.repeat(64),
+        policyDigest: '9'.repeat(64),
+        policyVersion: 'semantic-policy-v1',
+        startedAt: '2026-09-20T10:00:00.000Z',
+        completedAt: '2026-09-20T10:00:02.000Z',
+        execution: 'completed',
+        scope: {
+            discovered: 1,
+            eligible: 1,
+            assessed: 1,
+            cacheHits: 0,
+            excluded: [],
+            unassessed: [],
+            truncated: [],
+        },
+        limitations: [],
+        usage: {
+            networkAttempts: 1,
+            logicalRequests: 1,
+            retries: 0,
+            submittedBytes: 512,
+            actualInputTokens: 128,
+            estimatedInputTokens: 100,
+            attemptsWithUnknownUsage: 0,
+            estimatedCostUsd: 0.0001,
+            pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
+        },
+        publication: { state: 'not_requested' },
+        findingAssessments: [
+            {
+                findingId: 'F1',
+                support: {
+                    outcome: 'supported',
+                    probabilities: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                    confidence: 0.9,
+                },
+                attribution: {
+                    outcome: 'introduced_by_change',
+                    probabilities: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                    confidence: 0.9,
+                },
+                kind: {
+                    outcome: 'behavioral_or_contract_issue',
+                    probabilities: {
+                        behavioral_or_contract_issue: 0.9,
+                        style_preference: 0.05,
+                        undetermined: 0.05,
+                    },
+                    confidence: 0.9,
+                },
+                disposition: 'ready_for_orchestrator_validation',
+                escalate: false,
+                strongestEvidenceIds: ['E1'],
+                reasoning: 'fixture',
+            },
+        ],
+    };
+}
+
+/** One evaluation runner result, as the runner writes it, with the fixtures the case needs. */
+function evaluationOutcome(overrides: { readonly limitations?: readonly string[] } = {}): unknown {
+    return {
+        outcomes: [
+            {
+                fixtureId: 'fixture-1',
+                kind: 'revision',
+                path: 'src/a.ts',
+                ruleId: 'assertion_deleted',
+                sourceKind: 'corpus-fixture',
+                execution: 'completed',
+                requestedModel: 'jev-1.13.0',
+                returnedModels: ['jev-1.13.0'],
+                rulesAsked: ['assertion_deleted'],
+                rulesNotAsked: [{ ruleId: 'timing_semantics_changed', missingEvidence: ['scheduling call-site'] }],
+                evidenceSupplied: ['E1'],
+                missingEvidenceByRule: { timing_semantics_changed: ['scheduling call-site'] },
+                outcomes: [
+                    {
+                        ruleId: 'assertion_deleted',
+                        outcome: 'signal',
+                        probability: 0.93,
+                        disposition: 'recommend_investigation',
+                        reasoning: 'fixture',
+                    },
+                ],
+                expectedConcernHeld: true,
+                otherSignals: [],
+                providerRequests: 1,
+                usage: {
+                    networkAttempts: 1,
+                    logicalRequests: 1,
+                    retries: 0,
+                    submittedBytes: 2048,
+                    actualInputTokens: 512,
+                    estimatedInputTokens: 500,
+                    attemptsWithUnknownUsage: 0,
+                    estimatedCostUsd: 0.0004,
+                    pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
+                },
+                limitations: listOf(overrides.limitations),
+            },
+        ],
+        providerRequests: 1,
+        signals: 1,
+        expectationsHeld: 1,
     };
 }
 
@@ -382,76 +507,7 @@ describe('rule coverage', () => {
 
     it('records no rule coverage for a verification run and names the figure not computable', () => {
         const root = checkout();
-        writeSidecar(
-            root,
-            'verif-1',
-            {
-                schemaVersion: SEMANTIC_REPORT_FORMAT,
-                mode: 'verify',
-                runId: 'verify-run',
-                context: contextFor(4801, HEAD_ONE),
-                requestedModel: 'jev-1.13.0',
-                returnedModels: ['jev-1.13.0'],
-                sdkVersion: 'typesafe-sdk-1',
-                rulesDigest: 'a'.repeat(64),
-                policyDigest: '9'.repeat(64),
-                policyVersion: 'semantic-policy-v1',
-                startedAt: '2026-09-20T10:00:00.000Z',
-                completedAt: '2026-09-20T10:00:02.000Z',
-                execution: 'completed',
-                scope: {
-                    discovered: 1,
-                    eligible: 1,
-                    assessed: 1,
-                    cacheHits: 0,
-                    excluded: [],
-                    unassessed: [],
-                    truncated: [],
-                },
-                limitations: [],
-                usage: {
-                    networkAttempts: 1,
-                    logicalRequests: 1,
-                    retries: 0,
-                    submittedBytes: 512,
-                    actualInputTokens: 128,
-                    estimatedInputTokens: 100,
-                    attemptsWithUnknownUsage: 0,
-                    estimatedCostUsd: 0.0001,
-                    pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
-                },
-                publication: { state: 'not_requested' },
-                findingAssessments: [
-                    {
-                        findingId: 'F1',
-                        support: {
-                            outcome: 'supported',
-                            probabilities: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
-                            confidence: 0.9,
-                        },
-                        attribution: {
-                            outcome: 'introduced_by_change',
-                            probabilities: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
-                            confidence: 0.9,
-                        },
-                        kind: {
-                            outcome: 'behavioral_or_contract_issue',
-                            probabilities: {
-                                behavioral_or_contract_issue: 0.9,
-                                style_preference: 0.05,
-                                undetermined: 0.05,
-                            },
-                            confidence: 0.9,
-                        },
-                        disposition: 'ready_for_orchestrator_validation',
-                        escalate: false,
-                        strongestEvidenceIds: ['E1'],
-                        reasoning: 'fixture',
-                    },
-                ],
-            },
-            'verification.json'
-        );
+        writeSidecar(root, 'verif-1', verificationFixture(HEAD_ONE, 4801), 'verification.json');
 
         const record = measure(root);
 
@@ -498,10 +554,12 @@ describe('outcome accounting', () => {
 
         const states = measure(root).acrossRuns.derivedOutcomeStates;
 
-        expect(states.providerFailure).toBe(1);
-        expect(states.omittedForBudgetOrDeadline).toBe(1);
-        expect(states.missingRequiredEvidence).toBe(1);
-        expect(states.dryRun).toBe(0);
+        expect(states).toMatchObject({
+            providerFailure: 1,
+            omittedForBudgetOrDeadline: 1,
+            missingRequiredEvidence: 1,
+            dryRun: 0,
+        });
     });
 });
 
@@ -843,54 +901,6 @@ describe('across-run totals', () => {
 });
 
 describe("the evaluation runner's outcome file", () => {
-    function evaluationOutcome(): unknown {
-        return {
-            outcomes: [
-                {
-                    fixtureId: 'fixture-1',
-                    kind: 'revision',
-                    path: 'src/a.ts',
-                    ruleId: 'assertion_deleted',
-                    sourceKind: 'corpus-fixture',
-                    execution: 'completed',
-                    requestedModel: 'jev-1.13.0',
-                    returnedModels: ['jev-1.13.0'],
-                    rulesAsked: ['assertion_deleted'],
-                    rulesNotAsked: [{ ruleId: 'timing_semantics_changed', missingEvidence: ['scheduling call-site'] }],
-                    evidenceSupplied: ['E1'],
-                    missingEvidenceByRule: { timing_semantics_changed: ['scheduling call-site'] },
-                    outcomes: [
-                        {
-                            ruleId: 'assertion_deleted',
-                            outcome: 'signal',
-                            probability: 0.93,
-                            disposition: 'recommend_investigation',
-                            reasoning: 'fixture',
-                        },
-                    ],
-                    expectedConcernHeld: true,
-                    otherSignals: [],
-                    providerRequests: 1,
-                    usage: {
-                        networkAttempts: 1,
-                        logicalRequests: 1,
-                        retries: 0,
-                        submittedBytes: 2048,
-                        actualInputTokens: 512,
-                        estimatedInputTokens: 500,
-                        attemptsWithUnknownUsage: 0,
-                        estimatedCostUsd: 0.0004,
-                        pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
-                    },
-                    limitations: [],
-                },
-            ],
-            providerRequests: 1,
-            signals: 1,
-            expectationsHeld: 1,
-        };
-    }
-
     it("reads a fixture's asked and unasked rules and counts the labelled expectation apart from accuracy", () => {
         const root = checkout();
         const evaluationPath = join(root, 'evaluation.json');
@@ -1087,5 +1097,180 @@ describe('detail levels', () => {
     it('parses --detail into the full level and defaults to the aggregate one', () => {
         expect(parseCommandLine([]).detail).toBe('aggregate');
         expect(parseCommandLine(['--detail']).detail).toBe('runs');
+    });
+});
+
+describe('an evaluation fixture in the set-wide figures', () => {
+    function fixtureRoot(limitations: readonly string[] = []): { root: string; evaluationPath: string } {
+        const root = checkout();
+        const evaluationPath = join(root, 'evaluation.json');
+        writeFileSync(evaluationPath, `${JSON.stringify(evaluationOutcome({ limitations }), null, 4)}\n`);
+        return { root, evaluationPath };
+    }
+
+    it('folds the fixture rules, signals and texts into the vocabularies its totals already reach', () => {
+        const { root, evaluationPath } = fixtureRoot(['the corpus fixture had no caller context']);
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        // The totals these vocabularies sit beside already count the fixture, so the vocabularies must
+        // name it: a run whose signals total 1 and whose byRule is empty is a run with no rule.
+        expect(record.acrossRuns.signals.total).toBe(1);
+        expect(record.acrossRuns.signals.byRule).toEqual({ assertion_deleted: 1 });
+        expect(record.acrossRuns.ruleCoverage.askedRules).toBe(1);
+        expect(record.acrossRuns.ruleCoverage.notAskedRules).toBe(1);
+        expect(record.acrossRuns.ruleCoverage.notAskedByRule).toEqual({ timing_semantics_changed: 1 });
+        expect(record.acrossRuns.evidence.limitationsByText).toEqual({
+            'the corpus fixture had no caller context': 1,
+        });
+        expect(record.acrossRuns.evidence.unitsMissingRequiredEvidence).toBe(1);
+    });
+
+    it('publishes no scope ledger for an artifact that carries none', () => {
+        const { root, evaluationPath } = fixtureRoot();
+
+        const record = measure(root, { evaluationPath, detail: 'runs' });
+
+        expect(record.runs[0]?.outcomeAccounting.derivedFromEntries).toBeNull();
+        expect(record.runs[0]?.outcomeAccounting.publishedStates).toBeNull();
+        expect(record.acrossRuns.derivedOutcomeStates).toBeNull();
+        expect(record.acrossRuns.derivedOutcomeRuns).toBe(0);
+        const figures = record.notComputable.map((entry) => entry.figure);
+        expect(figures).toContain('runs[].outcomeAccounting.derivedFromEntries');
+        // The revision context is the other figure its artifact cannot carry, and it is named too.
+        expect(figures).toContain('runs[].context');
+        expect(record.acrossRuns.signals.total).toBe(1);
+    });
+
+    it('counts the omission totals over the runs that carry a ledger and names how many those are', () => {
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+        const evaluationPath = join(root, 'evaluation.json');
+        writeFileSync(evaluationPath, `${JSON.stringify(evaluationOutcome(), null, 4)}\n`);
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        expect(record.acrossRuns.runCount).toBe(2);
+        expect(record.acrossRuns.derivedOutcomeRuns).toBe(1);
+        expect(record.acrossRuns.derivedOutcomeStates).toMatchObject({
+            omittedForBudgetOrDeadline: 1,
+            providerFailure: 1,
+            missingRequiredEvidence: 1,
+        });
+        // The fixture is still counted as a run, and its rules reach the vocabularies beside the scan's.
+        expect(record.acrossRuns.signals.byRule.assertion_deleted).toBe(2);
+    });
+});
+
+describe('review rounds across heads', () => {
+    it('counts one round once when a head has both a scan and a verification sidecar', () => {
+        const root = checkout();
+        writeSidecar(
+            root,
+            'scan-1',
+            scanFixture({
+                headSha: HEAD_ONE,
+                prNumber: 4801,
+                signals: [{ path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'recommend_investigation' }],
+            })
+        );
+        writeSidecar(root, 'verif-1', verificationFixture(HEAD_ONE, 4801), 'verification.json');
+        writeDossier(
+            root,
+            '4801-111111111111',
+            dossierFixture({
+                pr: 4801,
+                headSha: HEAD_ONE,
+                findingsAccepted: 2,
+                dispositions: [{ ruleId: 'assertion_deleted', path: 'src/a.ts', disposition: 'confirmed-existing' }],
+            })
+        );
+
+        const rounds = measure(root).acrossRuns.reviewRounds;
+
+        // Both runs match one dossier; the head is one round, whatever read it.
+        expect(rounds.heads).toBe(1);
+        expect(rounds.dossiers).toBe(1);
+        expect(rounds.stanceDraws).toBe(1);
+        expect(rounds.findingsAccepted).toBe(2);
+        expect(rounds.findingsDiscarded).toBe(0);
+        expect(rounds.reviewsPublished).toBe(0);
+    });
+
+    it('still counts two heads as two rounds', () => {
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+        writeSidecar(root, 'scan-2', everyOmissionState(HEAD_TWO, 4801));
+        writeDossier(root, '4801-111111111111', dossierFixture({ pr: 4801, headSha: HEAD_ONE }));
+        writeDossier(root, '4801-222222222222', dossierFixture({ pr: 4801, headSha: HEAD_TWO }));
+
+        expect(measure(root).acrossRuns.reviewRounds).toMatchObject({ heads: 2, dossiers: 2, stanceDraws: 2 });
+    });
+});
+
+describe('execution states', () => {
+    function mixedStatesRoot(): string {
+        const root = checkout();
+        writeSidecar(
+            root,
+            'scan-completed',
+            scanFixture({
+                headSha: HEAD_ONE,
+                prNumber: 4801,
+                signals: [
+                    { path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'no_additional_recommendation' },
+                ],
+            })
+        );
+        writeSidecar(
+            root,
+            'scan-partial',
+            scanFixture({
+                headSha: HEAD_TWO,
+                prNumber: 4801,
+                signals: [
+                    { path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'no_additional_recommendation' },
+                ],
+                truncated: [{ path: 'src/a.ts', reason: 'unit-evidence-reduced-below-request-budget' }],
+            })
+        );
+        writeSidecar(
+            root,
+            'scan-unavailable',
+            scanFixture({
+                headSha: '3'.repeat(40),
+                prNumber: 4802,
+                signals: [],
+                unassessed: [{ path: 'src/b.ts', reason: 'provider_unavailable' }],
+                execution: 'unavailable',
+                failureCode: 'provider_unavailable',
+            })
+        );
+        return root;
+    }
+
+    it('counts the execution state of every run it read, per run and across runs', () => {
+        const record = measure(mixedStatesRoot());
+
+        expect(record.acrossRuns.executionStates).toEqual({
+            completed: 1,
+            partial: 1,
+            unavailable: 1,
+        });
+        expect(record.runs.map((run) => run.execution)).toEqual(['completed', 'partial', 'unavailable']);
+        expect(record.runs.map((run) => run.failureCode)).toEqual([null, null, 'provider_unavailable']);
+    });
+
+    it('names the failure codes beside the states, so an unavailable run keeps its cause', () => {
+        const record = measure(mixedStatesRoot());
+
+        expect(record.acrossRuns.failureCodes).toEqual({ provider_unavailable: 1 });
+    });
+
+    it('states the execution states in the human summary', () => {
+        const summary = renderMeasurementSummary(measure(mixedStatesRoot()));
+
+        expect(summary).toContain('execution states: completed 1, partial 1, unavailable 1');
+        expect(summary).toContain('failure codes: provider_unavailable 1');
     });
 });
