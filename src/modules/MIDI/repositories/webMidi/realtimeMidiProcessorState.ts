@@ -11,6 +11,12 @@ export type RealtimeMidiInput = {
     sampleRate: number;
     noteInstanceId?: string;
     blockSize?: number;
+    /**
+     * Drained batches from the idle pump the processor starts when this input
+     * is a stopped transport's only rack driver (#4870). The receiver voices
+     * them on their instrument routes; returning `false` cancels the drain.
+     */
+    onDrainedEvents?: (events: readonly RealtimeMidiEvent[]) => boolean | void;
 };
 
 export type RealtimeMidiEvent = {
@@ -18,6 +24,8 @@ export type RealtimeMidiEvent = {
     trackId?: string;
     sourceEventId?: string;
     noteInstanceId?: string;
+    /** Held lifetime a generated note-on carries from its processor (#4870). */
+    durationSamples?: number;
     timePpq?: number;
     tempoBpm?: number;
     kind:

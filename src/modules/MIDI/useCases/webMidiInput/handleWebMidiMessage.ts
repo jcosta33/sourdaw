@@ -1,11 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureGestureBeat } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
 
+import { captureEventBeatAt } from './captureEventBeat';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
@@ -151,7 +151,9 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
 
     switch (message.type) {
         case 'noteOn': {
-            const admittedTime = { ...timeStamp, recordingBeat: captureGestureBeat() };
+            // The recorded onset is the beat of the EVENT's own instant, not of
+            // this callback's turn on the main thread (#4875).
+            const admittedTime = { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
             return dispatchNoteHandler(
                 channel,
                 () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime),

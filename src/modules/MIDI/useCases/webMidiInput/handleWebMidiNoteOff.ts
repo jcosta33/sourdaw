@@ -1,12 +1,20 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
+import {
+    readBeatAtSamples,
+    readSecondsAtBeat,
+    tempoMapStore,
+    transportStore,
+    DEFAULT_TEMPO_BPM,
+} from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
+import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiProcessorState';
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -16,12 +24,15 @@ import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
-function secondsToBeats(seconds: number, tempo: number): number {
-    return (seconds * tempo) / 60;
-}
+/**
+ * Length for a Yeast-generated note that reports no lifetime of its own. A
+ * local copy of `handleWebMidiNoteOn`'s constant: that handler already imports
+ * this one, so the reverse import would close a module cycle.
+ */
+const FALLBACK_GENERATED_NOTE_SECONDS = 0.5;
 
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
-    function findActiveRecordingClip(trackId: string): string | null {
+    function findActiveRecordingClip(trackId: string, admittedBeat: number): string | null {
         const trackState = deps.getTrackStoreState();
         const transport = deps.getTransportStoreValue();
         if (!trackState || !transport) {
@@ -39,17 +50,18 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         }
 
         if (transport.isRecording && transport.overdubEnabled) {
-            const playhead = deps.playheadPositionRef.current;
             // Half-open [startBeat, endBeat), matching every other clip range
             // test in this module. An inclusive end makes the seam beat of two
             // abutting clips satisfy both, so `find` files the note into
             // whichever clip happens to come first in array order.
-            const intersecting = midiClips.find((clip) => playhead >= clip.startBeat && playhead < clip.endBeat);
+            const intersecting = midiClips.find(
+                (clip) => admittedBeat >= clip.startBeat && admittedBeat < clip.endBeat
+            );
             if (intersecting) {
                 return intersecting.id;
             }
 
-            if (transport.isLooping && playhead >= transport.loopStart && playhead <= transport.loopEnd) {
+            if (transport.isLooping && admittedBeat >= transport.loopStart && admittedBeat <= transport.loopEnd) {
                 const loopClip = midiClips.find(
                     (clip) => clip.startBeat >= transport.loopStart && clip.endBeat <= transport.loopEnd
                 );
@@ -102,6 +114,180 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 instrumentTrackId,
                 noteData.channel
             );
+            // A reset while the release is being processed ended the input
+            // session that owns its voices; batches drained from before it
+            // must not voice into the new one (#4870).
+            const generation = memberExpressionGeneration.current;
+            // A drained event clamps to the delivery-time frame, the same
+            // clamp the ingress batch applies against its post-processing
+            // read (#4870).
+            const drainedEventSampleFrame = (event: RealtimeMidiEvent): number =>
+                Math.max(Math.round(context.currentTime * context.sampleRate), Math.round(event.timeSamples));
+            const startCapturedVoice = (
+                pitch: number,
+                voiceChannel: number,
+                generatedId: string | undefined,
+                sampleFrame: number,
+                start: () => void,
+                release: (sampleFrame?: number, releaseVelocity?: number) => void
+            ): void => {
+                pendingYeastRelease.retire(`${instrumentTrackId}:${yeastDevice.id}`, voiceChannel, pitch, sampleFrame);
+                if (generatedId === undefined) {
+                    noteData.yeastVoiceReleases?.get(pitch)?.(sampleFrame, 0);
+                    start();
+                    (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
+                } else {
+                    noteData.yeastGeneratedVoices?.get(generatedId)?.release(sampleFrame, 0);
+                    start();
+                    (noteData.yeastGeneratedVoices ??= new Map()).set(generatedId, {
+                        pitch,
+                        channel: voiceChannel,
+                        release,
+                    });
+                }
+            };
+            // A generated note first emitted at the release block reaches its
+            // block only through the idle pump; this is the same voicing path
+            // the note-on handler gives its drained batches, over this
+            // release's own route and ownership (#4870).
+            const voiceYeastEvents = (drainedEvents: readonly RealtimeMidiEvent[]): void => {
+                for (const event of drainedEvents) {
+                    const eventSampleFrame = drainedEventSampleFrame(event);
+                    if (event.kind.type === 'noteOn') {
+                        const eventNote = event.kind.note;
+                        const eventVelocity = event.kind.velocity;
+                        const fermenterDevice = instrumentTrack.devices.find((device) => device.type === 'fermenter');
+                        if (fermenterDevice) {
+                            const deviceNode = resolveDeviceNode(audioEngine.getTrackStrip(instrumentTrackId), {
+                                type: 'fermenter',
+                            });
+                            if (deviceNode?.fermenterControls) {
+                                const control = deviceNode.fermenterControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
+                                );
+                            }
+                            continue;
+                        }
+                        const grandBouleDevice = instrumentTrack.devices.find(
+                            (device) => device.type === 'grand-boule'
+                        );
+                        if (grandBouleDevice) {
+                            const deviceNode = resolveDeviceNode(audioEngine.getTrackStrip(instrumentTrackId), {
+                                type: 'grand-boule',
+                            });
+                            if (deviceNode?.grandBouleControls) {
+                                const control = deviceNode.grandBouleControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(
+                                            eventNote,
+                                            eventVelocity / 127,
+                                            eventSampleFrame,
+                                            event.kind.channel
+                                        ),
+                                    (sampleFrame, releaseVelocity) => {
+                                        control.noteOff(eventNote, sampleFrame, releaseVelocity, event.kind.channel);
+                                        void deps.eventBus.emit('midi.noteOff', {
+                                            deviceId: grandBouleDevice.id,
+                                            midiNote: eventNote,
+                                            releaseVelocity,
+                                        });
+                                    }
+                                );
+                            }
+                            void deps.eventBus.emit('midi.noteOn', {
+                                deviceId: grandBouleDevice.id,
+                                midiNote: eventNote,
+                                velocity: eventVelocity / 127,
+                            });
+                            continue;
+                        }
+                        const levainDevice = instrumentTrack.devices.find((device) => device.type === 'levain');
+                        if (levainDevice) {
+                            const deviceNode = resolveDeviceNode(audioEngine.getTrackStrip(instrumentTrackId), {
+                                type: 'levain',
+                            });
+                            if (deviceNode?.levainControls) {
+                                const control = deviceNode.levainControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
+                                );
+                            }
+                            continue;
+                        }
+                        // A generated note carries its own held lifetime; only
+                        // a source event without one falls back to a fixed
+                        // length (#4870).
+                        let generatedDurationSeconds = FALLBACK_GENERATED_NOTE_SECONDS;
+                        if (event.durationSamples !== undefined) {
+                            generatedDurationSeconds = Math.max(0, event.durationSamples) / context.sampleRate;
+                        }
+                        const synthParams = deps.getSynthParamsForTrack(instrumentTrackId);
+                        deps.scheduleNote(
+                            context,
+                            audioEngine.ensureTrackStrip(instrumentTrackId).gainNode,
+                            eventNote,
+                            eventSampleFrame / context.sampleRate,
+                            generatedDurationSeconds,
+                            eventVelocity,
+                            synthParams
+                        );
+                    } else if (event.kind.type === 'noteOff') {
+                        const eventNote = event.kind.note;
+                        if (
+                            pendingYeastRelease.releaseEvent({
+                                routeId: `${instrumentTrackId}:${yeastDevice.id}`,
+                                trackId: event.trackId,
+                                noteInstanceId: event.noteInstanceId,
+                                channel: event.kind.channel,
+                                pitch: eventNote,
+                                sampleFrame: eventSampleFrame,
+                                releaseVelocity,
+                            })
+                        ) {
+                            continue;
+                        }
+                        if (event.trackId !== undefined && event.trackId !== instrumentTrackId) {
+                            continue;
+                        }
+                        if (event.noteInstanceId !== undefined) {
+                            // A voice the drain itself created is absent from
+                            // the pending snapshot taken before it existed; it
+                            // releases through the live generated-voice map.
+                            const voice = noteData.yeastGeneratedVoices?.get(event.noteInstanceId);
+                            if (voice?.pitch === eventNote && voice.channel === event.kind.channel) {
+                                voice.release(eventSampleFrame);
+                                noteData.yeastGeneratedVoices?.delete(event.noteInstanceId);
+                            }
+                            continue;
+                        }
+                        if (
+                            event.kind.channel !== noteData.channel ||
+                            pendingYeastRelease.wasRetired(pendingRelease, eventNote)
+                        ) {
+                            continue;
+                        }
+                        pendingYeastRelease.release(pendingRelease, eventNote, eventSampleFrame, releaseVelocity);
+                    }
+                }
+            };
             try {
                 const processedEvents = await deps.processRealtimeMidiInput({
                     context,
@@ -115,36 +301,21 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     sampleTime,
                     sampleRate: context.sampleRate,
                     noteInstanceId: noteData.noteInstanceId,
+                    onDrainedEvents: (drainedEvents) => {
+                        // A reset ended the input session that owns this
+                        // release's voices; the pump retires with it (#4870).
+                        if (generation !== memberExpressionGeneration.current) {
+                            return false;
+                        }
+                        voiceYeastEvents(drainedEvents);
+                        return undefined;
+                    },
                 });
-                const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
-                for (const event of processedEvents) {
-                    if (event.kind.type !== 'noteOff') {
-                        continue;
-                    }
-                    const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
-                    if (
-                        pendingYeastRelease.releaseEvent({
-                            routeId: `${instrumentTrackId}:${yeastDevice.id}`,
-                            trackId: event.trackId,
-                            noteInstanceId: event.noteInstanceId,
-                            channel: event.kind.channel,
-                            pitch: event.kind.note,
-                            sampleFrame: eventSampleFrame,
-                            releaseVelocity,
-                        })
-                    ) {
-                        continue;
-                    }
-                    if (
-                        event.noteInstanceId !== undefined ||
-                        (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
-                        event.kind.channel !== noteData.channel ||
-                        pendingYeastRelease.wasRetired(pendingRelease, event.kind.note)
-                    ) {
-                        continue;
-                    }
-                    pendingYeastRelease.release(pendingRelease, event.kind.note, eventSampleFrame, releaseVelocity);
-                }
+                // One voicing path for the ingress batch and every drained
+                // idle-pump batch: a release-triggered tail's first generated
+                // note rides this batch, and the source note's own release
+                // still flows through the pending snapshot (#4870).
+                voiceYeastEvents(processedEvents);
             } catch (error: unknown) {
                 logger.warn('[MIDI] Yeast note release failed:', error);
                 pendingYeastRelease.releaseAll(pendingRelease);
@@ -226,25 +397,52 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         const isRecording = transport?.isRecording ?? false;
 
         if (isRecording && isArmed) {
-            const clipId = findActiveRecordingClip(targetTrackId);
+            // The note belongs to the clip holding its admitted onset: a
+            // release processed after the playhead crossed a clip seam or a
+            // loop wrap must not move it (#4869).
+            const clipId = findActiveRecordingClip(targetTrackId, noteData.startBeat);
             if (!clipId) {
                 return;
             }
 
-            const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-            const durationSeconds = eventTime - noteData.startTime;
-            const durationBeats = secondsToBeats(durationSeconds, tempo);
-
             const trackLatencySec = deps.getCompensationDelay(targetTrackId);
             const context = audioEngine.context;
             const totalLatencySec = (context.baseLatency || 0) + (context.outputLatency || 0) + trackLatencySec;
-            const offsetBeats = secondsToBeats(totalLatencySec, tempo);
+
+            // With a tempo map `transport.tempo` is inert (setTempo), so the
+            // held length and the latency compensation convert through the
+            // map's own placement reads — the same conversion audio recording
+            // applies to a take (#3650, #4668). A flat timeline integrates as
+            // the straight base-tempo line, where the closed form is exact.
+            const tempoChanges = tempoMapStore.value?.changes ?? [];
+            const defaultTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
+            const flatTimeline = tempoChanges.length === 0;
+            const onsetSeconds = readSecondsAtBeat({ beat: noteData.startBeat });
+
+            const secondsToBeats = (seconds: number): number => {
+                if (flatTimeline) {
+                    return (seconds * defaultTempo) / 60;
+                }
+                return readBeatAtSamples({ samples: onsetSeconds + seconds, sampleRate: 1 }) - noteData.startBeat;
+            };
+
+            const durationSeconds = eventTime - noteData.startTime;
+            const durationBeats = secondsToBeats(durationSeconds);
+
             // noteData.startBeat is timeline-absolute (playhead at note-on);
             // the store is clip-relative, so subtract the recording clip's
             // media origin or notes land clip.startBeat late (M-143).
             const recordingClip = track?.clips.find((candidate) => candidate.id === clipId);
             const clipMediaOrigin = recordingClip ? recordingClip.startBeat - (recordingClip.midiOffsetBeats ?? 0) : 0;
-            const compensatedStartBeat = Math.max(0, noteData.startBeat - offsetBeats - clipMediaOrigin);
+
+            const latencyAdjustedOnsetBeat = (): number => {
+                if (flatTimeline) {
+                    return noteData.startBeat - (totalLatencySec * defaultTempo) / 60;
+                }
+                return readBeatAtSamples({ samples: onsetSeconds - totalLatencySec, sampleRate: 1 });
+            };
+
+            const compensatedStartBeat = Math.max(0, latencyAdjustedOnsetBeat() - clipMediaOrigin);
 
             // Preserve the played velocity (was hardcoded 100, M-143).
             const midiNote = deps.createMidiNote(
@@ -258,9 +456,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 deps.appendRecordedMidiNote({ clipId, note: midiNote });
                 return;
             }
-            const recordedNote = withRecordedNoteExpression(midiNote, noteData, (seconds) =>
-                secondsToBeats(seconds, tempo)
-            );
+            const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
             deps.appendRecordedMidiNote({ clipId, note: recordedNote });
         }
     };
