@@ -1,0 +1,18 @@
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  h_beb54bf43b47b7 52,188,205,291
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  h_beb54bf43b47b7 343
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  h_beb54bf43b47b7 1207-1220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f33d33d9927c29d236ccf5bbbf2950a0fdd6e1f5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
