@@ -32,6 +32,7 @@ import {
     runEvaluation,
     serializeEvaluationOutcomes,
     type EvaluationFixturePlan,
+    type SemanticEvaluationPorts,
     type SemanticEvaluationResult,
 } from './semanticReview/evaluation/runEvaluation.ts';
 import { createGitSourcePort, resolveFromRefs } from './semanticReview/gitSource.ts';
@@ -210,13 +211,19 @@ function exitCodeForFailure(code: SemanticFailureCode): number {
     return code === 'unsupported_scope' || code === 'invalid_response' ? EXIT_INVALID : EXIT_INCOMPLETE;
 }
 
-/**
- * Writes the outcome file the measurement command reads. Exported so the suite drives the same write the
- * entry point does: a case that serialized the result itself would stay green if this call site wrapped it
- * in an envelope again, which is exactly how the two commands came to disagree.
- */
-export function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResult): void {
+/** Writes the outcome file the measurement command reads: the result itself, never an envelope. */
+function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResult): void {
     writeFileSync(outPath, serializeEvaluationOutcomes(result));
+}
+
+/** The exit code one thrown failure earns, shared by the entry point and the command body. */
+function failureExit(error: unknown): number {
+    if (error instanceof SemanticFailure) {
+        console.error(`review:semantic:evaluate: ${error.code}: ${error.message}`);
+        return exitCodeForFailure(error.code);
+    }
+    console.error(error instanceof Error ? error.message : String(error));
+    return EXIT_INVALID;
 }
 
 /**
@@ -234,18 +241,57 @@ export function exitCodeFor(result: SemanticEvaluationResult): number {
     return undelivered ? EXIT_INCOMPLETE : EXIT_OK;
 }
 
+/**
+ * The command's whole body once its environment is known: parse the invocation, read the corpus, run the
+ * evaluation, render the report, and write the outcome file the measurement command reads.
+ *
+ * The source port factory, the ports, the log, and the arguments are parameters so the suite drives this
+ * exact path — including the `--out` write — with stubs. A case that called a write helper of its own could
+ * not see the branch that actually writes the file, which is where the writer and the reader came to
+ * disagree.
+ */
+export async function runEvaluationCommand(input: {
+    readonly argv: readonly string[];
+    readonly sourceFor: (fixture: EvaluationFixture) => EvaluationFixturePlan;
+    readonly portsFor: () => SemanticEvaluationPorts;
+    readonly log: (message: string) => void;
+}): Promise<number> {
+    try {
+        const parsed = parseEvaluationArgs(input.argv);
+        const corpus = readCorpus(parsed.corpusPath);
+        const profile: SemanticBudgetProfile = SEMANTIC_BUDGET_PROFILES[parsed.profile];
+        assertBudgetProfile(profile);
+        const result = await runEvaluation({
+            corpus,
+            ports: input.portsFor(),
+            profile,
+            planFor: input.sourceFor,
+            runId: `evaluation-${new Date().toISOString()}`,
+        });
+        input.log(renderEvaluation(result));
+        if (parsed.outPath !== undefined) {
+            // The measurement reader reads this file as the result itself, so the command writes exactly
+            // that: an envelope here left `pnpm review:semantic:measure --evaluation` refusing the file this
+            // command had just written.
+            writeEvaluationOutcomes(parsed.outPath, result);
+            input.log(`outcomes: ${parsed.outPath}`);
+        }
+        return exitCodeFor(result);
+    } catch (error) {
+        return failureExit(error);
+    }
+}
+
 async function main(): Promise<number> {
     try {
         assertEvaluationIsOptIn();
         const primaryRoot = resolvePrimaryRoot();
-        const parsed = parseEvaluationArgs(process.argv.slice(2));
-        const corpus = readCorpus(parsed.corpusPath);
-        const profile: SemanticBudgetProfile = SEMANTIC_BUDGET_PROFILES[parsed.profile];
-        assertBudgetProfile(profile);
         const controller = new AbortController();
-        const result = await runEvaluation({
-            corpus,
-            ports: {
+        const gitSource = createGitSourcePort(primaryRoot);
+        return await runEvaluationCommand({
+            argv: process.argv.slice(2),
+            sourceFor: planForFixture({ primaryRoot, gitSource }),
+            portsFor: () => ({
                 provider: createSdkProviderPort({ apiKey: loadApiKey(primaryRoot) }),
                 // A fresh memory cache per run: an evaluation observes the provider, and reading another
                 // run's stored answer would report that run's outcome under this run's identity.
@@ -253,27 +299,11 @@ async function main(): Promise<number> {
                 clock: { now: () => Date.now() },
                 signal: controller.signal,
                 log: (message) => console.log(message),
-            },
-            profile,
-            planFor: planForFixture({ primaryRoot, gitSource: createGitSourcePort(primaryRoot) }),
-            runId: `evaluation-${new Date().toISOString()}`,
+            }),
+            log: (message) => console.log(message),
         });
-        console.log(renderEvaluation(result));
-        if (parsed.outPath !== undefined) {
-            // The measurement reader reads this file as the result itself, so the writer writes exactly
-            // that: an envelope here left `pnpm review:semantic:measure --evaluation` refusing the file
-            // this command had just written.
-            writeEvaluationOutcomes(parsed.outPath, result);
-            console.log(`outcomes: ${parsed.outPath}`);
-        }
-        return exitCodeFor(result);
     } catch (error) {
-        if (error instanceof SemanticFailure) {
-            console.error(`review:semantic:evaluate: ${error.code}: ${error.message}`);
-            return exitCodeForFailure(error.code);
-        }
-        console.error(error instanceof Error ? error.message : String(error));
-        return EXIT_INVALID;
+        return failureExit(error);
     }
 }
 

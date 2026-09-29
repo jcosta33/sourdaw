@@ -17,7 +17,7 @@ import {
     assertEvaluationIsOptIn,
     exitCodeFor,
     parseEvaluationArgs,
-    writeEvaluationOutcomes,
+    runEvaluationCommand,
 } from '../../../semanticReviewEvaluation.ts';
 import { measureCheckout, readEvaluationOutcome } from '../../../semanticReviewMeasurement.ts';
 import { changedLineFacts, type UnitChangedLineFacts } from '../../changeFacts.ts';
@@ -617,13 +617,27 @@ describe('the outcome file the measurement command reads', () => {
         // its result in an envelope the reader refused, so this one takes the bytes the runner writes and
         // hands them to the reader's own entry point.
         const corpus = shippedCorpus();
-        const result = await evaluateWith(corpus, stubProvider(() => 0.02).port);
+        const positives = positiveRules(corpus);
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-evaluation-outcomes-'));
         outcomeRoots.push(root);
         const outcomePath = join(root, 'outcomes.json');
-        // The command's own write, not a copy of it: the envelope that broke this contract lived in the
-        // call site, so a case that serialized the result itself would not have seen it.
-        writeEvaluationOutcomes(outcomePath, result);
+        // The command itself, with a stub provider and the corpus-backed source: the `--out` branch that
+        // writes the file is inside it, so a case that called a write helper of its own would stay green
+        // while the command wrapped its result again. The stub answers each positive's own rule so the
+        // command completes as a held run and its exit code is the success path's.
+        const exitCode = await runEvaluationCommand({
+            argv: ['--out', outcomePath],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(0);
 
         const onDisk = JSON.parse(readFileSync(outcomePath, 'utf8')) as Record<string, unknown>;
         expect(Object.keys(onDisk)).toContain('outcomes');
