@@ -6,10 +6,10 @@
  */
 
 import { type SemanticScopeExclusion } from './contracts.ts';
+import { type SemanticPlannedRequest } from './planPublication.ts';
 import { estimateCost, type SemanticUsageTotals } from './provider.ts';
 import { type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
 import { type SemanticScopeStates } from './scopeAccounting.ts';
-import { type SemanticPlannedRequest } from './unitPriority.ts';
 
 /** Builds the scope report from the plan's unit paths and the run's outcome counts. */
 export function scopeReport(input: {

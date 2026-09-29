@@ -165,6 +165,10 @@ const SCOPE_STATE_NAMES = [
  *   every rule of its set as signals, which is the coverage ledger. That reason is the one omission
  *   signals are legitimate for, and it is required there: an omission claiming a unit reported its rules
  *   without any signal is a coverage record that is not there.
+ * - `assessed` counts the units the report holds answers for, so it equals the number of distinct
+ *   signalled paths that are not recorded unassessed. An assessed unit carries one signal per rule, and
+ *   the one signalled omission — the zero-call unit — is not an assessment. This is the row that keeps a
+ *   report from claiming an assessed unit with nothing behind it: a clean bill with no ledger at all.
  * - Every other omission reason — a dry run, a spent budget or elapsed deadline, a provider or request
  *   failure — means no request was made for that unit, so a signal for the same path contradicts it.
  * - `truncated` records regions rather than units and is deliberately outside the partition: a path
@@ -183,16 +187,21 @@ const SCOPE_STATE_NAMES = [
  */
 export function assertLedgersPartition(
     scope: {
+        readonly assessed: number;
         readonly excluded: readonly SemanticScopeExclusion[];
         readonly unassessed: readonly SemanticScopeExclusion[];
     },
-    signals: readonly { readonly path: string }[],
+    signals: readonly { readonly path: string }[] | undefined,
     label: string
 ): void {
     assertDistinctPaths(scope.excluded, 'excluded', label);
     assertDistinctPaths(scope.unassessed, 'unassessed', label);
     const excludedPaths = new Set(scope.excluded.map((entry) => entry.path));
-    const signalledPaths = new Set(signals.map((signal) => signal.path));
+    const omissionPaths = new Set(scope.unassessed.map((entry) => entry.path));
+    // A mode with no signal ledger of its own (a verify report keys findings, not paths) leaves the
+    // signal rows and the assessed tie to the arrays that mode publishes.
+    const signalLedger = signals ?? [];
+    const signalledPaths = new Set(signalLedger.map((signal) => signal.path));
     for (const entry of scope.unassessed) {
         if (excludedPaths.has(entry.path)) {
             refuse(
@@ -221,6 +230,18 @@ export function assertLedgersPartition(
                 `${label} carries a signal for ${path}, which it records as excluded; no unit was planned for it`
             );
         }
+    }
+    if (signals === undefined) {
+        return;
+    }
+    const assessedFromLedger = new Set(
+        signalLedger.filter((signal) => !omissionPaths.has(signal.path)).map((signal) => signal.path)
+    ).size;
+    if (assessedFromLedger !== scope.assessed) {
+        refuse(
+            'invalid_response',
+            `${label} reports ${String(scope.assessed)} assessed unit(s) but its ledger holds ${String(assessedFromLedger)}: a signalled unit that is not recorded unassessed is one assessed unit`
+        );
     }
 }
 

@@ -39,13 +39,12 @@ import {
     composeUnitPasses,
     passRequestPayload,
     requestedPasses,
-    unitRequestPreview,
-    type SemanticRequestPreview,
     type SemanticUnitPass,
 } from './passes.ts';
 import {
     assessUnit,
     createBudgetController,
+    estimateInputTokens,
     TYPESAFE_MODEL,
     TYPESAFE_SDK_VERSION_FOR_CACHE,
     type SemanticBudgetController,
@@ -63,6 +62,7 @@ import {
     unitNeedsContractContext,
     type SemanticBudgetProfile,
     type SemanticRule,
+    type SemanticRuleId,
 } from './rules.ts';
 import {
     buildScopeStates,
@@ -80,7 +80,6 @@ import {
 } from './unitAssessment.ts';
 import { orderPlannedUnits, plannedRequest, unitOmission } from './unitPriority.ts';
 
-export type { SemanticRequestPreview } from './passes.ts';
 export type { StoredUnitResponse } from './unitAssessment.ts';
 /** Re-exported here because the run's own completion decision reads it and callers import it from the plan. */
 export { isMissedAssessmentExclusion } from './scopeAccounting.ts';
@@ -340,16 +339,66 @@ export function planUnits(
     return { units: orderPlannedUnits(units), excluded, incomplete };
 }
 
-/** The request one planned unit would send, previewed under the model a live run would request. */
+/**
+ * One unit's requests as a dry run reports them: the questions its passes can ask, the evidence those
+ * requests would carry, and the evidence the plan composed for it whether or not a question needs it.
+ * The two evidence sets are kept apart on purpose — a unit whose every pass carries regions no question
+ * can be answered from sends nothing, and the plan's composition is exactly what an operator has to see
+ * to understand why.
+ */
+export type SemanticRequestPreview = {
+    readonly unitId: string;
+    readonly path: string;
+    /** Every rule that applies to the unit; `askedRuleIds` is the subset its requests would ask. */
+    readonly ruleIds: readonly SemanticRuleId[];
+    /** The rules the requests would ask: the ones a sent pass carries the required evidence for. */
+    readonly askedRuleIds: readonly SemanticRuleId[];
+    /** Every region the plan composed for the unit, across every pass, sent or not. */
+    readonly evidenceIds: readonly string[];
+    /** The regions the requests would carry. */
+    readonly sentEvidenceIds: readonly string[];
+    /** The bytes those requests would submit; 0 when no pass can ask anything. */
+    readonly bodyBytes: number;
+    readonly estimatedInputTokens: number;
+    /** Why no request would be sent, when no pass carries the evidence any question requires. */
+    readonly omissionReason?: string;
+};
+
+/**
+ * What one unit's requests would carry and measure. Body bytes are read from the passes the requests
+ * would actually send, so a dry run's export agrees with what a live run does instead of pricing
+ * questions that would never be asked. It lives here with the run's own request accounting: the byte and
+ * token measures are the provider's, and a preview built beside the pass composition would drag the
+ * adapter into every closure that reads a report.
+ */
 function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestPreview {
-    return unitRequestPreview({
+    const sent = requestedPasses({
+        rules: unit.rules,
+        kind: unit.file.kind,
+        evidence: unit.evidence,
+    });
+    let bodyBytes = 0;
+    for (const entry of sent) {
+        const payload = passRequestPayload({
+            unitId: unit.unitId,
+            path: unit.path,
+            file: unit.file,
+            rules: entry.rules,
+            pass: entry.pass,
+        });
+        bodyBytes += Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
+    }
+    const preview: SemanticRequestPreview = {
         unitId: unit.unitId,
         path: unit.path,
-        file: unit.file,
-        rules: unit.rules,
-        evidence: unit.evidence,
-        model,
-    });
+        ruleIds: unit.rules.map((rule) => rule.id),
+        askedRuleIds: sent.flatMap((entry) => entry.rules.map((rule) => rule.id)),
+        evidenceIds: unit.evidence.passes.flatMap((pass) => pass.references.map((reference) => reference.evidenceId)),
+        sentEvidenceIds: sent.flatMap((entry) => entry.pass.references.map((reference) => reference.evidenceId)),
+        bodyBytes,
+        estimatedInputTokens: estimateInputTokens(bodyBytes),
+    };
+    return sent.length === 0 ? { ...preview, omissionReason: MISSING_REQUIRED_EVIDENCE_REASON } : preview;
 }
 
 /**

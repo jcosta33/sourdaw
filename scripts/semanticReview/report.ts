@@ -22,6 +22,12 @@ import {
     type SemanticRevisionContext,
     type SemanticScopeExclusion,
 } from './contracts.ts';
+import {
+    assertPlanMatchesLedger,
+    assertRequestOrderIsSorted,
+    readPlannedRequests,
+    type SemanticPlannedRequest,
+} from './planPublication.ts';
 import { readFindingAssessments, readScanAssessments, readStringArray } from './reportAssessments.ts';
 import {
     assertScopeStatesMatch,
@@ -30,12 +36,6 @@ import {
     readScopeStates,
     type SemanticScopeStates,
 } from './scopeAccounting.ts';
-import {
-    assertRequestOrderIsSorted,
-    assertPlanMatchesLedger,
-    readPlannedRequests,
-    type SemanticPlannedRequest,
-} from './unitPriority.ts';
 
 import type { FindingAssessment, ScanAssessment } from './interpret.ts';
 
@@ -132,6 +132,14 @@ export function assertScopeConsistency(scope: SemanticScopeReport, label: string
     if (scope.cacheHits > scope.assessed) {
         refuse('invalid_response', `${label} reports more cache hits than assessed units`);
     }
+}
+
+/** A scan report always publishes its signals; a missing array is a defect, never an empty ledger. */
+function requireSignals(signals: readonly ScanAssessment[] | undefined): readonly ScanAssessment[] {
+    if (signals === undefined) {
+        refuse('invalid_response', 'a scan report carries no signals, which only a defect can produce');
+    }
+    return signals;
 }
 
 function readNonNegativeInteger(value: unknown, label: string): number {
@@ -308,7 +316,9 @@ export function validateReport(value: unknown): SemanticReport {
     // The mode's own ledger is read before the scope's checks: the partition below needs the signals and
     // both omission lists at once, and it holds whatever the planned order carries. A verify report
     // publishes no signals, so its side of the partition is the two lists alone.
-    const signals = record.mode === 'scan' ? readScanAssessments(record.signals) : [];
+    // The mode's own ledger: a scan publishes signals keyed by path, and a verify report keys its
+    // assessments by finding, so the partition's signal rows are left to the arrays that mode publishes.
+    const signals = record.mode === 'scan' ? readScanAssessments(record.signals) : undefined;
     const findingAssessments = record.mode === 'verify' ? readFindingAssessments(record.findingAssessments) : [];
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
@@ -365,15 +375,16 @@ export function validateReport(value: unknown): SemanticReport {
     assertIdentityAgrees(base);
 
     if (record.mode === 'scan') {
+        const scanSignals = requireSignals(signals);
         // The ledger and the plan must name the same units in both directions: an entry with no trace is
         // a unit the run never held, and a signal outside the order is an order rewritten around it.
         assertPlanMatchesLedger({
             requestOrder: scope.requestOrder,
-            signals,
+            signals: scanSignals,
             unassessed: scope.unassessed,
             label: SCOPE_LABEL,
         });
-        return { ...base, mode: 'scan', signals };
+        return { ...base, mode: 'scan', signals: scanSignals };
     }
     return { ...base, mode: 'verify', findingAssessments };
 }

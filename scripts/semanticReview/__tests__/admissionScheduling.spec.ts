@@ -828,6 +828,8 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         const fabricated = { ...last, path: 'nope/fabricated.ts' };
         expect(report.signals.some((signal) => signal.path === fabricated.path)).toBe(false);
         expect(report.scope.unassessed.some((entry) => entry.path === fabricated.path)).toBe(false);
+        // Raising `assessed` with the fabricated entry is what the ledger partition refuses: one more
+        // claimed assessment than the report holds signals for.
         expect(() =>
             validateReport({
                 ...report,
@@ -839,7 +841,7 @@ describe('a stored report cannot publish a plan its own records refute', () => {
                     requestOrder: [...order, fabricated],
                 },
             })
-        ).toThrow(/neither a signal nor an unassessed entry names it/);
+        ).toThrow(/reports 1 assessed unit\(s\) but its ledger holds 0/);
     });
 
     it('refuses an entry whose class disagrees with the class recorded for the same path as unassessed', async () => {
@@ -1202,6 +1204,47 @@ describe('every mode the report has validates its own output', () => {
             verifyScan(provider.port, [VERIFY_REGION_FINDING, { ...VERIFY_EVIDENCE_LESS_FINDING, findingId: 'f1' }])
         ).rejects.toMatchObject({ code: 'unsupported_scope' });
         expect(provider.calls()).toBe(0);
+    });
+
+    it('refuses a clean bill with no ledger behind it', async () => {
+        // The forged shape that matters most: an orderless report claiming one assessed unit with no
+        // signals, no omissions, and a completed execution — a summary that reads as an assessed run with
+        // nothing to report. Nothing else refutes it: the scope arithmetic balances, the totals are all
+        // zero, and the order and ledger checks return without a planned order.
+        const path = 'src/infra/thing.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(path)], sides(path, 'const before = 1;\n', 'const after = 2;\n')),
+            })
+        );
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.execution).toBe('completed');
+        const forged = {
+            ...report,
+            execution: 'completed' as const,
+            scope: {
+                discovered: 1,
+                eligible: 1,
+                assessed: 1,
+                cacheHits: 0,
+                excluded: [],
+                unassessed: [],
+                truncated: [],
+                requestOrder: undefined,
+                states: {
+                    notApplicable: 0,
+                    excludedWithAssessmentOwed: 0,
+                    missingRequiredEvidence: 0,
+                    omittedForBudgetOrDeadline: 0,
+                    providerFailure: 0,
+                    dryRun: 0,
+                },
+            },
+            signals: [],
+        };
+        expect(() => validateReport(forged)).toThrow(/reports 1 assessed unit\(s\) but its ledger holds 0/);
     });
 
     it('validates a replay of a scan whose units were omitted', async () => {
