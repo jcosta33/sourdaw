@@ -1,0 +1,23 @@
+AGENTS.md
+  s_ed5aa36a3ba357::t_9d8ee8fddebb8a 220-221
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_ed5aa36a3ba357::t_275a3b40542996 753-819
+scripts/reviewDossierSemanticAssessment.ts
+  s_ed5aa36a3ba357::t_0f950616ad6f8c 50-52,258-264,266-267,275-285,290-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e94b295d33bc3bd51f56ada40cec9eb5411e5d6a",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
