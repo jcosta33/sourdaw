@@ -1,0 +1,14 @@
+scripts/checkBarrelMockCoverage.ts
+  h_beb54bf43b47b7 273,279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1487aacda94e768b05048815cbda6dc09bd5d301",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
