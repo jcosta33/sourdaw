@@ -3075,6 +3075,76 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toContainEqual(expect.objectContaining({ index: 2, name: 'addClip' }));
     });
 
+    it.each(['Missing', 'Lead Pad'])('refuses an explicit unresolved clip parent %s', (ownerName) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+            ],
+            `Create a MIDI track named Lead; add a MIDI clip named Melody on ${ownerName} from beat 0 to beat 4`,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 1,
+                name: 'addClip',
+                reason: 'Batch-local parent is not unambiguously grounded in the user request',
+            })
+        );
+    });
+
+    it('does not let a device on the directly preceding new track move to an earlier new track', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Reference', kind: 'audio', binding: 'reference' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+            ],
+            'Create an audio track named Lead; create an audio track named Reference and add a Filter to it',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [] }],
+            }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 2,
+                name: 'addDevice',
+                reason: expect.stringContaining('not unambiguously grounded'),
+            })
+        );
+    });
+
+    it('keeps a device on the new track directly attached to the request clause', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Reference', kind: 'audio', binding: 'reference' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$reference', deviceType: 'builtin-filter', binding: 'filter' },
+                },
+            ],
+            'Create an audio track named Lead; create an audio track named Reference and add a Filter to it',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [] }],
+            }
+        );
+        const referenceId = (result.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addTrack'
+        )[1]?.trackId;
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { trackId: referenceId } });
+    });
+
     it.each([
         ['Lead', 0],
         ['Bass', 1],

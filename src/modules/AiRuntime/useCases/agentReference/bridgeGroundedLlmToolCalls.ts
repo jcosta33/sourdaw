@@ -4926,7 +4926,7 @@ function hasContradictoryCreatedTargetReference(input: {
     ) {
         return true;
     }
-    if (namesWholeCreatedObject(targetText, input.binding.name)) {
+    if (!isBatchLocalCreationActionType(input.actionName) && namesWholeCreatedObject(targetText, input.binding.name)) {
         return true;
     }
     if (
@@ -5072,18 +5072,41 @@ function getLiteralCreatedClipNoteIntent(input: {
     return 'matched';
 }
 
+function namesProducedCreationInClause(clause: PromptClause, actionName: string, name: string): boolean {
+    if (actionName === 'addClip') {
+        const clip = getAddClipPromptEvidence(clause);
+        return clip !== null && normalizePromptText(clip.name) === normalizePromptText(name);
+    }
+    if (actionName === 'addDevice') {
+        const source = /\b(?:add|insert)\s+(?:(?:a|an|the|new)\s+)?(.+)$/iu.exec(normalizePromptText(clause.text))?.[1];
+        return (
+            source !== undefined &&
+            new RegExp(
+                `^${escapeRegExp(normalizePromptText(name))}(?=$| (?:on|in|into|to|after|with|for|at|from)\\b)`,
+                'u'
+            ).test(source)
+        );
+    }
+    return namesWholeCreatedObject(clause.text, name);
+}
+
 function getExplicitCreatedTargetIntent(input: {
     bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
+    plannedCreations: readonly ToolCallResult[];
     prompt: string;
+    producedName?: string;
 }): 'matched' | 'mismatched' | 'none' {
     const rules = getExecutableAppActionGroundingRules(input.call.name);
     if (!rules) {
         return 'none';
     }
     const targetBindings = rules.targetRules.flatMap((rule) => {
+        if (isBatchLocalCreationActionType(input.call.name) && rule.optional) {
+            return [];
+        }
         const value = input.call.arguments[rule.argument];
         if (typeof value !== 'string' || !value.startsWith('$')) {
             return [];
@@ -5107,13 +5130,63 @@ function getExplicitCreatedTargetIntent(input: {
         }
     }
     const quoteScan = scanPromptQuotedText(input.prompt);
-    const actionClauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter(
+    const isCreation = isBatchLocalCreationActionType(input.call.name);
+    const promptClauses = getPromptClauses(input.prompt, quoteScan.maskedText);
+    const actionClauses = promptClauses.filter(
         (clause) =>
-            resolveClauseActionIntent(clause.masked, input.catalog, input.call.name)?.actionType === input.call.name ||
-            (input.call.name === 'renameClip' && /\brename\b.*\bclip\b/iu.test(clause.masked))
+            (resolveClauseActionIntent(clause.masked, input.catalog, input.call.name)?.actionType === input.call.name ||
+                (input.call.name === 'renameClip' && /\brename\b.*\bclip\b/iu.test(clause.masked))) &&
+            (!isCreation ||
+                ((input.producedName === undefined ||
+                    namesProducedCreationInClause(clause, input.call.name, input.producedName)) &&
+                    /\b(?:on|in|into|to)\s+(?!beats?\b|bars?\b|measures?\b|\d+\b)/iu.test(clause.masked)))
     );
     if (actionClauses.length === 0) {
         return 'none';
+    }
+    if (isCreation) {
+        for (const clause of actionClauses) {
+            if (!/\b(?:on|in|into|to)\s+it\b/iu.test(clause.masked)) {
+                continue;
+            }
+            const preceding = promptClauses.findLast((candidate) => candidate.end <= clause.start);
+            if (preceding === undefined) {
+                return 'mismatched';
+            }
+            const compatibleParents = [...input.bindings.values()].filter((binding) =>
+                targetBindings.some(({ rule }) => binding.capabilities.includes(rule.capability))
+            );
+            if (
+                targetBindings.some(
+                    ({ rule }) =>
+                        countCompatiblePlannedCreations(input.plannedCreations, rule.capability) >
+                        compatibleParents.length
+                )
+            ) {
+                return 'mismatched';
+            }
+            const namedParents = compatibleParents.filter((binding) =>
+                getNamedCreationMembers(preceding, binding.actionType).some((member) =>
+                    namesNamedCreationMember(member, binding.name)
+                )
+            );
+            const attachedParents =
+                namedParents.length > 0
+                    ? namedParents
+                    : compatibleParents.filter(
+                          (binding) =>
+                              compatibleParents.length === 1 &&
+                              hasHighLevelCreationEvidence(preceding.masked) &&
+                              CREATED_OBJECT_NOUNS[binding.actionType].test(normalizePromptText(preceding.masked))
+                      );
+            if (
+                attachedParents.length !== 1 ||
+                attachedParents[0]?.createdId !== targetBindings[0]?.binding.createdId
+            ) {
+                return 'mismatched';
+            }
+            return 'matched';
+        }
     }
     if (
         actionClauses.some((clause) =>
@@ -5124,7 +5197,7 @@ function getExplicitCreatedTargetIntent(input: {
     ) {
         return 'matched';
     }
-    return actionClauses.some((clause) =>
+    const contradictory = actionClauses.some((clause) =>
         targetBindings.some(({ binding, rule }) =>
             hasContradictoryCreatedTargetReference({
                 actionName: input.call.name,
@@ -5136,9 +5209,15 @@ function getExplicitCreatedTargetIntent(input: {
                 ...(rule.promptRole === undefined ? {} : { promptRole: rule.promptRole }),
             })
         )
-    )
-        ? 'mismatched'
-        : 'none';
+    );
+    const explicitlyNamedParent =
+        isCreation &&
+        actionClauses.some((clause) =>
+            /\b(?:on|in|into|to)\s+(?!(?:it|its|that|this|the new|new)\b)(?!beats?\b|bars?\b|measures?\b|\d+\b)/iu.test(
+                clause.masked
+            )
+        );
+    return contradictory || explicitlyNamedParent ? 'mismatched' : 'none';
 }
 
 type PromptActionRequest = {
@@ -6076,7 +6155,9 @@ export function bridgeGroundedLlmToolCalls({
             call,
             catalog,
             context: prospectiveContext,
+            plannedCreations: visiblePlannedTrackCreations,
             prompt,
+            producedName: collectedBindings.bindingsByCallIndex.get(index)?.name,
         });
         let grounded: ToolCallResult | LlmActionRejection;
         if (createdTargetIntent === 'mismatched') {
