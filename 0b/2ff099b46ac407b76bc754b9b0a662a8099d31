@@ -1,0 +1,35 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_ed5aa36a3ba357::t_eebdc54235e999 361-376
+scripts/__tests__/reviewDossier.spec.ts
+  s_ed5aa36a3ba357::t_dd5580bf7904bb 17-18,22,39,411-575,1222-1224
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_ed5aa36a3ba357::t_b729ddd93d8c9a 10,50-55,334-369,953-1002
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_ed5aa36a3ba357::t_b7643b5b9f79da 3,11-16,64,76,535-668
+scripts/checkStancesRecord.ts
+  s_ed5aa36a3ba357::t_29810a6315e642 17-19,225-257,389-391,393-394,396
+scripts/reviewDossier.ts
+  s_ed5aa36a3ba357::t_6f825f832d113b 30,33,47-48,50,54-55,138-147,570-572,576-585,610,653-654,677-682
+scripts/reviewDossierChain.ts
+  s_ed5aa36a3ba357::t_9238d619c8e570 8-10,120-266,388-394,422-424,464-466,475-476,491
+scripts/reviewDossierPublication.ts
+  s_ed5aa36a3ba357::t_3c60c859ed1148 24,31,70-77,249-254,421
+scripts/reviewDossierSemanticAssessment.ts
+  s_ed5aa36a3ba357::t_db0126cba300fa 29-45,234-235,242-243,250,255-302,321,329-336,359,373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b2ff099b46ac407b76bc754b9b0a662a8099d31",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
