@@ -501,6 +501,7 @@ vi.mock('#/modules/Gluten/stores', () => ({
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
+    initGrandBouleDocumentReconciliation: noop,
     prepareOfflineGrandBoule: noop,
     captureOfflineGrandBoule: vi.fn(() => {
         throw new Error('bootstrap wiring fixture does not capture Grand Boule state');

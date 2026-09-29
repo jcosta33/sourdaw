@@ -278,6 +278,18 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: ['audioEngine', 'startFaustNote'],
         reason: 'Yeast offset harness; the real MIDI graph reaches the barrel but the tests stub the engine doors directly and never call audioEngine or startFaustNote.',
     },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: 'Yeast groove-admission harness; the omitted Arrangement keys are never read by its tests (verified passing).',
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
+        barrel: '#/modules/AudioEngine/useCases',
+        missingKeys: ['audioEngine', 'startFaustNote'],
+        reason: 'Yeast groove-admission harness; the tests stub the engine doors directly and never call audioEngine or startFaustNote.',
+    },
 ];
 
 export type MockedBarrel = {

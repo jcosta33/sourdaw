@@ -81,8 +81,11 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // all three derive from that one capture — and lets a Play during a drag
     // hear the previewed value. The store and the chunk part only across the
     // stale-mirror window `projectGrandBoulePersistedState` documents: a
-    // peer's commit does not reconcile the local store (#4894); reload or node
-    // recreation closes it. The five snake_case names are the DSP's own
+    // genuinely uncommitted transient drag, whose in-flight preview the
+    // document has not yet seen. Every document-origin change — a peer's
+    // commit, an undo, a bulk load — reconciles the store through
+    // `initGrandBouleDocumentReconciliation` (#4894), so the window closes
+    // without a reload. The five snake_case names are the DSP's own
     // `set_param` vocabulary (`GrandBouleEngine::set_param`,
     // `crates/daw-dsp/src/grand_boule/engine.rs`), the same names
     // `prepareOfflineGrandBoule` posts; the `temperament` write rides as a

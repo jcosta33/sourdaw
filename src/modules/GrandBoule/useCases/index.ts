@@ -8,3 +8,5 @@ export { setGrandBouleMorphEnabled } from './setGrandBouleMorphEnabled';
 export { setGrandBouleMorphModel } from './setGrandBouleMorphModel';
 export { setGrandBouleMorphPosition } from './setGrandBouleMorphPosition';
 export { captureOfflineGrandBoule } from './captureOfflineGrandBoule';
+export { initGrandBouleDocumentReconciliation } from './initGrandBouleDocumentReconciliation';
+export { reconcileGrandBouleDevicesFromProject } from './reconcileGrandBouleDevicesFromProject';

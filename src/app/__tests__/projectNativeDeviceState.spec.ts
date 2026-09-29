@@ -12,15 +12,27 @@
  * project saved rather than the DSP's Equal/neutral defaults.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import {
     createGrandBouleStore,
     createDefaultGrandBouleState,
     resetGrandBouleStores,
 } from '#/modules/GrandBoule/stores';
+import { reconcileGrandBouleDevicesFromProject } from '#/modules/GrandBoule/useCases';
 
 import { projectNativeDeviceState } from '../projectNativeDeviceState';
+
+// The reconcile's engine half addresses the live AudioContext through
+// `ensureTrackStrip`, which does not exist under Vitest. Answering an empty
+// strip sends `resolveGrandBouleEngine` down its disconnected-handle branch, so
+// the sweep exercises the store fold this spec asserts and skips the engine;
+// the ready-engine sync is the module spec's subject.
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return { ...actual, ensureTrackStrip: () => ({ deviceNodes: [] }) };
+});
 
 describe('projectNativeDeviceState', () => {
     beforeEach(() => {
@@ -106,10 +118,11 @@ describe('projectNativeDeviceState', () => {
     it('lets the live store win when its voicing diverges from the chunk', () => {
         // Store-wins is the capture's precedence: the store holds what the
         // user hears right now, including a preview mid-drag, while the chunk
-        // only catches up at commit. A peer's commit never reconciles the
-        // local store (#4894), so after one the two genuinely diverge until
-        // reload or node recreation — and the projection still follows the
-        // store, the same source the live web carrier plays from.
+        // only catches up at commit. Before #4894's document-origin reconcile
+        // a peer's commit left the two genuinely diverged until reload; the
+        // projection still follows the store, the same source the live web
+        // carrier plays from — which is why the reconcile, not this arm, is
+        // what closes the window.
         const deviceId = 'grand-boule-divergent';
         const store = createGrandBouleStore(deviceId);
         const state = createDefaultGrandBouleState();
@@ -153,6 +166,51 @@ describe('projectNativeDeviceState', () => {
             sustain_threshold: 0.15,
             cc_smoothing_ms: 5,
         });
+    });
+
+    it('projects the peer-committed temperament once the document-origin reconcile has closed the window (#4894)', () => {
+        // The store holds temperament 1 from load; the chunk holds the peer's
+        // 5. Store-wins alone would keep projecting 1 forever — this is the
+        // stale-mirror window #4894 filed. The document-origin reconcile (the
+        // subscription's sweep) folds the chunk back into the store, and the
+        // same capture this arm performs then projects the peer's temperament.
+        const deviceId = 'grand-boule-reconciled';
+        const deviceState = {
+            version: 1,
+            data: {
+                modelA: 'balanced-grand',
+                modelB: 'clear-grand',
+                morphPosition: 0.3,
+                layerBalance: 0,
+                enabled: true,
+                temperament: 5,
+                hammerHardness: -0.4,
+                velocityCurve: 1.1,
+                stereoWidth: 0.9,
+                toneTilt: 0.25,
+            },
+        };
+        const store = createGrandBouleStore(deviceId);
+        const state = createDefaultGrandBouleState();
+        store.set({ ...state, temperament: 1 });
+        trackStore.set({ tracks: [trackCarrying(deviceId, deviceState)], selectedTrackId: null, ghostClips: [] });
+        try {
+            expect(projectNativeDeviceState({ deviceId, deviceType: 'grand-boule', deviceState })?.temperament).toBe(1);
+
+            reconcileGrandBouleDevicesFromProject();
+
+            expect(projectNativeDeviceState({ deviceId, deviceType: 'grand-boule', deviceState })).toEqual({
+                temperament: 5,
+                hammer_hardness: -0.4,
+                tone_tilt: 0.25,
+                stereo_width: 0.9,
+                velocity_curve: 1.1,
+                sustain_threshold: 0.15,
+                cc_smoothing_ms: 5,
+            });
+        } finally {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        }
     });
 
     it('rejects a chunk with an invalid temperament to the wholesale default', () => {
@@ -255,3 +313,54 @@ describe('projectNativeDeviceState', () => {
         expect(projected).toBeNull();
     });
 });
+
+/**
+ * Built here rather than imported from Arrangement's `TrackDummy`: an app-level
+ * spec reaches Arrangement only through its contract barrel, and the reconcile
+ * reads the device — id, type and `deviceState` chunk — off this strip.
+ */
+function trackCarrying(deviceId: string, deviceState: NonNullable<Track['devices'][number]['deviceState']>): Track {
+    return {
+        id: 'track-with-grand',
+        name: 'Piano',
+        kind: 'midi',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#0000ff',
+        clips: [],
+        devices: [
+            {
+                id: deviceId,
+                name: 'Grand Boule',
+                type: 'grand-boule',
+                bypassed: false,
+                parameterValues: {},
+                deviceState,
+            },
+        ],
+        sends: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        midiFx: [],
+    };
+}

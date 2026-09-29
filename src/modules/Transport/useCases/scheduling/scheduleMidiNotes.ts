@@ -1084,6 +1084,22 @@ export async function scheduleMidiNotes(
                     if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
                         continue;
                     }
+                    // #4910 — a live Yeast source note is owned once, by
+                    // processLiveYeastTrackBlock's block windows, at its audible
+                    // beat before the sequencer groove displaces it. Re-testing
+                    // the projected start dropped notes ownership had already
+                    // admitted whenever the displacement crossed a window edge —
+                    // or a looped iteration head, which the projection re-anchors
+                    // a full loop away — so this population is admitted on the
+                    // owned coordinate and the displaced start schedules where it
+                    // lands, the same post-admission treatment swing gets. Every
+                    // other path's selector only pre-selects groove-slack
+                    // candidates; the projected-start test is their real
+                    // ownership and keeps the exact window semantics.
+                    const admittedOnOwnedBeat = notesAreAbsolute && !isTrackScopedYeastNote;
+                    if (admittedOnOwnedBeat && (note.startBeat < fromBeat || note.startBeat >= toBeat)) {
+                        continue;
+                    }
 
                     const iterationStart = clip.startBeat + iterOffset;
                     let projectedNotes: readonly LiveYeastNote[];
@@ -1106,7 +1122,7 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
-                        if (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat) {
+                        if (!admittedOnOwnedBeat && (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat)) {
                             continue;
                         }
                         if (!isCurrent()) {
