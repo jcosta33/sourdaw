@@ -1,0 +1,48 @@
+src/modules/PluginHost/useCases/faustEngine/__tests__/faustPolyVoiceDispatchDspBehavior.spec.ts
+  s_fe7d9519d0226e::t_43080fa22df182 14,133-134,142-143
+  s_fe7d9519d0226e::t_20d131ec5a7aa4 11,15-16
+src/modules/PluginHost/useCases/faustEngine/registerSupersawUnison.ts
+  s_fe7d9519d0226e::t_28352030e81023 122-123
+src/modules/PluginHost/useCases/faustEngine/compileEffectFreeFaustPolyDsp.ts
+  s_fe7d9519d0226e::t_ca934667e1b0da 1-24
+.agents/skills/review-stances/test-validity.md
+  s_fe7d9519d0226e::t_a8c6e124ef1dd4 581-586
+src/modules/PluginHost/useCases/faustEngine/registerFaustDSP.ts
+  s_fe7d9519d0226e::t_ca934667e1b0da 41-42,52
+src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts
+  s_fe7d9519d0226e::t_ca934667e1b0da 5,31,44
+  s_fe7d9519d0226e::t_f734d8e3cac90f 32-39
+src/modules/PluginHost/models/FaustEngineTypes.ts
+  s_fe7d9519d0226e::t_ca934667e1b0da 8
+src/modules/PluginHost/useCases/faustEngine/__tests__/compileFaustDSP.spec.ts
+  s_fe7d9519d0226e::t_ef428a14e7b54c 7-8,10,103-107,109-137
+  s_fe7d9519d0226e::t_9a48713a0fc369 1-3,6,9,12-13,15-28,33-52,192-193
+  s_fe7d9519d0226e::t_f4ef308a84111e 11,145-183
+  s_fe7d9519d0226e::t_f734d8e3cac90f 108
+  s_fe7d9519d0226e::t_1563242fa90e82 4-5,14,29-32,53-102,138-144,184-191
+  s_fe7d9519d0226e::t_4a7f5d481bf8dd 194-195
+src/modules/Synth/useCases/proSynthInstruments.ts
+  s_fe7d9519d0226e::t_d606b1e11d117c 81-82,127-128,162-163
+.agents/skills/review-stances/correctness.md
+  s_fe7d9519d0226e::t_a8c6e124ef1dd4 462-467
+src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts
+  s_fe7d9519d0226e::t_28352030e81023 574-575,624-625,843-844,974-975,1068-1069
+src/modules/PluginHost/useCases/faustEngine/__tests__/faustEngineAccessors.spec.ts
+  s_fe7d9519d0226e::t_86a50a6a0e7985 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92a0511ade17a77deb1cf31a35ea9b9b25ec5d25",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
