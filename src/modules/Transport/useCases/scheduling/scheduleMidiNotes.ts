@@ -233,6 +233,7 @@ type SelectMidiNotesForSchedulerWindowInput = {
 type SelectYeastNotesForSchedulerWindowInput = {
     notes: readonly ScheduledMidiNote[];
     iterationStartBeat: number;
+    midiOffsetBeats: number;
     fromBeat: number;
     toBeat: number;
 };
@@ -343,12 +344,26 @@ function selectMidiNotesForSchedulerWindow({
 function selectYeastNotesForSchedulerWindow({
     notes,
     iterationStartBeat,
+    midiOffsetBeats,
     fromBeat,
     toBeat,
 }: SelectYeastNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
-    const { orderByNote, sortedNoteEnds, sortedNotes } = getScheduledMidiNoteIndex(notes);
-    const sourceStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-    const sourceEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const { maxDurationBeats, orderByNote, sortedNoteEnds, sortedNotes } = getScheduledMidiNoteIndex(notes);
+    // #4655 — candidates live in content coordinates: the window's audible
+    // span converts back with `+ midiOffsetBeats`, the same conversion
+    // `selectMidiNotesForSchedulerWindow` performs. The boundary lookbehind
+    // mirrors that selector too: content displaced before the iteration start
+    // sounds clamped to it, and only notes with `duration > offset − content`
+    // survive the clamp, so `maxDurationBeats` covers every one of them.
+    const schedulesIterationBoundary = iterationStartBeat >= fromBeat && iterationStartBeat < toBeat;
+    const leadingIntervalLookbehindBeats = schedulesIterationBoundary ? maxDurationBeats : 0;
+    const sourceStartBeat =
+        fromBeat -
+        iterationStartBeat +
+        midiOffsetBeats -
+        MAX_GROOVE_STAGE_DISPLACEMENT_BEATS -
+        leadingIntervalLookbehindBeats;
+    const sourceEndBeat = toBeat - iterationStartBeat + midiOffsetBeats + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
     const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
     const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
     const noteEndStartIndex = lowerBoundMidiNoteEnd(sortedNoteEnds, sourceStartBeat);
@@ -385,9 +400,13 @@ function getYeastCandidateIterationRange({
     iterationCount,
     loopEnabled,
     loopLengthBeats,
+    midiOffsetBeats,
     toBeat,
     notes,
-}: GetScheduledIterationRangeInput & { notes: readonly ScheduledMidiNote[] }): ScheduledIterationRange {
+}: GetScheduledIterationRangeInput & {
+    midiOffsetBeats: number;
+    notes: readonly ScheduledMidiNote[];
+}): ScheduledIterationRange {
     const activeRange = getScheduledIterationRange({
         clipStartBeat,
         fromBeat,
@@ -400,13 +419,23 @@ function getYeastCandidateIterationRange({
         return activeRange;
     }
     const { maxEndpointBeat, minEndpointBeat } = getScheduledMidiNoteIndex(notes);
+    // #4655 — endpoints are content beats; their audible position inside an
+    // iteration is `clipStartBeat + iteration * loopLength + endpoint −
+    // midiOffsetBeats`, so the offset widens the iteration range on the same
+    // side it shifts the endpoint.
     const firstEndpointIndex = Math.max(
         0,
-        Math.ceil((fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - maxEndpointBeat) / loopLengthBeats)
+        Math.ceil(
+            (fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - maxEndpointBeat + midiOffsetBeats) /
+                loopLengthBeats
+        )
     );
     const endpointEndIndex = Math.min(
         iterationCount,
-        Math.ceil((toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - minEndpointBeat) / loopLengthBeats)
+        Math.ceil(
+            (toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - minEndpointBeat + midiOffsetBeats) /
+                loopLengthBeats
+        )
     );
     return {
         startIndex: Math.min(activeRange.startIndex, firstEndpointIndex),
@@ -589,6 +618,7 @@ export async function scheduleMidiNotes(
                     iterationCount,
                     loopEnabled: clip.loopEnabled ?? false,
                     loopLengthBeats: loopLength,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                     notes: sourceNotes,
                     toBeat,
                 });
@@ -607,6 +637,7 @@ export async function scheduleMidiNotes(
                     const candidateNotes = selectYeastNotesForSchedulerWindow({
                         notes: sourceNotes,
                         iterationStartBeat,
+                        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         fromBeat,
                         toBeat,
                     });

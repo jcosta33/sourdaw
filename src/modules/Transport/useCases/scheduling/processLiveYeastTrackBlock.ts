@@ -68,7 +68,6 @@ type PendingLiveYeastNote = {
 type PendingIdentifiedLiveYeastNote = {
     notes: LiveYeastNote[];
     index: number;
-    midiOffsetBeats: number;
 };
 
 export async function processLiveYeastTrackBlock({
@@ -125,8 +124,25 @@ export async function processLiveYeastTrackBlock({
                     continue;
                 }
 
-                const noteStartBeat = iteration.iterationStartBeat + groovedNote.startBeat;
-                const noteEndBeat = noteStartBeat + groovedNote.duration;
+                // #4655 — own the note at its audible beat, the same coordinate
+                // every other path uses: `iterationStartBeat + startBeat −
+                // midiOffsetBeats`. The offset locates the content inside the
+                // clip; selecting and owning on the un-offset beat and shifting
+                // back afterwards dropped every note whose offset was wider
+                // than one scheduler window. Content displaced before the
+                // iteration start sounds clamped to it — the same boundary
+                // clamp `projectClipMidiEvents` applies to the projected note —
+                // so the owned start is exactly the beat the window test sees.
+                // The release keeps its full audible time: a note longer than
+                // its loop rings past the iteration end and the owning window
+                // follows the release, as the loop-work bounds spec pins.
+                const audibleStartBeat =
+                    iteration.iterationStartBeat + groovedNote.startBeat - iteration.midiOffsetBeats;
+                const noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
+                const noteEndBeat = audibleStartBeat + groovedNote.duration;
+                if (noteEndBeat <= noteStartBeat) {
+                    continue;
+                }
                 const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
                 const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
                 const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
@@ -249,13 +265,15 @@ export async function processLiveYeastTrackBlock({
                 pendingByInstance.set(event.noteInstanceId, {
                     notes: targetNotes,
                     index: noteIndex,
-                    midiOffsetBeats: iteration?.midiOffsetBeats ?? 0,
                 });
             } else {
                 const pending = pendingByRouteAndPitch.get(noteKey) ?? { indices: [], cursor: 0 };
                 pending.indices.push(noteIndex);
                 pendingByRouteAndPitch.set(noteKey, pending);
             }
+            // #4655 — the event time is already the audible beat; the
+            // offset was applied once at ownership above and must not be
+            // subtracted again here.
             targetNotes.push({
                 ...template,
                 id: `${template.id}:yeast:${event.kind.note}:${event.timeSamples}:${ordinal}`,
@@ -263,7 +281,7 @@ export async function processLiveYeastTrackBlock({
                 noteInstanceId: event.noteInstanceId,
                 pitch: event.kind.note,
                 velocity: event.kind.velocity,
-                startBeat: eventPpq - (iteration?.midiOffsetBeats ?? 0),
+                startBeat: eventPpq,
                 duration,
             });
             continue;
@@ -271,7 +289,6 @@ export async function processLiveYeastTrackBlock({
 
         let noteTarget = targetNotes;
         let noteIndex: number;
-        let midiOffsetBeats = iteration?.midiOffsetBeats ?? 0;
         if (event.noteInstanceId) {
             const pending = pendingByInstance.get(event.noteInstanceId);
             if (!pending) {
@@ -280,7 +297,6 @@ export async function processLiveYeastTrackBlock({
             pendingByInstance.delete(event.noteInstanceId);
             noteTarget = pending.notes;
             noteIndex = pending.index;
-            midiOffsetBeats = pending.midiOffsetBeats;
         } else {
             const pending = pendingByRouteAndPitch.get(noteKey);
             if (!pending || pending.cursor >= pending.indices.length) {
@@ -292,7 +308,7 @@ export async function processLiveYeastTrackBlock({
         const eventPpq = event.timePpq ?? samplesToBeat(changes, event.timeSamples, transport.tempo, sampleRate);
         noteTarget[noteIndex] = {
             ...note,
-            duration: Math.max(0, eventPpq - midiOffsetBeats - note.startBeat),
+            duration: Math.max(0, eventPpq - note.startBeat),
         };
     }
 
