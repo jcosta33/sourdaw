@@ -1,0 +1,27 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/mergeAutomationSegmentStreams.spec.ts
+  s_ed5aa36a3ba357::t_2fb61bbed13f94 42-47,152-157,159,173,182-187,192,196,205-213,217,222,224-226,246-256,295-473
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_ed5aa36a3ba357::t_6e628e8b25e0dd 682,700,724-727,730-734,743,747-749,794,797-799,802,811,814-815,847-852
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_ed5aa36a3ba357::t_99844093ebcfe6 491-493,496-499,512,528,531-538,541,544-546,566,569-571
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_ed5aa36a3ba357::t_456e228aaade89 617,638-647,649-664
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationExternalPlugin.spec.ts
+  s_ed5aa36a3ba357::t_deabfb297c9e3e 143-145,151-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4fba3965f775497c8110c4d243b7472874d3ed95",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
