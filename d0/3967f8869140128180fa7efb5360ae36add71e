@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_ed5aa36a3ba357::t_9c1386bc484d40 886-891,897-906,910,913-919,921-922,924,926-927
+  s_ed5aa36a3ba357::t_2de497105eb9be 418-435,476-477,479-482
+  s_ed5aa36a3ba357::t_d4e55b505635eb 436-475,478,892-896,907-909,911-912,920,923,925
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_ed5aa36a3ba357::t_0669e28d67941a 1123
+  s_ed5aa36a3ba357::t_0fd31e95a51ec8 1099
+  s_ed5aa36a3ba357::t_79689fbf37aa52 1076-1079,1081-1098,1100-1122,1124-1125,1130,1136,1143,1152-1154,1156
+  s_ed5aa36a3ba357::t_bd5946a5efc152 1080
+  s_ed5aa36a3ba357::t_ed7d37f542a0e9 1126-1129,1131-1135,1137-1142,1144-1151,1155,1157-1158
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_75861ae6a540c7 29-32,4692,5142,5165,5171,6298
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_10d6be25a0a8d5 223-253,438-460,465
+  s_ed5aa36a3ba357::t_f6d68d7b1c4a1d 461-464
+  s_ed5aa36a3ba357::t_a6f3738d5887c3 466-468
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ed5aa36a3ba357::t_2da0a2b753d167 3,172-191
+  s_ed5aa36a3ba357::t_6401a28694f605 192
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_6e9737eb2a0074 3267-3271,3273,3284,3314,3329-3355
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ed5aa36a3ba357::t_01189b3361fe29 15,115,128
+  s_ed5aa36a3ba357::t_75861ae6a540c7 117-118,127,129-130,132,151-156,158-159
+  s_ed5aa36a3ba357::t_d4e55b505635eb 116,119-126,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d03967f8869140128180fa7efb5360ae36add71e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
