@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_d47444e418e83d 149-181,184,245-246,256,299-300,302-333
+  s_ed5aa36a3ba357::t_c53fbafead0c27 182-183,185-193,301
+  s_ed5aa36a3ba357::t_5f85e3140282d8 334-335
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_92c2560294c409 3222-3240,3250-3290,3292-3296,3492-3541,3582
+  s_ed5aa36a3ba357::t_a8e1492662cbf6 3241-3249,3291
+  s_ed5aa36a3ba357::t_66dc7a01ed28da 3297-3350,3355-3356,3359,3361,3542-3565,3573,3577,3583-3584
+  s_ed5aa36a3ba357::t_f9d30cf80fcfe2 3351-3354,3357-3358,3360,3362-3366,3566-3572,3574-3576,3578-3581,3585-3588
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_93aa17b8ef9e04 4786-4792,5136-5143,5146-5147,5154-5158,5160-5169,5173,5175-5197,6273-6280,6282-6283
+  s_ed5aa36a3ba357::t_b7f58ceb823f9a 5144-5145,5148-5153,5159,5172
+  s_ed5aa36a3ba357::t_3fd94965dbfbe6 5170-5171,5174
+  s_ed5aa36a3ba357::t_2d082b0b348a07 6284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ad1357958d33e9f3b5314b47d14565c2f8ea4830",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
