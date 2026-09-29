@@ -234,11 +234,21 @@ function mapLaneRegions(
             // unlawful for the plan's own validator. The after side keeps the
             // portion left of the span; the portion inside the span claims
             // deleted material and is gone on either route. The portion right
-            // of the span survives verbatim only when nothing moved there —
-            // the excise route leaves the gap, while the ripple route rehomes
-            // that material and a verbatim tail would overhang it.
+            // of the span survives verbatim only when no window on the track
+            // shifted — the conservative proxy for nothing rehomed under it:
+            // any shifted window drops the tail, whether or not the shift
+            // reaches it.
             mapping.regionsBefore.push(region);
             if (region.endBeat <= input.deleteStartBeat) {
+                mapping.regionsAfter.push(region);
+                continue;
+            }
+            if (rightSideUnmoved && region.startBeat >= input.deleteEndBeat) {
+                // Wholly right of the span on a track where nothing shifted:
+                // the region is already correct, so it rides the after side
+                // verbatim too — the region object itself, like the boundary
+                // case above — recording no change and emitting no no-op
+                // transition.
                 mapping.regionsAfter.push(region);
                 continue;
             }
@@ -251,14 +261,14 @@ function mapLaneRegions(
                 });
             }
             if (rightSideUnmoved && region.endBeat > input.deleteEndBeat) {
-                const tailStartBeat = Math.max(region.startBeat, input.deleteEndBeat);
-                if (tailStartBeat < region.endBeat) {
-                    mapping.regionsAfter.push({
-                        startBeat: tailStartBeat,
-                        endBeat: region.endBeat,
-                        takeId: region.takeId,
-                    });
-                }
+                // Partial tail: the span consumed the region's body, so the
+                // surviving right portion is a fresh literal — the change is
+                // already recorded above.
+                mapping.regionsAfter.push({
+                    startBeat: Math.max(region.startBeat, input.deleteEndBeat),
+                    endBeat: region.endBeat,
+                    takeId: region.takeId,
+                });
             }
             continue;
         }
@@ -305,9 +315,11 @@ function mapLaneRegions(
  * A region whose take's clip was untouched rides the before side verbatim
  * too; the after side keeps the portion left of the deleted span, drops the
  * in-span portion (it claims deleted material) on either route, and keeps the
- * right-of-span portion verbatim only when nothing moved there — the excise
- * route leaves the gap, while the ripple route rehomes that material and a
- * verbatim tail would overhang it. The clamp exists because the store
+ * right-of-span portion verbatim only when no window on the track shifted —
+ * the conservative proxy for nothing having been rehomed under it. Any
+ * shifted window drops the tail, whether or not the shift reaches it: the
+ * capture does not prove per tail that the shift stays clear, and a verbatim
+ * tail could overhang rehomed material. The clamp exists because the store
  * tolerates a region wider than its take, so the overhang could otherwise
  * reach into the freed span and overlap the regions remapped onto it.
  * The derived sides keep the store's exactness law by
@@ -339,13 +351,12 @@ export function captureTakeReKeyTransitions(
         // the first — an accepted divergence on state no route produces.
         const takesById = new Map(lane.takes.map((take) => [take.id, take]));
         const takeMapping = mapLaneTakes(lane, groupWindowsByClipId(windows), input);
-        // Route discriminator: the excise route leaves the gap, so every
-        // window it emits is position-preserving (targetStartBeat ===
-        // sourceStartBeat), while the ripple route closes the gap and rehomes
-        // right-of-span material with shifted windows. A stale-wide region's
-        // right-of-span tail survives verbatim only when nothing moved there
-        // (see mapLaneRegions); on the ripple route a verbatim tail would
-        // overhang the rehomed material.
+        // Movement test, not route identity: true when no window on the
+        // track shifted — always the case on the excise route, which leaves
+        // the gap, and also on a ripple delete that moved nothing right of
+        // the span (a trim-only ripple). A stale-wide region's right-of-span
+        // tail survives verbatim only then; any shifted window drops it (see
+        // mapLaneRegions).
         const rightSideUnmoved = windows.every((window) => window.targetStartBeat === window.sourceStartBeat);
         const regionMapping = mapLaneRegions(
             lane,

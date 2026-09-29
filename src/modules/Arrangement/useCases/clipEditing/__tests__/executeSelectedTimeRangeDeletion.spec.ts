@@ -1381,6 +1381,36 @@ describe('executeSelectedTimeRangeDeletion', () => {
         ]);
     });
 
+    it('records no take-lane slot when a wholly-right region rides verbatim on an unmoved track', () => {
+        // The region sits wholly right of the range and nothing on the track
+        // shifts — the excise trims the left clip in place and leaves the
+        // gap. The region is already correct on the after side, so the lane
+        // emits no transition at all: a content-equal capture would be plan
+        // noise on every excise upstream of a parked comped clip.
+        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4 });
+        const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 8, endBeat: 12 });
+        setArrangement([createTrack('target', [left, keeper])]);
+        const keeperTake = { ...createTake('keeper', 'Keeper take', 8, 12), id: 'take-keeper' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [keeperTake],
+            activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: keeperTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        const laneStateBefore = takeLaneStore.value;
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+
+        expect(result.inversePlan).toMatchObject({ takeLanes: null });
+        // No transition means no reconcile pass: the lane state is untouched.
+        expect(takeLaneStore.value).toBe(laneStateBefore);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 8, endBeat: 12, takeId: keeperTake.id },
+        ]);
+    });
+
     it('keeps a stale region’s right-of-range tail verbatim when the excise moves nothing there', () => {
         // The stale region overhangs its take across the whole range. The
         // excise consumes the in-range portion, but the tail right of the
