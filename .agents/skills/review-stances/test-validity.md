@@ -87,6 +87,12 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-28 — an elapsed-time readiness test omitted the real progress producer
+
+The existing timeout cases exercised stalled Crumbs loads and captured-generation isolation, but no check drove Levain's decoded-bank progress into all five live TrackNodes across the 10-second boundary. A green timeout test therefore could not distinguish a healthy cold bank from a stall. PR #3982's review explicitly scoped out progressing-load policy and caller-visible outcomes; the test gap is the missing #3318 acceptance probe, not a failed #3982 cohort oracle.
+
+Probe: use the real decoded-bank producer and sink/descriptor route, assert each captured device receives its own increasing completion callback, then cross the old deadline, finish the finite bank, and require five token-matched worklet acknowledgements. Reverting progress forwarding or the per-device renewal must redden that case. Independently hold one final acknowledgement and one stalled peer, and assert typed failure rather than treating promise settlement or decoded bytes as playable readiness.
+
 ### 2026-09-28 — specs that measured a budget with the budget's own expression could not fail (escaped via PR #4491; merge `9effe3689c`)
 
 The semantic review's planner and its provider each measured one request budget differently — the planner reserved a hand-rolled wrapper, the provider measured `{state, questions}` — and the specs asserted the planner's figure with the planner's arithmetic, so the nine-byte divergence that left 37 of 42 scanned units unassessed in CI — the oversized unit under its own `budget_exhausted` refusal and 36 more under `budget-exhausted-before-admission` — was invisible to a green suite. The class of pin that cannot fail reappears whenever a repair adds pins, and each shape is checkable in the spec at head rather than in the history: an assertion reachable only after a neighbouring pin has already fixed the same value, a relation with enough slack that the constant it was written for cannot redden it, a parse that reads the first match in a file rather than the entry it names, and a ratio computed from a value its neighbour pinned.

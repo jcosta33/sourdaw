@@ -1,5 +1,5 @@
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
-export function waitForDevices(): Promise<void> {
+export function waitForDevices(): ReturnType<typeof audioEngine.waitForDevices> {
     return audioEngine.waitForDevices();
 }

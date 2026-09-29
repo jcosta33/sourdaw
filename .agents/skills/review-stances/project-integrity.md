@@ -1,5 +1,9 @@
 # Lesson library: project integrity
 
+## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
+
+`waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
+
 Attack every claim that a project is saved, reopenable, recoverable, or safe to leave. Trace each
 referenced asset from the exact serialized snapshot to the durable bytes and ownership record that
 a fresh runtime will consume. A document commit is insufficient when the document points outside

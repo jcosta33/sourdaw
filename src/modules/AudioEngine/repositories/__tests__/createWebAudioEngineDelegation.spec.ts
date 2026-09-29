@@ -784,6 +784,6 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('waitForDevices resolves immediately with no pending device loads', async () => {
-        await expect(engine.waitForDevices()).resolves.toBeUndefined();
+        await expect(engine.waitForDevices()).resolves.toEqual({ status: 'ready', devices: [] });
     });
 });

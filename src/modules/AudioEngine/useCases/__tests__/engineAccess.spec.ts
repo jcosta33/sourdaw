@@ -38,7 +38,7 @@ const engineMocks = vi.hoisted(() => {
             unwireSidechainRoute: vi.fn(),
             refreshSidechainAlignment: vi.fn(),
             resume: vi.fn(() => Promise.resolve()),
-            waitForDevices: vi.fn(() => Promise.resolve()),
+            waitForDevices: vi.fn(() => Promise.resolve({ status: 'ready', devices: [] })),
         },
     };
 });
@@ -76,7 +76,7 @@ describe('engineAccess', () => {
         engineMocks.engine.getState.mockReturnValue(engineMocks.engineState);
         engineMocks.engine.getMasterPeakLevel.mockReturnValue(0.42);
         engineMocks.engine.resume.mockResolvedValue(undefined);
-        engineMocks.engine.waitForDevices.mockResolvedValue(undefined);
+        engineMocks.engine.waitForDevices.mockResolvedValue({ status: 'ready', devices: [] });
     });
 
     it('getAudioContext returns the engine-owned context instance', () => {
@@ -178,7 +178,7 @@ describe('engineAccess', () => {
         await expect(resumeEngine()).resolves.toBeUndefined();
         expect(engineMocks.engine.resume).toHaveBeenCalledTimes(1);
 
-        await expect(waitForDevices()).resolves.toBeUndefined();
+        await expect(waitForDevices()).resolves.toEqual({ status: 'ready', devices: [] });
         expect(engineMocks.engine.waitForDevices).toHaveBeenCalledTimes(1);
     });
 });

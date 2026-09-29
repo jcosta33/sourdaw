@@ -10,6 +10,12 @@ export type DeviceReadinessFailureStage = 'node' | 'graph' | 'content' | 'runtim
 
 type DeviceReadinessStatus = 'node-pending' | 'graph-pending' | 'content-pending' | 'ready' | 'failed';
 
+type DeviceWaitState = {
+    status: 'ready' | 'pending' | 'failed' | 'cancelled';
+    stage: DeviceReadinessFailureStage | null;
+    lastActivityAtMs: number;
+};
+
 type TimingAccumulator = {
     samples: number;
     totalMs: number;
@@ -29,6 +35,9 @@ type DeviceReadinessRecord = {
     failedAtMs: number | null;
     status: DeviceReadinessStatus;
     failureStage: DeviceReadinessFailureStage | null;
+    lastActivityAtMs: number;
+    progressEpoch: number;
+    contentProgress: number;
 };
 
 const MAX_RETAINED_TERMINAL_RECORDS = 256;
@@ -95,8 +104,16 @@ class DeviceReadinessDiagnosticsCollector {
     private requestToPlayableReadyMs = createTimingAccumulator();
     private readonly records = new Map<string, DeviceReadinessRecord>();
     private readonly terminalOrder = new Set<string>();
+    private readonly waitCaptures = new Set<{
+        token: DeviceReadinessToken;
+        record: DeviceReadinessRecord | null;
+        invalidated: boolean;
+    }>();
 
     reset(): void {
+        for (const capture of this.waitCaptures) {
+            capture.invalidated = true;
+        }
         this.generation++;
         this.requested = 0;
         this.nodeReady = 0;
@@ -119,6 +136,7 @@ class DeviceReadinessDiagnosticsCollector {
         requiresContent: boolean;
         atMs?: number;
     }): DeviceReadinessToken {
+        this.invalidateWaitCaptures((capture) => capture.token.deviceId === input.deviceId);
         const previous = this.records.get(input.deviceId);
         if (previous && isPending(previous.status)) {
             this.cancelled++;
@@ -138,6 +156,9 @@ class DeviceReadinessDiagnosticsCollector {
             failedAtMs: null,
             status: 'node-pending',
             failureStage: null,
+            lastActivityAtMs: Date.now(),
+            progressEpoch: -1,
+            contentProgress: 0,
         });
         this.requested++;
         return token;
@@ -151,6 +172,7 @@ class DeviceReadinessDiagnosticsCollector {
         const atMs = timestampAtOrAfter(input.atMs, record.requestedAtMs);
         record.nodeReadyAtMs = atMs;
         record.status = 'graph-pending';
+        record.lastActivityAtMs = Date.now();
         this.nodeReady++;
         recordTiming(this.requestToNodeReadyMs, atMs - record.requestedAtMs);
     }
@@ -166,6 +188,7 @@ class DeviceReadinessDiagnosticsCollector {
         }
         const atMs = Math.max(record.requestedAtMs, record.nodeReadyAtMs ?? record.requestedAtMs, candidateAtMs);
         record.graphReadyAtMs = atMs;
+        record.lastActivityAtMs = Date.now();
         this.graphReady++;
         recordTiming(this.requestToGraphReadyMs, atMs - record.requestedAtMs);
         if (!record.requiresContent) {
@@ -179,6 +202,32 @@ class DeviceReadinessDiagnosticsCollector {
         }
     }
 
+    markContentProgress(input: { token: DeviceReadinessToken; epoch: number; progress: number }): void {
+        const record = this.currentRecord(input.token);
+        if (
+            !record ||
+            !record.requiresContent ||
+            record.status !== 'content-pending' ||
+            !Number.isSafeInteger(input.epoch) ||
+            input.epoch < 0 ||
+            !Number.isFinite(input.progress) ||
+            input.progress <= 0 ||
+            input.progress > 1 ||
+            input.epoch < record.progressEpoch
+        ) {
+            return;
+        }
+        if (input.epoch > record.progressEpoch) {
+            record.progressEpoch = input.epoch;
+            record.contentProgress = 0;
+        }
+        if (input.progress <= record.contentProgress) {
+            return;
+        }
+        record.contentProgress = input.progress;
+        record.lastActivityAtMs = Date.now();
+    }
+
     markContentSettled(input: { token: DeviceReadinessToken; outcome: DeviceContentLoadOutcome; atMs?: number }): void {
         const record = this.currentRecord(input.token);
         if (!record || !record.requiresContent || !isPending(record.status) || record.contentReadyAtMs !== null) {
@@ -186,6 +235,7 @@ class DeviceReadinessDiagnosticsCollector {
         }
         if (input.outcome === 'cancelled') {
             this.cancelled++;
+            this.invalidateWaitCaptures((capture) => capture.token === input.token);
             this.deleteRecord(input.token.deviceId);
             return;
         }
@@ -222,6 +272,7 @@ class DeviceReadinessDiagnosticsCollector {
     }
 
     cancel(token: DeviceReadinessToken): void {
+        this.invalidateWaitCaptures((capture) => capture.token === token);
         const record = this.currentRecord(token);
         if (!record) {
             return;
@@ -245,6 +296,46 @@ class DeviceReadinessDiagnosticsCollector {
             return record.status;
         }
         return 'pending';
+    }
+
+    getWaitState(token: DeviceReadinessToken): DeviceWaitState {
+        const record = this.currentRecord(token);
+        if (!record) {
+            return { status: 'cancelled', stage: null, lastActivityAtMs: 0 };
+        }
+        return this.waitStateForRecord(record);
+    }
+
+    captureWaitState(token: DeviceReadinessToken): { read: () => DeviceWaitState; release: () => void } {
+        const capture = { token, record: this.currentRecord(token), invalidated: false };
+        this.waitCaptures.add(capture);
+        return {
+            read: () =>
+                capture.invalidated || !capture.record
+                    ? { status: 'cancelled', stage: null, lastActivityAtMs: 0 }
+                    : this.waitStateForRecord(capture.record),
+            release: () => {
+                this.waitCaptures.delete(capture);
+            },
+        };
+    }
+
+    private waitStateForRecord(record: DeviceReadinessRecord): DeviceWaitState {
+        let stage: DeviceReadinessFailureStage | null = null;
+        if (record.status === 'failed') {
+            stage = record.failureStage;
+        } else if (record.status === 'node-pending') {
+            stage = 'node';
+        } else if (record.status === 'graph-pending') {
+            stage = 'graph';
+        } else if (record.status === 'content-pending') {
+            stage = 'content';
+        }
+        return {
+            status: record.status === 'ready' || record.status === 'failed' ? record.status : 'pending',
+            stage,
+            lastActivityAtMs: record.lastActivityAtMs,
+        };
     }
 
     snapshot(): AudioEngineDeviceReadinessDiagnostics {
@@ -288,6 +379,14 @@ class DeviceReadinessDiagnosticsCollector {
             return null;
         }
         return record;
+    }
+
+    private invalidateWaitCaptures(matches: (capture: { token: DeviceReadinessToken }) => boolean): void {
+        for (const capture of this.waitCaptures) {
+            if (matches(capture)) {
+                capture.invalidated = true;
+            }
+        }
     }
 
     private markPlayable(record: DeviceReadinessRecord, atMs: number): void {

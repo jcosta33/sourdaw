@@ -41,7 +41,8 @@ export async function autoLoadLevainSamples(
     deviceId: string,
     nodePort: MessagePort,
     instrumentId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onDecodedProgress?: (progress: number) => void
 ): Promise<readonly (MicPositionType | null)[] | null> {
     // The repository owns the desktop IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
@@ -71,6 +72,7 @@ export async function autoLoadLevainSamples(
                     return;
                 }
                 setSampleLoadProgress(deviceId, progress);
+                onDecodedProgress?.(progress);
             },
             signal,
         });
