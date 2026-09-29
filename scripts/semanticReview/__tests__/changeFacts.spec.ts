@@ -139,9 +139,29 @@ function unitPayload(
     });
 }
 
-/** Every declaration file the installed `vitest` ships, so the guard reads the framework's own surface. */
-function vitestDeclarationTexts(): string[] {
-    const packageFile = createRequire(import.meta.url).resolve('vitest/package.json');
+/**
+ * Every framework this repository's specs run on, with the package that *declares* its expect surface and
+ * the interfaces that declare its asymmetric matchers. `@playwright/test` re-exports `playwright/test`, so
+ * resolving the playwright package is what finds the interface the end-to-end specs' `expect` carries.
+ */
+const MATCHER_DECLARATION_SOURCES: readonly {
+    readonly framework: string;
+    readonly packageName: string;
+    readonly directories: readonly string[];
+    readonly interfaces: readonly string[];
+}[] = [
+    {
+        framework: 'vitest',
+        packageName: 'vitest',
+        directories: ['dist'],
+        interfaces: ['AsymmetricMatchersContaining', 'CustomMatcher'],
+    },
+    { framework: 'playwright', packageName: 'playwright', directories: ['types'], interfaces: ['AsymmetricMatchers'] },
+];
+
+/** Every declaration file one installed framework ships under the given directories. */
+function declarationTexts(packageName: string, directories: readonly string[]): string[] {
+    const packageFile = createRequire(import.meta.url).resolve(`${packageName}/package.json`);
     const texts: string[] = [];
     const walk = (directory: string): void => {
         for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -155,14 +175,17 @@ function vitestDeclarationTexts(): string[] {
             }
         }
     };
-    walk(join(dirname(packageFile), 'dist'));
+    for (const directory of directories) {
+        walk(join(dirname(packageFile), directory));
+    }
     return texts;
 }
 
 /**
- * The members one declared interface contributes, read from its body at the single-tab member indentation
- * the shipped declarations use. A nested object type's members sit one level deeper and are not part of
- * the interface's own surface.
+ * The members one declared interface contributes: the body's shallowest-indented `name:`/`name(`
+ * declarations, which is the interface's own surface. A nested object type's members sit deeper, and the
+ * shipped vitest declarations indent members with a tab and playwright's with two spaces, so the depth is
+ * measured per interface rather than assumed.
  */
 function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
     const members = new Set<string>();
@@ -189,11 +212,30 @@ function declaredInterfaceMembers(declarations: readonly string[], name: string)
                 }
             }
         }
-        for (const match of declaration.slice(open + 1, end).matchAll(/^\t([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu)) {
-            members.add(match[1] ?? '');
+        const declared = [
+            ...declaration.slice(open + 1, end).matchAll(/^([ \t]*)([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu),
+        ];
+        const shallowest = Math.min(...declared.map((match) => (match[1] ?? '').length));
+        for (const match of declared) {
+            if ((match[1] ?? '').length === shallowest) {
+                members.add(match[2] ?? '');
+            }
         }
     }
     return [...members];
+}
+
+/** Every asymmetric matcher each installed framework declares, keyed by framework. */
+function installedMatcherSurfaces(): Record<string, string[]> {
+    return Object.fromEntries(
+        MATCHER_DECLARATION_SOURCES.map((source) => {
+            const declarations = declarationTexts(source.packageName, source.directories);
+            return [
+                source.framework,
+                source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+            ];
+        })
+    );
 }
 
 /** How many single-line hunks the saturation witness is sliced into. */
@@ -304,9 +346,10 @@ describe('a changed line is classified by its text alone', () => {
             "expect.stringContaining('snap'),",
             'expect.stringMatching(/^snap/u),',
             'expect.closeTo(0.25, 5),',
-            // Matcher values the framework ships beyond the containing helpers.
+            // Matcher values the frameworks ship beyond the containing helpers.
             'expect.toBeOneOf([1, 2]),',
             'expect.toSatisfy((value) => value > 0),',
+            'expect.arrayOf(Example),',
             'expect.extend({ toBeWithinRange() {} });',
             'expect.addSnapshotSerializer(plugin);',
             'expect.setState({ assertionCalls: 1 });',
@@ -401,21 +444,24 @@ describe('a changed line is classified by its text alone', () => {
         expect(acrossHunks.before.removedAssertions).toEqual({ count: 0, lines: [], truncated: false });
     });
 
-    it('should treat every asymmetric matcher the framework declares as a non-assertion', () => {
-        // The non-assertion list is not allowed to be a hand-picked one: this derives the shipped
-        // asymmetric-matcher surface from vitest's own declarations and fails when a member is missing.
-        // `toSatisfy` and `toBeOneOf` are matcher values (`expect(x).toEqual(expect.toBeOneOf(['a']))`),
-        // and a removed `expect.toBeOneOf([...])` would otherwise publish as a removed assertion.
-        const declarations = vitestDeclarationTexts();
-        const declared = [
-            ...declaredInterfaceMembers(declarations, 'AsymmetricMatchersContaining'),
-            ...declaredInterfaceMembers(declarations, 'CustomMatcher'),
-        ];
-        expect(declarations.length).toBeGreaterThan(0);
-        for (const pinned of ['objectContaining', 'toSatisfy', 'toBeOneOf']) {
-            expect(declared).toContain(pinned);
-        }
-        expect(declared.filter((member) => !NON_ASSERTION_EXPECT_MEMBERS.has(member))).toEqual([]);
+    it('should treat every asymmetric matcher each installed framework declares as a non-assertion', () => {
+        // The non-assertion list is not allowed to be a hand-picked one: this derives each framework's
+        // shipped asymmetric-matcher surface from its own declarations and fails when a member is missing.
+        // `toSatisfy` and `toBeOneOf` (vitest) and `arrayOf` (playwright) are matcher values
+        // (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed one would otherwise publish as a
+        // removed assertion.
+        const surfaces = installedMatcherSurfaces();
+        expect(surfaces.vitest).toEqual(expect.arrayContaining(['objectContaining', 'toSatisfy', 'toBeOneOf']));
+        expect(surfaces.playwright).toEqual(expect.arrayContaining(['objectContaining', 'arrayOf', 'closeTo']));
+        const missing = Object.fromEntries(
+            Object.entries(surfaces)
+                .map(([framework, members]) => [
+                    framework,
+                    members.filter((member) => !NON_ASSERTION_EXPECT_MEMBERS.has(member)),
+                ])
+                .filter(([, members]) => (members as string[]).length > 0)
+        );
+        expect(missing).toEqual({});
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {

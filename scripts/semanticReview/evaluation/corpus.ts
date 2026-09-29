@@ -22,7 +22,12 @@
 
 import { join } from 'node:path';
 
-import { changedLineFacts, type PathChangedLines, type UnitChangedLineFacts } from '../changeFacts.ts';
+import {
+    changedLineFacts,
+    type ChangedSourceLine,
+    type PathChangedLines,
+    type UnitChangedLineFacts,
+} from '../changeFacts.ts';
 import { refuse, type EvidenceSide } from '../contracts.ts';
 import { SEMANTIC_RULES, type SemanticRuleId } from '../rules.ts';
 
@@ -163,8 +168,87 @@ function textLines(text: string): string[] {
 }
 
 /**
- * Checks one synthetic fixture's declared lines against its own text and hunk ranges, so a fixture that
- * drifts from its text fails at parse rather than being scored as a change it no longer describes.
+ * The longest-common-subsequence cap on one fixture side. A corpus fixture is a small file — the shipped
+ * positives are seventeen lines — and the walk below is quadratic, so a pair over the cap is refused
+ * rather than diffed.
+ */
+const FIXTURE_DIFF_LINE_LIMIT = 1_000;
+
+/**
+ * The added and removed lines two texts actually differ by, so a fixture's declared change cannot disagree
+ * with its own text. The walk takes a removal when both directions lose the same number of matches, which
+ * makes the script a function of the two texts alone; a fixture whose text carries a change it did not
+ * declare is then refused instead of being scored as a change it no longer describes.
+ */
+function deriveChangedLines(before: readonly string[], after: readonly string[]): PathChangedLines {
+    if (before.length > FIXTURE_DIFF_LINE_LIMIT || after.length > FIXTURE_DIFF_LINE_LIMIT) {
+        refuse(
+            'unsupported_scope',
+            `a corpus fixture is a small file: before and after must be at most ${String(FIXTURE_DIFF_LINE_LIMIT)} lines`
+        );
+    }
+    return lineEdits({ table: commonLineLengths(before, after), before, after });
+}
+
+/** The longest-common-subsequence lengths of two line arrays, flat-indexed as `i * (after.length + 1) + j`. */
+function commonLineLengths(before: readonly string[], after: readonly string[]): Uint32Array {
+    const width = after.length + 1;
+    const table = new Uint32Array((before.length + 1) * width);
+    for (let i = before.length - 1; i >= 0; i -= 1) {
+        for (let j = after.length - 1; j >= 0; j -= 1) {
+            if (before[i] === after[j]) {
+                table[i * width + j] = (table[(i + 1) * width + j + 1] ?? 0) + 1;
+                continue;
+            }
+            table[i * width + j] = Math.max(table[(i + 1) * width + j] ?? 0, table[i * width + j + 1] ?? 0);
+        }
+    }
+    return table;
+}
+
+/**
+ * The added and removed lines one LCS table implies, walked from the front. A removal is taken when both
+ * directions lose the same number of matches, so the script is a function of the two texts alone.
+ */
+function lineEdits(input: {
+    readonly table: Uint32Array;
+    readonly before: readonly string[];
+    readonly after: readonly string[];
+}): PathChangedLines {
+    const width = input.after.length + 1;
+    const added: ChangedSourceLine[] = [];
+    const removed: ChangedSourceLine[] = [];
+    let i = 0;
+    let j = 0;
+    while (i < input.before.length && j < input.after.length) {
+        if (input.before[i] === input.after[j]) {
+            i += 1;
+            j += 1;
+            continue;
+        }
+        if ((input.table[(i + 1) * width + j] ?? 0) >= (input.table[i * width + j + 1] ?? 0)) {
+            removed.push({ line: i + 1, text: input.before[i] ?? '' });
+            i += 1;
+            continue;
+        }
+        added.push({ line: j + 1, text: input.after[j] ?? '' });
+        j += 1;
+    }
+    for (; i < input.before.length; i += 1) {
+        removed.push({ line: i + 1, text: input.before[i] ?? '' });
+    }
+    for (; j < input.after.length; j += 1) {
+        added.push({ line: j + 1, text: input.after[j] ?? '' });
+    }
+    return { added, removed };
+}
+
+/**
+ * Checks one synthetic fixture's declared lines against its own text, hunk ranges, and derived diff, so a
+ * fixture that drifts from its text fails at parse rather than being scored as a change it no longer
+ * describes. The derived diff is what makes the fact block non-tautological: a line the text adds, removes,
+ * or rewrites without a matching declaration is refused, so the block cannot omit a change the fixture's
+ * own text makes.
  */
 function assertSyntheticFixtureConsistent(fixture: SyntheticPositive): void {
     const before = textLines(fixture.source.before);
@@ -212,6 +296,13 @@ function assertSyntheticFixtureConsistent(fixture: SyntheticPositive): void {
     }
     checkSide(fixture.changedLines.removed, before, fixture.hunks.before, 'before');
     checkSide(fixture.changedLines.added, after, fixture.hunks.after, 'after');
+    const derived = deriveChangedLines(before, after);
+    if (JSON.stringify(derived) !== JSON.stringify(fixture.changedLines)) {
+        refuse(
+            'unsupported_scope',
+            `fixture ${fixture.id} declares changed lines its own texts do not differ by: derived ${JSON.stringify(derived)}`
+        );
+    }
 }
 
 function parseFixture(value: unknown, index: number): EvaluationFixture {

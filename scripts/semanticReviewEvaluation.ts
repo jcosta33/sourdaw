@@ -117,15 +117,17 @@ export function parseEvaluationArgs(argv: readonly string[]): ParsedEvaluationAr
 /**
  * The evaluation never runs in CI, and never inside a unit test. CI has the advisory scan, which holds its
  * own budget and publishes nothing; a test that reached this file would spend money on a network call the
- * suite is not allowed to make. Exported so the suite pins the guard rather than trusting the entry point.
+ * suite is not allowed to make. Exported so the suite pins the guard rather than trusting the entry point,
+ * and the environment is a parameter because a test that read the ambient one asserted whichever refusal
+ * happened to win the order — under CI this suite has `CI` set too, and it must still be told it is a test.
  */
-export function assertEvaluationIsOptIn(): void {
-    const ci = process.env.CI;
+export function assertEvaluationIsOptIn(environment: NodeJS.ProcessEnv = process.env): void {
+    if (environment.VITEST !== undefined) {
+        refuse('unsupported_scope', 'the live semantic evaluation must never run from a unit test');
+    }
+    const ci = environment.CI;
     if (ci !== undefined && ci !== '' && ci !== 'false' && ci !== '0') {
         refuse('unsupported_scope', 'the live semantic evaluation is opt-in and never runs in CI');
-    }
-    if (process.env.VITEST !== undefined) {
-        refuse('unsupported_scope', 'the live semantic evaluation must never run from a unit test');
     }
 }
 

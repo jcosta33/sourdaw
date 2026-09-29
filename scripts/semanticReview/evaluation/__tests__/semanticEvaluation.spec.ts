@@ -370,6 +370,20 @@ describe('the corpus is validated rather than trusted', () => {
         expect(() => parseEvaluationCorpus(document, 'tampered corpus')).toThrow(/does not hold|holds/u);
     });
 
+    it('should refuse a text change its declared changed lines do not cover', () => {
+        // The derivation is what keeps a positive's fact block non-tautological: without it this fixture
+        // adds an assertion-free branch outside its declared hunks and parses clean, so the block omits a
+        // change its own text makes.
+        const document = tampered((corpus) => {
+            const fixture = entryById(corpus, 'early-exit-without-asserting');
+            const source = fixture.source as Record<string, unknown>;
+            // Appended rather than inserted, so the fixture's declared lines still sit at their numbers
+            // and the text and hunk checks stay quiet: only the derived diff can see this change.
+            source.after = `${String(source.after)}        if (!toolbar.ready) {\n            return;\n        }\n`;
+        });
+        expect(() => parseEvaluationCorpus(document, 'tampered corpus')).toThrow(/do not differ by/u);
+    });
+
     it('should refuse a negative that carries a concern', () => {
         const document = tampered((corpus) => {
             const expected = entryById(corpus, 'grid-label-retarget').expected as Record<string, unknown>;
@@ -585,7 +599,14 @@ describe('the live command line is opt-in', () => {
         expect(() => parseEvaluationArgs(['--nope'])).toThrow(SemanticFailure);
     });
 
-    it('should refuse to run inside this suite', () => {
-        expect(() => assertEvaluationIsOptIn()).toThrow(/never run from a unit test/u);
+    it('should refuse a unit test, a CI run, and nothing else', () => {
+        // Both refusals are pinned with their own environment rather than the ambient one: under CI this
+        // suite runs with `CI` set, and reading `process.env` here asserted whichever message happened to
+        // win the order instead of the refusal each condition owes.
+        expect(() => assertEvaluationIsOptIn({ VITEST: 'true' })).toThrow(/never run from a unit test/u);
+        expect(() => assertEvaluationIsOptIn({ CI: 'true' })).toThrow(/never runs in CI/u);
+        expect(() => assertEvaluationIsOptIn({ CI: 'true', VITEST: 'true' })).toThrow(/never run from a unit test/u);
+        expect(() => assertEvaluationIsOptIn({})).not.toThrow();
+        expect(() => assertEvaluationIsOptIn({ CI: 'false' })).not.toThrow();
     });
 });

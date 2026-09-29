@@ -94,23 +94,27 @@ const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * The `expect.<member>(` heads that are not assertions: the framework's asymmetric matchers, which build
- * the value an assertion compares against, and its registration, serialization, configuration, and state
- * helpers. The `assert` member is a namespace rather than a call and `not` is a property, so neither can
- * appear as `expect.<member>(` and neither needs a name here.
+ * The `expect.<member>(` heads that are not assertions, across both frameworks this repository's specs
+ * run on: the asymmetric matchers, which build the value an assertion compares against, and vitest's
+ * registration, serialization, configuration, and state helpers. The `assert` member is a namespace
+ * rather than a call and `not` is a property, so neither can appear as `expect.<member>(` and neither
+ * needs a name here.
  *
- * The asymmetric-matcher half is not hand-picked: the spec derives every member of the shipped
- * `AsymmetricMatchersContaining` and `CustomMatcher` interfaces from the installed `vitest` declarations
- * and fails when one is missing here, which is how `toSatisfy` and `toBeOneOf` were found — both are
- * matcher *values* (`expect.toEqual(expect.toBeOneOf(['a']))`), and a removed `expect.toBeOneOf([...])`
- * would otherwise have published as a removed assertion. Exported so that drift guard reads the one list
- * rather than a copy of it.
+ * The asymmetric-matcher half is not hand-picked: the spec derives every member of vitest's
+ * `AsymmetricMatchersContaining` and `CustomMatcher` and of playwright's `AsymmetricMatchers` from the
+ * installed declarations, and fails when one is missing here. That is how `toSatisfy` and `toBeOneOf`
+ * (vitest) and `arrayOf` (playwright, reachable in the end-to-end specs through `@playwright/test`, which
+ * re-exports `playwright/test`) were found: all three are matcher *values*
+ * (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed `expect.arrayOf(Example)` would otherwise
+ * have published as a removed assertion. Exported so that drift guard reads the one list rather than a
+ * copy of it.
  */
 export const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
-    // Asymmetric matchers, the complete shipped set.
+    // Asymmetric matchers, the complete shipped set of both frameworks.
     'any',
     'anything',
     'arrayContaining',
+    'arrayOf',
     'objectContaining',
     'stringContaining',
     'stringMatching',
