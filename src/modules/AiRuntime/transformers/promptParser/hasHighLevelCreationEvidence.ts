@@ -136,6 +136,10 @@ function namesSomethingToCreate(clause: string): boolean {
     return MUSICAL_GENRE_PATTERN.test(clause) || introducesSomethingNew(clause);
 }
 
+function namesMusicalContentToCreate(clause: string): boolean {
+    return MUSICAL_GENRE_PATTERN.test(clause) || introducedObjects(clause).some((object) => object.musicalContent);
+}
+
 /**
  * Whether the request asks for something to be created without naming what. The verb and the object
  * must share one clause, so "delete the drums and create nothing" carries no creation evidence.
@@ -152,8 +156,5 @@ export function hasHighLevelCreationEvidence(request: string): boolean {
 export function hasHighLevelContentCreationEvidence(request: string): boolean {
     return request
         .split(CLAUSE_SEPARATOR_PATTERN)
-        .some(
-            (clause) =>
-                hasUnnegatedCreationVerb(clause) && introducedObjects(clause).some((object) => object.musicalContent)
-        );
+        .some((clause) => hasUnnegatedCreationVerb(clause) && namesMusicalContentToCreate(clause));
 }

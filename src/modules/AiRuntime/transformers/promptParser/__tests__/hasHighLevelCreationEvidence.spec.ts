@@ -171,6 +171,13 @@ describe('hasHighLevelCreationEvidence', () => {
 });
 
 describe('hasHighLevelContentCreationEvidence', () => {
+    it.each(['create a jazz MIDI track', 'make a lo-fi MIDI track'])(
+        'recognizes genre-led musical content: %s',
+        (request) => {
+            expect(hasHighLevelContentCreationEvidence(request)).toBe(true);
+        }
+    );
+
     it.each([
         'create a beat on a new MIDI track',
         'write a melody on a new MIDI track',
@@ -182,6 +189,7 @@ describe('hasHighLevelContentCreationEvidence', () => {
 
     it.each([
         'do not create a beat on a new MIDI track',
+        'do not create a jazz MIDI track',
         'make the beat harder on a new MIDI track',
         'add 8 more beats to the loop',
         'add automation to the beat',
