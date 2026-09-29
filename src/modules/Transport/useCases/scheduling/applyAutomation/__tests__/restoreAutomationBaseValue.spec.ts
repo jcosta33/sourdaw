@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { scheduleSendAutomation, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
+import { scheduleSendAutomation, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
@@ -24,7 +24,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         scheduleTrackGain: vi.fn(),
         scheduleTrackPan: vi.fn(),
         updateDeviceParam: vi.fn(),
-        updateMidiFxParam: vi.fn(),
     };
 });
 vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
@@ -43,20 +42,6 @@ function trackWithDeviceParam(paramId: string, baseValue: number): RestorableTra
         // `dutch-oven` declares both halves of the contract against real product
         // data: `shimmer_pitch` is automatable: false, `mix` is automatable.
         devices: [{ id: 'ov-1', type: 'dutch-oven', parameterValues: { [paramId]: baseValue } }],
-        midiFx: [],
-    };
-}
-
-function trackWithMidiFxParam(paramId: string, baseValue: number): RestorableTrack {
-    return {
-        gain: 0.4,
-        pan: 12,
-        devices: [],
-        // No shipped MIDI FX type declares a descriptor yet, so `dutch-oven`
-        // stands in for the day one does — the branch reads `fx.type`
-        // generically, and this holds it to the same law rather than to the
-        // absence of data.
-        midiFx: [{ id: 'fx-1', type: 'dutch-oven', parameterValues: { [paramId]: baseValue } }],
     };
 }
 
@@ -82,7 +67,6 @@ describe('restoreAutomationBaseValue', () => {
                 gain: 0.4,
                 pan: 12,
                 devices: [],
-                midiFx: [],
                 sends: [{ busId: 'bus-hall', level: 0.5, preFader: true }],
             },
             landTime: 7,
@@ -96,7 +80,6 @@ describe('restoreAutomationBaseValue', () => {
             gain: 0.4,
             pan: 12,
             devices: [{ id: 'fermenter-1', type: 'fermenter', parameterValues: { filterCutoff: 840 } }],
-            midiFx: [],
         };
 
         restoreAutomationBaseValue({
@@ -126,24 +109,25 @@ describe('restoreAutomationBaseValue', () => {
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('writes the persisted base back for an automatable MIDI-FX parameter', () => {
+    it('does not restore a MIDI-FX parameter — it is not an automation target (#4789)', () => {
+        // A bare parameter id that resolves no device used to fall through to a
+        // MIDI-FX base restore, but nothing consumes MIDI-FX parameter values —
+        // the drive path writes nothing for them either — so there is no base
+        // to restore and the restore must write nothing. The track carries the
+        // MIDI-FX and its base, the way production truth does.
+        const track = {
+            gain: 0.4,
+            pan: 12,
+            devices: [],
+            midiFx: [{ id: 'arp-1', type: 'arp', parameterValues: { rate: 0.25 } }],
+        };
         restoreAutomationBaseValue({
-            lane: { trackId: 'track-1', parameterId: 'mix' },
-            track: trackWithMidiFxParam('mix', 0.31),
+            lane: { trackId: 'track-1', parameterId: 'rate' },
+            track,
             landTime: 7,
         });
 
-        expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'fx-1', 'mix', 0.31);
-    });
-
-    it('does not restore a non-automatable MIDI-FX parameter', () => {
-        restoreAutomationBaseValue({
-            lane: { trackId: 'track-1', parameterId: 'shimmer_pitch' },
-            track: trackWithMidiFxParam('shimmer_pitch', 0.31),
-            landTime: 7,
-        });
-
-        expect(updateMidiFxParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 });
 
@@ -173,7 +157,6 @@ describe('restoreAutomationBaseValue — stepped device parameters', () => {
             gain: 0.4,
             pan: 12,
             devices: [{ id: 'bact-1', type: 'bacteria', parameterValues: { [paramId]: baseValue } }],
-            midiFx: [],
         };
     }
 
@@ -202,7 +185,6 @@ describe('restoreAutomationBaseValue — stepped device parameters', () => {
             gain: 0.4,
             pan: 12,
             devices: [{ id: 'fermenter-1', type: 'fermenter', parameterValues: { oscEngine: 4.6 } }],
-            midiFx: [],
         };
 
         restoreAutomationBaseValue({

@@ -62,13 +62,30 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
-        const cc = addMidiCC(clipId, controller, value, beat);
+        const channel = 0;
+        // addMidiCC replaces any point already sitting at this (beat, channel, controller)
+        // key under a fresh id; the undo entry must name that replaced point, or Cmd+Z
+        // would leave the beat empty instead of restoring it (#4840).
+        const replaced = allCc.find(
+            (context: MidiCC) =>
+                context.beat === beat && context.channel === channel && context.controller === controller
+        );
+        const cc = addMidiCC(clipId, controller, value, beat, channel);
+        // Redo must re-create the clicked point under the SAME id: a fresh id would
+        // leave the undo side removing an id the store no longer holds.
+        const redo = (): void => {
+            addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
+        };
+        if (replaced === undefined) {
+            pushUndoEntry('Add CC point', () => removeMidiCC(clipId, cc.id), redo);
+            return;
+        }
         pushUndoEntry(
             'Add CC point',
-            () => removeMidiCC(clipId, cc.id),
-            // Redo must re-create the point under the SAME id: a fresh id would
-            // leave the undo side removing an id the store no longer holds.
-            () => addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id)
+            // Re-adding the replaced point under its own id replaces the clicked point
+            // at the same key, restoring the pre-click state exactly.
+            () => addMidiCC(clipId, replaced.controller, replaced.value, replaced.beat, replaced.channel, replaced.id),
+            redo
         );
     };
 

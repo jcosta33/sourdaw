@@ -56,12 +56,21 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    addMidiCC: vi.fn((clipId: string, controller: number, value: number, beat: number, channel: number = 0): MidiCC => {
-        const cc: MidiCC = { id: `cc-${controller}-${beat}-${value}`, controller, value, beat, channel };
-        const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
-        laneMocks.midiState.ccByClipId[clipId] = [...existing, cc];
-        return cc;
-    }),
+    addMidiCC: vi.fn(
+        (clipId: string, controller: number, value: number, beat: number, channel: number = 0, id?: string): MidiCC => {
+            const created: MidiCC = { id: `cc-${controller}-${beat}-${value}`, controller, value, beat, channel };
+            // Undo/redo re-adds under the captured id; every other call mints one.
+            const cc: MidiCC = id === undefined ? created : { ...created, id };
+            const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
+            // Mirrors the real use case: a point is keyed by (beat, channel, controller)
+            // and replaces the point already sitting at that key.
+            const deduped = existing.filter(
+                (point) => !(point.beat === beat && point.channel === channel && point.controller === controller)
+            );
+            laneMocks.midiState.ccByClipId[clipId] = [...deduped, cc];
+            return cc;
+        }
+    ),
     removeMidiCC: vi.fn((clipId: string, ccId: string): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
         laneMocks.midiState.ccByClipId[clipId] = existing.filter((point) => point.id !== ccId);
@@ -172,7 +181,7 @@ describe('CCLane', () => {
 
             fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
 
-            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, value, beat);
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, value, beat, 0);
             expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
         });
 
@@ -204,6 +213,46 @@ describe('CCLane', () => {
                 0,
                 addedCC?.id
             );
+        });
+
+        it('should restore the replaced point on undo when the click lands on an occupied key (#4840)', () => {
+            // The lane already holds a point at beat 1 (value 40), written by an
+            // earlier route. The click below lands on that exact key, so addMidiCC
+            // replaces it under a fresh id.
+            laneMocks.midiState.ccByClipId['clip-1'] = [
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ];
+            render(<CCLane {...defaultProps} />);
+            const value = valueFromY(40, 80);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+
+            // The click replaced the musician's point rather than stacking a second one.
+            const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+            expect(afterAdd).toHaveLength(1);
+            const clickedId = afterAdd[0]?.id;
+            expect(clickedId).not.toBe('cc-original');
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ]);
+
+            redoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: clickedId, controller: 1, value, beat: 1, channel: 0 },
+            ]);
+
+            // The cycle keeps holding: a second undo restores the musician's point again.
+            undoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ]);
         });
 
         it('should not add a point when the click target is an existing CC point', () => {
