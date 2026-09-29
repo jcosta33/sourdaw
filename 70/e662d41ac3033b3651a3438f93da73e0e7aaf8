@@ -1,0 +1,18 @@
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 1198-1225
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 145-163,338-339,344-346
+scripts/semanticReview/scopeAccounting.ts
+  h_beb54bf43b47b7 168-173,196-201,215-233,257,267-293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "70e662d41ac3033b3651a3438f93da73e0e7aaf8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
