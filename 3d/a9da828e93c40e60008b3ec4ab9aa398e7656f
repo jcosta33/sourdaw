@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_ed5aa36a3ba357::t_795945f80e1171 522-567,1607-1609,1611-1612,1614-1615,1617,1621-1623,1633,1650-1651,1655,1658-1660,1668,1670
+  s_ed5aa36a3ba357::t_bc9a5dafdc5ff7 1610,1613,1616,1618-1620,1624-1632,1634-1649,1652-1654,1656-1657,1661-1667,1669,1671-1676
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_72d3d8edb13920 6088
+  s_ed5aa36a3ba357::t_484e23614ead01 6084-6087,6089
+  s_ed5aa36a3ba357::t_0e48079d12ef60 4609-4654,4690,4770-4774,4776-4794,4799-4800,4918-4928,6082-6083
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_0ec33a40a12c41 3081,3114,3125-3127
+  s_ed5aa36a3ba357::t_21af8fdd072ecd 3055-3080,3082-3113,3115-3124,3128-3129
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_ed5aa36a3ba357::t_4d95881cd8cff4 267-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3da9da828e93c40e60008b3ec4ab9aa398e7656f",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
