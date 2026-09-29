@@ -21,13 +21,14 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from './reviewDossier.ts';
-import { readAssessmentIgnoredReason, readAssessmentImpact } from './reviewDossierChain.ts';
+import { readAssessmentIgnoredReason, readAssessmentImpact, readSignalDispositions } from './reviewDossierChain.ts';
 import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
 import type {
     AssessmentImpact,
     ReviewDossier,
     ReviewDossierEvent,
+    ReviewDossierSignalDisposition,
     ReviewDossierStance,
     ReviewModelTier,
 } from './reviewDossier.ts';
@@ -66,6 +67,14 @@ export type ReviewDossierInput = {
      * round neither cites nor declares it ignored.
      */
     assessmentIgnoredReason?: string;
+    /**
+     * One typed outcome per fired semantic signal, when the round wants to record what became of
+     * them. Optional: a round that disposes of a signal with the literal citation token needs no
+     * entry, and a round whose assessment fired nothing records none. Each entry names the signal's
+     * rule and path and carries one of the five dispositions, with an optional bounded artifact
+     * reference. It records an outcome, never agreement, and confers no verdict or merge authority.
+     */
+    signalDispositions?: ReviewDossierSignalDisposition[];
 };
 
 type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
@@ -237,6 +246,12 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
             'review dossier input assessmentIgnoredReason'
         );
     }
+    if (value.signalDispositions !== undefined) {
+        input.signalDispositions = readSignalDispositions(
+            value.signalDispositions,
+            'review dossier input signalDispositions'
+        );
+    }
     return input;
 }
 
@@ -403,6 +418,7 @@ function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
         recommendation: input.recommendation,
         assessmentImpact: parsed.assessmentImpact,
         assessmentIgnoredReason: parsed.assessmentIgnoredReason,
+        signalDispositions: parsed.signalDispositions,
     });
 }
 

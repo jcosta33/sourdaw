@@ -5,8 +5,9 @@
  * ceiling, and serialization. `reviewDossier.ts` owns the record's types, readers and validation;
  * this module owns turning a validated payload into canonical bytes and back-stop digests. It also
  * owns the `assessmentImpact` field's four-token vocabulary and reader, the one definition the
- * record reader and the caller-input parser share, and the `assessmentIgnoredReason` acknowledgement's
- * reader and `none`-only consistency rule. Every import from the record module is type-only,
+ * record reader and the caller-input parser share, the `assessmentIgnoredReason` acknowledgement's
+ * reader and `none`-only consistency rule, and the caller-authored `signalDispositions` list's
+ * five-token vocabulary and structural reader. Every import from the record module is type-only,
  * so the dependency runs one way.
  */
 
@@ -114,6 +115,153 @@ export function assertAssessmentIgnoredReasonConsistent(payload: DossierPayload)
             }`
         );
     }
+}
+
+/**
+ * The five outcomes a round may record for a fired semantic signal, in their canonical order. This
+ * array is the vocabulary's definition: the type is derived from it and a spec pins its exact
+ * contents, so widening it reddens a test rather than passing silently. Three of the five record a
+ * dismissal as readily as a confirmation, and none is a verdict: the token records what the round
+ * found, never that it agrees with the assessment, and confers no approval or merge authority.
+ */
+export const SIGNAL_DISPOSITIONS = [
+    'confirmed-and-fixed',
+    'confirmed-existing',
+    'false-positive',
+    'insufficient-evidence',
+    'not-investigated',
+] as const;
+export type SignalDisposition = (typeof SIGNAL_DISPOSITIONS)[number];
+
+/**
+ * The admission gate, as a total map keyed by the union rather than a set built from the array, for
+ * the same reason `ASSESSMENT_IMPACT_MEMBERSHIP` is one: a token added to either the array
+ * (widening the union) or this map (an excess key) fails to compile, and the exported key set lets a
+ * spec catch a run-time widening the type cannot see.
+ */
+export const SIGNAL_DISPOSITION_MEMBERSHIP: Record<SignalDisposition, true> = {
+    'confirmed-and-fixed': true,
+    'confirmed-existing': true,
+    'false-positive': true,
+    'insufficient-evidence': true,
+    'not-investigated': true,
+};
+const SIGNAL_DISPOSITION_TOKENS =
+    'confirmed-and-fixed, confirmed-existing, false-positive, insufficient-evidence or not-investigated';
+
+function isSignalDisposition(value: string): value is SignalDisposition {
+    return Object.hasOwn(SIGNAL_DISPOSITION_MEMBERSHIP, value);
+}
+
+/** Reads one disposition token, refusing any other value, a missing value, or a non-string. */
+export function readSignalDisposition(value: unknown, label: string): SignalDisposition {
+    if (typeof value !== 'string' || !isSignalDisposition(value)) {
+        fail(`${label} must be ${SIGNAL_DISPOSITION_TOKENS}, found ${describeValue(value)}`);
+    }
+    return value;
+}
+
+/**
+ * One caller-authored outcome for one fired signal. `ruleId` and `path` name the signal exactly as
+ * the assessment record's `firedSignals` projects it, so an entry matches a fired signal by that
+ * pair and nothing else. `artifact` is the optional bounded single-line reference supporting the
+ * outcome — an issue number or URL, a reviewer finding, a repair commit, or a regression test path.
+ */
+export type ReviewDossierSignalDisposition = {
+    ruleId: string;
+    path: string;
+    disposition: SignalDisposition;
+    artifact?: string;
+};
+
+const SIGNAL_DISPOSITION_KEYS = ['ruleId', 'path', 'disposition'] as const;
+const SIGNAL_DISPOSITION_ARTIFACT_KEYS = [...SIGNAL_DISPOSITION_KEYS, 'artifact'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function describeValue(value: unknown): string {
+    return JSON.stringify(value) ?? typeof value;
+}
+
+function assertEntryKeys(entry: Record<string, unknown>, allowed: readonly string[], label: string): void {
+    const actual = Object.keys(entry).sort().join(',');
+    const expected = [...allowed].sort().join(',');
+    if (actual !== expected) {
+        fail(`${label} fields must be ${expected}, found ${actual}`);
+    }
+}
+
+/** A persisted caller-authored string: non-blank first, then the shared single-line safety rules. */
+function readSafeEntryString(label: string, value: unknown): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        fail(`${label} must be a non-blank string, found ${describeValue(value)}`);
+    }
+    assertPublicationSafeEvidence(label, [value]);
+    return value;
+}
+
+/**
+ * Reads the caller-authored dispositions, failing closed on any malformed entry: the entry shape is
+ * exact, every value is a bounded single-line publication-safe string, the disposition is one of the
+ * five tokens, and one signal is disposed of at most once. The read is structural only — whether an
+ * entry names a signal the delivered assessment actually fired is the publication gate's check, the
+ * one place the delivered record is in hand.
+ */
+export function readSignalDispositions(value: unknown, label: string): ReviewDossierSignalDisposition[] {
+    if (!Array.isArray(value)) {
+        fail(`${label} must be an array, found ${describeValue(value)}`);
+    }
+    const dispositions: ReviewDossierSignalDisposition[] = [];
+    const seen = new Map<string, number>();
+    for (const [index, entry] of value.entries()) {
+        const entryLabel = `${label}[${index}]`;
+        if (!isRecord(entry)) {
+            fail(`${entryLabel} must be an object, found ${describeValue(entry)}`);
+        }
+        assertEntryKeys(
+            entry,
+            'artifact' in entry ? SIGNAL_DISPOSITION_ARTIFACT_KEYS : SIGNAL_DISPOSITION_KEYS,
+            entryLabel
+        );
+        const ruleId = readSafeEntryString(`${entryLabel}.ruleId`, entry.ruleId);
+        const path = readSafeEntryString(`${entryLabel}.path`, entry.path);
+        // One signal carries one outcome: the pair is the signal's identity, so an exact repeat in
+        // either value records the same signal twice. JSON framing cannot collide: the pair
+        // separator is structural, never string content.
+        const signalKey = JSON.stringify([ruleId, path]);
+        const firstIndex = seen.get(signalKey);
+        if (firstIndex !== undefined) {
+            fail(
+                `${entryLabel} repeats the signal already recorded at index ${String(firstIndex)}: ${ruleId} at ${path}`
+            );
+        }
+        seen.set(signalKey, index);
+        const disposition: ReviewDossierSignalDisposition = {
+            ruleId,
+            path,
+            disposition: readSignalDisposition(entry.disposition, `${entryLabel}.disposition`),
+        };
+        if ('artifact' in entry) {
+            disposition.artifact = readSafeEntryString(`${entryLabel}.artifact`, entry.artifact);
+        }
+        dispositions.push(disposition);
+    }
+    return dispositions;
+}
+
+/** The entry's canonical fields: `artifact` rides along only when the caller recorded one. */
+function signalDispositionFields(entry: ReviewDossierSignalDisposition): Record<string, JsonValue> {
+    const fields: Record<string, JsonValue> = {
+        ruleId: entry.ruleId,
+        path: entry.path,
+        disposition: entry.disposition,
+    };
+    if (entry.artifact !== undefined) {
+        fields.artifact = entry.artifact;
+    }
+    return fields;
 }
 
 type FieldEntry = readonly [string, JsonValue];
@@ -237,6 +385,13 @@ export function computeDossierDigest(payload: DossierPayload, headDigest: string
     if (payload.assessmentIgnoredReason !== undefined) {
         record.assessmentIgnoredReason = payload.assessmentIgnoredReason;
     }
+    // And the same for the typed signal dispositions: absent on every record persisted before the
+    // field existed, present — even as an empty list — on one that carries it, so two records
+    // differing only in the list still differ. The mapped fields are the ones serialization writes,
+    // so the digest preimage and the persisted bytes cannot disagree.
+    if (payload.signalDispositions !== undefined) {
+        record.signalDispositions = payload.signalDispositions.map(signalDispositionFields);
+    }
     record.headDigest = headDigest;
     return sha256Hex(canonicalJson(record));
 }
@@ -263,6 +418,9 @@ export function buildDossier(payload: DossierPayload): ReviewDossier {
     }
     if (payload.assessmentIgnoredReason !== undefined) {
         dossier.assessmentIgnoredReason = payload.assessmentIgnoredReason;
+    }
+    if (payload.signalDispositions !== undefined) {
+        dossier.signalDispositions = payload.signalDispositions;
     }
     return dossier;
 }
@@ -303,6 +461,9 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
     if (dossier.assessmentIgnoredReason !== undefined) {
         record.assessmentIgnoredReason = dossier.assessmentIgnoredReason;
     }
+    if (dossier.signalDispositions !== undefined) {
+        record.signalDispositions = dossier.signalDispositions.map(signalDispositionFields);
+    }
     record.headDigest = dossier.headDigest;
     record.dossierDigest = dossier.dossierDigest;
     return `${JSON.stringify(record, null, 4)}\n`;
@@ -311,8 +472,8 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
 /**
  * The payload a persisted dossier's own fields rebuild against a given event list. Both the append
  * path (in the record module) and the authorization digest below project a dossier this way, so the
- * projection lives in one place; `assessmentImpact` and `assessmentIgnoredReason` ride along so a
- * rebuilt digest still covers them.
+ * projection lives in one place; `assessmentImpact`, `assessmentIgnoredReason` and the typed signal
+ * dispositions ride along so a rebuilt digest still covers them.
  */
 export function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEvent[]): DossierPayload {
     return {
@@ -327,6 +488,7 @@ export function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEven
         recommendation: dossier.recommendation,
         assessmentImpact: dossier.assessmentImpact,
         assessmentIgnoredReason: dossier.assessmentIgnoredReason,
+        signalDispositions: dossier.signalDispositions,
     };
 }
 

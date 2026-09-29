@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assembleReviewDossier } from '../reviewDossier.ts';
+import { SIGNAL_DISPOSITIONS, assembleReviewDossier } from '../reviewDossier.ts';
 import {
     assertSemanticAssessmentAcknowledged,
     firedSignalCitationToken,
@@ -8,7 +8,12 @@ import {
 } from '../reviewDossierSemanticAssessment.ts';
 import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
-import type { AssessmentImpact, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
+import type {
+    AssessmentImpact,
+    ReviewDossier,
+    ReviewDossierEvent,
+    ReviewDossierSignalDisposition,
+} from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const PLAN: ReviewRiskPlan = {
@@ -56,6 +61,7 @@ function dossierWith(
         limitations?: string[];
         events?: ReviewDossierEvent[];
         discarded?: { finding: string; stance: string; reason: string }[];
+        dispositions?: ReviewDossierSignalDisposition[];
     } = {}
 ): ReviewDossier {
     return assembleReviewDossier({
@@ -67,6 +73,7 @@ function dossierWith(
         recommendation: 'approve',
         assessmentImpact: impact,
         assessmentIgnoredReason: options.reason,
+        signalDispositions: options.dispositions,
     });
 }
 
@@ -520,6 +527,140 @@ describe('fired-signal disposal at publication', () => {
                     ],
                 }),
                 coverageWithFired(),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+});
+
+describe('typed signal dispositions at publication', () => {
+    function coverageWithFired(
+        overrides: Record<string, unknown> = {}
+    ): ReturnType<typeof parseSemanticAssessmentCoverage> {
+        return parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [FIRED_SIGNAL], ...overrides });
+    }
+
+    /** The fired signal's own pair with a caller-chosen disposition, so the entry matches it exactly. */
+    function disposition(overrides: Partial<ReviewDossierSignalDisposition> = {}): ReviewDossierSignalDisposition {
+        return {
+            ruleId: FIRED_SIGNAL.ruleId,
+            path: FIRED_SIGNAL.path,
+            disposition: 'false-positive',
+            ...overrides,
+        };
+    }
+
+    const IGNORED = { reason: 'the fired rule is disposed of by a typed outcome entry' };
+
+    it.each(SIGNAL_DISPOSITIONS)(
+        'disposes of the fired signal with a %s entry, with no literal token anywhere',
+        (token) => {
+            const dossier = dossierWith('none', { ...IGNORED, dispositions: [disposition({ disposition: token })] });
+
+            // The typed entry is the only disposal: no stance admission, discarded finding, or
+            // limitation carries the citation token, and the dismissal tokens dispose exactly as the
+            // confirming ones do.
+            expect(() => assertSemanticAssessmentAcknowledged(dossier, coverageWithFired(), EXPECTED)).not.toThrow();
+        }
+    );
+
+    it('accepts an entry carrying the bounded artifact reference', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    ...IGNORED,
+                    dispositions: [disposition({ disposition: 'confirmed-and-fixed', artifact: '#4441' })],
+                }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses an entry naming a signal the delivered assessment did not fire, listing its token', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    ...IGNORED,
+                    dispositions: [disposition({ ruleId: 'conditional_admission_added' })],
+                }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).toThrow(
+            /review dossier signalDispositions names 1 signal\(s\) the delivered assessment did not fire \(semantic-signal conditional_admission_added src\/modules\/audio\/take\.test\.ts\): record an outcome only for a signal the delivered record carries/u
+        );
+    });
+
+    it('refuses an entry naming a path the delivered assessment did not fire', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { ...IGNORED, dispositions: [disposition({ path: 'src/other.test.ts' })] }),
+                coverageWithFired(),
+                EXPECTED
+            )
+        ).toThrow(/signalDispositions names 1 signal\(s\) the delivered assessment did not fire/u);
+    });
+
+    it('refuses a typed entry when the delivered record fired nothing at all', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { ...IGNORED, dispositions: [disposition()] }),
+                parseSemanticAssessmentCoverage(DELIVERED_WITHHELD),
+                EXPECTED
+            )
+        ).toThrow(/signalDispositions names 1 signal\(s\) the delivered assessment did not fire/u);
+    });
+
+    it('accepts an empty typed list beside a delivered record that fired nothing', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { ...IGNORED, dispositions: [] }),
+                parseSemanticAssessmentCoverage(DELIVERED_WITHHELD),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses a typed outcome when the assessment delivered nothing, naming the field and reason', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['semantic-ci absent: CI delivered no assessment for this head'],
+                    dispositions: [disposition()],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(
+            /review dossier signalDispositions records 1 outcome\(s\) but no semantic assessment was delivered for this head \(semantic-ci absent\): the field must be empty or absent/u
+        );
+    });
+
+    it('accepts an empty typed list and an absent one beside a no-assessment record', () => {
+        const cited = { limitations: ['semantic-ci absent: CI delivered no assessment for this head'] };
+
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', { ...cited, dispositions: [] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).not.toThrow();
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', cited),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('leaves a bundle with no semantic-ci record free of any typed-outcome requirement', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { dispositions: [disposition()] }),
+                undefined,
                 EXPECTED
             )
         ).not.toThrow();

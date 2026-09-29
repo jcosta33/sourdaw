@@ -9,6 +9,7 @@ import {
     parseStancesCheckThreshold,
     readStancesCheckAnswers,
     readStancesCheckRecord,
+    renderStancesCheckOutcome,
 } from '../checkStancesRecord.ts';
 import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
@@ -136,6 +137,60 @@ describe('readStancesCheckAnswers', () => {
             `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-latest"`
         );
         expect(() => readStancesCheckAnswers({ model: undefined, answers })).toThrow(/TypeSafe response model must be/);
+    });
+
+    it('refuses a superseded pin rather than accepting the family, naming both models', () => {
+        const answers = { stance_0: { type: 'noul', noul: 0.03 } };
+
+        expect(() => readStancesCheckAnswers({ model: 'jev-1.12.0', answers })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-1.12.0"`
+        );
+    });
+});
+
+describe('renderStancesCheckOutcome', () => {
+    it('names the pinned model in the all-pass summary line, keeping the threshold text', () => {
+        const evaluation = evaluateStancesCheck(
+            { stance_0: { noul: 0.9 }, stance_1: { noul: 0.6 } },
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(true);
+        expect(outcome.stderr).toEqual([]);
+        expect(outcome.stdout).toHaveLength(3);
+        expect(outcome.stdout[0]).toContain('correctness');
+        expect(outcome.stdout[0]).toContain('PASS');
+        expect(outcome.stdout[2]).toBe(
+            `stances:check: all 2 admission line(s) at or above threshold 0.5 (model ${TYPESAFE_STANCES_MODEL})`
+        );
+    });
+
+    it('names the pinned model in the below-threshold failure line, keeping the threshold text', () => {
+        const evaluation = evaluateStancesCheck(
+            { stance_0: { noul: 0.93 }, stance_1: { noul: 0.41 } },
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(false);
+        expect(outcome.stdout).toHaveLength(2);
+        expect(outcome.stderr).toEqual([
+            `stances:check: 1 of 2 admission line(s) fall below threshold 0.5 (model ${TYPESAFE_STANCES_MODEL}): test-validity (0.410)`,
+        ]);
+        expect(outcome.stderr[0]).toContain(TYPESAFE_STANCES_MODEL);
+    });
+
+    it('renders no summary line for a record with no admissions', () => {
+        const evaluation = evaluateStancesCheck({}, DEFAULT_STANCES_THRESHOLD, []);
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(true);
+        expect(outcome.stdout).toEqual([
+            `stances:check: all 0 admission line(s) at or above threshold 0.5 (model ${TYPESAFE_STANCES_MODEL})`,
+        ]);
     });
 });
 

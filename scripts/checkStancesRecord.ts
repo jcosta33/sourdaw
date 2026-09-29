@@ -14,7 +14,9 @@
  * Boundaries. This is an orchestrator-side advisory probe, not a trusted delivery script: it
  * writes nothing, reads only the bundle it is given, and its verdict only names lines for repair —
  * the acceptance duty itself stays with the orchestrator. The API key is read from the environment
- * only and is never printed or written. The stop causes form one regime with the contract: the
+ * only and is never printed or written. The pinned model the verdicts came from is named in the
+ * run's summary line, so a recorded run identifies its judge without the reader inspecting this
+ * source. The stop causes form one regime with the contract: the
  * third-party classes — a missing key, an unavailable or degraded service, or a malformed response
  * — exit 1 without a verdict and are a disclosed limitation for delivery, never a pass: an
  * unjudged admission is not a clean one. The caller-side classes remain stops: an out-of-range
@@ -220,6 +222,39 @@ function truncateAdmission(text: string): string {
     return text.length <= ADMISSION_DISPLAY_LIMIT ? text : `${text.slice(0, ADMISSION_DISPLAY_LIMIT)}…`;
 }
 
+/**
+ * The checker's rendered outcome: one line per admission, then one summary line naming the pinned
+ * model every verdict came from and the threshold they were judged against. The summary is where a
+ * recorded run identifies its judge without the reader inspecting the source, so the model rides
+ * both the pass line and the below-threshold failure line. The exit status is the caller's; a
+ * failure renders on the error channel and still names each failing stance with its probability.
+ */
+export function renderStancesCheckOutcome(
+    evaluation: StancesCheckEvaluation,
+    threshold: number
+): { stdout: readonly string[]; stderr: readonly string[]; passed: boolean } {
+    const stdout = evaluation.verdicts.map(
+        (verdict) =>
+            `${verdict.stance} — "${truncateAdmission(verdict.admittedBy)}" — ${verdict.probability.toFixed(3)} ${verdict.passes ? 'PASS' : 'FAIL'}`
+    );
+    if (evaluation.failures.length > 0) {
+        const named = evaluation.failures
+            .map((failure) => `${failure.stance} (${failure.probability.toFixed(3)})`)
+            .join(', ');
+        return {
+            stdout,
+            stderr: [
+                `stances:check: ${String(evaluation.failures.length)} of ${String(evaluation.verdicts.length)} admission line(s) fall below threshold ${String(threshold)} (model ${TYPESAFE_STANCES_MODEL}): ${named}`,
+            ],
+            passed: false,
+        };
+    }
+    stdout.push(
+        `stances:check: all ${String(evaluation.verdicts.length)} admission line(s) at or above threshold ${String(threshold)} (model ${TYPESAFE_STANCES_MODEL})`
+    );
+    return { stdout, stderr: [], passed: true };
+}
+
 const USAGE = [
     'Usage: node scripts/checkStancesRecord.ts <bundle-path> [--threshold <t>]',
     '',
@@ -351,24 +386,14 @@ async function runCheck(argv: readonly string[]): Promise<number> {
     const record = readStancesCheckRecord(readStancesJson(stancesPath), stancesPath);
     const payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey);
     const evaluation = evaluateStancesCheck(readStancesCheckAnswers(payload), threshold, record.admissions);
-    for (const verdict of evaluation.verdicts) {
-        console.log(
-            `${verdict.stance} — "${truncateAdmission(verdict.admittedBy)}" — ${verdict.probability.toFixed(3)} ${verdict.passes ? 'PASS' : 'FAIL'}`
-        );
+    const outcome = renderStancesCheckOutcome(evaluation, threshold);
+    for (const line of outcome.stdout) {
+        console.log(line);
     }
-    if (evaluation.failures.length > 0) {
-        const named = evaluation.failures
-            .map((failure) => `${failure.stance} (${failure.probability.toFixed(3)})`)
-            .join(', ');
-        console.error(
-            `stances:check: ${String(evaluation.failures.length)} of ${String(evaluation.verdicts.length)} admission line(s) fall below threshold ${String(threshold)}: ${named}`
-        );
-        return 1;
+    for (const line of outcome.stderr) {
+        console.error(line);
     }
-    console.log(
-        `stances:check: all ${String(evaluation.verdicts.length)} admission line(s) at or above threshold ${String(threshold)}`
-    );
-    return 0;
+    return outcome.passed ? 0 : 1;
 }
 
 async function main(): Promise<number> {

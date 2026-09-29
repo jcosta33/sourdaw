@@ -26,12 +26,23 @@
  * `recommend_investigation`, projected bounded and screened by `semanticReviewContext.ts`. Each
  * carries its own disposal duty, independent of the impact and of the withheld/unresolved citation
  * rule: a fresh publication is refused while any fired signal's citation token
- * `semantic-signal <ruleId> <path>` appears in none of the three caller-authored documents — a
- * stances.json stance's `admittedBy`, a discarded.json entry's `finding`, or a dossier
- * `limitations` line. The refusal names the undisposed signal's rule and path. Declaring the whole
- * assessment ignored is not a disposal: a fired signal is a specific thing the assessment asked the
- * round to look at, and only naming it disposes of it (ADR 0050). A record written before the field
- * existed parses as zero fired signals and keeps every legacy bundle working.
+ * `semantic-signal <ruleId> <path>` appears in none of the four caller-authored surfaces — a
+ * stances.json stance's `admittedBy`, a discarded.json entry's `finding`, a dossier `limitations`
+ * line, or a dossier `signalDispositions` entry naming that signal. The refusal names the undisposed
+ * signal's rule and path. Declaring the whole assessment ignored is not a disposal: a fired signal is
+ * a specific thing the assessment asked the round to look at, and only naming it disposes of it
+ * (ADR 0050). A record written before the field existed parses as zero fired signals and keeps every
+ * legacy bundle working.
+ *
+ * The typed `signalDispositions` list is the round's own record of what became of each fired signal.
+ * It is caller-authored and structural — one entry per fired signal, naming its rule and path, with
+ * one of the five dispositions — and its disposal power is unconditional: every disposition,
+ * including `false-positive`, `insufficient-evidence` and `not-investigated`, disposes of the signal
+ * it names, so a round is never pushed to agree with the model or to write prose to dismiss a false
+ * alarm. Two checks are coverage-relative, because only the delivered record knows what fired: an
+ * entry naming a signal the assessment did not fire is refused, and a record that delivered nothing
+ * (`no-assessment`) refuses any entry at all — the round cannot record outcomes for signals that were
+ * never delivered.
  */
 
 import { fail } from './prContract.ts';
@@ -220,30 +231,75 @@ function citesNoAssessment(
     return dossier.limitations.some((limitation) => limitation.includes(token));
 }
 
-/** The citation token a fired signal carries wherever one of the three documents disposes of it. */
-export function firedSignalCitationToken(signal: SemanticAssessmentFiredSignal): string {
+/** The citation token a fired signal carries wherever one of the documents disposes of it. */
+export function firedSignalCitationToken(signal: { readonly ruleId: string; readonly path: string }): string {
     return `semantic-signal ${signal.ruleId} ${signal.path}`;
 }
 
 /**
  * Every caller-authored text a fired signal's disposal token may appear in: the dispatched stances'
  * `admittedBy` lines (travelled in from the bundle's stances.json), the discarded findings' text,
- * and the dossier's limitations. The dossier record carries the last two directly.
+ * the dossier's limitations, and the typed outcome entries — each entry names its signal exactly, so
+ * its own token disposes of it whatever disposition it records.
  */
 function firedSignalDisposals(dossier: ReviewDossier, stanceAdmissions: readonly string[]): readonly string[] {
     return [
         ...stanceAdmissions,
         ...discardedDispositions(dossier).map((entry) => entry.findingId),
         ...dossier.limitations,
+        ...(dossier.signalDispositions ?? []).map((entry) => firedSignalCitationToken(entry)),
     ];
 }
 
 /**
- * A fired signal is disposed of only when its token appears in one of the three documents. The duty
- * is independent of the impact and of the withheld/unresolved citation rule: `none` plus an
- * `assessmentIgnoredReason` acknowledges the assessment as a whole, and never names the specific
- * thing it fired at. The refusal names every undisposed signal's rule and path so the repair is
- * writable from the message alone.
+ * An entry names a signal the delivered assessment actually fired: the pair is the signal's identity
+ * in the record, so the comparison is exact and never fuzzy. A round cannot record an outcome for
+ * something the assessment never asked it to look at, and the refusal lists every such entry by its
+ * token so the repair is writable from the message alone.
+ */
+function assertSignalDispositionsFired(
+    dossier: ReviewDossier,
+    coverage: Extract<SemanticAssessmentCoverage, { state: 'assessed' }>
+): void {
+    const entries = dossier.signalDispositions ?? [];
+    if (entries.length === 0) {
+        return;
+    }
+    const fired = new Set(coverage.firedSignals.map((signal) => firedSignalCitationToken(signal)));
+    const unfired = entries.filter((entry) => !fired.has(firedSignalCitationToken(entry)));
+    if (unfired.length === 0) {
+        return;
+    }
+    const listed = unfired.map((entry) => firedSignalCitationToken(entry)).join('; ');
+    fail(
+        `review dossier signalDispositions names ${String(unfired.length)} signal(s) the delivered assessment did not fire (${listed}): record an outcome only for a signal the delivered record carries`
+    );
+}
+
+/**
+ * A record that delivered nothing cannot have fired anything, so it refuses any typed outcome: the
+ * list must be empty or absent. The refusal names the field, the entry count, and the record's own
+ * reason, so the repair is to remove the entries rather than to invent a signal to attach them to.
+ */
+function assertNoSignalDispositions(
+    dossier: ReviewDossier,
+    coverage: Extract<SemanticAssessmentCoverage, { state: 'no-assessment' }>
+): void {
+    const entries = dossier.signalDispositions ?? [];
+    if (entries.length === 0) {
+        return;
+    }
+    fail(
+        `review dossier signalDispositions records ${String(entries.length)} outcome(s) but no semantic assessment was delivered for this head (semantic-ci ${coverage.reason}): the field must be empty or absent`
+    );
+}
+
+/**
+ * A fired signal is disposed of only when its token appears in one of the caller-authored surfaces,
+ * or when a typed outcome entry names it. The duty is independent of the impact and of the
+ * withheld/unresolved citation rule: `none` plus an `assessmentIgnoredReason` acknowledges the
+ * assessment as a whole, and never names the specific thing it fired at. The refusal names every
+ * undisposed signal's rule and path so the repair is writable from the message alone.
  */
 function assertFiredSignalsDisposed(
     dossier: ReviewDossier,
@@ -262,7 +318,7 @@ function assertFiredSignalsDisposed(
     }
     const listed = undisposed.map((signal) => `${signal.ruleId} at ${signal.path}`).join('; ');
     fail(
-        `review dossier does not dispose of ${String(undisposed.length)} of the delivered assessment's ${String(coverage.firedSignals.length)} fired signal(s) (${listed}): name each as semantic-signal <ruleId> <path> in a stance admittedBy, a discarded finding, or a limitation`
+        `review dossier does not dispose of ${String(undisposed.length)} of the delivered assessment's ${String(coverage.firedSignals.length)} fired signal(s) (${listed}): name each as semantic-signal <ruleId> <path> in a stance admittedBy, a discarded finding, or a limitation, or record a signalDispositions entry for it`
     );
 }
 
@@ -270,12 +326,14 @@ function assertFiredSignalsDisposed(
  * The publication gate: a delivered assessment with anything withheld or unresolved must be cited
  * (a limitation naming the assessment's artifact identity or a withheld path) or declared ignored
  * (`none` plus `assessmentIgnoredReason`). Independently of that rule, every fired signal the
- * record carries must be disposed of by name in a stance admission, a discarded finding, or a
- * limitation — see `assertFiredSignalsDisposed`. A `none` with no reason refuses, naming the field
- * and the figure it contradicts; a non-`none` impact that never cites refuses the same way. A
- * `no-assessment` record — CI ran and delivered nothing for the head — refuses `assessmentImpact:
- * none` outright (a reason does not rescue it, since there is no assessment to have had no effect
- * on) and refuses any dossier whose limitations never cite the record's reason as the token
+ * record carries must be disposed of by name in a stance admission, a discarded finding, a
+ * limitation, or a typed `signalDispositions` entry — see `assertFiredSignalsDisposed` — and every
+ * typed entry must name a signal the record actually fired. A `none` with no reason refuses, naming
+ * the field and the figure it contradicts; a non-`none` impact that never cites refuses the same
+ * way. A `no-assessment` record — CI ran and delivered nothing for the head — refuses
+ * `assessmentImpact: none` outright (a reason does not rescue it, since there is no assessment to
+ * have had no effect on), refuses any typed outcome entry (nothing fired, so nothing can have an
+ * outcome), and refuses any dossier whose limitations never cite the record's reason as the token
  * `semantic-ci <reason>`, whatever its impact. A bundle with no `semantic-ci.json` passes with no
  * requirement; a record naming another publication is refused before either rule runs.
  *
@@ -298,6 +356,7 @@ export function assertSemanticAssessmentAcknowledged(
         );
     }
     if (coverage.state === 'no-assessment') {
+        assertNoSignalDispositions(dossier, coverage);
         const token = noAssessmentCitationToken(coverage);
         if (dossier.assessmentImpact === 'none') {
             fail(
@@ -311,6 +370,7 @@ export function assertSemanticAssessmentAcknowledged(
         }
         return;
     }
+    assertSignalDispositionsFired(dossier, coverage);
     assertFiredSignalsDisposed(dossier, coverage, stanceAdmissions);
     if (coverage.withheld === 0 && coverage.unresolved === 0) {
         return;
