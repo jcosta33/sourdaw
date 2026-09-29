@@ -25,7 +25,7 @@ import {
 import { readFindingAssessments, readScanAssessments, readStringArray } from './reportAssessments.ts';
 import {
     assertScopeStatesMatch,
-    assertUnassessedPathsAreDistinct,
+    assertOneRecordPerPath,
     readScopeExclusions,
     readScopeStates,
     type SemanticScopeStates,
@@ -307,9 +307,9 @@ export function validateReport(value: unknown): SemanticReport {
     };
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
-    // One unit per path, refused before anything downstream reads a single record per path: a duplicate
-    // omission is malformed whatever the totals say, and it can hide two disagreeing classes.
-    assertUnassessedPathsAreDistinct(scope.unassessed, SCOPE_LABEL);
+    // One record per path in both lists, refused before the totals are compared: a duplicate is
+    // malformed whatever the sums say, and it hides a contradiction from a one-record-per-path reader.
+    assertOneRecordPerPath(scope.excluded, scope.unassessed, SCOPE_LABEL);
     if (record.mode !== 'scan' && scope.requestOrder !== undefined) {
         // A verify report's own mode never walks units, so an order beside its findings is a claim no
         // verifier produced and no ledger of its can corroborate.

@@ -12,7 +12,12 @@
 import { APITimeoutError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
-import { type SemanticRevisionBase, type SemanticScopeExclusion } from '../contracts.ts';
+import {
+    buildRevisionContext,
+    SEMANTIC_POLICY_VERSION,
+    type SemanticRevisionBase,
+    type SemanticScopeExclusion,
+} from '../contracts.ts';
 import {
     collectEvidence,
     type PathHunks,
@@ -23,10 +28,16 @@ import {
 import { answerableRulesForPass, passRequestPayload } from '../passes.ts';
 import { computeResponseCacheKey, TYPESAFE_MODEL, type SemanticProviderPort } from '../provider.ts';
 import { parseStoredResponses, replayScanSignals } from '../replay.ts';
-import { parseReportJson, renderSummary, serializeReport, validateReport } from '../report.ts';
-import { SEMANTIC_BUDGET_PROFILES, type SemanticBudgetProfile, type SemanticRuleId } from '../rules.ts';
-import { planUnits, runScan, type RunScanInput } from '../run.ts';
+import { parseReportJson, renderSummary, serializeReport, validateReport, type SemanticScanReport } from '../report.ts';
+import {
+    computePolicyDigest,
+    SEMANTIC_BUDGET_PROFILES,
+    type SemanticBudgetProfile,
+    type SemanticRuleId,
+} from '../rules.ts';
+import { planUnits, runScan, type RunScanInput, type StoredUnitResponse } from '../run.ts';
 import { mergeUnitAnswers } from '../unitAssessment.ts';
+import { runVerify, type CandidateFinding } from '../verify.ts';
 
 const HEAD = 'a'.repeat(40);
 const MERGE_BASE = 'b'.repeat(40);
@@ -164,6 +175,102 @@ function collectFrom(source: SemanticSourcePort): SemanticEvidenceSet {
 /** The unassessed entries a report records, in the plan's own order. */
 function unassessedOf(report: { readonly scope: { readonly unassessed: readonly SemanticScopeExclusion[] } }) {
     return report.scope.unassessed;
+}
+
+/** A verifier that answers every question from the labels that question itself offered. */
+function choiceProvider(): { port: SemanticProviderPort; calls: () => number } {
+    let calls = 0;
+    return {
+        calls: () => calls,
+        port: {
+            systemOne: async ({ questions }) => {
+                calls += 1;
+                const answers: Record<string, unknown> = {};
+                for (const [id, question] of Object.entries(questions)) {
+                    const labels = Object.keys((question as { criteria: Record<string, string> }).criteria);
+                    const probabilities: Record<string, number> = {};
+                    for (const label of labels) {
+                        probabilities[label] = 0.05;
+                    }
+                    const first = labels[0];
+                    if (first !== undefined) {
+                        probabilities[first] = 1 - 0.05 * (labels.length - 1);
+                    }
+                    answers[id] = { type: 'choice', probabilities, confidence: 0.9, choice: first };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        },
+    };
+}
+
+const VERIFY_REGION_FINDING: CandidateFinding = {
+    findingId: 'f1',
+    headSha: HEAD,
+    claim: 'the guard was removed',
+    expectedBehavior: 'the guard rejects the input',
+    evidenceReferences: [{ path: 'src/modules/Project/a.ts', side: 'after', startLine: 1, endLine: 1 }],
+};
+
+/** The verify analogue of an omitted unit: a finding that names no region, so nothing can be sent. */
+const VERIFY_EVIDENCE_LESS_FINDING: CandidateFinding = {
+    findingId: 'f2',
+    headSha: HEAD,
+    claim: 'a claim that names no evidence',
+    expectedBehavior: 'expected',
+    evidenceReferences: [],
+};
+
+/** A verify run over two findings, one naming a region and one naming none. */
+async function verifyScan(provider: SemanticProviderPort, findings: readonly CandidateFinding[]) {
+    return runVerify({
+        ports: {
+            source: fakeSource([], { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' }),
+            provider,
+            cache: new MapCache(),
+            clock: fixedClock(1_000),
+            signal: new AbortController().signal,
+            log: () => undefined,
+        },
+        revision: BASE_REVISION,
+        profile: SEMANTIC_BUDGET_PROFILES.local,
+        findings,
+        runId: 'admission-scheduling-verify',
+    });
+}
+
+/**
+ * The replayed report exactly as `review:semantic replay` builds it: the same context, scope, and usage,
+ * with the signals recomputed from the stored answers under a replayed policy version.
+ */
+function replayOfScan(report: SemanticScanReport, units: readonly StoredUnitResponse[]): SemanticScanReport {
+    const replayedVersion = `${SEMANTIC_POLICY_VERSION}+replay`;
+    // The sidecar the command writes and reads back, through its own bytes.
+    const sidecar = JSON.stringify({
+        contextDigest: report.context.contextDigest,
+        rulesDigest: report.rulesDigest,
+        units,
+    });
+    const responses = parseStoredResponses(JSON.parse(sidecar) as unknown, 'responses.json');
+    return {
+        ...report,
+        context: buildRevisionContext({
+            repository: report.context.repository,
+            repositoryId: report.context.repositoryId,
+            prNumber: report.context.prNumber,
+            headSha: report.context.headSha,
+            targetBaseSha: report.context.targetBaseSha,
+            mergeBaseSha: report.context.mergeBaseSha,
+            trustedExecutionSha: report.context.trustedExecutionSha,
+            contractSourceSha: report.context.contractSourceSha,
+            evidenceProfile: report.context.evidenceProfile,
+            rulesDigest: report.context.rulesDigest,
+            policyVersion: replayedVersion,
+        }),
+        signals: replayScanSignals(responses),
+        policyDigest: computePolicyDigest(),
+        policyVersion: replayedVersion,
+    };
 }
 
 describe('a binding budget admits the risky unit first, whatever its path', () => {
@@ -568,8 +675,8 @@ function stateProvider(): SemanticProviderPort {
 }
 
 /** One scan of the four-state fixture: a spent attempt, a failed request, and a starved unit. */
-async function scannedFourStates() {
-    const { report } = await runScan(
+async function fourStateResult() {
+    const result = await runScan(
         scanInput({
             provider: stateProvider(),
             source: stateSource(),
@@ -577,8 +684,13 @@ async function scannedFourStates() {
             profile: { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 1 },
         })
     );
-    expect(() => validateReport(report)).not.toThrow();
-    return report;
+    expect(() => validateReport(result.report)).not.toThrow();
+    return result;
+}
+
+/** The four-state scan's report, for the cases that read only what it published. */
+async function scannedFourStates() {
+    return (await fourStateResult()).report;
 }
 
 describe('the run totals keep the four omission states apart', () => {
@@ -834,6 +946,32 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         ).toThrow(/records crates\/daw-dsp\/src\/big\.rs as unassessed more than once/);
     });
 
+    it('refuses a path the scope records as excluded more than once', async () => {
+        // One record says nothing was owed and the other says an assessment was owed and missed, and a
+        // reader taking one record per path sees only the last. `discovered` and the totals are raised with
+        // the duplicate so the scope arithmetic still balances, which is what made this reachable.
+        const report = await scannedFourStates();
+        const states = report.scope.states;
+        if (states === undefined) {
+            throw new Error('the run published no totals, so the case would assert nothing');
+        }
+        expect(report.scope.excluded).toEqual([{ path: EXCLUDED_PATH, reason: 'no-applicable-rule' }]);
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: {
+                    ...report.scope,
+                    discovered: report.scope.discovered + 1,
+                    excluded: [
+                        ...report.scope.excluded,
+                        { path: EXCLUDED_PATH, reason: 'credential-shaped-content-excluded' },
+                    ],
+                    states: { ...states, excludedWithAssessmentOwed: 1 },
+                },
+            })
+        ).toThrow(/records docs\/README\.md as excluded more than once/);
+    });
+
     it('refuses a verify report that carries a planned order', async () => {
         // A verifier walks findings, never units, so an order beside its findings is a claim its mode
         // cannot produce and no ledger of its own can corroborate.
@@ -847,6 +985,122 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         const report = await scannedFourStates();
         expect(report.scope.requestOrder).toHaveLength(report.scope.eligible);
         expect(() => validateReport(report)).not.toThrow();
+    });
+});
+
+describe('every mode the report has validates its own output', () => {
+    it('validates a verify report whose own findings include one with no evidence', async () => {
+        // A verifier keys its omissions by finding id rather than path, so the walk covers that shape: one
+        // finding assessed, one that names no region and is therefore omitted, and no scan-only field.
+        const provider = choiceProvider();
+        const { report } = await verifyScan(provider.port, [VERIFY_REGION_FINDING, VERIFY_EVIDENCE_LESS_FINDING]);
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.mode).toBe('verify');
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toEqual([
+            { path: VERIFY_EVIDENCE_LESS_FINDING.findingId, reason: expect.any(String) },
+        ]);
+        expect(report.scope.requestOrder).toBeUndefined();
+        expect(report.scope.states).toBeUndefined();
+        expect(report.findingAssessments).toHaveLength(1);
+    });
+
+    it('validates a verify report whose every finding lacks evidence', async () => {
+        // The sharpest verify shape: nothing can be sent for any finding, so the run assesses nothing,
+        // records one omission per finding id, and must still validate its own output.
+        const provider = forbiddenProvider();
+        const { report } = await verifyScan(provider.port, [
+            VERIFY_EVIDENCE_LESS_FINDING,
+            { ...VERIFY_EVIDENCE_LESS_FINDING, findingId: 'f3' },
+        ]);
+        expect(provider.calls()).toBe(0);
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.scope.assessed).toBe(0);
+        expect(report.scope.unassessed.map((entry) => entry.path)).toEqual(['f2', 'f3']);
+        expect(report.execution).toBe('unavailable');
+    });
+
+    it('validates a scan whose every path was excluded', async () => {
+        // The empty-eligible shape: nothing was owed, so the run is skipped and both published fields are
+        // present and empty rather than absent.
+        const provider = forbiddenProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(EXCLUDED_PATH)], sides(EXCLUDED_PATH, '# before\n', '# after\n')),
+            })
+        );
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.execution).toBe('skipped');
+        expect(report.scope.eligible).toBe(0);
+        expect(report.scope.requestOrder).toEqual([]);
+        expect(report.scope.states?.notApplicable).toBe(1);
+    });
+
+    it('refuses duplicate finding ids before any provider call', async () => {
+        // Two findings under one id would collapse into one record, and a run over two evidence-less ones
+        // would write a report the validator refuses. The input is wrong, so it is refused before the
+        // collector, the cache, and the provider are reached — the run cannot spend on it at all.
+        const provider = choiceProvider();
+        await expect(
+            verifyScan(provider.port, [VERIFY_REGION_FINDING, { ...VERIFY_EVIDENCE_LESS_FINDING, findingId: 'f1' }])
+        ).rejects.toMatchObject({ code: 'unsupported_scope' });
+        expect(provider.calls()).toBe(0);
+    });
+
+    it('validates a replay of a scan whose units were omitted', async () => {
+        // Replay keeps the scan's scope and recomputes its signals from the stored answers, so the omitted
+        // unit's ledger has to survive it: a replay that dropped the skipped unit's entries would read as a
+        // more complete run than the scan was.
+        const { report, storedResponses } = await fourStateResult();
+        const replayed = replayOfScan(report, storedResponses);
+        expect(replayed.policyVersion).toContain('+replay');
+        expect(() => validateReport(replayed)).not.toThrow();
+        expect(replayed.scope).toEqual(report.scope);
+        expect(replayed.signals.some((signal) => signal.path === SKIPPED_PATH)).toBe(true);
+        expect(replayed.signals.filter((signal) => signal.path === SKIPPED_PATH)).toEqual(
+            report.signals.filter((signal) => signal.path === SKIPPED_PATH)
+        );
+        expect(replayed.signals).toHaveLength(report.signals.length);
+    });
+
+    it('validates a dry run whose every unit is unassessed', async () => {
+        // The dry-run shape: no signals at all, every eligible unit omitted under the dry-run reason, and
+        // both published fields present and consistent with those records.
+        const provider = forbiddenProvider();
+        const input = scanInput({
+            provider: provider.port,
+            source: fakeSource([changedFile(EXCLUDED_PATH), changedFile(STARVED_PATH)], {
+                ...sides(EXCLUDED_PATH, '# before\n', '# after\n'),
+                ...sides(STARVED_PATH, 'const b = 1;\n', 'const b = 2;\n'),
+            }),
+        });
+        const { report } = await runScan({ ...input, dryRun: true });
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.scope.requestOrder).toHaveLength(report.scope.eligible);
+        expect(report.scope.states?.dryRun).toBe(report.scope.eligible);
+        expect(report.signals).toHaveLength(0);
+    });
+
+    it('validates the scan shape whose units were all assessed', async () => {
+        const path = 'src/infra/thing.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(path)], sides(path, 'const before = 1;\n', 'const after = 2;\n')),
+            })
+        );
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.scope.unassessed).toHaveLength(0);
+        expect(report.scope.states).toEqual({
+            notApplicable: 0,
+            excludedWithAssessmentOwed: 0,
+            missingRequiredEvidence: 0,
+            omittedForBudgetOrDeadline: 0,
+            providerFailure: 0,
+            dryRun: 0,
+        });
     });
 });
 

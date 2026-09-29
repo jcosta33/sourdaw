@@ -152,20 +152,29 @@ const SCOPE_STATE_NAMES = [
 ] as const satisfies readonly (keyof SemanticScopeStates)[];
 
 /**
- * Holds the unassessed list to one record per path. A unit is planned once per path, so it can be
- * omitted once: a repeated path is malformed on its own, and it also hides a contradiction, because a
- * reader taking the last record for a path would see only one of two disagreeing classes. The scope's
- * arithmetic cannot see the duplicate — moving `assessed` and `eligible` together still balances — and
- * the collector keeps its own exclusions to one entry per path for the same reason. An excluded path
- * repeated is bounded by that arithmetic instead: keeping `eligible + excluded.length` equal to
- * `discovered` forces a forger to inflate `discovered`, which the report publishes no independent list
- * of paths to refute.
+ * Holds the excluded and unassessed lists to one record per path. A path is planned once, excluded once,
+ * and omitted once, so a repeated record is malformed on its own — and each list hides a contradiction
+ * from a reader that takes one record per path: two reasons that disagree about whether an assessment
+ * was owed, or two classes for the same omission. The scope's arithmetic cannot see either duplicate:
+ * the omitted one moves `assessed` and `eligible` together and still balances, and the excluded one is
+ * balanced by raising `discovered`, which the report publishes no independent path list to refute. The
+ * collector keeps its own exclusions to one entry per path by the same rule. `truncated` is left alone:
+ * it legitimately carries one record per withheld region, so a path repeats there for a reason.
  */
-export function assertUnassessedPathsAreDistinct(unassessed: readonly SemanticScopeExclusion[], label: string): void {
+export function assertOneRecordPerPath(
+    excluded: readonly SemanticScopeExclusion[],
+    unassessed: readonly SemanticScopeExclusion[],
+    label: string
+): void {
+    assertDistinctPaths(excluded, 'excluded', label);
+    assertDistinctPaths(unassessed, 'unassessed', label);
+}
+
+function assertDistinctPaths(entries: readonly SemanticScopeExclusion[], list: string, label: string): void {
     const seen = new Set<string>();
-    for (const entry of unassessed) {
+    for (const entry of entries) {
         if (seen.has(entry.path)) {
-            refuse('invalid_response', `${label} records ${entry.path} as unassessed more than once`);
+            refuse('invalid_response', `${label} records ${entry.path} as ${list} more than once`);
         }
         seen.add(entry.path);
     }

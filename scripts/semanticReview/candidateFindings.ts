@@ -152,3 +152,23 @@ export function assertFindingsBoundToHead(findings: readonly CandidateFinding[],
         }
     }
 }
+
+/**
+ * Every finding needs its own identity. A verify run keys its assessments and its omissions by finding
+ * id, so two findings under one id collapse into one record the report cannot tell apart — and, because
+ * the unassessed list holds one entry per key, a run over two evidence-less findings that share an id
+ * would produce a report the validator refuses. Refused here, before any provider call, so a malformed
+ * submission costs nothing and can never become a report the pipeline refuses to write.
+ */
+export function assertFindingIdsAreDistinct(findings: readonly CandidateFinding[]): void {
+    const seen = new Set<string>();
+    for (const finding of findings) {
+        if (seen.has(finding.findingId)) {
+            refuse(
+                'unsupported_scope',
+                `finding id ${finding.findingId} appears more than once; a verify run keys its records by finding id`
+            );
+        }
+        seen.add(finding.findingId);
+    }
+}
