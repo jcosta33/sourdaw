@@ -578,7 +578,7 @@ export class TrackNode {
         this.deps.onAsyncRuntimeGraphMutation?.(Object.freeze({ application, reason }));
     }
 
-    private rollbackPromotedDevice(readinessToken: DeviceReadinessToken): boolean {
+    private rollbackPromotedDevice(readinessToken: DeviceReadinessToken, cause = 'a live graph failure'): boolean {
         const pendingLoad = this._pendingDeviceLoads.get(readinessToken.deviceId);
         if (
             !pendingLoad ||
@@ -601,7 +601,7 @@ export class TrackNode {
         }
         this.reportAsyncRuntimeGraphMutation(
             'needs-reconcile',
-            `Async device promotion for ${readinessToken.deviceId} rolled back after a live graph failure`
+            `Async device promotion for ${readinessToken.deviceId} rolled back after ${cause}`
         );
         if (this._pendingDeviceLoads.get(readinessToken.deviceId) !== pendingLoad) {
             return false;
@@ -940,7 +940,9 @@ export class TrackNode {
             let failureStage: DeviceReadinessFailureStage = 'node';
             if (pendingLoad.resolved) {
                 failureStage = this._pendingGraphReadinessTokens.has(pendingLoad.readinessToken) ? 'graph' : 'content';
-                graphChanged = this.rollbackPromotedDevice(pendingLoad.readinessToken) || graphChanged;
+                graphChanged =
+                    this.rollbackPromotedDevice(pendingLoad.readinessToken, `${failureStage} readiness timed out`) ||
+                    graphChanged;
             }
             this.invalidatePendingDeviceLoad({
                 deviceId,
@@ -952,6 +954,16 @@ export class TrackNode {
         if (graphChanged) {
             this.scheduleRebuildChain();
         }
+    }
+
+    public capturePendingDeviceLoads(): Array<{ promise: Promise<unknown>; token: DeviceReadinessToken }> {
+        const loads: Array<{ promise: Promise<unknown>; token: DeviceReadinessToken }> = [];
+        for (const pendingLoad of this._pendingDeviceLoads.values()) {
+            if (pendingLoad.loadPromise) {
+                loads.push({ promise: pendingLoad.loadPromise, token: pendingLoad.readinessToken });
+            }
+        }
+        return loads;
     }
 
     public getDeviceLoadState(deviceId: string): DeviceLoadState {
@@ -1184,6 +1196,19 @@ export class TrackNode {
                                 this._failedDeviceLoads.add(deviceId);
                             }
                             this.deps.readinessDiagnostics.markContentSettled({ token: readinessToken, outcome });
+                        },
+                        onContentProgress: (epoch, progress) => {
+                            if (
+                                this._pendingDeviceLoads.get(deviceId) !== pendingLoad ||
+                                pendingLoad.abortController.signal.aborted
+                            ) {
+                                return;
+                            }
+                            this.deps.readinessDiagnostics.markContentProgress({
+                                token: readinessToken,
+                                epoch,
+                                progress,
+                            });
                         },
                         onRuntimeFailure: (failedDn, replacementDn) =>
                             this.failLoadedDevice(deviceId, failedDn, replacementDn),

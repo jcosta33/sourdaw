@@ -15,7 +15,8 @@ type AutoLoad = (
     deviceId: string,
     port: MessagePort,
     instrumentId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (progress: number) => void
 ) => Promise<readonly (MicPositionType | null)[] | null>;
 
 function makeDeps(
@@ -462,6 +463,38 @@ describe('createLevainBridge', () => {
 
             await expect(registration).resolves.toBe('ready');
             await expect(replacement).resolves.toBe('ready');
+        });
+
+        it('forwards only current decoded progress through a registration and its successor', async () => {
+            const loads: Array<{
+                settle: PromiseWithResolvers<readonly MicPositionType[] | null>;
+                progress: (progress: number) => void;
+            }> = [];
+            const deps = makeDeps((_id, _port, _instrumentId, _signal, onProgress) => {
+                const settle = Promise.withResolvers<readonly MicPositionType[] | null>();
+                loads.push({ settle, progress: onProgress! });
+                return settle.promise;
+            });
+            const bridge = createLevainBridge(deps);
+            const observed = vi.fn();
+            const port = {} as MessagePort;
+            const registration = bridge.registerLevainDevice('d1', makeDevice(), port, observed);
+
+            loads[0]!.progress(0.2);
+            expect(observed).toHaveBeenLastCalledWith(1, 0.2);
+            const successor = bridge.loadSamplesForInstrument('d1', 'cello');
+            loads[0]!.progress(0.3);
+            expect(observed).toHaveBeenCalledTimes(1);
+            loads[1]!.progress(0.1);
+            expect(observed).toHaveBeenLastCalledWith(2, 0.1);
+
+            bridge.unregisterLevainDevice('d1');
+            loads[1]!.progress(0.2);
+            expect(observed).toHaveBeenCalledTimes(2);
+            loads[0]!.settle.resolve(null);
+            loads[1]!.settle.resolve(null);
+            await expect(registration).resolves.toBe('cancelled');
+            await expect(successor).resolves.toBe('cancelled');
         });
     });
 

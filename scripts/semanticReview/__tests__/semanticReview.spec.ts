@@ -11,6 +11,11 @@ import {
 } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
+import {
+    renderSavedProjectStateMatcherDigest,
+    SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+    SAVED_PROJECT_STATE_SURFACES,
+} from '../../savedProjectStatePaths.ts';
 import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
     e2eSpecPattern,
@@ -98,6 +103,8 @@ import {
 } from '../run.ts';
 import { sensitiveContentReason } from '../sensitive.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
+
+import { generatedDigestProbes } from './digestProbes.ts';
 
 /**
  * Fixtures are composed at runtime from their parts, so no credential-shaped literal appears here:
@@ -6077,6 +6084,434 @@ describe('a fixture is not a test', () => {
         // A code file outside `__tests__/` with no runner suffix is implementation, not test material.
         expect(isTestPath('src/modules/Project/useCases/undoProject.ts')).toBe(false);
         expect(isTestPath('tests/e2e/admitLoopbackProvider.ts')).toBe(false);
+    });
+});
+
+describe('saved-project-state applicability matrix', () => {
+    const PROJECT_STATE_RULE_IDS = [
+        'mutation_outside_undo_path',
+        'persisted_shape_changed_without_migration',
+        'silent_data_loss_possible',
+    ] as const;
+
+    // All three project-state rules share one applicability predicate, so each path must select all
+    // three or none; a single rule disagreeing reddens the matrix.
+    function selected(path: string): string[] {
+        return PROJECT_STATE_RULE_IDS.filter((id) => semanticRule(id).appliesTo(path));
+    }
+
+    it('digests a lossless encoding of every persisted-state matcher', () => {
+        // The three rules' digest input is exactly the lossless encoding of the persisted-state
+        // matchers, in registry order; adding, removing, or editing a matcher changes this list.
+        const persistedMatchers = SAVED_PROJECT_STATE_SURFACES.filter((surface) =>
+            surface.scopes.includes('persisted-state')
+        ).map((surface) => surface.matcher);
+        expect(SAVED_PROJECT_STATE_DIGEST_ENTRIES).toEqual(persistedMatchers.map(renderSavedProjectStateMatcherDigest));
+        expect(SAVED_PROJECT_STATE_DIGEST_ENTRIES).toHaveLength(persistedMatchers.length);
+        for (const id of PROJECT_STATE_RULE_IDS) {
+            expect(semanticRule(id).applicabilityPaths).toEqual(SAVED_PROJECT_STATE_DIGEST_ENTRIES);
+        }
+        // The encoding is lossless: distinct generated probes must render distinctly. A matcher edit
+        // that moves `appliesTo` while `computeRulesDigest()` stays byte-identical replays a stored
+        // assessment against a changed scope, so a renderer that drops a field, the boundary between
+        // the two fields, a field role, or a kind, or that lowercases, trims, length-encodes, or
+        // collapses a field onto a shared prefix, encodes two distinct probes identically and must
+        // redden this case. An injective re-encoding (reversing a field, say) is lossless and is
+        // deliberately not rejected: the digest only has to keep distinct matchers distinct.
+        const renderings = new Set<string>();
+        for (const matcher of generatedDigestProbes()) {
+            const rendered = renderSavedProjectStateMatcherDigest(matcher);
+            expect(renderings.has(rendered), `collides: ${JSON.stringify(matcher)} -> ${rendered}`).toBe(false);
+            renderings.add(rendered);
+        }
+    });
+
+    it('selects exactly the paths that own saved-project state or undo', () => {
+        const matrix: ReadonlyArray<readonly [path: string, expected: boolean, why: string]> = [
+            // Owners, sourced from src/modules/CrdtDocument/AGENTS.md, src/modules/Project/AGENTS.md,
+            // and the risk policy's own list.
+            [
+                'src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts',
+                true,
+                'CRDT persistence: IndexedDB increments and `.sdaw` bundle encoding',
+            ],
+            [
+                'src/modules/CrdtDocument/repositories/branchStateAuthority.ts',
+                true,
+                'durable branch-state authority: the one revisioned envelope',
+            ],
+            ['src/modules/CrdtDocument/models/ActionHistoryState.ts', true, 'semantic action history / undo'],
+            [
+                'src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts',
+                true,
+                'project load/save use case',
+            ],
+            ['src/modules/Project/repositories/project/writeProjectJson.ts', true, 'project load/save repository'],
+            ['src/app/project.sdaw', true, '`.sdaw` saved-project shape'],
+            ['src/app/bootstrap.ts', true, 'app bootstrap wiring'],
+            // Restored persisted-state owners (#4902 finding 1).
+            ['src/modules/Project/models/ProjectData.ts', true, 'canonical `.sourdaw` schema + version contract'],
+            ['src/modules/Project/models/VcaTrackMigration.ts', true, 'VCA-track migration'],
+            ['src/modules/Project/useCases/repairProjectData.ts', true, 'project-data repair'],
+            ['src/modules/Project/handlers/project/handleRepairProjectData.ts', true, 'project-data repair handler'],
+            ['src/modules/Project/stores/projectStore.ts', true, 'persisted `projectMeta` CRDT slot'],
+            ['src/modules/Project/stores/arrangementStore.ts', true, 'persisted `arrangements` CRDT slot'],
+            ['src/modules/Project/models/ProductionBrief.ts', true, 'persisted `productionBrief` durable key'],
+            ['src/modules/Project/useCases/recentProjects/addToRecentProjects.ts', true, 'recent-project persistence'],
+            ['src/app/registerDependencies.ts', true, 'composition root wiring'],
+            ['src/app/resolveAppComposition.ts', true, 'composition root wiring'],
+            ['src/app/main.tsx', true, 'composition root wiring'],
+            // Restored direct persisted-slot writers and saved-project creators (#4902 finding A).
+            [
+                'src/modules/Project/useCases/arrangement/createArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/duplicateArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/loadSnapshot.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/renameArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/switchArrangement.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/arrangement/syncCurrentArrangementToStore.ts',
+                true,
+                'arrangement use case writes `arrangementStore`',
+            ],
+            ['src/modules/Project/useCases/arrangement/takeSnapshot.ts', true, 'arrangement snapshot use case'],
+            ['src/modules/Project/useCases/arrangement/helpers.ts', true, 'arrangement persisted-shape helper'],
+            ['src/modules/Project/useCases/setProjectKeyRoot.ts', true, 'writes `projectStore` key root'],
+            ['src/modules/Project/useCases/setProjectScaleName.ts', true, 'writes `projectStore` scale name'],
+            ['src/modules/Project/useCases/importSclFile.ts', true, 'writes `projectStore` tuning'],
+            ['src/modules/Project/useCases/finishProjectLoading.ts', true, 'writes `projectStore` loading flag'],
+            [
+                'src/modules/Project/useCases/reportProjectLoadFailure.ts',
+                true,
+                'writes `projectStore` loading flag on failure',
+            ],
+            [
+                'src/modules/Project/useCases/createFreshProjectMetadata.ts',
+                true,
+                'creates the persisted project-metadata shape',
+            ],
+            [
+                'src/modules/Project/useCases/setTrackCanonicalRole.ts',
+                true,
+                'routes a canonical-role change into the persisted production brief',
+            ],
+            [
+                'src/modules/Project/useCases/acceptCreativeIntent.ts',
+                true,
+                'builds `nextBrief` and dispatches `setProductionBrief`, which writes `projectStore`',
+            ],
+            [
+                'src/modules/Project/useCases/unlockProjectScopedBrief.ts',
+                true,
+                'removes the brief lock through `setProductionBrief`, which writes `projectStore`',
+            ],
+            [
+                'src/modules/Project/handlers/projectTemplate/handleCreateProjectFromTemplate.ts',
+                true,
+                'creates a saved project from a template',
+            ],
+            ['src/modules/Project/stores/index.ts', true, 'persisted-store barrel'],
+            [
+                'src/app/getProductionCommandHandlerMaps.ts',
+                true,
+                'registers the project, undo and version-control handler maps',
+            ],
+            [
+                'src/modules/Project/useCases/repairprojectdata.ts',
+                true,
+                'all-lowercase project-data repair spelling, selected only by the `repairprojectdata` substring matcher',
+            ],
+            // Template and demo writers whose own sources write persisted CRDT slots or replace the
+            // saved project (#4902 finding 1): the whole subtree is not matched, only these writers.
+            [
+                'src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts',
+                true,
+                'replaces the saved project and resets the CRDT-backed stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts',
+                true,
+                'writes `projectStore` metadata and resets arrangement/transport/chord/groove stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts',
+                true,
+                'template builder runs `initProject` then `finalizeTemplate`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/addMarkers.ts',
+                true,
+                'writes the CRDT-backed `markerStore`',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/demoUtils/syncArrangement.ts',
+                true,
+                'writes the persisted `arrangementStore` arrangements slot',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts',
+                true,
+                'writes track, MIDI, transport, automation, marker, tempo-map and project stores',
+            ],
+            // ProjectVersioning persisted-shape and snapshot/restore owners (#4902 finding 2).
+            ['src/modules/ProjectVersioning/models/ProjectVersion.ts', true, 'version/snapshot/branch persisted shape'],
+            [
+                'src/modules/ProjectVersioning/stores/versionControlStore.ts',
+                true,
+                'persists `sourdaw-version-control` state',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/captureSnapshot.ts',
+                true,
+                'serializes active project state into a snapshot',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts',
+                true,
+                'hydrates track, marker, transport, MIDI and automation stores',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/createProjectVersion.ts',
+                true,
+                'captures a snapshot and writes a stored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/branching/deleteBranch.ts',
+                true,
+                'deletes a stored version branch',
+            ],
+            // One matrix row witnesses each remaining persisted-state matcher, so the surface-drop
+            // sweep reddens the matrix for every matcher (#4902 acceptance).
+            [
+                'src/modules/Project/useCases/projectTemplates/templateDefinitions/applyProjectTemplate.ts',
+                true,
+                'app-action template entry; its create() writes the template persisted slots',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/addSections.ts',
+                true,
+                'writes the CRDT-backed `markerStore` sections',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/setChordProgression.ts',
+                true,
+                'writes the CRDT-backed `chordTrackStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/setGroove.ts',
+                true,
+                'writes the CRDT-backed `grooveTemplateStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts',
+                true,
+                'commits template tracks into `trackStore` and `arrangementStore`',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/commitVcaGroups.ts',
+                true,
+                'commits VCA groups and track state through the Arrangement stores',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/configureYeastArpeggiator.ts',
+                true,
+                'writes the CRDT-backed Yeast rack',
+            ],
+            [
+                'src/modules/ProjectVersioning/handlers/versionControl/handleCreateProjectVersion.ts',
+                true,
+                'routes a version creation into the persisted version-control store',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/tagging/tagVersion.ts',
+                true,
+                'writes a stored version tag',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/restoreVersion.ts',
+                true,
+                'hydrates a stored snapshot and records the restored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/autoSaveVersion.ts',
+                true,
+                'creates an autosave stored version',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/queries/setAutoSaveInterval.ts',
+                true,
+                'writes the persisted autosave interval',
+            ],
+            // Saved-document slot-owning stores — one row per non-test `createAutomergeStorage(` call
+            // site (#4902 finding 1). The Project `projectStore`/`arrangementStore` slots and
+            // CrdtDocument's `actionHistoryStore` are already witnessed above; these rows witness the
+            // remaining call sites, so the surface-drop sweep reddens the matrix for every new matcher.
+            ['src/modules/arrangement/stores/adjustmentlayer.ts', true, 'persisted `adjustmentLayers` CRDT slot'],
+            ['src/modules/arrangement/stores/gainenvelopestore.ts', true, 'persisted `gainEnvelopes` CRDT slot'],
+            ['src/modules/arrangement/stores/markerstore.ts', true, 'persisted `markers` CRDT slot'],
+            ['src/modules/arrangement/stores/takelanestore.ts', true, 'persisted `takeLanes` CRDT slot'],
+            ['src/modules/arrangement/stores/trackstore.ts', true, 'persisted `tracks` CRDT slot'],
+            ['src/modules/arrangement/stores/vcagroupstore.ts', true, 'persisted `vcaGroups` CRDT slot'],
+            ['src/modules/arrangement/stores/warpstates.ts', true, 'persisted `warpStates` CRDT slot'],
+            ['src/modules/automation/stores/automationstore.ts', true, 'persisted `automation` CRDT slot'],
+            ['src/modules/automation/stores/modulationstore.ts', true, 'persisted `modulation` CRDT slot'],
+            [
+                'src/modules/command/stores/commandbatchidempotencystore.ts',
+                true,
+                'persisted `commandBatchIdempotency` CRDT slot',
+            ],
+            ['src/modules/controlsurface/stores/midilearnstore.ts', true, 'persisted `midiLearn` CRDT slot'],
+            ['src/modules/cvgate/stores/cvgate.ts', true, 'persisted `cvGate` CRDT slot'],
+            ['src/modules/knead/stores/kneadstore.ts', true, 'persisted `knead` CRDT slot'],
+            ['src/modules/midi/stores/chordtrackstore.ts', true, 'persisted `chordTrack` CRDT slot'],
+            [
+                'src/modules/midi/stores/groovetemplateautomergestorage.ts',
+                true,
+                'persisted `grooveTemplates` CRDT slot',
+            ],
+            ['src/modules/midi/stores/midistore.ts', true, 'persisted `midi` CRDT slot'],
+            ['src/modules/routing/stores/sidechainstore.ts', true, 'persisted `sidechainRoutes` CRDT slot'],
+            ['src/modules/transport/stores/tempomapstore.ts', true, 'persisted `tempoMap` CRDT slot'],
+            ['src/modules/transport/stores/timesignaturemapstore.ts', true, 'persisted `timeSignatureMap` CRDT slot'],
+            ['src/modules/transport/stores/transportstore.ts', true, 'persisted `transport` CRDT slot'],
+            ['src/modules/yeast/stores/yeastautomergestorage.ts', true, 'persisted `yeast` CRDT slot'],
+            // The one Arrangement use case the view keeps: it resets the slot-owning stores for a
+            // replacement project (a saved-project-state write), reached by the `arrangementstore`
+            // word marker.
+            [
+                'src/modules/Arrangement/useCases/resetArrangementStoresForProject.ts',
+                true,
+                'resets the Arrangement slot-owning stores for a replacement project',
+            ],
+            // Excluded, recorded with the reason each surface is left out.
+            [
+                'src/modules/Arrangement/presentations/views/TrackList.tsx',
+                false,
+                'presentation-only view; owns no persisted state or undo record',
+            ],
+            [
+                'src/modules/MIDI/useCases/quantizeNotes.ts',
+                false,
+                'MIDI use case; only MIDI slot-owning stores (`midiStore`, `chordTrackStore`, `grooveTemplateAutomergeStorage`) are selected, not its use cases',
+            ],
+            [
+                'src/modules/Command/stores/macroStore.ts',
+                false,
+                'Command/ macro surface owns neither persisted state nor undo; its undo files match the `undo` word, not a bare prefix',
+            ],
+            [
+                'src/modules/Command/useCases/productionBriefAdmissionPort.ts',
+                false,
+                'production-brief admission guard seam; names the brief but owns no persisted state (`productionbrief` is scoped to `src/modules/Project/`)',
+            ],
+            [
+                'src/modules/Command/useCases/isProjectDataRepairAction.ts',
+                false,
+                'pure `repairProjectData` action-type predicate; names `ProjectData` but owns no persisted state (`projectdata` is scoped to `src/modules/Project/models/`)',
+            ],
+            [
+                'src/modules/DawInterchange/useCases/mapToProjectData.ts',
+                false,
+                '`.dawproject` → `ProjectData` interchange mapping; native saved-project persistence belongs to Project and CrdtDocument',
+            ],
+            [
+                'src/modules/DawInterchange/useCases/projectDataContract.ts',
+                false,
+                '`ProjectData` interchange type aliases derived from `buildProjectData`; no persisted write',
+            ],
+            [
+                'src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts',
+                false,
+                '`soundOff` contains `undo` only mid-word; it owns neither persisted state nor an undo record',
+            ],
+            [
+                'scripts/repairReviewFinding.ts',
+                false,
+                'review-repair script, not project-data repair; `repair` alone is not the marker',
+            ],
+            [
+                'src/modules/Project/presentations/views/RecentProjectsMenu.tsx',
+                false,
+                'recent-projects presentation view; the `recentProjects/` use cases are the owner, not the menu',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templateHelpers/buildDevice.ts',
+                false,
+                'pure in-memory device factory; writes no store',
+            ],
+            [
+                'src/modules/Project/useCases/projectTemplates/templatePreviews/previewLoops.ts',
+                false,
+                'template preview-loop data; no persisted write',
+            ],
+            [
+                'src/modules/Project/useCases/demoProjects/demoUtils/note.ts',
+                false,
+                'pure in-memory note builder; writes no store',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/queries/getVersionHistory.ts',
+                false,
+                'read-only version-history query; no persisted write',
+            ],
+            [
+                'src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/getActiveCheckpointOwnerId.ts',
+                false,
+                'read-only owner-id read from `projectStore`; writes nothing',
+            ],
+        ];
+        for (const [path, expected, why] of matrix) {
+            expect(selected(path), `${why}: ${path}`).toEqual(expected ? [...PROJECT_STATE_RULE_IDS] : []);
+        }
+    });
+
+    it('matches undo as a path word, at a segment start or camelCase boundary', () => {
+        // Real undo owners keep matching; the mid-word `undo` of `soundOff` does not.
+        expect(selected('src/modules/Command/useCases/undo.ts')).toEqual([...PROJECT_STATE_RULE_IDS]);
+        expect(selected('src/modules/AiRuntime/useCases/aiPanelActions/undoLastAction.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        expect(selected('src/modules/Command/handlers/undoRedo/handleRedo.ts')).toEqual([...PROJECT_STATE_RULE_IDS]);
+        expect(selected('src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts')).toEqual([]);
+    });
+
+    it('is case-insensitive, matching the risk predicate it shares', () => {
+        // Case decision: the shared predicate lowercases before matching, so a correctly cased
+        // `src/modules/CrdtDocument/...` path and a mis-cased variant both select the rules.
+        expect(selected('src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        expect(selected('src/modules/crdtdocument/repositories/crdtpersistence/saveincrementalstoidb.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+    });
+
+    it('reddens if CrdtDocument/ stops matching or a nonexistent Crdt/ prefix is restored', () => {
+        // `automergeRepository.ts` carries no other marker, so it matches only through the module name;
+        // dropping the `crdtdocument` match silently removes all three rules from the whole module.
+        expect(selected('src/modules/CrdtDocument/repositories/automergeRepository.ts')).toEqual([
+            ...PROJECT_STATE_RULE_IDS,
+        ]);
+        // `src/modules/Crdt/` never existed; a path under it must match none of the three rules.
+        expect(selected('src/modules/Crdt/document.ts')).toEqual([]);
     });
 });
 

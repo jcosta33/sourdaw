@@ -55,6 +55,7 @@ export type WasmDeviceCreateDeps = {
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
     onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
+    onContentProgress?: (epoch: number, progress: number) => void;
     /** Replace a terminally failed loaded node in the owning graph slot. */
     onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
     /** Request one fresh generation after the failed runtime has been retired. */
@@ -470,6 +471,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
         signal,
         onLoaded,
         onContentLoadSettled,
+        onContentProgress,
         onRuntimeFailure: replaceRuntimeFailure,
         onRuntimeRecovery: requestRuntimeRecovery,
     }) {
@@ -592,6 +594,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         handleCc: result.handleCc,
                     },
                     port: result.workletNode.port,
+                    onProgress: onContentProgress,
                 });
                 onContentLoadSettled?.(contentOutcome);
                 getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: contentOutcome === 'ready' });

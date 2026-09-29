@@ -326,7 +326,13 @@ describe('Levain instrument persistence round trip', () => {
         await registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, port);
 
         expect(levainStore.value?.[DEVICE_ID]?.patch.instrumentId).toBe('timpani');
-        expect(autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'timpani', expect.any(AbortSignal));
+        expect(autoLoadLevainSamples).toHaveBeenCalledWith(
+            DEVICE_ID,
+            port,
+            'timpani',
+            expect.any(AbortSignal),
+            expect.any(Function)
+        );
     });
 
     it('does not write a chunk for a device that only appeared', async () => {

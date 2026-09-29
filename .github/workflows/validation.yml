@@ -697,6 +697,8 @@ jobs:
       # feature is on by default, so a release build turns every real-time
       # allocation guard into a no-op that passes while proving nothing.
       - name: Server and Rust workspace health gates
+        env:
+          CARGO_HTTP_MULTIPLEXING: 'false'
         run: pnpm health:server:full
 
   native-macos:

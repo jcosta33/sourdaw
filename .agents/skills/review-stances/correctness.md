@@ -68,6 +68,12 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
+
+The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
+
+Probe: drive real decoded-file completions to every captured consumer at 39/161 just before the old deadline, then finish all 161 and require five worklet-acknowledged ready results without rollback. In the same fixture, leave one peer stalled for its own full inactivity window while another progresses, and require only the stalled peer to fail. Hold the final worklet acknowledgement to prove decoded completion alone never means ready; make a committed template report current failure without changing project identity, while obsolete cancellation stays silent.
+
 ### 2026-09-28 — browser exception and validation scope disagreed (escaped via PR #4854)
 
 PR #4854 exempted known review tooling and agent documentation from browser selection, but did not
@@ -79,6 +85,14 @@ Blind spot: the review proved the browser selector in isolation and did not trac
 through the validation workflow's job conditions. Probe: feed a real mixed review-tooling and agent-doc
 diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
 cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
+
+PR #4902 exposed the same omission one level earlier: four changed delivery and review helper paths
+were absent from the explicit tooling-name set, so the browser selector classified them as product
+work even though the validation workflow correctly ran the script suite for a tooling plan. Blind
+spot: the review verified the registered names without tracing every path in a real change through
+the classifier. Probe: classify the full changed-path set, including root specs and helpers, and
+require tooling-only paths to retain CodeQL and the tooling suite while mixed, unknown, lookalike,
+and rename paths remain broad.
 
 ### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
 

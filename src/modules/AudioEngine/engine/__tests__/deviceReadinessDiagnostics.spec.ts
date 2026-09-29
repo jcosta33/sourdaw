@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 
@@ -53,6 +53,97 @@ describe('deviceReadinessDiagnostics', () => {
         });
     });
 
+    it('keeps an active wait outcome after diagnostic eviction but cancels it on replacement or reset', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'early',
+            deviceType: 'fermenter',
+            requiresContent: false,
+        });
+        const firstWait = deviceReadinessDiagnostics.captureWaitState(token);
+        const overlappingWait = deviceReadinessDiagnostics.captureWaitState(token);
+        try {
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            for (let index = 0; index < 256; index++) {
+                const unrelated = deviceReadinessDiagnostics.begin({
+                    deviceId: `unrelated-${String(index)}`,
+                    deviceType: 'fermenter',
+                    requiresContent: false,
+                });
+                deviceReadinessDiagnostics.markGraphReady({ token: unrelated });
+            }
+            expect(deviceReadinessDiagnostics.getWaitState(token).status).toBe('cancelled');
+            expect(firstWait.read().status).toBe('ready');
+            expect(overlappingWait.read().status).toBe('ready');
+
+            deviceReadinessDiagnostics.begin({ deviceId: 'early', deviceType: 'fermenter', requiresContent: false });
+            expect(firstWait.read().status).toBe('cancelled');
+            expect(overlappingWait.read().status).toBe('cancelled');
+
+            const current = deviceReadinessDiagnostics.begin({
+                deviceId: 'current',
+                deviceType: 'fermenter',
+                requiresContent: false,
+            });
+            const currentWait = deviceReadinessDiagnostics.captureWaitState(current);
+            try {
+                deviceReadinessDiagnostics.markGraphReady({ token: current });
+                deviceReadinessDiagnostics.reset();
+                expect(currentWait.read().status).toBe('cancelled');
+            } finally {
+                currentWait.release();
+            }
+        } finally {
+            firstWait.release();
+            overlappingWait.release();
+        }
+    });
+
+    it('cancels an evicted load for a surviving wait after an overlapping wait releases', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'early',
+            deviceType: 'fermenter',
+            requiresContent: false,
+        });
+        const releasedWait = deviceReadinessDiagnostics.captureWaitState(token);
+        const survivingWait = deviceReadinessDiagnostics.captureWaitState(token);
+        try {
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            releasedWait.release();
+            for (let index = 0; index < 256; index++) {
+                const unrelated = deviceReadinessDiagnostics.begin({
+                    deviceId: `unrelated-${String(index)}`,
+                    deviceType: 'fermenter',
+                    requiresContent: false,
+                });
+                deviceReadinessDiagnostics.markGraphReady({ token: unrelated });
+            }
+            expect(deviceReadinessDiagnostics.getWaitState(token).status).toBe('cancelled');
+            expect(survivingWait.read().status).toBe('ready');
+
+            deviceReadinessDiagnostics.cancel(token);
+            expect(survivingWait.read().status).toBe('cancelled');
+
+            const successor = deviceReadinessDiagnostics.begin({
+                deviceId: 'early',
+                deviceType: 'fermenter',
+                requiresContent: false,
+            });
+            const successorWait = deviceReadinessDiagnostics.captureWaitState(successor);
+            try {
+                deviceReadinessDiagnostics.markGraphReady({ token: successor });
+                deviceReadinessDiagnostics.cancel(token);
+                deviceReadinessDiagnostics.markFailed({ token, stage: 'runtime' });
+                expect(deviceReadinessDiagnostics.getWaitState(successor).status).toBe('ready');
+                expect(successorWait.read().status).toBe('ready');
+            } finally {
+                successorWait.release();
+            }
+        } finally {
+            releasedWait.release();
+            survivingWait.release();
+        }
+    });
+
     it('does not mark a content-backed device playable until its content is ready', () => {
         const token = deviceReadinessDiagnostics.begin({
             deviceId: 'levain-1',
@@ -74,6 +165,51 @@ describe('deviceReadinessDiagnostics', () => {
             graphToContentReadyMs: 21,
             requestToPlayableReadyMs: 35,
         });
+    });
+
+    it('renews only genuine progress for the current content phase and bank epoch', () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(1_000);
+            const staleToken = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain-1',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            const token = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain-1',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            const initialActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+
+            vi.setSystemTime(2_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 1 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(initialActivity);
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            const graphActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+
+            vi.setSystemTime(3_000);
+            deviceReadinessDiagnostics.markContentProgress({ token: staleToken, epoch: 1, progress: 1 / 161 });
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 0.01 });
+            const firstProgressActivity = deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs;
+            expect(firstProgressActivity).toBe(3_000);
+            expect(firstProgressActivity).toBeGreaterThan(graphActivity);
+
+            vi.setSystemTime(4_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 1, progress: 0.01 });
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 0, progress: 0.9 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(firstProgressActivity);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 1 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(4_000);
+
+            deviceReadinessDiagnostics.markContentSettled({ token, outcome: 'ready' });
+            vi.setSystemTime(5_000);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 2 / 161 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).status).toBe('ready');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('records a zero graph-to-content wait when content is ready before graph connection', () => {

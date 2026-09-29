@@ -879,6 +879,9 @@
           },
           {
             "name": "Server and Rust workspace health gates",
+            "env": {
+              "CARGO_HTTP_MULTIPLEXING": "false"
+            },
             "run": "pnpm health:server:full"
           }
         ]

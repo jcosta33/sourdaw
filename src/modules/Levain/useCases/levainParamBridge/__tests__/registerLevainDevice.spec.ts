@@ -25,6 +25,6 @@ describe('registerLevainDevice', () => {
 
         expect(outcome).toBe('ready');
         expect(bridge.registerLevainDevice).toHaveBeenCalledTimes(1);
-        expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port);
+        expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port, undefined);
     });
 });

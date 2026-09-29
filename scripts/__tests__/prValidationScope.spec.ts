@@ -88,6 +88,21 @@ const PR_4890_PATHS = [
     'scripts/semanticReview/withheldReasons.ts',
     'scripts/semanticReviewContext.ts',
 ];
+const PR_4902_PATHS = [
+    'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/__tests__/prepareReview.spec.ts',
+    'scripts/reviewRiskPolicy.ts',
+    'scripts/savedProjectStatePaths.ts',
+    'scripts/semanticReview/__tests__/semanticReview.spec.ts',
+    'scripts/semanticReview/rules.ts',
+    'scripts/trustedGithubWriteBootstrap.ts',
+];
+const NEW_REVIEW_TOOLING_PATHS = [
+    'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewRiskPolicy.ts',
+    'scripts/savedProjectStatePaths.ts',
+    'scripts/trustedGithubWriteBootstrap.ts',
+];
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -189,6 +204,23 @@ describe('required affected verification', () => {
         expect(plan.reasons.map(({ path }) => path)).toEqual(PR_4890_PATHS);
     });
 
+    it('keeps the exact seven paths of PR 4902 in tooling scope', () => {
+        const plan = selectValidationPlan(PR_4902_PATHS, INVENTORY);
+        expect(plan).toMatchObject({ profile: 'tooling', browser: false, browserAi: false, codeql: true });
+        expect(plan.matrix.include).toEqual([]);
+        expect(plan.reasons.map(({ path }) => path)).toEqual(PR_4902_PATHS);
+    });
+
+    it.each(NEW_REVIEW_TOOLING_PATHS)('recognizes added review tooling path %s', (path) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+    });
+
     it('uses broad scope for mixed, unknown, and build paths', () => {
         for (const path of [
             'src/app/bootstrap.ts',
@@ -204,6 +236,22 @@ describe('required affected verification', () => {
         }
     });
 
+    it('keeps mixed product, unknown, and lookalike paths broad', () => {
+        for (const path of [
+            'src/app/bootstrap.ts',
+            'scripts/newBuildStep.ts',
+            'scripts/agentDeliveryScriptsLookalike.ts',
+            'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
+        ]) {
+            expect(selectValidationPlan([...PR_4902_PATHS, path], INVENTORY)).toMatchObject({
+                profile: 'broad',
+                browser: true,
+                browserAi: true,
+                codeql: true,
+            });
+        }
+    });
+
     it('keeps either side of a rename or deletion in the classification', () => {
         const renamedToUnknown = parseChangedPaths('R100\0scripts/semanticReviewContext.ts\0scripts/newBuildStep.ts\0');
         const renamedFromUnknown = parseChangedPaths(
@@ -211,6 +259,14 @@ describe('required affected verification', () => {
         );
         expect(selectValidationPlan(renamedToUnknown, INVENTORY).profile).toBe('broad');
         expect(selectValidationPlan(renamedFromUnknown, INVENTORY).profile).toBe('broad');
+        const reviewToolRenamedToUnknown = parseChangedPaths(
+            'R100\0scripts/reviewRiskPolicy.ts\0scripts/newBuildStep.ts\0'
+        );
+        const reviewToolRenamedFromUnknown = parseChangedPaths(
+            'R100\0scripts/newBuildStep.ts\0scripts/reviewRiskPolicy.ts\0'
+        );
+        expect(selectValidationPlan(reviewToolRenamedToUnknown, INVENTORY).profile).toBe('broad');
+        expect(selectValidationPlan(reviewToolRenamedFromUnknown, INVENTORY).profile).toBe('broad');
         expect(
             selectValidationPlan(parseChangedPaths('D\0scripts/semanticReviewContext.ts\0'), INVENTORY).profile
         ).toBe('tooling');

@@ -120,7 +120,7 @@ const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
 // VST3 host: the closure's paths, source buckets, and path-to-source mapping
 // are byte-identical to the previous pin, and only that notice's own content
 // digest moved. Any other field moving is a legal-closure change, not drift.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = 'b11aadca93727098096b64d2fbf0664eaff4c2268240ba5a99eca2be0c6e13a6';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = '0f987a74b02051d7ed2d30b6abae2c8203d08523eaa0d98f433df00875fc363f';
 const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
 const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
@@ -1326,46 +1326,47 @@ describe('release inventory', () => {
 
             const soundboardPath = join(root, 'crates/daw-dsp/src/grand_boule/soundboard.rs');
             const soundboardSource = readFileSync(soundboardPath, 'utf8');
+            const voicingsPath = join(root, 'src/modules/GrandBoule/models/GrandBouleMorphState.ts');
+            const voicingsSource = readFileSync(voicingsPath, 'utf8');
+            const coupledStringsPath = join(root, 'crates/daw-dsp/src/grand_boule/coupled_strings.rs');
+            const coupledStringsSource = readFileSync(coupledStringsPath, 'utf8');
+            const parametersPath = join(root, 'crates/daw-dsp/src/grand_boule/parameters.rs');
+            const parametersSource = readFileSync(parametersPath, 'utf8');
             writeFileSync(soundboardPath, 'const SOUNDBOARD_MODES: usize = 192; fn rebuild_modes() {}');
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('Grand Boule FIR body contract');
 
             writeFileSync(soundboardPath, soundboardSource);
-            writeFileSync(
-                join(root, 'src/modules/GrandBoule/models/GrandBouleMorphState.ts'),
-                `export const model = { id: 'balanced-grand', name: 'Steinway Model D' };`
-            );
+            writeFileSync(voicingsPath, `export const model = { id: 'balanced-grand', name: 'Steinway Model D' };`);
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('product voicing contract');
 
-            writeGrandBouleReleaseFixture(root);
+            writeFileSync(voicingsPath, voicingsSource);
             writeFileSync(
-                join(root, 'crates/daw-dsp/src/grand_boule/coupled_strings.rs'),
+                coupledStringsPath,
                 'fn sigma_bridge_hz(fundamental_hz: f32) -> f32 { 0.8 + fundamental_hz * 0.004 }'
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('polarization-decay');
 
-            writeGrandBouleReleaseFixture(root);
+            writeFileSync(coupledStringsPath, coupledStringsSource);
             writeFileSync(
-                join(root, 'crates/daw-dsp/src/grand_boule/parameters.rs'),
+                parametersPath,
                 '//! Project tuning curves and standard piano mappings\nfn curve(key: u32) { let exponent = 8.0_f32 + 0.020 * (key as f32 - 1.0); }'
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('hammer-stiffness');
 
-            writeGrandBouleReleaseFixture(root);
-            const voicingsPath = join(root, 'src/modules/GrandBoule/models/GrandBouleMorphState.ts');
+            writeFileSync(parametersPath, parametersSource);
             writeFileSync(
                 voicingsPath,
-                readFileSync(voicingsPath, 'utf8').replace(
+                voicingsSource.replace(
                     'hammerHardnessScale: 0.92, hammerMassScale: 1.08, soundboardBrightness: 0.48, sympatheticLevel: 0.58, bodyResonance: 0.52, toneColor: -0.08',
                     'hammerHardnessScale: 1, hammerMassScale: 1, soundboardBrightness: 0.55, sympatheticLevel: 0.5, bodyResonance: 0.6, toneColor: 0'
                 )
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded tuple');
 
-            writeGrandBouleReleaseFixture(root);
-            writeFileSync(voicingsPath, `${readFileSync(voicingsPath, 'utf8')}\nconst oldId = 'steinway-d';\n`);
+            writeFileSync(voicingsPath, `${voicingsSource}\nconst oldId = 'steinway-d';\n`);
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('legacy branded id');
 
-            writeGrandBouleReleaseFixture(root);
+            writeFileSync(voicingsPath, voicingsSource);
             const enginePath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
             writeFileSync(
                 enginePath,

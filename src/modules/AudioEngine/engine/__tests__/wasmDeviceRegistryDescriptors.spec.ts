@@ -417,10 +417,14 @@ describe('wasmDeviceRegistry descriptors', () => {
         it('registers the runtime device with its port and flips engineReady on load', async () => {
             const result = makeLevainResult();
             factoryMocks.createLevainNode.mockResolvedValue(result);
-            const registerLevainDevice = vi.fn(() => Promise.resolve<DeviceContentLoadOutcome>('ready'));
+            const registerLevainDevice = vi.fn((input: { onProgress?: (epoch: number, progress: number) => void }) => {
+                input.onProgress?.(1, 0.2);
+                return Promise.resolve<DeviceContentLoadOutcome>('ready');
+            });
             const setLevainEngineReady = vi.fn();
             setAudioDeviceRuntimeSink({ registerLevainDevice, setLevainEngineReady });
-            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-1' });
+            const onContentProgress = vi.fn();
+            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-1', onContentProgress });
 
             const { placeholder, loadPromise } = requireDescriptor('levain').create(deps);
             placeholder.levainControls?.setParam('cutoff', 0.4);
@@ -434,8 +438,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                     handleCc: result.handleCc,
                 },
                 port: result.workletNode.port,
+                onProgress: expect.any(Function),
             });
             expect(setLevainEngineReady).toHaveBeenCalledWith({ deviceId: 'lev-1', isReady: true });
+            expect(onContentProgress).toHaveBeenCalledWith(1, 0.2);
 
             vi.mocked(deps.onLoaded).mockReturnValue(false);
             registerLevainDevice.mockClear();
