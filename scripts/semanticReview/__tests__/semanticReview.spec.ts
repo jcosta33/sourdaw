@@ -8080,6 +8080,10 @@ describe('reduced-unit reporting', () => {
             path: 'crates/daw-dsp/src/big.rs',
             reason: 'unit-evidence-reduced-below-request-budget (after)',
         });
+        // The operator-facing limitation names the request budget and the dropped-region count, so a
+        // reader can tell how much evidence never left the machine. Deleting the push reddens this case.
+        expect(result.report.limitations.join(' ')).toContain('per-request state budget');
+        expect(result.report.limitations.join(' ')).toContain('1 region(s) were not sent');
     });
 
     it("does not record a request-budget reduction for the collector's own per-region withholding", async () => {

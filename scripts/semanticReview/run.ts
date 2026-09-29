@@ -39,6 +39,7 @@ import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
 import {
     choosePassIndexForRule,
     composeUnitPasses,
+    passMissingEvidence,
     passRequestPayload,
     type SemanticUnitPass,
     type StoredUnitPass,
@@ -57,7 +58,6 @@ import {
 import { type SemanticScanReport } from './report.ts';
 import { scopeReport, usageReport } from './reporting.ts';
 import { unitReservationBytes, unitStatePlusQuestionBytes } from './requestPayload.ts';
-import { missingRequiredEvidence } from './requiredEvidence.ts';
 import {
     applicableRules,
     computePolicyDigest,
@@ -445,21 +445,6 @@ async function assessOneUnit(input: {
     readonly deadline: number;
 }): Promise<UnitAssessment> {
     const unit = input.unit;
-    // The unit-level missing evidence reads the whole carried set, so a question answered across
-    // several passes reports missing only when a region genuinely never left the machine.
-    const missing = new Map<SemanticRuleId, string[]>(
-        unit.rules.map((rule) => [
-            rule.id,
-            missingRequiredEvidence(
-                rule,
-                unit.evidence.own,
-                unit.evidence.context,
-                unit.file.kind,
-                unit.evidence.ownDroppedSides,
-                unit.evidence.contextDroppedSides
-            ),
-        ])
-    );
 
     const passResults: { pass: SemanticUnitPass; result: SemanticAssessmentResult }[] = [];
     for (const pass of unit.evidence.passes) {
@@ -486,11 +471,20 @@ async function assessOneUnit(input: {
 
     // Merge per question: the answer from the pass that best carries that rule's required evidence. A
     // selected evidence id is validated against the ids that pass actually sent, never the unit's union,
-    // so a merged answer can cite only evidence its source pass carried.
+    // so a merged answer can cite only evidence its source pass carried. Each pass answers independently,
+    // so the merged answer is exactly one pass's answer and its missing evidence is what that pass
+    // lacked, never the union of every pass's regions.
     const mergedAnswers: Record<string, unknown> = {};
     const sourcePassByRule = new Map<SemanticRuleId, SemanticUnitPass>();
+    const mergedMissing = new Map<SemanticRuleId, string[]>();
     for (const rule of unit.rules) {
-        const chosen = choosePassIndexForRule({ kind: unit.file.kind, rule, passes: unit.evidence.passes });
+        const chosen = choosePassIndexForRule({
+            kind: unit.file.kind,
+            rule,
+            passes: unit.evidence.passes,
+            ownDroppedSides: unit.evidence.ownDroppedSides,
+            contextDroppedSides: unit.evidence.contextDroppedSides,
+        });
         const entry = passResults[chosen];
         if (entry === undefined) {
             refuse('invalid_response', `unit ${unit.unitId} has no assessed pass ${String(chosen)}`);
@@ -501,6 +495,16 @@ async function assessOneUnit(input: {
         }
         mergedAnswers[rule.id] = assertEvidenceIdsPresent(answer, evidenceIdSet(entry.pass.references));
         sourcePassByRule.set(rule.id, entry.pass);
+        mergedMissing.set(
+            rule.id,
+            passMissingEvidence({
+                kind: unit.file.kind,
+                rule,
+                pass: entry.pass,
+                ownDroppedSides: unit.evidence.ownDroppedSides,
+                contextDroppedSides: unit.evidence.contextDroppedSides,
+            })
+        );
     }
 
     const signals = unit.rules.map((rule) =>
@@ -509,7 +513,7 @@ async function assessOneUnit(input: {
             rule,
             unitId: unit.unitId,
             path: unit.path,
-            missingEvidence: missing.get(rule.id) ?? [],
+            missingEvidence: mergedMissing.get(rule.id) ?? [],
         })
     );
 
@@ -531,7 +535,7 @@ async function assessOneUnit(input: {
             path: unit.path,
             ruleIds: unit.rules.map((rule) => rule.id),
             answers: mergedAnswers,
-            missingEvidence: Object.fromEntries(missing),
+            missingEvidence: Object.fromEntries(mergedMissing),
             passes: storedPasses,
         },
         returnedModels,

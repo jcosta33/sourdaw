@@ -94,13 +94,37 @@ export function composeUnitPasses(
 }
 
 /**
+ * The required-evidence tokens one pass lacks, read from that pass's own regions alone. The unit's
+ * dropped sides are supplied because a side the collector or the partitioner dropped is not supplied
+ * by any pass, however many of its regions a pass still carries; a side whose regions live in a
+ * different pass is absent from this pass's own set and therefore missing from it too.
+ */
+export function passMissingEvidence(input: {
+    readonly kind: SemanticChangedFile['kind'];
+    readonly rule: SemanticRule;
+    readonly pass: { readonly own: readonly EvidenceReference[]; readonly context: readonly EvidenceReference[] };
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+}): string[] {
+    return missingRequiredEvidence(
+        input.rule,
+        input.pass.own,
+        input.pass.context,
+        input.kind,
+        input.ownDroppedSides,
+        input.contextDroppedSides
+    );
+}
+
+/**
  * The pass that best supplies one rule's required evidence: the pass with the fewest missing
  * required-evidence tokens, and the earliest pass when several carry the same amount. The pass order
  * is a deterministic function of the unit's admission order and the profile, so the earliest-pass
  * tie-break is deterministic too.
  *
  * Exported so the merge rule is a pure function a mutation test can attack directly; nothing else
- * reads it.
+ * reads it. The caller then reads the chosen pass's missing tokens through `passMissingEvidence`, so a
+ * rule whose required sides land in different passes is never certified on a one-sided answer.
  */
 export function choosePassIndexForRule(input: {
     readonly kind: SemanticChangedFile['kind'];
@@ -109,19 +133,33 @@ export function choosePassIndexForRule(input: {
         readonly own: readonly EvidenceReference[];
         readonly context: readonly EvidenceReference[];
     }[];
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
 }): number {
     const first = input.passes[0];
     if (first === undefined) {
         refuse('invalid_response', `cannot choose a pass for ${input.rule.id}: the unit has no passes`);
     }
     let best = 0;
-    let bestMissing = missingRequiredEvidence(input.rule, first.own, first.context, input.kind).length;
+    let bestMissing = passMissingEvidence({
+        kind: input.kind,
+        rule: input.rule,
+        pass: first,
+        ownDroppedSides: input.ownDroppedSides,
+        contextDroppedSides: input.contextDroppedSides,
+    }).length;
     for (let index = 1; index < input.passes.length; index += 1) {
         const pass = input.passes[index];
         if (pass === undefined) {
             continue;
         }
-        const missing = missingRequiredEvidence(input.rule, pass.own, pass.context, input.kind);
+        const missing = passMissingEvidence({
+            kind: input.kind,
+            rule: input.rule,
+            pass,
+            ownDroppedSides: input.ownDroppedSides,
+            contextDroppedSides: input.contextDroppedSides,
+        });
         if (missing.length < bestMissing) {
             bestMissing = missing.length;
             best = index;

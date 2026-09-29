@@ -352,6 +352,58 @@ describe('multi-pass evidence transport', () => {
     });
 });
 
+describe('the merge reports the answering pass missing evidence', () => {
+    it('reports a rule whose required sides are split across passes as insufficient context', async () => {
+        // `audio_thread_allocation` needs both `before source` and `after source`. Sized so the before
+        // side and the after side each fit one request but together exceed it, they land in different
+        // passes, so no single pass carries both and the rule must not be certified decisive.
+        const path = 'crates/daw-dsp/src/big.rs';
+        const before = 'const before_value = 1;\n'.repeat(500);
+        const after = 'const after_value = 2;\n'.repeat(500);
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path, { added: 500, deleted: 500 })],
+                    { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            profile: MULTI_PASS_PROFILE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'audio_thread_allocation');
+        expect(signal?.outcome).toBe('insufficient_context');
+        // Exactly the one side the answering pass lacked is named, never the empty union of both passes.
+        expect(signal?.missingEvidence).toHaveLength(1);
+        expect(['before source', 'after source']).toContain(signal?.missingEvidence[0]);
+        const stored = result.storedResponses[0];
+        expect(stored?.missingEvidence.audio_thread_allocation).toHaveLength(1);
+        // The record still names the pass the answer came from.
+        expect(stored?.passes.some((pass) => pass.answerRuleIds.includes('audio_thread_allocation'))).toBe(true);
+    });
+
+    it('still emits a decisive disposition when a rule required evidence fits one pass', async () => {
+        const path = 'crates/daw-dsp/src/small.rs';
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path)],
+                    { [`${MERGE_BASE}:${path}`]: 'const before = 1;\n', [`${HEAD}:${path}`]: 'const after = 2;\n' },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'audio_thread_allocation');
+        expect(signal?.outcome).toBe('no_signal');
+        expect(signal?.missingEvidence).toEqual([]);
+    });
+});
+
 describe('merge rule', () => {
     it('picks the earliest pass that carries the required evidence', () => {
         // For an added test file, `assertion_deleted` requires only the after test source, so two passes
@@ -361,7 +413,16 @@ describe('merge rule', () => {
             { own: [reference('a1', 'after')], context: [] },
             { own: [reference('a2', 'after')], context: [] },
         ];
-        expect(choosePassIndexForRule({ kind: 'added', rule, passes })).toBe(0);
+        const droppedSides = new Set<EvidenceSide>();
+        expect(
+            choosePassIndexForRule({
+                kind: 'added',
+                rule,
+                passes,
+                ownDroppedSides: droppedSides,
+                contextDroppedSides: droppedSides,
+            })
+        ).toBe(0);
         // A pass without the required side loses to one that has it, whatever the order.
         expect(
             choosePassIndexForRule({
@@ -371,6 +432,8 @@ describe('merge rule', () => {
                     { own: [reference('b1', 'before')], context: [] },
                     { own: [reference('a2', 'after')], context: [] },
                 ],
+                ownDroppedSides: droppedSides,
+                contextDroppedSides: droppedSides,
             })
         ).toBe(1);
     });
