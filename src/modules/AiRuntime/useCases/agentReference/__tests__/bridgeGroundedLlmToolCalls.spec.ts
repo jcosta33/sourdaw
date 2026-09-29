@@ -3052,6 +3052,81 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([expect.objectContaining({ name: 'addNotes' })]);
     });
 
+    it('refuses an ambiguous new-track anaphora after two track creations', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$lead',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on that new track from beat 0 to beat 4',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(expect.objectContaining({ index: 2, name: 'addClip' }));
+    });
+
+    it.each([
+        ['Lead', 0],
+        ['Bass', 1],
+    ] as const)('keeps a clip on the explicitly named new %s track', (ownerName, ownerIndex) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: ownerIndex === 0 ? '$lead' : '$bass',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            `Create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new ${ownerName} track from beat 0 to beat 4`,
+            { ...projectContext, tracks: [] }
+        );
+        const trackIdentities = (result.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addTrack'
+        );
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[2]).toMatchObject({
+            type: 'addClip',
+            payload: { trackId: trackIdentities[ownerIndex]?.trackId, name: 'Melody' },
+        });
+    });
+
+    it.each([
+        ['create 2 MIDI tracks', 'Lead', 'Bass'],
+        ['create 2 MIDI tracks named Lead', 'Lead', 'Lead'],
+        ['create a MIDI track named "Lead and Bass"', 'Lead and Bass', null],
+    ] as const)('preserves counted and quoted creation authority for %s', (prompt, firstName, secondName) => {
+        const names = secondName === null ? [firstName] : [firstName, secondName];
+        const result = bridge(
+            names.map((name, index) => ({
+                name: 'addTrack',
+                arguments: { name, kind: 'midi', binding: `track-${index}` },
+            })),
+            prompt,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.rejections).toEqual([]);
+        expect(
+            result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
+        ).toEqual(names);
+    });
+
     it('keeps one requested bass track slot while allowing its new clip and notes', () => {
         const prompt = 'create a walking bass line on a new track';
         const track = { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } };

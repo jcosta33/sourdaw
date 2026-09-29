@@ -4606,6 +4606,52 @@ function namesWholeCreatedObject(text: string, name: string): boolean {
     );
 }
 
+function getNamedCreationSegments(scope: PromptClause, actionType: BatchLocalBindingProducerName): string[] {
+    const noun = CREATED_OBJECT_NOUNS[actionType];
+    return [...scope.masked.matchAll(new RegExp(`${noun.source}\\s+(?:named|called)\\b`, 'giu'))].flatMap((match) => {
+        if (match.index === undefined) {
+            return [];
+        }
+        const tail = scope.text.slice(match.index + match[0].length);
+        const nextObject =
+            /\b(?:tracks?|clips?|buses?|devices?|plugins?|effects?|(?:automation )?lanes?)\s+(?:named|called)\b/iu.exec(
+                tail
+            );
+        return [tail.slice(0, nextObject?.index ?? tail.length)];
+    });
+}
+
+function getNamedCreationMembers(scope: PromptClause, actionType: BatchLocalBindingProducerName): string[] {
+    return getNamedCreationSegments(scope, actionType).flatMap((segment) => {
+        const members: string[] = [];
+        const masked = scanPromptQuotedText(segment).maskedText;
+        let start = 0;
+        for (const separator of masked.matchAll(/,\s*(?:and\b\s*)?|\s+and\s+/giu)) {
+            if (separator.index === undefined) {
+                continue;
+            }
+            members.push(segment.slice(start, separator.index).trim());
+            start = separator.index + separator[0].length;
+        }
+        members.push(segment.slice(start).trim());
+        return members.filter((member) => member.length > 0);
+    });
+}
+
+function namesNamedCreationMember(member: string, name: string): boolean {
+    const normalizedName = normalizePromptText(name);
+    const trimmed = member.trim();
+    if (/^["'“‘]/u.test(trimmed)) {
+        const masked = scanPromptQuotedText(trimmed).maskedText;
+        const closing = masked.slice(1).search(/["'”’]/u) + 1;
+        return closing > 0 && normalizePromptText(trimmed.slice(1, closing)) === normalizedName;
+    }
+    return new RegExp(
+        `^${escapeRegExp(normalizedName)}(?=$| (?:on|in|from|at|for|with|that|which|then|but|midi|audio)\\b)`,
+        'u'
+    ).test(normalizePromptText(trimmed));
+}
+
 function getOpenCreatedObjectRequest(
     prompt: string,
     maskedPrompt: string
@@ -4641,19 +4687,7 @@ function namesCreationInScope(input: {
     const normalized = normalizePromptText(input.scope.text);
     const normalizedName = normalizePromptText(input.name);
     const noun = CREATED_OBJECT_NOUNS[input.actionType];
-    const namedSegments = [
-        ...input.scope.masked.matchAll(new RegExp(`${noun.source}\\s+(?:named|called)\\b`, 'giu')),
-    ].flatMap((match) => {
-        if (match.index === undefined) {
-            return [];
-        }
-        const tail = input.scope.text.slice(match.index + match[0].length);
-        const nextObject =
-            /\b(?:tracks?|clips?|buses?|devices?|plugins?|effects?|(?:automation )?lanes?)\s+(?:named|called)\b/iu.exec(
-                tail
-            );
-        return [tail.slice(0, nextObject?.index ?? tail.length)];
-    });
+    const namedSegments = getNamedCreationSegments(input.scope, input.actionType);
     const namesObject = namedSegments.some((segment) =>
         new RegExp(
             `^${escapeRegExp(normalizedName)}(?=$| (?:on|in|from|at|for|with|that|which|and|then|but)\\b)`,
@@ -4733,18 +4767,37 @@ function getCreatedObjectRequestIndexes(input: {
                 continue;
             }
             const quantity = new RegExp(`\\b(\\d+)\\s+(?:\\w+\\s+){0,2}${noun.source}`, 'u').exec(normalized);
-            const slots = quantity ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS) : 1;
+            const namedMembers = getNamedCreationMembers(scope, actionType);
+            const slots = quantity
+                ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS)
+                : Math.min(Math.max(namedMembers.length, 1), SEMANTIC_COMMAND_LIST_MAX_CREATIONS);
+            const spentNames = new Map<string, number>();
             for (let slot = 0; slot < slots; slot += 1) {
-                const matching = [...input.bindings.entries()].find(
-                    ([index, binding]) =>
-                        !authorized.has(index) &&
-                        input.calls[index]?.name === actionType &&
-                        namesCreationInScope({ actionType, name: binding.name, scope, slots })
-                );
+                const matching = [...input.bindings.entries()].find(([index, binding]) => {
+                    if (
+                        authorized.has(index) ||
+                        input.calls[index]?.name !== actionType ||
+                        !namesCreationInScope({ actionType, name: binding.name, scope, slots })
+                    ) {
+                        return false;
+                    }
+                    if (namedMembers.length === 0) {
+                        return true;
+                    }
+                    const matchingMembers = namedMembers.filter((member) =>
+                        namesNamedCreationMember(member, binding.name)
+                    ).length;
+                    const permittedCount = namedMembers.length === 1 ? slots : matchingMembers;
+                    return (
+                        matchingMembers > 0 && (spentNames.get(normalizePromptText(binding.name)) ?? 0) < permittedCount
+                    );
+                });
                 if (!matching) {
                     break;
                 }
                 authorized.add(matching[0]);
+                const name = normalizePromptText(matching[1].name);
+                spentNames.set(name, (spentNames.get(name) ?? 0) + 1);
             }
         }
     }
@@ -4861,6 +4914,17 @@ function hasContradictoryCreatedTargetReference(input: {
     const normalized = normalizePromptText(targetText);
     if (normalized.length === 0) {
         return false;
+    }
+    const sameKindBindings = [...input.bindings.values()].filter(
+        (candidate) => candidate.actionType === input.binding.actionType
+    );
+    if (
+        sameKindBindings.length > 1 &&
+        CREATION_ANAPHORA_PATTERNS[input.binding.actionType].test(
+            normalizePromptText(scanPromptQuotedText(targetText).maskedText)
+        )
+    ) {
+        return true;
     }
     if (namesWholeCreatedObject(targetText, input.binding.name)) {
         return true;
@@ -6015,8 +6079,14 @@ export function bridgeGroundedLlmToolCalls({
             prompt,
         });
         let grounded: ToolCallResult | LlmActionRejection;
-        if (!isBatchLocalCreationActionType(call.name) && createdTargetIntent === 'mismatched') {
-            grounded = rejection(index, call.name, 'Batch-local target is not grounded in the user request');
+        if (createdTargetIntent === 'mismatched') {
+            grounded = rejection(
+                index,
+                call.name,
+                isBatchLocalCreationActionType(call.name)
+                    ? 'Batch-local parent is not unambiguously grounded in the user request'
+                    : 'Batch-local target is not grounded in the user request'
+            );
         } else if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||

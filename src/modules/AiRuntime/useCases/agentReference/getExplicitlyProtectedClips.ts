@@ -210,9 +210,6 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
             ids: resolveProtectedClipIds(member, clips, context),
             trackOnly: isTrackOnlyReference(member, context),
         }));
-        if (wholeIsLiteralName && resolvedMembers.every((member) => member.ids.length === 0 && !member.trackOnly)) {
-            continue;
-        }
         for (const member of resolvedMembers) {
             complete &&= member.ids.length > 0 || member.trackOnly;
             for (const clipId of member.ids) {

@@ -264,6 +264,23 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    it('marks an unquoted whole-name collision incomplete when every list member is unresolved', () => {
+        const wholeName = createClip('clip-alpha-and-omega', 'Alpha and Omega');
+        const collisionContext = {
+            ...context,
+            tracks: [createTrack('track-collision', 'Collision', [wholeName])],
+        };
+
+        expect(getExplicitClipProtection('set Verse to 90, excluding Alpha and Omega', collisionContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: false,
+        });
+        expect(getExplicitClipProtection('set Verse to 90, excluding "Alpha and Omega"', collisionContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: true,
+        });
+    });
+
     it('treats quoted exclusion words as names and keeps quoted excluded names literal', () => {
         expect(getProtectedClips('rename Lead to "excluding Bass Verse"')).toEqual([]);
         expect(getProtectedClips('set Verse to 90, excluding "Rock and Roll"')).toContainEqual({

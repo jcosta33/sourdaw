@@ -519,6 +519,52 @@ describe('transform.compile planner tool', () => {
         expect(result.rejectionReason).toContain('protected or unresolved target');
     });
 
+    it('rejects a compiled Verse edit when an exact whole-name exclusion hides only unresolved members', async () => {
+        const context = {
+            ...CONTEXT,
+            tracks: [
+                {
+                    ...CONTEXT.tracks[0]!,
+                    clips: [
+                        ...CONTEXT.tracks[0]!.clips,
+                        {
+                            id: 'clip-alpha-and-omega',
+                            name: 'Alpha and Omega',
+                            type: 'midi' as const,
+                            startBeat: 16,
+                            endBeat: 24,
+                            noteCount: 4,
+                        },
+                    ],
+                },
+            ],
+        };
+        const document = {
+            ...DOCUMENT,
+            selectors: { verse: { target: 'clip', where: { nameIncludes: 'Verse' }, limit: 1 } },
+            steps: [
+                {
+                    id: 'verse',
+                    kind: 'emit',
+                    operation: 'setAllVelocities',
+                    arguments: {
+                        clipId: { literal: 'clip-verse' },
+                        velocity: { literal: 90 },
+                    },
+                },
+            ],
+        };
+        planCalls(['compile-1'], document);
+        const result = await parsePromptToActions(
+            'set note velocities in Verse MIDI clip to 90, excluding Alpha and Omega',
+            context,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected or unresolved target');
+    });
+
     it.each([
         [
             'create a MIDI track named Lead and add an empty MIDI clip named Melody on that new track from beat 0 to beat 4',
@@ -1557,6 +1603,76 @@ describe('transform.compile planner tool', () => {
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('Provider value name does not match the user request');
     });
+
+    it.each([
+        ['Lead', false],
+        ['Bass', true],
+    ] as const)(
+        'spends named creation slots across transform and ordinary origins with %s',
+        async (ordinaryName, allowed) => {
+            const document = {
+                ...DOCUMENT,
+                selectors: {},
+                steps: [
+                    {
+                        id: 'lead-transform',
+                        kind: 'emit',
+                        operation: 'addTrack',
+                        binding: 'lead-transform',
+                        arguments: { name: { literal: 'Lead' }, kind: { literal: 'midi' } },
+                    },
+                ],
+            };
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'compile-1',
+                            name: 'transform.compile',
+                            arguments: { document: JSON.stringify(document) },
+                        },
+                        {
+                            id: 'catalog-1',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['addTrack'] },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'proposal-1',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                compiledCallIds: ['compile-1'],
+                                commands: [
+                                    {
+                                        name: 'addTrack',
+                                        arguments: { name: ordinaryName, kind: 'midi', binding: 'ordinary-track' },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+
+            const result = await parsePromptToActions(
+                'create 2 MIDI tracks named Lead and Bass',
+                CONTEXT,
+                undefined,
+                'revision-transform-1'
+            );
+
+            expect(
+                result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
+            ).toEqual(allowed ? ['Lead', 'Bass'] : []);
+            if (!allowed) {
+                expect(result.rejectionReason).toContain('not grounded');
+            }
+        }
+    );
 
     it.each([
         [
