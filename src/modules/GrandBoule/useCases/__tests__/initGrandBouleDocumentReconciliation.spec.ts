@@ -30,7 +30,7 @@ vi.mock('../calibrateGrandBouleMidi/syncMidiCalibrationToEngine', () => ({
     syncMidiCalibrationToEngine: mocks.syncMidiCalibration,
 }));
 
-import { DOC_PREFIX_ROOT } from '#/modules/CrdtDocument/useCases';
+import { DOC_PREFIX_ROOT, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 
 import { readGrandBouleDeviceState, toGrandBouleDeviceState } from '../../models/GrandBouleDeviceState';
 import { createGrandBouleStore, resetGrandBouleStores } from '../../stores/grandBouleStore';
@@ -56,6 +56,9 @@ const CHUNK_AT_5 = {
         toneTilt: 0.25,
     },
 };
+
+/** What the session's own projection still holds before the bridge re-projects the peer commit. */
+const CHUNK_AT_1 = { ...CHUNK_AT_5, data: { ...CHUNK_AT_5.data, temperament: 1 } };
 
 function projectWith(...devices: FixtureDevice[]): FixtureTracks {
     return { tracks: [{ devices }] };
@@ -201,6 +204,33 @@ describe('initGrandBouleDocumentReconciliation', () => {
 
         expect(mocks.syncVoicing).toHaveBeenCalledTimes(1);
         expect(createGrandBouleStore(DEVICE_A).value?.temperament).toBe(5);
+    });
+
+    // The deferral's whole reason (#4894): the repository fires its listeners
+    // in registration order — reconciliation registers at bootstrap, the
+    // projection bridge at session start — so the bridge's synchronous
+    // re-projection of the same change lands in the track store before the
+    // deferred sweep reads it. This case registers both through the seam in
+    // that order and dispatches the way `notifyListeners` does; a sweep made
+    // synchronous in the listener would hydrate from the stale pre-projection
+    // projection instead.
+    it('sweeps after the projection bridge re-projects the same change in registration order', async () => {
+        seedStaleStore(DEVICE_A);
+        mocks.trackStore.value = projectWith(grandBouleDevice(DEVICE_A, CHUNK_AT_1));
+        const reconciliationListener = documentOriginListener();
+        const unsubscribeProjection = subscribeToCrdtChanges(() => {
+            mocks.trackStore.value = projectWith(grandBouleDevice(DEVICE_A, CHUNK_AT_5));
+        });
+        const dispatchOrder = mocks.subscribe.mock.calls.map(([listener]) => listener);
+        expect(dispatchOrder).toEqual([reconciliationListener, expect.any(Function)]);
+
+        for (const listener of dispatchOrder) {
+            listener(DOC_PREFIX_ROOT);
+        }
+        await flushSweep();
+
+        expect(createGrandBouleStore(DEVICE_A).value?.temperament).toBe(5);
+        unsubscribeProjection();
     });
 
     it('reconciles every Grand Boule device on the project and no other device', () => {

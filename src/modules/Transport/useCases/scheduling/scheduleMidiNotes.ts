@@ -1122,7 +1122,22 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
-                        if (!admittedOnOwnedBeat && (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat)) {
+                        // #4910 admitted the note on its owned coordinate, so its
+                        // segments schedule where the projection lands them — a
+                        // groove displacement past `toBeat` included. One bound
+                        // survives (#4924): a segment whose start sits further
+                        // behind the window than one groove stage can reach was
+                        // re-anchored there by the wrap (a duration tail lands a
+                        // full loop behind the owning window), so scheduling it
+                        // computes a start seconds behind the audio clock, which
+                        // Web Audio clamps to an immediate fire. Every other
+                        // path keeps the exact window semantics its selector
+                        // owns.
+                        if (admittedOnOwnedBeat) {
+                            if (unswungStartBeat < fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+                                continue;
+                            }
+                        } else if (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat) {
                             continue;
                         }
                         if (!isCurrent()) {

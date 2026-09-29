@@ -404,6 +404,45 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ).toEqual([]);
     });
 
+    it('drops the release a duration wrap re-anchors a full loop behind the owning window', async () => {
+        // #4910 admission — content 3.9 with a 0.5-beat duration in a 4-beat
+        // loop crosses the iteration end at 4, and the projection re-anchors
+        // the release to the iteration head: beat 0, a full loop length
+        // behind the window that owns the note at 3.9. No groove is involved
+        // — the duration wrap alone produces the segment — and scheduling it
+        // computes a start ~1.94 s behind the audio clock, which Web Audio
+        // clamps to an immediate fire: a spurious second attack on every
+        // pass. Only the in-window heads may sound.
+        expect(
+            await sweepScheduledVoices({
+                clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
+                note: { startBeat: 3.9, duration: 0.5 },
+                grooveState: defaultGrooveTemplateState,
+                sweepEndBeat: 8,
+            })
+        ).toEqual([
+            { pitch: 60, beat: 3.9, durationBeats: 0.1 },
+            { pitch: 60, beat: 7.9, durationBeats: 0.1 },
+        ]);
+    });
+
+    it('drops the segment a groove displacement re-anchors across the iteration seam', async () => {
+        // The same note with slot-0 timingOffset +0.5 displaces its projected
+        // start to 4.15, across the iteration end; the projection wraps it to
+        // the iteration head at 0.15 — 3.75 beats behind the window that owns
+        // the note at 3.9. Every pass would fire that stale start
+        // immediately, so the widened admission bound drops it and no voice
+        // sounds from either pass.
+        expect(
+            await sweepScheduledVoices({
+                clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
+                note: { startBeat: 3.9, duration: 0.5 },
+                grooveState: sequencerGrooveState({ index: 0, timingOffset: 0.5 }),
+                sweepEndBeat: 8,
+            })
+        ).toEqual([]);
+    });
+
     it('schedules a looped note the groove displaces across an iteration head where the twin re-anchors it', async () => {
         // Content 1/32 sits on grid slot 0; timingOffset −0.5 pulls the
         // projected start to −0.21875 inside the iteration, and the projection
