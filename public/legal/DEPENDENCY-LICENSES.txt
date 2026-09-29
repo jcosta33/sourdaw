@@ -7,10 +7,10 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:793c0980912bb6b487593835b8e34d1c33ef18a1dfcea197c24625d0498a7a4e
-- pnpm-lock.yaml sha256:c12bfb469d243e6c9a526902ad41cb6d1c47f4a8e14606fac96b259bdee5c3f8
+- pnpm-lock.yaml sha256:478b4fce2b0e39ec9239a4489f2a6087c772b7954e98b4d7d649bfc000c6cf6d
 - server/package-lock.json sha256:9e491a9c1d3f49b0555fc2ea8bc3b7ae3854d734a6e3c4a6a645a93ed73a7a00
 
-Package inventory: 353 npm, 321 Cargo
+Package inventory: 355 npm, 321 Cargo
 
 cargo:adler2@2.0.1 | 0BSD OR MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17,sha256:8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb | Cargo.lock
 cargo:alsa@0.11.0 | Apache-2.0/MIT | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530 | Cargo.lock
@@ -442,6 +442,7 @@ npm:@types/long@4.0.2 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b27482
 npm:@types/mdast@4.0.4 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/ms@2.1.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/node@26.4.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
+npm:@types/node@26.6.3 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/node-fetch@2.6.13 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.3.0 | MIT | sha256:dea9265341829002e2c23a7372393eb2ed6e26085fb623f38a4ba0af833f30a6 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.7.3 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
@@ -661,6 +662,7 @@ npm:trim-lines@3.0.1 | MIT | sha256:9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec
 npm:trough@2.2.0 | MIT | sha256:6c03fd41cfd7c92d8aa8a2fa521b94b2683f059123281dcf921ddea9216b6254 | pnpm-lock.yaml
 npm:tslib@2.8.1 | 0BSD | sha256:210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751 | pnpm-lock.yaml
 npm:undici-types@8.3.0 | MIT | sha256:a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27 | pnpm-lock.yaml
+npm:undici-types@8.9.0 | MIT | sha256:a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27 | pnpm-lock.yaml
 npm:unified@11.0.5 | MIT | sha256:05811400116ed61f1a7693b78fe8ca6598c155a12f3978e609db4df648a4cb3d | pnpm-lock.yaml
 npm:unist-util-is@6.0.1 | MIT | sha256:82974dbf2639d13edab95c32ed9cb6c0867ede272cd2e07ce47ce8548fe55c05 | pnpm-lock.yaml
 npm:unist-util-position@5.0.0 | MIT | sha256:63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf | pnpm-lock.yaml
@@ -20596,6 +20598,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Evidence labels: LICENSE
 Packages:
 - npm:undici-types@8.3.0
+- npm:undici-types@8.9.0
 
 MIT License
 
@@ -23411,6 +23414,7 @@ Packages:
 - npm:@types/ms@2.1.0
 - npm:@types/node-fetch@2.6.13
 - npm:@types/node@26.4.0
+- npm:@types/node@26.6.3
 - npm:@types/offscreencanvas@2019.7.3
 - npm:@types/react-dom@19.3.0
 - npm:@types/react@19.3.0
