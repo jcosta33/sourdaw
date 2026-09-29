@@ -19,13 +19,14 @@ import {
     sortedCounts,
     sumCounts,
     type AcrossRuns,
+    type FiredSignal,
     type MeasurementDetail,
     type MeasurementMachine,
     type MeasurementRecord,
     type MeasurementRun,
     type MeasurementSources,
-    type NotComputableFigure,
     type RecordExtras,
+    type RecordedSignalDisposition,
     type RepeatedWarning,
     type ReviewRoundSummary,
     type RuleNotAskedReason,
@@ -35,6 +36,7 @@ import {
     SEMANTIC_MEASUREMENT_FORMAT,
     SEMANTIC_MEASUREMENT_SCHEMA_VERSION,
 } from './contracts.ts';
+import { notComputableFigures } from './gaps.ts';
 
 type CoverageTotals = {
     applicable: number;
@@ -176,11 +178,59 @@ type SignalTotals = {
     dispositionTokens: Record<string, number>;
     signals: number;
     fired: number;
+    runsWithSignalLedger: number;
+    runsWithFindingLedger: number;
     dispositions: number;
     dismissed: number;
     undismissed: number;
     withoutDossier: number;
 };
+
+/** The identity of one fired signal on the head it fired on, however many sidecars that head has. */
+function firedSignalKey(run: MeasurementRun, signal: FiredSignal): string {
+    const { repository, prNumber, headSha } = run.context;
+    const head = headSha ?? run.artifact.path;
+    return [repository ?? '', String(prNumber ?? ''), head, signal.ruleId, signal.path].join('\u0000');
+}
+
+/**
+ * What the rounds recorded, counted once per head.
+ *
+ * One head is normally read by several sidecars — a scan and a verification report at least — and each
+ * run matches the same dossier. Counting each run's dispositions and dismissals would multiply one
+ * round's outcomes by the number of artifacts that happen to name that head, so they are keyed by the
+ * head and the signal, and the recorded dispositions by the dossier that holds them. The per-run signal
+ * counts above stay per run: those measure what was asked, not what a round disposed of.
+ */
+function sumDisposals(runs: readonly MeasurementRun[]): {
+    dispositions: Map<string, RecordedSignalDisposition>;
+    fired: Map<string, boolean>;
+    withoutDossier: Set<string>;
+} {
+    const dispositions = new Map<string, RecordedSignalDisposition>();
+    const fired = new Map<string, boolean>();
+    const withoutDossier = new Set<string>();
+    for (const run of runs) {
+        const outcome = run.signalOutcome;
+        if (outcome === null) {
+            continue;
+        }
+        for (const entry of outcome.dispositionsRecorded) {
+            dispositions.set(`${entry.dossier}\u0000${entry.ruleId}\u0000${entry.path}`, entry);
+        }
+        const hasDossier = outcome.dossiersMatched.length > 0;
+        const undismissedHere = new Set(outcome.undismissedFiredSignals.map((signal) => firedSignalKey(run, signal)));
+        for (const signal of outcome.firedSignals) {
+            const key = firedSignalKey(run, signal);
+            if (!hasDossier) {
+                withoutDossier.add(key);
+                continue;
+            }
+            fired.set(key, (fired.get(key) ?? true) && !undismissedHere.has(key));
+        }
+    }
+    return { dispositions, fired, withoutDossier };
+}
 
 function sumSignals(runs: readonly MeasurementRun[]): SignalTotals {
     const totals: SignalTotals = {
@@ -189,6 +239,8 @@ function sumSignals(runs: readonly MeasurementRun[]): SignalTotals {
         dispositionTokens: {},
         signals: 0,
         fired: 0,
+        runsWithSignalLedger: 0,
+        runsWithFindingLedger: 0,
         dispositions: 0,
         dismissed: 0,
         undismissed: 0,
@@ -196,22 +248,30 @@ function sumSignals(runs: readonly MeasurementRun[]): SignalTotals {
     };
     for (const run of runs) {
         if (run.signalOutcome !== null) {
+            totals.runsWithSignalLedger += 1;
             totals.signals += run.signalOutcome.totalSignals;
             totals.fired += run.signalOutcome.firedSignals.length;
             sumCounts(totals.byDisposition, run.signalOutcome.byDisposition);
-            totals.dispositions += run.signalOutcome.dispositionsRecorded.length;
-            sumCounts(
-                totals.dispositionTokens,
-                countBy(run.signalOutcome.dispositionsRecorded, (entry) => entry.disposition)
-            );
-            totals.dismissed += run.signalOutcome.dismissedFiredSignals;
-            totals.undismissed += run.signalOutcome.undismissedFiredSignals.length;
-            totals.withoutDossier += run.signalOutcome.firedSignalsWithoutDossier;
         }
         if (run.findingOutcome !== null) {
+            totals.runsWithFindingLedger += 1;
             sumCounts(totals.byFindingDisposition, run.findingOutcome.byDisposition);
         }
     }
+    const disposals = sumDisposals(runs);
+    totals.dispositions = disposals.dispositions.size;
+    sumCounts(
+        totals.dispositionTokens,
+        countBy([...disposals.dispositions.values()], (entry) => entry.disposition)
+    );
+    for (const dismissed of disposals.fired.values()) {
+        if (dismissed) {
+            totals.dismissed += 1;
+        } else {
+            totals.undismissed += 1;
+        }
+    }
+    totals.withoutDossier = disposals.withoutDossier.size;
     return totals;
 }
 
@@ -291,14 +351,23 @@ function sumWallClock(runs: readonly MeasurementRun[]): { wallClockMs: number; w
     return { wallClockMs, wallClockRuns };
 }
 
+/**
+ * The runner's own held-label count, over the fixtures it completed.
+ *
+ * A fixture the runner did not assess carries a label the runner already read as not held, because it
+ * reads an absent answer as a wrong one; folding those in would turn `unavailable` into evidence about
+ * the rules. They are counted in `notAssessed` instead, and the held rate is over what was assessed.
+ */
 function sumLabelledExpectations(runs: readonly MeasurementRun[]): AcrossRuns['labelledExpectations'] {
     const labelled = runs.filter((run) => run.labelledExpectationHeld !== null);
     if (labelled.length === 0) {
         return null;
     }
+    const assessed = labelled.filter((run) => run.execution === 'completed');
     return {
-        held: labelled.filter((run) => run.labelledExpectationHeld === true).length,
-        total: labelled.length,
+        held: assessed.filter((run) => run.labelledExpectationHeld === true).length,
+        total: assessed.length,
+        notAssessed: labelled.length - assessed.length,
     };
 }
 
@@ -340,11 +409,17 @@ function acrossRuns(runs: readonly MeasurementRun[], extras: RecordExtras): Acro
             limitationsByText: sortedCounts(extras.limitationsByText),
         },
         signals: {
-            total: signals.signals,
-            byDisposition: sortedCounts(signals.byDisposition),
-            byRule: sortedCounts(extras.signalsByRule),
-            fired: signals.fired,
-            byFindingDisposition: sortedCounts(signals.byFindingDisposition),
+            runsWithSignalLedger: signals.runsWithSignalLedger,
+            runsWithFindingLedger: signals.runsWithFindingLedger,
+            // An empty ledger is null with the contributing-run count beside it, so the zero a
+            // verification-only measurement would otherwise publish cannot read as a run that asked
+            // nothing and found nothing.
+            total: signals.runsWithSignalLedger === 0 ? null : signals.signals,
+            byDisposition: signals.runsWithSignalLedger === 0 ? null : sortedCounts(signals.byDisposition),
+            byRule: signals.runsWithSignalLedger === 0 ? null : sortedCounts(extras.signalsByRule),
+            fired: signals.runsWithSignalLedger === 0 ? null : signals.fired,
+            byFindingDisposition:
+                signals.runsWithFindingLedger === 0 ? null : sortedCounts(signals.byFindingDisposition),
         },
         signalDispositions: {
             recorded: signals.dispositions,
@@ -357,138 +432,6 @@ function acrossRuns(runs: readonly MeasurementRun[], extras: RecordExtras): Acro
         labelledExpectations: sumLabelledExpectations(runs),
         repeatedWarnings: repeatedWarnings(runs),
     };
-}
-
-/** The figures a skipped artifact would have contributed, named one by one so no gap reads as a zero. */
-function skippedFigures(skipped: readonly SkippedArtifact[]): NotComputableFigure[] {
-    return skipped.map((artifact) => ({
-        figure: `every figure ${artifact.path} would contribute`,
-        reason: `the artifact was skipped rather than read: ${artifact.reason}`,
-    }));
-}
-
-type ScanShapeCounts = {
-    scans: number;
-    withoutStates: number;
-    withoutOrder: number;
-    verifyRuns: number;
-    withoutRound: number;
-    withoutDispositions: number;
-};
-
-/** What the scan runs do and do not carry, which decides which figures are not computable. */
-function scanShape(runs: readonly MeasurementRun[]): ScanShapeCounts {
-    const scans = runs.filter((run) => run.artifact.kind !== 'evaluation-fixture' && run.mode === 'scan');
-    const scanRuns = runs.filter((run) => run.signalOutcome !== null);
-    return {
-        scans: scans.length,
-        withoutStates: scans.filter((run) => run.outcomeAccounting.publishedStates === null).length,
-        withoutOrder: scans.filter((run) => run.ruleCoverage?.applicableRulesComplete === false).length,
-        verifyRuns: runs.filter((run) => run.ruleCoverage === null).length,
-        withoutRound: scanRuns.filter((run) => (run.signalOutcome?.dossiersMatched.length ?? 0) === 0).length,
-        withoutDispositions: runs.filter(
-            (run) =>
-                (run.signalOutcome?.dossiersMatched.length ?? 0) > 0 &&
-                run.signalOutcome?.dispositionsRecorded.length === 0
-        ).length,
-    };
-}
-
-/**
- * The field a gap is named against. At the full detail level that is the per-run field itself; at the
- * aggregate level the record carries no per-run entries, so the gap is named against the total it
- * leaves short.
- */
-function gapFigure(detail: MeasurementDetail, runField: string, totalField: string): string {
-    return detail === 'runs' ? runField : totalField;
-}
-
-function gapFigures(runs: readonly MeasurementRun[], detail: MeasurementDetail): NotComputableFigure[] {
-    const figures: NotComputableFigure[] = [];
-    const shape = scanShape(runs);
-    if (shape.withoutStates > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].outcomeAccounting.publishedStates', 'acrossRuns.publishedOutcomeStates'),
-            reason: `${String(shape.withoutStates)} stored scan report(s) were written before scope.states existed; their omission totals here are derived from their own excluded and unassessed entries`,
-        });
-    }
-    if (shape.withoutOrder > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].ruleCoverage.applicableRules', 'acrossRuns.ruleCoverage.applicableRules'),
-            reason: `${String(shape.withoutOrder)} stored scan report(s) carry no scope.requestOrder, so the rule set of each unit omitted before admission is in no artifact; those runs' applicable counts are floors over the units whose rules the report publishes, and their notAskedByReason under-counts an omission whose rules are unpublished`,
-        });
-    }
-    const withoutWallClock = runs.filter((run) => run.wallClock === null).length;
-    if (withoutWallClock > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].wallClock', 'acrossRuns.wallClockMs'),
-            reason: `${String(withoutWallClock)} artifact(s) record no start and end — an evaluation outcome reports a fixture's answers, not its clock — so no span exists for them`,
-        });
-    }
-    const withoutTruncation = runs.filter((run) => run.evidenceCompleteness.truncatedRegions === null).length;
-    if (withoutTruncation > 0) {
-        figures.push({
-            figure: gapFigure(
-                detail,
-                'runs[].evidenceCompleteness.truncatedRegions',
-                'acrossRuns.evidence.truncatedRegions'
-            ),
-            reason: `${String(withoutTruncation)} artifact(s) carry no truncation ledger; nothing recorded whether evidence was cut, which is not the same as none being cut`,
-        });
-    }
-    if (shape.verifyRuns > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].ruleCoverage for verification runs', 'acrossRuns.ruleCoverage'),
-            reason: `${String(shape.verifyRuns)} verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change`,
-        });
-    }
-    const noPr = runs.filter(
-        (run) => run.context.prNumber === null && run.artifact.kind !== 'evaluation-fixture'
-    ).length;
-    if (noPr > 0) {
-        figures.push({
-            figure: 'acrossRuns.repeatedWarnings',
-            reason: `${String(noPr)} run(s) name no pull request, so a signal repeated across their heads cannot be attributed to one pull request`,
-        });
-    }
-    const withoutLedger = runs.filter((run) => run.outcomeAccounting.derivedFromEntries === null).length;
-    if (withoutLedger > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].outcomeAccounting.derivedFromEntries', 'acrossRuns.derivedOutcomeStates'),
-            reason: `${String(withoutLedger)} artifact(s) carry no scope ledger — an evaluation outcome reports what a fixture asked and what came back, not which units were omitted — so the omission totals here are over the runs that do, and acrossRuns.derivedOutcomeRuns names how many those are`,
-        });
-    }
-    const withoutContext = runs.filter((run) => run.context.repository === null).length;
-    if (withoutContext > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].context', 'acrossRuns.runCountByKind'),
-            reason: `${String(withoutContext)} evaluation fixture(s) carry no revision context: the outcome file records the rules a fixture asked about, not the repository or head it was run over`,
-        });
-    }
-    const withoutDossier = runs.reduce((sum, run) => sum + (run.signalOutcome?.firedSignalsWithoutDossier ?? 0), 0);
-    if (withoutDossier > 0) {
-        figures.push({
-            figure: 'acrossRuns.signalDispositions.undismissedFiredSignals',
-            reason: `${String(withoutDossier)} fired signal(s) sit on a head with no stored dossier, so whether the round disposed of them is in no artifact`,
-        });
-    }
-    if (shape.withoutRound > 0) {
-        figures.push({
-            figure: gapFigure(detail, 'runs[].reviewRounds', 'acrossRuns.reviewRounds'),
-            reason: `${String(shape.withoutRound)} scan run(s) have no stored dossier for their head, so the round's draws, findings and typed dispositions are absent rather than zero`,
-        });
-    }
-    if (shape.withoutDispositions > 0) {
-        figures.push({
-            figure: gapFigure(
-                detail,
-                'runs[].signalOutcome.dispositionsRecorded',
-                'acrossRuns.signalDispositions.recorded'
-            ),
-            reason: `${String(shape.withoutDispositions)} run(s) matched a dossier that records no typed disposition for this head — a historical record written before the field existed, or a round that disposed by citation text alone`,
-        });
-    }
-    return figures;
 }
 
 const ADVISORY = [
@@ -532,7 +475,16 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
         "each run artifact's own #limitations, one entry per distinct text with the number of runs that recorded it",
     'acrossRuns.ruleCoverage.notAskedByRule':
         'the same rule set the coverage figures count, read once for the whole set rather than repeated per run',
-    'acrossRuns.signals.byRule': "each run artifact's own #signals[].ruleId, counted across the set",
+    'acrossRuns.signals.byRule':
+        "each run artifact's own #signals[].ruleId or an evaluation outcome's #outcomes[].ruleId, counted once per run across the set",
+    'acrossRuns.signals.byDisposition':
+        "each run artifact's own #signals[].disposition or an evaluation outcome's #outcomes[].disposition, counted once per run across the set; null when no run carried a signal ledger",
+    'acrossRuns.signals.runsWithSignalLedger':
+        'the runs that carry a signal ledger at all: a scan report or an evaluation outcome; a verification report assesses findings instead',
+    'acrossRuns.signals.byFindingDisposition':
+        "each verification report's own #findingAssessments[].disposition, counted across the set; null when no run carried a finding ledger",
+    'acrossRuns.signalDispositions':
+        'the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token',
     'acrossRuns.labelledExpectations':
         "the evaluation runner's own #expectedConcernHeld count over the fixtures it ran",
     skippedArtifacts:
@@ -579,6 +531,6 @@ export function buildMeasurementRecord(input: {
         runs: detail === 'runs' ? [...input.runs] : [],
         acrossRuns: acrossRuns(input.runs, input.extras ?? emptyRecordExtras()),
         skippedArtifacts: [...input.skippedArtifacts],
-        notComputable: [...skippedFigures(input.skippedArtifacts), ...gapFigures(input.runs, detail)],
+        notComputable: notComputableFigures(input.runs, detail, input.skippedArtifacts),
     };
 }

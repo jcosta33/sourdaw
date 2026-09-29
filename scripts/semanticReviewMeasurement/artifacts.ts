@@ -382,17 +382,55 @@ export function aggregateStoredReport(input: {
     };
 }
 
+/**
+ * Which of a fixture's rules were asked, read from the ledger rather than from the runner's own lists.
+ *
+ * The stored path derives asked and not-asked from the signals the artifact carries, so the two cannot
+ * disagree; a fixture read from `rulesAsked`/`rulesNotAsked` alone could publish one rule as never
+ * asked and as answered in the same record. An outcome with no missing evidence is an asked rule — the
+ * interpreter's own rule, that supplied evidence decides before any answer does — and a rule the
+ * runner listed but that carries no outcome is unasked with whatever evidence it recorded.
+ */
+function fixtureRuleLedger(fixture: EvaluationFixtureOutcome): {
+    askedRules: string[];
+    notAsked: { ruleId: string; reason: RuleNotAskedReason; missingEvidence: readonly string[] }[];
+} {
+    const askedRules: string[] = [];
+    const notAsked: { ruleId: string; reason: RuleNotAskedReason; missingEvidence: readonly string[] }[] = [];
+    const seen = new Set<string>();
+    for (const outcome of fixture.outcomes) {
+        seen.add(outcome.ruleId);
+        const missing = fixture.missingEvidenceByRule[outcome.ruleId] ?? [];
+        if (missing.length === 0) {
+            askedRules.push(outcome.ruleId);
+            continue;
+        }
+        notAsked.push({ ruleId: outcome.ruleId, reason: 'missing-required-evidence', missingEvidence: missing });
+    }
+    for (const entry of fixture.rulesNotAsked) {
+        if (seen.has(entry.ruleId)) {
+            continue;
+        }
+        seen.add(entry.ruleId);
+        notAsked.push({
+            ruleId: entry.ruleId,
+            reason: entry.missingEvidence.length === 0 ? 'no-answerable-question' : 'missing-required-evidence',
+            missingEvidence: entry.missingEvidence,
+        });
+    }
+    return { askedRules, notAsked };
+}
+
 export function aggregateEvaluationFixture(input: {
     readonly artifact: MeasurementArtifact;
     readonly fixture: EvaluationFixtureOutcome;
 }): MeasurementRun {
     const { fixture } = input;
+    const { notAsked, askedRules } = fixtureRuleLedger(fixture);
     const notAskedByReason = emptyNotAskedReasons();
     const tokens: Record<string, number> = {};
-    for (const entry of fixture.rulesNotAsked) {
-        const reason: RuleNotAskedReason =
-            entry.missingEvidence.length === 0 ? 'no-answerable-question' : 'missing-required-evidence';
-        notAskedByReason[reason] += 1;
+    for (const entry of notAsked) {
+        notAskedByReason[entry.reason] += 1;
         for (const token of entry.missingEvidence) {
             tokens[token] = (tokens[token] ?? 0) + 1;
         }
@@ -413,15 +451,15 @@ export function aggregateEvaluationFixture(input: {
         wallClock: null,
         usage: { ...fixture.usage, cacheHits: 0 },
         ruleCoverage: {
-            applicableRules: fixture.rulesAsked.length + fixture.rulesNotAsked.length,
+            applicableRules: askedRules.length + notAsked.length,
             applicableRulesComplete: true,
             unitsWithUnpublishedRuleSets: 0,
-            askedRules: fixture.rulesAsked.length,
-            notAskedRules: fixture.rulesNotAsked.length,
+            askedRules: askedRules.length,
+            notAskedRules: notAsked.length,
             notAskedByReason,
         },
         evidenceCompleteness: {
-            unitsMissingRequiredEvidence: fixture.rulesNotAsked.length > 0 ? 1 : 0,
+            unitsMissingRequiredEvidence: notAsked.length > 0 ? 1 : 0,
             requiredEvidenceTokensMissing: sortedCounts(tokens),
             // A fixture outcome reports the rules it asked and the evidence it carried; it carries no
             // truncation ledger, so nothing recorded whether evidence was cut.
@@ -466,10 +504,13 @@ export function emptyRecordExtras(): RecordExtras {
  * them out publishes a run whose signals count but whose rules are recorded nowhere.
  */
 export function addFixtureExtras(extras: RecordExtras, fixture: EvaluationFixtureOutcome): RecordExtras {
+    // The same ledger the run's own coverage is derived from, so the set-wide rule vocabulary and the
+    // per-run counts cannot name different rules as unasked.
+    const { notAsked } = fixtureRuleLedger(fixture);
     return {
         notAskedByRule: mergeCounts(
             extras.notAskedByRule,
-            countBy(fixture.rulesNotAsked, (entry) => entry.ruleId)
+            countBy(notAsked, (entry) => entry.ruleId)
         ),
         signalsByRule: mergeCounts(
             extras.signalsByRule,

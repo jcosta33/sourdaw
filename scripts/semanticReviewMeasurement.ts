@@ -466,6 +466,18 @@ function describeCounts(counts: Readonly<Record<string, number>>): string {
 }
 
 /**
+ * The signal ledger, or the plain statement that no artifact carried one. A verification-only
+ * measurement has no signal figures at all, and printing a row of zeros for it would read as a run
+ * that asked nothing and found nothing.
+ */
+function describeSignals(across: AcrossRuns): string {
+    if (across.signals.total === null || across.signals.byDisposition === null) {
+        return `signals: no artifact read carries a signal ledger (${String(across.signals.runsWithFindingLedger)} finding ledger(s) read)`;
+    }
+    return `signals: ${String(across.signals.total)} (${describeCounts(across.signals.byDisposition)}), ${String(across.signals.runsWithSignalLedger)} run(s) with a signal ledger`;
+}
+
+/**
  * The omission totals and where they came from. A record whose artifacts carry no scope ledger says so
  * instead of printing a row of zeros that reads as a run which omitted nothing.
  */
@@ -517,16 +529,17 @@ export function renderMeasurementSummary(record: MeasurementRecord): string {
         `failure codes: ${describeCounts(across.failureCodes)}`,
         `usage: ${String(across.usage.networkAttempts)} network attempt(s), ${mebibytes(across.usage.submittedBytes)} submitted, ${String(across.usage.actualInputTokens)} input token(s), ~$${across.usage.estimatedCostUsd.toFixed(4)}, ${String(across.usage.cacheHits)} cache hit(s)`,
         `wall clock: ${wallClockSeconds} s over ${String(across.wallClockRuns)} run(s), from their own startedAt/completedAt`,
-        `signals: ${String(across.signals.total)} (${Object.entries(across.signals.byDisposition)
-            .map(([disposition, count]) => `${disposition} ${String(count)}`)
-            .join(', ')})`,
+        describeSignals(across),
         `review rounds: ${String(across.reviewRounds.heads)} head(s) with a dossier, ${String(across.reviewRounds.stanceDraws)} draw(s), ${String(across.reviewRounds.findingsAccepted)} finding(s) accepted, ${String(across.reviewRounds.findingsDiscarded)} discarded`,
         `dispositions: ${String(across.signalDispositions.recorded)} recorded, ${String(across.signalDispositions.dismissedFiredSignals)} fired signal(s) dismissed, ${String(across.signalDispositions.undismissedFiredSignals)} undismissed on heads with a dossier, ${String(across.signalDispositions.withoutDossier)} on heads with none`,
         `repeated warnings: ${String(across.repeatedWarnings.length)} (ruleId, path) pair(s) flagged on more than one head of one pull request`,
     ];
+    if (across.signals.byFindingDisposition !== null) {
+        lines.push(`finding dispositions: ${describeCounts(across.signals.byFindingDisposition)}`);
+    }
     if (across.labelledExpectations !== null) {
         lines.push(
-            `labelled expectations: ${String(across.labelledExpectations.held)}/${String(across.labelledExpectations.total)} held — a count about the rules and the provider, not an accuracy figure`
+            `labelled expectations: ${String(across.labelledExpectations.held)}/${String(across.labelledExpectations.total)} held over completed fixture(s), ${String(across.labelledExpectations.notAssessed)} not assessed — a count about the rules and the provider, not an accuracy figure`
         );
     }
     lines.push(`skipped artifacts: ${String(record.skippedArtifacts.length)}`);

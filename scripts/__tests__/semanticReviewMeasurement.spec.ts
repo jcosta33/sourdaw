@@ -271,53 +271,53 @@ function verificationFixture(headSha: string, prNumber?: number): unknown {
     };
 }
 
-/** One evaluation runner result, as the runner writes it, with the fixtures the case needs. */
-function evaluationOutcome(overrides: { readonly limitations?: readonly string[] } = {}): unknown {
-    return {
+/**
+ * One evaluation runner result, as the runner writes it. A case overrides the fields it is about, so a
+ * fixture that disagrees with itself can be written down.
+ */
+function evaluationOutcome(overrides: Record<string, unknown> = {}): unknown {
+    const fixture: Record<string, unknown> = {
+        fixtureId: 'fixture-1',
+        kind: 'revision',
+        path: 'src/a.ts',
+        ruleId: 'assertion_deleted',
+        sourceKind: 'corpus-fixture',
+        execution: 'completed',
+        requestedModel: 'jev-1.13.0',
+        returnedModels: ['jev-1.13.0'],
+        rulesAsked: ['assertion_deleted'],
+        rulesNotAsked: [{ ruleId: 'timing_semantics_changed', missingEvidence: ['scheduling call-site'] }],
+        evidenceSupplied: ['E1'],
+        missingEvidenceByRule: { timing_semantics_changed: ['scheduling call-site'] },
         outcomes: [
             {
-                fixtureId: 'fixture-1',
-                kind: 'revision',
-                path: 'src/a.ts',
                 ruleId: 'assertion_deleted',
-                sourceKind: 'corpus-fixture',
-                execution: 'completed',
-                requestedModel: 'jev-1.13.0',
-                returnedModels: ['jev-1.13.0'],
-                rulesAsked: ['assertion_deleted'],
-                rulesNotAsked: [{ ruleId: 'timing_semantics_changed', missingEvidence: ['scheduling call-site'] }],
-                evidenceSupplied: ['E1'],
-                missingEvidenceByRule: { timing_semantics_changed: ['scheduling call-site'] },
-                outcomes: [
-                    {
-                        ruleId: 'assertion_deleted',
-                        outcome: 'signal',
-                        probability: 0.93,
-                        disposition: 'recommend_investigation',
-                        reasoning: 'fixture',
-                    },
-                ],
-                expectedConcernHeld: true,
-                otherSignals: [],
-                providerRequests: 1,
-                usage: {
-                    networkAttempts: 1,
-                    logicalRequests: 1,
-                    retries: 0,
-                    submittedBytes: 2048,
-                    actualInputTokens: 512,
-                    estimatedInputTokens: 500,
-                    attemptsWithUnknownUsage: 0,
-                    estimatedCostUsd: 0.0004,
-                    pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
-                },
-                limitations: listOf(overrides.limitations),
+                outcome: 'signal',
+                probability: 0.93,
+                disposition: 'recommend_investigation',
+                reasoning: 'fixture',
             },
         ],
+        expectedConcernHeld: true,
+        otherSignals: [],
         providerRequests: 1,
-        signals: 1,
-        expectationsHeld: 1,
+        usage: {
+            networkAttempts: 1,
+            logicalRequests: 1,
+            retries: 0,
+            submittedBytes: 2048,
+            actualInputTokens: 512,
+            estimatedInputTokens: 500,
+            attemptsWithUnknownUsage: 0,
+            estimatedCostUsd: 0.0004,
+            pricingConfigurationVersion: 'typesafe-pricing-2026-09-20',
+        },
+        limitations: [],
     };
+    for (const [key, value] of Object.entries(overrides)) {
+        fixture[key] = value;
+    }
+    return { outcomes: [fixture], providerRequests: 1, signals: 1, expectationsHeld: 1 };
 }
 
 function writeSidecar(root: string, digest: string, report: unknown, name = 'scan.json'): void {
@@ -911,7 +911,7 @@ describe("the evaluation runner's outcome file", () => {
         expect(record.acrossRuns.runCountByKind).toEqual({ 'evaluation-fixture': 1 });
         expect(record.runs[0]?.ruleCoverage?.askedRules).toBe(1);
         expect(record.runs[0]?.ruleCoverage?.notAskedByReason['missing-required-evidence']).toBe(1);
-        expect(record.acrossRuns.labelledExpectations).toEqual({ held: 1, total: 1 });
+        expect(record.acrossRuns.labelledExpectations).toEqual({ held: 1, total: 1, notAssessed: 0 });
         // The count is about the rules and the provider, and the record says so rather than calling it
         // an accuracy figure.
         expect(record.advisory).toContain('never an accuracy figure');
@@ -1158,7 +1158,7 @@ describe('an evaluation fixture in the set-wide figures', () => {
             missingRequiredEvidence: 1,
         });
         // The fixture is still counted as a run, and its rules reach the vocabularies beside the scan's.
-        expect(record.acrossRuns.signals.byRule.assertion_deleted).toBe(2);
+        expect(record.acrossRuns.signals.byRule).toMatchObject({ assertion_deleted: 2 });
     });
 });
 
@@ -1272,5 +1272,224 @@ describe('execution states', () => {
 
         expect(summary).toContain('execution states: completed 1, partial 1, unavailable 1');
         expect(summary).toContain('failure codes: provider_unavailable 1');
+    });
+});
+
+/**
+ * Whether a legend key names a field the record actually carries. `runs[]` walks into the first
+ * element, and a key that also lists sibling fields (`a/b`) or qualifies itself in prose
+ * (`runs[].ruleCoverage for verification runs`) is read by its first path segment.
+ */
+function legendKeyResolves(record: unknown, field: string): boolean {
+    const path = (field.split(' ')[0] ?? '').split('/')[0] ?? '';
+    let current: unknown = record;
+    for (const raw of path.split('.')) {
+        const key = raw.replace(/\[\]$/u, '');
+        if (Array.isArray(current)) {
+            if (current.length === 0) {
+                return true;
+            }
+            current = current[0];
+        }
+        if (typeof current !== 'object' || current === null || !(key in current)) {
+            return false;
+        }
+        current = (current as Record<string, unknown>)[key];
+    }
+    return true;
+}
+
+describe('the field legend', () => {
+    it.each([
+        ['the aggregate level', 'aggregate'],
+        ['the full level', 'runs'],
+    ] as const)('names only fields the record carries at %s', (_label, detail) => {
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+        writeDossier(root, '4801-111111111111', dossierFixture({ pr: 4801, headSha: HEAD_ONE }));
+
+        const record = measure(root, { detail });
+
+        expect(Object.keys(record.fieldSources).length).toBeGreaterThan(10);
+        for (const field of Object.keys(record.fieldSources)) {
+            expect({ field, resolves: legendKeyResolves(record, field) }).toEqual({ field, resolves: true });
+        }
+    });
+
+    it('names both artifacts a per-rule signal figure is summed from', () => {
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+
+        const legend = measure(root, { detail: 'aggregate' }).fieldSources['acrossRuns.signals.byRule'];
+
+        expect(legend).toContain('#signals[].ruleId');
+        expect(legend).toContain('#outcomes[].ruleId');
+    });
+});
+
+describe('a measurement that carries no signal ledger', () => {
+    function verificationOnlyRoot(): string {
+        const root = checkout();
+        writeSidecar(root, 'verif-1', verificationFixture(HEAD_ONE, 4801), 'verification.json');
+        writeSidecar(root, 'verif-2', verificationFixture(HEAD_TWO, 4802), 'verification.json');
+        return root;
+    }
+
+    it('publishes null with the contributing-run count rather than a row of zeros', () => {
+        const record = measure(verificationOnlyRoot(), { detail: 'aggregate' });
+
+        expect(record.acrossRuns.signals.total).toBeNull();
+        expect(record.acrossRuns.signals.byDisposition).toBeNull();
+        expect(record.acrossRuns.signals.byRule).toBeNull();
+        expect(record.acrossRuns.signals.fired).toBeNull();
+        expect(record.acrossRuns.signals.runsWithSignalLedger).toBe(0);
+        // The finding ledger is what these runs do carry, and it stays published.
+        expect(record.acrossRuns.signals.runsWithFindingLedger).toBe(2);
+        expect(record.acrossRuns.signals.byFindingDisposition).toEqual({
+            ready_for_orchestrator_validation: 2,
+        });
+        expect(record.notComputable.map((entry) => entry.figure)).toContain('acrossRuns.signals');
+    });
+
+    it('says so in the summary and names the finding ledger it did read', () => {
+        const summary = renderMeasurementSummary(measure(verificationOnlyRoot(), { detail: 'aggregate' }));
+
+        expect(summary).toContain('signals: no artifact read carries a signal ledger');
+        expect(summary).toContain('finding dispositions: ready_for_orchestrator_validation 2');
+    });
+});
+
+describe('disposals across several sidecars of one head', () => {
+    function twoSidecarsOneHead(withDossier: boolean): string {
+        const root = checkout();
+        const signals = [
+            { path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'recommend_investigation' as const },
+            { path: 'src/b.ts', ruleId: 'timing_semantics_changed', disposition: 'recommend_investigation' as const },
+        ];
+        writeSidecar(root, 'scan-1', scanFixture({ headSha: HEAD_ONE, prNumber: 4801, signals }));
+        writeSidecar(root, 'scan-2', scanFixture({ headSha: HEAD_ONE, prNumber: 4801, signals }));
+        if (withDossier) {
+            writeDossier(
+                root,
+                '4801-111111111111',
+                dossierFixture({
+                    pr: 4801,
+                    headSha: HEAD_ONE,
+                    dispositions: [
+                        { ruleId: 'assertion_deleted', path: 'src/a.ts', disposition: 'confirmed-existing' },
+                    ],
+                })
+            );
+        }
+        return root;
+    }
+
+    it("counts a dossier's dispositions and dismissals once, not once per sidecar", () => {
+        const record = measure(twoSidecarsOneHead(true), { detail: 'aggregate' });
+
+        expect(record.acrossRuns.runCount).toBe(2);
+        expect(record.acrossRuns.signalDispositions.recorded).toBe(1);
+        expect(record.acrossRuns.signalDispositions.byToken).toEqual({ 'confirmed-existing': 1 });
+        expect(record.acrossRuns.signalDispositions.dismissedFiredSignals).toBe(1);
+        expect(record.acrossRuns.signalDispositions.undismissedFiredSignals).toBe(1);
+        // The per-run signal counts stay per run: those measure what was asked, not what was disposed.
+        expect(record.acrossRuns.signals.fired).toBe(4);
+    });
+
+    it("counts a head's undisposed signals once when no dossier records the head", () => {
+        const record = measure(twoSidecarsOneHead(false), { detail: 'aggregate' });
+
+        expect(record.acrossRuns.signalDispositions.withoutDossier).toBe(2);
+        expect(record.acrossRuns.signalDispositions.undismissedFiredSignals).toBe(0);
+    });
+});
+
+describe('the fixture label against the fixture ledger', () => {
+    it('keeps an unassessed fixture out of the held rate and names it', () => {
+        const root = checkout();
+        const evaluationPath = join(root, 'evaluation.json');
+        writeFileSync(
+            evaluationPath,
+            `${JSON.stringify(
+                {
+                    outcomes: [
+                        (evaluationOutcome() as { outcomes: unknown[] }).outcomes[0],
+                        (
+                            evaluationOutcome({
+                                fixtureId: 'fixture-2',
+                                execution: 'unavailable',
+                                expectedConcernHeld: false,
+                            }) as { outcomes: unknown[] }
+                        ).outcomes[0],
+                    ],
+                },
+                null,
+                4
+            )}\n`
+        );
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        expect(record.acrossRuns.labelledExpectations).toEqual({ held: 1, total: 1, notAssessed: 1 });
+        expect(record.acrossRuns.executionStates).toEqual({ completed: 1, unavailable: 1 });
+    });
+
+    it('reads asked and not-asked from the fixture ledger, so one rule cannot be both', () => {
+        const root = checkout();
+        const evaluationPath = join(root, 'evaluation.json');
+        // The runner's own lists call the rule unasked while its outcome carries no missing evidence:
+        // the ledger decides, exactly as it does on the stored path.
+        writeFileSync(
+            evaluationPath,
+            `${JSON.stringify(
+                evaluationOutcome({
+                    rulesAsked: [],
+                    rulesNotAsked: [{ ruleId: 'assertion_deleted', missingEvidence: ['after source'] }],
+                    missingEvidenceByRule: {},
+                    outcomes: [
+                        {
+                            ruleId: 'assertion_deleted',
+                            outcome: 'no_signal',
+                            probability: 0.1,
+                            disposition: 'no_additional_recommendation',
+                            reasoning: 'fixture',
+                        },
+                    ],
+                }),
+                null,
+                4
+            )}\n`
+        );
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        expect(record.acrossRuns.ruleCoverage.askedRules).toBe(1);
+        expect(record.acrossRuns.ruleCoverage.notAskedRules).toBe(0);
+        expect(record.acrossRuns.ruleCoverage.notAskedByRule).toEqual({});
+        expect(record.acrossRuns.signals.byDisposition).toEqual({ no_additional_recommendation: 1 });
+    });
+
+    it('still publishes a rule the ledger records as unasked, with its missing evidence', () => {
+        const root = checkout();
+        const evaluationPath = join(root, 'evaluation.json');
+        writeFileSync(
+            evaluationPath,
+            `${JSON.stringify(
+                evaluationOutcome({
+                    rulesAsked: ['assertion_deleted'],
+                    rulesNotAsked: [],
+                    missingEvidenceByRule: { assertion_deleted: ['after source'] },
+                }),
+                null,
+                4
+            )}\n`
+        );
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        expect(record.acrossRuns.ruleCoverage.askedRules).toBe(0);
+        expect(record.acrossRuns.ruleCoverage.notAskedRules).toBe(1);
+        expect(record.acrossRuns.ruleCoverage.notAskedByRule).toEqual({ assertion_deleted: 1 });
+        expect(record.acrossRuns.evidence.requiredEvidenceTokensMissing).toEqual({ 'after source': 1 });
     });
 });

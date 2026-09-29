@@ -316,14 +316,23 @@ export type AcrossRuns = {
         readonly runsWithoutTruncationLedger: number;
     };
     readonly signals: {
-        readonly total: number;
-        readonly byDisposition: Readonly<Record<string, number>>;
+        /**
+         * How many runs carried the ledger each figure below is summed from. Null figures beside a zero
+         * here mean no artifact could report the ledger, never that a run reported nothing.
+         */
+        readonly runsWithSignalLedger: number;
+        readonly runsWithFindingLedger: number;
+        /** Null when no run carried a signal ledger; `runsWithSignalLedger` says how many did. */
+        readonly total: number | null;
+        readonly byDisposition: Readonly<Record<string, number>> | null;
         /** Every rule's signals across the runs, and how many each rule returned. */
-        readonly byRule: Readonly<Record<string, number>>;
-        readonly fired: number;
-        readonly byFindingDisposition: Readonly<Record<string, number>>;
+        readonly byRule: Readonly<Record<string, number>> | null;
+        readonly fired: number | null;
+        /** Null when no run carried a finding ledger, which only a verification report does. */
+        readonly byFindingDisposition: Readonly<Record<string, number>> | null;
     };
     readonly signalDispositions: {
+        /** One entry per disposed signal, counted once however many runs of that head read the dossier. */
         readonly recorded: number;
         readonly byToken: Readonly<Record<string, number>>;
         readonly dismissedFiredSignals: number;
@@ -339,7 +348,16 @@ export type AcrossRuns = {
         readonly findingsDiscarded: number;
         readonly reviewsPublished: number;
     };
-    readonly labelledExpectations: { readonly held: number; readonly total: number } | null;
+    /**
+     * The evaluation runner's own held-label count, over the fixtures that completed. A fixture the
+     * runner did not assess is counted in `notAssessed` instead: its label says nothing about the
+     * rules, and folding it in would read an absent answer as a wrong one.
+     */
+    readonly labelledExpectations: {
+        readonly held: number;
+        readonly total: number;
+        readonly notAssessed: number;
+    } | null;
     readonly repeatedWarnings: readonly RepeatedWarning[];
 };
 

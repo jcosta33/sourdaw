@@ -1,9 +1,9 @@
 {
     "format": "semantic-review-measurement-v1",
     "schemaVersion": 1,
-    "measuredAt": "2026-09-29T21:01:30.165Z",
+    "measuredAt": "2026-09-29T21:28:21.145Z",
     "machine": {
-        "checkoutGitSha": "a3476d823930e563e0d0ab48489d8e9d6cf2755f",
+        "checkoutGitSha": "88faec2742144712e9c1dda94d7d355c4a4fdf2a",
         "workingTree": "dirty",
         "host": {
             "platform": "darwin",
@@ -11,7 +11,7 @@
             "arch": "arm64",
             "cores": 12
         },
-        "loadAverage1m": 6.83
+        "loadAverage1m": 7.48
     },
     "advisory": "This record measures what the advisory semantic review cost and what its artifacts returned. A returned probability is a model answer, never an accuracy figure; a question no request asked is counted as not asked, never as a correct negative.",
     "fieldSources": {
@@ -23,7 +23,11 @@
         "acrossRuns.repeatedWarnings": "the same (ruleId, path) fired on more than one distinct head of one pull request, keyed by repository and pull request number",
         "acrossRuns.evidence.limitationsByText": "each run artifact's own #limitations, one entry per distinct text with the number of runs that recorded it",
         "acrossRuns.ruleCoverage.notAskedByRule": "the same rule set the coverage figures count, read once for the whole set rather than repeated per run",
-        "acrossRuns.signals.byRule": "each run artifact's own #signals[].ruleId, counted across the set",
+        "acrossRuns.signals.byRule": "each run artifact's own #signals[].ruleId or an evaluation outcome's #outcomes[].ruleId, counted once per run across the set",
+        "acrossRuns.signals.byDisposition": "each run artifact's own #signals[].disposition or an evaluation outcome's #outcomes[].disposition, counted once per run across the set; null when no run carried a signal ledger",
+        "acrossRuns.signals.runsWithSignalLedger": "the runs that carry a signal ledger at all: a scan report or an evaluation outcome; a verification report assesses findings instead",
+        "acrossRuns.signals.byFindingDisposition": "each verification report's own #findingAssessments[].disposition, counted across the set; null when no run carried a finding ledger",
+        "acrossRuns.signalDispositions": "the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token",
         "acrossRuns.labelledExpectations": "the evaluation runner's own #expectedConcernHeld count over the fixtures it ran",
         "skippedArtifacts": "artifacts present on disk that the report validator or the dossier reader refused, with its message",
         "runs[]": "not published at this detail level: the record was measured with the aggregate detail level, which carries the across-run figures and the gaps; measure again with --detail for one entry per run"
@@ -35,7 +39,7 @@
         "reviewBundleRootPresent": true,
         "evaluationOutcomePath": null,
         "storedRunsRead": 108,
-        "dossiersRead": 447,
+        "dossiersRead": 449,
         "evaluationFixturesRead": 0,
         "detail": "aggregate",
         "note": "retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact"
@@ -485,6 +489,8 @@
             }
         },
         "signals": {
+            "runsWithSignalLedger": 67,
+            "runsWithFindingLedger": 41,
             "total": 9039,
             "byDisposition": {
                 "no_additional_recommendation": 5569,
@@ -523,8 +529,8 @@
         "signalDispositions": {
             "recorded": 0,
             "byToken": {},
-            "dismissedFiredSignals": 35,
-            "undismissedFiredSignals": 166,
+            "dismissedFiredSignals": 10,
+            "undismissedFiredSignals": 63,
             "withoutDossier": 2
         },
         "reviewRounds": {
@@ -827,6 +833,14 @@
         {
             "figure": "acrossRuns.ruleCoverage",
             "reason": "41 verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change"
+        },
+        {
+            "figure": "acrossRuns.signals",
+            "reason": "41 verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does"
+        },
+        {
+            "figure": "acrossRuns.signals.byFindingDisposition",
+            "reason": "67 run(s) assess units rather than candidate findings, so they carry no finding ledger; acrossRuns.signals.runsWithFindingLedger names how many runs do"
         },
         {
             "figure": "acrossRuns.signalDispositions.undismissedFiredSignals",
