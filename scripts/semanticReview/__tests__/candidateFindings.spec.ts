@@ -53,6 +53,14 @@ describe('parseCandidateFindings reproductionReferences', () => {
         expect(refusal.message).toBe('findings[0].reproductionReferences[0].path must be a non-empty string');
     });
 
+    it('refuses a reproduction reference whose path is blank', () => {
+        const refusal = refusalOf(() =>
+            parseCandidateFindings([validFinding({ reproductionReferences: [{ path: '   ', note: 'n' }] })], LABEL)
+        );
+        expect(refusal.code).toBe('unsupported_scope');
+        expect(refusal.message).toBe('findings[0].reproductionReferences[0].path must be a non-empty string');
+    });
+
     it('parses a well-formed reproduction reference without defaulting its fields', () => {
         const findings = parseCandidateFindings(
             [
