@@ -80,6 +80,14 @@ through the validation workflow's job conditions. Probe: feed a real mixed revie
 diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
 cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
 
+PR #4902 exposed the same omission one level earlier: four changed delivery and review helper paths
+were absent from the explicit tooling-name set, so the browser selector classified them as product
+work even though the validation workflow correctly ran the script suite for a tooling plan. Blind
+spot: the review verified the registered names without tracing every path in a real change through
+the classifier. Probe: classify the full changed-path set, including root specs and helpers, and
+require tooling-only paths to retain CodeQL and the tooling suite while mixed, unknown, lookalike,
+and rename paths remain broad.
+
 ### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
 
 PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at an upper bound of thirteen fitted regions (the overage is `22 − fittedRegions` only when the fitter left no slack, so any slack lowers the count) — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the oversized unit's own refusal began the cascade: the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported 37 unassessed, 36 as `budget-exhausted-before-admission` plus the oversized unit itself under `budget_exhausted`.

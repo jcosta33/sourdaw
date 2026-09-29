@@ -7,6 +7,7 @@ export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
 // Explicit operational entry points: adding a new script never silently opts out.
 const REVIEW_TOOLING = new Set([
+    'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
     'confirmReviewRepairs',
@@ -26,7 +27,9 @@ const REVIEW_TOOLING = new Set([
     'reviewDossierBindings',
     'reviewerModelDiversity',
     'reviewRoundEscalation',
+    'reviewRiskPolicy',
     'reviewShadowStatus',
+    'savedProjectStatePaths',
     'semanticReviewContext',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
@@ -43,6 +46,7 @@ const REVIEW_TOOLING = new Set([
     'supersedePullRequest',
     'supersedePullRequestGh',
     'syncParentLane',
+    'trustedGithubWriteBootstrap',
     'trackerIssueReconciliation',
 ]);
 
