@@ -5074,7 +5074,7 @@ function getLiteralCreatedClipNoteIntent(input: {
 
 function namesProducedCreationInClause(clause: PromptClause, actionName: string, name: string): boolean {
     if (actionName === 'addClip') {
-        const clip = getAddClipPromptEvidence(clause);
+        const clip = getAddClipPromptEvidence({ ...clause, directional: false, matchedIntentPhrase: '' });
         return clip !== null && normalizePromptText(clip.name) === normalizePromptText(name);
     }
     if (actionName === 'addDevice') {
