@@ -390,10 +390,16 @@ function lowerBoundYeastLoopEnd(entries: readonly YeastLoopPhaseEntry[], endPhas
 }
 
 /**
- * Phase view of the content a looped iteration wraps: only notes whose
- * offset-relative start slips before the iteration head — the class the
- * ownership re-anchors with the twin's positive modulo instead of clamping —
- * indexed by their wrapped position (`phaseBeat`) and wrapped release
+ * Phase view of the content a looped iteration wraps: the class the ownership
+ * re-anchors with the twin's positive modulo instead of clamping — starts
+ * already before the iteration head, plus starts within one groove stage's
+ * displacement after it, which the clip groove can pull across the head
+ * (`MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` bounds that displacement; the twin
+ * grooves each candidate first and re-anchors only what lands before the head,
+ * so a note pulled back inside sounds un-wrapped, and a raw start in
+ * `[0, displacement)` indexes at its own position — the phase window's groove
+ * slack is what reaches it from the late phase the twin anchors it to). Notes
+ * are indexed by their wrapped position (`phaseBeat`) and wrapped release
  * (`endPhaseBeat`). The release stays uncapped: a note longer than its loop
  * rings past the iteration end and the owning window follows the release, as
  * the loop-work bounds spec pins.
@@ -417,7 +423,12 @@ function getYeastLoopPhaseIndex({
         const note = notes[index]!;
         orderByNote.set(note, index);
         const relativeStartBeat = note.startBeat - midiOffsetBeats;
-        if (relativeStartBeat >= 0) {
+        // Membership mirrors the twin's wrap class on both sides of the head: a
+        // start already before it re-anchors as-is, and a start up to one groove
+        // stage after it can be displaced across by the clip groove — the twin
+        // then re-anchors the displaced start to the iteration's late phase, so
+        // the note must be a phase-index candidate for that window.
+        if (relativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
             continue;
         }
         const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
@@ -478,9 +489,13 @@ function selectYeastNotesForSchedulerWindow({
         // A looped iteration wraps a start displaced before its head into the
         // iteration — the twin's `((offset % loopLength) + loopLength) %
         // loopLength` re-anchor — so those notes are also selected by their
-        // wrapped phase. The window normalizes into loop phase and may itself
-        // straddle the seam; the release query stays unnormalized because a
-        // wrapped release rings past the iteration end.
+        // wrapped phase. Membership covers the groove too: a raw start within
+        // `MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` of the head is indexed on both
+        // sides of it, and the phase window's own groove slack reaches the note
+        // from the window that owns its displaced start. The window normalizes
+        // into loop phase and may itself straddle the seam; the release query
+        // stays unnormalized because a wrapped release rings past the iteration
+        // end.
         const loopIndex = getYeastLoopPhaseIndex({ notes, loopLengthBeats, midiOffsetBeats });
         const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;

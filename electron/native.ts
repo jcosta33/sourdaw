@@ -52,7 +52,7 @@ export type NativeHost = {
      * Declared here rather than reached through the generic command record
      * because it is main-process-only by design (#4752): the shell calls it
      * the moment it creates a session window, and when a session window's
-     * page finishes loading — a same-window reload replaces its renderer —
+     * navigation commits — a same-window reload replaces its renderer —
      * and no renderer may name it, since a page that could bump the session
      * generation could strand another session's arm arbitrarily.
      */

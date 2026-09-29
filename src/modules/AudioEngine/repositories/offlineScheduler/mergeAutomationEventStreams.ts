@@ -2,6 +2,7 @@ import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStra
 
 import { type CompiledAutomationEvent } from './compileAutomationEvents';
 import { compiledEventsToSegments } from './compiledEventsToSegments';
+import { eventStreamFrame } from './eventStreamFrame';
 import {
     mergeAutomationSegmentStreams,
     type AutomationSegmentScope,
@@ -16,6 +17,14 @@ export type AutomationEventStream = Readonly<{
     laneId: string;
     scope: AutomationSegmentScope;
     events: readonly CompiledAutomationEvent[];
+    /**
+     * A clip-scoped lane's scope window end, in the events' own time origin
+     * (seconds past the export region start). The compiled events end where
+     * the lane's last point (plus slew settle) lands, not where its clip
+     * does; the merge needs the window to stretch the stream's extent to
+     * what the scope law gives the lane (#4736). A track lane carries none.
+     */
+    windowEndSeconds?: number;
 }>;
 
 /**
@@ -77,6 +86,22 @@ function mergedSegmentsToEvents(
 }
 
 /**
+ * A stream's scope window end in the frames the segment conversion addresses
+ * (the event families convert at compensation 0), or `undefined` for a lane
+ * with no window — a track lane, whose extent needs no stretching.
+ */
+function windowEndFrameFor(
+    stream: AutomationEventStream,
+    durationSeconds: number,
+    sampleRate: number
+): number | undefined {
+    if (stream.windowEndSeconds === undefined) {
+        return undefined;
+    }
+    return eventStreamFrame(stream.windowEndSeconds, durationSeconds, sampleRate);
+}
+
+/**
  * Resolve every lane's compiled event stream on one device parameter into the
  * single spliced stream a one-schedule-per-parameter consumer applies — the
  * event-bound export families (`audioParam` targets, `curveWrite` writes),
@@ -105,6 +130,7 @@ export function mergeAutomationEventStreams(
         laneId: stream.laneId,
         scope: stream.scope,
         segments: compiledEventsToSegments(stream.events, durationSeconds, sampleRate, 0),
+        windowEndFrame: windowEndFrameFor(stream, durationSeconds, sampleRate),
     }));
     const merged = mergeAutomationSegmentStreams(segmentStreams);
     return { events: mergedSegmentsToEvents(merged.segments, sampleRate), withheldLaneIds: merged.withheldLaneIds };

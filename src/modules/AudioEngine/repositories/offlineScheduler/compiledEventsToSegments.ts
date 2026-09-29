@@ -1,19 +1,19 @@
 import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
 import { type CompiledAutomationEvent } from './compileAutomationEvents';
-
-function toFrame(seconds: number, durationSeconds: number, sampleRate: number): number {
-    return Math.round(Math.min(durationSeconds, Math.max(0, seconds)) * sampleRate);
-}
+import { eventStreamFrame } from './eventStreamFrame';
 
 /**
  * The one compiled-events→segments conversion: consecutive events become the
  * spans between their frames, a `set` closes its span on the value it holds
  * and a `linear` closes on its own, and a zero-length terminator carries the
- * last event's value. `compileAutomationSegments` runs it on a lane's fresh
- * compile; `mergeAutomationEventStreams` runs it on streams that are about to
- * be resolved by the scope law, at compensation 0 because that family shifts
- * at application time.
+ * last event's value. An empty event stream — a lane whose scope window
+ * misses the export region compiles to zero events — converts to no
+ * segments, which `mergeAutomationSegmentStreams` then drops exactly like
+ * any other empty stream. `compileAutomationSegments` runs it on a lane's
+ * fresh compile; `mergeAutomationEventStreams` runs it on streams that are
+ * about to be resolved by the scope law, at compensation 0 because that
+ * family shifts at application time.
  */
 export function compiledEventsToSegments(
     events: readonly CompiledAutomationEvent[],
@@ -47,6 +47,12 @@ export function compiledEventsToSegments(
     // a multi-event stream — is shifted throughout, on every segment,
     // including its last event, and gets the opening hold when its seed is a
     // time-zero `set`.
+    // An empty stream has no seed, no spans and no terminator — the merge
+    // drops it like any other empty stream, so a clip lane whose window
+    // misses the region never reaches the dereferences below.
+    if (events.length === 0) {
+        return [];
+    }
     const segments: OfflineAutomationSegment[] = [];
     const seed = events[0]!;
     const reachesPastStart = events.at(-1)!.timeSeconds > 0;
@@ -54,7 +60,7 @@ export function compiledEventsToSegments(
     if (compensationDelaySec > 0 && reachesPastStart && seed.type === 'set' && seed.timeSeconds === 0) {
         segments.push({
             startFrame: 0,
-            endFrame: toFrame(seed.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
+            endFrame: eventStreamFrame(seed.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
             startValue: seed.value,
             endValue: seed.value,
         });
@@ -64,14 +70,14 @@ export function compiledEventsToSegments(
         const previous = events[index - 1]!;
         const event = events[index]!;
         segments.push({
-            startFrame: toFrame(previous.timeSeconds + shift, durationSeconds, sampleRate),
-            endFrame: toFrame(event.timeSeconds + shift, durationSeconds, sampleRate),
+            startFrame: eventStreamFrame(previous.timeSeconds + shift, durationSeconds, sampleRate),
+            endFrame: eventStreamFrame(event.timeSeconds + shift, durationSeconds, sampleRate),
             startValue: previous.value,
             endValue: event.type === 'linear' ? event.value : previous.value,
         });
     }
     const last = events.at(-1)!;
-    const lastFrame = toFrame(last.timeSeconds + shift, durationSeconds, sampleRate);
+    const lastFrame = eventStreamFrame(last.timeSeconds + shift, durationSeconds, sampleRate);
     segments.push({ startFrame: lastFrame, endFrame: lastFrame, startValue: last.value, endValue: last.value });
     return segments;
 }

@@ -18,6 +18,7 @@ import {
     compileAutomationEvents,
 } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
+import { eventStreamFrame } from './eventStreamFrame';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
 import { mergeAutomationEventStreams, type AutomationEventStream } from './mergeAutomationEventStreams';
 import {
@@ -78,6 +79,8 @@ function collectDeviceEventStream(
         scope: AutomationSegmentScope;
         targetIndex: number;
         events: CompiledAutomationEvent[];
+        /** A clip-scoped lane's window end, region-relative seconds. */
+        windowEndSeconds?: number;
         apply: (events: readonly CompiledAutomationEvent[]) => void;
     }
 ): void {
@@ -88,7 +91,12 @@ function collectDeviceEventStream(
     }
     const targetGroup = group.targets[entry.targetIndex] ?? { apply: entry.apply, streams: [] };
     group.targets[entry.targetIndex] = targetGroup;
-    targetGroup.streams.push({ laneId: entry.laneId, scope: entry.scope, events: entry.events });
+    targetGroup.streams.push({
+        laneId: entry.laneId,
+        scope: entry.scope,
+        events: entry.events,
+        windowEndSeconds: entry.windowEndSeconds,
+    });
 }
 
 /**
@@ -368,6 +376,31 @@ export function scheduleTrackAutomation({
                 endSeconds: projectBeat(bounds.endBeat),
             };
         }
+        // The scope window the merge resolves by (#4736): a compiled stream
+        // ends at its last point (plus slew settle), not where the clip does,
+        // so the window end travels with the stream — region-relative seconds
+        // for the event-bound families (their conversion applies no
+        // compensation), and the same `eventStreamFrame` conversion the
+        // segments family's own clock uses for the segments family. That
+        // clock shifts by the compensation exactly when the compile's stream
+        // reaches past the region start (#4684 leaves a stream whose every
+        // event sits at the region start unshifted), so a window closing
+        // exactly there takes no shift either — frame 0, the terminator the
+        // compile actually emitted. Every shifted clock shares the same
+        // offset, so a window end and the neighboring lane's opening land on
+        // the same frame. The value-independent window is also what makes
+        // every target of one parameter splice at the same frames.
+        const clipWindowEndSeconds = activeWindowSeconds
+            ? activeWindowSeconds.endSeconds - regionStartSeconds
+            : undefined;
+        const clipWindowEndFrame =
+            clipWindowEndSeconds === undefined
+                ? undefined
+                : eventStreamFrame(
+                      (clipWindowEndSeconds > 0 ? compensationDelaySec : 0) + clipWindowEndSeconds,
+                      durationSeconds,
+                      sampleRate
+                  );
 
         // AU-3: follow linked lanes to the authoritative source (cycle-guarded,
         // linkScale accumulated) exactly as the live path does — offline
@@ -577,19 +610,31 @@ export function scheduleTrackAutomation({
                 // Collected, not applied — see `segmentGroupsByKey` and the
                 // merge pass after this loop. `apply` is the same call on every
                 // lane that resolves this (device, parameter) pair, so the last
-                // one resolved is as good as any to hold it. The scope is the
-                // resolution law's input (#4736): a clip-scoped lane owns every
-                // span its clip window covers.
+                // one resolved is as good as any to hold it. The scope and the
+                // window end are the resolution law's inputs (#4736): a
+                // clip-scoped lane owns every span its clip window covers.
                 const groupKey = `${candidate.deviceId}::${parameterId}`;
                 const group = segmentGroupsByKey.get(groupKey);
                 if (group) {
-                    group.streams.push({ laneId: lane.id, scope: lane.clipId ? 'clip' : 'track', segments });
+                    group.streams.push({
+                        laneId: lane.id,
+                        scope: lane.clipId ? 'clip' : 'track',
+                        segments,
+                        windowEndFrame: clipWindowEndFrame,
+                    });
                 } else {
                     segmentGroupsByKey.set(groupKey, {
                         apply: binding.apply,
                         deviceId: candidate.deviceId,
                         parameterId,
-                        streams: [{ laneId: lane.id, scope: lane.clipId ? 'clip' : 'track', segments }],
+                        streams: [
+                            {
+                                laneId: lane.id,
+                                scope: lane.clipId ? 'clip' : 'track',
+                                segments,
+                                windowEndFrame: clipWindowEndFrame,
+                            },
+                        ],
                     });
                 }
                 continue;
@@ -670,6 +715,7 @@ export function scheduleTrackAutomation({
                     scope: lane.clipId ? 'clip' : 'track',
                     targetIndex: 0,
                     events,
+                    windowEndSeconds: clipWindowEndSeconds,
                     apply: (mergedEvents) =>
                         scheduleCurveWritePoints(
                             binding.targets,
@@ -725,6 +771,7 @@ export function scheduleTrackAutomation({
                         scope: lane.clipId ? 'clip' : 'track',
                         targetIndex,
                         events,
+                        windowEndSeconds: clipWindowEndSeconds,
                         apply: applyMergedEvents,
                     });
                     continue;
@@ -782,6 +829,7 @@ export function scheduleTrackAutomation({
                     scope: lane.clipId ? 'clip' : 'track',
                     targetIndex,
                     events,
+                    windowEndSeconds: clipWindowEndSeconds,
                     apply: applyMergedEvents,
                 });
             }

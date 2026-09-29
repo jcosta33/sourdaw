@@ -48,21 +48,40 @@ describe('renderer session lifecycle', () => {
     });
 });
 
-// The session-generation bump for a same-window reload must fire when the
-// replacing navigation begins (#4752): the incoming renderer's startup disarm
-// is not held back by module evaluation, so an arm the outgoing page left in
-// flight has to be stale before that disarm settles.
+// The session-generation bump rides `did-navigate` (#4752): Electron fires it
+// only for a committed main-frame cross-document navigation, after every
+// cancellable navigation event, so a navigation the shell vetoes at
+// `will-navigate` never reaches it — while still landing ahead of the
+// successor's module evaluation and its startup disarm. The excluded classes
+// never produce a payload here to classify: a sub-frame completion reports
+// only through `did-frame-navigate`, a same-document one only through
+// `did-navigate-in-page` (electron.d.ts, `did-navigate`: "Emitted when a main
+// frame navigation is done. This event is not emitted for in-page
+// navigations…"). The classes below pin the payload decision itself.
 describe('renderer-replacing navigation', () => {
-    it('begins a session for a main-frame cross-document navigation, a reload included', () => {
-        expect(isRendererReplacingNavigation({ isInPlace: false, isMainFrame: true })).toBe(true);
+    it('begins a session for the committed boot load of a session window, a non-HTTP origin included', () => {
+        expect(
+            isRendererReplacingNavigation({ url: 'file:///app/index.html', httpResponseCode: -1, httpStatusText: '' })
+        ).toBe(true);
     });
 
-    it('keeps the session for a sub-frame navigation', () => {
-        expect(isRendererReplacingNavigation({ isInPlace: false, isMainFrame: false })).toBe(false);
+    it('begins a session for a committed reload or page change', () => {
+        expect(
+            isRendererReplacingNavigation({
+                url: 'http://127.0.0.1:5173/',
+                httpResponseCode: 200,
+                httpStatusText: 'OK',
+            })
+        ).toBe(true);
     });
 
-    it('keeps the session for a same-document navigation', () => {
-        expect(isRendererReplacingNavigation({ isInPlace: true, isMainFrame: true })).toBe(false);
-        expect(isRendererReplacingNavigation({ isInPlace: true, isMainFrame: false })).toBe(false);
+    it('begins a session when the commit is an error page, because the renderer is replaced all the same', () => {
+        expect(
+            isRendererReplacingNavigation({
+                url: 'http://127.0.0.1:5173/missing',
+                httpResponseCode: 404,
+                httpStatusText: 'Not Found',
+            })
+        ).toBe(true);
     });
 });

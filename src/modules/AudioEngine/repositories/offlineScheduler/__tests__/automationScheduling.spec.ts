@@ -1215,13 +1215,15 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
             clipBoundsById: clipBounds,
         });
 
-        // One call for the whole group: A's terminator (frame 0, value 3)
-        // becomes a hold across the gap to B's first frame (40), and B's own
-        // terminator (frame 40, value 9) closes the merged stream.
+        // One call for the whole group: each clip owns every frame of its own
+        // window, not just the lone terminator its single point compiles to —
+        // A holds its 3 across [0, 40) and B holds its 9 across [40, 80),
+        // closing on B's terminator there.
         expect(scheduleParam.mock.calls).toHaveLength(1);
         expect(scheduleParam.mock.calls[0]![0]).toEqual([
             { startFrame: 0, endFrame: 40, startValue: 3, endValue: 3 },
-            { startFrame: 40, endFrame: 40, startValue: 9, endValue: 9 },
+            { startFrame: 40, endFrame: 80, startValue: 9, endValue: 9 },
+            { startFrame: 80, endFrame: 80, startValue: 9, endValue: 9 },
         ]);
     });
 
@@ -1522,13 +1524,17 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
 
         expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
         expect(scheduleParam.mock.calls).toHaveLength(1);
-        // Both lanes compile to a lone zero-length terminator at frame 0;
-        // clip-b's (later in lane-array order) is what the merge keeps —
-        // pinning the content, not just the call count, is what actually
-        // catches an opening hold re-introduced on the seed: that hold
-        // survives the clustering check (its own malformed terminator still
-        // sorts the stream as non-clashing) but corrupts this merged output.
-        expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
+        // clip-a's zero-width window still compiles to its unshifted lone
+        // terminator — the #4684 rule, and it owns nothing, so the splice
+        // drops it — while clip-b's window IS the whole region: its 9 holds
+        // from frame 0 to the region end. Pinning the content, not just the
+        // call count, is what actually catches a seed-opening hold
+        // re-introduced on the compile: clip-a's own value (3) must never own
+        // a span of the merged stream.
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 400, startValue: 9, endValue: 9 },
+            { startFrame: 400, endFrame: 400, startValue: 9, endValue: 9 },
+        ]);
     });
 
     // #4684: a multi-point clip lane whose visible window is zero-width at
@@ -1701,11 +1707,13 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
         expect(scheduleParam.mock.calls).toHaveLength(1);
         // 2s + 0.01s compensation = 2.01s * 100 sampleRate = frame 201, not the
-        // unshifted 200 — the device write now lands on the same delayed
-        // clock as clip-b's own compensated audio.
+        // unshifted 200 — the handover still lands there, now because clip-a's
+        // window (closing at 2s) is stretched onto the same shifted clock its
+        // neighbor opens on, and clip-b owns its window to the region end.
         expect(scheduleParam.mock.calls[0]![0]).toEqual([
             { startFrame: 0, endFrame: 201, startValue: 3, endValue: 3 },
-            { startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 },
+            { startFrame: 201, endFrame: 400, startValue: 9, endValue: 9 },
+            { startFrame: 400, endFrame: 400, startValue: 9, endValue: 9 },
         ]);
     });
 
@@ -1753,7 +1761,8 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
         expect(scheduleParam.mock.calls[0]![0]).toEqual([
             { startFrame: 0, endFrame: 200, startValue: 3, endValue: 3 },
-            { startFrame: 200, endFrame: 200, startValue: 9, endValue: 9 },
+            { startFrame: 200, endFrame: 400, startValue: 9, endValue: 9 },
+            { startFrame: 400, endFrame: 400, startValue: 9, endValue: 9 },
         ]);
     });
 });

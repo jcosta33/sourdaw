@@ -325,8 +325,8 @@ pub struct AppState {
     pub retrospective_arm:
         Arc<Mutex<Option<crate::commands::engine_retrospective::DesiredRetrospectiveArm>>>,
     /// How many renderer sessions the shell has begun, one bump per session
-    /// window the main process creates (and one per session window page that
-    /// finishes loading — a same-window reload replaces its renderer). See
+    /// window the main process creates (and one per session-window navigation
+    /// that commits — a same-window reload replaces its renderer). See
     /// [`AppState::begin_renderer_session`].
     pub session_generation: Arc<AtomicU64>,
     /// The durable half of `plugin_registry`: the file a scan writes and the
@@ -580,8 +580,8 @@ impl AppState {
     /// must match and answer the new one.
     ///
     /// The shell calls this on the main process's own behalf the moment it
-    /// creates a session window, and again when a session window's page
-    /// finishes loading — a same-window reload replaces its renderer without
+    /// creates a session window, and again when a session window's navigation
+    /// commits — a same-window reload replaces its renderer without
     /// replacing the window. A retrospective arm is stamped with the
     /// generation current when it was issued, so a bump between its stamp and
     /// its landing proves the renderer that asked for it is gone: landing it

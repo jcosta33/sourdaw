@@ -151,7 +151,72 @@ function eqClipLane(): AutomationLane {
     });
 }
 
-function scheduleEqLanes(lanes: AutomationLane[]): ParamDouble {
+/** A clip lane on the same window whose points stop two beats before the clip does. */
+function shortClipLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-clip-short',
+        clipId: 'clip-a',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [
+            { beat: 2, value: 9, curve: 'linear', tension: 0 },
+            { beat: 4, value: 9, curve: 'linear', tension: 0 },
+        ],
+    });
+}
+
+/** A clip lane carrying a single point inside its window. */
+function onePointClipLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-clip-one-point',
+        clipId: 'clip-a',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [{ beat: 3, value: 9, curve: 'linear', tension: 0 }],
+    });
+}
+
+/** A clip lane scoped entirely before the export region. */
+function earlyClipLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-clip-early',
+        clipId: 'clip-early',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [
+            { beat: -4, value: 9, curve: 'linear', tension: 0 },
+            { beat: -2, value: 9, curve: 'linear', tension: 0 },
+        ],
+    });
+}
+
+const EARLY_CLIP_BOUNDS = new Map([['clip-early', { startBeat: -5, endBeat: -1 }]]);
+
+const SHORT_CLIP_ORDERS = [
+    ['track lane first', (): AutomationLane[] => [eqTrackLane(), shortClipLane()]],
+    ['clip lane first', (): AutomationLane[] => [shortClipLane(), eqTrackLane()]],
+] as const;
+
+const ONE_POINT_ORDERS = [
+    ['track lane first', (): AutomationLane[] => [eqTrackLane(), onePointClipLane()]],
+    ['clip lane first', (): AutomationLane[] => [onePointClipLane(), eqTrackLane()]],
+] as const;
+
+const EARLY_CLIP_ORDERS = [
+    ['track lane first', (): AutomationLane[] => [eqTrackLane(), earlyClipLane()]],
+    ['clip lane first', (): AutomationLane[] => [earlyClipLane(), eqTrackLane()]],
+] as const;
+
+function scheduleEqLanes(
+    lanes: AutomationLane[],
+    clipBoundsById: Map<string, { startBeat: number; endBeat: number }> = SHARED_CLIP_BOUNDS
+): ParamDouble {
     const node = createOfflineDeviceNode({
         context: asBaseAudioContext(createMockAudioContext()),
         deviceType: 'builtin-eq',
@@ -175,7 +240,7 @@ function scheduleEqLanes(lanes: AutomationLane[]): ParamDouble {
         projectBeatToSeconds: IDENTITY_BEAT,
         sampleRate: 100,
         slewTickSeconds: 1,
-        clipBoundsById: SHARED_CLIP_BOUNDS,
+        clipBoundsById,
     });
     return eqParam as unknown as ParamDouble;
 }
@@ -346,6 +411,48 @@ describe('scheduleTrackAutomation — the scope law reaches the audioParam and c
 
             for (let time = 0.5; time <= 9.5; time += 0.5) {
                 expect(ceilingAt(time)).toBeCloseTo(dbToGain(segmentValueAtTime(segmentCalls[0]!, time * 1000)), 9);
+            }
+        }
+    });
+});
+
+describe('scheduleTrackAutomation — a clip lane owns every frame of its clip window, not just its compiled extent', () => {
+    it('plays the clip value to the window end when its points stop early, in both lane orders', () => {
+        for (const [order, buildLanes] of SHORT_CLIP_ORDERS) {
+            const events = recordedParamEvents(scheduleEqLanes(buildLanes()));
+            expect(paramValueAt(events, 1), `${order}: before the window the track lane plays`).toBeCloseTo(3, 9);
+            expect(paramValueAt(events, 4), `${order}: at the last point the clip lane plays`).toBeCloseTo(9, 9);
+            // The points stop at 4 but the clip plays to 6: the value the lane
+            // held at its last point owns the window tail — live holds the
+            // param there, so a track value inside the window is the defect.
+            expect(
+                paramValueAt(events, 5.5),
+                `${order}: the window tail past the last point stays the clip's`
+            ).toBeCloseTo(9, 9);
+            expect(paramValueAt(events, 7), `${order}: past the window the track lane plays`).toBeCloseTo(3, 9);
+        }
+    });
+
+    it('holds a one-point clip lane’s value across its whole window, in both lane orders', () => {
+        for (const [order, buildLanes] of ONE_POINT_ORDERS) {
+            const events = recordedParamEvents(scheduleEqLanes(buildLanes()));
+            expect(paramValueAt(events, 1), `${order}: before the window the track lane plays`).toBeCloseTo(3, 9);
+            expect(paramValueAt(events, 3), `${order}: the single point’s value`).toBeCloseTo(9, 9);
+            expect(paramValueAt(events, 5.9), `${order}: held to the window end`).toBeCloseTo(9, 9);
+            expect(paramValueAt(events, 7), `${order}: past the window the track lane plays`).toBeCloseTo(3, 9);
+        }
+    });
+});
+
+describe('scheduleTrackAutomation — a clip lane whose window misses the export region compiles to nothing', () => {
+    it('schedules the export cleanly with the track lane applying alone, in both lane orders', () => {
+        for (const [order, buildLanes] of EARLY_CLIP_ORDERS) {
+            const events = recordedParamEvents(scheduleEqLanes(buildLanes(), EARLY_CLIP_BOUNDS));
+            for (const time of [1, 5, 9]) {
+                expect(paramValueAt(events, time), `${order}: the track lane applies alone at ${time}`).toBeCloseTo(
+                    3,
+                    9
+                );
             }
         }
     });

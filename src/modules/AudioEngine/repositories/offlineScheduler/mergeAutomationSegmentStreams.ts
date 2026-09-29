@@ -14,6 +14,16 @@ export type AutomationSegmentStream = Readonly<{
     laneId: string;
     scope: AutomationSegmentScope;
     segments: readonly OfflineAutomationSegment[];
+    /**
+     * A clip-scoped lane's scope window end, in this merge's frame domain —
+     * the clip's last frame inside the region, on the same clock (including
+     * any compensation shift) as the segments themselves. The compiled
+     * material ends where the lane's last point (plus slew settle) lands,
+     * not where its clip does, so the merge stretches a windowed stream's
+     * extent out to this frame before resolving. A track lane carries none:
+     * its compiled extent stays its ownership.
+     */
+    windowEndFrame?: number;
 }>;
 
 /**
@@ -92,6 +102,49 @@ function clipStreamToSpan(stream: AutomationSegmentStream, start: number, end: n
 }
 
 /**
+ * Hold a clip stream's closing value out to its scope window's end.
+ *
+ * A clip lane's compiled stream ends where its last point (plus slew settle)
+ * lands, not where its clip does — but the scope law gives the lane every
+ * frame of its clip window (#4736). A stream carrying `windowEndFrame`
+ * therefore has its closing terminator replaced by a hold out to that frame
+ * and a fresh terminator there, so its extent covers its window and the
+ * per-span resolution below hands it the whole window: a lane whose points
+ * stop mid-clip keeps owning the tail, a one-point lane owns its window from
+ * its single value, and the splice frames follow the window rather than
+ * value-dependent settle distances. Track lanes carry no window and pass
+ * through untouched, which is what keeps their extent-based law where it
+ * already resolved correctly. `compileAutomationEvents` opens every stream
+ * at its window's start, so only the far end needs carrying.
+ */
+function extendStreamToWindowEnd(stream: AutomationSegmentStream): AutomationSegmentStream {
+    const last = stream.segments.at(-1)!;
+    if (stream.windowEndFrame === undefined || stream.windowEndFrame <= last.endFrame) {
+        return stream;
+    }
+    // Every compiled stream closes on a zero-length terminator, so replacing
+    // it keeps the stream contiguous and still ending on one.
+    return {
+        ...stream,
+        segments: [
+            ...stream.segments.slice(0, -1),
+            {
+                startFrame: last.endFrame,
+                endFrame: stream.windowEndFrame,
+                startValue: last.endValue,
+                endValue: last.endValue,
+            },
+            {
+                startFrame: stream.windowEndFrame,
+                endFrame: stream.windowEndFrame,
+                startValue: last.endValue,
+                endValue: last.endValue,
+            },
+        ],
+    };
+}
+
+/**
  * Merge every lane's compiled segment stream on one device parameter into the
  * single stream a one-schedule-per-parameter consumer (a worklet's
  * `paramAutomation`, the offline recording projection) can hold — resolving
@@ -113,6 +166,12 @@ function clipStreamToSpan(stream: AutomationSegmentStream, start: number, end: n
  * the outcome is independent of which lane comes first in time (#4749). A
  * stream that compiles to a lone zero-length terminator covers only its own
  * frame; on a span another stream covers it contributes nothing.
+ *
+ * Before the sweep, a stream carrying a clip scope window
+ * (`windowEndFrame` — see `extendStreamToWindowEnd`) is stretched to that
+ * frame, so a clip lane's extent is its window and the per-span ownership
+ * above hands it every frame of the window the law gives it, however early
+ * its own points stop.
  *
  * The kept clusters (in time order) are pairwise disjoint by construction and
  * merge exactly as before: the later one's first frame is at or past the
@@ -246,7 +305,7 @@ export function mergeAutomationSegmentStreams(
         laneOrder.set(stream.laneId, index);
     }
 
-    const ordered = [...nonEmpty].sort((first, second) => {
+    const ordered = nonEmpty.map(extendStreamToWindowEnd).sort((first, second) => {
         const startFrameDiff = first.segments[0]!.startFrame - second.segments[0]!.startFrame;
         if (startFrameDiff !== 0) {
             return startFrameDiff;

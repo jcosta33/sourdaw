@@ -29,8 +29,7 @@ export function compileAutomationSegments(
         projectBeatToSeconds,
         options
     );
-    if (events.length === 0) {
-        return [];
-    }
+    // An empty compile — a lane whose scope window misses the region —
+    // converts to no segments (`compiledEventsToSegments` guards it).
     return compiledEventsToSegments(events, durationSeconds, sampleRate, compensationDelaySec);
 }

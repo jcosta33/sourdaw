@@ -266,6 +266,18 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Yeast offset harness; the omitted Arrangement keys are never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
+        barrel: '#/modules/AudioEngine/useCases',
+        missingKeys: ['audioEngine', 'startFaustNote'],
+        reason: "Yeast offset harness; the real MIDI graph reaches the barrel but the tests stub the engine doors directly and never call audioEngine or startFaustNote.",
+    },
 ];
 
 export type MockedBarrel = {

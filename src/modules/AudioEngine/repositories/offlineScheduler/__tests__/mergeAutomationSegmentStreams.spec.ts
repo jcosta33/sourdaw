@@ -47,6 +47,15 @@ function stream(
     return { laneId, scope, segments };
 }
 
+/** A clip-scoped stream carrying the frame its clip window closes on. */
+function windowedStream(
+    laneId: string,
+    segments: readonly OfflineAutomationSegment[],
+    windowEndFrame: number
+): AutomationSegmentStream {
+    return { laneId, scope: 'clip', segments, windowEndFrame };
+}
+
 describe('mergeAutomationSegmentStreams', () => {
     it('holds the earlier stream’s value across the gap to the later stream, in time order', () => {
         const streamA = stream('a', [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 3 }, terminator(10, 3)]);
@@ -470,6 +479,85 @@ describe('mergeAutomationSegmentStreams', () => {
                 { startFrame: 40, endFrame: 160, startValue: 9, endValue: 9 },
                 ...clipSegments,
             ]);
+        });
+
+        /**
+         * The scope window law: a clip stream carries the frame its clip window
+         * closes on, and the merge stretches its extent to that frame before
+         * resolving — a lane's compiled material ends at its last point (plus
+         * slew settle), which is not where its clip does. Track streams carry no
+         * window and merge exactly as before.
+         */
+        describe('a clip stream’s scope window, not its compiled extent, bounds what it owns', () => {
+            const coveringTrack = (): AutomationSegmentStream =>
+                stream(
+                    'lane-track',
+                    [{ startFrame: 0, endFrame: 1000, startValue: 3, endValue: 3 }, terminator(1000, 3)],
+                    'track'
+                );
+
+            it('holds a clip stream’s closing value across the window tail its points never reach', () => {
+                const clipStream = windowedStream(
+                    'lane-clip',
+                    [{ startFrame: 200, endFrame: 400, startValue: 9, endValue: 9 }, terminator(400, 9)],
+                    600
+                );
+
+                const result = mergeAutomationSegmentStreams([coveringTrack(), clipStream]);
+
+                expect(result.withheldLaneIds).toEqual([]);
+                expect(result.segments).toEqual([
+                    { startFrame: 0, endFrame: 200, startValue: 3, endValue: 3 },
+                    // The clip owns [200, 600]: its material, then the hold
+                    // across the tail its points never reach (piecewise at the
+                    // material's own end, with identical values).
+                    { startFrame: 200, endFrame: 400, startValue: 9, endValue: 9 },
+                    { startFrame: 400, endFrame: 600, startValue: 9, endValue: 9 },
+                    terminator(600, 9),
+                    // The track lane resumes at the window's end.
+                    { startFrame: 600, endFrame: 1000, startValue: 3, endValue: 3 },
+                    terminator(1000, 3),
+                ]);
+                expect(isContiguousAutomationSchedule(result.segments)).toBe(true);
+            });
+
+            it('resolves the identical splice whichever order the caller lists the lanes in', () => {
+                const clipStream = windowedStream(
+                    'lane-clip',
+                    [{ startFrame: 200, endFrame: 400, startValue: 9, endValue: 9 }, terminator(400, 9)],
+                    600
+                );
+
+                const forward = mergeAutomationSegmentStreams([coveringTrack(), clipStream]);
+                const reversed = mergeAutomationSegmentStreams([clipStream, coveringTrack()]);
+
+                expect(reversed).toEqual(forward);
+            });
+
+            it('stretches a lone-terminator clip stream to own its whole window from its single value', () => {
+                const clipStream = windowedStream('lane-clip', [terminator(200, 9)], 600);
+
+                const result = mergeAutomationSegmentStreams([coveringTrack(), clipStream]);
+
+                expect(result.withheldLaneIds).toEqual([]);
+                expect(result.segments).toEqual([
+                    { startFrame: 0, endFrame: 200, startValue: 3, endValue: 3 },
+                    { startFrame: 200, endFrame: 600, startValue: 9, endValue: 9 },
+                    terminator(600, 9),
+                    { startFrame: 600, endFrame: 1000, startValue: 3, endValue: 3 },
+                    terminator(1000, 3),
+                ]);
+                expect(isContiguousAutomationSchedule(result.segments)).toBe(true);
+            });
+
+            it('drops an empty clip stream even when it carries a window, so the track lane applies alone', () => {
+                const result = mergeAutomationSegmentStreams([windowedStream('lane-clip', [], 600), coveringTrack()]);
+
+                expect(result).toEqual({
+                    segments: [{ startFrame: 0, endFrame: 1000, startValue: 3, endValue: 3 }, terminator(1000, 3)],
+                    withheldLaneIds: [],
+                });
+            });
         });
     });
 });

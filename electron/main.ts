@@ -446,13 +446,19 @@ const createWindow = (): BrowserWindow => {
     attachWebContentsPolicy(window);
     // A reload replaces this window's renderer without replacing the window,
     // so the session begun at creation does not cover it. The bump belongs at
-    // the moment the replacing navigation begins, not when the page finishes
-    // loading: module evaluation — dynamic imports included — does not hold
-    // the load event, so the incoming renderer's startup disarm can settle
-    // while the load is still in flight, and an arm the outgoing page left
-    // must already be stale when that happens (#4752).
-    window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-        if (isRendererReplacingNavigation({ isInPlace, isMainFrame })) {
+    // the commit of the replacing navigation: module evaluation — dynamic
+    // imports included — does not hold the load event, so the incoming
+    // renderer's startup disarm can settle while the load is still in flight,
+    // and an arm the outgoing page left must already be stale when that
+    // happens (#4752). Commit is also the first evidence a vetoed navigation
+    // cannot produce: `did-start-navigation` fires before the cancellable
+    // navigation events and cannot itself be cancelled, so a navigation this
+    // shell vetoes at `will-navigate` never reaches `did-navigate` — bumping
+    // there stamped a replacement that never happened. The event is inherently
+    // main-frame and cross-document: sub-frame completions report through
+    // `did-frame-navigate`, same-document ones through `did-navigate-in-page`.
+    window.webContents.on('did-navigate', (_event, url, httpResponseCode, httpStatusText) => {
+        if (isRendererReplacingNavigation({ url, httpResponseCode, httpStatusText })) {
             nativeHost?.beginRendererSession();
         }
     });
