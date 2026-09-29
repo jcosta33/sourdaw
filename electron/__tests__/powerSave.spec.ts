@@ -132,6 +132,7 @@ describe('power-save over the routed engine lifecycle', () => {
 
     const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unknown>): NativeHost => ({
         shutdown: () => undefined,
+        beginRendererSession: refuseUnexpected('beginRendererSession'),
         startDictation: refuseUnexpected('startDictation'),
         stopDictation: refuseUnexpected('stopDictation'),
         cancelDictation: refuseUnexpected('cancelDictation'),

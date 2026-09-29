@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({
     stopPlayback: vi.fn(),
     resetAudioGraph: vi.fn(),
+    disarmRetrospectiveCapture: vi.fn(),
     unloadPlugin: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     beginProjectSessionPluginRetirement: vi.fn(),
@@ -14,7 +15,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: runtime.stopPlayback,
     repairRuntimeGraphFromProject: runtime.repairRuntimeGraphFromProject,
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({ resetAudioGraph: runtime.resetAudioGraph }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    resetAudioGraph: runtime.resetAudioGraph,
+    disarmRetrospectiveCapture: runtime.disarmRetrospectiveCapture,
+}));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     beginProjectSessionPluginRetirement: runtime.beginProjectSessionPluginRetirement,
 }));
@@ -24,6 +28,7 @@ describe('quiesceProjectSession', () => {
         vi.resetModules();
         runtime.stopPlayback.mockReset();
         runtime.resetAudioGraph.mockReset();
+        runtime.disarmRetrospectiveCapture.mockReset();
         runtime.unloadPlugin.mockReset();
         runtime.repairRuntimeGraphFromProject.mockReset();
         runtime.beginProjectSessionPluginRetirement.mockReset().mockImplementation(async () => ({

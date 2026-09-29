@@ -287,7 +287,9 @@ describe('applyAutomation', () => {
         applyAutomation(0);
         applyAutomation(1);
 
-        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        // Two writes: the scope-entry tick (#4741) writes the opening value,
+        // the moving tick writes the glide — both through the stripped id.
+        expect(updateDeviceParam).toHaveBeenCalledTimes(2);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
@@ -886,7 +888,9 @@ describe('applyAutomation', () => {
         // back to where the curve was a tick ago.
         it.each([
             [true, 0],
-            [false, 1],
+            // Two: the scope-entry tick (#4741) and the moving tick both
+            // reach the uncarried full door.
+            [false, 2],
         ])(
             'writes a moving device parameter over IPC only while the native session is not carrying it (carried: %s)',
             (carried, expectedWrites) => {
@@ -1027,8 +1031,12 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+            // Two fallback holds: the scope-entry tick (#4741) at the curve's
+            // own opening value, then the moving tick one glide later.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'shift_semitones', 0);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
+                2,
                 'track-1',
                 'device-k1',
                 'shift_semitones',
@@ -1052,7 +1060,11 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
-            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+            // The release went through the full door. The only fallback hold
+            // is the pre-release scope-entry tick (#4741) at 0.2, on the node
+            // the engine is not driving.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.2);
         });
 
         it('writes an uncarried built-in through the full door and holds nothing', () => {
@@ -1095,8 +1107,12 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(applyFermenterRuntimeParam).not.toHaveBeenCalled();
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+            // Two fallback holds: the scope-entry tick (#4741) resting at the
+            // curve's own 5_000, then the moving tick one glide later.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-f2', 'cutoff', 5_000);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
+                2,
                 'track-1',
                 'device-f2',
                 'cutoff',
@@ -1124,7 +1140,11 @@ describe('applyAutomation', () => {
             expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
                 expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff', value: 5_000 })
             );
-            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+            // The release went through the runtime use case. The only
+            // fallback hold is the pre-release scope-entry tick (#4741) at
+            // 1_000, on the node the engine is not driving.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-f1', 'cutoff', 1_000);
         });
     });
 
@@ -1331,7 +1351,8 @@ describe('applyAutomation', () => {
             seedRestorableDeviceLane('lane-restore-off');
             applyAutomation(0);
             applyAutomation(1);
-            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            // The scope-entry tick (#4741) and the moving tick.
+            expect(updateDeviceParam).toHaveBeenCalledTimes(2);
 
             setAutomationMode('off');
             applyAutomation(2);

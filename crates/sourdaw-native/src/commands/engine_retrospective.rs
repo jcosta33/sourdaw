@@ -15,6 +15,9 @@
 use daw_engine::retrospective::RETROSPECTIVE_CHANNEL_RANGE;
 use daw_engine::EngineHandle;
 
+#[cfg(test)]
+use std::sync::Arc;
+
 use crate::commands::graph::GraphRegistry;
 use crate::state::AppState;
 
@@ -35,12 +38,24 @@ pub struct DesiredRetrospectiveArm {
 /// any lock or recording anything. Otherwise records the arm and answers `Ok`
 /// whether or not an engine is running or knows the strip yet; when both hold,
 /// the engine is armed now, and otherwise the next applied graph batch arms it.
+///
+/// The arm is stamped with the renderer session generation current when the
+/// command starts, and refused — recorded nowhere, arming nothing, still
+/// answering `Ok` — when that generation no longer matches by the time the
+/// locks are its: the main process has begun a successor session, so the
+/// renderer that asked is gone and its successor's startup disarm must not be
+/// overwritten by this arm landing late behind a batch (#4752).
 pub async fn arm_retrospective_capture(
     track_id: String,
     channels: u32,
     state: &AppState,
 ) -> Result<(), String> {
     let channels = supported_channels(channels)?;
+
+    // Stamped before any lock: the arm's session is whoever owned this command
+    // when it was issued, not whoever holds the graph registry when it finally
+    // lands.
+    let arm_generation = state.session_generation();
 
     let registry_guard = state
         .graph
@@ -54,6 +69,10 @@ pub async fn arm_retrospective_capture(
         .retrospective_arm
         .lock()
         .map_err(|error| format!("Failed to lock retrospective arm: {error}"))?;
+
+    if state.session_generation() != arm_generation {
+        return Ok(());
+    }
 
     if let (Some(engine), Some(native_id)) = (
         engine_guard.as_mut(),
@@ -350,6 +369,105 @@ mod tests {
 
         assert_eq!(armed_target(&state), None);
         assert_eq!(recorded(&state), None);
+    }
+
+    #[test]
+    fn an_arm_blocked_behind_a_batch_never_lands_after_a_successor_session_began() {
+        // The issue's command-level reproduction (#4752): an arm parked behind
+        // a held lock while the main process begins the successor session and
+        // its startup disarm completes. The test holds the graph registry —
+        // the arm's first lock — so the arm stamps its pre-bump session and
+        // parks where the disarm never reaches (disarm takes engine → record
+        // only). The disarm therefore completes while the arm is still parked,
+        // and only the release after it lets the arm reach the gate: without
+        // the gate the arm would land behind the disarm and re-record what the
+        // disarm cleared, reddening the final assertions. Parking on the
+        // engine lock cannot do this — the parked arm wins that mutex and
+        // lands before the disarm runs, so a gate-less build stays green.
+        let state = Arc::new(AppState::default());
+        let _commands = boot_capture_engine(&state);
+        apply(&state, one_strip_batch());
+
+        let held_graph = state
+            .graph
+            .lock()
+            .expect("the test holds the graph registry");
+
+        let (arm_began, arm_began_rx) = std::sync::mpsc::channel();
+        let arm_state = Arc::clone(&state);
+        let arm = std::thread::spawn(move || {
+            // The runtime is built before the handshake so that, after the
+            // send, only a straight-line nanosecond-scale stretch separates
+            // the handshake from the command's generation stamp; the runtime
+            // `block_on_test` would build per call is work enough for the
+            // main thread's bump to systematically win that race.
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime should build");
+            let observed = arm_state.session_generation();
+            arm_began
+                .send(observed)
+                .expect("the test still waits on the arm's handshake");
+            runtime.block_on(async {
+                arm_retrospective_capture(STRIP.to_string(), 2, &arm_state)
+                    .await
+                    .expect("a refused arm is not an error")
+            })
+        });
+
+        // The stamp is the command's first act and nothing observable sits
+        // between it and the held graph registry, so the handshake — which
+        // proves the arm thread has begun — plus this pause give the arm's
+        // straight-line path to the stamp overwhelming room: the bump below
+        // cannot outrun it even on a loaded scheduler. A flip would land the
+        // arm as the new session's own and fail this test loudly, never
+        // silently.
+        let arm_generation = arm_began_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the arm thread begins and reads its session");
+        assert_eq!(
+            arm_generation,
+            state.session_generation(),
+            "the arm read the pre-bump generation"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        state.begin_renderer_session();
+        block_on_test(disarm_retrospective_capture(&state)).expect("the startup disarm resolves");
+
+        drop(held_graph);
+        arm.join().expect("the blocked arm thread finishes");
+
+        assert_eq!(
+            recorded(&state),
+            None,
+            "the dead session's arm stays refused"
+        );
+        assert_eq!(armed_target(&state), None);
+    }
+
+    #[test]
+    fn an_arm_from_the_session_that_is_current_still_lands() {
+        // The gate refuses only arms a begun session superseded mid-flight: an
+        // arm issued after the bump is the new session's own and lands as
+        // before.
+        let state = AppState::default();
+        let _commands = boot_capture_engine(&state);
+        apply(&state, one_strip_batch());
+        state.begin_renderer_session();
+
+        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
+            .expect("the arm resolves");
+
+        assert_eq!(armed_target(&state), Some(resolved_native_id(&state)));
+        assert_eq!(
+            recorded(&state),
+            Some(DesiredRetrospectiveArm {
+                track_id: STRIP.to_string(),
+                channels: 2,
+            })
+        );
     }
 
     #[test]

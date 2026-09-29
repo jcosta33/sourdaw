@@ -18,10 +18,17 @@ import {
     compileAutomationEvents,
 } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
+import { eventStreamFrame } from './eventStreamFrame';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
-import { mergeAutomationSegmentStreams, type AutomationSegmentStream } from './mergeAutomationSegmentStreams';
+import { mergeAutomationEventStreams, type AutomationEventStream } from './mergeAutomationEventStreams';
+import {
+    mergeAutomationSegmentStreams,
+    type AutomationSegmentScope,
+    type AutomationSegmentStream,
+} from './mergeAutomationSegmentStreams';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
+import { scheduleCompiledEventsOnParam } from './scheduleCompiledEventsOnParam';
 
 type AutomationTempoChange = {
     beat: number;
@@ -39,6 +46,58 @@ type ScheduleTrackAutomationDeviceEntry = {
      */
     contributesAudio: boolean;
 };
+
+/**
+ * One AudioParam target's (or the curve-write pair's) collected streams on one
+ * (device, parameter) group, with the application call that consumes the one
+ * spliced stream the group resolves to.
+ */
+type AutomationEventTargetGroup = {
+    apply: (events: readonly CompiledAutomationEvent[]) => void;
+    streams: AutomationEventStream[];
+};
+
+type AutomationEventGroup = {
+    deviceId: string;
+    parameterId: string;
+    targets: AutomationEventTargetGroup[];
+};
+
+/**
+ * Collect one lane's compiled events onto its (device, parameter) group — the
+ * event-bound families' counterpart of the `segments` branch's group push. A
+ * group's targets fill in lane order; every lane that resolves the same
+ * binding visits the same targets in the same order, so the index is dense.
+ */
+function collectDeviceEventStream(
+    groups: Map<string, AutomationEventGroup>,
+    entry: {
+        groupKey: string;
+        deviceId: string;
+        parameterId: string;
+        laneId: string;
+        scope: AutomationSegmentScope;
+        targetIndex: number;
+        events: CompiledAutomationEvent[];
+        /** A clip-scoped lane's window end, region-relative seconds. */
+        windowEndSeconds?: number;
+        apply: (events: readonly CompiledAutomationEvent[]) => void;
+    }
+): void {
+    let group = groups.get(entry.groupKey);
+    if (!group) {
+        group = { deviceId: entry.deviceId, parameterId: entry.parameterId, targets: [] };
+        groups.set(entry.groupKey, group);
+    }
+    const targetGroup = group.targets[entry.targetIndex] ?? { apply: entry.apply, streams: [] };
+    group.targets[entry.targetIndex] = targetGroup;
+    targetGroup.streams.push({
+        laneId: entry.laneId,
+        scope: entry.scope,
+        events: entry.events,
+        windowEndSeconds: entry.windowEndSeconds,
+    });
+}
 
 /**
  * The two parts of the device-parameter contract the live apply path enforces,
@@ -215,7 +274,7 @@ function resolveLaneValueBound(
  */
 function scheduleCurveWritePoints(
     targets: OfflineCurveWriteTargets,
-    events: CompiledAutomationEvent[],
+    events: readonly CompiledAutomationEvent[],
     clampValue: (value: number) => number,
     compensationDelaySec: number,
     scheduleFrame: ScheduleCall
@@ -273,14 +332,13 @@ export function scheduleTrackAutomation({
     /**
      * Every `segments`-bound lane on one (device, parameter) collects its
      * compiled stream here instead of applying immediately, keyed by
-     * `${deviceId}::${parameterId}`, alongside the lane id that produced each
-     * stream. A `segments` consumer keeps only its most recent `apply` call,
-     * so two lanes driving one parameter — a track lane plus a clip lane, or
-     * two clip lanes on disjoint clips — used to lose every lane but the
-     * last; the group applies exactly once, after the loop, through
-     * `mergeAutomationSegmentStreams` (see the call site below), which keeps
-     * every disjoint stream and withholds only the lanes a genuine overlap
-     * cannot merge.
+     * `${deviceId}::${parameterId}`, alongside the lane id and scope that
+     * produced each stream. A `segments` consumer keeps only its most recent
+     * `apply` call, so two lanes driving one parameter used to lose every
+     * lane but the last; the group applies exactly once, after the loop,
+     * through `mergeAutomationSegmentStreams` (see the call site below),
+     * which resolves every span by the scope law and keeps each lane's
+     * material on the spans it owns.
      */
     const segmentGroupsByKey = new Map<
         string,
@@ -291,6 +349,20 @@ export function scheduleTrackAutomation({
             streams: AutomationSegmentStream[];
         }
     >();
+
+    /**
+     * Every `curveWrite`- or `audioParam`-bound lane on one (device, parameter)
+     * collects its compiled events here, keyed like `segmentGroupsByKey`, one
+     * target group per AudioParam target (a `curveWrite` binding has exactly
+     * one). Those families used to apply each overlapping lane immediately onto
+     * the same target, so web and stems exports resolved a track lane against a
+     * clip lane by lane-array insertion order while live played the clip lane;
+     * the group applies once, after the loop, through
+     * `mergeAutomationEventStreams` — the same scope law the segments branch
+     * applies, so the applied curve for one project is identical across the
+     * segments-bound, audioParam and curveWrite exports.
+     */
+    const eventGroupsByKey = new Map<string, AutomationEventGroup>();
 
     for (const lane of trackLanes) {
         let activeWindowSeconds: { startSeconds: number; endSeconds: number } | undefined;
@@ -304,6 +376,31 @@ export function scheduleTrackAutomation({
                 endSeconds: projectBeat(bounds.endBeat),
             };
         }
+        // The scope window the merge resolves by (#4736): a compiled stream
+        // ends at its last point (plus slew settle), not where the clip does,
+        // so the window end travels with the stream — region-relative seconds
+        // for the event-bound families (their conversion applies no
+        // compensation), and the same `eventStreamFrame` conversion the
+        // segments family's own clock uses for the segments family. That
+        // clock shifts by the compensation exactly when the compile's stream
+        // reaches past the region start (#4684 leaves a stream whose every
+        // event sits at the region start unshifted), so a window closing
+        // exactly there takes no shift either — frame 0, the terminator the
+        // compile actually emitted. Every shifted clock shares the same
+        // offset, so a window end and the neighboring lane's opening land on
+        // the same frame. The value-independent window is also what makes
+        // every target of one parameter splice at the same frames.
+        const clipWindowEndSeconds = activeWindowSeconds
+            ? activeWindowSeconds.endSeconds - regionStartSeconds
+            : undefined;
+        const clipWindowEndFrame =
+            clipWindowEndSeconds === undefined
+                ? undefined
+                : eventStreamFrame(
+                      (clipWindowEndSeconds > 0 ? compensationDelaySec : 0) + clipWindowEndSeconds,
+                      durationSeconds,
+                      sampleRate
+                  );
 
         // AU-3: follow linked lanes to the authoritative source (cycle-guarded,
         // linkScale accumulated) exactly as the live path does — offline
@@ -513,17 +610,31 @@ export function scheduleTrackAutomation({
                 // Collected, not applied — see `segmentGroupsByKey` and the
                 // merge pass after this loop. `apply` is the same call on every
                 // lane that resolves this (device, parameter) pair, so the last
-                // one resolved is as good as any to hold it.
+                // one resolved is as good as any to hold it. The scope and the
+                // window end are the resolution law's inputs (#4736): a
+                // clip-scoped lane owns every span its clip window covers.
                 const groupKey = `${candidate.deviceId}::${parameterId}`;
                 const group = segmentGroupsByKey.get(groupKey);
                 if (group) {
-                    group.streams.push({ laneId: lane.id, segments });
+                    group.streams.push({
+                        laneId: lane.id,
+                        scope: lane.clipId ? 'clip' : 'track',
+                        segments,
+                        windowEndFrame: clipWindowEndFrame,
+                    });
                 } else {
                     segmentGroupsByKey.set(groupKey, {
                         apply: binding.apply,
                         deviceId: candidate.deviceId,
                         parameterId,
-                        streams: [{ laneId: lane.id, segments }],
+                        streams: [
+                            {
+                                laneId: lane.id,
+                                scope: lane.clipId ? 'clip' : 'track',
+                                segments,
+                                windowEndFrame: clipWindowEndFrame,
+                            },
+                        ],
                     });
                 }
                 continue;
@@ -592,17 +703,40 @@ export function scheduleTrackAutomation({
                     }
                     scheduleFrame(time, call);
                 };
-                scheduleCurveWritePoints(
-                    binding.targets,
+                // Collected, not applied — see `eventGroupsByKey` and the merge
+                // pass after this loop. The write schedule the group resolves
+                // applies once per parameter, by the scope law, instead of two
+                // lanes racing one target in lane-array order.
+                collectDeviceEventStream(eventGroupsByKey, {
+                    groupKey: `${candidate.deviceId}::${parameterId}`,
+                    deviceId: candidate.deviceId,
+                    parameterId,
+                    laneId: lane.id,
+                    scope: lane.clipId ? 'clip' : 'track',
+                    targetIndex: 0,
                     events,
-                    clampStep,
-                    compensationDelaySec,
-                    scheduleWithinRender
-                );
+                    windowEndSeconds: clipWindowEndSeconds,
+                    apply: (mergedEvents) =>
+                        scheduleCurveWritePoints(
+                            binding.targets,
+                            mergedEvents,
+                            clampStep,
+                            compensationDelaySec,
+                            scheduleWithinRender
+                        ),
+                });
                 continue;
             }
-            for (const target of binding.targets) {
+            for (const [targetIndex, target] of binding.targets.entries()) {
                 const { audioParam, scale, offset, convert } = target;
+                // Every target of the parameter compiles the same timeline —
+                // the options below differ only in how values map into the
+                // param's units — so the group's scope resolution below, which
+                // is decided on frames and lane order and never on values, is
+                // consistent across the targets of one parameter.
+                const applyMergedEvents = (mergedEvents: readonly CompiledAutomationEvent[]): void => {
+                    scheduleCompiledEventsOnParam(audioParam, mergedEvents, compensationDelaySec);
+                };
                 if (convert) {
                     // Non-affine device→AudioParam law (dB→linear, a delay
                     // floor). Live slews, clamps and quantises in DEVICE units
@@ -612,15 +746,13 @@ export function scheduleTrackAutomation({
                     // applied at write time by `emitTransform`. Only the link
                     // scale composes with the device scalar, exactly as it
                     // composes before live's parameter-family transform.
-                    scheduleAutomationOnParam(
-                        audioParam,
+                    const events = compileAutomationEvents(
                         points,
                         durationSeconds,
                         defaultTempo,
                         changes,
                         regionStartSeconds,
                         projectBeatToSeconds,
-                        compensationDelaySec,
                         {
                             ...boundOptions,
                             slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
@@ -629,6 +761,19 @@ export function scheduleTrackAutomation({
                             emitTransform: convert,
                         }
                     );
+                    // Collected, not applied — see `eventGroupsByKey` and the
+                    // merge pass after this loop.
+                    collectDeviceEventStream(eventGroupsByKey, {
+                        groupKey: `${candidate.deviceId}::${parameterId}`,
+                        deviceId: candidate.deviceId,
+                        parameterId,
+                        laneId: lane.id,
+                        scope: lane.clipId ? 'clip' : 'track',
+                        targetIndex,
+                        events,
+                        windowEndSeconds: clipWindowEndSeconds,
+                        apply: applyMergedEvents,
+                    });
                     continue;
                 }
                 // Compose linkScale with the device binding's unit scale/offset as
@@ -665,30 +810,41 @@ export function scheduleTrackAutomation({
                     valueScale: laneScale * scale,
                     valueOffset: offset,
                 };
-                scheduleAutomationOnParam(
-                    audioParam,
+                const events = compileAutomationEvents(
                     points,
                     durationSeconds,
                     defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    compensationDelaySec,
                     paramOptions
                 );
+                // Collected, not applied — see `eventGroupsByKey` and the merge
+                // pass after this loop.
+                collectDeviceEventStream(eventGroupsByKey, {
+                    groupKey: `${candidate.deviceId}::${parameterId}`,
+                    deviceId: candidate.deviceId,
+                    parameterId,
+                    laneId: lane.id,
+                    scope: lane.clipId ? 'clip' : 'track',
+                    targetIndex,
+                    events,
+                    windowEndSeconds: clipWindowEndSeconds,
+                    apply: applyMergedEvents,
+                });
             }
         }
     }
 
     // One `apply` per (device, parameter) group, now that every lane's stream
-    // is collected: `mergeAutomationSegmentStreams` keeps every disjoint
-    // stream (each one starting at or after the previous one's terminator
-    // frame) and, inside a genuinely overlapping cluster, keeps only the one
-    // stream latest in lane-array order — there is no general way to
-    // interleave two schedules that both claim the same frame. The group
-    // applies exactly once, with whatever the merge kept; a caller that must
-    // not silently lose a withheld lane's writes learns about it through
-    // `onWithheldDeviceLanes`.
+    // is collected: `mergeAutomationSegmentStreams` resolves the group by the
+    // scope law — a clip-scoped lane owns every span its clip window covers,
+    // a track-level lane owns the rest, equal scopes break to the lane latest
+    // in lane-array order — and keeps every lane's material on the spans it
+    // owns, so nothing is withheld and the group still applies exactly once.
+    // A caller that must account for lanes the merge could not keep learns
+    // about it through `onWithheldDeviceLanes`, which the total law leaves
+    // silent.
     for (const { apply, deviceId, parameterId, streams } of segmentGroupsByKey.values()) {
         const merged = mergeAutomationSegmentStreams(streams);
         if (merged.withheldLaneIds.length > 0) {
@@ -696,6 +852,33 @@ export function scheduleTrackAutomation({
         }
         if (merged.segments.length > 0) {
             apply(merged.segments);
+        }
+    }
+
+    // The event-bound families apply once per (device, parameter) target the
+    // same way the segments family applies once per group above. A lone lane
+    // keeps the direct application its family always had — the merge of one
+    // stream is that stream, so both routes resolve identically. Overlapping
+    // lanes resolve by the scope law, and what each binding family receives is
+    // one spliced event stream — an AudioParam timeline, or the curve-write
+    // pair's write schedule — that plays the clip lane inside its window and
+    // the track lane around it, whichever order the lanes arrived in.
+    for (const { deviceId, parameterId, targets } of eventGroupsByKey.values()) {
+        for (const { apply, streams } of targets) {
+            if (streams.length <= 1) {
+                const single = streams[0];
+                if (single && single.events.length > 0) {
+                    apply(single.events);
+                }
+                continue;
+            }
+            const merged = mergeAutomationEventStreams(streams, sampleRate, durationSeconds);
+            if (merged.withheldLaneIds.length > 0) {
+                onWithheldDeviceLanes?.({ deviceId, parameterId, laneIds: merged.withheldLaneIds });
+            }
+            if (merged.events.length > 0) {
+                apply(merged.events);
+            }
         }
     }
 }

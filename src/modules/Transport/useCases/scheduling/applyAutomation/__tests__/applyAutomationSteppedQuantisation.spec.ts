@@ -173,8 +173,10 @@ describe('applyAutomation — stepped device parameters', () => {
         // index the engine is already holding across the twelve ticks.
         //
         // Measured: the slew (α = 0.4) produces 2.4, 4.08, 5.048, 5.629,
-        // 5.777, … which round to 2, 4, 5, 6, 6, … and dedupe to this.
-        expect(delivered).toEqual([2, 4, 5, 6]);
+        // 5.777, … which round to 2, 4, 5, 6, 6, … and dedupe to this. The
+        // seed tick leads the ride with its own value (0): entering the
+        // lane's scope writes once (#4741).
+        expect(delivered).toEqual([0, 2, 4, 5, 6]);
     });
 
     it('records the delivered index as the modulation base, not the continuous filter value', () => {
@@ -215,7 +217,8 @@ describe('applyAutomation — stepped device parameters', () => {
         expect(delivered.filter((value) => !Number.isInteger(value))).toEqual([]);
         // Measured: 3.2, 5.12, 6.272, 6.963, 7.378, … rounding and deduping to
         // this step curve, which arrives at mode 8 rather than dead-zoning at 7.
-        expect(delivered).toEqual([3, 5, 6, 7, 8]);
+        // The seed tick leads with its own value (0) — the #4741 entry write.
+        expect(delivered).toEqual([0, 3, 5, 6, 7, 8]);
         expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
 
@@ -246,8 +249,10 @@ describe('applyAutomation — stepped device parameters', () => {
         // the first six an oversampling factor the cascade cannot build, and
         // exactly what this node used to be handed. Resolved onto the set and
         // deduped by the repeat gate, the same ride is three factors. It still
-        // arrives at 32 rather than stalling under it.
-        expect(delivered).toEqual([8, 16, 32]);
+        // arrives at 32 rather than stalling under it. The seed tick leads
+        // with its own value (1, itself a legal factor) — the #4741 entry
+        // write.
+        expect(delivered).toEqual([1, 8, 16, 32]);
         expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
 
@@ -272,8 +277,9 @@ describe('applyAutomation — stepped device parameters', () => {
         expect(delivered.filter((value) => !Number.isInteger(value))).toEqual([]);
         // The slew (α = 0.4) runs 1.2, 2.04, 2.42, 2.65, 2.79, … which the
         // integer law rounds and the repeat gate dedupes to this, arriving at
-        // waveform 3 rather than stalling one index below it.
-        expect(delivered).toEqual([1, 2, 3]);
+        // waveform 3 rather than stalling one index below it. The seed tick
+        // leads with its own value (0) — the #4741 entry write.
+        expect(delivered).toEqual([0, 1, 2, 3]);
     });
 
     it("delivers whole semitones to Fermenter's oscCoarse while riding 0 → 12", () => {
@@ -297,8 +303,9 @@ describe('applyAutomation — stepped device parameters', () => {
         // one would satisfy the integer assertion vacuously) and it arrives at
         // the octave rather than stalling a semitone under it.
         // Measured: the slew (α = 0.4) runs 4.8, 7.68, 9.408, 10.44, 11.07,
-        // 11.44, 11.66 … which round and dedupe to this.
-        expect(delivered).toEqual([5, 8, 9, 10, 11, 12]);
+        // 11.44, 11.66 … which round and dedupe to this. The seed tick leads
+        // with its own value (0) — the #4741 entry write.
+        expect(delivered).toEqual([0, 5, 8, 9, 10, 11, 12]);
     });
 
     it("delivers fractional cents to Fermenter's oscFine while riding 0 → 7", () => {
@@ -322,8 +329,11 @@ describe('applyAutomation — stepped device parameters', () => {
 
         // The claim is the fractions, so assert they are actually there rather
         // than only that the sequence matches — the pinned array below would
-        // still be "a sequence" if every entry were whole.
-        expect(delivered.filter((value) => Number.isInteger(value))).toEqual([]);
+        // still be "a sequence" if every entry were whole. Only the seed
+        // tick's own value (0, the ride's start) is whole: the #4741 entry
+        // write, exact because the curve asks for it.
+        expect(delivered[0]).toBe(0);
+        expect(delivered.slice(1).filter((value) => Number.isInteger(value))).toEqual([]);
         // The whole ride, pinned. Twelve deliveries where the `int` law gave
         // five (`3, 4, 5, 6, 7`, measured): the repeat gate reads on the
         // delivered domain, so seven of these twelve ticks used to send nothing
@@ -331,7 +341,7 @@ describe('applyAutomation — stepped device parameters', () => {
         // while the filter was still climbing through it. IEEE-754 doubles, so
         // these values are exact and reproducible rather than approximated.
         expect(delivered).toEqual([
-            2.8000000000000003, 4.48, 5.488, 6.0928, 6.45568, 6.673408, 6.8040448, 6.88242688, 6.929456128,
+            0, 2.8000000000000003, 4.48, 5.488, 6.0928, 6.45568, 6.673408, 6.8040448, 6.88242688, 6.929456128,
             6.9576736768, 6.9746042060799995, 6.9847625236479995,
         ]);
     });

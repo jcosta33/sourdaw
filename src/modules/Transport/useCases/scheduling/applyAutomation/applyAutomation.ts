@@ -331,6 +331,56 @@ export function applyAutomation(currentBeat: number): Set<string> {
         }
     }
 
+    // #4736: the device parameters a clip-scoped lane owns this tick, with
+    // the owning lane per (device, parameter) — the last qualifying clip lane
+    // in store order, which is the deterministic tie-break when two clip
+    // lanes cover the same parameter. The convention the exports follow is
+    // the established DAW one: clip automation overrides track automation
+    // while the clip plays. The scan mirrors exactly the gates that let a
+    // clip lane reach its device write below, because a track lane (or a
+    // losing clip lane) must be suppressed precisely when the winner would
+    // have written — no more, no less.
+    const clipOwnedDeviceParams = new Map<string, string>();
+    for (const lane of autoState.lanes) {
+        if (!lane.clipId || lane.points.length === 0) {
+            continue;
+        }
+        const track = automationState.trackIndex.get(lane.trackId);
+        if (!track || track.automationMode === 'off' || lane.enabled === false) {
+            continue;
+        }
+        const readBeat = compensatedBeatFor(lane.trackId);
+        const clip = track.clips.find((context) => context.id === lane.clipId);
+        if (!clip || readBeat < clip.startBeat || readBeat > clip.endBeat) {
+            continue;
+        }
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
+            continue;
+        }
+        const curveValue = getAutomationValueAtBeat(lane.id, readBeat);
+        if (curveValue === null) {
+            continue;
+        }
+        const deviceIndex = resolveDeviceAutomationTargetIndex(
+            lane.parameterId,
+            track.devices,
+            deviceAcceptsAutomationParameter
+        );
+        if (deviceIndex < 0) {
+            continue;
+        }
+        const device = track.devices[deviceIndex]!;
+        const paramId = getDeviceAutomationParameterId(lane.parameterId);
+        if (!paramId) {
+            continue;
+        }
+        const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
+        if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
+            continue;
+        }
+        clipOwnedDeviceParams.set(`${device.id}::${paramId}`, lane.id);
+    }
+
     for (const lane of autoState.lanes) {
         if (lane.points.length === 0) {
             continue;
@@ -479,13 +529,38 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
                     continue;
                 }
+                // #4736: while a clip-scoped lane's window covers this beat,
+                // it owns the device parameter — a track-level lane (and a
+                // clip lane that lost the store-order tie-break) holds its
+                // tongue. The suppressed lane drops its slew state, so the
+                // tick it comes back into scope it re-enters and writes its
+                // held value once (the #4741 entry law) instead of gliding
+                // from a stale smoothed value — exactly what the offline
+                // merge splices at the ownership boundary.
+                const clipOwner = clipOwnedDeviceParams.get(`${device.id}::${paramId}`);
+                if (clipOwner !== undefined && clipOwner !== lane.id) {
+                    automationState.drivingLanes.delete(lane.id);
+                    automationState.pluginParamSlew.delete(lane.id);
+                    continue;
+                }
                 if (!laneSlew) {
                     laneSlew = new Map<string, number>();
                     automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
 
-                const prev = laneSlew.get(device.id) ?? value;
-                const slewed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                // #4741: the first tick a lane drives this device — entering
+                // its scope on a clip-window opening, or the first tick after
+                // load — has no previous value to glide from, so seeding it
+                // from the target and gating on movement would write nothing:
+                // a flat lane would sit on the manual value for ever. The
+                // entry tick snaps to the target and writes it once, matching
+                // the offline slew, whose first sample is the compiled
+                // stream's opening value.
+                const previousSlew = laneSlew.get(device.id);
+                const enteredLaneScope = previousSlew === undefined;
+                const seed = previousSlew ?? value;
+                const slewed =
+                    isDiscontinuity || enteredLaneScope ? value : slewStep(seed, value, AUTOMATION_SLEW_ALPHA);
                 // Lane data is validated on load only for finiteness and
                 // `maxValue >= minValue` — never against what it drives — so a
                 // stored curve can ask for anything, and a linked lane applies
@@ -543,11 +618,12 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const previousDelivered = quantiseDeviceParameterValue({
                     deviceType: device.type,
                     paramId,
-                    value: prev,
+                    value: seed,
                 });
                 const moved =
                     isDiscontinuity ||
-                    (Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
+                    enteredLaneScope ||
+                    (Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 // A device the native session carries has its parameters
                 // stamped on the audio thread from the engine's own queue,

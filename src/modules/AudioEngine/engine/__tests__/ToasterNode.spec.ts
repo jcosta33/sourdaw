@@ -237,6 +237,39 @@ describe('createToasterNode', () => {
         );
     });
 
+    // #4744: a clip-scoped lane on a clip that starts after the export region
+    // start compiles to a stream whose first frame is not 0. The node used to
+    // refuse every such stream, so the bounce played the parameter's manual
+    // value for the whole region while live playback moved it inside the clip.
+    it('accepts a bounded schedule that opens after frame 0 (#4744)', async () => {
+        const node = await createToasterNode(makeCtx());
+        postMessage.mockClear();
+
+        const segments = [
+            { startFrame: 480, endFrame: 608, startValue: 0.2, endValue: 0.8 },
+            { startFrame: 608, endFrame: 608, startValue: 0.8, endValue: 0.8 },
+        ];
+        node.scheduleParam('reverbMix', segments);
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', paramId: 1, segments });
+    });
+
+    it('still rejects a schedule whose segments do not chain from the first one (#4744)', async () => {
+        const node = await createToasterNode(makeCtx());
+        postMessage.mockClear();
+
+        node.scheduleParam('reverbMix', [
+            { startFrame: 480, endFrame: 608, startValue: 0.2, endValue: 0.8 },
+            // A gap: this segment starts past the previous end.
+            { startFrame: 610, endFrame: 700, startValue: 0.8, endValue: 1 },
+        ]);
+        // A negative opening frame is still malformed.
+        node.scheduleParam('reverbMix', [{ startFrame: -1, endFrame: 8, startValue: 0.2, endValue: 0.8 }]);
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('should forward a finite setPadParam value and drop a non-finite one', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();

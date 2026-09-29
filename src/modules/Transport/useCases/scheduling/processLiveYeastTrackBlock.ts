@@ -35,6 +35,9 @@ export type LiveYeastIteration = {
     iterationStartBeat: number;
     iterationEndBeat: number;
     midiOffsetBeats: number;
+    /** Loop geometry of the owning clip; a descriptor without it never wraps. */
+    loopEnabled?: boolean;
+    loopLengthBeats?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -68,8 +71,11 @@ type PendingLiveYeastNote = {
 type PendingIdentifiedLiveYeastNote = {
     notes: LiveYeastNote[];
     index: number;
-    midiOffsetBeats: number;
 };
+
+function positiveModulo(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
+}
 
 export async function processLiveYeastTrackBlock({
     context,
@@ -125,8 +131,41 @@ export async function processLiveYeastTrackBlock({
                     continue;
                 }
 
-                const noteStartBeat = iteration.iterationStartBeat + groovedNote.startBeat;
-                const noteEndBeat = noteStartBeat + groovedNote.duration;
+                // #4655 — own the note at its audible beat, the same coordinate
+                // every other path uses: `iterationStartBeat + startBeat −
+                // midiOffsetBeats`. The offset locates the content inside the
+                // clip; selecting and owning on the un-offset beat and shifting
+                // back afterwards dropped every note whose offset was wider
+                // than one scheduler window. Where a displaced start lands is
+                // the twin's law, not this module's: a non-looped clip clamps
+                // it to the iteration start — the boundary clamp
+                // `projectClipMidiEvents` applies to the projected note — while
+                // a looped iteration wraps it, the same
+                // `((offset % loopLength) + loopLength) % loopLength` re-anchor
+                // the twin applies to a looped clip's negative relative start.
+                // The release keeps its full audible time either way: a clamped
+                // note keeps its original end beat, and a wrapped note rings
+                // its full duration from the wrapped start, past the iteration
+                // end, with the owning window following the release, as the
+                // loop-work bounds spec pins.
+                const audibleStartBeat =
+                    iteration.iterationStartBeat + groovedNote.startBeat - iteration.midiOffsetBeats;
+                const loopLengthBeats = iteration.loopLengthBeats ?? 0;
+                let noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
+                let noteEndBeat = audibleStartBeat + groovedNote.duration;
+                if (
+                    iteration.loopEnabled === true &&
+                    loopLengthBeats > 0 &&
+                    audibleStartBeat < iteration.iterationStartBeat
+                ) {
+                    noteStartBeat =
+                        iteration.iterationStartBeat +
+                        positiveModulo(audibleStartBeat - iteration.iterationStartBeat, loopLengthBeats);
+                    noteEndBeat = noteStartBeat + groovedNote.duration;
+                }
+                if (noteEndBeat <= noteStartBeat) {
+                    continue;
+                }
                 const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
                 const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
                 const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
@@ -249,13 +288,15 @@ export async function processLiveYeastTrackBlock({
                 pendingByInstance.set(event.noteInstanceId, {
                     notes: targetNotes,
                     index: noteIndex,
-                    midiOffsetBeats: iteration?.midiOffsetBeats ?? 0,
                 });
             } else {
                 const pending = pendingByRouteAndPitch.get(noteKey) ?? { indices: [], cursor: 0 };
                 pending.indices.push(noteIndex);
                 pendingByRouteAndPitch.set(noteKey, pending);
             }
+            // #4655 — the event time is already the audible beat; the
+            // offset was applied once at ownership above and must not be
+            // subtracted again here.
             targetNotes.push({
                 ...template,
                 id: `${template.id}:yeast:${event.kind.note}:${event.timeSamples}:${ordinal}`,
@@ -263,7 +304,7 @@ export async function processLiveYeastTrackBlock({
                 noteInstanceId: event.noteInstanceId,
                 pitch: event.kind.note,
                 velocity: event.kind.velocity,
-                startBeat: eventPpq - (iteration?.midiOffsetBeats ?? 0),
+                startBeat: eventPpq,
                 duration,
             });
             continue;
@@ -271,7 +312,6 @@ export async function processLiveYeastTrackBlock({
 
         let noteTarget = targetNotes;
         let noteIndex: number;
-        let midiOffsetBeats = iteration?.midiOffsetBeats ?? 0;
         if (event.noteInstanceId) {
             const pending = pendingByInstance.get(event.noteInstanceId);
             if (!pending) {
@@ -280,7 +320,6 @@ export async function processLiveYeastTrackBlock({
             pendingByInstance.delete(event.noteInstanceId);
             noteTarget = pending.notes;
             noteIndex = pending.index;
-            midiOffsetBeats = pending.midiOffsetBeats;
         } else {
             const pending = pendingByRouteAndPitch.get(noteKey);
             if (!pending || pending.cursor >= pending.indices.length) {
@@ -292,7 +331,7 @@ export async function processLiveYeastTrackBlock({
         const eventPpq = event.timePpq ?? samplesToBeat(changes, event.timeSamples, transport.tempo, sampleRate);
         noteTarget[noteIndex] = {
             ...note,
-            duration: Math.max(0, eventPpq - midiOffsetBeats - note.startBeat),
+            duration: Math.max(0, eventPpq - note.startBeat),
         };
     }
 

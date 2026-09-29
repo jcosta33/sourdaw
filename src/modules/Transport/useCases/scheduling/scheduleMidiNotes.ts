@@ -233,8 +233,23 @@ type SelectMidiNotesForSchedulerWindowInput = {
 type SelectYeastNotesForSchedulerWindowInput = {
     notes: readonly ScheduledMidiNote[];
     iterationStartBeat: number;
+    midiOffsetBeats: number;
+    loopEnabled: boolean;
+    loopLengthBeats: number;
     fromBeat: number;
     toBeat: number;
+};
+type YeastLoopPhaseEntry = {
+    endPhaseBeat: number;
+    note: ScheduledMidiNote;
+    phaseBeat: number;
+};
+type YeastLoopPhaseIndex = {
+    loopLengthBeats: number;
+    midiOffsetBeats: number;
+    orderByNote: ReadonlyMap<ScheduledMidiNote, number>;
+    sortedEnds: readonly YeastLoopPhaseEntry[];
+    sortedEntries: readonly YeastLoopPhaseEntry[];
 };
 type ScheduledIterationRange = {
     endIndex: number;
@@ -257,6 +272,12 @@ const MIDI_NOTE_GROOVE_LOOKAROUND_BEATS = 1;
 // MIDI writes replace note arrays rather than mutating them, so array identity
 // invalidates this cache whenever project truth changes.
 const scheduledMidiNoteIndexes = new WeakMap<readonly ScheduledMidiNote[], ScheduledMidiNoteIndex>();
+// Same invalidation rule for the looped-iteration phase view below.
+const yeastLoopPhaseIndexes = new WeakMap<readonly ScheduledMidiNote[], YeastLoopPhaseIndex>();
+
+function positiveModulo(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
+}
 
 function getScheduledMidiNoteIndex(notes: readonly ScheduledMidiNote[]): ScheduledMidiNoteIndex {
     const cached = scheduledMidiNoteIndexes.get(notes);
@@ -340,15 +361,139 @@ function selectMidiNotesForSchedulerWindow({
     return candidates;
 }
 
+function lowerBoundYeastLoopPhase(entries: readonly YeastLoopPhaseEntry[], phaseBeat: number): number {
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (entries[middle]!.phaseBeat < phaseBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+function lowerBoundYeastLoopEnd(entries: readonly YeastLoopPhaseEntry[], endPhaseBeat: number): number {
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (entries[middle]!.endPhaseBeat < endPhaseBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+/**
+ * Phase view of the content a looped iteration wraps: the class the ownership
+ * re-anchors with the twin's positive modulo instead of clamping — starts
+ * already before the iteration head, plus starts within one groove stage's
+ * displacement after it, which the clip groove can pull across the head
+ * (`MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` bounds that displacement; the twin
+ * grooves each candidate first and re-anchors only what lands before the head,
+ * so a note pulled back inside sounds un-wrapped, and a raw start in
+ * `[0, displacement)` indexes at its own position — the phase window's groove
+ * slack is what reaches it from the late phase the twin anchors it to). Notes
+ * are indexed by their wrapped position (`phaseBeat`) and wrapped release
+ * (`endPhaseBeat`). The release stays uncapped: a note longer than its loop
+ * rings past the iteration end and the owning window follows the release, as
+ * the loop-work bounds spec pins. A start in `[0, displacement)` carries a
+ * second release entry one loop past its phase — only the groove can wrap it,
+ * and the wrapped release then rings a loop past the raw `endPhaseBeat`.
+ */
+function getYeastLoopPhaseIndex({
+    notes,
+    loopLengthBeats,
+    midiOffsetBeats,
+}: Pick<
+    SelectYeastNotesForSchedulerWindowInput,
+    'notes' | 'loopLengthBeats' | 'midiOffsetBeats'
+>): YeastLoopPhaseIndex {
+    const cached = yeastLoopPhaseIndexes.get(notes);
+    if (cached?.loopLengthBeats === loopLengthBeats && cached.midiOffsetBeats === midiOffsetBeats) {
+        return cached;
+    }
+
+    const orderByNote = new Map<ScheduledMidiNote, number>();
+    const sortedEntries: YeastLoopPhaseEntry[] = [];
+    const sortedEnds: YeastLoopPhaseEntry[] = [];
+    for (let index = 0; index < notes.length; index++) {
+        const note = notes[index]!;
+        orderByNote.set(note, index);
+        const relativeStartBeat = note.startBeat - midiOffsetBeats;
+        // Membership mirrors the twin's wrap class on both sides of the head: a
+        // start already before it re-anchors as-is, and a start up to one groove
+        // stage after it can be displaced across by the clip groove — the twin
+        // then re-anchors the displaced start to the iteration's late phase, so
+        // the note must be a phase-index candidate for that window.
+        if (relativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+            continue;
+        }
+        const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
+        const entry = { endPhaseBeat: phaseBeat + note.duration, note, phaseBeat };
+        sortedEntries.push(entry);
+        sortedEnds.push(entry);
+        if (relativeStartBeat >= 0) {
+            // The groove-crossing class sounds un-wrapped only while the groove
+            // leaves the start on the head's near side; when it pulls the start
+            // across, ownership re-anchors it a full loop later and the release
+            // rings at `wrappedStart + duration`, past this entry's
+            // `endPhaseBeat`. Index that wrapped release too: it lands within
+            // one groove stage of `phaseBeat + loopLengthBeats + duration`,
+            // exactly the slack the release window already spends, so the
+            // window owning the wrapped release still finds the note here.
+            sortedEnds.push({
+                endPhaseBeat: phaseBeat + loopLengthBeats + note.duration,
+                note,
+                phaseBeat,
+            });
+        }
+    }
+    sortedEntries.sort(
+        (left, right) => left.phaseBeat - right.phaseBeat || orderByNote.get(left.note)! - orderByNote.get(right.note)!
+    );
+    const created = {
+        loopLengthBeats,
+        midiOffsetBeats,
+        orderByNote,
+        sortedEnds: sortedEnds.sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
+        sortedEntries,
+    };
+    yeastLoopPhaseIndexes.set(notes, created);
+    return created;
+}
+
 function selectYeastNotesForSchedulerWindow({
     notes,
     iterationStartBeat,
+    midiOffsetBeats,
+    loopEnabled,
+    loopLengthBeats,
     fromBeat,
     toBeat,
 }: SelectYeastNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
-    const { orderByNote, sortedNoteEnds, sortedNotes } = getScheduledMidiNoteIndex(notes);
-    const sourceStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-    const sourceEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const { maxDurationBeats, orderByNote, sortedNoteEnds, sortedNotes } = getScheduledMidiNoteIndex(notes);
+    // #4655 — candidates live in content coordinates: the window's audible
+    // span converts back with `+ midiOffsetBeats`, the same conversion
+    // `selectMidiNotesForSchedulerWindow` performs. The boundary lookbehind
+    // mirrors that selector too: content displaced before the iteration start
+    // used to sound clamped to it, and only notes with `duration > offset −
+    // content` survived the clamp, so `maxDurationBeats` covers every one of
+    // them.
+    const schedulesIterationBoundary = iterationStartBeat >= fromBeat && iterationStartBeat < toBeat;
+    const leadingIntervalLookbehindBeats = schedulesIterationBoundary ? maxDurationBeats : 0;
+    const sourceStartBeat =
+        fromBeat -
+        iterationStartBeat +
+        midiOffsetBeats -
+        MAX_GROOVE_STAGE_DISPLACEMENT_BEATS -
+        leadingIntervalLookbehindBeats;
+    const sourceEndBeat = toBeat - iterationStartBeat + midiOffsetBeats + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
     const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
     const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
     const noteEndStartIndex = lowerBoundMidiNoteEnd(sortedNoteEnds, sourceStartBeat);
@@ -359,6 +504,53 @@ function selectYeastNotesForSchedulerWindow({
     }
     for (let index = noteEndStartIndex; index < noteEndEndIndex; index++) {
         candidates.add(sortedNoteEnds[index]!);
+    }
+    if (loopEnabled && loopLengthBeats > 0) {
+        // A looped iteration wraps a start displaced before its head into the
+        // iteration — the twin's `((offset % loopLength) + loopLength) %
+        // loopLength` re-anchor — so those notes are also selected by their
+        // wrapped phase. Membership covers the groove too: a raw start within
+        // `MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` of the head is indexed on both
+        // sides of it, and the phase window's own groove slack reaches the note
+        // from the window that owns its displaced start. The window normalizes
+        // into loop phase and may itself straddle the seam; the release query
+        // stays unnormalized because a wrapped release rings past the iteration
+        // end.
+        const loopIndex = getYeastLoopPhaseIndex({ notes, loopLengthBeats, midiOffsetBeats });
+        const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
+        if (phaseWidthBeats >= loopLengthBeats) {
+            for (const { note } of loopIndex.sortedEntries) {
+                candidates.add(note);
+            }
+        } else {
+            const normalizedStartBeat = positiveModulo(phaseStartBeat, loopLengthBeats);
+            const normalizedEndBeat = normalizedStartBeat + phaseWidthBeats;
+            const phaseStartIndex = lowerBoundYeastLoopPhase(loopIndex.sortedEntries, normalizedStartBeat);
+            if (normalizedEndBeat <= loopLengthBeats) {
+                const phaseEndIndex = lowerBoundYeastLoopPhase(loopIndex.sortedEntries, normalizedEndBeat);
+                for (let index = phaseStartIndex; index < phaseEndIndex; index++) {
+                    candidates.add(loopIndex.sortedEntries[index]!.note);
+                }
+            } else {
+                const wrappedEndIndex = lowerBoundYeastLoopPhase(
+                    loopIndex.sortedEntries,
+                    normalizedEndBeat - loopLengthBeats
+                );
+                for (let index = phaseStartIndex; index < loopIndex.sortedEntries.length; index++) {
+                    candidates.add(loopIndex.sortedEntries[index]!.note);
+                }
+                for (let index = 0; index < wrappedEndIndex; index++) {
+                    candidates.add(loopIndex.sortedEntries[index]!.note);
+                }
+            }
+        }
+        const releaseStartIndex = lowerBoundYeastLoopEnd(loopIndex.sortedEnds, phaseStartBeat);
+        const releaseEndIndex = lowerBoundYeastLoopEnd(loopIndex.sortedEnds, phaseEndBeat);
+        for (let index = releaseStartIndex; index < releaseEndIndex; index++) {
+            candidates.add(loopIndex.sortedEnds[index]!.note);
+        }
     }
     return [...candidates].sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
 }
@@ -385,9 +577,13 @@ function getYeastCandidateIterationRange({
     iterationCount,
     loopEnabled,
     loopLengthBeats,
+    midiOffsetBeats,
     toBeat,
     notes,
-}: GetScheduledIterationRangeInput & { notes: readonly ScheduledMidiNote[] }): ScheduledIterationRange {
+}: GetScheduledIterationRangeInput & {
+    midiOffsetBeats: number;
+    notes: readonly ScheduledMidiNote[];
+}): ScheduledIterationRange {
     const activeRange = getScheduledIterationRange({
         clipStartBeat,
         fromBeat,
@@ -399,14 +595,29 @@ function getYeastCandidateIterationRange({
     if (!loopEnabled || notes.length === 0) {
         return activeRange;
     }
-    const { maxEndpointBeat, minEndpointBeat } = getScheduledMidiNoteIndex(notes);
+    const { maxDurationBeats, maxEndpointBeat } = getScheduledMidiNoteIndex(notes);
+    // #4655 — endpoints are content beats; their audible position inside an
+    // iteration is the offset-relative start, wrapped into the iteration when
+    // it slips before the head. A looped iteration therefore owns note-ons up
+    // to `max(loopLength, widest positive reach)` past its start, and a
+    // wrapped note rings its release that far plus its duration, so the range
+    // widens backwards by both and forwards only while the iteration start
+    // still precedes the window.
+    const latestOwnedOffsetBeats = Math.max(loopLengthBeats, maxEndpointBeat - midiOffsetBeats);
     const firstEndpointIndex = Math.max(
         0,
-        Math.ceil((fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - maxEndpointBeat) / loopLengthBeats)
+        Math.ceil(
+            (fromBeat -
+                MAX_GROOVE_STAGE_DISPLACEMENT_BEATS -
+                clipStartBeat -
+                latestOwnedOffsetBeats -
+                maxDurationBeats) /
+                loopLengthBeats
+        )
     );
     const endpointEndIndex = Math.min(
         iterationCount,
-        Math.ceil((toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - minEndpointBeat) / loopLengthBeats)
+        Math.floor((toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat) / loopLengthBeats) + 1
     );
     return {
         startIndex: Math.min(activeRange.startIndex, firstEndpointIndex),
@@ -589,6 +800,7 @@ export async function scheduleMidiNotes(
                     iterationCount,
                     loopEnabled: clip.loopEnabled ?? false,
                     loopLengthBeats: loopLength,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                     notes: sourceNotes,
                     toBeat,
                 });
@@ -607,6 +819,9 @@ export async function scheduleMidiNotes(
                     const candidateNotes = selectYeastNotesForSchedulerWindow({
                         notes: sourceNotes,
                         iterationStartBeat,
+                        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                        loopEnabled: clip.loopEnabled ?? false,
+                        loopLengthBeats: loopLength,
                         fromBeat,
                         toBeat,
                     });
@@ -621,6 +836,8 @@ export async function scheduleMidiNotes(
                         iterationStartBeat,
                         iterationEndBeat,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                        loopEnabled: clip.loopEnabled ?? false,
+                        loopLengthBeats: loopLength,
                         sourceNotes,
                     } satisfies LiveYeastIteration;
                     cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);

@@ -1,0 +1,83 @@
+import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
+
+import { type CompiledAutomationEvent } from './compileAutomationEvents';
+import { eventStreamFrame } from './eventStreamFrame';
+
+/**
+ * The one compiled-events→segments conversion: consecutive events become the
+ * spans between their frames, a `set` closes its span on the value it holds
+ * and a `linear` closes on its own, and a zero-length terminator carries the
+ * last event's value. An empty event stream — a lane whose scope window
+ * misses the export region compiles to zero events — converts to no
+ * segments, which `mergeAutomationSegmentStreams` then drops exactly like
+ * any other empty stream. `compileAutomationSegments` runs it on a lane's
+ * fresh compile; `mergeAutomationEventStreams` runs it on streams that are
+ * about to be resolved by the scope law, at compensation 0 because that
+ * family shifts at application time.
+ */
+export function compiledEventsToSegments(
+    events: readonly CompiledAutomationEvent[],
+    durationSeconds: number,
+    sampleRate: number,
+    compensationDelaySec: number
+): OfflineAutomationSegment[] {
+    // Clip scheduling shifts audio by the track's latency compensation
+    // (M-038); a device parameter bound to a `segments` stream must land on
+    // that same shifted clock or its worklet steps before the audio it
+    // shapes. The shift is applied in seconds, on the compiled events, before
+    // the seconds→frames conversion below, so rounding happens exactly once.
+    // The region-start seed re-anchors at frame 0 — the same re-anchoring
+    // `scheduleAutomationOnParam` (:40-41) and the curve-write branch in
+    // `automationScheduling.ts` (`scheduleCurveWritePoints`) apply to theirs —
+    // so the device does not sit on its stale base value for the first
+    // `compensationDelaySec` of the render.
+    //
+    // A lane whose window closes exactly at the region start compiles to
+    // several events all sitting at time zero (the seed `set@0`, plus a
+    // `linear@0` or `set@0` from the zero-width visible span) — nothing in the
+    // stream ever gets past the region start. Events are time-ordered
+    // (`compileAutomationEvents` only ever appends at a non-decreasing
+    // `relativeStart`/`timeSeconds`), so the last event's own time answers
+    // that question for the whole stream: shifting it (or opening a hold in
+    // front of it) has no later material to lead into, and instead turns it
+    // into a `[0, D]` span that overlaps whatever lane opens at the region
+    // start, which the merge then reads as a genuine clash and withholds a
+    // lane over (#4684). A stream whose last event is later than zero — a
+    // lone event later in the render included, no different from the tail of
+    // a multi-event stream — is shifted throughout, on every segment,
+    // including its last event, and gets the opening hold when its seed is a
+    // time-zero `set`.
+    // An empty stream has no seed, no spans and no terminator — the merge
+    // drops it like any other empty stream, so a clip lane whose window
+    // misses the region never reaches the dereferences below.
+    if (events.length === 0) {
+        return [];
+    }
+    const segments: OfflineAutomationSegment[] = [];
+    const seed = events[0]!;
+    const reachesPastStart = events.at(-1)!.timeSeconds > 0;
+    const shift = reachesPastStart ? compensationDelaySec : 0;
+    if (compensationDelaySec > 0 && reachesPastStart && seed.type === 'set' && seed.timeSeconds === 0) {
+        segments.push({
+            startFrame: 0,
+            endFrame: eventStreamFrame(seed.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
+            startValue: seed.value,
+            endValue: seed.value,
+        });
+    }
+
+    for (let index = 1; index < events.length; index++) {
+        const previous = events[index - 1]!;
+        const event = events[index]!;
+        segments.push({
+            startFrame: eventStreamFrame(previous.timeSeconds + shift, durationSeconds, sampleRate),
+            endFrame: eventStreamFrame(event.timeSeconds + shift, durationSeconds, sampleRate),
+            startValue: previous.value,
+            endValue: event.type === 'linear' ? event.value : previous.value,
+        });
+    }
+    const last = events.at(-1)!;
+    const lastFrame = eventStreamFrame(last.timeSeconds + shift, durationSeconds, sampleRate);
+    segments.push({ startFrame: lastFrame, endFrame: lastFrame, startValue: last.value, endValue: last.value });
+    return segments;
+}

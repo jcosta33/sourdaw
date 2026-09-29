@@ -210,6 +210,9 @@ describe('handling one supervisor request end to end', () => {
 // `nativeCommand`; these satisfy the host shape and throw so a test that
 // somehow routes into one fails loudly.
 const unroutableStubs = {
+    beginRendererSession: () => {
+        throw new Error('Unexpected session call: beginRendererSession');
+    },
     startDictation: () => {
         throw new Error('Unexpected dictation call: startDictation');
     },
@@ -222,7 +225,10 @@ const unroutableStubs = {
     grantPath: () => {
         throw new Error('Unexpected grant call: grantPath');
     },
-} satisfies Pick<NativeHost, 'startDictation' | 'stopDictation' | 'cancelDictation' | 'grantPath'>;
+} satisfies Pick<
+    NativeHost,
+    'beginRendererSession' | 'startDictation' | 'stopDictation' | 'cancelDictation' | 'grantPath'
+>;
 
 describe('reading a method off the addon', () => {
     it('calls the implementation with the host as its receiver, forwarding the arguments', () => {
