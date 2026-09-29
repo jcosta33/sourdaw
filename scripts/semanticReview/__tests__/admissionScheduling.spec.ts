@@ -756,6 +756,27 @@ describe('the run totals keep the four omission states apart', () => {
     });
 });
 
+/**
+ * The honest one-unit, two-rule production scan the ledger cases below doctor. Its own report
+ * validates, which is the positive control every forgery here is measured against.
+ */
+async function honestTwoRuleUnit() {
+    const path = 'src/infra/thing.ts';
+    const provider = countingProvider();
+    const { report } = await runScan(
+        scanInput({
+            provider: provider.port,
+            source: fakeSource([changedFile(path)], sides(path, 'const before = 1;\n', 'const after = 2;\n')),
+        })
+    );
+    expect(() => validateReport(report)).not.toThrow();
+    const entry = (report.scope.requestOrder ?? [])[0];
+    if (entry === undefined) {
+        throw new Error('the run published no planned entry, so the case would assert nothing');
+    }
+    return { report, entry, path };
+}
+
 describe('a stored report cannot publish a plan its own records refute', () => {
     it('refuses a reversed planned order', async () => {
         const report = await scannedFourStates();
@@ -921,6 +942,94 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         );
     });
 
+    it('refuses a planned entry whose ledger severs one of its rules', async () => {
+        // The run's own report validates; the doctored one publishes a plan of two rules while its
+        // ledger answers only one of them, so a consumer reading `signals` counts one assessment for a
+        // unit the plan says carries two questions.
+        const { report, entry } = await honestTwoRuleUnit();
+        expect(entry.ruleIds).toHaveLength(2);
+        expect(() => validateReport({ ...report, signals: report.signals.slice(0, 1) })).toThrow(
+            /one signal per published rule/
+        );
+    });
+
+    it('refuses a planned entry whose ledger repeats one rule signal', async () => {
+        // The other direction of the same tie: a duplicated signal inflates every consumer that reads
+        // `signals` — the summary's question count among them — while the plan still names two rules.
+        const { report } = await honestTwoRuleUnit();
+        const first = report.signals[0];
+        if (first === undefined) {
+            throw new Error('the run published no signal, so the case would assert nothing');
+        }
+        expect(() => validateReport({ ...report, signals: [...report.signals, first] })).toThrow(
+            /one signal per published rule/
+        );
+    });
+
+    it('refuses an entry whose answerable count is not the one its own ledger proves', async () => {
+        // `answerableRules` is the count of rules whose best pass carries all their required evidence,
+        // which is exactly what a signal without missing evidence records. This honest unit publishes two
+        // rules and its ledger answers one of them, so the run publishes 1; a zero and a two are both
+        // figures its own ledger refutes, and the order still satisfies the admission key and the
+        // partition, so only this comparison refuses them.
+        const { report, entry } = await honestTwoRuleUnit();
+        const answered = report.signals.filter((signal) => signal.missingEvidence.length === 0).length;
+        expect(answered).toBe(1);
+        expect(entry.answerableRules).toBe(answered);
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: { ...report.scope, requestOrder: [{ ...entry, answerableRules: 0 }] },
+            })
+        ).toThrow(/as 0 answerable rule\(s\) while its ledger holds 1/);
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: { ...report.scope, requestOrder: [{ ...entry, answerableRules: 2 }] },
+            })
+        ).toThrow(/as 2 answerable rule\(s\) while its ledger holds 1/);
+    });
+
+    it('refuses a severe class for a signal-less unit whose own rules are not severe', async () => {
+        // The unit is omitted before any request, so it carries no signal and the signal-side severity
+        // comparison never ran. Its published rules are both non-severe architecture-integration rules,
+        // and a unit's class is derived from those rules' categories, so the severe class is refuted by
+        // the very field the entry publishes. Both class fields are raised together, so only the
+        // re-derivation from `ruleIds` refuses it.
+        const { report, entry, path } = await honestTwoRuleUnit();
+        const states = report.scope.states;
+        if (states === undefined) {
+            throw new Error('the run published no totals, so the case would assert nothing');
+        }
+        expect(report.signals.every((signal) => signal.investigationCategory === 'architecture-integration')).toBe(
+            true
+        );
+        const omission = {
+            path,
+            reason: 'budget-exhausted-before-admission',
+            priorityClass: 'severe-production' as const,
+        };
+        expect(() =>
+            validateReport({
+                ...report,
+                // The omitted unit is what makes such a run partial, so the doctored report claims the
+                // state an honest run with this scope would record.
+                execution: 'partial',
+                signals: [],
+                scope: {
+                    ...report.scope,
+                    assessed: 0,
+                    requestOrder: [{ ...entry, priorityClass: 'severe-production' }],
+                    unassessed: [omission],
+                    states: {
+                        ...states,
+                        omittedForBudgetOrDeadline: 1,
+                    },
+                },
+            })
+        ).toThrow(/carry no severe investigation category/);
+    });
+
     it('refuses a path the scope records as unassessed more than once', async () => {
         // The duplicate hides a contradiction: a reader taking the last record for the path would see
         // only the class the plan publishes, while the first record disagrees with it. Everything else in
@@ -1030,6 +1139,13 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         expect(signalled.has(SKIPPED_PATH)).toBe(true);
         expect(truncated.has(SKIPPED_PATH)).toBe(true);
         expect(planned.has(SKIPPED_PATH)).toBe(true);
+        // Its own ledger row is the one the plan tie must keep valid: every rule of the unit reports its
+        // missing evidence, so the entry's answerable count is zero while its rule ledger is whole.
+        const skippedEntry = (report.scope.requestOrder ?? []).find((entry) => entry.path === SKIPPED_PATH);
+        expect(skippedEntry?.answerableRules).toBe(0);
+        expect(report.signals.filter((signal) => signal.path === SKIPPED_PATH)).toHaveLength(
+            skippedEntry?.ruleIds.length ?? 0
+        );
         // An omission whose reason means no call was made: planned and omitted, never signalled.
         expect(omissions.get(STARVED_PATH)).toBe('budget_exhausted');
         expect(signalled.has(STARVED_PATH)).toBe(false);

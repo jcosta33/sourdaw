@@ -478,6 +478,18 @@ function describeSignals(across: AcrossRuns): string {
 }
 
 /**
+ * The dispositions block, or the plain statement that no artifact carried a signal ledger to dispose of.
+ * The same silent zero `describeSignals` removes: a verification-only measurement has no fired signal,
+ * so a row of zeros would read as a round that dismissed nothing.
+ */
+function describeDispositions(across: AcrossRuns): string {
+    if (across.signalDispositions.recorded === null) {
+        return 'dispositions: no artifact read carries a signal ledger, so no fired signal could be disposed of';
+    }
+    return `dispositions: ${String(across.signalDispositions.recorded)} recorded, ${String(across.signalDispositions.dismissedFiredSignals)} fired signal(s) dismissed, ${String(across.signalDispositions.undismissedFiredSignals)} undismissed on heads with a dossier, ${String(across.signalDispositions.withoutDossier)} on heads with none`;
+}
+
+/**
  * The omission totals and where they came from. A record whose artifacts carry no scope ledger says so
  * instead of printing a row of zeros that reads as a run which omitted nothing.
  */
@@ -502,12 +514,6 @@ function mebibytes(bytes: number): string {
 
 /**
  * The human reading of the record. Every line names the figures it prints; none of them is a verdict.
- *
- * The two derived spans are computed before the lines that print them on purpose: a division inside a
- * template interpolation after a parenthesized member expression (`${(a.b / c)}`) sends the trusted
- * snapshot's import scanner (`snapshotImportSpecifiers` in `scripts/trustedGithubWriteBootstrap.ts`)
- * into unbounded recursion, and the advisory semantic review scans this file as a changed path. That
- * scanner defect is reported rather than worked around silently; this file simply does not feed it.
  */
 export function renderMeasurementSummary(record: MeasurementRecord): string {
     const { acrossRuns: across, sources } = record;
@@ -531,7 +537,7 @@ export function renderMeasurementSummary(record: MeasurementRecord): string {
         `wall clock: ${wallClockSeconds} s over ${String(across.wallClockRuns)} run(s), from their own startedAt/completedAt`,
         describeSignals(across),
         `review rounds: ${String(across.reviewRounds.heads)} head(s) with a dossier, ${String(across.reviewRounds.stanceDraws)} draw(s), ${String(across.reviewRounds.findingsAccepted)} finding(s) accepted, ${String(across.reviewRounds.findingsDiscarded)} discarded`,
-        `dispositions: ${String(across.signalDispositions.recorded)} recorded, ${String(across.signalDispositions.dismissedFiredSignals)} fired signal(s) dismissed, ${String(across.signalDispositions.undismissedFiredSignals)} undismissed on heads with a dossier, ${String(across.signalDispositions.withoutDossier)} on heads with none`,
+        describeDispositions(across),
         `repeated warnings: ${String(across.repeatedWarnings.length)} (ruleId, path) pair(s) flagged on more than one head of one pull request`,
     ];
     if (across.signals.byFindingDisposition !== null) {

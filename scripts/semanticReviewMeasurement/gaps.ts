@@ -80,6 +80,14 @@ function ledgerGaps(runs: readonly MeasurementRun[], detail: MeasurementDetail):
             reason: `${String(withoutSignalLedger)} verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does`,
         });
     }
+    if (runs.length === withoutSignalLedger) {
+        // Nothing fired, so nothing could be disposed of: the dispositions block is null rather than a
+        // row of zeros however many dossiers were read.
+        figures.push({
+            figure: 'acrossRuns.signalDispositions',
+            reason: `no artifact read carries a signal ledger, so no fired signal could be disposed of; every figure in the dispositions block is null rather than zero`,
+        });
+    }
     const withoutFindingLedger = runs.filter((run) => run.findingOutcome === null).length;
     if (withoutFindingLedger > 0) {
         figures.push({

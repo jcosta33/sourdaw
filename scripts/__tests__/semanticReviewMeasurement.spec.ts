@@ -22,8 +22,15 @@ import {
     SEMANTIC_REPORT_FORMAT,
     computeContextDigest,
     type SemanticRevisionInputs,
+    type UnitPriorityClass,
 } from '../semanticReview/contracts.ts';
 import { parseReportJson } from '../semanticReview/report.ts';
+import {
+    isSemanticRuleId,
+    semanticRule,
+    SEVERE_INVESTIGATION_CATEGORIES,
+    type RuleInvestigationCategory,
+} from '../semanticReview/rules.ts';
 import { buildScopeStates, type SemanticScopeStates } from '../semanticReview/scopeAccounting.ts';
 import { measureCheckout, parseCommandLine, renderMeasurementSummary } from '../semanticReviewMeasurement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
@@ -120,10 +127,47 @@ function signalRecord(fixture: SignalFixture): unknown {
         probability: recommend ? 0.9 : 0.1,
         confidence: 0,
         disposition: fixture.disposition,
-        investigationCategory: 'test-validity',
+        // A real signal carries the rule's own category, and the plan's class re-derives severity from
+        // it, so the fixture reads the same table the producer does rather than inventing one.
+        investigationCategory: categoryOf(fixture.ruleId),
         missingEvidence: missing,
         reasoning: 'fixture',
     };
+}
+
+/** The escalation categories, read as a set so a rule's category joins by membership, never by a cast. */
+const SEVERE_CATEGORIES: ReadonlySet<string> = new Set(SEVERE_INVESTIGATION_CATEGORIES);
+
+/** The investigation category of one rule, from the trusted table, so a fixture cannot invent one. */
+function categoryOf(ruleId: string): RuleInvestigationCategory {
+    if (!isSemanticRuleId(ruleId)) {
+        throw new Error(`fixture rule id ${ruleId} is not a known semantic rule`);
+    }
+    return semanticRule(ruleId).investigationCategory;
+}
+
+/**
+ * The class the producer would place one planned unit in, read from the rules the entry publishes: a
+ * severe rule's category is what makes a unit severe, and the fixture's paths are production material.
+ */
+function fixturePriorityClass(ruleIds: readonly string[]): UnitPriorityClass {
+    return ruleIds.some((ruleId) => SEVERE_CATEGORIES.has(categoryOf(ruleId))) ? 'severe-production' : 'production';
+}
+
+/**
+ * The answerable count the producer would publish for one planned entry: the rules whose best pass
+ * carries all their required evidence, which is what a signal without missing evidence records. An entry
+ * no signal names was omitted before any request, so the fixture leaves every rule of it answerable.
+ */
+function fixtureAnswerableRules(input: {
+    readonly ruleIds: readonly string[];
+    readonly signalled: boolean;
+    readonly cleanSignals: number;
+}): number {
+    if (!input.signalled) {
+        return input.ruleIds.length;
+    }
+    return input.cleanSignals;
 }
 
 /** The band the validator's own interpretation would reach: withheld evidence outranks any answer. */
@@ -156,11 +200,23 @@ function scanFixture(input: ScanFixtureInput): unknown {
     // A planned unit's rule set is published only when the report carries an order; the fixture adds
     // the field only then, so a report without one is the older shape rather than an empty order.
     if (input.requestOrder !== undefined) {
+        const signalledPaths = new Set(input.signals.map((signal) => signal.path));
+        const cleanSignals = new Map<string, number>();
+        for (const signal of input.signals) {
+            if (listOf(signal.missingEvidence).length > 0) {
+                continue;
+            }
+            cleanSignals.set(signal.path, (cleanSignals.get(signal.path) ?? 0) + 1);
+        }
         scope.requestOrder = input.requestOrder.map((entry) => ({
             path: entry.path,
-            priorityClass: 'production',
+            priorityClass: fixturePriorityClass(entry.ruleIds),
             missingRequiredEvidenceTokens: 0,
-            answerableRules: entry.ruleIds.length,
+            answerableRules: fixtureAnswerableRules({
+                ruleIds: entry.ruleIds,
+                signalled: signalledPaths.has(entry.path),
+                cleanSignals: cleanSignals.get(entry.path) ?? 0,
+            }),
             ruleIds: [...entry.ruleIds],
         }));
     }
@@ -590,6 +646,28 @@ describe('evidence completeness', () => {
 
         expect(measure(root).acrossRuns.evidence.limitationsByText).toEqual({
             'evidence for src/a.ts did not fit the per-request state budget: 2 region(s) were not sent': 2,
+        });
+    });
+
+    it('counts a limitation text once per run however often that run repeated it', () => {
+        // The figure is the number of runs that recorded the text, not the number of occurrences: the
+        // fixture path already dedups with a Set, and a report that repeats a limitation in one run is
+        // still one run that recorded it.
+        const root = checkout();
+        const repeated = 'evidence for src/a.ts was not supplied: it exceeds the per-region budget';
+        const signals = [
+            { path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'no_additional_recommendation' as const },
+        ];
+        writeSidecar(
+            root,
+            'scan-1',
+            scanFixture({ headSha: HEAD_ONE, signals, limitations: [repeated, repeated, 'a second text'] })
+        );
+        writeSidecar(root, 'scan-2', scanFixture({ headSha: HEAD_TWO, signals, limitations: [repeated] }));
+
+        expect(measure(root).acrossRuns.evidence.limitationsByText).toEqual({
+            'a second text': 1,
+            [repeated]: 2,
         });
     });
 });
@@ -1029,11 +1107,10 @@ describe('the record itself', () => {
 
 /**
  * The advisory semantic review scans every changed TypeScript file with the trusted snapshot's import
- * scanner, and that scanner ends the process with `Maximum call stack size exceeded` on one shape this
- * lane's entry briefly carried: a division after a parenthesized member expression inside a template
- * interpolation (`${(a.b / c)}`). The defect is in `snapshotImportSpecifiers`, not here, and these
- * sources must not feed it until it is fixed — a red advisory check on this lane is what this case
- * catches, and it stays true after the fix.
+ * scanner, and these are the measurement entry's own sources. The scanner once ended the process with
+ * `Maximum call stack size exceeded` on a division after a parenthesized member expression inside a
+ * template interpolation (#4934), which cost the review its assessment of any change carrying the shape;
+ * an earlier revision of these sources carried it, so the case keeps them scanned rather than described.
  */
 describe("the trusted import scanner reads this lane's sources", () => {
     it.each([
@@ -1325,6 +1402,21 @@ describe('the field legend', () => {
         expect(legend).toContain('#signals[].ruleId');
         expect(legend).toContain('#outcomes[].ruleId');
     });
+
+    it('names the fixture fields the coverage figures are read from, not the ones they are not', () => {
+        // `#rulesAsked` is validated but never read: asked coverage is derived from the fixture's own
+        // outcomes and missing evidence, so a reader reproducing it from this legend would get the
+        // contradiction the derivation removed.
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+
+        const legend = measure(root, { detail: 'runs' }).fieldSources['runs[].ruleCoverage'];
+
+        expect(legend).toContain('#outcomes[].ruleId');
+        expect(legend).toContain('#missingEvidenceByRule');
+        expect(legend).toContain('#rulesNotAsked[].{ruleId,missingEvidence}');
+        expect(legend).not.toContain('#rulesAsked');
+    });
 });
 
 describe('a measurement that carries no signal ledger', () => {
@@ -1356,6 +1448,28 @@ describe('a measurement that carries no signal ledger', () => {
 
         expect(summary).toContain('signals: no artifact read carries a signal ledger');
         expect(summary).toContain('finding dispositions: ready_for_orchestrator_validation 2');
+    });
+
+    it('publishes null dispositions with the gap named rather than a row of zeros', () => {
+        // Nothing fired in these runs, so nothing could be disposed of. A zero recorded, zero dismissed
+        // row would read as a round that dismissed nothing, which is a different claim.
+        const record = measure(verificationOnlyRoot(), { detail: 'aggregate' });
+
+        expect(record.acrossRuns.signalDispositions).toEqual({
+            recorded: null,
+            byToken: null,
+            dismissedFiredSignals: null,
+            undismissedFiredSignals: null,
+            withoutDossier: null,
+        });
+        expect(record.notComputable.map((entry) => entry.figure)).toContain('acrossRuns.signalDispositions');
+    });
+
+    it('says the dispositions are not computable in the summary instead of printing zeros', () => {
+        const summary = renderMeasurementSummary(measure(verificationOnlyRoot(), { detail: 'aggregate' }));
+
+        expect(summary).toContain('dispositions: no artifact read carries a signal ledger');
+        expect(summary).not.toContain('dispositions: 0 recorded');
     });
 });
 
@@ -1432,6 +1546,45 @@ describe('the fixture label against the fixture ledger', () => {
 
         expect(record.acrossRuns.labelledExpectations).toEqual({ held: 1, total: 1, notAssessed: 1 });
         expect(record.acrossRuns.executionStates).toEqual({ completed: 1, unavailable: 1 });
+    });
+
+    it('keeps a completed fixture that never asked its labelled rule out of the held rate', () => {
+        // The runner's own execution state says the run finished, not that the question was put: the
+        // second fixture completed while its ledger records its labelled rule as unasked, so its label
+        // is an absent answer and belongs in notAssessed beside the unassessed fixture.
+        const root = checkout();
+        const evaluationPath = join(root, 'evaluation.json');
+        writeFileSync(
+            evaluationPath,
+            `${JSON.stringify(
+                {
+                    outcomes: [
+                        (evaluationOutcome() as { outcomes: unknown[] }).outcomes[0],
+                        (
+                            evaluationOutcome({
+                                fixtureId: 'fixture-2',
+                                execution: 'completed',
+                                expectedConcernHeld: true,
+                                missingEvidenceByRule: { assertion_deleted: ['after source'] },
+                            }) as { outcomes: unknown[] }
+                        ).outcomes[0],
+                    ],
+                },
+                null,
+                4
+            )}\n`
+        );
+
+        const record = measure(root, { evaluationPath, detail: 'aggregate' });
+
+        expect(record.acrossRuns.labelledExpectations).toEqual({ held: 1, total: 1, notAssessed: 1 });
+        // The ledger is what decides: the second fixture's own rule went unasked, and only the first
+        // asked the rule it labelled.
+        expect(record.acrossRuns.ruleCoverage.askedRules).toBe(1);
+        expect(record.acrossRuns.ruleCoverage.notAskedByRule).toEqual({
+            assertion_deleted: 1,
+            timing_semantics_changed: 2,
+        });
     });
 
     it('reads asked and not-asked from the fixture ledger, so one rule cannot be both', () => {
