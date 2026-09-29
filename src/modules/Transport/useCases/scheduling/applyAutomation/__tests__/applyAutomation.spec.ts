@@ -1181,7 +1181,7 @@ describe('applyAutomation', () => {
             expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', expect.any(Number));
         });
 
-        it('does not dispatch on a fresh lane when the target already equals the seeded previous (within epsilon)', () => {
+        it('writes a fresh flat lane once on entry and does not repeat while the value holds', () => {
             mutableTrackStore.value = {
                 tracks: [
                     {
@@ -1208,14 +1208,21 @@ describe('applyAutomation', () => {
                     },
                 ],
             };
-            // First tick: laneSlew is empty so prev = `?? value` = value, and
-            // slewStep(value, value) === value → |smoothed - prev| == 0 <= epsilon,
-            // so the dispatch branch is skipped (the device path's symmetric guard).
+            // #4911: the entry tick snaps to the target and writes it once —
+            // a fresh flat lane used to seed its slew at the target and never
+            // write at all. The change gate's surviving subject is what the
+            // second tick locks: a value the engine already holds is not sent
+            // again (the device path's symmetric guard).
             vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5);
 
             applyAutomation(0);
 
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
+            expect(updateMidiFxParam).toHaveBeenCalledTimes(1);
+            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', 0.5);
+
+            applyAutomation(1);
+
+            expect(updateMidiFxParam).toHaveBeenCalledTimes(1);
         });
     });
 

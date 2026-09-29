@@ -129,6 +129,7 @@ import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
+import { initGrandBouleDocumentReconciliation } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
@@ -621,6 +622,11 @@ initBacteriaSubscribers({ eventBus, logger });
 // `modAssignments` is a routing table, not a number `parameterValues` can hold.
 initBacteriaModAssignmentsPersistence();
 composeGrandBoule({ eventBus, logger });
+// Beside the load subscriber it mirrors: a peer's device-state commit, an undo,
+// or a bulk load rewrites the document without re-running any app action, so the
+// per-device store needs this document-origin trigger to stay out of the
+// stale-mirror window #4894 describes.
+initGrandBouleDocumentReconciliation();
 initCrumbsDeviceStatePersistence();
 // The native Crumbs instance follows the device's presence on the project, not
 // the panel's mount: the mapper splices a Crumbs device onto its strip by the

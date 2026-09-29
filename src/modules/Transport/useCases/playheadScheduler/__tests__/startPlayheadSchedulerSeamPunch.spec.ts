@@ -9,11 +9,11 @@ import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 /**
- * Seam coverage for the playhead scheduler, driven through the REAL
- * `scheduleMidiNotes` (the sibling `startPlayheadScheduler.spec.ts` mocks it, so
- * it can only observe that scheduling was requested, never what came out).
- * Everything below the note dispatch is stubbed, so `scheduleNote` is the
- * observation point: every assertion here is about a note the engine was
+ * Seam and late-wrap punch coverage for the playhead scheduler, driven through
+ * the REAL `scheduleMidiNotes` (the sibling `startPlayheadScheduler.spec.ts`
+ * mocks it, so it can only observe that scheduling was requested, never what
+ * came out). Everything below the note dispatch is stubbed, so `scheduleNote`
+ * is the observation point: every assertion here is about a note the engine was
  * actually told to play, at the audio-clock time it was told to play it.
  */
 
@@ -270,30 +270,34 @@ async function runUntilWraps(worker: SchedulerWorkerHarness, wrapsWanted: number
     expect(wraps).toBe(wrapsWanted);
 }
 
+function resetPunchHarness(): void {
+    vi.clearAllMocks();
+    evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
+    tempoMapStoreState.value = { changes: [] };
+    midiStoreState.value = null;
+    // Module-global metronome dedup state; carried between tests otherwise.
+    metronomeSchedulingState.lastBeat = -1;
+    metronomeSchedulingState.firedClickTimes.clear();
+    punchClock.start.length = 0;
+    punchClock.stop.length = 0;
+    ctxTime.now = 0;
+    schedulerTickSequence = 0;
+    disposePlayheadScheduler();
+    vi.stubGlobal(
+        'Worker',
+        class {
+            onmessage: ((event: { data: unknown }) => void) | null = null;
+            postMessage = vi.fn();
+            terminate = vi.fn();
+            addEventListener = vi.fn();
+            removeEventListener = vi.fn();
+        }
+    );
+}
+
 describe('startPlayheadScheduler punch across the loop seam', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
-        evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
-        tempoMapStoreState.value = { changes: [] };
-        midiStoreState.value = null;
-        // Module-global metronome dedup state; carried between tests otherwise.
-        metronomeSchedulingState.lastBeat = -1;
-        metronomeSchedulingState.firedClickTimes.clear();
-        punchClock.start.length = 0;
-        punchClock.stop.length = 0;
-        ctxTime.now = 0;
-        schedulerTickSequence = 0;
-        disposePlayheadScheduler();
-        vi.stubGlobal(
-            'Worker',
-            class {
-                onmessage: ((event: { data: unknown }) => void) | null = null;
-                postMessage = vi.fn();
-                terminate = vi.fn();
-                addEventListener = vi.fn();
-                removeEventListener = vi.fn();
-            }
-        );
+        resetPunchHarness();
     });
 
     afterEach(() => {
@@ -395,6 +399,127 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
         expect(punchClock.stop).toHaveLength(1);
         expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 56, 3);
         expect(punchClock.stop[0]! - punchClock.start[0]!).toBeCloseTo(TICK_SECONDS * 28, 3);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+});
+
+/**
+ * #4905 — the late wrap serves regions at or below the scheduler look-ahead
+ * (0.2 beats at 120 BPM), where no seam is ever scheduled: `seamCapableRegion`
+ * is false and every wrap goes through the post-crossing path. That path
+ * replaces the scanned position with the incoming pass's overshoot BEFORE the
+ * punch checks run, so the scan never revisits the dying pass's tail — where a
+ * punch-out at or inside the region end lives. On the unfixed tree such a
+ * punch-out never fires and the recording runs unbounded. The tick stride
+ * (0.14 beats) exceeds the whole region, so every tick is a wrap and the
+ * wrapped scan cycle is ~0.04, ~0.08, ~0.02, ~0.06 and a fifth landing near
+ * zero.
+ */
+describe('startPlayheadScheduler punch at the late wrap on a sub-look-ahead region', () => {
+    const LOOP_START_BEAT = 0;
+    const LOOP_END_BEAT = 0.1;
+    const PUNCH_IN_BEAT = 0.02;
+    const PUNCH_OUT_AT_END_BEAT = 0.1;
+    const PUNCH_OUT_BEFORE_END_BEAT = 0.09;
+    const TICKS = 10;
+
+    async function runTicks(worker: SchedulerWorkerHarness, count: number): Promise<void> {
+        for (let tick = 0; tick < count; tick++) {
+            await runTick(worker);
+        }
+    }
+
+    function punchInsAt(anchorBeat: number): number {
+        return vi
+            .mocked(startRecording)
+            .mock.calls.filter(([beat]) => beat !== undefined && Math.abs(beat - anchorBeat) < 1e-6).length;
+    }
+
+    function punchOutsAt(atBeat: number): number {
+        return vi
+            .mocked(stopRecording)
+            .mock.calls.filter(([beat]) => beat !== undefined && Math.abs(beat - atBeat) < 1e-6).length;
+    }
+
+    beforeEach(() => {
+        resetPunchHarness();
+    });
+
+    afterEach(() => {
+        disposePlayheadScheduler();
+        vi.unstubAllGlobals();
+    });
+
+    // The punch-out sits exactly on loopEnd. The wrapped scan can never reach
+    // it (every wrapped position is below loopEnd), so only a punch-out due at
+    // the wrap itself can close the recording. Asserted as a law rather than
+    // exact counts: how many of the five scan landings fall inside the punch
+    // region depends on which side of zero the fifth one's float dust lands,
+    // but every pass the state machine opens must close at that pass's wrap.
+    it('closes the punch recording at every wrap when the punch-out sits at loopEnd', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: LOOP_START_BEAT,
+            isLooping: true,
+            loopStart: LOOP_START_BEAT,
+            loopEnd: LOOP_END_BEAT,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_BEAT,
+            punchOutBeat: PUNCH_OUT_AT_END_BEAT,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await runTicks(worker, TICKS);
+
+        // The state machine re-arms across passes: the first wrap closes the
+        // recording and the next in-region scan opens it again. Unfixed, the
+        // first punch-in ran unbounded — one punch-in, zero punch-outs.
+        expect(punchInsAt(PUNCH_IN_BEAT)).toBeGreaterThanOrEqual(2);
+        // Every opened pass closed at its wrap.
+        expect(punchOutsAt(PUNCH_OUT_AT_END_BEAT)).toBe(punchInsAt(PUNCH_IN_BEAT));
+        expect(punchOutsAt(PUNCH_OUT_AT_END_BEAT)).toBeGreaterThanOrEqual(2);
+        // Every punch-in is anchored at the region start — the max of the
+        // punch point and the wrapped window's opening at loopStart.
+        expect(vi.mocked(startRecording).mock.calls.length).toBe(punchInsAt(PUNCH_IN_BEAT));
+        // The first punch-out is due at the very next wrap after the punch-in:
+        // tick 1 opens, tick 2 wraps and must fire it.
+        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 2, 3);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // Companion: the punch-out sits strictly inside the region. Honest note
+    // from the unfixed tree: it does eventually fire there — but only when a
+    // wrapped scan landing just under loopEnd happens to clear the punch-out
+    // beat, which on this geometry is ticks 5 and 10. The first punch-out
+    // lands three wraps after it was due (~0.35 s instead of the wrap at
+    // ~0.14 s), with the recording capturing past its punch-out point the
+    // whole time, and only 2 of the 4 passes the state machine should cycle
+    // actually happen. Fixed, it is due at the first wrap like any other.
+    it('closes the punch recording at the wrap when the punch-out sits just before loopEnd', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: LOOP_START_BEAT,
+            isLooping: true,
+            loopStart: LOOP_START_BEAT,
+            loopEnd: LOOP_END_BEAT,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_BEAT,
+            punchOutBeat: PUNCH_OUT_BEFORE_END_BEAT,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await runTicks(worker, TICKS);
+
+        // Both scan landings that miss the punch region (the ~zero and the
+        // just-below-loopEnd one) are settled here: the open/close cycle is
+        // strictly alternating over ten ticks.
+        expect(punchInsAt(PUNCH_IN_BEAT)).toBe(4);
+        expect(punchOutsAt(PUNCH_OUT_BEFORE_END_BEAT)).toBe(4);
+        // The first punch-out is due at the first wrap after the punch-in, not
+        // at a later scan landing.
+        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 2, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 });
