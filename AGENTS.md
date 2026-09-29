@@ -340,6 +340,9 @@ clean. Infrastructure retries discharge nothing: a retry-dependent pass is a fla
 same duty as failure. Without relevant change, a vanished failure is a defect (race, ordering,
 isolation, leaked state, or environment); fix it, open a lane, or file it. Green-by-retry launders
 failure like weakened tests. DAW concurrency and scheduling make flakes likely real timing defects.
+For a pull request blocked by a filed failure, use the
+[failed-Gate recovery procedure](./.agents/skills/delivery-orchestration/SKILL.md#recovering-a-blocked-gate);
+a retry never authorizes delivery.
 
 ## Map
 

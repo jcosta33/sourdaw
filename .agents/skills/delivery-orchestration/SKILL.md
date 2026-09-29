@@ -553,6 +553,32 @@ Dormant required-CI admission retains pinned workflow-derived gate and
 complete-rollup rules from the launcher's pinned `origin/main` workflow copy;
 lanes cannot select or reshape it.
 
+### Recovering a blocked Gate
+
+When a required check fails because of a filed defect, preserve the original
+evidence with the owning issue: the run URL and attempt, full head SHA, failed
+check and matrix shard, relevant failure excerpt, and any retained artifacts.
+Keep that failed run attached to the original head. A matching issue, a green
+nightly, or a later successful attempt alone does not establish recovery.
+
+Verify that a fix changes the cause in the code or check scope and that a
+regression test exercises the reported failure conditions and outcome. For a
+scope defect, inspect the changed-path decision and prove the resulting `Gate`
+still requires every selected check. A filed issue or a change that merely
+touches a nearby path is not this proof. If no relevant fix is available, leave
+the pull request blocked and the cause issue open with the failure evidence;
+there is no retry, empty commit, scope exception, or delivery waiver.
+
+After the verified fix lands on `main`, check whether its commit is already in
+the blocked pull-request lane. If it is absent, merge that actual fix from
+`main` into the owned lane. This is justified only when the fix changes the code
+or scope that produced the failure. Do not rebase or add an empty commit to
+trigger another run. Publish the resulting head through `lane:publish`, then
+require a fresh `Gate` on that changed code and a fresh review of the new head
+before delivery. If the new check fails, retain the new failure as evidence and
+continue fixing the cause; do not rerun it to obtain green. Diagnostic retries
+never replace the original failure or authorize `deliver`.
+
 ### Refusals and retries
 
 GitHub structural mergeability independently gates base compatibility: delivery
