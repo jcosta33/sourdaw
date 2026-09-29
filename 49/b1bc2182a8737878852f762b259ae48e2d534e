@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_ed5aa36a3ba357::t_78d26cf6196484 1342,1344-1347,1353-1355,1882
+  s_ed5aa36a3ba357::t_a5d9dcac2eaa1a 1343,1348-1352
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_ed5aa36a3ba357::t_b0bb37dcce3d74 303
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_a778eb96df4881 3229-3236,3245-3256,3268-3270,3274-3297,3300,3318-3320
+  s_ed5aa36a3ba357::t_759ad9eb2e977f 3222-3228,3237-3244,3257-3267,3271-3273,3298-3299,3301-3317,3321-3327
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_09e040d2317620 5155,5163-5175
+  s_ed5aa36a3ba357::t_92b3077fa4bae6 5179
+  s_ed5aa36a3ba357::t_cbd01baf2d2f69 5156-5162,5176-5178,5181-5182
+  s_ed5aa36a3ba357::t_b7a9524034eb9e 5183-5185
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_ed5aa36a3ba357::t_f1b955eb2915f8 264,268-270,278-279,332-333
+  s_ed5aa36a3ba357::t_b507439ae37ff3 331
+  s_ed5aa36a3ba357::t_bb5d1602d9a511 263,292-296,300-309
+  s_ed5aa36a3ba357::t_8fa8fbc7ce8d5e 310-311,322-330
+  s_ed5aa36a3ba357::t_a778eb96df4881 265-267,271-277,280-291,297-299,312-321
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_7f138916dd277e 179-183,202,221-222,227,381-386,390-392,396-399,406-410
+  s_ed5aa36a3ba357::t_a778eb96df4881 184-201,203-220,387-389,393-395,400-405
+  s_ed5aa36a3ba357::t_2341f337f98662 411-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "49b1bc2182a8737878852f762b259ae48e2d534e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
