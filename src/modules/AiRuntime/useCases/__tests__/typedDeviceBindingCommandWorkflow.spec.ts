@@ -220,12 +220,37 @@ const twoTrackOrderedProviderItems = [
     },
 ] as const;
 
-type WorkflowProviderItems =
-    | typeof providerItems
-    | typeof siblingDeviceProviderItems
-    | typeof orderedDeviceProviderItems
-    | typeof twoTrackOrderedProviderItems
-    | typeof missingAnchorDeviceProviderItems;
+const bassOrderedPrompt =
+    'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track after the Filter';
+
+const bassOrderedProviderItems = twoTrackOrderedProviderItems.map((item, index) => {
+    if (index === 3) {
+        return {
+            ...item,
+            arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'lead-compressor' },
+        };
+    }
+    if (index === 7) {
+        return {
+            ...item,
+            arguments: {
+                trackId: '$bass',
+                deviceType: 'builtin-compressor',
+                binding: 'bass-compressor',
+                afterDeviceId: '$bass-filter',
+            },
+            dependsOn: ['add-bass-filter'],
+        };
+    }
+    return item;
+});
+
+type WorkflowProviderItems = ReadonlyArray<{
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    dependsOn?: readonly string[];
+}>;
 
 const missingAnchorDeviceProviderItems = [
     orderedDeviceProviderItems[0],
@@ -401,6 +426,38 @@ describe('typed created-device binding Command workflow', () => {
             [
                 ['Lead', [leadDeviceIds[0], leadDeviceIds[2], leadDeviceIds[1]]],
                 ['Bass', bassDeviceIds],
+            ]
+        );
+        const committedTracks = structuredClone(trackStore.value?.tracks);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+    });
+
+    it('keeps a later Bass insertion anchor off the earlier Lead chain through approval and undo', async () => {
+        const revision = captureProjectRevision();
+        const workflow = materializeWorkflow(revision, bassOrderedPrompt, bassOrderedProviderItems);
+        expect(workflow.actions).toHaveLength(8);
+        expect(trackStore.value?.tracks).toEqual([]);
+        const leadDeviceIds = workflow.actions.slice(1, 4).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Lead device');
+            }
+            return action.payload.deviceId;
+        });
+        const bassDeviceIds = workflow.actions.slice(5).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Bass device');
+            }
+            return action.payload.deviceId;
+        });
+        const commandBatch = compileWorkflowCommandBatch(workflow, revision, 'bass-ordered', bassOrderedPrompt);
+        expect(await executeVersionedCommandBatchEnvelope(commandBatch)).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks.map((track) => [track.name, track.devices.map((device) => device.id)])).toEqual(
+            [
+                ['Lead', leadDeviceIds],
+                ['Bass', [bassDeviceIds[0], bassDeviceIds[2], bassDeviceIds[1]]],
             ]
         );
         const committedTracks = structuredClone(trackStore.value?.tracks);

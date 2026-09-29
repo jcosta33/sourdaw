@@ -1073,6 +1073,89 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addDevice', 'setDeviceParameter']);
     });
 
+    it('keeps a requested beat on a new MIDI track alongside the bounded Guitar treatment', () => {
+        const prompt = 'create a beat on a new MIDI track and make Guitar sound like a radio';
+        const creativeAuthority = buildAuthority({
+            mode: 'create',
+            editDimensions: ['processing', 'arrangement', 'midi-content'],
+            creationSlots: [
+                TRACK_CREATION_SLOT,
+                NESTED_CLIP_SLOT,
+                { objectType: 'device', parentObjectId: 'guitar', budget: 1 },
+            ],
+        });
+        const compiled = compileArbitraryCommandList({
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: synthPlan,
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'make-beat-track',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Beat Track', kind: 'midi', binding: 'beat-track' },
+                                },
+                                {
+                                    id: 'make-beat-clip',
+                                    name: 'addClip',
+                                    arguments: {
+                                        trackId: '$beat-track',
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        name: 'Beat',
+                                        binding: 'beat-clip',
+                                    },
+                                    dependsOn: ['make-beat-track'],
+                                },
+                                {
+                                    id: 'write-beat',
+                                    name: 'addNotes',
+                                    arguments: {
+                                        clipId: '$beat-clip',
+                                        notes: [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }],
+                                    },
+                                    dependsOn: ['make-beat-clip'],
+                                },
+                                {
+                                    id: 'treat-guitar',
+                                    name: 'addDevice',
+                                    arguments: { deviceType: 'radio-filter' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Guitar' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            context: createdDeviceContext,
+            creativeAuthority,
+            revision: PROJECT_REVISION,
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        const result = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context: createdDeviceContext,
+            creativeAuthority,
+            projectRevision: PROJECT_REVISION,
+            prompt,
+        });
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes', 'addDevice']);
+        expect(result.actionCommandGraph?.dependenciesByActionIndex[2]).toContain(1);
+        expect(result.actionCommandGraph?.dependenciesByActionIndex).toHaveLength(4);
+    });
+
     it('refuses the device past the nested slot budget and the batch that carried it', () => {
         const result = bridgeSynthProposal({
             creationSlots: [TRACK_CREATION_SLOT, NESTED_DEVICE_SLOT],

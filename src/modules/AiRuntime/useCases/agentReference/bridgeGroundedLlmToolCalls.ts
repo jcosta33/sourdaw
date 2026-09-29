@@ -26,7 +26,10 @@ import {
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
 import { isValidParameterValue } from '../../transformers/llmActionStrategies/bridgeArgumentGuards';
-import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
+import {
+    hasHighLevelContentCreationEvidence,
+    hasHighLevelCreationEvidence,
+} from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -4686,9 +4689,7 @@ function getOpenCreatedObjectRequest(
         const typedObject = Object.values(CREATED_OBJECT_NOUNS).some((noun) => noun.test(normalized));
         wholeComposition ||= !typedObject;
         nestedMidiContent ||=
-            /\b(?:create|add|write|compose|make|lay down|with)\s+(?:a|an|new|some)\s+(?:\w+\s+){0,2}(?:bass\s+lines?|drum\s+parts?|melod(?:y|ies)|grooves?|riffs?|progressions?|chords?)\b/u.test(
-                normalized
-            ) &&
+            hasHighLevelContentCreationEvidence(clause.masked) &&
             CREATED_OBJECT_NOUNS.addTrack.test(normalized) &&
             !CREATED_OBJECT_NOUNS.addClip.test(normalized);
     }
@@ -5138,6 +5139,7 @@ function getCreatedDeviceOrderingRejection(input: {
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
+    declaredBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     prompt: string;
     visibleBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
 }): string | null {
@@ -5160,13 +5162,13 @@ function getCreatedDeviceOrderingRejection(input: {
     );
     const matchingDeviceClauses = namedDeviceClauses.filter((clause) => {
         const parentClause = getCreatedParentEvidenceClause(clause, 'addDevice');
-        const namedParents = [...input.visibleBindings.values()].filter(
+        const namedParents = [...input.declaredBindings.values()].filter(
             (candidate) =>
                 (candidate.actionType === 'addTrack' || candidate.actionType === 'createBus') &&
                 hasCompleteCreatedTargetReference(
                     parentClause.text,
                     candidate,
-                    input.visibleBindings,
+                    input.declaredBindings,
                     input.context,
                     'addDevice'
                 )
@@ -6293,6 +6295,7 @@ export function bridgeGroundedLlmToolCalls({
             call,
             catalog,
             context: prospectiveContext,
+            declaredBindings: collectedBindings.bindingsByName,
             prompt,
             visibleBindings,
         });

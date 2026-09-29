@@ -3264,9 +3264,13 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
             ],
         };
-        const route = (items: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'], structured: boolean) => {
+        const route = (
+            items: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
+            structured: boolean,
+            request = prompt
+        ) => {
             if (!structured) {
-                return bridge(items, prompt, context);
+                return bridge(items, request, context);
             }
             const compiled = compileArbitraryCommandList({
                 context,
@@ -3277,7 +3281,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                         arguments: {
                             plan: {
                                 semantic: { classification: 'simple', uncertainty: [] },
-                                objective: prompt,
+                                objective: request,
                                 constraints: [],
                                 scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
                                 capabilityIds: [],
@@ -3307,7 +3311,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 compilerEvidence: compiled.compilerEvidence,
                 context,
                 projectRevision: 'revision-two-track-order',
-                prompt,
+                prompt: request,
             });
         };
         for (const structured of [false, true]) {
@@ -3322,6 +3326,33 @@ describe('bridgeGroundedLlmToolCalls', () => {
             );
             expect(invented.actions).toEqual([]);
             expect(invented.rejections).toContainEqual(expect.objectContaining({ index: 7, name: 'addDevice' }));
+
+            const laterAnchorRequest =
+                'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track after the Filter';
+            const laterAnchorCalls = calls.map((call, index) => {
+                if (index === 3) {
+                    return {
+                        name: 'addDevice',
+                        arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'lead-compressor' },
+                    };
+                }
+                if (index === 7) {
+                    return { ...call, arguments: { ...call.arguments, afterDeviceId: '$bass-filter' } };
+                }
+                return call;
+            });
+            const correctLater = route(laterAnchorCalls, structured, laterAnchorRequest);
+            expect(correctLater.rejections).toEqual([]);
+            expect(correctLater.actions).toHaveLength(8);
+            const borrowed = route(
+                laterAnchorCalls.map((call, index) =>
+                    index === 3 ? { ...call, arguments: { ...call.arguments, afterDeviceId: '$lead-filter' } } : call
+                ),
+                structured,
+                laterAnchorRequest
+            );
+            expect(borrowed.actions).toEqual([]);
+            expect(borrowed.rejections).toContainEqual(expect.objectContaining({ index: 3, name: 'addDevice' }));
         }
     });
 
