@@ -366,7 +366,10 @@ fired signal — the signal's `ruleId` and `path`, a `disposition` of
 single-line `artifact` reference — an issue number or URL, a reviewer finding,
 a repair commit, or a regression test path. Every disposition disposes of the
 signal it names, so a round records what it found without agreeing with the
-assessment, and the literal token keeps working. The read is structural: an
+assessment, and the literal token keeps working. An entry matches by that exact
+rule-and-path pair rather than by the space-joined citation text, and a
+free-text citation disposes only as a whole citation, so a longer path's token
+never disposes a shorter one. The read is structural: an
 unknown token, an entry naming a signal the delivered record did not fire, two
 entries for one signal, or any entry when the record delivered nothing
 (`no-assessment`) is refused; no disposition requires a posted comment or an

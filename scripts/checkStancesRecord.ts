@@ -14,9 +14,10 @@
  * Boundaries. This is an orchestrator-side advisory probe, not a trusted delivery script: it
  * writes nothing, reads only the bundle it is given, and its verdict only names lines for repair —
  * the acceptance duty itself stays with the orchestrator. The API key is read from the environment
- * only and is never printed or written. The pinned model the verdicts came from is named in the
- * run's summary line, so a recorded run identifies its judge without the reader inspecting this
- * source. The stop causes form one regime with the contract: the
+ * only and is never printed or written. The model the response carried — validated against the pin
+ * before it is used — rides into the evaluation and is named in the run's summary line, so a recorded
+ * run identifies the judge that answered without the reader inspecting this source. The stop causes
+ * form one regime with the contract: the
  * third-party classes — a missing key, an unavailable or degraded service, or a malformed response
  * — exit 1 without a verdict and are a disclosed limitation for delivery, never a pass: an
  * unjudged admission is not a clean one. The caller-side classes remain stops: an out-of-range
@@ -97,6 +98,11 @@ export type StanceVerdict = {
 };
 
 export type StancesCheckEvaluation = {
+    /**
+     * The model that answered, carried here from the validated response rather than re-read from the
+     * request pin, so a rendered outcome names the judge its verdicts actually came from.
+     */
+    model: string;
     verdicts: StanceVerdict[];
     failures: StanceVerdict[];
 };
@@ -183,10 +189,18 @@ export function buildStancesCheckBody(record: StancesCheckRecord): StancesCheckB
  * Judges every admission against its answer. A malformed answer is a stop, never a pass: a
  * judgment the service did not numerically deliver cannot stand in for one.
  */
+/**
+ * Judges every admission against its answer, carrying the model that answered into the evaluation so
+ * the rendered outcome can only name the judge the verdicts came from. The model is a required
+ * argument, never defaulted to the request pin: a caller that has not read the responder's own model
+ * cannot render an outcome. A malformed answer is a stop, never a pass: a judgment the service did
+ * not numerically deliver cannot stand in for one.
+ */
 export function evaluateStancesCheck(
     answers: unknown,
     threshold: number,
-    admissions: readonly StanceAdmission[]
+    admissions: readonly StanceAdmission[],
+    model: string
 ): StancesCheckEvaluation {
     if (!isRecord(answers)) {
         fail(`TypeSafe response answers must be an object, found ${describeValue(answers)}`);
@@ -206,7 +220,7 @@ export function evaluateStancesCheck(
             passes: noul >= threshold,
         };
     });
-    return { verdicts, failures: verdicts.filter((verdict) => !verdict.passes) };
+    return { model, verdicts, failures: verdicts.filter((verdict) => !verdict.passes) };
 }
 
 export function parseStancesCheckThreshold(raw: string | undefined): number {
@@ -223,11 +237,13 @@ function truncateAdmission(text: string): string {
 }
 
 /**
- * The checker's rendered outcome: one line per admission, then one summary line naming the pinned
- * model every verdict came from and the threshold they were judged against. The summary is where a
- * recorded run identifies its judge without the reader inspecting the source, so the model rides
- * both the pass line and the below-threshold failure line. The exit status is the caller's; a
- * failure renders on the error channel and still names each failing stance with its probability.
+ * The checker's rendered outcome: one line per admission, then one summary line naming the model
+ * every verdict came from — `evaluation.model`, the responder's own model as the validated response
+ * carried it, never the request pin re-read here — and the threshold they were judged against. The
+ * summary is where a recorded run identifies its judge without the reader inspecting the source, so
+ * the model rides both the pass line and the below-threshold failure line. The exit status is the
+ * caller's; a failure renders on the error channel and still names each failing stance with its
+ * probability.
  */
 export function renderStancesCheckOutcome(
     evaluation: StancesCheckEvaluation,
@@ -244,13 +260,13 @@ export function renderStancesCheckOutcome(
         return {
             stdout,
             stderr: [
-                `stances:check: ${String(evaluation.failures.length)} of ${String(evaluation.verdicts.length)} admission line(s) fall below threshold ${String(threshold)} (model ${TYPESAFE_STANCES_MODEL}): ${named}`,
+                `stances:check: ${String(evaluation.failures.length)} of ${String(evaluation.verdicts.length)} admission line(s) fall below threshold ${String(threshold)} (model ${evaluation.model}): ${named}`,
             ],
             passed: false,
         };
     }
     stdout.push(
-        `stances:check: all ${String(evaluation.verdicts.length)} admission line(s) at or above threshold ${String(threshold)} (model ${TYPESAFE_STANCES_MODEL})`
+        `stances:check: all ${String(evaluation.verdicts.length)} admission line(s) at or above threshold ${String(threshold)} (model ${evaluation.model})`
     );
     return { stdout, stderr: [], passed: true };
 }
@@ -364,18 +380,22 @@ async function requestStancesVerdicts(body: StancesCheckBody, apiKey: string): P
 }
 
 /**
- * The response's `answers` member — the per-question judgments keyed by index — lifted out of the
- * response envelope (`model`, `answers`, `usage`). A payload without that member is a malformed
- * response and a stop: no member can stand in for a judgment that was never delivered.
+ * The response envelope's own members, lifted and validated: the `model` the service answered with
+ * and the per-question judgments keyed by index. A payload without an `answers` member is a malformed
+ * response and a stop, and a payload whose `model` is not the pin is refused outright — the pin is
+ * versioned, so a provider or environment default can never silently select another model. The
+ * returned `model` is the responder's own value, which the evaluation and the rendered outcome carry,
+ * so the run names the judge that actually answered rather than the constant it asked for.
  */
-export function readStancesCheckAnswers(payload: unknown): unknown {
+export function readStancesCheckAnswers(payload: unknown): { model: string; answers: unknown } {
     if (!isRecord(payload) || !isRecord(payload.answers)) {
         fail(`TypeSafe response must carry an answers object, found ${describeValue(payload)}`);
     }
-    if (payload.model !== TYPESAFE_STANCES_MODEL) {
-        fail(`TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found ${describeValue(payload.model)}`);
+    const model = payload.model;
+    if (model !== TYPESAFE_STANCES_MODEL) {
+        fail(`TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found ${describeValue(model)}`);
     }
-    return payload.answers;
+    return { model, answers: payload.answers };
 }
 
 async function runCheck(argv: readonly string[]): Promise<number> {
@@ -385,7 +405,8 @@ async function runCheck(argv: readonly string[]): Promise<number> {
     const stancesPath = join(bundlePath, STANCES_FILE_NAME);
     const record = readStancesCheckRecord(readStancesJson(stancesPath), stancesPath);
     const payload = await requestStancesVerdicts(buildStancesCheckBody(record), apiKey);
-    const evaluation = evaluateStancesCheck(readStancesCheckAnswers(payload), threshold, record.admissions);
+    const response = readStancesCheckAnswers(payload);
+    const evaluation = evaluateStancesCheck(response.answers, threshold, record.admissions, response.model);
     const outcome = renderStancesCheckOutcome(evaluation, threshold);
     for (const line of outcome.stdout) {
         console.log(line);

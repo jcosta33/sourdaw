@@ -39,10 +39,15 @@
  * one of the five dispositions — and its disposal power is unconditional: every disposition,
  * including `false-positive`, `insufficient-evidence` and `not-investigated`, disposes of the signal
  * it names, so a round is never pushed to agree with the model or to write prose to dismiss a false
- * alarm. Two checks are coverage-relative, because only the delivered record knows what fired: an
+ * alarm. Matching is by identity, never by text: an entry disposes of the one fired signal with the
+ * identical rule and the identical path, so a longer path whose citation token contains a shorter
+ * one's cannot dispose of the shorter signal, and two pairs whose space-joined tokens collide stay
+ * distinct. Two checks are coverage-relative, because only the delivered record knows what fired: an
  * entry naming a signal the assessment did not fire is refused, and a record that delivered nothing
  * (`no-assessment`) refuses any entry at all — the round cannot record outcomes for signals that were
- * never delivered.
+ * never delivered. The free-text citation token is likewise whole-citation only: it disposes of a
+ * signal when it ends the text or is followed by a character no repository path continues with, so a
+ * token that is merely the prefix of a longer path's citation names that longer signal instead.
  */
 
 import { fail } from './prContract.ts';
@@ -237,25 +242,57 @@ export function firedSignalCitationToken(signal: { readonly ruleId: string; read
 }
 
 /**
- * Every caller-authored text a fired signal's disposal token may appear in: the dispatched stances'
- * `admittedBy` lines (travelled in from the bundle's stances.json), the discarded findings' text,
- * the dossier's limitations, and the typed outcome entries — each entry names its signal exactly, so
- * its own token disposes of it whatever disposition it records.
+ * The identity a typed outcome entry and a fired signal share. The space-joined citation token cannot
+ * serve as one: rule `a b` with path `c` and rule `a` with path `b c` join to the same string, and a
+ * longer path's token contains a shorter path's. Entries therefore match on this key — the same
+ * unambiguous key the record reader already dedupes them by — so an entry disposes of the one fired
+ * signal with the identical rule and the identical path, and of nothing else.
  */
-function firedSignalDisposals(dossier: ReviewDossier, stanceAdmissions: readonly string[]): readonly string[] {
+function firedSignalIdentity(signal: { readonly ruleId: string; readonly path: string }): string {
+    return JSON.stringify([signal.ruleId, signal.path]);
+}
+
+/**
+ * The characters that can continue a repository path. A citation followed by one of them belongs to a
+ * longer path — the token `semantic-signal rule src/a.ts` sits inside `semantic-signal rule
+ * src/a.ts/extra` — and so names a different signal. Only a citation that ends the text or is
+ * followed by any other character (whitespace, punctuation, a closing quote) is a whole citation.
+ */
+const PATH_CONTINUATION = /^[A-Za-z0-9._~+/@-]$/u;
+
+/** Whether `text` carries `token` as a whole citation, never as the prefix of a longer path's. */
+function citesWholeCitation(text: string, token: string): boolean {
+    let index = text.indexOf(token);
+    while (index !== -1) {
+        const following = text[index + token.length];
+        if (following === undefined || !PATH_CONTINUATION.test(following)) {
+            return true;
+        }
+        index = text.indexOf(token, index + 1);
+    }
+    return false;
+}
+
+/**
+ * Every caller-authored free text a fired signal's citation token may appear in: the dispatched
+ * stances' `admittedBy` lines (travelled in from the bundle's stances.json), the discarded findings'
+ * text, and the dossier's limitations. Typed outcome entries are deliberately not here: they match by
+ * signal identity rather than by text, so a token collision cannot dispose of another signal.
+ */
+function firedSignalCitations(dossier: ReviewDossier, stanceAdmissions: readonly string[]): readonly string[] {
     return [
         ...stanceAdmissions,
         ...discardedDispositions(dossier).map((entry) => entry.findingId),
         ...dossier.limitations,
-        ...(dossier.signalDispositions ?? []).map((entry) => firedSignalCitationToken(entry)),
     ];
 }
 
 /**
- * An entry names a signal the delivered assessment actually fired: the pair is the signal's identity
- * in the record, so the comparison is exact and never fuzzy. A round cannot record an outcome for
- * something the assessment never asked it to look at, and the refusal lists every such entry by its
- * token so the repair is writable from the message alone.
+ * An entry names a signal the delivered assessment actually fired: the identity key is the signal's
+ * identity in the record, so the comparison is exact and never fuzzy — two pairs whose citation
+ * tokens collide are still different signals. A round cannot record an outcome for something the
+ * assessment never asked it to look at, and the refusal lists every such entry by its rule and path
+ * so the repair is writable from the message alone.
  */
 function assertSignalDispositionsFired(
     dossier: ReviewDossier,
@@ -265,12 +302,12 @@ function assertSignalDispositionsFired(
     if (entries.length === 0) {
         return;
     }
-    const fired = new Set(coverage.firedSignals.map((signal) => firedSignalCitationToken(signal)));
-    const unfired = entries.filter((entry) => !fired.has(firedSignalCitationToken(entry)));
+    const fired = new Set(coverage.firedSignals.map((signal) => firedSignalIdentity(signal)));
+    const unfired = entries.filter((entry) => !fired.has(firedSignalIdentity(entry)));
     if (unfired.length === 0) {
         return;
     }
-    const listed = unfired.map((entry) => firedSignalCitationToken(entry)).join('; ');
+    const listed = unfired.map((entry) => `${entry.ruleId} at ${entry.path}`).join('; ');
     fail(
         `review dossier signalDispositions names ${String(unfired.length)} signal(s) the delivered assessment did not fire (${listed}): record an outcome only for a signal the delivered record carries`
     );
@@ -295,11 +332,11 @@ function assertNoSignalDispositions(
 }
 
 /**
- * A fired signal is disposed of only when its token appears in one of the caller-authored surfaces,
- * or when a typed outcome entry names it. The duty is independent of the impact and of the
- * withheld/unresolved citation rule: `none` plus an `assessmentIgnoredReason` acknowledges the
- * assessment as a whole, and never names the specific thing it fired at. The refusal names every
- * undisposed signal's rule and path so the repair is writable from the message alone.
+ * A fired signal is disposed of when a typed outcome entry carries its identity, or when its citation
+ * token stands as a whole citation in one of the caller-authored texts. The duty is independent of
+ * the impact and of the withheld/unresolved citation rule: `none` plus an `assessmentIgnoredReason`
+ * acknowledges the assessment as a whole, and never names the specific thing it fired at. The refusal
+ * names every undisposed signal's rule and path so the repair is writable from the message alone.
  */
 function assertFiredSignalsDisposed(
     dossier: ReviewDossier,
@@ -309,9 +346,12 @@ function assertFiredSignalsDisposed(
     if (coverage.firedSignals.length === 0) {
         return;
     }
-    const disposals = firedSignalDisposals(dossier, stanceAdmissions);
+    const citations = firedSignalCitations(dossier, stanceAdmissions);
+    const recorded = new Set((dossier.signalDispositions ?? []).map((entry) => firedSignalIdentity(entry)));
     const undisposed = coverage.firedSignals.filter(
-        (signal) => !disposals.some((text) => text.includes(firedSignalCitationToken(signal)))
+        (signal) =>
+            !recorded.has(firedSignalIdentity(signal)) &&
+            !citations.some((text) => citesWholeCitation(text, firedSignalCitationToken(signal)))
     );
     if (undisposed.length === 0) {
         return;

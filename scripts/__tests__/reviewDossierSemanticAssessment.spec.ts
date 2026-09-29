@@ -577,7 +577,7 @@ describe('typed signal dispositions at publication', () => {
         ).not.toThrow();
     });
 
-    it('refuses an entry naming a signal the delivered assessment did not fire, listing its token', () => {
+    it('refuses an entry naming a signal the delivered assessment did not fire, listing its rule and path', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
                 dossierWith('none', {
@@ -588,7 +588,7 @@ describe('typed signal dispositions at publication', () => {
                 EXPECTED
             )
         ).toThrow(
-            /review dossier signalDispositions names 1 signal\(s\) the delivered assessment did not fire \(semantic-signal conditional_admission_added src\/modules\/audio\/take\.test\.ts\): record an outcome only for a signal the delivered record carries/u
+            /review dossier signalDispositions names 1 signal\(s\) the delivered assessment did not fire \(conditional_admission_added at src\/modules\/audio\/take\.test\.ts\): record an outcome only for a signal the delivered record carries/u
         );
     });
 
@@ -664,5 +664,153 @@ describe('typed signal dispositions at publication', () => {
                 EXPECTED
             )
         ).not.toThrow();
+    });
+});
+
+/**
+ * The two ways a space-joined citation token loses the identity its fields carry: a longer path whose
+ * token contains a shorter one, and two different pairs that join to the identical token. Both
+ * disposal paths must match on the identity, never on the text, so neither can dispose, or accept an
+ * entry for, a signal the round never named.
+ */
+describe('signal identity at publication', () => {
+    const SHORTER = { ruleId: 'admission_branch_completes_without_asserting', path: 'src/modules/audio/take.ts' };
+    const LONGER = { ...SHORTER, path: `${SHORTER.path}/extra` };
+
+    function coverageWith(
+        signals: { ruleId: string; path: string }[]
+    ): ReturnType<typeof parseSemanticAssessmentCoverage> {
+        return parseSemanticAssessmentCoverage({
+            ...DELIVERED_WITHHELD,
+            firedSignals: signals.map((signal) => ({ ...signal, probability: 0.8 })),
+        });
+    }
+
+    function entry(
+        signal: { ruleId: string; path: string },
+        disposition: ReviewDossierSignalDisposition['disposition'] = 'false-positive'
+    ): ReviewDossierSignalDisposition {
+        return { ...signal, disposition };
+    }
+
+    it('disposes only the signal whose path it names exactly when a shorter path also fired', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the longer path carries a typed outcome',
+                    dispositions: [entry(LONGER)],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\)/u
+        );
+    });
+
+    it('disposes only the shorter signal when the entry names it exactly', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the shorter path carries a typed outcome',
+                    dispositions: [entry(SHORTER, 'confirmed-and-fixed')],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\/extra\)/u
+        );
+    });
+
+    it('passes when both prefix-path signals carry their own typed outcome', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'both prefix-path signals carry typed outcomes',
+                    dispositions: [entry(SHORTER, 'confirmed-and-fixed'), entry(LONGER)],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses a free-text citation that is only the prefix of a longer path’s citation', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [`the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(LONGER)}`],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\)/u
+        );
+    });
+
+    it('disposes a shorter path from a whole citation that ends the text or the clause', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [`the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(SHORTER)}`],
+                }),
+                coverageWith([SHORTER, LONGER]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.ts\/extra\)/u
+        );
+    });
+
+    it('refuses an entry for a pair the record did not fire when two pairs join to one citation token', () => {
+        const firedPair = { ruleId: 'rule one', path: 'src/a.ts' };
+        const collidingPair = { ruleId: 'rule', path: 'one src/a.ts' };
+        // The collision is real: both pairs produce the identical space-joined citation token.
+        expect(firedSignalCitationToken(firedPair)).toBe(firedSignalCitationToken(collidingPair));
+
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the entry names the colliding pair',
+                    dispositions: [entry(collidingPair)],
+                }),
+                coverageWith([firedPair]),
+                EXPECTED
+            )
+        ).toThrow(
+            /review dossier signalDispositions names 1 signal\(s\) the delivered assessment did not fire \(rule at one src\/a\.ts\): record an outcome only for a signal the delivered record carries/u
+        );
+    });
+
+    it('disposes the fired pair of a token collision from its own identity', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the entry names the fired pair',
+                    dispositions: [entry({ ruleId: 'rule one', path: 'src/a.ts' })],
+                }),
+                coverageWith([{ ruleId: 'rule one', path: 'src/a.ts' }]),
+                EXPECTED
+            )
+        ).not.toThrow();
+    });
+
+    it('disposes only its own pair when two fired pairs join to one citation token', () => {
+        const collidingPair = { ruleId: 'rule', path: 'one src/a.ts' };
+
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', {
+                    reason: 'the entry names one of the two colliding fired pairs',
+                    dispositions: [entry({ ruleId: 'rule one', path: 'src/a.ts' })],
+                }),
+                coverageWith([{ ruleId: 'rule one', path: 'src/a.ts' }, collidingPair]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(rule at one src\/a\.ts\): name each as semantic-signal <ruleId> <path>/u
+        );
     });
 });

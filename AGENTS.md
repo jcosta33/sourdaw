@@ -89,7 +89,8 @@ The caller writes it, no script generates it, and the orchestrator confirms its 
 substance before publication. `pnpm stances:check <bundle>` tests each admission line with a typed
 judgment and fails lines that name touched paths instead of failure modes. The checker pins a
 versioned model rather than a moving alias — environment and provider defaults cannot silently select
-another, its run names the pinned model in its summary line, and changing the pin is a deliberate,
+another, its run names the model that answered, validated against that pin, in its summary line, and
+changing the pin is a deliberate,
 reviewable change. Run it before dispatch
 when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
 its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
@@ -213,7 +214,10 @@ optional `signalDispositions` list carries one entry per fired signal, each nami
 reference — an issue number or URL, a reviewer finding, a repair commit, or a regression test path —
 carrying the same evidence-value safety rules as every other recorded value. A typed entry disposes
 of the signal it names whatever disposition it records, and the literal token keeps working, so a
-round is never forced to agree with the model or to write prose to dismiss a false alarm. Validation
+round is never forced to agree with the model or to write prose to dismiss a false alarm. Entries match
+a fired signal by its exact `ruleId` and `path` pair, never by their space-joined citation text, and a
+free-text citation disposes only as a whole citation — a token that merely prefixes a longer path's
+citation names that longer signal. Validation
 is structural only: an unknown disposition token, an entry naming a signal the delivered assessment
 did not fire, two entries for one signal, or any entry when the record delivered nothing
 (`no-assessment`) is refused, and no disposition requires a posted comment or an issue — a
