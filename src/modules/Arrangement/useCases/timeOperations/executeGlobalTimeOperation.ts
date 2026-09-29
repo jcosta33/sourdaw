@@ -13,8 +13,7 @@ import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWrit
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
-import { captureTakeReKeyTransitions } from '../comping/captureTakeReKeyTransitions';
-import { collectTakeReKeyWindows } from '../comping/collectTakeReKeyWindows';
+import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
@@ -682,15 +681,13 @@ function collectRetiredClipIds(transition: ClipSatelliteTransition): readonly st
 }
 
 /**
- * The take-lane half of a delete that re-keys instead of removes (#4841): how
- * every take and comp region on the rewritten tracks follows the clips'
- * surviving fragments. The windows diff the pre-operation clips against the
- * prepared track state — the same transition `prepareDeletedTracks` committed
- * to — and the delete-right identities name the right fragments, including the
- * spanning clip's, whose own id stays on the left half. Captured alongside the
- * retirement, before any handle publishes, so the inverse plan replays the
- * exact facets — including the take ids a split minted, which a replayed redo
- * re-mints identically.
+ * The take-lane half of a delete that re-keys instead of removes (#4841): only
+ * owners that accept clip updates take part, and the re-key targets come from
+ * the delete-right identities, including the spanning clip's, whose own id
+ * stays on the left half. Captured alongside the retirement, before any handle
+ * publishes, so the inverse plan replays the exact facets — including the take
+ * ids a split minted, which a replayed redo re-mints identically. The
+ * projection and capture are `captureTrackTakeReKeyTransitions`.
  */
 function captureDeleteTakeReKeyTransitions(
     owners: readonly NormalizedOwner[],
@@ -699,34 +696,14 @@ function captureDeleteTakeReKeyTransitions(
     identities: readonly ClipReplayIdentity[],
     removedClipIds: readonly string[]
 ): readonly TakeReKeyLaneTransition[] {
-    const windowsByTrackId = collectTakeReKeyWindows({
-        beforeTracks: owners
-            .filter((owner) => owner.acceptsClipUpdate)
-            .map((owner) => ({
-                trackId: owner.id,
-                clips: owner.clips.map((normalizedClip) => ({
-                    id: normalizedClip.source.id,
-                    startBeat: normalizedClip.source.startBeat,
-                    endBeat: normalizedClip.source.endBeat,
-                })),
-            })),
-        afterTracks: nextTrackState.tracks.map((track) => ({
-            trackId: track.id,
-            clips: track.clips.map((clip) => ({
-                id: clip.id,
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-            })),
-        })),
+    return captureTrackTakeReKeyTransitions({
+        owners: owners.filter((owner) => owner.acceptsClipUpdate),
+        afterTracks: nextTrackState.tracks,
         reKeyTargets: new Map(
             identities
                 .filter((identity) => identity.role === 'delete-right')
                 .map((identity) => [identity.sourceClipId, identity.targetClipId])
         ),
-        deleteStartBeat: operation.startBeat,
-    });
-    return captureTakeReKeyTransitions({
-        windowsByTrackId,
         removedClipIds: new Set(removedClipIds),
         deleteStartBeat: operation.startBeat,
         deleteEndBeat: operation.endBeat,

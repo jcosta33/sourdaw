@@ -13,8 +13,7 @@ import { type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes'
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
-import { captureTakeReKeyTransitions } from '../comping/captureTakeReKeyTransitions';
-import { collectTakeReKeyWindows } from '../comping/collectTakeReKeyWindows';
+import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
@@ -783,14 +782,12 @@ function prepareLocalState(
 }
 
 /**
- * The take-lane half of the excise (#4841): how every take and comp region on
- * the selected tracks follows the clips' surviving fragments. The windows diff
- * the pre-operation clips against the prepared track state — the same
- * transition `planTrack` committed to — and the spanning records name the
- * right fragments, which stay at `endBeat` (the excise leaves a gap; nothing
- * ripples). Captured alongside the retirement, before any handle publishes, so
- * the undo closure and the inverse plan restore the exact facets, and a
- * replayed redo re-mints the same fragment take ids.
+ * The take-lane half of the excise (#4841): the re-key targets are the
+ * spanning records' right fragments, which stay at `endBeat` — the excise
+ * leaves a gap, nothing ripples. Captured alongside the retirement, before
+ * any handle publishes, so the undo closure and the inverse plan restore the
+ * exact facets, and a replayed redo re-mints the same fragment take ids. The
+ * projection and capture are `captureTrackTakeReKeyTransitions`.
  */
 function captureSelectedRangeTakeReKeyTransitions(
     owners: readonly NormalizedOwner[],
@@ -799,28 +796,10 @@ function captureSelectedRangeTakeReKeyTransitions(
     spanningClips: readonly SpanningClipRecord[],
     removedClipIds: readonly string[]
 ): readonly TakeReKeyLaneTransition[] {
-    const windowsByTrackId = collectTakeReKeyWindows({
-        beforeTracks: owners.map((owner) => ({
-            trackId: owner.id,
-            clips: owner.clips.map((normalizedClip) => ({
-                id: normalizedClip.source.id,
-                startBeat: normalizedClip.source.startBeat,
-                endBeat: normalizedClip.source.endBeat,
-            })),
-        })),
-        afterTracks: nextTrackState.tracks.map((track) => ({
-            trackId: track.id,
-            clips: track.clips.map((clip) => ({
-                id: clip.id,
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-            })),
-        })),
+    return captureTrackTakeReKeyTransitions({
+        owners,
+        afterTracks: nextTrackState.tracks,
         reKeyTargets: new Map(spanningClips.map((record) => [record.sourceClipId, record.fragmentClipId])),
-        deleteStartBeat: operation.startBeat,
-    });
-    return captureTakeReKeyTransitions({
-        windowsByTrackId,
         removedClipIds: new Set(removedClipIds),
         deleteStartBeat: operation.startBeat,
         deleteEndBeat: operation.endBeat,

@@ -1,18 +1,15 @@
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
-import { collectTrackClipIds } from '../../services/collectTrackClipIds';
+import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 
+import { regionsOverlap } from './regionsOverlap';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 export type TakeReKeyWriteDirection = 'apply' | 'restore';
 
 function regionKey(region: CompRegion): string {
     return `${region.startBeat}:${region.endBeat}:${region.takeId}`;
-}
-
-function regionsOverlap(left: CompRegion, right: CompRegion): boolean {
-    return left.startBeat < right.endBeat && right.startBeat < left.endBeat;
 }
 
 function isModifiedByTransition(take: Take, other: Take): boolean {
@@ -230,16 +227,10 @@ export function writeTakeReKeyTransitions(
     // The clip ids currently in the project, collected once per write and only
     // when some lane actually re-adds a take: the per-take liveness checks
     // share one scan instead of rebuilding per-track clip lists per take.
-    let liveClipIds: Set<string> | null = null;
+    let liveClipIds: ReadonlySet<string> | null = null;
     const requireLiveClipIds = (): ReadonlySet<string> => {
         if (liveClipIds === null) {
-            const collected = new Set<string>();
-            for (const track of getTrackStoreState()?.tracks ?? []) {
-                for (const clipId of collectTrackClipIds(track)) {
-                    collected.add(clipId);
-                }
-            }
-            liveClipIds = collected;
+            liveClipIds = collectLiveClipIds(getTrackStoreState()?.tracks ?? []);
         }
         return liveClipIds;
     };
