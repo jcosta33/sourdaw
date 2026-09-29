@@ -1,0 +1,16 @@
+scripts/savedProjectStatePaths.ts
+  h_beb54bf43b47b7 10-13,138-150,155-156,176-177,183,186,239-299,336-343
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 6216-6225,6363-6395,6413
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1657ee5ec14b17ad0384c59366dd557fb95c0b29",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

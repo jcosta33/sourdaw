@@ -12,6 +12,11 @@ release/open-source-inventory.json
   "git_ai_version": "1.7.4",
   "base_commit_sha": "0ce88f4247eb424b3c994b3316aaec65bb00fdbe",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_fe7d9519d0226e": {
       "agent_id": {
