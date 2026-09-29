@@ -1,0 +1,18 @@
+src/modules/GrandBoule/useCases/__tests__/initGrandBouleDocumentReconciliation.spec.ts
+  h_beb54bf43b47b7 33,60-62,209-235
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  h_beb54bf43b47b7 407-445
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 1125-1140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d5bb46003cfd42496c0b2386ffede084178d0a9d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
