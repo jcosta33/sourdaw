@@ -1519,6 +1519,26 @@ describe('disposals across several sidecars of one head', () => {
 });
 
 describe('the fixture label against the fixture ledger', () => {
+    it('names the held rate not computable when no evaluation artifact was read', () => {
+        // The figure is null for a corpus that was never read, which is not the same as a rate over
+        // nothing; the legend promises every null aggregate figure is named, and a cold reader of the
+        // committed record has only the record to tell the two apart.
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+
+        const aggregate = measure(root, { detail: 'aggregate' });
+        const full = measure(root, { detail: 'runs' });
+
+        expect(aggregate.acrossRuns.labelledExpectations).toBeNull();
+        expect(aggregate.sources.evaluationFixturesRead).toBe(0);
+        expect(aggregate.notComputable.map((entry) => entry.figure)).toContain('acrossRuns.labelledExpectations');
+        expect(full.notComputable.map((entry) => entry.figure)).toContain('runs[].labelledExpectationHeld');
+        // The gap is the same gap at either level; only the field it is named against changes.
+        expect(aggregate.notComputable.map((entry) => entry.reason)).toEqual(
+            full.notComputable.map((entry) => entry.reason)
+        );
+    });
+
     it('keeps an unassessed fixture out of the held rate and names it', () => {
         const root = checkout();
         const evaluationPath = join(root, 'evaluation.json');

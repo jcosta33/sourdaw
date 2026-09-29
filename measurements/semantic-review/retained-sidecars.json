@@ -1,9 +1,9 @@
 {
     "format": "semantic-review-measurement-v1",
     "schemaVersion": 1,
-    "measuredAt": "2026-09-29T23:06:27.068Z",
+    "measuredAt": "2026-09-29T23:33:38.745Z",
     "machine": {
-        "checkoutGitSha": "d03336ec91adeeb3ec8e084d8401151223688f97",
+        "checkoutGitSha": "2475bff5141b4752c6d6dfa858a555a46604a399",
         "workingTree": "dirty",
         "host": {
             "platform": "darwin",
@@ -39,7 +39,7 @@
         "reviewBundleRootPresent": true,
         "evaluationOutcomePath": null,
         "storedRunsRead": 109,
-        "dossiersRead": 454,
+        "dossiersRead": 455,
         "evaluationFixturesRead": 0,
         "detail": "aggregate",
         "note": "retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact"
@@ -833,6 +833,10 @@
         {
             "figure": "acrossRuns.ruleCoverage",
             "reason": "42 verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change"
+        },
+        {
+            "figure": "acrossRuns.labelledExpectations",
+            "reason": "no evaluation artifact was read, so no fixture carried a labelled expectation; sources.evaluationFixturesRead names how many were read, and the held rate is null rather than a rate over nothing"
         },
         {
             "figure": "acrossRuns.signals",

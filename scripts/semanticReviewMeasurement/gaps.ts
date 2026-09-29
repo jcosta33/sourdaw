@@ -167,6 +167,15 @@ function gapFigures(runs: readonly MeasurementRun[], detail: MeasurementDetail):
             reason: `${String(shape.verifyRuns)} verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change`,
         });
     }
+    // The held rate is null exactly when no artifact carried a label, which only an evaluation fixture
+    // can: this is the same predicate `sumLabelledExpectations` returns null on, so the gap and the null
+    // figure cannot disagree about whether any corpus was read.
+    if (runs.every((run) => run.labelledExpectationHeld === null)) {
+        figures.push({
+            figure: gapFigure(detail, 'runs[].labelledExpectationHeld', 'acrossRuns.labelledExpectations'),
+            reason: 'no evaluation artifact was read, so no fixture carried a labelled expectation; sources.evaluationFixturesRead names how many were read, and the held rate is null rather than a rate over nothing',
+        });
+    }
     const noPr = runs.filter(
         (run) => run.context.prNumber === null && run.artifact.kind !== 'evaluation-fixture'
     ).length;
