@@ -7,9 +7,10 @@
  * - `undo` — the risk policy's `undo` risk class. Its scope is unchanged from the policy's original
  *   predicate, except that the `undo` marker now matches a path word rather than a bare substring
  *   (a false-positive correction: `crumbsAllSoundOff.ts` no longer matches).
- * - `persisted-state` — the three project-state rules. It is the `undo` view plus the Project
- *   module's persisted-shape, migration, repair, and persisted-slot owners and the composition-root
- *   files that wire them.
+ * - `persisted-state` — the three project-state rules. It is the `undo` view plus the saved-document
+ *   slot-owning stores (every non-test `createAutomergeStorage(` call site, one exact matcher each),
+ *   the Project module's persisted-shape, migration, repair, and saved-project owners, the
+ *   version-history owners, and the composition-root files that wire them.
  *
  * Both predicates fold over the same registry, and the rules digest is a lossless encoding of each
  * persisted-state matcher (kind plus every field) rather than a rendered glob, so editing a matcher
@@ -130,6 +131,19 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  * - `projectstore`, `arrangementstore`, `productionbrief`, the `recentProjects/` use cases: the
  *   persisted CRDT slots (`projectStore`'s durable `projectMeta` keys, `arrangementStore`'s
  *   `arrangements` slot, the `productionBrief` durable key) and the recent-projects persistence.
+ * - the saved-document slot-owning stores, derived mechanically rather than sampled: every non-test
+ *   source path that constructs a durable slot on the saved `.sdaw` Automerge document by calling
+ *   `createAutomergeStorage(` (including the two stores that pass the literal `'root'` document
+ *   name), one exact matcher per call site. The criterion is the call site — a reader can re-derive
+ *   the list with a `createAutomergeStorage` constructor grep over `src/modules` (excluding
+ *   `createAutomergeStoragePreview`, which builds a transient preview document, and the import and
+ *   transaction-helper references) — never a sample that a source can contradict. This reaches the
+ *   Project `projectStore`/`arrangementStore` slots and CrdtDocument's `actionHistoryStore` already
+ *   covered by the word and substring matchers above, and adds the slots the previous revision left
+ *   unmatched: Arrangement's stores (`trackStore` opens `tracks` on the same `root` document as
+ *   `projectStore`'s `projectMeta`, and `src/modules/Arrangement/AGENTS.md` documents atomic
+ *   mutations and undo) plus the slot stores of Automation, Command, ControlSurface, CvGate, Knead,
+ *   MIDI, Routing, Transport and Yeast.
  * - the Project module's direct persisted-slot writers and saved-project creators whose names carry
  *   none of the markers above: the `useCases/arrangement/` snapshot/edit use cases (which write
  *   `arrangementStore` and clear undo history), the metadata and tuning writers (`setProjectKeyRoot`,
@@ -155,9 +169,11 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  *   `finalizeTemplate`, `commitVcaGroups`, `configureYeastArpeggiator`), and the demo writers
  *   `demoUtils/syncArrangement.ts` and `nebulaDrift/createNebulaDriftDemo.ts`.
  *
- * Deliberately not matched, with no persisted-project or undo ownership documented in their own
- * `AGENTS.md`: `MIDI/` and `Arrangement/` beyond their migration files, `Command/` beyond its undo
- * files, the Project module's presentation views (`presentations/views/`), its semantic queries
+ * Deliberately not matched: other modules' use cases, handlers, and read surfaces stay out — the
+ * view holds only their slot-owning stores (the `createAutomergeStorage(` call sites above), their
+ * undo files, and their migration files, never the use cases that write through those stores.
+ * `Command/` stays out beyond its undo files and its `commandBatchIdempotencyStore` slot store, as do
+ * the Project module's presentation views (`presentations/views/`), its semantic queries
  * (`semanticProjectQueries`, `semanticProjectIndex`, `semanticRangeOverlap`,
  * `getSemanticProjectIndexDiagnostics`, `parseSemanticProjectQueryInput`, the `SemanticProjectQuery`
  * model), its creative-brief read surfaces (`collectProtectedScopes`, `getProjectScopedBriefLock`,
@@ -207,6 +223,67 @@ export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] =
     { matcher: { kind: 'wordPrefix', value: 'productionbrief' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'wordPrefix', value: 'projectstore' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'wordPrefix', value: 'arrangementstore' }, scopes: ['persisted-state'] },
+    // Saved-document slot-owning stores: one exact matcher per non-test `createAutomergeStorage(`
+    // call site. The Project `projectStore`/`arrangementStore` slots and CrdtDocument's
+    // `actionHistoryStore` are already reached by the `projectstore`/`arrangementstore` word and
+    // `crdtdocument` substring matchers above; these rows are the remaining call sites.
+    {
+        matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/adjustmentlayer.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/gainenvelopestore.ts' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/markerstore.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/takelanestore.ts' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/trackstore.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/vcagroupstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/arrangement/stores/warpstates.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/automation/stores/automationstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/automation/stores/modulationstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/command/stores/commandbatchidempotencystore.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/controlsurface/stores/midilearnstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/cvgate/stores/cvgate.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/modules/knead/stores/kneadstore.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/modules/midi/stores/chordtrackstore.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/midi/stores/groovetemplateautomergestorage.ts' },
+        scopes: ['persisted-state'],
+    },
+    { matcher: { kind: 'exact', value: 'src/modules/midi/stores/midistore.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/modules/routing/stores/sidechainstore.ts' }, scopes: ['persisted-state'] },
+    { matcher: { kind: 'exact', value: 'src/modules/transport/stores/tempomapstore.ts' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/transport/stores/timesignaturemapstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/transport/stores/transportstore.ts' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'exact', value: 'src/modules/yeast/stores/yeastautomergestorage.ts' },
+        scopes: ['persisted-state'],
+    },
     {
         matcher: { kind: 'prefix', value: 'src/modules/project/usecases/recentprojects/' },
         scopes: ['persisted-state'],

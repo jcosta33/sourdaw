@@ -6130,6 +6130,20 @@ describe('saved-project-state applicability matrix', () => {
                 { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
                 { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'handlers' },
             ],
+            // The two fields' boundary itself is part of the encoding: two split points over the same
+            // concatenated text, and a pair whose roles are swapped (empty prefix vs empty substring),
+            // both concatenate to one string a separator-less renderer would collapse to. A renderer
+            // that joins the fields without the separator reddens these two probes.
+            [
+                'prefixAndSubstring.split-point',
+                { kind: 'prefixAndSubstring', prefix: 'src/app/boo', substring: 'tstrap' },
+                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
+            ],
+            [
+                'prefixAndSubstring.swapped-roles',
+                { kind: 'prefixAndSubstring', prefix: 'bootstrap', substring: '' },
+                { kind: 'prefixAndSubstring', prefix: '', substring: 'bootstrap' },
+            ],
             ['exact.value', { kind: 'exact', value: 'src/a.ts' }, { kind: 'exact', value: 'src/b.ts' }],
         ];
         for (const [label, left, right] of fieldCases) {
@@ -6396,6 +6410,39 @@ describe('saved-project-state applicability matrix', () => {
                 true,
                 'writes the persisted autosave interval',
             ],
+            // Saved-document slot-owning stores — one row per non-test `createAutomergeStorage(` call
+            // site (#4902 finding 1). The Project `projectStore`/`arrangementStore` slots and
+            // CrdtDocument's `actionHistoryStore` are already witnessed above; these rows witness the
+            // remaining call sites, so the surface-drop sweep reddens the matrix for every new matcher.
+            ['src/modules/arrangement/stores/adjustmentlayer.ts', true, 'persisted `adjustmentLayers` CRDT slot'],
+            ['src/modules/arrangement/stores/gainenvelopestore.ts', true, 'persisted `gainEnvelopes` CRDT slot'],
+            ['src/modules/arrangement/stores/markerstore.ts', true, 'persisted `markers` CRDT slot'],
+            ['src/modules/arrangement/stores/takelanestore.ts', true, 'persisted `takeLanes` CRDT slot'],
+            ['src/modules/arrangement/stores/trackstore.ts', true, 'persisted `tracks` CRDT slot'],
+            ['src/modules/arrangement/stores/vcagroupstore.ts', true, 'persisted `vcaGroups` CRDT slot'],
+            ['src/modules/arrangement/stores/warpstates.ts', true, 'persisted `warpStates` CRDT slot'],
+            ['src/modules/automation/stores/automationstore.ts', true, 'persisted `automation` CRDT slot'],
+            ['src/modules/automation/stores/modulationstore.ts', true, 'persisted `modulation` CRDT slot'],
+            [
+                'src/modules/command/stores/commandbatchidempotencystore.ts',
+                true,
+                'persisted `commandBatchIdempotency` CRDT slot',
+            ],
+            ['src/modules/controlsurface/stores/midilearnstore.ts', true, 'persisted `midiLearn` CRDT slot'],
+            ['src/modules/cvgate/stores/cvgate.ts', true, 'persisted `cvGate` CRDT slot'],
+            ['src/modules/knead/stores/kneadstore.ts', true, 'persisted `knead` CRDT slot'],
+            ['src/modules/midi/stores/chordtrackstore.ts', true, 'persisted `chordTrack` CRDT slot'],
+            [
+                'src/modules/midi/stores/groovetemplateautomergestorage.ts',
+                true,
+                'persisted `grooveTemplates` CRDT slot',
+            ],
+            ['src/modules/midi/stores/midistore.ts', true, 'persisted `midi` CRDT slot'],
+            ['src/modules/routing/stores/sidechainstore.ts', true, 'persisted `sidechainRoutes` CRDT slot'],
+            ['src/modules/transport/stores/tempomapstore.ts', true, 'persisted `tempoMap` CRDT slot'],
+            ['src/modules/transport/stores/timesignaturemapstore.ts', true, 'persisted `timeSignatureMap` CRDT slot'],
+            ['src/modules/transport/stores/transportstore.ts', true, 'persisted `transport` CRDT slot'],
+            ['src/modules/yeast/stores/yeastautomergestorage.ts', true, 'persisted `yeast` CRDT slot'],
             // Excluded, recorded with the reason each surface is left out.
             [
                 'src/modules/Arrangement/presentations/views/TrackList.tsx',
@@ -6405,7 +6452,7 @@ describe('saved-project-state applicability matrix', () => {
             [
                 'src/modules/MIDI/useCases/quantizeNotes.ts',
                 false,
-                'MIDI/ documents no persisted-project or undo ownership (its migration file is matched, not the module)',
+                'MIDI use case; only MIDI slot-owning stores (`midiStore`, `chordTrackStore`, `grooveTemplateAutomergeStorage`) are selected, not its use cases',
             ],
             [
                 'src/modules/Command/stores/macroStore.ts',
