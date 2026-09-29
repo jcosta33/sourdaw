@@ -494,6 +494,12 @@ class LevainProcessor extends AudioWorkletProcessor {
                 inst.note_expression(msg.note, msg.channel, msg.bendSemitones, msg.pressure, msg.slide);
                 break;
             case 'allNotesOff':
+                // Drop any not-yet-dispatched scheduled notes first so a queued
+                // future noteOn cannot retrigger after the release, nor a stale
+                // queued noteOff cut the next take short (#4631). Clearing in
+                // place allocates nothing on the audio thread.
+                this._queue.length = 0;
+                this._queueHead = 0;
                 inst.all_notes_off();
                 break;
             case 'param': {

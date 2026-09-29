@@ -9,7 +9,7 @@
  * never an empirically established defect probability.
  */
 
-import { refuse, type SemanticFailureCode } from './contracts.ts';
+import { refuse } from './contracts.ts';
 import {
     PROBABILITY_SUM_TOLERANCE,
     SEVERE_INVESTIGATION_CATEGORIES,
@@ -338,12 +338,4 @@ export function interpretFinding(input: {
         strongestEvidenceIds: [...input.strongestEvidenceIds],
         reasoning,
     };
-}
-
-/** The failure code a refused assessment carries, for the report's execution state. */
-export function executionStateFor(failure: SemanticFailureCode): 'partial' | 'unavailable' {
-    if (failure === 'budget_exhausted' || failure === 'context_collection_failed') {
-        return 'partial';
-    }
-    return 'unavailable';
 }

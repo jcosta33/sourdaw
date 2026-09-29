@@ -1,5 +1,5 @@
 import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
-import { projectGrandBouleCalibrationToNativePatch } from '#/modules/GrandBoule/useCases';
+import { captureOfflineGrandBoule, projectGrandBouleCalibrationToNativePatch } from '#/modules/GrandBoule/useCases';
 import { projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 import { projectToasterKitToNativePatch } from '#/modules/Toaster/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
@@ -17,11 +17,11 @@ export type ProjectNativeDeviceStateInput = {
  * What one native device projects to, once it can be answered.
  *
  * Takes `deviceId` alongside `deviceState` because not every projection reads
- * `deviceState` at all: Grand Boule's calibration lives in its per-device
- * store, so its arm ignores `deviceState` and looks the store up by
- * `deviceId` instead. An arm that does need a chunk answers `null` when one
- * has not been committed yet, the same "nothing to project" answer a type
- * with no projection at all gives.
+ * `deviceState` at all: part of Grand Boule's state — its MIDI calibration —
+ * lives in its per-device store, so its arm looks that store up by `deviceId`
+ * while decoding the chunk for the rest. An arm that does need a chunk answers
+ * `null` when one has not been committed yet, the same "nothing to project"
+ * answer a type with no projection at all gives.
  */
 type ProjectDeviceState = (input: {
     deviceId: string;
@@ -67,13 +67,45 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // A native Grand Boule strip with morph enabled renders the unmorphed base
     // model until that gap has its own lane.
     //
-    // MIDI calibration is the one thing this arm does project: it is not
-    // `deviceState` at all but per-device store state
+    // What this arm does project is the state `parameterValues` cannot carry:
+    // the temperament and preset voicing folded from the chunk (#4727) and the
+    // MIDI calibration from the per-device store
     // (`createGrandBouleStore(deviceId)`), which is why the arm reads
-    // `deviceId` and ignores `deviceState` entirely — a native body built
-    // fresh at Play must start on the calibrated half-pedal edge, not the DSP
-    // default (#4302).
-    'grand-boule': ({ deviceId }) => projectGrandBouleCalibrationToNativePatch({ deviceId }),
+    // `deviceId` too — a native body built fresh at Play must start on the
+    // calibrated half-pedal edge (#4302) and on the saved tuning and voicing,
+    // not the DSP's Equal/neutral defaults. The chunk is decoded through
+    // `captureOfflineGrandBoule`, the same capture the offline render restores
+    // from, so a rebuilt body and a bounce agree by construction; the capture
+    // prefers the live store's voicing when one exists, which keeps the rebuilt
+    // native body, the live web carrier, and the export capture in agreement —
+    // all three derive from that one capture — and lets a Play during a drag
+    // hear the previewed value. The store and the chunk part only across the
+    // stale-mirror window `projectGrandBoulePersistedState` documents: a
+    // peer's commit does not reconcile the local store (#4894); reload or node
+    // recreation closes it. The five snake_case names are the DSP's own
+    // `set_param` vocabulary (`GrandBouleEngine::set_param`,
+    // `crates/daw-dsp/src/grand_boule/engine.rs`), the same names
+    // `prepareOfflineGrandBoule` posts; the `temperament` write rides as a
+    // `set_param` name here because the native body has no message port — the
+    // engine's dedicated `set_temperament` door is the live handle's
+    // (`GrandBouleEngineHandle`), not a body-build record's.
+    'grand-boule': ({ deviceId, deviceState }) => {
+        if (deviceState === undefined) {
+            return projectGrandBouleCalibrationToNativePatch({ deviceId });
+        }
+        const { calibration, voicing } = captureOfflineGrandBoule({ deviceId, deviceState });
+        const patch: Record<string, number> = {
+            temperament: voicing.temperament,
+            hammer_hardness: voicing.parameters.hammerHardness,
+            tone_tilt: voicing.parameters.toneTilt,
+            stereo_width: voicing.parameters.stereoWidth,
+            velocity_curve: voicing.parameters.velocityCurve,
+        };
+        if (calibration !== null) {
+            return { ...patch, ...calibration };
+        }
+        return patch;
+    },
     // Every control the panel owns is a `GlutenPatch` key encoded to a number
     // and persisted as a `parameterValues` entry; nothing else to project.
     gluten: null,

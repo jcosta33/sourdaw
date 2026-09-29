@@ -284,6 +284,7 @@ function runResolveScope(event, scopes) {
             ...process.env,
             EVENT: event,
             BROWSER: scopes.browser ?? 'false',
+            PROFILE: scopes.profile ?? 'broad',
             RUST: scopes.rust,
             SERVER: scopes.server,
             E2E: scopes.e2e,
@@ -390,9 +391,8 @@ const gateRun = gateStep?.run ?? '';
 const heavyGateRun = heavyGateStep?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
-// `uses:` job reports failure when any job inside it failed, so the summary is
-// no weaker for being shorter — and `expectedValidationJobs` below is what
-// keeps a leg from being dropped out of the lane unnoticed.
+// The reusable validation lane includes its own explicit selected-result
+// summary, so the outer Gate can require one result for that whole lane.
 const expectedGateNeeds = ['scope', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
@@ -400,6 +400,7 @@ const expectedValidationJobs = [
     'lint',
     'boundaries',
     'unit',
+    'tooling-unit',
     'smoke',
     'build',
     'rust',
@@ -408,6 +409,7 @@ const expectedValidationJobs = [
     'native-parity',
     'dependency-review',
     'pr-secrets',
+    'validation-gate',
 ];
 const expectedHeavyGateNeeds = ['e2e', 'e2e-report', 'browser-ai-webgpu'];
 const scope = workflow.jobs?.scope;
@@ -421,11 +423,11 @@ expect(scopePlan?.id === 'plan' && scopePlan?.run === 'node scripts/prValidation
     scopePlan?.env?.BASE_SHA === '${{ github.event.pull_request.base.sha }}' &&
     scopePlan?.env?.HEAD_SHA === '${{ github.event.pull_request.head.sha }}',
     'required scope must plan against immutable base and head SHAs');
-for (const name of ['matrix', 'browser', 'browser-ai', 'codeql']) {
+for (const name of ['profile', 'matrix', 'browser', 'browser-ai', 'codeql']) {
     expect(scope?.outputs?.[name] === `\${{ steps.plan.outputs.${name} }}`,
         `required scope must export ${name} from its plan`);
 }
-expect(Object.keys(scope?.outputs ?? {}).length === 4, 'required scope must export exactly selected-check outputs');
+expect(Object.keys(scope?.outputs ?? {}).length === 5, 'required scope must export exactly selected-check outputs');
 expect(stepNamed(scope, 'Upload scope manifest')?.with?.path === 'pr-validation-scope.json' &&
     stepNamed(scope, 'Upload scope manifest')?.with?.['if-no-files-found'] === 'error',
     'required scope must publish its manifest or fail');
@@ -513,10 +515,10 @@ expect(
 // leaves the reusable caller with an empty output while the decide pins stay green.
 expect(
     JSON.stringify(Object.keys(validationEvents?.workflow_call?.outputs ?? {}).sort()) ===
-        JSON.stringify(['code', 'e2e', 'heavy', 'rust', 'server', 'web']),
-    'validation.yml must export exactly the six scope outputs to its callers'
+        JSON.stringify(['code', 'e2e', 'heavy', 'rust', 'server', 'tooling', 'web']),
+    'validation.yml must export exactly the seven scope outputs to its callers'
 );
-for (const exportName of ['heavy', 'rust', 'server', 'e2e', 'web', 'code']) {
+for (const exportName of ['heavy', 'rust', 'server', 'e2e', 'web', 'code', 'tooling']) {
     expect(
         validationEvents?.workflow_call?.outputs?.[exportName]?.value === `\${{ jobs.decide.outputs.${exportName} }}`,
         `the ${exportName} caller output must forward jobs.decide.outputs.${exportName}`
@@ -525,6 +527,7 @@ for (const exportName of ['heavy', 'rust', 'server', 'e2e', 'web', 'code']) {
 expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml', 'the PR workflow must call shared validation');
 expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
 expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
+expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
 expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
     'selected browser checks must wait for scope and successful validation');
@@ -601,16 +604,26 @@ for (const eventName of ['schedule', 'workflow_dispatch']) {
     );
 }
 expect(
-    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
+    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\ncode=true\ntooling=false\n',
     'pull_request must consume the selected browser scope and preserve other path-filter outputs'
 );
 expect(
-    runResolveScope('pull_request', allFalseScopes) === 'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
+    runResolveScope('pull_request', allFalseScopes) === 'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\ntooling=false\n',
     'a head that claims no scope must report no code-bearing change'
 );
 expect(
-    runResolveScope('pull_request', unclassifiedScopes) === 'heavy=false\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    runResolveScope('pull_request', unclassifiedScopes) === 'heavy=false\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\ntooling=false\n',
     'an unclassified path must force every fast scope rather than skipping the checks that would observe it'
+);
+expect(
+    runResolveScope('pull_request', { ...unclassifiedScopes, web: 'true', browser: 'false', profile: 'tooling' }) ===
+        'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=true\ntooling=true\n',
+    'known review tooling must retain script checks without product work'
+);
+expect(
+    runResolveScope('pull_request', { ...unclassifiedScopes, browser: 'false', profile: 'docs' }) ===
+        'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\ntooling=false\n',
+    'agent documentation must not promote unclassified product work'
 );
 expect(
     lint?.if === "needs.decide.outputs.code == 'true'" && boundaries?.if === "needs.decide.outputs.code == 'true'",
@@ -648,8 +661,8 @@ expect(
     'static device write boundary census must not continue on error'
 );
 expect(
-    stepNamed(staticJob, 'Device write boundary census')?.if === undefined,
-    'static device write boundary census must stay unconditional'
+    stepNamed(staticJob, 'Device write boundary census')?.if === "needs.decide.outputs.tooling != 'true'",
+    'static device write boundary census must run for product scope'
 );
 expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,

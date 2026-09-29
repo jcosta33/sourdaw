@@ -493,11 +493,25 @@ export async function scheduleMidiNotes(
 
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
+    // #4591 — the MIDI twin of scheduleAudioClips' cue-send rule: the strip's
+    // mute sits downstream of the pre-fader tap, so a muted MIDI track still
+    // feeds its pre-fader (cue) sends, and the offline mixdown schedules those
+    // tracks (`resolveOfflineMixAudibility`). Skipping every muted track here
+    // left its bus silent live while the export played the return. A
+    // post-fader send dies with the mute and a send to a bus that no longer
+    // exists reaches nothing, so both stay skipped, as the audio twin skips
+    // them.
+    const busTrackIds = new Set(
+        tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
+    );
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
         }
-        if (track.kind !== 'midi' || track.muted) {
+        if (track.kind !== 'midi') {
+            continue;
+        }
+        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             continue;
         }
 

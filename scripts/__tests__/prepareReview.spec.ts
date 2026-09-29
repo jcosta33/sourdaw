@@ -266,6 +266,7 @@ describe('review prepare', () => {
             'scripts/reviewRepair.ts',
             'scripts/reviewRiskPolicy.ts',
             'scripts/reviewRoundEscalation.ts',
+            'scripts/savedProjectStatePaths.ts',
             'scripts/semanticReview/contracts.ts',
             'scripts/semanticReview/interpret.ts',
             'scripts/semanticReview/report.ts',

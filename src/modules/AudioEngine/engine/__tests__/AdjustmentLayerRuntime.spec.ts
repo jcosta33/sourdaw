@@ -253,3 +253,118 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
         });
     });
 });
+
+// #4603 — the chain order must be a property of the layer stack, not of the
+// order the buses happened to be created during playback. Two runtimes that
+// end with the identical active set in the identical stack order must wire
+// the identical chain, whatever their creation histories were.
+describe('AdjustmentLayerRuntime — chain order follows the layer stack, not creation history', () => {
+    // Layer A (eq) sits above layer B (saturation) in the stack; both affect t1.
+    const recA = { layerId: 'layer-a', trackId: 't1', effectType: 'eq', parameters: {}, blend: 1 } as const;
+    const recB = { layerId: 'layer-b', trackId: 't1', effectType: 'saturation', parameters: {}, blend: 1 } as const;
+
+    function makeRuntime(): {
+        runtime: ReturnType<typeof createAdjustmentLayerRuntime>;
+        ctx: ReturnType<typeof createMockAudioContext>;
+        destination: AudioNode;
+    } {
+        const ctx = createMockAudioContext();
+        const destination = asAudioNode(createMockAudioNode('gain'));
+        const deps: TrackRerouteDeps = {
+            getContext: () => asBaseAudioContext(ctx),
+            getTrackDefaultDestination: (id) => (id === 't1' ? destination : null),
+            rerouteTrack: vi.fn<(trackId: string) => void>(),
+        };
+        return { runtime: createAdjustmentLayerRuntime(deps), ctx, destination };
+    }
+
+    // A bus is identified from the graph alone, with no look into the runtime:
+    // a bus's input node is the gain that feeds its device's input, the eq
+    // device's input is a 'peaking' biquad, and the distortion device's input
+    // is the gain feeding its waveshaper. Each runtime gets its own context so
+    // the created-node lists never mix.
+    function assertEqLayerIsFirstInChain(input: {
+        ctx: ReturnType<typeof createMockAudioContext>;
+        destination: AudioNode;
+        runtime: ReturnType<typeof createAdjustmentLayerRuntime>;
+    }): void {
+        const { ctx, destination, runtime } = input;
+        const feeds = (source: { connect: Mock }, target: unknown): boolean =>
+            source.connect.mock.calls.some((call: unknown[]) => call[0] === target);
+        const gains = ctx.createGain.mock.results.map((result) => result.value);
+        const biquads = ctx.createBiquadFilter.mock.results.map((result) => result.value);
+
+        const eqDeviceInput = biquads.find((biquad) => biquad.type === 'peaking');
+        if (!eqDeviceInput) {
+            throw new Error('Expected the eq bus to have created its peaking biquad');
+        }
+        const eqBusInput = gains.find((gain) => feeds(gain, eqDeviceInput));
+        if (!eqBusInput) {
+            throw new Error('Expected a gain feeding the eq device');
+        }
+        // The bus input's first target is its dry gain; the dry gain's target
+        // is the bus output (input → dry/wet/device → wet → output).
+        const eqDryGain = gains.find((gain) => feeds(eqBusInput, gain));
+        if (!eqDryGain) {
+            throw new Error('Expected the eq bus input to feed its dry gain');
+        }
+        const eqBusOutput = gains.find((gain) => feeds(eqDryGain, gain));
+        if (!eqBusOutput) {
+            throw new Error('Expected the eq dry gain to feed the bus output');
+        }
+
+        const chainHead = runtime.getBusChainInputForTrack('t1');
+        expect(chainHead).toBe(eqBusInput);
+        // First in the chain also means not last: the eq bus's output feeds the
+        // next bus, and exactly one bus output feeds the track destination.
+        expect(feeds(eqBusOutput, destination)).toBe(false);
+        const destinationFeeders = gains.filter((gain) => feeds(gain, destination));
+        expect(destinationFeeders).toHaveLength(1);
+        expect(destinationFeeders[0]).not.toBe(eqBusOutput);
+    }
+
+    it('wires the identical chain for the same active stack whatever the creation history', () => {
+        // Playback started where only B's region is active; A's region joined
+        // one tick later, so B's bus was created first.
+        const startedBeforeA = makeRuntime();
+        startedBeforeA.runtime.applyTick([recB]);
+        const headAfterFirstTick = startedBeforeA.runtime.getBusChainInputForTrack('t1');
+        startedBeforeA.runtime.applyTick([recA, recB]);
+
+        // Playback started inside both regions; both buses were created in one
+        // tick, in stack order.
+        const startedInsideBoth = makeRuntime();
+        startedInsideBoth.runtime.applyTick([recA, recB]);
+
+        // The premise: the histories really differ — the first runtime's chain
+        // began as B's bus. (Without this the differential could pass vacuously
+        // if the two runs ended up identical by accident.) The bus is found
+        // through its device: the gain feeding the waveshaper is the
+        // distortion device's splitter, and the gain feeding the splitter is
+        // the bus's input node.
+        const startedBeforeAGains = startedBeforeA.ctx.createGain.mock.results.map((result) => result.value);
+        const satShaper = startedBeforeA.ctx.createWaveShaper.mock.results[0]?.value;
+        if (!satShaper) {
+            throw new Error('Expected the saturation bus to have created its waveshaper');
+        }
+        const satDeviceSplitter = startedBeforeAGains.find((gain) =>
+            gain.connect.mock.calls.some((call: unknown[]) => call[0] === satShaper)
+        );
+        if (!satDeviceSplitter) {
+            throw new Error('Expected the distortion splitter to feed its waveshaper');
+        }
+        const satBusInput = startedBeforeAGains.find((gain) =>
+            gain.connect.mock.calls.some((call: unknown[]) => call[0] === satDeviceSplitter)
+        );
+        if (!satBusInput) {
+            throw new Error('Expected a gain feeding the distortion splitter');
+        }
+        expect(headAfterFirstTick).toBe(satBusInput);
+
+        expect(startedBeforeA.runtime.listLiveBusKeys().sort()).toEqual(
+            startedInsideBoth.runtime.listLiveBusKeys().sort()
+        );
+        assertEqLayerIsFirstInChain(startedBeforeA);
+        assertEqLayerIsFirstInChain(startedInsideBoth);
+    });
+});

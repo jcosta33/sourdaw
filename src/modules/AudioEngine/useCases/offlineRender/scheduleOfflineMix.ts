@@ -90,6 +90,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
             midi: midi!,
             trackInputNode: strip.inputNode,
             trackGainNode: strip.faderNode,
+            trackPreFaderTap: strip.preFaderTap,
             trackPanNode: strip.panNode,
             sendAutomationParams: sendAutomationParamsByTrack.get(track.id),
             destination: masterGain,

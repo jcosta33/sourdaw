@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      profile: ${{ steps.plan.outputs.profile }}
       matrix: ${{ steps.plan.outputs.matrix }}
       browser: ${{ steps.plan.outputs.browser }}
       browser-ai: ${{ steps.plan.outputs.browser-ai }}
@@ -54,6 +55,7 @@ jobs:
     uses: ./.github/workflows/validation.yml
     with:
       browser: ${{ needs.scope.outputs.browser == 'true' }}
+      profile: ${{ needs.scope.outputs.profile }}
 
   affected:
     name: Affected workflows

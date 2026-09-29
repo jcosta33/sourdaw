@@ -11,7 +11,7 @@ repository.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-automerge = "0.11"
+automerge = "0.12"
 daw-core = { path = "../daw-core" }
 hostname = "0.4"
 mdns-sd = "0.21"

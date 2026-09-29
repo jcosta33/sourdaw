@@ -3,8 +3,10 @@ import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
+import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { commitVcaGroups } from './commitVcaGroups';
+import { reportDeviceReadiness } from './reportDeviceReadiness';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { VcaGroupHandle } from './createVca';
@@ -39,6 +41,7 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
 
     ensureTrackStrips();
 
+    const originatingEpoch = projectLoadEpoch.current;
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
-    await waitForDevices();
+    reportDeviceReadiness(await waitForDevices(), originatingEpoch);
 }
