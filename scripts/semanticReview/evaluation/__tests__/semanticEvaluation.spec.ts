@@ -656,6 +656,36 @@ describe('the outcome file the measurement command reads', () => {
     });
 });
 
+describe("the evaluation command's own exit code", () => {
+    it('should return the nonzero exit when a label did not hold', async () => {
+        // The command's own `return exitCodeFor(result)`: every other case reads the pure helper or the
+        // success path, so a command that answered a held run's code whatever the run found would keep
+        // them all green. The stub fires the label-retarget negative's rule, which is the disagreement the
+        // one live run recorded, and the documented exit table gives that 1.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const firedNegativePath = fixtureOf(corpus, 'grid-label-retarget').path;
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: stubProvider(({ ruleId, path }) => {
+                    if (positives.get(path) === ruleId) {
+                        return 0.95;
+                    }
+                    return path === firedNegativePath && ruleId === 'assertion_deleted' ? 0.72 : 0.02;
+                }).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(1);
+    });
+});
+
 describe('the live command line is opt-in', () => {
     it('should default to the profile the advisory review runs under and honour the documented options', () => {
         expect(parseEvaluationArgs([])).toEqual({
