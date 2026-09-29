@@ -1,0 +1,14 @@
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1209-1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe4b03a93b22f4964208d99fc5c0b10c8ee791da",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
