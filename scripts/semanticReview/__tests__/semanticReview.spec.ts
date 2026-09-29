@@ -15,7 +15,6 @@ import {
     renderSavedProjectStateMatcherDigest,
     SAVED_PROJECT_STATE_DIGEST_ENTRIES,
     SAVED_PROJECT_STATE_SURFACES,
-    type SavedProjectStateMatcher,
 } from '../../savedProjectStatePaths.ts';
 import { ADVISORY_WORKFLOW_PATH } from '../../semanticReviewContext.ts';
 import {
@@ -105,6 +104,8 @@ import {
 import { sensitiveContentReason } from '../sensitive.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
 
+import { generatedDigestProbes } from './digestProbes.ts';
+
 /**
  * Fixtures are composed at runtime from their parts, so no credential-shaped literal appears here:
  * the repository's pull-request diff secret scan is a required gate, and its rules match the
@@ -122,53 +123,6 @@ function secretFixture(...parts: readonly string[]): string {
 /** Inverts the case of every letter, so a prefix that is already uppercase still probes case-sensitivity. */
 function flipCase(value: string): string {
     return value.replaceAll(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
-}
-
-// The small value domain the digest probes span: the empty string (a field may be empty), a plain
-// value, and a value that contains the `/` separator a boundary-joining renderer would use.
-const DIGEST_VALUE_DOMAIN = ['', 'a', 'src/app/bootstrap'] as const;
-
-const SINGLE_FIELD_DIGEST_BUILDERS: ReadonlyArray<(value: string) => SavedProjectStateMatcher> = [
-    (value) => ({ kind: 'wordPrefix', value }),
-    (value) => ({ kind: 'substring', value }),
-    (value) => ({ kind: 'prefix', value }),
-    (value) => ({ kind: 'suffix', value }),
-    (value) => ({ kind: 'exact', value }),
-];
-
-/**
- * Generated digest probes: every single-field kind over the value domain, the two-field kind over the
- * domain in both roles, and every split of a separator-containing text (so the boundary between the
- * two fields shifts across the separator). A renderer that ignores a field, the boundary between the
- * two fields, a field role, or a kind then encodes two distinct matchers identically.
- */
-function generatedDigestProbes(): readonly SavedProjectStateMatcher[] {
-    const probes: SavedProjectStateMatcher[] = [];
-    for (const make of SINGLE_FIELD_DIGEST_BUILDERS) {
-        for (const value of DIGEST_VALUE_DOMAIN) {
-            probes.push(make(value));
-        }
-    }
-    // Two-field pairs, deduplicated: the whole-text splits coincide with a domain pair.
-    const pairs = new Set<string>();
-    const addPair = (prefix: string, substring: string): void => {
-        const key = JSON.stringify([prefix, substring]);
-        if (pairs.has(key)) {
-            return;
-        }
-        pairs.add(key);
-        probes.push({ kind: 'prefixAndSubstring', prefix, substring });
-    };
-    for (const prefix of DIGEST_VALUE_DOMAIN) {
-        for (const substring of DIGEST_VALUE_DOMAIN) {
-            addPair(prefix, substring);
-        }
-    }
-    const joined = 'src/app/bootstrap';
-    for (let index = 0; index <= joined.length; index += 1) {
-        addPair(joined.slice(0, index), joined.slice(index));
-    }
-    return probes;
 }
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
@@ -6159,8 +6113,11 @@ describe('saved-project-state applicability matrix', () => {
         }
         // The encoding is lossless: distinct generated probes must render distinctly. A matcher edit
         // that moves `appliesTo` while `computeRulesDigest()` stays byte-identical replays a stored
-        // assessment against a changed scope, so a renderer that ignores a field, the boundary between
-        // the two fields, a field role, or a kind must redden this case.
+        // assessment against a changed scope, so a renderer that drops a field, the boundary between
+        // the two fields, a field role, or a kind, or that lowercases, trims, length-encodes, or
+        // collapses a field onto a shared prefix, encodes two distinct probes identically and must
+        // redden this case. An injective re-encoding (reversing a field, say) is lossless and is
+        // deliberately not rejected: the digest only has to keep distinct matchers distinct.
         const renderings = new Set<string>();
         for (const matcher of generatedDigestProbes()) {
             const rendered = renderSavedProjectStateMatcherDigest(matcher);
