@@ -4783,7 +4783,13 @@ function getCreatedObjectRequestIndexes(input: {
             if (span.actionType !== actionType && !noun.test(normalized) && actionType !== 'addDevice') {
                 continue;
             }
-            const quantity = new RegExp(`\\b(\\d+)\\s+(?:\\w+\\s+){0,2}${noun.source}`, 'u').exec(normalized);
+            const quantity = new RegExp(
+                `(?<![\\p{L}\\p{N}-])([+-]?\\d[\\p{L}\\p{N}.,+-]*)\\s+(?:\\w+\\s+){0,2}${noun.source}`,
+                'iu'
+            ).exec(scope.masked);
+            if (quantity && (!/^\+?\d+$/u.test(quantity[1] ?? '') || Number(quantity[1]) <= 0)) {
+                continue;
+            }
             const namedMembers = getNamedCreationMembers(scope, actionType);
             const namedTrackMembers = actionType === 'addTrack' ? getNamedTrackMembersWithKinds(scope) : [];
             const slots = quantity
@@ -5125,6 +5131,68 @@ function getCreatedParentEvidenceClause<TClause extends PromptClause>(clause: TC
         return clause;
     }
     return { ...clause, masked: beforeAnchor, text: clause.text.slice(0, orderingAnchor.index) };
+}
+
+function getCreatedDeviceOrderingRejection(input: {
+    binding?: BatchLocalCreationBinding;
+    call: ToolCallResult;
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+    visibleBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+}): string | null {
+    const parentReference = input.call.arguments.trackId;
+    if (input.call.name !== 'addDevice' || typeof parentReference !== 'string' || !parentReference.startsWith('$')) {
+        return null;
+    }
+    const producedName =
+        input.binding?.name ??
+        input.context.availableDeviceTypes?.find((device) => device.id === input.call.arguments.deviceType)?.name;
+    if (producedName === undefined) {
+        return null;
+    }
+    const quoteScan = scanPromptQuotedText(input.prompt);
+    const anchoredClauses = getPromptClauses(input.prompt, quoteScan.maskedText)
+        .filter(
+            (clause) =>
+                resolveClauseActionIntent(clause.masked, input.catalog, 'addDevice')?.actionType === 'addDevice' &&
+                namesProducedCreationInClause(clause, 'addDevice', producedName)
+        )
+        .flatMap((clause) => {
+            const anchor = /\bafter\b/iu.exec(clause.masked);
+            return anchor?.index === undefined ? [] : [clause.text.slice(anchor.index + anchor[0].length).trim()];
+        });
+    if (anchoredClauses.length === 0) {
+        return null;
+    }
+    const requestedAnchor = anchoredClauses[0]?.replace(/^(?:the|a|an|new)\s+/iu, '');
+    const matchingAnchors = [...input.visibleBindings.values()].filter(
+        (candidate) =>
+            candidate.actionType === 'addDevice' &&
+            candidate.parentTrackReference === parentReference &&
+            requestedAnchor !== undefined &&
+            namesNamedCreationMember(requestedAnchor, candidate.name)
+    );
+    const parentBinding = input.visibleBindings.get(parentReference.slice(1));
+    const qualifiedAnchor =
+        requestedAnchor !== undefined && /\b(?:on|in)\b/iu.test(scanPromptQuotedText(requestedAnchor).maskedText);
+    if (
+        anchoredClauses.length !== 1 ||
+        matchingAnchors.length !== 1 ||
+        input.call.arguments.afterDeviceId !== `$${matchingAnchors[0]?.binding}` ||
+        (qualifiedAnchor &&
+            (parentBinding === undefined ||
+                !hasCompleteCreatedTargetReference(
+                    requestedAnchor,
+                    parentBinding,
+                    input.visibleBindings,
+                    input.context,
+                    'addDevice'
+                )))
+    ) {
+        return 'Requested device insertion anchor is missing or mismatched';
+    }
+    return null;
 }
 
 function getExplicitCreatedTargetIntent(input: {
@@ -6202,8 +6270,18 @@ export function bridgeGroundedLlmToolCalls({
             prompt,
             producedName: collectedBindings.bindingsByCallIndex.get(index)?.name,
         });
+        const createdDeviceOrderingRejection = getCreatedDeviceOrderingRejection({
+            binding: collectedBindings.bindingsByCallIndex.get(index),
+            call,
+            catalog,
+            context: prospectiveContext,
+            prompt,
+            visibleBindings,
+        });
         let grounded: ToolCallResult | LlmActionRejection;
-        if (createdTargetIntent === 'mismatched') {
+        if (createdDeviceOrderingRejection !== null) {
+            grounded = rejection(index, call.name, createdDeviceOrderingRejection);
+        } else if (createdTargetIntent === 'mismatched') {
             grounded = rejection(
                 index,
                 call.name,

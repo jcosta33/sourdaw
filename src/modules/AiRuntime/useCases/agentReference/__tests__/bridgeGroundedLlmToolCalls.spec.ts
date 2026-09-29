@@ -3219,6 +3219,151 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { afterDeviceId: firstDeviceId } });
     });
 
+    it('refuses a device that omits the requested after anchor behind another device', () => {
+        const calls = [
+            { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+            { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'limiter' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'compressor' },
+            },
+        ];
+        const prompt =
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track';
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const ordinary = bridge(calls, prompt, context);
+        const unbound = bridge(
+            calls.map((call, index) =>
+                index === 3
+                    ? { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-compressor' } }
+                    : call
+            ),
+            prompt,
+            context
+        );
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-ordered-devices',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: prompt,
+                            constraints: [],
+                            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: calls.map((call, index) => ({
+                                id: `item-${String(index)}`,
+                                name: call.name,
+                                arguments: call.arguments,
+                                ...(index === 0 ? {} : { dependsOn: [`item-${String(index - 1)}`] }),
+                            })),
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        const structured = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: 'revision-ordered-devices',
+            prompt,
+        });
+        for (const result of [ordinary, structured, unbound]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual(expect.objectContaining({ index: 3, name: 'addDevice' }));
+        }
+    });
+
+    it('refuses a wrong or ambiguous created-device ordering anchor', () => {
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const wrongAnchor = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'limiter' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$limiter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            context
+        );
+        const ambiguousAnchor = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-one' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-two' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter-one',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add another Filter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            context
+        );
+        for (const result of [wrongAnchor, ambiguousAnchor]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual(
+                expect.objectContaining({
+                    index: 3,
+                    name: 'addDevice',
+                    reason: 'Requested device insertion anchor is missing or mismatched',
+                })
+            );
+        }
+    });
+
     it.each([
         ['Lead', 0],
         ['Bass', 1],
@@ -3342,6 +3487,103 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addTrack']);
         expect(result.actions[0]).toMatchObject({ payload: { name: 'Bass', kind: 'midi' } });
         expect(result.actions[1]).toMatchObject({ payload: { name: 'Lead', kind: 'audio' } });
+    });
+
+    it('refuses a negative named creation count across transform and list producers', () => {
+        const context = { ...projectContext, tracks: [] };
+        const revision = 'revision-negative-count';
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision,
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Create the requested tracks.',
+                            constraints: [],
+                            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'list-lead',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Lead', kind: 'midi', binding: 'list-lead' },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'transform-lead' } },
+                ...compiled.compilerEvidence.commands,
+            ],
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: revision,
+            prompt: 'create -2 MIDI tracks named Lead',
+            transformProof: {
+                revision,
+                creativeAuthorityId: null,
+                compilations: [
+                    {
+                        callId: 'compile-lead',
+                        revision,
+                        commands: [
+                            {
+                                key: 'transform-lead',
+                                stepId: 'transform-lead',
+                                operation: 'addTrack',
+                                arguments: { name: 'Lead', kind: 'midi' },
+                                reason: 'test fixture',
+                                expectedEffect: 'test fixture',
+                                binding: 'transform-lead',
+                                dependencyKeys: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it.each(['create 0 MIDI tracks named Lead', 'create 2e3 MIDI tracks named Lead'])(
+        'does not infer one creation slot from a malformed count in %s',
+        (prompt) => {
+            const result = bridge(
+                [{ name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } }],
+                prompt,
+                { ...projectContext, tracks: [] }
+            );
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).not.toEqual([]);
+        }
+    );
+
+    it('does not read a quoted numeric track name as a creation count', () => {
+        const result = bridge(
+            [{ name: 'addTrack', arguments: { name: '2 MIDI tracks', kind: 'midi', binding: 'two-tracks' } }],
+            'create a MIDI track named "2 MIDI tracks"',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[0]).toMatchObject({ type: 'addTrack', payload: { name: '2 MIDI tracks' } });
     });
 
     it('keeps one requested bass track slot while allowing its new clip and notes', () => {
