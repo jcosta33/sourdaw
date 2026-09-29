@@ -369,7 +369,7 @@ describe('project license', () => {
         const manifest = readCargoInventoryFixtureManifest(root);
         const inventory = manifest.cargoRuntimeInventory;
         expect(inventory).toBeDefined();
-        inventory!.packages = inventory!.packages.filter(({ name }) => name !== 'adler2');
+        inventory!.packages = inventory!.packages.filter(({ name }) => name !== 'rtrb');
         writeCargoInventoryFixtureManifest(root, manifest);
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
@@ -395,7 +395,7 @@ describe('project license', () => {
         expect(automerge).toBeDefined();
         writeFileSync(
             reportPath,
-            report.replace(/^(cargo:adler2@2\.0\.1 \| [^|]+ \| )[^|]+( \| Cargo\.lock)$/mu, `$1${automerge!}$2`)
+            report.replace(/^(cargo:rtrb@0\.4\.0 \| [^|]+ \| )[^|]+( \| Cargo\.lock)$/mu, `$1${automerge!}$2`)
         );
 
         expect(() => collectCargoDependencyLicenses(root)).toThrow('Cargo dependency inventory drifted');
