@@ -1223,6 +1223,53 @@ describe('every mode the report has validates its own output', () => {
         expect(() => validateReport(forged)).toThrow(/reports 2 assessed finding\(s\) but its assessments name 0/);
     });
 
+    it('refuses a verify report that records one finding as assessed and as unassessed', async () => {
+        // The overlap is load-bearing rather than decorative: the forgery claims the omitted finding was
+        // assessed too and doubles its omission, so `assessed + unassessed.length` still balances and the
+        // assessed count still matches the distinct ids the assessments name. Only the overlap refutes it,
+        // and without it the hidden omission reads as a completed assessment.
+        const provider = choiceProvider();
+        const { report } = await verifyScan(provider.port, [VERIFY_REGION_FINDING, VERIFY_EVIDENCE_LESS_FINDING]);
+        const assessment = report.findingAssessments[0];
+        const omission = report.scope.unassessed[0];
+        if (assessment === undefined || omission === undefined) {
+            throw new Error(
+                'the honest run assessed one finding and omitted another, so the case would assert nothing'
+            );
+        }
+        expect(report.scope).toMatchObject({ eligible: 2, assessed: 1 });
+        expect(omission.path).toBe(VERIFY_EVIDENCE_LESS_FINDING.findingId);
+        const forged = {
+            ...report,
+            scope: {
+                ...report.scope,
+                discovered: 3,
+                eligible: 3,
+                assessed: 1,
+                unassessed: [omission, { path: 'f3', reason: omission.reason }],
+            },
+            findingAssessments: [{ ...assessment, findingId: omission.path }],
+        };
+        expect(() => validateReport(forged)).toThrow(
+            new RegExp(`records ${omission.path} as assessed and as unassessed`)
+        );
+    });
+
+    it('refuses a verify report that names one assessed finding id twice', async () => {
+        // The scope counts exactly what the honest run counted; only the ledger names the same finding
+        // twice, so the count tie would pass if the two entries were counted as one distinct id.
+        const provider = choiceProvider();
+        const { report } = await verifyScan(provider.port, [VERIFY_REGION_FINDING, VERIFY_EVIDENCE_LESS_FINDING]);
+        const assessment = report.findingAssessments[0];
+        if (assessment === undefined) {
+            throw new Error('the honest run assessed no finding, so the case would assert nothing');
+        }
+        // The second entry repeats the first, so the ledger names one finding id twice.
+        const repeated = { ...assessment, reasoning: `${assessment.reasoning} (recorded twice)` };
+        const forged = { ...report, findingAssessments: [assessment, repeated] };
+        expect(() => validateReport(forged)).toThrow(/records an assessed finding id more than once/);
+    });
+
     it('refuses duplicate finding ids before any provider call', async () => {
         // Two findings under one id would collapse into one record, and a run over two evidence-less ones
         // would write a report the validator refuses. The input is wrong, so it is refused before the
