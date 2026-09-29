@@ -19,6 +19,7 @@ import {
     sortedCounts,
     sumCounts,
     type AcrossRuns,
+    type MeasurementDetail,
     type MeasurementMachine,
     type MeasurementRecord,
     type MeasurementRun,
@@ -353,38 +354,51 @@ function scanShape(runs: readonly MeasurementRun[]): ScanShapeCounts {
     };
 }
 
-function gapFigures(runs: readonly MeasurementRun[]): NotComputableFigure[] {
+/**
+ * The field a gap is named against. At the full detail level that is the per-run field itself; at the
+ * aggregate level the record carries no per-run entries, so the gap is named against the total it
+ * leaves short.
+ */
+function gapFigure(detail: MeasurementDetail, runField: string, totalField: string): string {
+    return detail === 'runs' ? runField : totalField;
+}
+
+function gapFigures(runs: readonly MeasurementRun[], detail: MeasurementDetail): NotComputableFigure[] {
     const figures: NotComputableFigure[] = [];
     const shape = scanShape(runs);
     if (shape.withoutStates > 0) {
         figures.push({
-            figure: 'runs[].outcomeAccounting.publishedStates',
+            figure: gapFigure(detail, 'runs[].outcomeAccounting.publishedStates', 'acrossRuns.publishedOutcomeStates'),
             reason: `${String(shape.withoutStates)} stored scan report(s) were written before scope.states existed; their omission totals here are derived from their own excluded and unassessed entries`,
         });
     }
     if (shape.withoutOrder > 0) {
         figures.push({
-            figure: 'runs[].ruleCoverage.applicableRules',
+            figure: gapFigure(detail, 'runs[].ruleCoverage.applicableRules', 'acrossRuns.ruleCoverage.applicableRules'),
             reason: `${String(shape.withoutOrder)} stored scan report(s) carry no scope.requestOrder, so the rule set of each unit omitted before admission is in no artifact; those runs' applicable counts are floors over the units whose rules the report publishes, and their notAskedByReason under-counts an omission whose rules are unpublished`,
         });
     }
     const withoutWallClock = runs.filter((run) => run.wallClock === null).length;
     if (withoutWallClock > 0) {
         figures.push({
-            figure: 'runs[].wallClock',
+            figure: gapFigure(detail, 'runs[].wallClock', 'acrossRuns.wallClockMs'),
             reason: `${String(withoutWallClock)} artifact(s) record no start and end — an evaluation outcome reports a fixture's answers, not its clock — so no span exists for them`,
         });
     }
     const withoutTruncation = runs.filter((run) => run.evidenceCompleteness.truncatedRegions === null).length;
     if (withoutTruncation > 0) {
         figures.push({
-            figure: 'runs[].evidenceCompleteness.truncatedRegions',
+            figure: gapFigure(
+                detail,
+                'runs[].evidenceCompleteness.truncatedRegions',
+                'acrossRuns.evidence.truncatedRegions'
+            ),
             reason: `${String(withoutTruncation)} artifact(s) carry no truncation ledger; nothing recorded whether evidence was cut, which is not the same as none being cut`,
         });
     }
     if (shape.verifyRuns > 0) {
         figures.push({
-            figure: 'runs[].ruleCoverage for verification runs',
+            figure: gapFigure(detail, 'runs[].ruleCoverage for verification runs', 'acrossRuns.ruleCoverage'),
             reason: `${String(shape.verifyRuns)} verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change`,
         });
     }
@@ -406,13 +420,17 @@ function gapFigures(runs: readonly MeasurementRun[]): NotComputableFigure[] {
     }
     if (shape.withoutRound > 0) {
         figures.push({
-            figure: 'runs[].reviewRounds',
+            figure: gapFigure(detail, 'runs[].reviewRounds', 'acrossRuns.reviewRounds'),
             reason: `${String(shape.withoutRound)} scan run(s) have no stored dossier for their head, so the round's draws, findings and typed dispositions are absent rather than zero`,
         });
     }
     if (shape.withoutDispositions > 0) {
         figures.push({
-            figure: 'runs[].signalOutcome.dispositionsRecorded',
+            figure: gapFigure(
+                detail,
+                'runs[].signalOutcome.dispositionsRecorded',
+                'acrossRuns.signalDispositions.recorded'
+            ),
             reason: `${String(shape.withoutDispositions)} run(s) matched a dossier that records no typed disposition for this head — a historical record written before the field existed, or a round that disposed by citation text alone`,
         });
     }
@@ -461,6 +479,26 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
         'artifacts present on disk that the report validator or the dossier reader refused, with its message',
 };
 
+/**
+ * The legend for the detail level the record was measured at. At the aggregate level the per-run
+ * entries are absent by choice rather than by accident, and the map says so instead of describing
+ * fields the record does not carry.
+ */
+function fieldSourcesFor(detail: MeasurementDetail): Record<string, string> {
+    if (detail === 'runs') {
+        return FIELD_SOURCES;
+    }
+    const sources: Record<string, string> = {};
+    for (const [field, source] of Object.entries(FIELD_SOURCES)) {
+        if (!field.startsWith('runs[')) {
+            sources[field] = source;
+        }
+    }
+    sources['runs[]'] =
+        'not published at this detail level: the record was measured with the aggregate detail level, which carries the across-run figures and the gaps; measure again with --detail for one entry per run';
+    return sources;
+}
+
 export function buildMeasurementRecord(input: {
     readonly measuredAt: string;
     readonly machine: MeasurementMachine;
@@ -469,17 +507,18 @@ export function buildMeasurementRecord(input: {
     readonly skippedArtifacts: readonly SkippedArtifact[];
     readonly extras?: RecordExtras;
 }): MeasurementRecord {
+    const { detail } = input.sources;
     return {
         format: SEMANTIC_MEASUREMENT_FORMAT,
         schemaVersion: SEMANTIC_MEASUREMENT_SCHEMA_VERSION,
         measuredAt: input.measuredAt,
         machine: input.machine,
         advisory: ADVISORY,
-        fieldSources: FIELD_SOURCES,
+        fieldSources: fieldSourcesFor(detail),
         sources: input.sources,
-        runs: [...input.runs],
+        runs: detail === 'runs' ? [...input.runs] : [],
         acrossRuns: acrossRuns(input.runs, input.extras ?? emptyRecordExtras()),
         skippedArtifacts: [...input.skippedArtifacts],
-        notComputable: [...skippedFigures(input.skippedArtifacts), ...gapFigures(input.runs)],
+        notComputable: [...skippedFigures(input.skippedArtifacts), ...gapFigures(input.runs, detail)],
     };
 }

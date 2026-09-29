@@ -25,10 +25,14 @@ import {
 } from '../semanticReview/contracts.ts';
 import { parseReportJson } from '../semanticReview/report.ts';
 import { buildScopeStates, type SemanticScopeStates } from '../semanticReview/scopeAccounting.ts';
-import { measureCheckout } from '../semanticReviewMeasurement.ts';
+import { measureCheckout, parseCommandLine } from '../semanticReviewMeasurement.ts';
 import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
-import type { MeasurementMachine, MeasurementRecord } from '../semanticReviewMeasurement/contracts.ts';
+import type {
+    MeasurementDetail,
+    MeasurementMachine,
+    MeasurementRecord,
+} from '../semanticReviewMeasurement/contracts.ts';
 
 const MACHINE: MeasurementMachine = {
     checkoutGitSha: 'f'.repeat(40),
@@ -257,11 +261,17 @@ function writeDossier(root: string, name: string, dossier: unknown): void {
     writeFileSync(join(directory, 'dossier.json'), `${JSON.stringify(dossier, null, 4)}\n`);
 }
 
-function measure(root: string, overrides: { evaluationPath?: string; strict?: boolean } = {}): MeasurementRecord {
+function measure(
+    root: string,
+    overrides: { evaluationPath?: string; strict?: boolean; detail?: MeasurementDetail } = {}
+): MeasurementRecord {
     return measureCheckout({
         root,
         evaluationOutcomePath: overrides.evaluationPath ?? null,
         strict: overrides.strict ?? false,
+        // The per-run figures are what most cases read, so they measure at the full detail level; the
+        // aggregate default has cases of its own.
+        detail: overrides.detail ?? 'runs',
         measuredAt: MEASURED_AT,
         machine: MACHINE,
     });
@@ -999,6 +1009,7 @@ describe('the record itself', () => {
         expect(record.measuredAt).toBe(MEASURED_AT);
         expect(record.machine).toEqual(MACHINE);
         expect(record.sources.storedRunsRead).toBe(1);
+        expect(record.sources.detail).toBe('runs');
         expect(record.sources.sidecarRootPresent).toBe(true);
         expect(record.fieldSources['runs[].usage']).toContain('#usage');
         expect(record.fieldSources['runs[].wallClock']).toContain('span');
@@ -1024,5 +1035,57 @@ describe("the trusted import scanner reads this lane's sources", () => {
         const source = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
 
         expect(() => snapshotImportSpecifiers(source)).not.toThrow();
+    });
+});
+
+describe('detail levels', () => {
+    it('publishes the across-run figures and the gaps with no per-run entry by default', () => {
+        const root = checkout();
+        writeSidecar(root, 'scan-1', everyOmissionState(HEAD_ONE, 4801));
+        writeSidecar(root, 'scan-2', everyOmissionState(HEAD_TWO, 4801));
+
+        const record = measure(root, { detail: 'aggregate' });
+
+        expect(record.sources.detail).toBe('aggregate');
+        expect(record.runs).toEqual([]);
+        expect(record.acrossRuns.runCount).toBe(2);
+        expect(record.acrossRuns.ruleCoverage.applicableRules).toBe(10);
+        expect(record.acrossRuns.usage.networkAttempts).toBe(4);
+        // The legend describes this record, not the fields a fuller one would carry.
+        expect(record.fieldSources['runs[]']).toContain('not published at this detail level');
+        expect(record.fieldSources['runs[].usage']).toBeUndefined();
+    });
+
+    it('names an aggregate-level gap against the total it leaves short, not a per-run field', () => {
+        const root = checkout();
+        writeSidecar(
+            root,
+            'scan-1',
+            scanFixture({
+                headSha: HEAD_ONE,
+                prNumber: 4801,
+                signals: [
+                    { path: 'src/a.ts', ruleId: 'assertion_deleted', disposition: 'no_additional_recommendation' },
+                ],
+                unassessed: [{ path: 'src/b.ts', reason: 'budget-exhausted-before-admission' }],
+            })
+        );
+
+        const aggregate = measure(root, { detail: 'aggregate' });
+        const full = measure(root, { detail: 'runs' });
+
+        expect(aggregate.notComputable.map((entry) => entry.figure)).toContain(
+            'acrossRuns.ruleCoverage.applicableRules'
+        );
+        expect(full.notComputable.map((entry) => entry.figure)).toContain('runs[].ruleCoverage.applicableRules');
+        // The gap itself is the same gap at either level: only the field it is named against changes.
+        expect(aggregate.notComputable.map((entry) => entry.reason)).toEqual(
+            full.notComputable.map((entry) => entry.reason)
+        );
+    });
+
+    it('parses --detail into the full level and defaults to the aggregate one', () => {
+        expect(parseCommandLine([]).detail).toBe('aggregate');
+        expect(parseCommandLine(['--detail']).detail).toBe('runs');
     });
 });

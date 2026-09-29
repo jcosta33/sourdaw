@@ -15,6 +15,10 @@ import type { SemanticUsageReport } from '../semanticReview/report.ts';
 export type { SemanticScopeStates };
 
 export const SEMANTIC_MEASUREMENT_FORMAT = 'semantic-review-measurement-v1';
+
+/** The two detail levels a record may be measured at. */
+export const MEASUREMENT_DETAILS = ['aggregate', 'runs'] as const;
+export type MeasurementDetail = (typeof MEASUREMENT_DETAILS)[number];
 export const SEMANTIC_MEASUREMENT_SCHEMA_VERSION = 1;
 
 /** A stored artifact this record was built from, identified by its own bytes. */
@@ -214,6 +218,13 @@ export type StoredDossier = { readonly path: string; readonly dossier: ReviewDos
 export type SkippedArtifact = { readonly path: string; readonly reason: string };
 
 export type MeasurementSources = {
+    /**
+     * How much of each run this record carries: `aggregate` publishes the across-run figures and the
+     * gaps, `runs` adds one entry per artifact. A cold reader of the committed example needs the first
+     * and the second is what a full measurement publishes, so the level is recorded rather than
+     * inferred from an absent array.
+     */
+    readonly detail: MeasurementDetail;
     readonly sidecarRoot: string;
     readonly sidecarRootPresent: boolean;
     readonly reviewBundleRoot: string;

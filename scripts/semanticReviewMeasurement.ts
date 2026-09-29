@@ -34,6 +34,7 @@ import {
 } from './semanticReviewMeasurement/artifacts.ts';
 import {
     type EvaluationFixtureOutcome,
+    type MeasurementDetail,
     type MeasurementMachine,
     type MeasurementRecord,
     type MeasurementRun,
@@ -59,6 +60,9 @@ const USAGE = [
     '                       Default: the primary checkout, where the pipeline writes them.',
     '  --evaluation <path>  Also read the evaluation runner outcome file at this path.',
     '  --out <path>         Write the record here instead of printing it.',
+    '  --detail             Publish one entry per run as well as the across-run figures. The default',
+    '                       record is aggregate-level: the committed example is one, and a per-run',
+    '                       record is far larger than the per-region evidence budget.',
     '  --summary            Print the human summary instead of the record.',
     '  --strict             Refuse on the first artifact that does not read, instead of recording it',
     '                       as skipped with its reason.',
@@ -70,6 +74,7 @@ type ParsedArgs = {
     readonly root?: string;
     readonly evaluationPath?: string;
     readonly outPath?: string;
+    readonly detail: MeasurementDetail;
     readonly summary: boolean;
     readonly strict: boolean;
 };
@@ -93,6 +98,7 @@ function parseCommandLine(argv: readonly string[]): ParsedArgs {
     let root: string | undefined;
     let evaluationPath: string | undefined;
     let outPath: string | undefined;
+    let detail: MeasurementDetail = 'aggregate';
     let summary = false;
     let strict = false;
     for (let index = 0; index < argv.length; index += 1) {
@@ -120,6 +126,10 @@ function parseCommandLine(argv: readonly string[]): ParsedArgs {
             outPath = value();
             continue;
         }
+        if (argument === '--detail') {
+            detail = 'runs';
+            continue;
+        }
         if (argument === '--summary') {
             summary = true;
             continue;
@@ -130,7 +140,7 @@ function parseCommandLine(argv: readonly string[]): ParsedArgs {
         }
         invalid(`unknown option ${String(argument)}\n\n${USAGE}`);
     }
-    return { root, evaluationPath, outPath, summary, strict };
+    return { root, evaluationPath, outPath, detail, summary, strict };
 }
 
 /** The stored scan and verification sidecars under one sidecar root, in digest-directory order. */
@@ -390,7 +400,8 @@ export type MeasurementInputs = {
     readonly runs: readonly MeasurementRun[];
     readonly skippedArtifacts: readonly SkippedArtifact[];
     readonly extras: RecordExtras;
-    readonly sources: Omit<MeasurementSources, 'note'>;
+    /** The reader's own half of the provenance; the detail level and the note are the caller's. */
+    readonly sources: Omit<MeasurementSources, 'note' | 'detail'>;
 };
 
 export function readMeasurementInputs(input: {
@@ -498,6 +509,7 @@ export function measureCheckout(input: {
     readonly root: string;
     readonly evaluationOutcomePath: string | null;
     readonly strict: boolean;
+    readonly detail: MeasurementDetail;
     readonly measuredAt: string;
     readonly machine: MeasurementMachine;
 }): MeasurementRecord {
@@ -518,6 +530,7 @@ export function measureCheckout(input: {
         machine: input.machine,
         sources: {
             ...inputs.sources,
+            detail: input.detail,
             note: 'retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact',
         },
         runs: inputs.runs,
@@ -533,6 +546,7 @@ async function main(): Promise<number> {
             root: resolve(parsed.root ?? primaryRoot()),
             evaluationOutcomePath: parsed.evaluationPath === undefined ? null : resolve(parsed.evaluationPath),
             strict: parsed.strict,
+            detail: parsed.detail,
             measuredAt: new Date().toISOString(),
             machine: machineProvenance(),
         });
