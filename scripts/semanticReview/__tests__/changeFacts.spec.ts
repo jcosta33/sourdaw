@@ -211,6 +211,13 @@ describe('a changed line is classified by its text alone', () => {
             'expectExternalProjectLink(entry, slug);',
             'assert.deepStrictEqual(actual, expected);',
             'expect(result).not.toThrow();',
+            // Session-scoped heads the framework ships beyond soft/poll: a removed one is a removed check,
+            // and an allowlist of the heads that came to mind published no removed assertion for either.
+            "expect.fail('the engine never became ready');",
+            "expect.unreachable('the branch is impossible');",
+            'expect.assertions(2);',
+            'expect.hasAssertions();',
+            'await expect.poll(() => count).toBe(3);',
         ];
         const notAssertions = [
             'expectations.push(value);',
@@ -227,6 +234,17 @@ describe('a changed line is classified by its text alone', () => {
             'const localised = date.toLocaleDateString();',
             'const precise = ratio.toPrecision(3);',
             'const rows = table.toggleAllRowsSelected(true);',
+            // `expect.<member>(` heads that are values, registration, or state rather than checks.
+            'expect.objectContaining({ gain: 0.5 }),',
+            'expect.any(String),',
+            'expect.anything(),',
+            'expect.arrayContaining([1, 2]),',
+            "expect.stringContaining('snap'),",
+            'expect.stringMatching(/^snap/u),',
+            'expect.closeTo(0.25, 5),',
+            'expect.extend({ toBeWithinRange() {} });',
+            'expect.addSnapshotSerializer(plugin);',
+            'expect.setState({ assertionCalls: 1 });',
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
@@ -243,6 +261,25 @@ describe('a changed line is classified by its text alone', () => {
         expect(facts).toEqual({
             basis: 'unified-diff',
             before: { removedAssertions: { count: 0, lines: [], truncated: false } },
+            after: {
+                addedAssertions: { count: 0, lines: [], truncated: false },
+                addedControlFlow: { count: 0, lines: [], truncated: false },
+            },
+        });
+    });
+
+    it('should report a removed session-scoped head as a removed assertion', () => {
+        const facts = changedLineFacts({
+            added: [],
+            removed: [
+                { line: 41, text: "        expect.fail('the engine never became ready');" },
+                { line: 44, text: "        expect.unreachable('the branch is impossible');" },
+                { line: 47, text: '        expect.objectContaining({ gain: 0.5 }),' },
+            ],
+        });
+        expect(facts).toEqual({
+            basis: 'unified-diff',
+            before: { removedAssertions: { count: 2, lines: [41, 44], truncated: false } },
             after: {
                 addedAssertions: { count: 0, lines: [], truncated: false },
                 addedControlFlow: { count: 0, lines: [], truncated: false },

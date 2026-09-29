@@ -72,11 +72,11 @@ export type UnitChangedLineFacts =
 /**
  * An assertion-carrying line, decided by its text alone.
  *
- * Every pattern is an assertion *head*: the call that begins an assertion. Vitest's and Playwright's
- * `expect(...)`, the session-scoped `expect.soft(...)`/`expect.poll(...)`/`expect.hasAssertions()`,
- * node:test's `assert(...)` and `assert.equal(...)`, and this repository's own capitalized `expect*`
- * helpers such as `expectExternalProjectLink`. The capitalization matters: `expectations.push(` is not an
- * assertion call, and a pattern loose enough to admit it would report removals that never existed.
+ * The patterns below are the heads that are not `expect.<member>(`: Vitest's and Playwright's
+ * `expect(...)`, this repository's own capitalized `expect*` helpers such as `expectExternalProjectLink`,
+ * and node:test's `assert(...)` and `assert.equal(...)`. The capitalization matters: `expectations.push(`
+ * is not an assertion call, and a pattern loose enough to admit it would report removals that never
+ * existed.
  *
  * The matchers a head chains — `.toBe(`, `.not.toEqual(`, `.resolves.toBe(` — are deliberately *not*
  * patterns of their own. An unanchored `.to[A-Za-z]*\(` reads `JSON.stringify(value).toLowerCase()`,
@@ -89,10 +89,49 @@ export type UnitChangedLineFacts =
  */
 const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
     /\bexpect\s*\(/u,
-    /\bexpect\s*\.\s*(?:soft|poll|hasAssertions|assertions)\s*\(/u,
     /\bexpect[A-Z][A-Za-z0-9_$]*\s*\(/u,
     /\bassert\s*(?:\.\s*[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(/u,
 ];
+
+/**
+ * The `expect.<member>(` heads that are not assertions, read from the shipped Vitest 5.0.2 declarations —
+ * `ExpectStatic` in `vitest/dist/chunks/task-utils.d.BZm4GSQD.d.ts` and `config.d.CU_b-wJj.d.ts`, plus
+ * chai's `fail` — and from Playwright's configuration helper: the asymmetric matchers, which build the
+ * value an assertion compares against, and the registration, serialization, configuration, and state
+ * helpers. The `assert` member is a namespace rather than a call, and `not` is a property, so neither can
+ * appear as `expect.<member>(` and neither needs a name here.
+ */
+const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
+    'any',
+    'anything',
+    'arrayContaining',
+    'objectContaining',
+    'stringContaining',
+    'stringMatching',
+    'closeTo',
+    'schemaMatching',
+    'extend',
+    'addEqualityTesters',
+    'addSnapshotSerializer',
+    'getState',
+    'setState',
+    'configure',
+]);
+
+/**
+ * The member one `expect.<member>(` head spells, or undefined when the line spells none.
+ *
+ * The open-ended side is deliberate. An allowlist of the assertion heads that came to mind silently missed
+ * `expect.fail(` and `expect.unreachable(`, which this repository's specs spell 126 and 4 times, so a
+ * removed one published no removed assertion at all — the false-negative half of the defect that made the
+ * matcher pattern over-report. Every member outside the non-assertion list above now counts, including one
+ * a later framework version adds, and the price of that direction is a removed configuration helper
+ * reading as a removed assertion: visible, and bounded by the list being the framework's own
+ * non-assertion surface.
+ */
+function expectMemberHead(text: string): string | undefined {
+    return /\bexpect\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/u.exec(text)?.[1];
+}
 
 /**
  * A control-flow-introducing line, decided by its text alone: `if (`, `else`, `catch`, `switch`, `throw`,
@@ -116,6 +155,10 @@ function matchesAny(patterns: readonly RegExp[], text: string): boolean {
 
 /** Whether one changed line's text carries an assertion call. */
 export function isAssertionLine(text: string): boolean {
+    const member = expectMemberHead(text);
+    if (member !== undefined && !NON_ASSERTION_EXPECT_MEMBERS.has(member)) {
+        return true;
+    }
     return matchesAny(ASSERTION_LINE_PATTERNS, text);
 }
 
