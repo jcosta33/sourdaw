@@ -124,6 +124,53 @@ function flipCase(value: string): string {
     return value.replaceAll(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
 
+// The small value domain the digest probes span: the empty string (a field may be empty), a plain
+// value, and a value that contains the `/` separator a boundary-joining renderer would use.
+const DIGEST_VALUE_DOMAIN = ['', 'a', 'src/app/bootstrap'] as const;
+
+const SINGLE_FIELD_DIGEST_BUILDERS: ReadonlyArray<(value: string) => SavedProjectStateMatcher> = [
+    (value) => ({ kind: 'wordPrefix', value }),
+    (value) => ({ kind: 'substring', value }),
+    (value) => ({ kind: 'prefix', value }),
+    (value) => ({ kind: 'suffix', value }),
+    (value) => ({ kind: 'exact', value }),
+];
+
+/**
+ * Generated digest probes: every single-field kind over the value domain, the two-field kind over the
+ * domain in both roles, and every split of a separator-containing text (so the boundary between the
+ * two fields shifts across the separator). A renderer that ignores a field, the boundary between the
+ * two fields, a field role, or a kind then encodes two distinct matchers identically.
+ */
+function generatedDigestProbes(): readonly SavedProjectStateMatcher[] {
+    const probes: SavedProjectStateMatcher[] = [];
+    for (const make of SINGLE_FIELD_DIGEST_BUILDERS) {
+        for (const value of DIGEST_VALUE_DOMAIN) {
+            probes.push(make(value));
+        }
+    }
+    // Two-field pairs, deduplicated: the whole-text splits coincide with a domain pair.
+    const pairs = new Set<string>();
+    const addPair = (prefix: string, substring: string): void => {
+        const key = JSON.stringify([prefix, substring]);
+        if (pairs.has(key)) {
+            return;
+        }
+        pairs.add(key);
+        probes.push({ kind: 'prefixAndSubstring', prefix, substring });
+    };
+    for (const prefix of DIGEST_VALUE_DOMAIN) {
+        for (const substring of DIGEST_VALUE_DOMAIN) {
+            addPair(prefix, substring);
+        }
+    }
+    const joined = 'src/app/bootstrap';
+    for (let index = 0; index <= joined.length; index += 1) {
+        addPair(joined.slice(0, index), joined.slice(index));
+    }
+    return probes;
+}
+
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 
 /** A minimal workflow document with the jobs the deadline relation reads. */
@@ -6100,70 +6147,6 @@ describe('saved-project-state applicability matrix', () => {
     }
 
     it('digests a lossless encoding of every persisted-state matcher', () => {
-        // A matcher edit that changes what the predicate matches must change the digest. The digest
-        // entries are the matcher kinds plus every field, so two matchers that would render the same
-        // glob still encode differently.
-        expect(renderSavedProjectStateMatcherDigest({ kind: 'suffix', value: '.sdaw' })).not.toBe(
-            renderSavedProjectStateMatcherDigest({ kind: 'prefix', value: '**/*.sdaw' })
-        );
-        expect(renderSavedProjectStateMatcherDigest({ kind: 'wordPrefix', value: 'undo' })).not.toBe(
-            renderSavedProjectStateMatcherDigest({ kind: 'substring', value: 'undo' })
-        );
-        // A renderer that drops a field must redden the case: for every kind, changing each field
-        // changes the rendered encoding. Otherwise a matcher-field edit moves `appliesTo` while
-        // `computeRulesDigest()` stays byte-identical, replaying a stored assessment against a changed
-        // scope. Probe each field in turn.
-        const fieldCases: ReadonlyArray<
-            readonly [label: string, left: SavedProjectStateMatcher, right: SavedProjectStateMatcher]
-        > = [
-            ['wordPrefix.value', { kind: 'wordPrefix', value: 'undo' }, { kind: 'wordPrefix', value: 'redo' }],
-            ['substring.value', { kind: 'substring', value: 'undo' }, { kind: 'substring', value: 'redo' }],
-            ['prefix.value', { kind: 'prefix', value: 'src/a/' }, { kind: 'prefix', value: 'src/b/' }],
-            ['suffix.value', { kind: 'suffix', value: '.sdaw' }, { kind: 'suffix', value: '.sourdaw' }],
-            [
-                'prefixAndSubstring.prefix',
-                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
-                { kind: 'prefixAndSubstring', prefix: 'src/infra/', substring: 'bootstrap' },
-            ],
-            [
-                'prefixAndSubstring.substring',
-                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
-                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'handlers' },
-            ],
-            // The two fields' boundary itself is part of the encoding: two split points over the same
-            // concatenated text, and a pair whose roles are swapped (empty prefix vs empty substring),
-            // both concatenate to one string a separator-less renderer would collapse to. A renderer
-            // that joins the fields without the separator reddens these two probes.
-            [
-                'prefixAndSubstring.split-point',
-                { kind: 'prefixAndSubstring', prefix: 'src/app/boo', substring: 'tstrap' },
-                { kind: 'prefixAndSubstring', prefix: 'src/app/', substring: 'bootstrap' },
-            ],
-            [
-                'prefixAndSubstring.swapped-roles',
-                { kind: 'prefixAndSubstring', prefix: 'bootstrap', substring: '' },
-                { kind: 'prefixAndSubstring', prefix: '', substring: 'bootstrap' },
-            ],
-            ['exact.value', { kind: 'exact', value: 'src/a.ts' }, { kind: 'exact', value: 'src/b.ts' }],
-        ];
-        for (const [label, left, right] of fieldCases) {
-            expect(renderSavedProjectStateMatcherDigest(left), label).not.toBe(
-                renderSavedProjectStateMatcherDigest(right)
-            );
-        }
-        // A renderer that collapses two kinds onto one encoding — e.g. rendering `exact` under the
-        // `prefix` encoding — leaves `computeRulesDigest()` byte-identical across a kind edit, so a
-        // stored assessment replays against a changed scope. One matcher of each of the six kinds
-        // sharing one value, with the six encodings asserted pairwise distinct, reddens that.
-        const oneOfEachKind: readonly SavedProjectStateMatcher[] = [
-            { kind: 'wordPrefix', value: 'undo' },
-            { kind: 'substring', value: 'undo' },
-            { kind: 'prefix', value: 'undo' },
-            { kind: 'suffix', value: 'undo' },
-            { kind: 'prefixAndSubstring', prefix: 'undo', substring: 'undo' },
-            { kind: 'exact', value: 'undo' },
-        ];
-        expect(new Set(oneOfEachKind.map(renderSavedProjectStateMatcherDigest)).size).toBe(6);
         // The three rules' digest input is exactly the lossless encoding of the persisted-state
         // matchers, in registry order; adding, removing, or editing a matcher changes this list.
         const persistedMatchers = SAVED_PROJECT_STATE_SURFACES.filter((surface) =>
@@ -6173,6 +6156,16 @@ describe('saved-project-state applicability matrix', () => {
         expect(SAVED_PROJECT_STATE_DIGEST_ENTRIES).toHaveLength(persistedMatchers.length);
         for (const id of PROJECT_STATE_RULE_IDS) {
             expect(semanticRule(id).applicabilityPaths).toEqual(SAVED_PROJECT_STATE_DIGEST_ENTRIES);
+        }
+        // The encoding is lossless: distinct generated probes must render distinctly. A matcher edit
+        // that moves `appliesTo` while `computeRulesDigest()` stays byte-identical replays a stored
+        // assessment against a changed scope, so a renderer that ignores a field, the boundary between
+        // the two fields, a field role, or a kind must redden this case.
+        const renderings = new Set<string>();
+        for (const matcher of generatedDigestProbes()) {
+            const rendered = renderSavedProjectStateMatcherDigest(matcher);
+            expect(renderings.has(rendered), `collides: ${JSON.stringify(matcher)} -> ${rendered}`).toBe(false);
+            renderings.add(rendered);
         }
     });
 
@@ -6443,6 +6436,14 @@ describe('saved-project-state applicability matrix', () => {
             ['src/modules/transport/stores/timesignaturemapstore.ts', true, 'persisted `timeSignatureMap` CRDT slot'],
             ['src/modules/transport/stores/transportstore.ts', true, 'persisted `transport` CRDT slot'],
             ['src/modules/yeast/stores/yeastautomergestorage.ts', true, 'persisted `yeast` CRDT slot'],
+            // The one Arrangement use case the view keeps: it resets the slot-owning stores for a
+            // replacement project (a saved-project-state write), reached by the `arrangementstore`
+            // word marker.
+            [
+                'src/modules/Arrangement/useCases/resetArrangementStoresForProject.ts',
+                true,
+                'resets the Arrangement slot-owning stores for a replacement project',
+            ],
             // Excluded, recorded with the reason each surface is left out.
             [
                 'src/modules/Arrangement/presentations/views/TrackList.tsx',
@@ -6458,6 +6459,26 @@ describe('saved-project-state applicability matrix', () => {
                 'src/modules/Command/stores/macroStore.ts',
                 false,
                 'Command/ macro surface owns neither persisted state nor undo; its undo files match the `undo` word, not a bare prefix',
+            ],
+            [
+                'src/modules/Command/useCases/productionBriefAdmissionPort.ts',
+                false,
+                'production-brief admission guard seam; names the brief but owns no persisted state (`productionbrief` is scoped to `src/modules/Project/`)',
+            ],
+            [
+                'src/modules/Command/useCases/isProjectDataRepairAction.ts',
+                false,
+                'pure `repairProjectData` action-type predicate; names `ProjectData` but owns no persisted state (`projectdata` is scoped to `src/modules/Project/models/`)',
+            ],
+            [
+                'src/modules/DawInterchange/useCases/mapToProjectData.ts',
+                false,
+                '`.dawproject` → `ProjectData` interchange mapping; native saved-project persistence belongs to Project and CrdtDocument',
+            ],
+            [
+                'src/modules/DawInterchange/useCases/projectDataContract.ts',
+                false,
+                '`ProjectData` interchange type aliases derived from `buildProjectData`; no persisted write',
             ],
             [
                 'src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts',

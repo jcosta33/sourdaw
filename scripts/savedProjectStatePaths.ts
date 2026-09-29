@@ -127,10 +127,14 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  *   (`main.tsx`, `registerDependencies.ts`, `resolveAppComposition.ts`).
  * - `migration`, `repairprojectdata`, `projectdata`: the canonical `.sourdaw` schema and version
  *   contract (`ProjectData.ts`), its migrations (`VcaTrackMigration.ts` and other modules' legacy
- *   migrations), and its repair (`repairProjectData`, `handleRepairProjectData`).
+ *   migrations), and its repair (`repairProjectData`, `handleRepairProjectData`). `projectdata` is
+ *   scoped to `src/modules/Project/models/` so it holds the schema itself without reaching other
+ *   modules' `ProjectData`-naming interchange and action files.
  * - `projectstore`, `arrangementstore`, `productionbrief`, the `recentProjects/` use cases: the
  *   persisted CRDT slots (`projectStore`'s durable `projectMeta` keys, `arrangementStore`'s
  *   `arrangements` slot, the `productionBrief` durable key) and the recent-projects persistence.
+ *   `productionbrief` is scoped to `src/modules/Project/` so it holds the brief model and writers
+ *   without reaching the Command module's `productionBriefAdmissionPort`.
  * - the saved-document slot-owning stores, derived mechanically rather than sampled: every non-test
  *   source path that constructs a durable slot on the saved `.sdaw` Automerge document by calling
  *   `createAutomergeStorage(` (including the two stores that pass the literal `'root'` document
@@ -171,8 +175,11 @@ function matchesMatcher(path: string, matcher: SavedProjectStateMatcher): boolea
  *
  * Deliberately not matched: other modules' use cases, handlers, and read surfaces stay out — the
  * view holds only their slot-owning stores (the `createAutomergeStorage(` call sites above), their
- * undo files, and their migration files, never the use cases that write through those stores.
- * `Command/` stays out beyond its undo files and its `commandBatchIdempotencyStore` slot store, as do
+ * undo files, and their migration files, plus the one use case that clears those stores for a
+ * replacement project, `Arrangement/useCases/resetArrangementStoresForProject.ts` (reached by the
+ * `arrangementstore` word marker; its direct store resets are a saved-project-state write the view
+ * keeps). `Command/` stays out beyond its undo files and its `commandBatchIdempotencyStore` slot
+ * store, as do
  * the Project module's presentation views (`presentations/views/`), its semantic queries
  * (`semanticProjectQueries`, `semanticProjectIndex`, `semanticRangeOverlap`,
  * `getSemanticProjectIndexDiagnostics`, `parseSemanticProjectQueryInput`, the `SemanticProjectQuery`
@@ -219,8 +226,14 @@ export const SAVED_PROJECT_STATE_SURFACES: readonly SavedProjectStateSurface[] =
     },
     { matcher: { kind: 'wordPrefix', value: 'migration' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'substring', value: 'repairprojectdata' }, scopes: ['persisted-state'] },
-    { matcher: { kind: 'wordPrefix', value: 'projectdata' }, scopes: ['persisted-state'] },
-    { matcher: { kind: 'wordPrefix', value: 'productionbrief' }, scopes: ['persisted-state'] },
+    {
+        matcher: { kind: 'prefixAndSubstring', prefix: 'src/modules/project/models/', substring: 'projectdata' },
+        scopes: ['persisted-state'],
+    },
+    {
+        matcher: { kind: 'prefixAndSubstring', prefix: 'src/modules/project/', substring: 'productionbrief' },
+        scopes: ['persisted-state'],
+    },
     { matcher: { kind: 'wordPrefix', value: 'projectstore' }, scopes: ['persisted-state'] },
     { matcher: { kind: 'wordPrefix', value: 'arrangementstore' }, scopes: ['persisted-state'] },
     // Saved-document slot-owning stores: one exact matcher per non-test `createAutomergeStorage(`
