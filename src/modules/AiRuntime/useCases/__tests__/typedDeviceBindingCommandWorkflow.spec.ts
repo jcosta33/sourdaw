@@ -176,10 +176,55 @@ const orderedDeviceProviderItems = [
     },
 ] as const;
 
+const twoTrackOrderedPrompt =
+    'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track';
+
+const twoTrackOrderedProviderItems = [
+    orderedDeviceProviderItems[0],
+    {
+        ...orderedDeviceProviderItems[1],
+        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'lead-filter' },
+    },
+    {
+        ...orderedDeviceProviderItems[2],
+        arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'lead-limiter' },
+    },
+    {
+        ...orderedDeviceProviderItems[3],
+        arguments: {
+            trackId: '$lead',
+            deviceType: 'builtin-compressor',
+            binding: 'lead-compressor',
+            afterDeviceId: '$lead-filter',
+        },
+        dependsOn: ['add-filter'],
+    },
+    { id: 'make-bass', name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+    {
+        id: 'add-bass-filter',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-filter', binding: 'bass-filter' },
+        dependsOn: ['make-bass'],
+    },
+    {
+        id: 'add-bass-limiter',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-limiter', binding: 'bass-limiter' },
+        dependsOn: ['make-bass'],
+    },
+    {
+        id: 'add-bass-compressor',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-compressor', binding: 'bass-compressor' },
+        dependsOn: ['make-bass'],
+    },
+] as const;
+
 type WorkflowProviderItems =
     | typeof providerItems
     | typeof siblingDeviceProviderItems
     | typeof orderedDeviceProviderItems
+    | typeof twoTrackOrderedProviderItems
     | typeof missingAnchorDeviceProviderItems;
 
 const missingAnchorDeviceProviderItems = [
@@ -331,6 +376,38 @@ describe('typed created-device binding Command workflow', () => {
         expect(trackStore.value?.tracks).toEqual([]);
         await redo();
         expect(trackStore.value?.tracks).toEqual([committedTrack]);
+    });
+
+    it('commits distinct requested device orders on two new tracks and round-trips the batch', async () => {
+        const revision = captureProjectRevision();
+        const workflow = materializeWorkflow(revision, twoTrackOrderedPrompt, twoTrackOrderedProviderItems);
+        expect(workflow.actions).toHaveLength(8);
+        expect(trackStore.value?.tracks).toEqual([]);
+        const leadDeviceIds = workflow.actions.slice(1, 4).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Lead device');
+            }
+            return action.payload.deviceId;
+        });
+        const bassDeviceIds = workflow.actions.slice(5).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Bass device');
+            }
+            return action.payload.deviceId;
+        });
+        const commandBatch = compileWorkflowCommandBatch(workflow, revision, 'two-track-order', twoTrackOrderedPrompt);
+        expect(await executeVersionedCommandBatchEnvelope(commandBatch)).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks.map((track) => [track.name, track.devices.map((device) => device.id)])).toEqual(
+            [
+                ['Lead', [leadDeviceIds[0], leadDeviceIds[2], leadDeviceIds[1]]],
+                ['Bass', bassDeviceIds],
+            ]
+        );
+        const committedTracks = structuredClone(trackStore.value?.tracks);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
     });
 
     it('retains guarded sibling device producers when partially accepting the later device', async () => {

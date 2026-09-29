@@ -3219,6 +3219,112 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { afterDeviceId: firstDeviceId } });
     });
 
+    it('scopes a requested insertion anchor to the named parent across ordinary and semantic-list proposals', () => {
+        const prompt =
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track';
+        const calls = [
+            { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'lead-filter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'lead-limiter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: '$lead',
+                    deviceType: 'builtin-compressor',
+                    binding: 'lead-compressor',
+                    afterDeviceId: '$lead-filter',
+                },
+            },
+            { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-filter', binding: 'bass-filter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-limiter', binding: 'bass-limiter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-compressor', binding: 'bass-compressor' },
+            },
+        ];
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const route = (items: typeof calls, structured: boolean) => {
+            if (!structured) {
+                return bridge(items, prompt, context);
+            }
+            const compiled = compileArbitraryCommandList({
+                context,
+                revision: 'revision-two-track-order',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: prompt,
+                                constraints: [],
+                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: items.map((call, index) => ({
+                                    id: `item-${String(index)}`,
+                                    name: call.name,
+                                    arguments: call.arguments,
+                                    ...(index === 0 ? {} : { dependsOn: [`item-${String(index - 1)}`] }),
+                                })),
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            return bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context,
+                projectRevision: 'revision-two-track-order',
+                prompt,
+            });
+        };
+        for (const structured of [false, true]) {
+            const correct = route(calls, structured);
+            expect(correct.rejections).toEqual([]);
+            expect(correct.actions).toHaveLength(8);
+            const invented = route(
+                calls.map((call, index) =>
+                    index === 7 ? { ...call, arguments: { ...call.arguments, afterDeviceId: '$bass-filter' } } : call
+                ),
+                structured
+            );
+            expect(invented.actions).toEqual([]);
+            expect(invented.rejections).toContainEqual(expect.objectContaining({ index: 7, name: 'addDevice' }));
+        }
+    });
+
     it('refuses a device that omits the requested after anchor behind another device', () => {
         const calls = [
             { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },

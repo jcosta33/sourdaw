@@ -300,7 +300,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             {
                 commands: {
                     type: 'array',
-                    minItems: 1,
+                    minItems: 0,
                     maxItems: MAX_LLM_ACTIONS_PER_BATCH,
                     items: {
                         type: 'object',

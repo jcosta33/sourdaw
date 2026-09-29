@@ -5152,18 +5152,37 @@ function getCreatedDeviceOrderingRejection(input: {
         return null;
     }
     const quoteScan = scanPromptQuotedText(input.prompt);
-    const anchoredClauses = getPromptClauses(input.prompt, quoteScan.maskedText)
-        .filter(
-            (clause) =>
-                resolveClauseActionIntent(clause.masked, input.catalog, 'addDevice')?.actionType === 'addDevice' &&
-                namesProducedCreationInClause(clause, 'addDevice', producedName)
-        )
-        .flatMap((clause) => {
-            const anchor = /\bafter\b/iu.exec(clause.masked);
-            return anchor?.index === undefined ? [] : [clause.text.slice(anchor.index + anchor[0].length).trim()];
-        });
+    const parentBinding = input.visibleBindings.get(parentReference.slice(1));
+    const namedDeviceClauses = getPromptClauses(input.prompt, quoteScan.maskedText).filter(
+        (clause) =>
+            resolveClauseActionIntent(clause.masked, input.catalog, 'addDevice')?.actionType === 'addDevice' &&
+            namesProducedCreationInClause(clause, 'addDevice', producedName)
+    );
+    const matchingDeviceClauses = namedDeviceClauses.filter((clause) => {
+        const parentClause = getCreatedParentEvidenceClause(clause, 'addDevice');
+        const namedParents = [...input.visibleBindings.values()].filter(
+            (candidate) =>
+                (candidate.actionType === 'addTrack' || candidate.actionType === 'createBus') &&
+                hasCompleteCreatedTargetReference(
+                    parentClause.text,
+                    candidate,
+                    input.visibleBindings,
+                    input.context,
+                    'addDevice'
+                )
+        );
+        return namedParents.length === 0 || (namedParents.length === 1 && namedParents[0] === parentBinding);
+    });
+    const anchoredClauses = matchingDeviceClauses.flatMap((clause) => {
+        const anchor = /\bafter\b/iu.exec(clause.masked);
+        return anchor?.index === undefined ? [] : [clause.text.slice(anchor.index + anchor[0].length).trim()];
+    });
     if (anchoredClauses.length === 0) {
-        return null;
+        return input.call.arguments.afterDeviceId !== undefined &&
+            matchingDeviceClauses.length > 0 &&
+            namedDeviceClauses.some((clause) => /\bafter\b/iu.test(clause.masked))
+            ? 'Requested device insertion anchor is missing or mismatched'
+            : null;
     }
     const requestedAnchor = anchoredClauses[0]?.replace(/^(?:the|a|an|new)\s+/iu, '');
     const matchingAnchors = [...input.visibleBindings.values()].filter(
@@ -5173,7 +5192,6 @@ function getCreatedDeviceOrderingRejection(input: {
             requestedAnchor !== undefined &&
             namesNamedCreationMember(requestedAnchor, candidate.name)
     );
-    const parentBinding = input.visibleBindings.get(parentReference.slice(1));
     const qualifiedAnchor =
         requestedAnchor !== undefined && /\b(?:on|in)\b/iu.test(scanPromptQuotedText(requestedAnchor).maskedText);
     if (

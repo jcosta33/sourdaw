@@ -260,6 +260,77 @@ describe('transform.compile planner tool', () => {
         ).toBe('success');
     });
 
+    it('admits a selected compiled-only proposal through the hosted tool protocol and runtime', async () => {
+        const schema = APPLICATION_OWNED_TOOL_SCHEMAS.find((tool) => tool.function.name === 'command.batch.propose');
+        if (!schema) {
+            throw new Error('Expected command.batch.propose in the application-owned catalog');
+        }
+        const wire = projectOpenAiStrictToolSchema(schema);
+        const { protocol, request } = readyRequest({
+            operation: 'tools',
+            tools: [
+                {
+                    name: wire.function.name,
+                    description: wire.function.description,
+                    parameters: wire.function.parameters,
+                },
+            ],
+        });
+        const session = protocol.start(request);
+        expect(() =>
+            session.push(
+                eventEnvelope(request, 0, {
+                    type: 'tool-call',
+                    call: {
+                        id: 'propose-compiled-only',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [], list: null, compiledCallIds: ['compile-1'], plan: null },
+                    },
+                })
+            )
+        ).not.toThrow();
+        const admitted = session.finish(finishEnvelope(request, 1, { reason: 'stop' }));
+        expect(admitted.output.toolCalls).toHaveLength(1);
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: admitted.output.toolCalls });
+        const result = await parsePromptToActions(
+            'set note velocities in the selected MIDI clips to 90',
+            CONTEXT,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toHaveLength(2);
+
+        const emptySession = protocol.start(request);
+        emptySession.push(
+            eventEnvelope(request, 0, {
+                type: 'tool-call',
+                call: {
+                    id: 'propose-empty',
+                    name: 'command.batch.propose',
+                    arguments: { commands: [], list: null, compiledCallIds: null, plan: null },
+                },
+            })
+        );
+        const emptyCall = emptySession.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls;
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: emptyCall });
+        const empty = await parsePromptToActions(
+            'set note velocities in the selected MIDI clips to 90',
+            CONTEXT,
+            undefined,
+            'revision-transform-1'
+        );
+        expect(empty.actions).toEqual([]);
+        expect(empty.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
+    });
+
     it('refuses malformed, duplicate-key, and oversized JSON text before compilation', () => {
         const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');
         const duplicateName = JSON.stringify(DOCUMENT).replace(

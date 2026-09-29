@@ -1339,6 +1339,20 @@ function validateCatalogTerminalCalls(
     return declineValidation;
 }
 
+function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
+    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || !Array.isArray(call.arguments.commands)) {
+        return call;
+    }
+    return {
+        ...call,
+        arguments: Object.fromEntries(
+            Object.entries(call.arguments).filter(
+                ([key, value]) => (key !== 'list' && key !== 'plan') || value !== null
+            )
+        ),
+    };
+}
+
 /** One accepted call of a turn, under the identity the loop resolved for it. */
 type IdentifiedToolCall = { call: ToolCallResult; callId: string };
 
@@ -1865,7 +1879,7 @@ export async function runApplicationOwnedToolLoop(
         if (terminalCalls.length > 0 || outcome.toolCalls.length === 0) {
             return {
                 status: 'complete',
-                toolCalls: terminalCalls.map(({ call }) => call),
+                toolCalls: terminalCalls.map(({ call }) => normalizeTerminalProposalCall(call)),
                 decline: terminalValidation.decline,
                 searchedIntents: [...searchedIntents],
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
