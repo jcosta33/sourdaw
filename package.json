@@ -54,6 +54,7 @@
         "lane:prune": "node scripts/pruneLane.ts",
         "review:prepare": "node scripts/prepareReviewEntry.ts",
         "review:semantic": "node scripts/semanticReview.ts",
+        "review:semantic:measure": "node scripts/semanticReviewMeasurement.ts",
         "review:accept": "node scripts/trustedGithubWriteBootstrap.ts review:accept",
         "review:publish": "node scripts/trustedGithubWriteBootstrap.ts review:publish",
         "review:publish:recover": "node scripts/trustedGithubWriteBootstrap.ts review:publish:recover",
