@@ -161,6 +161,11 @@ const rendererSessionQuiescer = createRendererSessionQuiescer(
 );
 
 const createAndActivateWindow = (): BrowserWindow => {
+    // A new renderer session begins here, before anything can load into the
+    // window: every retrospective arm the previous renderer left in flight is
+    // stale from this moment, so it can never land over its successor's
+    // startup disarm (#4752).
+    nativeHost?.beginRendererSession();
     rendererSessionLifecycle.startWindow();
     closeSessionQuiescedWindow = undefined;
     const window = createWindow();
@@ -439,6 +444,13 @@ const createWindow = (): BrowserWindow => {
         });
     });
     attachWebContentsPolicy(window);
+    // A reload replaces this window's renderer without replacing the window,
+    // so the session begun at creation does not cover it: the page that
+    // finishes loading starts a session of its own, and every arm the
+    // previous page left in flight is stale from that moment (#4752).
+    window.webContents.on('did-finish-load', () => {
+        nativeHost?.beginRendererSession();
+    });
     void window.loadURL(entryUrl);
     destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(
         window,

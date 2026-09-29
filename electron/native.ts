@@ -45,6 +45,18 @@ export type NativeHost = {
      * and they call it with named, checked arguments.
      */
     readonly grantPath: (path: string, mode: FileGrantMode, recursive: boolean) => Promise<void>;
+    /**
+     * Begin a renderer session, answering the generation a retrospective arm
+     * from that session must still match when it lands.
+     *
+     * Declared here rather than reached through the generic command record
+     * because it is main-process-only by design (#4752): the shell calls it
+     * the moment it creates a session window, and when a session window's
+     * page finishes loading — a same-window reload replaces its renderer —
+     * and no renderer may name it, since a page that could bump the session
+     * generation could strand another session's arm arbitrarily.
+     */
+    readonly beginRendererSession: () => number;
     /** Dedicated dictation controls stay outside generic renderer command routing. */
     readonly startDictation: (sessionId: string) => Promise<string>;
     readonly stopDictation: (sessionId: string) => void;

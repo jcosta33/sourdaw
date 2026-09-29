@@ -57,7 +57,12 @@ describe('projectEngineTransportMaps', () => {
         // the endpoints, and the engine would run the whole ramp at 120.
         expect(maps.tempo.length).toBeGreaterThan(2);
         const rampTempos = maps.tempo.map((segment) => segment.beatsPerMinute);
-        expect(rampTempos[0]).toBe(120);
+        // The engine integrates each segment as span × BPM, so a segment
+        // states the mean tempo of the span it opens rather than the ramp's
+        // left endpoint (#4657): the opening segment's mean sits strictly
+        // above the opening tempo, and only the final segment — whose span is
+        // the rest of the arrangement — states an endpoint outright.
+        expect(rampTempos[0]).toBeGreaterThan(120);
         expect(rampTempos.at(-1)).toBe(240);
         // Monotonic through the ramp, and strictly between the endpoints in the
         // middle: that is what makes it a ramp rather than two steps.

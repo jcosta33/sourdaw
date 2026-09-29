@@ -21,6 +21,19 @@
  * (`RAMP_SEGMENT_BEATS`) and widens uniformly when a project's ramps would
  * otherwise exceed the engine's segment budget, so a dense map loses resolution
  * evenly instead of losing its tail.
+ *
+ * ## A segment states the tempo its span integrates to
+ *
+ * The engine counts beats by integrating each segment as `span × BPM`, and the
+ * song position it hands the arpeggiator's step clock and hosted plugins'
+ * tempo sync is that integral. A segment sitting at the exact second its beat
+ * is reached must therefore carry the *mean* tempo over the span it opens —
+ * stating the ramp's value at the segment's left endpoint makes every segment
+ * of a rising ramp integrate too few beats (a falling one, too many) and
+ * carries the error into every later segment, so the engine's song position
+ * drifts off the arrangement permanently after one ramp (#4657). With the
+ * mean, the engine's beat count returns exactly the arrangement's beat at
+ * every projected segment boundary, whatever the sampling resolution.
  */
 
 import { secondsBetweenBeats } from '../../models/TempoMap';
@@ -187,6 +200,31 @@ function tempoAtBeat(sorted: readonly TempoChange[], beat: number, defaultTempo:
     return governing.tempo + (next.tempo - governing.tempo) * travelled;
 }
 
+/**
+ * The tempo one projected segment states, given the boundary its beat opens
+ * and the one the next beat opens.
+ *
+ * The engine integrates each segment as `span × BPM`, so the tempo that makes
+ * the integral land on the segment's own beats is the mean over its span —
+ * `60 · Δbeat / Δseconds` (#4657). The last segment has no following boundary
+ * to average across: its span is the rest of the arrangement, which holds the
+ * tempo the arrangement is at, so it states that. A boundary that opens no
+ * time (two beats on one second) cannot state a mean either, and the engine
+ * refuses equal segment frames outright, so the segment installs nothing
+ * either way and keeps the arrangement's tempo rather than dividing by zero.
+ */
+function segmentBeatsPerMinute(
+    sorted: readonly TempoChange[],
+    boundary: { beat: number; seconds: number },
+    next: { beat: number; seconds: number } | undefined,
+    defaultTempo: number
+): number {
+    if (next === undefined || next.seconds <= boundary.seconds) {
+        return tempoAtBeat(sorted, boundary.beat, defaultTempo);
+    }
+    return (60 * (next.beat - boundary.beat)) / (next.seconds - boundary.seconds);
+}
+
 function projectTempo(
     changes: readonly TempoChange[],
     defaultTempo: number,
@@ -223,12 +261,14 @@ function projectTempo(
         beats.unshift(0);
     }
 
-    // Tempo is read from the whole authored map, not from the thinned one: a
-    // segment that survived should still state the tempo the arrangement is
-    // actually at, whatever was dropped around it.
-    return beats.map((beat) => ({
-        startSeconds: atBeat(beat),
-        beatsPerMinute: tempoAtBeat(sorted, beat, defaultTempo),
+    // Each boundary's second is integrated once, in beat order, through the
+    // whole authored map — not the thinned one — so a segment that survived
+    // still opens on the second the arrangement actually reaches its beat,
+    // whatever was dropped around it.
+    const boundaries = beats.map((beat) => ({ beat, seconds: atBeat(beat) }));
+    return boundaries.map((boundary, index) => ({
+        startSeconds: boundary.seconds,
+        beatsPerMinute: segmentBeatsPerMinute(sorted, boundary, boundaries[index + 1], defaultTempo),
     }));
 }
 

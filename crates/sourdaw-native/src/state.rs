@@ -17,6 +17,7 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
@@ -323,6 +324,11 @@ pub struct AppState {
     /// this — it is always the innermost of the three.
     pub retrospective_arm:
         Arc<Mutex<Option<crate::commands::engine_retrospective::DesiredRetrospectiveArm>>>,
+    /// How many renderer sessions the shell has begun, one bump per session
+    /// window the main process creates (and one per session window page that
+    /// finishes loading — a same-window reload replaces its renderer). See
+    /// [`AppState::begin_renderer_session`].
+    pub session_generation: Arc<AtomicU64>,
     /// The durable half of `plugin_registry`: the file a scan writes and the
     /// first plugin-touching command reads back, so a relaunched app resolves
     /// a saved project's plugins without a manual scan. Control-side only —
@@ -570,6 +576,26 @@ fn chain_kind_for_category(category: &str) -> DeviceKind {
 }
 
 impl AppState {
+    /// Begin a renderer session: advance the generation a retrospective arm
+    /// must match and answer the new one.
+    ///
+    /// The shell calls this on the main process's own behalf the moment it
+    /// creates a session window, and again when a session window's page
+    /// finishes loading — a same-window reload replaces its renderer without
+    /// replacing the window. A retrospective arm is stamped with the
+    /// generation current when it was issued, so a bump between its stamp and
+    /// its landing proves the renderer that asked for it is gone: landing it
+    /// then would write a dead session's punch back over its successor's
+    /// startup disarm (#4752).
+    pub fn begin_renderer_session(&self) -> u64 {
+        self.session_generation.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// The generation retrospective arms are currently stamped against.
+    pub fn session_generation(&self) -> u64 {
+        self.session_generation.load(Ordering::Acquire)
+    }
+
     /// App state whose plugin registry is backed by the scan registry file in
     /// the platform's app-data directory. The production constructor.
     ///
@@ -605,6 +631,7 @@ impl Default for AppState {
                 crate::commands::graph::GraphMappingSessions::default(),
             )),
             retrospective_arm: Arc::new(Mutex::new(None)),
+            session_generation: Arc::new(AtomicU64::new(0)),
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
             ),

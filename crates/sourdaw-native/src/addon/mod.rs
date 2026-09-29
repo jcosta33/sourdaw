@@ -868,6 +868,21 @@ impl SourdawNative {
         )
     }
 
+    /// Begin a renderer session on the shell's behalf, answering the
+    /// generation a retrospective arm from that session must still match when
+    /// it lands.
+    ///
+    /// The shell calls this directly — it is denied to the renderer like the
+    /// other shell-plumbing methods — the moment it creates a session window,
+    /// and again when a session window's page finishes loading, which is how
+    /// a same-window reload replaces its renderer. The bump is what refuses
+    /// an arm the previous renderer left in flight once its successor's
+    /// startup disarm has run (#4752).
+    #[napi]
+    pub fn begin_renderer_session(&self) -> u64 {
+        self.singletons.app_state.begin_renderer_session()
+    }
+
     /// Empty the engine slot when the output stream behind it is gone, so the
     /// next `apply_graph_commands` boots a fresh engine on the current default
     /// device. Answers

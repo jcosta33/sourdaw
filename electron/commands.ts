@@ -185,6 +185,14 @@ export const EXPOSED_COMMANDS = [
  * addon, for the path a native dialog is about to return, which is what makes
  * "the user picked this" the only way a path becomes reachable.
  *
+ * `begin_renderer_session` is denied like `grant_path` for the reason it
+ * exists (jcosta33/sourdaw#4752): it is the main process's own admission of a
+ * renderer session — the bump that strands every retrospective arm the
+ * previous renderer left in flight — and the shell calls it directly on the
+ * addon when it creates a session window and when a session window's page
+ * finishes loading. A renderer able to name it could strand a successor
+ * session's arm arbitrarily.
+ *
  * `send_plugin_midi` is denied for a reason of its own: it is block-immediate
  * and carries no timing contract. It hands a plugin one note at the head of
  * whichever block it is next given, because a note struck on a keyboard has no
@@ -205,6 +213,7 @@ export const EXPOSED_COMMANDS = [
  * panel opens, so its caller never went away.
  */
 export const DENIED_COMMANDS = [
+    'begin_renderer_session',
     'cancel_dictation',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',

@@ -84,6 +84,7 @@ const refuseGrant = () => {
 
 const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unknown>): NativeHost => ({
     shutdown: () => undefined,
+    beginRendererSession: refuseDictation('beginRendererSession'),
     startDictation: refuseDictation('startDictation'),
     stopDictation: refuseDictation('stopDictation'),
     cancelDictation: refuseDictation('cancelDictation'),
