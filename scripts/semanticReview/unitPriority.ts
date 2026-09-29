@@ -199,16 +199,19 @@ export function readPlannedRequests(value: unknown, label: string): readonly Sem
 /**
  * Holds a published order to the key it claims to be sorted by, and to the scope's own records.
  *
- * Enforced: the entries are distinct; they cover exactly the eligible units; no entry names a path the
+ * Enforced: the entries are distinct; their count is the eligible count; no entry names a path the
  * scope records as excluded, which the planner never planned; every unit the scope records as
  * unassessed is listed; each entry's answerable count fits its rule list; and the entries read
  * non-decreasing in the admission key — class rank, then the missing-evidence measure, then the path.
+ * Coverage is completed by `assertPlanMatchesLedger`, which refuses an entry for a unit the report
+ * records no trace of.
  *
  * Not enforced, because the published fields cannot support it: an entry's own rule set, class, and
  * counts are never re-derived here. The report carries no plan and no previous path, so an entry whose
- * figures and key position agree with each other passes however the run actually walked its units; a
- * stored order can be refuted for disagreeing with the key or with the scope's records, never for
- * disagreeing with a plan nobody published.
+ * figures, key position, and ledger trace agree with each other passes however the run actually walked
+ * its units — a forgery that raises the order, the signals, and the scope together is
+ * indistinguishable from an honest report. These checks bound disagreement with the key and with the
+ * report's own records; they do not prove that every entry had a unit.
  */
 export function assertRequestOrderIsSorted(input: {
     readonly requestOrder?: readonly SemanticPlannedRequest[];
@@ -270,14 +273,23 @@ export function assertRequestOrderIsSorted(input: {
 }
 
 /**
- * Holds the report's own signals to the plan it publishes: every unit a signal names must be a unit the
- * order lists. Without this, an entry's path could be rewritten to any file the plan never contained and
- * the order would still agree with the scope's counts — the displaced unit's ledger would simply name a
- * unit the plan no longer holds. A report written before the order existed carries none and stays valid.
+ * Ties the published order to the report's own ledger in both directions.
+ *
+ * Every unit a signal names must be in the order: a signal for a unit the plan does not list is a report
+ * whose order was rewritten around its own records. And every order entry must be a unit the report
+ * records — named by a signal, or listed as unassessed — so an entry fabricated for a unit that left no
+ * trace is refused instead of counted as assessed. An honest plan leaves one of the two traces for every
+ * unit it holds: an asked unit reports each of its rules as a signal, and a unit no request could ask is
+ * recorded as unassessed.
+ *
+ * What the tie cannot see is a forgery that raises the order, the signals, and the scope together: a
+ * stored report is self-describing, and a consistent rewrite of all three is beyond what it can refute
+ * about itself. A report written before the order existed carries none and stays valid.
  */
-export function assertSignalsNamePlannedUnits(input: {
+export function assertPlanMatchesLedger(input: {
     readonly requestOrder?: readonly SemanticPlannedRequest[];
     readonly signals: readonly { readonly path: string }[];
+    readonly unassessed: readonly SemanticScopeExclusion[];
     readonly label: string;
 }): void {
     const order = input.requestOrder;
@@ -290,6 +302,18 @@ export function assertSignalsNamePlannedUnits(input: {
             refuse(
                 'invalid_response',
                 `${input.label} carries a signal for ${signal.path}, which its planned order does not list`
+            );
+        }
+    }
+    const recorded = new Set([
+        ...input.signals.map((signal) => signal.path),
+        ...input.unassessed.map((entry) => entry.path),
+    ]);
+    for (const entry of order) {
+        if (!recorded.has(entry.path)) {
+            refuse(
+                'invalid_response',
+                `${input.label} plans ${entry.path} without recording it: neither a signal nor an unassessed entry names it`
             );
         }
     }

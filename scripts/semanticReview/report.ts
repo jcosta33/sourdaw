@@ -31,7 +31,7 @@ import {
 } from './scopeAccounting.ts';
 import {
     assertRequestOrderIsSorted,
-    assertSignalsNamePlannedUnits,
+    assertPlanMatchesLedger,
     readPlannedRequests,
     type SemanticPlannedRequest,
 } from './unitPriority.ts';
@@ -306,6 +306,11 @@ export function validateReport(value: unknown): SemanticReport {
     };
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
+    if (record.mode !== 'scan' && scope.requestOrder !== undefined) {
+        // A verify report's own mode never walks units, so an order beside its findings is a claim no
+        // verifier produced and no ledger of its can corroborate.
+        refuse('invalid_response', 'a verify report carries a planned order, which only a scan produces');
+    }
     // The published totals and order are held to the scope's own records and to the admission key.
     assertScopeStatesMatch({
         states: scope.states,
@@ -352,9 +357,14 @@ export function validateReport(value: unknown): SemanticReport {
 
     if (record.mode === 'scan') {
         const signals = readScanAssessments(record.signals);
-        // The ledger and the plan must name the same units: a signal for a unit the order does not list
-        // is a report whose order was rewritten around its own records.
-        assertSignalsNamePlannedUnits({ requestOrder: scope.requestOrder, signals, label: SCOPE_LABEL });
+        // The ledger and the plan must name the same units in both directions: an entry with no trace is
+        // a unit the run never held, and a signal outside the order is an order rewritten around it.
+        assertPlanMatchesLedger({
+            requestOrder: scope.requestOrder,
+            signals,
+            unassessed: scope.unassessed,
+            label: SCOPE_LABEL,
+        });
         return { ...base, mode: 'scan', signals };
     }
     return { ...base, mode: 'verify', findingAssessments: readFindingAssessments(record.findingAssessments) };

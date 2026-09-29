@@ -694,6 +694,43 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         ).toThrow(/carries a signal for src\/infra\/thing.ts, which its planned order does not list/);
     });
 
+    it('refuses an entry fabricated for a unit the report records no trace of', async () => {
+        // The count tie and the scope arithmetic both still hold here: the fabricated entry is appended
+        // and the eligible, assessed, and discovered counts are raised with it, so the order is as long
+        // as the eligible count and stays sorted by the key. Only the ledger tie refutes it — nothing in
+        // the report's own signals or unassessed entries names that unit.
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        const last = order[order.length - 1];
+        if (last === undefined) {
+            throw new Error('the run published no planned entry, so the case would assert nothing');
+        }
+        const fabricated = { ...last, path: 'nope/fabricated.ts' };
+        expect(report.signals.some((signal) => signal.path === fabricated.path)).toBe(false);
+        expect(report.scope.unassessed.some((entry) => entry.path === fabricated.path)).toBe(false);
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: {
+                    ...report.scope,
+                    discovered: report.scope.discovered + 1,
+                    eligible: report.scope.eligible + 1,
+                    assessed: report.scope.assessed + 1,
+                    requestOrder: [...order, fabricated],
+                },
+            })
+        ).toThrow(/neither a signal nor an unassessed entry names it/);
+    });
+
+    it('refuses a verify report that carries a planned order', async () => {
+        // A verifier walks findings, never units, so an order beside its findings is a claim its mode
+        // cannot produce and no ledger of its own can corroborate.
+        const report = await scannedFourStates();
+        expect(() => validateReport({ ...report, mode: 'verify', findingAssessments: [] })).toThrow(
+            /only a scan produces/
+        );
+    });
+
     it('accepts the order the run itself published', async () => {
         const report = await scannedFourStates();
         expect(report.scope.requestOrder).toHaveLength(report.scope.eligible);
