@@ -1,0 +1,75 @@
+measurements/semantic-review/retained-sidecars.json
+  s_ed5aa36a3ba357::t_6b62465de944d7 1-858
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  s_ed5aa36a3ba357::t_83492684ae09bf 1-1495
+scripts/checkBarrelMockCoverage.ts
+  s_ed5aa36a3ba357::t_671cb779eae1bd 281-292
+scripts/semanticReviewMeasurement.ts
+  s_ed5aa36a3ba357::t_504df711d1f553 1-635
+scripts/semanticReviewMeasurement/artifacts.ts
+  s_ed5aa36a3ba357::t_902a4e8956b626 1-562
+scripts/semanticReviewMeasurement/contracts.ts
+  s_ed5aa36a3ba357::t_12004cafea0b55 1-444
+scripts/semanticReviewMeasurement/gaps.ts
+  s_ed5aa36a3ba357::t_55a37b08664763 1-181
+scripts/semanticReviewMeasurement/record.ts
+  s_ed5aa36a3ba357::t_7984f983f2c456 1-536
+src/app/__tests__/bootstrap.spec.ts
+  s_ed5aa36a3ba357::t_13e88c2f46a2d1 139,226,506,1264-1270
+src/app/__tests__/projectNativeDeviceState.spec.ts
+  s_ed5aa36a3ba357::t_52106844177b43 15,17,23,27-36,121-125,171-215,316-366
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_e9a5ce057d7778 132,625-629
+src/app/projectNativeDeviceState.ts
+  s_ed5aa36a3ba357::t_73df3794b98bcb 84-88
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ed5aa36a3ba357::t_77c4c3d1841f0d 632-639
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/singlePointClipLaneWindowHold.spec.ts
+  s_ed5aa36a3ba357::t_c99056c3dfdbd6 1-506
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ed5aa36a3ba357::t_ce77dfb892062d 353-363,454-489,504-523,529-563,892-898
+src/modules/GrandBoule/AGENTS.md
+  s_ed5aa36a3ba357::t_56d6da81af065e 7
+src/modules/GrandBoule/useCases/__tests__/initGrandBouleDocumentReconciliation.spec.ts
+  s_ed5aa36a3ba357::t_df14ab0276a40f 1-311
+src/modules/GrandBoule/useCases/index.ts
+  s_ed5aa36a3ba357::t_6afb4bbb38d62a 11-12
+src/modules/GrandBoule/useCases/initGrandBouleDocumentReconciliation.ts
+  s_ed5aa36a3ba357::t_0c3663a3f783bb 1-67
+src/modules/GrandBoule/useCases/reconcileGrandBouleDevicesFromProject.ts
+  s_ed5aa36a3ba357::t_9030f0c3712ec9 1-22
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_ed5aa36a3ba357::t_0f61a9a9f440a5 3-5,394-573
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_ed5aa36a3ba357::t_14ca16f380db6b 12-16,273-297,300,405-525
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ed5aa36a3ba357::t_92549fa11afdc2 351-355,408-416,501,707-715,839,956-964
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ed5aa36a3ba357::t_af3316643db634 1-552
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ed5aa36a3ba357::t_96ef6344a97271 1184,1211-1215,1220-1225
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationLaneEntry.spec.ts
+  s_ed5aa36a3ba357::t_0b70a070c78c52 4,6,42-47,183-317
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ed5aa36a3ba357::t_55efc038b45996 706-720,742
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ed5aa36a3ba357::t_8f5ba6f5880427 33,707-720,1101-1116,1139-1155
+tests/e2e/exportAudioEvidence.spec.ts
+  s_ed5aa36a3ba357::t_7c20f862b6290a 14-26,43,49-66,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "54e4b3e51382af54c4a3a0c72d21dcf9afb22ed7",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
