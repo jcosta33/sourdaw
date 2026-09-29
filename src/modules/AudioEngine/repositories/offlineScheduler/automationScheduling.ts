@@ -273,14 +273,13 @@ export function scheduleTrackAutomation({
     /**
      * Every `segments`-bound lane on one (device, parameter) collects its
      * compiled stream here instead of applying immediately, keyed by
-     * `${deviceId}::${parameterId}`, alongside the lane id that produced each
-     * stream. A `segments` consumer keeps only its most recent `apply` call,
-     * so two lanes driving one parameter — a track lane plus a clip lane, or
-     * two clip lanes on disjoint clips — used to lose every lane but the
-     * last; the group applies exactly once, after the loop, through
-     * `mergeAutomationSegmentStreams` (see the call site below), which keeps
-     * every disjoint stream and withholds only the lanes a genuine overlap
-     * cannot merge.
+     * `${deviceId}::${parameterId}`, alongside the lane id and scope that
+     * produced each stream. A `segments` consumer keeps only its most recent
+     * `apply` call, so two lanes driving one parameter used to lose every
+     * lane but the last; the group applies exactly once, after the loop,
+     * through `mergeAutomationSegmentStreams` (see the call site below),
+     * which resolves every span by the scope law and keeps each lane's
+     * material on the spans it owns.
      */
     const segmentGroupsByKey = new Map<
         string,
@@ -513,17 +512,19 @@ export function scheduleTrackAutomation({
                 // Collected, not applied — see `segmentGroupsByKey` and the
                 // merge pass after this loop. `apply` is the same call on every
                 // lane that resolves this (device, parameter) pair, so the last
-                // one resolved is as good as any to hold it.
+                // one resolved is as good as any to hold it. The scope is the
+                // resolution law's input (#4736): a clip-scoped lane owns every
+                // span its clip window covers.
                 const groupKey = `${candidate.deviceId}::${parameterId}`;
                 const group = segmentGroupsByKey.get(groupKey);
                 if (group) {
-                    group.streams.push({ laneId: lane.id, segments });
+                    group.streams.push({ laneId: lane.id, scope: lane.clipId ? 'clip' : 'track', segments });
                 } else {
                     segmentGroupsByKey.set(groupKey, {
                         apply: binding.apply,
                         deviceId: candidate.deviceId,
                         parameterId,
-                        streams: [{ laneId: lane.id, segments }],
+                        streams: [{ laneId: lane.id, scope: lane.clipId ? 'clip' : 'track', segments }],
                     });
                 }
                 continue;
@@ -681,14 +682,14 @@ export function scheduleTrackAutomation({
     }
 
     // One `apply` per (device, parameter) group, now that every lane's stream
-    // is collected: `mergeAutomationSegmentStreams` keeps every disjoint
-    // stream (each one starting at or after the previous one's terminator
-    // frame) and, inside a genuinely overlapping cluster, keeps only the one
-    // stream latest in lane-array order — there is no general way to
-    // interleave two schedules that both claim the same frame. The group
-    // applies exactly once, with whatever the merge kept; a caller that must
-    // not silently lose a withheld lane's writes learns about it through
-    // `onWithheldDeviceLanes`.
+    // is collected: `mergeAutomationSegmentStreams` resolves the group by the
+    // scope law — a clip-scoped lane owns every span its clip window covers,
+    // a track-level lane owns the rest, equal scopes break to the lane latest
+    // in lane-array order — and keeps every lane's material on the spans it
+    // owns, so nothing is withheld and the group still applies exactly once.
+    // A caller that must account for lanes the merge could not keep learns
+    // about it through `onWithheldDeviceLanes`, which the total law leaves
+    // silent.
     for (const { apply, deviceId, parameterId, streams } of segmentGroupsByKey.values()) {
         const merged = mergeAutomationSegmentStreams(streams);
         if (merged.withheldLaneIds.length > 0) {

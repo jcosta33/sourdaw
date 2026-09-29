@@ -488,15 +488,15 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
         expect(result).toEqual({ outcome: 'converted', entries: [], overlaps: [] });
     });
 
-    it('converts the strip, keeps the parameter entry, and reports the withheld lane when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O)', () => {
-        // clip-b[0.4, 0.8) holds `lane-clip-b`'s single point at its own
-        // start. The track-level lane (no clipId) carries a second point at
+    it('splices the clip lane over its window and keeps the track lane outside it when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O) (#4736)', () => {
+        // clip-b[0.4, 0.8) holds `lane-clip-b`'s flat value across its
+        // window. The track-level lane (no clipId) carries a second point at
         // beat 2 — past clip-b's start — so its own schedule genuinely spans
         // across clip-b's window rather than merely compiling back to back
-        // with it. `lane-clip-b` is latest in lane-array order, so
-        // `mergeAutomationSegmentStreams` keeps it and withholds `lane-track`
-        // — the parameter's entry still converts, carrying `lane-clip-b`'s
-        // writes, and every other entry on the strip still stands too.
+        // with it. The scope law hands clip-b's window to `lane-clip-b` and
+        // every other span to `lane-track`: the entry carries the splice,
+        // nothing is withheld, and every other entry on the strip still
+        // stands too.
         const scopedClip = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
         const track = createTrack({ devices: [hostedDevice], clips: [scopedClip] });
         const lanes: AutomationLane[] = [
@@ -509,7 +509,7 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
                 id: 'lane-clip-b',
                 parameterId: 'plugin-1:7',
                 clipId: scopedClip.id,
-                points: [point(0.4, 0.9)],
+                points: [point(0.4, 0.9), point(0.8, 0.9)],
             }),
         ];
 
@@ -525,16 +525,25 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
         if (result.outcome !== 'converted') {
             throw new Error(`expected 'converted', got 'declined': ${result.reason}`);
         }
-        expect(result.overlaps).toEqual([{ deviceId: 'plugin-1', parameterId: '7', laneIds: ['lane-track'] }]);
+        expect(result.overlaps).toEqual([]);
         const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
         expect(entry).toBeDefined();
-        expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.9, time: 0.4 });
+        // The track lane's flat value outside the clip window, the clip
+        // lane's value across it, and the track lane's resumption at the
+        // window's end — the scope law's splice.
+        expect(entry?.writes).toEqual([
+            { shape: 'step', value: 0.6, time: 0 },
+            { shape: 'step', value: 0.9, time: 0.4 },
+            { shape: 'step', value: 0.6, time: 0.8 },
+        ]);
     });
 
-    it('withholds both losing lanes into one overlap entry, keeping the latest, when three lanes on one device parameter mutually overlap', () => {
+    it('resolves a three-way mutual overlap to the latest lane, withholding nothing, when three track-level lanes share one device parameter (#4736)', () => {
         // Every lane below is track-level (no clipId) and spans the whole
         // render, so all three genuinely overlap on one device parameter —
-        // one cluster of three, not three independent pairs.
+        // one cluster of three, not three independent pairs. Equal scopes
+        // break to the lane latest in array order on the one span all three
+        // cover.
         const track = createTrack({ devices: [hostedDevice] });
         const lanes: AutomationLane[] = [
             lane({ id: 'lane-1', parameterId: 'plugin-1:7', points: [point(0, 0.1), point(4, 0.1)] }),
@@ -554,11 +563,11 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
         if (result.outcome !== 'converted') {
             throw new Error(`expected 'converted', got 'declined': ${result.reason}`);
         }
-        expect(result.overlaps).toEqual([{ deviceId: 'plugin-1', parameterId: '7', laneIds: ['lane-1', 'lane-2'] }]);
+        expect(result.overlaps).toEqual([]);
         const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
         expect(entry).toBeDefined();
-        // lane-3 is latest in lane-array order, so its own value (0.9) is
-        // what the kept, merged stream opens with.
-        expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.9, time: 0 });
+        // lane-3 is latest in lane-array order, so it owns the shared span
+        // and its own value (0.9) is all the merged stream carries.
+        expect(entry?.writes).toEqual([{ shape: 'step', value: 0.9, time: 0 }]);
     });
 });

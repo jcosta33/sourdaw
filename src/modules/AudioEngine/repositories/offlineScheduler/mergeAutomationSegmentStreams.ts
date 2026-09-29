@@ -1,18 +1,26 @@
 import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
+/**
+ * The scope a lane drives its parameter from, and the whole of the resolution
+ * law's input: a clip-scoped lane is the more specific owner, so it beats a
+ * track-level lane on every span their streams share (#4736) — the Bitwig /
+ * Studio One / Logic convention that clip automation overrides track
+ * automation while the clip plays.
+ */
+export type AutomationSegmentScope = 'clip' | 'track';
+
 /** One lane's compiled segment stream on the (device, parameter) pair being merged. */
 export type AutomationSegmentStream = Readonly<{
     laneId: string;
+    scope: AutomationSegmentScope;
     segments: readonly OfflineAutomationSegment[];
 }>;
 
 /**
- * `segments` is the single stream every kept lane on one device parameter
- * merges into — one stream per disjoint cluster the sweep below finds, with
- * exactly one survivor per cluster of two or more. `withheldLaneIds` names
- * every lane a cluster did not keep, in the original `streams` array order,
- * so a caller that must account for a withheld lane (the live producer, the
- * native export) does not have to re-derive who lost.
+ * Every lane on the (device, parameter) pair resolves into one merged stream —
+ * there is no withholding left to report. The field stays because the
+ * contract's callers (the live producer, the native export) still read it;
+ * under the scope law it is always empty.
  */
 export type MergedAutomationSegmentStreams = Readonly<{
     segments: readonly OfflineAutomationSegment[];
@@ -20,44 +28,106 @@ export type MergedAutomationSegmentStreams = Readonly<{
 }>;
 
 /**
+ * The value a segment carries at a frame inside it. A zero-length segment (a
+ * stream's closing terminator, or two events that rounded onto one frame) is
+ * a constant; anything else is the linear ramp the consumers evaluate.
+ */
+function segmentValueAt(segment: OfflineAutomationSegment, frame: number): number {
+    if (segment.endFrame <= segment.startFrame) {
+        return segment.startValue;
+    }
+    const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+    return segment.startValue + (segment.endValue - segment.startValue) * fraction;
+}
+
+/**
+ * One lane's precedence on a shared span: the more specific scope wins, and
+ * equal scopes break to the lane latest in the caller's array order — the
+ * same "last apply wins" precedence a single non-clashing consumer would
+ * have given every lane on this parameter.
+ */
+function outranks(
+    candidate: AutomationSegmentStream,
+    incumbent: AutomationSegmentStream,
+    laneOrder: ReadonlyMap<string, number>
+): boolean {
+    if (candidate.scope !== incumbent.scope) {
+        return candidate.scope === 'clip';
+    }
+    return laneOrder.get(candidate.laneId)! > laneOrder.get(incumbent.laneId)!;
+}
+
+/**
+ * One owner's material clipped to `[start, end]`.
+ *
+ * The stream is internally contiguous, so the clipped pieces tile the span:
+ * each real segment contributes its overlap, with the ramp value interpolated
+ * at a boundary that cuts through it, and each zero-length segment inside the
+ * span (including the owner's closing terminator at its far end) is carried
+ * through whole — which is what keeps the merged output ending in a
+ * terminator.
+ */
+function clipStreamToSpan(stream: AutomationSegmentStream, start: number, end: number): OfflineAutomationSegment[] {
+    const clipped: OfflineAutomationSegment[] = [];
+    for (const segment of stream.segments) {
+        if (segment.startFrame === segment.endFrame) {
+            if (segment.startFrame >= start && segment.startFrame <= end) {
+                clipped.push(segment);
+            }
+            continue;
+        }
+        const clippedStart = Math.max(segment.startFrame, start);
+        const clippedEnd = Math.min(segment.endFrame, end);
+        if (clippedEnd <= clippedStart) {
+            continue;
+        }
+        clipped.push({
+            startFrame: clippedStart,
+            endFrame: clippedEnd,
+            startValue: segmentValueAt(segment, clippedStart),
+            endValue: segmentValueAt(segment, clippedEnd),
+        });
+    }
+    return clipped;
+}
+
+/**
  * Merge every lane's compiled segment stream on one device parameter into the
- * single stream a "last apply wins" consumer (a worklet's `paramAutomation`,
- * the offline recording projection) can hold at once, withholding whichever
- * lanes in a genuinely overlapping cluster lose the tie-break — rather than
- * abandoning the whole group over one clashing pair and dropping lanes that
- * intersect nothing.
+ * single stream a one-schedule-per-parameter consumer (a worklet's
+ * `paramAutomation`, the offline recording projection) can hold — resolving
+ * overlap by the scope law instead of abandoning lanes, and keeping every
+ * lane's material on the spans it owns.
  *
  * Streams are sorted by first frame (ties broken by terminator frame
- * ascending — see below), then swept into clusters: a stream joins the
- * current cluster when its start frame is before the cluster's own running
- * maximum terminator frame seen so far, not merely the immediately preceding
- * stream's own terminator — a short stream nested entirely inside an earlier,
- * longer-running one must still join the cluster the longer stream opened,
- * even though the stream immediately before it (also nested, and shorter
- * still) ends earlier than the outer one does.
+ * ascending), then swept into clusters: a stream joins the current cluster
+ * when its start frame is before the cluster's running maximum terminator
+ * frame — a short stream nested entirely inside an earlier, longer-running
+ * one joins the cluster the longer stream opened. A cluster of one stream is
+ * kept whole. Inside a cluster of two or more, every span between the
+ * clusters' boundary frames is owned by exactly one lane: the most specific
+ * scope covering the span — a clip-scoped lane over a track-level lane,
+ * while the clip plays (#4736) — and, at equal scope, the lane latest in the
+ * caller's array order. The winner's material is clipped to the span and the
+ * pieces concatenate in time order, so a track lane's leading hold (before
+ * its first point) and its trailing terminator are spans like any other and
+ * the outcome is independent of which lane comes first in time (#4749). A
+ * stream that compiles to a lone zero-length terminator covers only its own
+ * frame; on a span another stream covers it contributes nothing.
  *
- * A cluster of one stream is kept whole. A cluster of two or more keeps
- * exactly the one stream latest in the caller's original lane-array order —
- * the same "last apply wins" precedence a single non-clashing consumer would
- * have given every lane on this parameter — and withholds the rest, recording
- * each withheld lane's id once, in original lane-array order.
- *
- * The kept streams (one per cluster, in time order) are pairwise disjoint by
- * construction and merge exactly as before: the later one's first frame is at
- * or past the earlier one's zero-length terminator frame — the frame
+ * The kept clusters (in time order) are pairwise disjoint by construction and
+ * merge exactly as before: the later one's first frame is at or past the
+ * earlier one's zero-length terminator frame — the frame
  * `compileAutomationSegments` always closes a stream with, carrying the value
  * the lane last held. Merging them holds that value across the gap between
- * the terminator and the next stream's first frame, replacing the
+ * the terminator and the next cluster's first frame, replacing the
  * terminator: nothing writes the parameter in that gap, live or offline, so
  * it keeps its last value there exactly as Web Audio's per-clip-window
- * `applyAutomation` does. A zero-width gap (the next stream starts exactly
- * where the previous one ended) drops the terminator instead of inserting a
- * zero-length hold next to it. The merged stream ends with the last kept
- * stream's own terminator, and — given only disjoint kept streams — stays
- * contiguous throughout: every accepted assertion in this file also holds for
- * `isContiguousAutomationSchedule` (`engine/ToasterNode.ts`), which
- * additionally requires the very first frame to be `0`; a caller merging
- * streams that do not open there must not present the result to that check.
+ * `applyAutomation` does. A zero-width gap drops the terminator instead of
+ * inserting a zero-length hold next to it. The merged stream stays
+ * contiguous throughout and ends with a zero-length terminator, so every
+ * accepted assertion here also holds for `isContiguousAutomationSchedule`
+ * (`engine/ToasterNode.ts`) — which, since #4744, accepts streams opening at
+ * any non-negative frame, as every merged stream here may.
  *
  * A clip whose window ends exactly at the region start compiles to a
  * zero-length stream — a lone terminator sitting at frame 0, carrying nothing
@@ -69,6 +139,100 @@ export type MergedAutomationSegmentStreams = Readonly<{
  * ends first (the zero-length one) sorts first, so it is what the next
  * stream's first frame is checked against, order-independently.
  */
+/**
+ * Sweep the time-ordered streams into overlap clusters: a stream joins the
+ * running cluster when its start frame is before the cluster's running
+ * maximum terminator frame, and opens a new cluster otherwise.
+ */
+function clusterStreams(ordered: readonly AutomationSegmentStream[]): AutomationSegmentStream[][] {
+    const clusters: AutomationSegmentStream[][] = [];
+    let currentCluster: AutomationSegmentStream[] = [];
+    let runningMaxTerminator = -Infinity;
+    for (const stream of ordered) {
+        const startFrame = stream.segments[0]!.startFrame;
+        const terminatorFrame = stream.segments.at(-1)!.endFrame;
+        if (currentCluster.length > 0 && startFrame < runningMaxTerminator) {
+            currentCluster.push(stream);
+            runningMaxTerminator = Math.max(runningMaxTerminator, terminatorFrame);
+            continue;
+        }
+        if (currentCluster.length > 0) {
+            clusters.push(currentCluster);
+        }
+        currentCluster = [stream];
+        runningMaxTerminator = terminatorFrame;
+    }
+    if (currentCluster.length > 0) {
+        clusters.push(currentCluster);
+    }
+    return clusters;
+}
+
+/**
+ * Resolve one cluster of two or more overlapping streams by the scope law:
+ * every span between the clusters' boundary frames goes to the most specific
+ * stream covering it, and the winners' clipped pieces concatenate in time
+ * order.
+ */
+function resolveClusterByScope(
+    cluster: readonly AutomationSegmentStream[],
+    laneOrder: ReadonlyMap<string, number>
+): OfflineAutomationSegment[] {
+    const boundaries = new Set<number>();
+    for (const stream of cluster) {
+        boundaries.add(stream.segments[0]!.startFrame);
+        boundaries.add(stream.segments.at(-1)!.endFrame);
+    }
+    const frames = [...boundaries].sort((first, second) => first - second);
+    const material: OfflineAutomationSegment[] = [];
+    for (let index = 0; index < frames.length - 1; index++) {
+        const start = frames[index]!;
+        const end = frames[index + 1]!;
+        let owner: AutomationSegmentStream | undefined;
+        for (const stream of cluster) {
+            if (stream.segments[0]!.startFrame > start || stream.segments.at(-1)!.endFrame < end) {
+                continue;
+            }
+            if (owner === undefined || outranks(stream, owner, laneOrder)) {
+                owner = stream;
+            }
+        }
+        if (owner !== undefined) {
+            material.push(...clipStreamToSpan(owner, start, end));
+        }
+    }
+    return material;
+}
+
+/**
+ * Splice the kept clusters (in time order) into one contiguous stream,
+ * holding each cluster's terminator value across the gap to the next one.
+ */
+function spliceKeptMaterial(
+    keptMaterial: readonly (readonly OfflineAutomationSegment[])[]
+): OfflineAutomationSegment[] {
+    const merged: OfflineAutomationSegment[] = [];
+    for (let index = 0; index < keptMaterial.length; index++) {
+        const material = keptMaterial[index]!;
+        if (index === keptMaterial.length - 1) {
+            merged.push(...material);
+            break;
+        }
+        merged.push(...material.slice(0, -1));
+        const terminator = material.at(-1)!;
+        const nextFirst = keptMaterial[index + 1]![0]!;
+        if (nextFirst.startFrame > terminator.endFrame) {
+            merged.push({
+                startFrame: terminator.endFrame,
+                endFrame: nextFirst.startFrame,
+                startValue: terminator.endValue,
+                endValue: terminator.endValue,
+            });
+        }
+    }
+    return merged;
+}
+
 export function mergeAutomationSegmentStreams(
     streams: readonly AutomationSegmentStream[]
 ): MergedAutomationSegmentStreams {
@@ -90,64 +254,14 @@ export function mergeAutomationSegmentStreams(
         return first.segments.at(-1)!.endFrame - second.segments.at(-1)!.endFrame;
     });
 
-    const clusters: AutomationSegmentStream[][] = [];
-    let currentCluster: AutomationSegmentStream[] = [];
-    let runningMaxTerminator = -Infinity;
-    for (const stream of ordered) {
-        const startFrame = stream.segments[0]!.startFrame;
-        const terminatorFrame = stream.segments.at(-1)!.endFrame;
-        if (currentCluster.length > 0 && startFrame < runningMaxTerminator) {
-            currentCluster.push(stream);
-            runningMaxTerminator = Math.max(runningMaxTerminator, terminatorFrame);
-            continue;
-        }
-        if (currentCluster.length > 0) {
-            clusters.push(currentCluster);
-        }
-        currentCluster = [stream];
-        runningMaxTerminator = terminatorFrame;
-    }
-    if (currentCluster.length > 0) {
-        clusters.push(currentCluster);
-    }
+    const clusters = clusterStreams(ordered);
 
-    const withheldLaneIds: string[] = [];
-    const kept: AutomationSegmentStream[] = [];
+    // One owner per span inside a cluster; single-stream clusters carry their
+    // own material whole. Nothing is withheld: the law resolves every span.
+    const keptMaterial: OfflineAutomationSegment[][] = [];
     for (const cluster of clusters) {
-        if (cluster.length === 1) {
-            kept.push(cluster[0]!);
-            continue;
-        }
-        const keeper = cluster.reduce((latest, candidate) =>
-            laneOrder.get(candidate.laneId)! > laneOrder.get(latest.laneId)! ? candidate : latest
-        );
-        kept.push(keeper);
-        for (const stream of cluster) {
-            if (stream !== keeper) {
-                withheldLaneIds.push(stream.laneId);
-            }
-        }
+        keptMaterial.push(cluster.length === 1 ? [...cluster[0]!.segments] : resolveClusterByScope(cluster, laneOrder));
     }
-    withheldLaneIds.sort((first, second) => laneOrder.get(first)! - laneOrder.get(second)!);
 
-    const merged: OfflineAutomationSegment[] = [];
-    for (let index = 0; index < kept.length; index++) {
-        const stream = kept[index]!.segments;
-        if (index === kept.length - 1) {
-            merged.push(...stream);
-            break;
-        }
-        merged.push(...stream.slice(0, -1));
-        const terminator = stream.at(-1)!;
-        const nextFirst = kept[index + 1]!.segments[0]!;
-        if (nextFirst.startFrame > terminator.endFrame) {
-            merged.push({
-                startFrame: terminator.endFrame,
-                endFrame: nextFirst.startFrame,
-                startValue: terminator.endValue,
-                endValue: terminator.endValue,
-            });
-        }
-    }
-    return { segments: merged, withheldLaneIds };
+    return { segments: spliceKeptMaterial(keptMaterial), withheldLaneIds: [] };
 }

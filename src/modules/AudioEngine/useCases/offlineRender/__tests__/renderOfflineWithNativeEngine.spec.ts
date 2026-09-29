@@ -614,7 +614,7 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
         ]);
     });
 
-    it('declines the whole strip when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O)', async () => {
+    it('renders the strip natively, spliced by scope, when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O) (#4736)', async () => {
         const trackLane: StoredAutomationLane = {
             id: 'lane-track',
             trackId: 'audio-1',
@@ -635,12 +635,32 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
             minValue: -24,
             maxValue: 24,
         };
-        const { result, commands } = await renderFixtureD([trackLane, pointLane('lane-clip-b', 9, 0.01, 'clip-b')]);
+        // The clip lane holds its value across its whole window, so its
+        // schedule spans it rather than collapsing to a lone terminator.
+        const clipLane: StoredAutomationLane = {
+            ...pointLane('lane-clip-b', 9, 0.01, 'clip-b'),
+            points: [
+                { beat: 0.01, value: 9, curve: 'step', tension: 0 },
+                { beat: 0.02, value: 9, curve: 'step', tension: 0 },
+            ],
+        };
+        const { result, deviceWrites } = await renderFixtureD([trackLane, clipLane]);
 
-        expect(result).toEqual({
-            outcome: 'declined',
-            reason: 'automation on track "Glued": lanes on device "glue-1" overlap on parameter "inputGain"',
-        });
-        expect(commands).toEqual([]);
+        // The scope law hands clip-b's window to the clip lane and every
+        // other span to the track lane. Nothing is withheld, so the native
+        // export has no overlap to decline over and renders with the splice.
+        expect(result.outcome).toBe('rendered');
+        expect(deviceWrites).toEqual([
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 3, time: 0 },
+            },
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 9, time: 0.005 },
+            },
+        ]);
     });
 });
