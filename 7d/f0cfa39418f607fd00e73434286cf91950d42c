@@ -1,0 +1,31 @@
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_b6652df74d8413 468-475
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/joinNotes.spec.ts
+  s_ed5aa36a3ba357::t_5af41c3a5d143a 290-323
+src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts
+  s_ed5aa36a3ba357::t_1c4e554a18755f 165-167,170
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_ed5aa36a3ba357::t_5446977fbaf618 65-82,85-88
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_ed5aa36a3ba357::t_70a145167de7ac 59-73,184,218-257
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_ed5aa36a3ba357::t_3ef10b9ff427d4 3,112-123,125-126,130
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ed5aa36a3ba357::t_a77d5a4fcf53f1 1,422-425,482,484,678-686
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7df0cfa39418f607fd00e73434286cf91950d42c",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
