@@ -1,0 +1,14 @@
+scripts/semanticReview/__tests__/candidateFindings.spec.ts
+  h_beb54bf43b47b7 56-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7ccb87d030cc6b96e77014be404d3f9fcc24a204",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
