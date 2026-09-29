@@ -25,7 +25,7 @@ import {
 import { readFindingAssessments, readScanAssessments, readStringArray } from './reportAssessments.ts';
 import {
     assertScopeStatesMatch,
-    assertEachPathRecordedOnce,
+    assertLedgersPartition,
     readScopeExclusions,
     readScopeStates,
     type SemanticScopeStates,
@@ -305,12 +305,16 @@ export function validateReport(value: unknown): SemanticReport {
         requestOrder: readPlannedRequests(rawScope.requestOrder, 'scope.requestOrder'),
         states: readScopeStates(rawScope.states, 'scope.states'),
     };
+    // The mode's own ledger is read before the scope's checks: the partition below needs the signals and
+    // both omission lists at once, and it holds whatever the planned order carries. A verify report
+    // publishes no signals, so its side of the partition is the two lists alone.
+    const signals = record.mode === 'scan' ? readScanAssessments(record.signals) : [];
+    const findingAssessments = record.mode === 'verify' ? readFindingAssessments(record.findingAssessments) : [];
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
-    // A path is excluded once, omitted once, and never both, refused before the totals are compared and
-    // whatever the planned order carries: a report written before that field existed publishes no order
-    // for the order and ledger checks to read, so the record invariant cannot depend on one.
-    assertEachPathRecordedOnce(scope.excluded, scope.unassessed, SCOPE_LABEL);
+    // A path is planned once, excluded once, and omitted once, and the ledgers say which: refused here,
+    // before the totals are compared and without reading the planned order.
+    assertLedgersPartition(scope, signals, SCOPE_LABEL);
     if (record.mode !== 'scan' && scope.requestOrder !== undefined) {
         // A verify report's own mode never walks units, so an order beside its findings is a claim no
         // verifier produced and no ledger of its can corroborate.
@@ -361,7 +365,6 @@ export function validateReport(value: unknown): SemanticReport {
     assertIdentityAgrees(base);
 
     if (record.mode === 'scan') {
-        const signals = readScanAssessments(record.signals);
         // The ledger and the plan must name the same units in both directions: an entry with no trace is
         // a unit the run never held, and a signal outside the order is an order rewritten around it.
         assertPlanMatchesLedger({
@@ -372,7 +375,7 @@ export function validateReport(value: unknown): SemanticReport {
         });
         return { ...base, mode: 'scan', signals };
     }
-    return { ...base, mode: 'verify', findingAssessments: readFindingAssessments(record.findingAssessments) };
+    return { ...base, mode: 'verify', findingAssessments };
 }
 
 const PUBLICATION_STATE_SET: ReadonlySet<string> = new Set(['not_requested', 'published', 'stale', 'failed']);

@@ -1090,6 +1090,16 @@ describe('semantic review context', () => {
                             unassessed: [{ path: 'crates/daw-dsp/src/big.rs', reason: 'missing-required-evidence' }],
                             truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
                         },
+                        // The unit that made no request still reports every rule of its set, which is the
+                        // coverage ledger its omission reason names: the producer always emits it.
+                        signals: [
+                            signal({
+                                unitId: 'crates/daw-dsp/src/big.rs',
+                                path: 'crates/daw-dsp/src/big.rs',
+                                ruleId: 'audio_thread_allocation',
+                                investigationCategory: 'realtime',
+                            }),
+                        ],
                     })
                 ),
             }),

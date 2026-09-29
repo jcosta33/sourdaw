@@ -152,40 +152,73 @@ const SCOPE_STATE_NAMES = [
 ] as const satisfies readonly (keyof SemanticScopeStates)[];
 
 /**
- * The scope's record invariant, stated once: a path is excluded once, omitted once, and never both.
+ * The scope's ledger partition, stated once over every list a scan publishes.
  *
- * A path is planned once, so its record is one entry in one list. A repeat inside a list is malformed on
- * its own and hides a contradiction from a reader that takes one record per path — two reasons that
- * disagree about whether an assessment was owed, or two classes for the same omission. A path in both
- * lists is worse: the exclusion says nothing was owed while the omission says an assessment was owed and
- * missed, so the four omission states stop being mutually exclusive and a path-keyed consumer reads both
- * for one path.
+ * A path is planned once, excluded once, and omitted once, and the ledgers say which of those happened:
  *
- * Neither defect is visible to the scope arithmetic: the omitted duplicate moves `assessed` and
- * `eligible` together, the excluded one is balanced by raising `discovered`, and a cross-list entry is
- * balanced by raising `eligible` with it. Both are refused here, before the totals are compared and
- * whatever the planned order carries — a report written before that field existed publishes no order for
- * the order and ledger checks to read, and the invariant has to hold for it too. The collector keeps its
- * own exclusions to one entry per path by the same rule.
+ * - `excluded` and `unassessed` each hold one record per path, and no path is in both. A repeat inside a
+ *   list is malformed on its own and hides a contradiction from a reader that takes one record per path;
+ *   a path in both lists says nothing was owed and that an assessment was owed and missed.
+ * - `signals` is the ledger of a unit that produced answers. A path with signals is therefore neither
+ *   excluded — no unit was planned for it — nor an omission, with exactly one exception: the unit no pass
+ *   could ask makes zero provider calls and is still reported as `missing-required-evidence` *and* carries
+ *   every rule of its set as signals, which is the coverage ledger. That reason is the one omission
+ *   signals are legitimate for, and it is required there: an omission claiming a unit reported its rules
+ *   without any signal is a coverage record that is not there.
+ * - Every other omission reason — a dry run, a spent budget or elapsed deadline, a provider or request
+ *   failure — means no request was made for that unit, so a signal for the same path contradicts it.
+ * - `truncated` records regions rather than units and is deliberately outside the partition: a path
+ *   repeats there once per withheld region, and it may name a path no other list holds (a withheld
+ *   context document), or a path that is excluded, omitted, or signalled.
  *
- * `truncated` is deliberately outside this invariant: it records regions rather than units, so a path
- * repeats there for every withheld region, and a withheld path is legitimately both excluded and
- * truncated. Paths are compared as exact strings — the collector publishes git-canonical paths, so two
- * spellings of one path are not a shape a report can produce — and canonicalisation is out of scope.
+ * None of this is visible to the scope arithmetic: an omitted duplicate moves `assessed` and `eligible`
+ * together, an excluded one is balanced by raising `discovered`, a cross-list entry by raising `eligible`,
+ * and a stray signal by raising `assessed` with it. The partition is refused before the totals are
+ * compared and without reading the planned order, because the order checks return when a stored report
+ * carries no order — the shape written before that field existed — and the ledgers have to partition paths
+ * for that report too. An order that is present adds only the ties it can hold, checked where it is read:
+ * every signalled unit and every omission must be listed, and no entry may name an excluded path. Paths
+ * are compared as exact strings: the collector publishes git-canonical paths, so two spellings of one path
+ * are not a shape a report can produce, and canonicalisation is out of scope.
  */
-export function assertEachPathRecordedOnce(
-    excluded: readonly SemanticScopeExclusion[],
-    unassessed: readonly SemanticScopeExclusion[],
+export function assertLedgersPartition(
+    scope: {
+        readonly excluded: readonly SemanticScopeExclusion[];
+        readonly unassessed: readonly SemanticScopeExclusion[];
+    },
+    signals: readonly { readonly path: string }[],
     label: string
 ): void {
-    assertDistinctPaths(excluded, 'excluded', label);
-    assertDistinctPaths(unassessed, 'unassessed', label);
-    const excludedPaths = new Set(excluded.map((entry) => entry.path));
-    for (const entry of unassessed) {
+    assertDistinctPaths(scope.excluded, 'excluded', label);
+    assertDistinctPaths(scope.unassessed, 'unassessed', label);
+    const excludedPaths = new Set(scope.excluded.map((entry) => entry.path));
+    const signalledPaths = new Set(signals.map((signal) => signal.path));
+    for (const entry of scope.unassessed) {
         if (excludedPaths.has(entry.path)) {
             refuse(
                 'invalid_response',
                 `${label} records ${entry.path} as excluded and as unassessed; a path is either owed nothing or planned and omitted, never both`
+            );
+        }
+        const carriesLedger = entry.reason === MISSING_REQUIRED_EVIDENCE_REASON;
+        if (signalledPaths.has(entry.path) && !carriesLedger) {
+            refuse(
+                'invalid_response',
+                `${label} records ${entry.path} as unassessed (${entry.reason}) while its signals report the unit; that reason means no request was made`
+            );
+        }
+        if (carriesLedger && !signalledPaths.has(entry.path)) {
+            refuse(
+                'invalid_response',
+                `${label} records ${entry.path} as missing required evidence without a signal for it; the unit that made no request still reports its rules`
+            );
+        }
+    }
+    for (const path of signalledPaths) {
+        if (excludedPaths.has(path)) {
+            refuse(
+                'invalid_response',
+                `${label} carries a signal for ${path}, which it records as excluded; no unit was planned for it`
             );
         }
     }

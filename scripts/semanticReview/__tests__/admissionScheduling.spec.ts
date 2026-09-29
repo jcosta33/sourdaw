@@ -177,6 +177,14 @@ function unassessedOf(report: { readonly scope: { readonly unassessed: readonly 
     return report.scope.unassessed;
 }
 
+/** The reason one path is recorded as unassessed with, for the cases that assert a partition row. */
+function omissionReasonOf(
+    report: { readonly scope: { readonly unassessed: readonly SemanticScopeExclusion[] } },
+    path: string
+): string | undefined {
+    return report.scope.unassessed.find((entry) => entry.path === path)?.reason;
+}
+
 /** A verifier that answers every question from the labels that question itself offered. */
 function choiceProvider(): { port: SemanticProviderPort; calls: () => number } {
     let calls = 0;
@@ -1000,13 +1008,133 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         ).toThrow(/records docs\/README\.md as excluded more than once/);
     });
 
+    it('pins the legitimate ledger combinations the generator emits', async () => {
+        // The partition read as a table over the four-state report: an excluded path no other ledger
+        // holds; a skipped unit that is omitted, signalled, truncated, and planned at once; and two
+        // omissions whose reasons mean no call was made. Every row here is legitimate by construction.
+        const { report } = await fourStateResult();
+        const planned = new Set((report.scope.requestOrder ?? []).map((entry) => entry.path));
+        const excluded = new Set(report.scope.excluded.map((entry) => entry.path));
+        const omissions = new Map(report.scope.unassessed.map((entry) => [entry.path, entry.reason]));
+        const truncated = new Set(report.scope.truncated.map((entry) => entry.path));
+        const signalled = new Set(report.signals.map((signal) => signal.path));
+
+        // excluded ∩ unassessed = ∅, excluded ∩ signals = ∅, excluded ∩ requestOrder = ∅.
+        expect(Array.from(excluded).filter((path) => omissions.has(path))).toEqual([]);
+        expect(Array.from(excluded).filter((path) => signalled.has(path))).toEqual([]);
+        expect(Array.from(excluded).filter((path) => planned.has(path))).toEqual([]);
+        // The unit no pass could ask: omitted as missing required evidence, signalled, truncated, planned.
+        expect(omissions.get(SKIPPED_PATH)).toBe('missing-required-evidence');
+        expect(signalled.has(SKIPPED_PATH)).toBe(true);
+        expect(truncated.has(SKIPPED_PATH)).toBe(true);
+        expect(planned.has(SKIPPED_PATH)).toBe(true);
+        // An omission whose reason means no call was made: planned and omitted, never signalled.
+        expect(omissions.get(STARVED_PATH)).toBe('budget_exhausted');
+        expect(signalled.has(STARVED_PATH)).toBe(false);
+        expect(planned.has(STARVED_PATH)).toBe(true);
+        // signals ⊆ requestOrder and unassessed ⊆ requestOrder.
+        expect([...signalled].every((path) => planned.has(path))).toBe(true);
+        expect([...omissions.keys()].every((path) => planned.has(path))).toBe(true);
+        expect(() => validateReport(report)).not.toThrow();
+
+        // A withheld path is excluded *and* truncated, and named by no other ledger.
+        const withheld = await runScan(
+            scanInput({
+                provider: forbiddenProvider().port,
+                source: fakeSource([changedFile('.env'), changedFile(STARVED_PATH)], {
+                    ...sides('.env', 'A=1\n', 'A=2\n'),
+                    ...sides(STARVED_PATH, 'const b = 1;\n', 'const b = 2;\n'),
+                }),
+            })
+        );
+        expect(() => validateReport(withheld.report)).not.toThrow();
+        expect(withheld.report.scope.excluded).toEqual([{ path: '.env', reason: 'sensitive-content-excluded' }]);
+        expect(withheld.report.scope.truncated.some((entry) => entry.path === '.env')).toBe(true);
+        expect(withheld.report.scope.requestOrder?.map((entry) => entry.path)).toEqual([STARVED_PATH]);
+        expect(withheld.report.signals.some((signal) => signal.path === '.env')).toBe(false);
+        expect(withheld.report.scope.unassessed.some((entry) => entry.path === '.env')).toBe(false);
+    });
+
+    it('refuses a signal for a path the scope records as excluded', async () => {
+        // The orderless shape a historical bundle keeps: appending a signal for the excluded path and
+        // raising discovered, eligible, and assessed with it leaves every other check satisfied, because
+        // the order and ledger checks never run without a planned order.
+        const report = await scannedFourStates();
+        const orderless = { ...report, scope: { ...report.scope, requestOrder: undefined } };
+        const ledgerSignal = report.signals.find((signal) => signal.path === SKIPPED_PATH);
+        if (ledgerSignal === undefined) {
+            throw new Error('the run carried no signal for the skipped unit, so the case would assert nothing');
+        }
+        expect(() => validateReport(orderless)).not.toThrow();
+        expect(() =>
+            validateReport({
+                ...orderless,
+                scope: {
+                    ...orderless.scope,
+                    discovered: orderless.scope.discovered + 1,
+                    eligible: orderless.scope.eligible + 1,
+                    assessed: orderless.scope.assessed + 1,
+                },
+                signals: [...orderless.signals, { ...ledgerSignal, path: EXCLUDED_PATH }],
+            })
+        ).toThrow(/carries a signal for docs\/README\.md, which it records as excluded/);
+    });
+
+    it('refuses a signal for a unit whose omission reason means no call was made', async () => {
+        // The reason says the unit was never attempted; a signal for it says a request was answered.
+        const report = await scannedFourStates();
+        const orderless = { ...report, scope: { ...report.scope, requestOrder: undefined } };
+        const ledgerSignal = report.signals.find((signal) => signal.path === SKIPPED_PATH);
+        if (ledgerSignal === undefined) {
+            throw new Error('the run carried no signal for the skipped unit, so the case would assert nothing');
+        }
+        expect(omissionReasonOf(orderless, STARVED_PATH)).toBe('budget_exhausted');
+        expect(() =>
+            validateReport({ ...orderless, signals: [...orderless.signals, { ...ledgerSignal, path: STARVED_PATH }] })
+        ).toThrow(
+            /records electron\/b-budget\.ts as unassessed \(budget_exhausted\) while its signals report the unit/
+        );
+    });
+
+    it('refuses an omission claiming a unit reported its rules with no signal for it', async () => {
+        // The other direction of the same row: missing required evidence is the one reason whose unit
+        // still reports every rule, so an omission carrying it without a ledger is a coverage record that
+        // is not there.
+        const report = await scannedFourStates();
+        const orderless = { ...report, scope: { ...report.scope, requestOrder: undefined } };
+        expect(omissionReasonOf(orderless, SKIPPED_PATH)).toBe('missing-required-evidence');
+        expect(() =>
+            validateReport({
+                ...orderless,
+                signals: orderless.signals.filter((signal) => signal.path !== SKIPPED_PATH),
+            })
+        ).toThrow(/records crates\/daw-dsp\/src\/big\.rs as missing required evidence without a signal for it/);
+    });
+
     it('refuses a verify report that carries a planned order', async () => {
         // A verifier walks findings, never units, so an order beside its findings is a claim its mode
-        // cannot produce and no ledger of its own can corroborate.
-        const report = await scannedFourStates();
-        expect(() => validateReport({ ...report, mode: 'verify', findingAssessments: [] })).toThrow(
-            /only a scan produces/
-        );
+        // cannot produce and no ledger of its own can corroborate. The fixture is an honest verify report
+        // first, so the refusal is the mode rule and not a shape the scan's scope cannot carry.
+        const provider = choiceProvider();
+        const { report } = await verifyScan(provider.port, [VERIFY_REGION_FINDING, VERIFY_EVIDENCE_LESS_FINDING]);
+        expect(() => validateReport(report)).not.toThrow();
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: {
+                    ...report.scope,
+                    requestOrder: [
+                        {
+                            path: VERIFY_EVIDENCE_LESS_FINDING.findingId,
+                            priorityClass: 'production',
+                            missingRequiredEvidenceTokens: 1,
+                            answerableRules: 1,
+                            ruleIds: ['assertion_deleted'],
+                        },
+                    ],
+                },
+            })
+        ).toThrow(/only a scan produces/);
     });
 
     it('accepts the order the run itself published', async () => {
