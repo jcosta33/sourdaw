@@ -236,6 +236,36 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
 ];
 
 export type MockedBarrel = {

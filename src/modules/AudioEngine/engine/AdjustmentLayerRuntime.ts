@@ -12,6 +12,16 @@ type LiveBus = {
     lastParamSignature: string;
     lastBlend: number;
     disposalTimer: ReturnType<typeof setTimeout> | null;
+    /**
+     * The layer's position in the stack that governs this track's chain, as
+     * the latest tick carrying it reported. Records within a tick arrive in
+     * the project's layer stack order (the applier walks the stack array), so
+     * the chain order is a function of the stack, never of the order the buses
+     * happened to be created in (#4603).
+     */
+    stackRank: number;
+    /** Tie-break for buses whose layers never co-occur in one tick. */
+    creationSeq: number;
 };
 
 export type TrackRerouteDeps = {
@@ -61,18 +71,17 @@ function paramSignature(params: Record<string, number>): string {
 
 export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): AdjustmentLayerRuntime {
     const liveBuses = new Map<RegionKey, LiveBus>();
-    const busOrderByTrack = new Map<string, string[]>();
+    let creationSeqCounter = 0;
 
     const chainedBusesForTrack = (trackId: string): AdjustmentBusNode[] => {
-        const order = busOrderByTrack.get(trackId) ?? [];
-        const chain: AdjustmentBusNode[] = [];
-        for (const layerId of order) {
-            const live = liveBuses.get(keyFor(layerId, trackId));
-            if (live) {
-                chain.push(live.bus);
+        const live: LiveBus[] = [];
+        for (const candidate of liveBuses.values()) {
+            if (candidate.trackId === trackId) {
+                live.push(candidate);
             }
         }
-        return chain;
+        live.sort((left, right) => left.stackRank - right.stackRank || left.creationSeq - right.creationSeq);
+        return live.map((entry) => entry.bus);
     };
 
     const getBusChainInputForTrack = (trackId: string): AudioNode | null => {
@@ -96,33 +105,7 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
         }
     };
 
-    const addLayerToOrder = (trackId: string, layerId: string): void => {
-        const order = busOrderByTrack.get(trackId);
-        if (!order) {
-            busOrderByTrack.set(trackId, [layerId]);
-            return;
-        }
-        if (order.includes(layerId)) {
-            return;
-        }
-        order.push(layerId);
-    };
-
-    const removeLayerFromOrder = (trackId: string, layerId: string): void => {
-        const order = busOrderByTrack.get(trackId);
-        if (!order) {
-            return;
-        }
-        const idx = order.indexOf(layerId);
-        if (idx !== -1) {
-            order.splice(idx, 1);
-        }
-        if (order.length === 0) {
-            busOrderByTrack.delete(trackId);
-        }
-    };
-
-    const createBus = (input: ApplyInput): LiveBus | null => {
+    const createBus = (input: ApplyInput, stackRank: number): LiveBus | null => {
         const ctx = deps.getContext();
         if (!ctx) {
             return null;
@@ -141,6 +124,8 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
             lastParamSignature: paramSignature(input.parameters),
             lastBlend: input.blend,
             disposalTimer: null,
+            stackRank,
+            creationSeq: creationSeqCounter++,
         };
     };
 
@@ -151,7 +136,6 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
         }
         live.bus.dispose();
         liveBuses.delete(key);
-        removeLayerFromOrder(live.trackId, live.layerId);
         deps.rerouteTrack(live.trackId);
         wireChain(live.trackId);
     };
@@ -160,6 +144,12 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
         applyTick: (records): void => {
             const seen = new Set<RegionKey>();
             const touchedTracks = new Set<string>();
+            // Tracks whose chain order the tick's record sequence revised — a
+            // stack reorder moves existing buses without creating any.
+            const reorderedTracks = new Set<string>();
+            // The layer's position among this tick's active layers for its
+            // track, in first-seen order — the stack order the applier walks.
+            const tickRanks = new Map<RegionKey, number>();
 
             for (const rec of records) {
                 if (rec.effectType === 'volume' || rec.effectType === 'pan') {
@@ -167,6 +157,11 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 }
                 const key = keyFor(rec.layerId, rec.trackId);
                 seen.add(key);
+                let rank = tickRanks.get(key);
+                if (rank === undefined) {
+                    rank = tickRanks.size;
+                    tickRanks.set(key, rank);
+                }
                 const existing = liveBuses.get(key);
                 if (existing) {
                     if (existing.disposalTimer) {
@@ -182,12 +177,15 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                         existing.bus.setBlend(rec.blend);
                         existing.lastBlend = rec.blend;
                     }
+                    if (existing.stackRank !== rank) {
+                        existing.stackRank = rank;
+                        reorderedTracks.add(rec.trackId);
+                    }
                     continue;
                 }
-                const live = createBus(rec);
+                const live = createBus(rec, rank);
                 if (live) {
                     liveBuses.set(key, live);
-                    addLayerToOrder(rec.trackId, rec.layerId);
                     touchedTracks.add(rec.trackId);
                 }
             }
@@ -211,6 +209,13 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 wireChain(trackId);
                 deps.rerouteTrack(trackId);
             }
+            for (const trackId of reorderedTracks) {
+                if (touchedTracks.has(trackId)) {
+                    continue;
+                }
+                wireChain(trackId);
+                deps.rerouteTrack(trackId);
+            }
         },
         getBusInputForTrack: getBusChainInputForTrack,
         getBusChainInputForTrack,
@@ -225,7 +230,6 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 live.bus.dispose();
             }
             liveBuses.clear();
-            busOrderByTrack.clear();
             for (const trackId of trackIds) {
                 deps.rerouteTrack(trackId);
             }
