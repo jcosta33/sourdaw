@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_ed5aa36a3ba357::t_ac55d58987545d 888
+  s_ed5aa36a3ba357::t_32bb7612e1504e 419,887,889-893
+  s_ed5aa36a3ba357::t_a72bcf37b351f3 894-931,933
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ed5aa36a3ba357::t_a439ad03956b11 139-142,159
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ed5aa36a3ba357::t_1b53f0f4a2d753 180,192
+  s_ed5aa36a3ba357::t_53ef9e415f67f2 174-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3c7d272defc299279684e3de8ed8edf79b8f6844",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
