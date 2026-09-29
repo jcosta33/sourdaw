@@ -1828,12 +1828,14 @@ describe('contract-carrying admission', () => {
             contractSourceSha: MERGE_BASE,
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        // The planner lists its units in path order, so the pair's place in the plan reads the same either
-        // way; what the plan carries is that the unrelated spec precedes the covered source there too, with
-        // the source and its coverer both planned.
+        // The plan's admission order is its own key, not the collector's byte order: a unit carrying a
+        // security-platform rule is admitted before test material whatever their paths, so the closure
+        // source precedes both specs and only the two specs still read in path order. The byte-order
+        // claim above belongs to the collector's attempt order and never promised the plan's.
         const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
         const plannedIndex = (path: string): number => planned.units.findIndex((unit) => unit.path === path);
-        expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(sourcePath));
+        expect(plannedIndex(sourcePath)).toBeLessThan(plannedIndex(unrelatedSpecPath));
+        expect(plannedIndex(sourcePath)).toBeLessThan(plannedIndex(anchorSpecPath));
         expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(anchorSpecPath));
         expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
         expect(planned.units.some((unit) => unit.path === anchorSpecPath)).toBe(true);
@@ -2446,17 +2448,25 @@ describe('contract-carrying admission', () => {
         };
         const charged = await scanWith(true);
         const chargedUnit = charged.previews.find((preview) => preview.path === path);
-        expect(charged.report.scope.assessed).toBe(1);
-        // The charged documents travel, and so do both own sides — none is shed for the request budget.
+        // Both sides together exceed one request, so the plan composes several passes and no single one
+        // carries every side a rule needs: nothing can be asked. The unit is reported as missing
+        // required evidence rather than sent at all — the transport used to buy discarded answers.
+        expect(charged.report.scope.assessed).toBe(0);
+        expect(charged.report.scope.unassessed).toEqual([
+            { path, reason: 'missing-required-evidence', priorityClass: 'severe-production' },
+        ]);
+        // The plan still composes the charged documents and both own sides: none is shed for the request
+        // budget, which is the shedding the multi-request transport exists to prevent.
         expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
         expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
         expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
+        expect(chargedUnit?.sentEvidenceIds).toEqual([]);
         expect(charged.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
             false
         );
         const bare = await scanWith(false);
         const bareUnit = bare.previews.find((preview) => preview.path === path);
-        expect(bare.report.scope.assessed).toBe(1);
+        expect(bare.report.scope.assessed).toBe(0);
         expect(bareUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
         expect(bareUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
         expect(bare.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
@@ -4475,12 +4485,14 @@ describe('a planned unit measures inside the request budget the provider enforce
         ];
         const units = paddedUnits(saturatedSources(layout, SATURATION_CAP), SATURATION_CAP);
         expect([...units.map((unit) => unit.path)].sort()).toEqual([...layout.map((entry) => entry.path)].sort());
-        expect(
-            units.map((unit) => ({
-                path: unit.path,
-                overBy: Math.max(0, maxPassStateBytes(unit) - SATURATION_CAP),
-            }))
-        ).toEqual(layout.map((entry) => ({ path: entry.path, overBy: 0 })));
+        // The plan's admission order is its own key, so the cap invariant is read per path rather than
+        // in plan order; every unit still has to measure inside the cap on every pass.
+        const overByPath = new Map(
+            units.map((unit) => [unit.path, Math.max(0, maxPassStateBytes(unit) - SATURATION_CAP)])
+        );
+        expect(layout.map((entry) => ({ path: entry.path, overBy: overByPath.get(entry.path) }))).toEqual(
+            layout.map((entry) => ({ path: entry.path, overBy: 0 }))
+        );
         // The fixture spends the cap, so the invariant is load-bearing rather than slack.
         expect(Math.max(...units.map((unit) => maxPassStateBytes(unit)))).toBeGreaterThan(SATURATION_CAP - 1_024);
     });
@@ -4525,10 +4537,11 @@ describe('a request refused for its own size leaves the rest of the plan assesse
     ];
 
     /**
-     * The request envelope carries the model on top of the state and questions the planner reserves, so
-     * a unit planned at the state cap has a body over a `maxRequestBytes` that sits just above that cap.
-     * That is the reachable per-request refusal: the planner now admits no unit the state cap itself
-     * would refuse, and the refusal still belongs to that one unit.
+     * A ci profile whose state ceiling is the fixture's saturation cap. The per-request body limit is
+     * measured per case rather than pinned: a request now carries only the questions its pass can
+     * answer, so the bytes a saturated unit submits depend on the question set and a constant would
+     * stop refusing anything the moment that set narrowed — which is exactly how this fixture first
+     * went quiet. The planner still admits no unit the state cap itself would refuse.
      */
     const refusalProfile: SemanticBudgetProfile = {
         ...SEMANTIC_BUDGET_PROFILES.ci,
@@ -4556,18 +4569,42 @@ describe('a request refused for its own size leaves the rest of the plan assesse
         });
     }
 
+    /**
+     * The bytes each planned unit's request would submit, read from the run's own previews under a
+     * profile that refuses nothing, so the limit below can sit between the saturated unit and the rest.
+     */
+    async function measuredPreviews() {
+        const base = scanPorts(constantProvider(0.05), fixtureSource(), fixedClock(1_000));
+        const { previews } = await runScan({
+            ...base,
+            profile: { ...refusalProfile, maxRequestBytes: SATURATION_CAP * 8 },
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        return previews;
+    }
+
     it('assesses the units after a per-request size refusal instead of blaming the run budget', async () => {
+        const previews = await measuredPreviews();
+        const saturated = previews.find((preview) => preview.path === refusedPath)?.bodyBytes ?? 0;
+        const largestOther = Math.max(
+            ...previews.filter((preview) => preview.path !== refusedPath).map((preview) => preview.bodyBytes)
+        );
+        // The measured fixture really does separate them, so the refusal can only land on the unit it
+        // was built around.
+        expect(saturated).toBeGreaterThan(largestOther);
         const base = scanPorts(constantProvider(0.05), fixtureSource(), fixedClock(1_000));
         const { report } = await runScan({
             ...base,
-            profile: refusalProfile,
+            profile: { ...refusalProfile, maxRequestBytes: largestOther + 1 },
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
         expect(report.scope.eligible).toBe(3);
         expect(report.scope.assessed).toBe(2);
         // The refused unit carries its own per-request code, and the unit after it is genuinely assessed:
         // a signal for its path is the evidence that the plan continued rather than that it was counted.
-        expect(report.scope.unassessed).toEqual([{ path: refusedPath, reason: 'request_too_large' }]);
+        expect(report.scope.unassessed).toEqual([
+            { path: refusedPath, reason: 'request_too_large', priorityClass: 'severe-production' },
+        ]);
         expect(report.signals.some((signal) => signal.path === lastPath)).toBe(true);
         expect(report.scope.unassessed.some((entry) => entry.reason === 'budget-exhausted-before-admission')).toBe(
             false
@@ -4598,8 +4635,8 @@ describe('a request refused for its own size leaves the rest of the plan assesse
         });
         expect(report.scope.assessed).toBe(1);
         expect(report.scope.unassessed).toEqual([
-            { path: refusedPath, reason: 'budget_exhausted' },
-            { path: lastPath, reason: 'budget-exhausted-before-admission' },
+            { path: refusedPath, reason: 'budget_exhausted', priorityClass: 'severe-production' },
+            { path: lastPath, reason: 'budget-exhausted-before-admission', priorityClass: 'severe-production' },
         ]);
         expect(report.failureCode).toBe('budget_exhausted');
         expect(report.execution).toBe('partial');
@@ -4650,8 +4687,8 @@ describe('the deadline stops admission under its own name', () => {
         expect(report.scope.eligible).toBe(3);
         expect(report.scope.assessed).toBe(1);
         expect(report.scope.unassessed).toEqual([
-            { path: deadlinePath, reason: 'deadline_elapsed' },
-            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+            { path: deadlinePath, reason: 'deadline_elapsed', priorityClass: 'severe-production' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
         ]);
         expect(report.failureCode).toBe('deadline_elapsed');
         expect(report.execution).toBe('partial');
@@ -4682,9 +4719,9 @@ describe('the deadline stops admission under its own name', () => {
             const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
             expect(report.scope.assessed).toBe(0);
             expect(report.scope.unassessed).toEqual([
-                { path: firstPath, reason: 'deadline_elapsed' },
-                { path: deadlinePath, reason: 'deadline-elapsed-before-admission' },
-                { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+                { path: firstPath, reason: 'deadline_elapsed', priorityClass: 'severe-production' },
+                { path: deadlinePath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
+                { path: lastPath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
             ]);
             expect(report.failureCode).toBe('deadline_elapsed');
             expect(report.execution).not.toBe('completed');
@@ -4711,9 +4748,9 @@ describe('the deadline stops admission under its own name', () => {
         const atTheTie = await runScan(scanPorts(tieProvider, deadlineSource(), tie));
         expect(atTheTie.report.scope.assessed).toBe(0);
         expect(atTheTie.report.scope.unassessed).toEqual([
-            { path: firstPath, reason: 'deadline_elapsed' },
-            { path: deadlinePath, reason: 'deadline-elapsed-before-admission' },
-            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+            { path: firstPath, reason: 'deadline_elapsed', priorityClass: 'severe-production' },
+            { path: deadlinePath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
         ]);
         expect(atTheTie.report.failureCode).toBe('deadline_elapsed');
         expect(tieCalls).toBe(1);
@@ -4728,7 +4765,11 @@ describe('the deadline stops admission under its own name', () => {
         const justBefore = await runScan(scanPorts(beforeProvider, deadlineSource(), before));
         // One millisecond of run time is left, so the first unit's own failure is its own: a timeout, and
         // admission continues until the next attempt finds the deadline spent.
-        expect(justBefore.report.scope.unassessed[0]).toEqual({ path: firstPath, reason: 'timeout' });
+        expect(justBefore.report.scope.unassessed[0]).toEqual({
+            path: firstPath,
+            reason: 'timeout',
+            priorityClass: 'severe-production',
+        });
         expect(justBefore.report.failureCode).toBe('deadline_elapsed');
     });
 
@@ -4753,8 +4794,8 @@ describe('the deadline stops admission under its own name', () => {
         const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
         expect(report.scope.assessed).toBe(1);
         expect(report.scope.unassessed).toEqual([
-            { path: deadlinePath, reason: 'deadline_elapsed' },
-            { path: lastPath, reason: 'deadline-elapsed-before-admission' },
+            { path: deadlinePath, reason: 'deadline_elapsed', priorityClass: 'severe-production' },
+            { path: lastPath, reason: 'deadline-elapsed-before-admission', priorityClass: 'severe-production' },
         ]);
         expect(calls).toBe(1);
     });
@@ -4827,7 +4868,9 @@ describe('the deadline stops admission under its own name', () => {
         });
         const { report } = await runScan(scanPorts(provider, deadlineSource(), fixedClock(1_000)));
         expect(report.scope.assessed).toBe(2);
-        expect(report.scope.unassessed).toEqual([{ path: deadlinePath, reason: 'timeout' }]);
+        expect(report.scope.unassessed).toEqual([
+            { path: deadlinePath, reason: 'timeout', priorityClass: 'severe-production' },
+        ]);
         expect(report.failureCode).toBe('timeout');
         expect(report.execution).toBe('partial');
     });
@@ -6070,11 +6113,18 @@ describe('incomplete-scope reporting', () => {
 
     async function reducedScan() {
         const provider = constantProvider(0.05);
+        // A second, small unit so the run delivers something: a run whose only unit is skipped is
+        // `unavailable`, and the claim here is about a partial assessment, not about an absent one.
         const source = fakeSource({
-            files: [changedFile('crates/daw-dsp/src/big.rs', { added: 900, deleted: 1 })],
+            files: [
+                changedFile('crates/daw-dsp/src/big.rs', { added: 900, deleted: 1 }),
+                changedFile('crates/daw-dsp/src/small.rs'),
+            ],
             blobs: {
                 [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: before,
                 [`${HEAD}:crates/daw-dsp/src/big.rs`]: after,
+                [`${MERGE_BASE}:crates/daw-dsp/src/small.rs`]: 'const before = 1;\n',
+                [`${HEAD}:crates/daw-dsp/src/small.rs`]: 'const after = 2;\n',
             },
         });
         const base = scanPorts(provider, source, fixedClock(1_000));
@@ -8051,8 +8101,19 @@ describe('reduced-unit reporting', () => {
             // Large enough that collection records nothing: any split must come from fitting.
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        expect(result.report.scope.assessed).toBe(1);
-        expect(result.report.execution).toBe('completed');
+        // The plan composes the whole unit and cuts nothing — but with both sides over one request no
+        // single pass carries a realtime rule's whole required set, so the unit is recorded as missing
+        // required evidence instead of being asked for answers the interpreter would discard.
+        expect(result.previews[0]?.evidenceIds.length).toBeGreaterThan(0);
+        expect(result.previews[0]?.sentEvidenceIds).toEqual([]);
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.scope.unassessed).toEqual([
+            {
+                path: 'crates/daw-dsp/src/big.rs',
+                reason: 'missing-required-evidence',
+                priorityClass: 'severe-production',
+            },
+        ]);
         expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
             false
         );
@@ -8098,10 +8159,17 @@ describe('reduced-unit reporting', () => {
             ...scanPorts(
                 constantProvider(0.05),
                 fakeSource({
-                    files: [changedFile(path, { added: 2_000, deleted: 1 })],
+                    // The withheld unit is skipped for want of the side collection dropped, so a second,
+                    // small unit carries the run's assessment and keeps its state partial.
+                    files: [
+                        changedFile(path, { added: 2_000, deleted: 1 }),
+                        changedFile('crates/daw-dsp/src/small.rs'),
+                    ],
                     blobs: {
                         [`${MERGE_BASE}:${path}`]: 'const small = 1;\n',
                         [`${HEAD}:${path}`]: oversized,
+                        [`${MERGE_BASE}:crates/daw-dsp/src/small.rs`]: 'const before = 1;\n',
+                        [`${HEAD}:crates/daw-dsp/src/small.rs`]: 'const after = 2;\n',
                     },
                 }),
                 fixedClock(1_000)

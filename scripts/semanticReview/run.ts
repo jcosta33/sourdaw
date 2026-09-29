@@ -13,8 +13,6 @@
 
 import {
     buildRevisionContext,
-    evidenceIdSet,
-    NO_EVIDENCE_ID,
     refuse,
     SEMANTIC_POLICY_VERSION,
     SEMANTIC_REPORT_FORMAT,
@@ -35,14 +33,13 @@ import {
     type SemanticSourcePort,
 } from './evidence.ts';
 import { unitReductionReason } from './fit.ts';
-import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
+import { type ScanAssessment } from './interpret.ts';
 import {
-    choosePassIndexForRule,
+    assertAnswersMatchQuestions,
     composeUnitPasses,
-    passMissingEvidence,
     passRequestPayload,
+    requestedPasses,
     type SemanticUnitPass,
-    type StoredUnitPass,
 } from './passes.ts';
 import {
     assessUnit,
@@ -50,7 +47,6 @@ import {
     estimateInputTokens,
     TYPESAFE_MODEL,
     TYPESAFE_SDK_VERSION_FOR_CACHE,
-    type SemanticAssessmentResult,
     type SemanticBudgetController,
     type SemanticCachePort,
     type SemanticProviderPort,
@@ -68,6 +64,25 @@ import {
     type SemanticRule,
     type SemanticRuleId,
 } from './rules.ts';
+import {
+    buildScopeStates,
+    BUDGET_STOPPED_REASON,
+    DEADLINE_STOPPED_REASON,
+    DRY_RUN_REASON,
+    isMissedAssessmentExclusion,
+    MISSING_REQUIRED_EVIDENCE_REASON,
+} from './scopeAccounting.ts';
+import {
+    mergeUnitAnswers,
+    type AssessedPass,
+    type MergedUnitAssessment,
+    type StoredUnitResponse,
+} from './unitAssessment.ts';
+import { orderPlannedUnits, plannedRequest, unitOmission } from './unitPriority.ts';
+
+export type { StoredUnitResponse } from './unitAssessment.ts';
+/** Re-exported here because the run's own completion decision reads it and callers import it from the plan. */
+export { isMissedAssessmentExclusion } from './scopeAccounting.ts';
 
 export type SemanticClock = { readonly now: () => number };
 
@@ -85,15 +100,6 @@ export type SemanticPorts = {
     readonly clock: SemanticClock;
     readonly signal: AbortSignal;
     readonly log: (message: string) => void;
-};
-
-export type SemanticRequestPreview = {
-    readonly unitId: string;
-    readonly path: string;
-    readonly ruleIds: readonly SemanticRuleId[];
-    readonly evidenceIds: readonly string[];
-    readonly bodyBytes: number;
-    readonly estimatedInputTokens: number;
 };
 
 export type SemanticUnitPlan = {
@@ -135,28 +141,6 @@ export type SemanticUnitEvidence = {
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
 };
-
-/**
- * The exclusion reasons that mean nothing was owed for this path: no rule applies to it, or the
- * collector decided it needs no reading at all — generated, a lockfile, binary, or unchanged text.
- *
- * The complement is what turns an empty scope into "an assessment was never produced". A lockfile-only
- * change is the same class as a documentation-only one and must stay a skip; reading every
- * non-`no-applicable-rule` reason as a missed assessment turned it into a red check claiming a
- * coverage gap that does not exist.
- */
-const NOTHING_OWED_EXCLUSION_REASONS: ReadonlySet<string> = new Set([
-    'no-applicable-rule',
-    'generated',
-    'dependency-lockfile',
-    'binary',
-    'no-text-change',
-]);
-
-/** Whether an exclusion means an assessment was owed for that path and not produced. */
-export function isMissedAssessmentExclusion(reason: string): boolean {
-    return !NOTHING_OWED_EXCLUSION_REASONS.has(reason);
-}
 
 /** Whether a region was minted for the given changed file, by post-change path. */
 function isAttributedTo(set: SemanticEvidenceSet, reference: EvidenceReference, changedPath: string): boolean {
@@ -349,29 +333,72 @@ export function planUnits(
             },
         });
     }
-    return { units, excluded, incomplete };
+    // Admission order is the plan's own decision, not the path order the files arrived in: a binding
+    // budget or deadline reads the risk and the answerable evidence each unit carries, and the path is
+    // only the final tie-break between units that key identically.
+    return { units: orderPlannedUnits(units), excluded, incomplete };
 }
 
+/**
+ * One unit's requests as a dry run reports them: the questions its passes can ask, the evidence those
+ * requests would carry, and the evidence the plan composed for it whether or not a question needs it.
+ * The two evidence sets are kept apart on purpose — a unit whose every pass carries regions no question
+ * can be answered from sends nothing, and the plan's composition is exactly what an operator has to see
+ * to understand why.
+ */
+export type SemanticRequestPreview = {
+    readonly unitId: string;
+    readonly path: string;
+    /** Every rule that applies to the unit; `askedRuleIds` is the subset its requests would ask. */
+    readonly ruleIds: readonly SemanticRuleId[];
+    /** The rules the requests would ask: the ones a sent pass carries the required evidence for. */
+    readonly askedRuleIds: readonly SemanticRuleId[];
+    /** Every region the plan composed for the unit, across every pass, sent or not. */
+    readonly evidenceIds: readonly string[];
+    /** The regions the requests would carry. */
+    readonly sentEvidenceIds: readonly string[];
+    /** The bytes those requests would submit; 0 when no pass can ask anything. */
+    readonly bodyBytes: number;
+    readonly estimatedInputTokens: number;
+    /** Why no request would be sent, when no pass carries the evidence any question requires. */
+    readonly omissionReason?: string;
+};
+
+/**
+ * What one unit's requests would carry and measure. Body bytes are read from the passes the requests
+ * would actually send, so a dry run's export agrees with what a live run does instead of pricing
+ * questions that would never be asked. It lives here with the run's own request accounting: the byte and
+ * token measures are the provider's, and a preview built beside the pass composition would drag the
+ * adapter into every closure that reads a report.
+ */
 function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestPreview {
+    const sent = requestedPasses({
+        rules: unit.rules,
+        kind: unit.file.kind,
+        evidence: unit.evidence,
+    });
     let bodyBytes = 0;
-    for (const pass of unit.evidence.passes) {
+    for (const entry of sent) {
         const payload = passRequestPayload({
             unitId: unit.unitId,
             path: unit.path,
             file: unit.file,
-            rules: unit.rules,
-            pass,
+            rules: entry.rules,
+            pass: entry.pass,
         });
         bodyBytes += Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
     }
-    return {
+    const preview: SemanticRequestPreview = {
         unitId: unit.unitId,
         path: unit.path,
         ruleIds: unit.rules.map((rule) => rule.id),
-        evidenceIds: unit.evidence.references.map((reference) => reference.evidenceId),
+        askedRuleIds: sent.flatMap((entry) => entry.rules.map((rule) => rule.id)),
+        evidenceIds: unit.evidence.passes.flatMap((pass) => pass.references.map((reference) => reference.evidenceId)),
+        sentEvidenceIds: sent.flatMap((entry) => entry.pass.references.map((reference) => reference.evidenceId)),
         bodyBytes,
         estimatedInputTokens: estimateInputTokens(bodyBytes),
     };
+    return sent.length === 0 ? { ...preview, omissionReason: MISSING_REQUIRED_EVIDENCE_REASON } : preview;
 }
 
 /**
@@ -409,16 +436,6 @@ export type RunScanResult = {
     readonly storedResponses: readonly StoredUnitResponse[];
 };
 
-export type StoredUnitResponse = {
-    readonly unitId: string;
-    readonly path: string;
-    readonly ruleIds: readonly SemanticRuleId[];
-    readonly answers: Readonly<Record<string, unknown>>;
-    readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
-    /** The passes this unit's evidence travelled in; the merged answer names its source pass. */
-    readonly passes: readonly StoredUnitPass[];
-};
-
 type ScanAccumulation = {
     signals: ScanAssessment[];
     storedResponses: StoredUnitResponse[];
@@ -429,14 +446,20 @@ type ScanAccumulation = {
     failureCode: string | undefined;
 };
 
-/** One unit's validated answers, kept with the deterministic inputs their interpretation depended on. */
-type UnitAssessment = {
-    readonly signals: readonly ScanAssessment[];
-    readonly stored: StoredUnitResponse;
-    readonly returnedModels: readonly string[];
-    readonly fromCache: boolean;
+/** One unit's merged answers, with the number of requests it actually sent. */
+type UnitAssessment = MergedUnitAssessment & {
+    /**
+     * The requests this unit sent. Zero means no pass could ask any of its questions: the unit is
+     * recorded as an omission, and its rules still report the evidence every request would have lacked.
+     */
+    readonly providerCalls: number;
 };
 
+/**
+ * Asks one unit everything it can answer. Each pass sends only the questions it carries the required
+ * evidence for, and a pass with no question left is not sent at all; the merge then reads each rule's
+ * answer from the pass that best carries it.
+ */
 async function assessOneUnit(input: {
     readonly ports: SemanticPorts;
     readonly unit: SemanticUnitPlan;
@@ -445,14 +468,18 @@ async function assessOneUnit(input: {
     readonly deadline: number;
 }): Promise<UnitAssessment> {
     const unit = input.unit;
+    const assessedPasses: AssessedPass[] = [];
 
-    const passResults: { pass: SemanticUnitPass; result: SemanticAssessmentResult }[] = [];
-    for (const pass of unit.evidence.passes) {
+    for (const { pass, rules } of requestedPasses({
+        rules: unit.rules,
+        kind: unit.file.kind,
+        evidence: unit.evidence,
+    })) {
         const payload = passRequestPayload({
             unitId: unit.unitId,
             path: unit.path,
             file: unit.file,
-            rules: unit.rules,
+            rules,
             pass,
         });
         const result = await assessUnit({
@@ -466,85 +493,12 @@ async function assessOneUnit(input: {
             signal: input.ports.signal,
             now: input.ports.clock.now,
         });
-        passResults.push({ pass, result });
+        const askedRuleIds = rules.map((rule) => rule.id);
+        assertAnswersMatchQuestions({ unitId: unit.unitId, answers: result.response.answers, askedRuleIds });
+        assessedPasses.push({ pass, askedRuleIds, result });
     }
 
-    // Merge per question: the answer from the pass that best carries that rule's required evidence. A
-    // selected evidence id is validated against the ids that pass actually sent, never the unit's union,
-    // so a merged answer can cite only evidence its source pass carried. Each pass answers independently,
-    // so the merged answer is exactly one pass's answer and its missing evidence is what that pass
-    // lacked, never the union of every pass's regions.
-    const mergedAnswers: Record<string, unknown> = {};
-    const sourcePassByRule = new Map<SemanticRuleId, SemanticUnitPass>();
-    const mergedMissing = new Map<SemanticRuleId, string[]>();
-    for (const rule of unit.rules) {
-        const chosen = choosePassIndexForRule({
-            kind: unit.file.kind,
-            rule,
-            passes: unit.evidence.passes,
-            unitOwn: unit.evidence.own,
-            unitContext: unit.evidence.context,
-            ownDroppedSides: unit.evidence.ownDroppedSides,
-            contextDroppedSides: unit.evidence.contextDroppedSides,
-        });
-        const entry = passResults[chosen];
-        if (entry === undefined) {
-            refuse('invalid_response', `unit ${unit.unitId} has no assessed pass ${String(chosen)}`);
-        }
-        const answer = entry.result.response.answers[rule.id];
-        if (answer === undefined) {
-            refuse('invalid_response', `TypeSafe response is missing the required answer ${rule.id}`);
-        }
-        mergedAnswers[rule.id] = assertEvidenceIdsPresent(answer, evidenceIdSet(entry.pass.references));
-        sourcePassByRule.set(rule.id, entry.pass);
-        mergedMissing.set(
-            rule.id,
-            passMissingEvidence({
-                kind: unit.file.kind,
-                rule,
-                pass: entry.pass,
-                unitOwn: unit.evidence.own,
-                unitContext: unit.evidence.context,
-                ownDroppedSides: unit.evidence.ownDroppedSides,
-                contextDroppedSides: unit.evidence.contextDroppedSides,
-            })
-        );
-    }
-
-    const signals = unit.rules.map((rule) =>
-        interpretScanOutcome({
-            answer: mergedAnswers[rule.id],
-            rule,
-            unitId: unit.unitId,
-            path: unit.path,
-            missingEvidence: mergedMissing.get(rule.id) ?? [],
-        })
-    );
-
-    const storedPasses = unit.evidence.passes.map((pass) => ({
-        passId: pass.passId,
-        evidenceIds: pass.references.map((reference) => reference.evidenceId),
-        answerRuleIds: unit.rules.filter((rule) => sourcePassByRule.get(rule.id) === pass).map((rule) => rule.id),
-    }));
-
-    const fromCache = passResults.every(({ result }) => result.fromCache);
-    const returnedModels = passResults
-        .filter(({ result }) => !result.fromCache)
-        .map(({ result }) => result.response.model);
-
-    return {
-        signals,
-        stored: {
-            unitId: unit.unitId,
-            path: unit.path,
-            ruleIds: unit.rules.map((rule) => rule.id),
-            answers: mergedAnswers,
-            missingEvidence: Object.fromEntries(mergedMissing),
-            passes: storedPasses,
-        },
-        returnedModels,
-        fromCache,
-    };
+    return { ...mergeUnitAnswers({ unit, assessedPasses }), providerCalls: assessedPasses.length };
 }
 
 /**
@@ -553,8 +507,8 @@ async function assessOneUnit(input: {
  * the units after it keep their bytes and attempts and must stay assessable.
  */
 const STOPPED_ADMISSION_REASONS: Readonly<Record<string, string>> = {
-    budget_exhausted: 'budget-exhausted-before-admission',
-    deadline_elapsed: 'deadline-elapsed-before-admission',
+    budget_exhausted: BUDGET_STOPPED_REASON,
+    deadline_elapsed: DEADLINE_STOPPED_REASON,
 };
 
 /**
@@ -581,14 +535,14 @@ async function assessPlannedUnits(input: {
     };
     if (input.dryRun) {
         for (const unit of input.units) {
-            accumulation.unassessed.push({ path: unit.path, reason: 'dry-run' });
+            accumulation.unassessed.push(unitOmission(unit, DRY_RUN_REASON));
         }
         return accumulation;
     }
     let stoppedReason: string | undefined;
     for (const unit of input.units) {
         if (stoppedReason !== undefined) {
-            accumulation.unassessed.push({ path: unit.path, reason: stoppedReason });
+            accumulation.unassessed.push(unitOmission(unit, stoppedReason));
             continue;
         }
         try {
@@ -599,9 +553,19 @@ async function assessPlannedUnits(input: {
                 budget: input.budget,
                 deadline: input.deadline,
             });
-            accumulation.assessed += 1;
             accumulation.signals.push(...outcome.signals);
             accumulation.storedResponses.push(outcome.stored);
+            // A unit no pass could ask sent nothing. It is not an assessment — no answer exists — so it
+            // is recorded as an omission under its own reason, while its stored record keeps every rule
+            // reporting the evidence no request could have carried.
+            if (outcome.providerCalls === 0) {
+                accumulation.unassessed.push(unitOmission(unit, MISSING_REQUIRED_EVIDENCE_REASON));
+                input.ports.log(
+                    `semantic scan: unit ${unit.path} was not asked (no pass carries its required evidence)`
+                );
+                continue;
+            }
+            accumulation.assessed += 1;
             if (outcome.fromCache) {
                 accumulation.cacheHits += 1;
             } else {
@@ -612,7 +576,7 @@ async function assessPlannedUnits(input: {
         } catch (error) {
             const failure = asFailure(error);
             accumulation.failureCode = failure.code;
-            accumulation.unassessed.push({ path: unit.path, reason: failure.code });
+            accumulation.unassessed.push(unitOmission(unit, failure.code));
             stoppedReason = STOPPED_ADMISSION_REASONS[failure.code];
             input.ports.log(`semantic scan: unit ${unit.path} was not assessed (${failure.code}): ${failure.message}`);
         }
@@ -673,13 +637,6 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
 
     const usage = budget.totals();
     const completedAt = new Date(input.ports.clock.now()).toISOString();
-    // A dry run assesses nothing, so every eligible unit is unassessed. Reporting an empty list with
-    // a non-zero eligible count fails the report's own arithmetic, which no caller saw only because
-    // the dry-run path returns before validation.
-    let reportedUnassessed = unassessed;
-    if (input.dryRun) {
-        reportedUnassessed = units.map((unit) => ({ path: unit.path, reason: 'dry-run-made-no-request' }));
-    }
     const execution = executionState({
         dryRun: input.dryRun,
         assessed,
@@ -709,7 +666,9 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
             truncated: [...evidenceSet.truncated, ...unitReductions],
             assessed,
             cacheHits,
-            unassessed: reportedUnassessed,
+            unassessed,
+            requestOrder: units.map((unit) => plannedRequest(unit)),
+            states: buildScopeStates({ excluded, unassessed }),
         }),
         signals,
         limitations: [...evidenceSet.limitations, ...unitReductionLimitations],
@@ -718,21 +677,6 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
         failureCode,
     };
     return { report, previews, storedResponses };
-}
-
-function assertEvidenceIdsPresent(answer: unknown, supplied: ReadonlySet<string>): unknown {
-    if (typeof answer !== 'object' || answer === null) {
-        return answer;
-    }
-    const record = answer as Record<string, unknown>;
-    const selected = record.selectedEvidenceId;
-    if (selected === undefined) {
-        return answer;
-    }
-    if (typeof selected !== 'string' || (selected !== NO_EVIDENCE_ID && !supplied.has(selected))) {
-        refuse('invalid_response', `answer selected unknown evidence id ${JSON.stringify(selected)}`);
-    }
-    return answer;
 }
 
 type FailureLike = { code: string; message: string };

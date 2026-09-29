@@ -34,7 +34,11 @@ export type ScanAssessment = {
     readonly path: string;
     /** The band the answer fell in, derived in code from `probability` and the rule's thresholds. */
     readonly outcome: ScanOutcome;
-    /** The Noul answer itself: the probability that this one property holds. Nothing is derived from it but `outcome`. */
+    /**
+     * The Noul answer itself: the probability that this one property holds. Nothing is derived from it
+     * but `outcome`, and a question no pass could ask carries the fixed 0, with `missingEvidence`
+     * deciding that entry.
+     */
     readonly probability: number;
     /**
      * How far the answer sits past the band edge it cleared, and 0 when it cleared neither. A Noul
@@ -158,7 +162,19 @@ export function interpretScanOutcome(input: {
 }): ScanAssessment {
     const { rule } = input;
     const { fire } = rule.thresholds;
-    const probability = readNoulAnswer(input.answer, `${rule.id} answer for ${input.path}`);
+    // A rule whose required evidence no pass carried was never asked, so there is no answer to read.
+    // Only missing evidence may explain an absent answer: a question the request sent and the response
+    // dropped must be refused here rather than reported as an unresolved verdict nothing produced.
+    if (input.answer === undefined && input.missingEvidence.length === 0) {
+        refuse(
+            'invalid_response',
+            `${rule.id} has no answer for ${input.path} and no missing required evidence to explain it`
+        );
+    }
+    // An unasked question carries no probability at all. The fixed 0 is the value that cannot clear a
+    // fire threshold, and the missing evidence below is what decides this entry's outcome either way.
+    const probability =
+        input.answer === undefined ? 0 : readNoulAnswer(input.answer, `${rule.id} answer for ${input.path}`);
 
     let outcome: ScanOutcome;
     let disposition: ScanDisposition;

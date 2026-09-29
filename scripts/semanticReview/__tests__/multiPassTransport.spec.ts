@@ -227,16 +227,27 @@ describe('multi-pass evidence transport', () => {
             profile: MULTI_PASS_PROFILE,
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        expect(result.report.scope.assessed).toBe(1);
+        // The after side spans passes, so no single pass holds the whole required set for a rule that
+        // needs both sides. Nothing can be asked from that evidence, so the unit is recorded as missing
+        // required evidence and no request is sent — the transport used to buy answers it discarded.
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage.networkAttempts).toBe(0);
+        expect(result.report.scope.unassessed).toEqual([
+            { path: fixture.file.path, reason: 'missing-required-evidence', priorityClass: 'severe-test' },
+        ]);
         const stored = result.storedResponses[0];
         expect(stored).toBeDefined();
-        expect(stored?.passes.length).toBeGreaterThanOrEqual(2);
-        // Every minted region (1 before hunk + 80 after hunks) is carried across the passes.
+        // The record still names every rule of the unit, so `replay` reproduces the same ledger.
+        expect(stored?.ruleIds.slice().sort()).toEqual(result.report.signals.map((signal) => signal.ruleId).sort());
+        expect(stored?.passes).toEqual([]);
+        expect(stored?.omissionReason).toBe('missing-required-evidence');
+        // Every minted region (1 before hunk + 80 after hunks) is still composed for the unit, and none
+        // of it travels: the plan carries the unit whole while no question can be answered from it.
         expect(result.previews[0]?.evidenceIds.length).toBe(81);
+        expect(result.previews[0]?.sentEvidenceIds).toEqual([]);
         // Nothing was truncated for want of a region: the run names no request-budget reduction.
         expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-'))).toBe(false);
-        // The after side spans passes, so no single pass holds the whole required set for a rule that
-        // needs both sides: it is reported insufficient rather than certified from a fragment.
+        // The coverage ledger: the rule still reports the side no pass carried.
         expect(stored?.missingEvidence.assertion_deleted).toContain('after test source');
         const signal = result.report.signals.find((entry) => entry.ruleId === 'assertion_deleted');
         expect(signal?.outcome).toBe('insufficient_context');
@@ -287,7 +298,7 @@ describe('multi-pass evidence transport', () => {
         expect(calls).toBe(2);
     });
 
-    it('accounts per pass and names a region no pass could carry', async () => {
+    it('names a region no pass could carry and reports the unit it leaves unanswerable', async () => {
         const path = 'crates/daw-dsp/src/big.rs';
         // The after side is large enough to exceed one request on its own, so no pass carries it: it is
         // dropped whole and its side recorded. The before side fits and travels in pass one.
@@ -305,70 +316,77 @@ describe('multi-pass evidence transport', () => {
             ),
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        expect(result.report.scope.assessed).toBe(1);
-        expect(result.report.usage.networkAttempts).toBe(1);
-        // The region no pass carried is named with its side.
+        // Both realtime rules need the after side, which no pass carries: the unit is skipped rather
+        // than asked from its before side alone, and the region that could not travel is still named.
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage.networkAttempts).toBe(0);
+        expect(result.report.scope.unassessed).toEqual([
+            { path, reason: 'missing-required-evidence', priorityClass: 'severe-production' },
+        ]);
         expect(result.report.scope.truncated).toContainEqual({
             path,
             reason: 'unit-evidence-reduced-below-request-budget (after)',
         });
     });
 
-    it('counts one network attempt and one byte reservation per pass sent', async () => {
-        const fixture = bigHunkedTestFile(80, 160);
+    it('counts one network attempt for the passes that carry a question, not for every composed pass', async () => {
+        // A unit whose own sides fit one request but whose charged context does not is composed into
+        // several passes. Only a pass carrying every side a rule needs can be asked, so the transport
+        // sends one request where it used to send one per composed pass.
+        const path = 'electron/__tests__/small.spec.ts';
+        const own = 'export const value = 1;\n';
+        const contractPaths = ['docs/contract-1.md', 'docs/contract-2.md', 'docs/contract-3.md'];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${path}`]: own,
+            [`${HEAD}:${path}`]: `${own}export const added = 2;\n`,
+        };
+        for (const contractPath of contractPaths) {
+            blobs[`${MERGE_BASE}:${contractPath}`] = '# contract\n'.repeat(220);
+        }
         const result = await runScan({
-            ...scanInput(
-                constantProvider(0.05),
-                fakeSource(
-                    [fixture.file],
-                    {
-                        [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
-                        [`${HEAD}:${fixture.file.path}`]: fixture.after,
-                    },
-                    new Map([[fixture.file.path, fixture.hunks]])
-                ),
-                fixedClock(1_000)
-            ),
-            profile: MULTI_PASS_PROFILE,
+            ...scanInput(constantProvider(0.05), fakeSource([changedFile(path)], blobs), fixedClock(1_000)),
+            contractPaths,
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        const passes = result.storedResponses[0]?.passes.length ?? 0;
-        expect(passes).toBeGreaterThanOrEqual(2);
-        // local profile retries zero times, so each pass is exactly one network attempt.
-        expect(result.report.usage.networkAttempts).toBe(passes);
-        // The bytes submitted exceed one request's state budget, so the evidence travelled in several
-        // requests rather than being trimmed to one.
-        expect(result.report.usage.submittedBytes).toBeGreaterThan(
+        const preview = result.previews[0];
+        expect(result.report.scope.assessed).toBe(1);
+        // The plan composed more regions than the request carried: the unit really did travel in
+        // several passes, and only the one that could be asked was sent.
+        expect(preview?.evidenceIds.length).toBeGreaterThan(preview?.sentEvidenceIds.length ?? 0);
+        expect(result.report.usage.networkAttempts).toBe(1);
+        expect(result.storedResponses[0]?.passes.length).toBe(1);
+        // One request's bytes, not the sum of every composed pass.
+        expect(result.report.usage.submittedBytes).toBeLessThan(
             SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes
         );
     });
 
-    it('leaves a unit unassessed when a later pass is refused, instead of merging a partial answer', async () => {
-        const fixture = bigHunkedTestFile(80, 160);
-        const profile = { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 1, maxRetriesPerRequest: 0 };
+    it('leaves a unit unassessed when the pass carrying its questions is refused', async () => {
+        // All-or-nothing still holds where it can be reached: the units whose own sides fit one request
+        // send one request, and a refusal on it records the unit as unassessed rather than as answered
+        // from nothing. A later pass can no longer be the refused one — every shipped rule requires both
+        // own sides, so a split unit asks nothing and is never sent at all.
+        const path = 'crates/daw-dsp/src/small.rs';
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 0, maxRetriesPerRequest: 0 };
         const result = await runScan({
             ...scanInput(
                 constantProvider(0.05),
                 fakeSource(
-                    [fixture.file],
-                    {
-                        [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
-                        [`${HEAD}:${fixture.file.path}`]: fixture.after,
-                    },
-                    new Map([[fixture.file.path, fixture.hunks]])
+                    [changedFile(path)],
+                    { [`${MERGE_BASE}:${path}`]: 'const before = 1;\n', [`${HEAD}:${path}`]: 'const after = 2;\n' },
+                    new Map<string, PathHunks>()
                 ),
                 fixedClock(1_000)
             ),
             profile,
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
-        // All-or-nothing: the first pass succeeded, but the second was refused, so no partial merged
-        // answer is recorded for the unit.
         expect(result.report.scope.assessed).toBe(0);
         expect(result.storedResponses).toHaveLength(0);
         expect(result.report.failureCode).toBe('budget_exhausted');
-        expect(result.report.usage.networkAttempts).toBe(1);
-        expect(result.report.scope.unassessed).toEqual([{ path: fixture.file.path, reason: 'budget_exhausted' }]);
+        expect(result.report.scope.unassessed).toEqual([
+            { path, reason: 'budget_exhausted', priorityClass: 'severe-production' },
+        ]);
     });
 });
 
@@ -430,8 +448,10 @@ describe('the merge reports the answering pass missing evidence', () => {
         expect(['before source', 'after source']).toContain(signal?.missingEvidence[0]);
         const stored = result.storedResponses[0];
         expect(stored?.missingEvidence.audio_thread_allocation).toHaveLength(1);
-        // The record still names the pass the answer came from.
-        expect(stored?.passes.some((pass) => pass.answerRuleIds.includes('audio_thread_allocation'))).toBe(true);
+        // Neither pass carries both sides, so no request asked the rule and the record names no
+        // answering pass — the omission is explicit instead of an answer merged from a fragment.
+        expect(stored?.passes).toEqual([]);
+        expect(stored?.omissionReason).toBe('missing-required-evidence');
     });
 
     it('still emits a decisive disposition when a rule required evidence fits one pass', async () => {

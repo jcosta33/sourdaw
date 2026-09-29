@@ -11,6 +11,7 @@
  */
 
 import {
+    assertFindingIdsAreDistinct,
     assertFindingsBoundToHead,
     parseCandidateFindings,
     type CandidateFinding,
@@ -58,7 +59,7 @@ import { sliceLines } from './slicing.ts';
 
 import type { SemanticVerifyReport } from './report.ts';
 
-export { assertFindingsBoundToHead, parseCandidateFindings };
+export { assertFindingIdsAreDistinct, assertFindingsBoundToHead, parseCandidateFindings };
 export type { CandidateFinding, CandidateFindingEvidence };
 
 /**
@@ -584,6 +585,9 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
         rulesDigest,
         policyVersion: SEMANTIC_POLICY_VERSION,
     });
+    // Identity first: a duplicate id makes the report this run would write unmatchable to its own
+    // findings, so it is refused before the collector, the cache, or any provider call is reached.
+    assertFindingIdsAreDistinct(input.findings);
     assertFindingsBoundToHead(input.findings, context.headSha);
     // Collection, the provider request, and the budget controller all run under the profile's verify
     // budgets, so a region the collector admits is one the request can carry and the run's stated

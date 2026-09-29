@@ -62,6 +62,47 @@ function signal(overrides: Record<string, unknown> = {}): Record<string, unknown
     };
 }
 
+/**
+ * One signal per assessed unit, so a hand-built fixture is still a shape the producer could have
+ * written: `assessed` counts the distinct signalled paths that are not recorded unassessed, and every
+ * assessed unit carries a signal. The first signal is unresolved and the second a near miss, which is
+ * what the projection's unresolved-question figure reads.
+ */
+function assessedSignals(count: number): Record<string, unknown>[] {
+    return Array.from({ length: count }, (_unused, index) => {
+        const path = `src/assessed-${String(index + 1)}.ts`;
+        if (index === 0) {
+            return signal({
+                unitId: path,
+                path,
+                outcome: 'insufficient_context',
+                disposition: 'unresolved',
+                probability: 0.5,
+            });
+        }
+        return signal({
+            unitId: path,
+            path,
+            outcome: 'no_signal',
+            disposition: 'no_additional_recommendation',
+            probability: index === 1 ? 0.55 : 0.2,
+        });
+    });
+}
+
+/** The scope counts a fixture's own signals imply, so the hand-built report keeps the ledger partition. */
+function scopeWithCounts(
+    scope: Record<string, unknown>,
+    signals: readonly Record<string, unknown>[]
+): Record<string, unknown> {
+    const unassessed = (scope.unassessed ?? []) as { path: string }[];
+    const excluded = (scope.excluded ?? []) as { path: string }[];
+    const omitted = new Set(unassessed.map((entry) => entry.path));
+    const assessed = new Set(signals.map((entry) => String(entry.path)).filter((path) => !omitted.has(path))).size;
+    const eligible = assessed + unassessed.length;
+    return { ...scope, discovered: eligible + excluded.length, eligible, assessed };
+}
+
 function scanReport(
     overrides: Record<string, unknown> = {},
     headSha: string = HEAD,
@@ -81,6 +122,22 @@ function scanReport(
         rulesDigest,
         policyVersion: SEMANTIC_POLICY_VERSION,
     });
+    const defaultScope = {
+        discovered: 4,
+        eligible: 3,
+        assessed: 2,
+        cacheHits: 0,
+        excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+        unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+        truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
+    };
+    const scope = (overrides.scope as Record<string, unknown> | undefined) ?? defaultScope;
+    const signals =
+        (overrides.signals as Record<string, unknown>[] | undefined) ?? assessedSignals(Number(scope.assessed ?? 0));
+    // A fixture that supplies only its signals gets the counts they imply; one that supplies a scope
+    // keeps it, and the signals follow its assessed count.
+    const fixtureScope =
+        overrides.scope === undefined && overrides.signals !== undefined ? scopeWithCounts(scope, signals) : scope;
     return {
         schemaVersion: SEMANTIC_REPORT_FORMAT,
         mode: 'scan',
@@ -95,20 +152,8 @@ function scanReport(
         startedAt: '2026-01-01T00:00:00.000Z',
         completedAt: '2026-01-01T00:00:01.000Z',
         execution: 'partial',
-        scope: {
-            discovered: 4,
-            eligible: 3,
-            assessed: 2,
-            cacheHits: 0,
-            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
-            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
-            truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
-        },
-        signals: [
-            signal({ outcome: 'insufficient_context', disposition: 'unresolved', probability: 0.5 }),
-            signal({ outcome: 'no_signal', disposition: 'no_additional_recommendation', probability: 0.55 }),
-            signal({ outcome: 'no_signal', disposition: 'no_additional_recommendation', probability: 0.2 }),
-        ],
+        scope: fixtureScope,
+        signals,
         limitations: ['a limitation'],
         usage: {
             networkAttempts: 1,
@@ -350,7 +395,8 @@ describe('semantic review context', () => {
         expect(result).toMatchObject({
             state: 'assessed',
             assessedHeadSha: HEAD,
-            scope: { discovered: 4, eligible: 3, assessed: 2 },
+            // The counts the fixture's one signalled path implies: one assessed unit, one omission.
+            scope: { discovered: 3, eligible: 2, assessed: 1 },
             artifact: { name: 'semantic-review-42-456-1' },
         });
         // No unscreened projected byte reaches the record `semantic-ci.json` serialises.
@@ -1068,6 +1114,48 @@ describe('semantic review context', () => {
 
         const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
         expect(result.scope.unassessed).toEqual([{ path: 'src/modules/Project/big.ts', reason: 'request_too_large' }]);
+    });
+
+    it('keeps the missing-required-evidence omission as a known scope reason', () => {
+        // A unit whose evidence never carried what its questions require is skipped without a request.
+        // An unregistered reason would project to `unrecognized-reason` and read as an unknown cause
+        // rather than as a unit the plan could not ask anything.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            // The one unit this fixture carries made no request, so nothing was assessed.
+                            discovered: 2,
+                            eligible: 1,
+                            assessed: 0,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'crates/daw-dsp/src/big.rs', reason: 'missing-required-evidence' }],
+                            truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
+                        },
+                        // The unit that made no request still reports every rule of its set, which is the
+                        // coverage ledger its omission reason names: the producer always emits it.
+                        signals: [
+                            signal({
+                                unitId: 'crates/daw-dsp/src/big.rs',
+                                path: 'crates/daw-dsp/src/big.rs',
+                                ruleId: 'audio_thread_allocation',
+                                investigationCategory: 'realtime',
+                            }),
+                        ],
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.unassessed).toEqual([
+            { path: 'crates/daw-dsp/src/big.rs', reason: 'missing-required-evidence' },
+        ]);
     });
 
     it('keeps the deadline admission reason as a known scope reason', () => {

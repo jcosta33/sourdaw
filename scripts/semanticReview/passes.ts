@@ -7,12 +7,44 @@
  * planner and the assessor share one definition and a mutation test can attack the merge directly.
  */
 
-import { refuse, semanticDigest, type EvidenceReference, type EvidenceSide } from './contracts.ts';
+import { NO_EVIDENCE_ID, refuse, semanticDigest, type EvidenceReference, type EvidenceSide } from './contracts.ts';
 import { type SemanticChangedFile, type SemanticEvidenceSet } from './evidence.ts';
 import { fitUnitEvidence, partitionUnitEvidence, type FittedPass } from './fit.ts';
 import { unitRequestPayload } from './requestPayload.ts';
 import { missingRequiredEvidence } from './requiredEvidence.ts';
 import { type SemanticRule, type SemanticRuleId } from './rules.ts';
+
+/**
+ * One unit's evidence as every per-pass question about it is asked: the passes it travels in, the
+ * regions it carries whole, and the sides the fitter or the collector dropped. A planned unit
+ * satisfies this shape, so the planner and the assessor read one measure of what a request can answer.
+ */
+export type UnitPassEvidence = {
+    readonly passes: readonly SemanticUnitPass[];
+    readonly own: readonly EvidenceReference[];
+    readonly context: readonly EvidenceReference[];
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+};
+
+/**
+ * A planned unit as every per-pass question about it is read: what it is, which rules apply, and the
+ * evidence those rules are answered from. A plan satisfies this shape, so the ordering, the request
+ * carriage, and the merge share one definition without importing the planner's own record.
+ *
+ * A rename's previous path is carried because the planner admits the rules of both offered paths, and
+ * the admission class reads the same pair: a cross-boundary rename must not be classified from its
+ * destination alone.
+ */
+export type UnitQuestionPlan = {
+    readonly path: string;
+    readonly file: {
+        readonly kind: SemanticChangedFile['kind'];
+        readonly previousPath?: string;
+    };
+    readonly rules: readonly SemanticRule[];
+    readonly evidence: UnitPassEvidence;
+};
 
 /** One ordered pass: a fitted region set plus its deterministic identity. */
 export type SemanticUnitPass = FittedPass & {
@@ -213,6 +245,137 @@ export function choosePassIndexForRule(input: {
         }
     }
     return best;
+}
+
+/**
+ * The rules one pass can answer: exactly those whose required evidence that pass carries in full. They
+ * are the questions that pass's request may contain — a rule whose evidence this pass leaves missing
+ * would only buy an answer the interpreter discards.
+ */
+export function answerableRulesForPass(input: {
+    readonly rules: readonly SemanticRule[];
+    readonly pass: SemanticUnitPass;
+    readonly kind: SemanticChangedFile['kind'];
+    readonly evidence: UnitPassEvidence;
+}): SemanticRule[] {
+    return input.rules.filter((rule) => missingEvidenceInPass({ ...input, rule }).length === 0);
+}
+
+/**
+ * The required-evidence tokens no pass of this unit carries: what the unit cannot ask anyone. It is the
+ * fewest-missing measure the pass choice reads, so a rule this reports empty for is exactly a rule some
+ * request of the unit asks.
+ */
+export function bestPassMissingEvidence(input: {
+    readonly rule: SemanticRule;
+    readonly kind: SemanticChangedFile['kind'];
+    readonly evidence: UnitPassEvidence;
+}): string[] {
+    let best: string[] | undefined;
+    for (const pass of input.evidence.passes) {
+        const missing = missingEvidenceInPass({ ...input, pass });
+        if (best === undefined || missing.length < best.length) {
+            best = missing;
+        }
+        if (best.length === 0) {
+            break;
+        }
+    }
+    // A planned unit always has at least one pass, so the fallback only answers an empty unit.
+    return best ?? [];
+}
+
+/** One pass's missing tokens for one rule, read through the shared measure and the unit's own sides. */
+function missingEvidenceInPass(input: {
+    readonly kind: SemanticChangedFile['kind'];
+    readonly evidence: UnitPassEvidence;
+    readonly rule: SemanticRule;
+    readonly pass: SemanticUnitPass;
+}): string[] {
+    return passMissingEvidence({
+        kind: input.kind,
+        rule: input.rule,
+        pass: input.pass,
+        unitOwn: input.evidence.own,
+        unitContext: input.evidence.context,
+        ownDroppedSides: input.evidence.ownDroppedSides,
+        contextDroppedSides: input.evidence.contextDroppedSides,
+    });
+}
+
+/**
+ * The response must answer exactly the questions the request sent. A missing answer for a sent question
+ * cannot be interpreted — the request asked for it — and an answer for a question this pass never sent
+ * is refused too, because nothing checked a value the request did not define. Matching in both
+ * directions is what makes the answer set a fact about the request rather than the provider's choice.
+ */
+export function assertAnswersMatchQuestions(input: {
+    readonly unitId: string;
+    readonly answers: Readonly<Record<string, unknown>>;
+    readonly askedRuleIds: readonly SemanticRuleId[];
+}): void {
+    for (const ruleId of input.askedRuleIds) {
+        if (input.answers[ruleId] === undefined) {
+            refuse(
+                'invalid_response',
+                `TypeSafe response for ${input.unitId} is missing the answer ${ruleId} its request asked for`
+            );
+        }
+    }
+    const asked: ReadonlySet<string> = new Set(input.askedRuleIds);
+    for (const ruleId of Object.keys(input.answers)) {
+        if (!asked.has(ruleId)) {
+            refuse(
+                'invalid_response',
+                `TypeSafe response for ${input.unitId} answered ${ruleId}, which its request did not ask`
+            );
+        }
+    }
+}
+
+/**
+ * Validates a returned answer's selected evidence id against the ids the answering pass actually sent.
+ * The pass's own region set is the authority, never the unit's union: a merged answer may cite only
+ * evidence its source pass carried, and the explicit `none` option is always available.
+ */
+export function assertAnswerEvidenceSupplied(answer: unknown, supplied: ReadonlySet<string>): unknown {
+    if (typeof answer !== 'object' || answer === null) {
+        return answer;
+    }
+    const selected = (answer as Record<string, unknown>).selectedEvidenceId;
+    if (selected === undefined) {
+        return answer;
+    }
+    if (typeof selected !== 'string' || (selected !== NO_EVIDENCE_ID && !supplied.has(selected))) {
+        refuse('invalid_response', `answer selected unknown evidence id ${JSON.stringify(selected)}`);
+    }
+    return answer;
+}
+
+/** One pass with the questions its request would ask: the answerable rules, in plan order. */
+export type RequestedPass = {
+    readonly pass: SemanticUnitPass;
+    readonly rules: readonly SemanticRule[];
+};
+
+/**
+ * The passes one unit would send, each with the rules it can answer. A pass no rule can be asked in is
+ * not a request at all, so it is absent here — and a unit with no entry sends nothing, which is exactly
+ * the unit whose omission the report records as missing required evidence.
+ */
+export function requestedPasses(input: {
+    readonly rules: readonly SemanticRule[];
+    readonly kind: SemanticChangedFile['kind'];
+    readonly evidence: UnitPassEvidence;
+}): RequestedPass[] {
+    const requested: RequestedPass[] = [];
+    for (const pass of input.evidence.passes) {
+        const rules = answerableRulesForPass({ ...input, pass });
+        if (rules.length > 0) {
+            requested.push({ pass, rules });
+        }
+    }
+    return requested;
 }
 
 /** One pass's request payload, shaped exactly as the provider receives it. */

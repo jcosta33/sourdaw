@@ -69,6 +69,7 @@ import {
 } from './admissionBytes.ts';
 import { isContractCarryingContent, resolvedRelativeImportCandidates } from './contractCarrying.ts';
 import { regionFitsRequest } from './fit.ts';
+import { compareLexicographic } from './pathOrder.ts';
 import { applicableRules, isCollectedSpec, unitNeedsContractContext } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, type LineRange } from './slicing.ts';
@@ -79,15 +80,7 @@ export { admissionBytesBySide, chargeableRegionBytes, kindHasAfterSide, kindHasB
 export type { AdmissionSide, AdmissionSideBytes, ChangedFileContents };
 
 /** A deterministic string ordering. `localeCompare` is locale-dependent and would not be reproducible. */
-export function compareLexicographic(left: string, right: string): number {
-    if (left < right) {
-        return -1;
-    }
-    if (left > right) {
-        return 1;
-    }
-    return 0;
-}
+export { compareLexicographic } from './pathOrder.ts';
 
 /** A deterministic path ordering, used wherever a source ordering must be reproducible. */
 export function compareByPath(left: { readonly path: string }, right: { readonly path: string }): number {
