@@ -72,22 +72,26 @@ export type UnitChangedLineFacts =
 /**
  * An assertion-carrying line, decided by its text alone.
  *
- * The vocabulary is the assertion calls these suites spell: Vitest's and Playwright's `expect(...)`, a
- * chained matcher (`expect(x).toBe(y)`, including `.not.`, `.resolves.` and `.rejects.`), node:test's
- * `assert(...)` and `assert.equal(...)`, and this repository's own capitalized `expect*` helpers such as
- * `expectExternalProjectLink`. The capitalization matters: `expectations.push(` is not an assertion call,
- * and a pattern loose enough to admit it would report removals that never existed.
+ * Every pattern is an assertion *head*: the call that begins an assertion. Vitest's and Playwright's
+ * `expect(...)`, the session-scoped `expect.soft(...)`/`expect.poll(...)`/`expect.hasAssertions()`,
+ * node:test's `assert(...)` and `assert.equal(...)`, and this repository's own capitalized `expect*`
+ * helpers such as `expectExternalProjectLink`. The capitalization matters: `expectations.push(` is not an
+ * assertion call, and a pattern loose enough to admit it would report removals that never existed.
  *
- * A line is decided by text, never by a parse. A matcher split across several lines is reported on the
- * line that spells its head, and a call spelled inside a string or a comment is reported as written.
- * That limit is disclosed by `basis` and by the rules' own wording rather than hidden here.
+ * The matchers a head chains — `.toBe(`, `.not.toEqual(`, `.resolves.toBe(` — are deliberately *not*
+ * patterns of their own. An unanchored `.to[A-Za-z]*\(` reads `JSON.stringify(value).toLowerCase()`,
+ * `count.toFixed(2)` and `date.toISOString()` as assertions, and a serialization-only edit that removes
+ * one would then publish a removed assertion with no counterpart: the very false alarm this block exists
+ * to quiet, carrying the block's deterministic authority. A matcher split onto a line of its own is
+ * reported on the line that spells its head, which is the same limitation `basis` and the rules disclose:
+ * a line is decided by text, never by a parse, and a call spelled inside a string or comment is reported
+ * as written.
  */
 const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
     /\bexpect\s*\(/u,
-    /\bexpect\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\(/u,
+    /\bexpect\s*\.\s*(?:soft|poll|hasAssertions|assertions)\s*\(/u,
     /\bexpect[A-Z][A-Za-z0-9_$]*\s*\(/u,
     /\bassert\s*(?:\.\s*[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(/u,
-    /\.\s*(?:not\s*\.\s*)?(?:to|rejects|resolves)[A-Za-z0-9_$]*\s*\(/u,
 ];
 
 /**

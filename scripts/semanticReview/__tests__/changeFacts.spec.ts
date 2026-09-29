@@ -21,7 +21,7 @@ import {
 import { collectEvidence, type SemanticChangedFile, type SemanticSourcePort } from '../evidence.ts';
 import { passRequestPayload } from '../passes.ts';
 import { computeResponseCacheKey, TYPESAFE_MODEL } from '../provider.ts';
-import { unitReservationBytes } from '../requestPayload.ts';
+import { unitStatePlusQuestionBytes } from '../requestPayload.ts';
 import { SEMANTIC_BUDGET_PROFILES } from '../rules.ts';
 import { planUnits, type SemanticUnitPlan } from '../run.ts';
 
@@ -134,6 +134,73 @@ function unitPayload(
     });
 }
 
+/** How many single-line hunks the saturation witness is sliced into. */
+const WITNESS_REGIONS = 3;
+
+/** The block one added spec of `WITNESS_REGIONS` lines reports: its first line carries an assertion head. */
+const WITNESS_FACTS: UnitChangedLineFacts = {
+    basis: 'unified-diff',
+    before: { removedAssertions: { count: 0, lines: [], truncated: false } },
+    after: {
+        addedAssertions: { count: 1, lines: [1], truncated: false },
+        addedControlFlow: { count: 0, lines: [], truncated: false },
+    },
+};
+
+/**
+ * One synthetic added spec whose after side is `WITNESS_REGIONS` single-line hunks, the last carrying
+ * `padding` filler bytes, with the changed lines a real diff of that file would report. JSON escapes none
+ * of the filler, so the unit's serialized evidence grows one byte per padding byte and the fitter's
+ * admission boundary can be bisected with the fact block in place.
+ */
+function witnessSource(padding: number): SemanticSourcePort {
+    const lines = [
+        "        expect(screen.getByText('1/16')).toBeInTheDocument();",
+        "    it('exposes the snap value control', async () => {",
+        `        const filler = '${'p'.repeat(padding)}';`,
+    ];
+    const content = `${lines.join('\n')}\n`;
+    return {
+        changedFiles: () => [
+            {
+                path: PATH,
+                kind: 'added',
+                binary: false,
+                generated: false,
+                added: lines.length,
+                deleted: 0,
+            },
+        ],
+        readFile: (sha, path) => (path === PATH && sha === HEAD ? content : undefined),
+        changedHunks: () =>
+            new Map([
+                [
+                    PATH,
+                    {
+                        path: PATH,
+                        before: [],
+                        after: lines.map((_line, index) => ({ startLine: index + 1, endLine: index + 1 })),
+                    },
+                ],
+            ]),
+        changedLines: () =>
+            new Map([[PATH, { added: lines.map((text, index) => ({ line: index + 1, text })), removed: [] }]]),
+    };
+}
+
+/** The unit that fixture plans under `cap`, or undefined when its evidence is over the budget outright. */
+function witnessUnit(padding: number, cap: number): SemanticUnitPlan | undefined {
+    const source = witnessSource(padding);
+    const set = collectEvidence({
+        port: source,
+        mergeBaseSha: MERGE_BASE,
+        headSha: HEAD,
+        contractSourceSha: MERGE_BASE,
+        limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+    });
+    return planUnits([...source.changedFiles(MERGE_BASE, HEAD)], set, cap).units[0];
+}
+
 describe('a changed line is classified by its text alone', () => {
     it('should read the assertion calls these suites spell and not the words that merely start like them', () => {
         const assertions = [
@@ -150,9 +217,37 @@ describe('a changed line is classified by its text alone', () => {
             'const assertValue = 3;',
             'const assertionCount = 2;',
             'assertiveCopy.write(text);',
+            // A matcher-shaped method on an ordinary receiver is not an assertion. These are the lines an
+            // unanchored `.to[A-Za-z](` pattern published as removed assertions, which is the false alarm
+            // this block exists to quiet.
+            'const text = value.toString();',
+            'const fixed = count.toFixed(2);',
+            'const lower = name.toLowerCase();',
+            'const stamp = date.toISOString();',
+            'const localised = date.toLocaleDateString();',
+            'const precise = ratio.toPrecision(3);',
+            'const rows = table.toggleAllRowsSelected(true);',
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
+    });
+
+    it('should report no removed assertion for an edit that only removes a serialization call', () => {
+        const facts = changedLineFacts({
+            added: [],
+            removed: [
+                { line: 12, text: 'const stamp = date.toISOString();' },
+                { line: 13, text: 'const text = payload.toString();' },
+            ],
+        });
+        expect(facts).toEqual({
+            basis: 'unified-diff',
+            before: { removedAssertions: { count: 0, lines: [], truncated: false } },
+            after: {
+                addedAssertions: { count: 0, lines: [], truncated: false },
+                addedControlFlow: { count: 0, lines: [], truncated: false },
+            },
+        });
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {
@@ -224,12 +319,46 @@ describe('a unit request carries its own changed-line facts', () => {
         expect(unit.changedLineFacts).toEqual({ basis: 'unavailable' });
     });
 
-    it('should reserve the facts with the unit so the plan and the provider measure one payload', () => {
-        const withLines = plannedUnit(new Map([[PATH, CHANGED_LINES]]));
-        const withoutLines = plannedUnit(new Map());
-        expect(unitReservationBytes(withLines.file, withLines.rules, withLines.changedLineFacts)).toBeGreaterThan(
-            unitReservationBytes(withoutLines.file, withoutLines.rules, withoutLines.changedLineFacts)
+    it('should reserve the facts with the unit so a saturated plan still measures inside the state cap', () => {
+        // The witness this case exists for: the reservation is the planner's own number, so a reservation
+        // that ignored the facts would admit exactly the facts' bytes of extra evidence and the largest
+        // sent pass would then measure over the cap. The fixture is bisected to the deepest padding whose
+        // regions the plan still carries whole, which is the boundary where that slack has nowhere to hide.
+        const cap = SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes;
+        const padded = (padding: number): SemanticUnitPlan | undefined => witnessUnit(padding, cap);
+        const carriesWholeUnit = (padding: number): boolean => padded(padding)?.evidence.own.length === WITNESS_REGIONS;
+        let low = 0;
+        let high = cap;
+        while (low < high) {
+            const middle = Math.ceil((low + high) / 2);
+            if (carriesWholeUnit(middle)) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        const unit = padded(low);
+        if (unit === undefined) {
+            throw new Error('the fixture planned no unit, so the case would assert nothing');
+        }
+        expect(unit.changedLineFacts).toEqual(WITNESS_FACTS);
+        expect(unit.evidence.own).toHaveLength(WITNESS_REGIONS);
+        // One more byte of evidence does not fit, so the budget is genuinely spent and the measurement
+        // below is taken at the boundary rather than with slack the reservation could be hiding in.
+        expect(carriesWholeUnit(low + 1)).toBe(false);
+        const largestSentPass = Math.max(
+            ...unit.evidence.passes.map((pass) =>
+                unitStatePlusQuestionBytes({
+                    unitId: unit.unitId,
+                    path: unit.path,
+                    file: unit.file,
+                    rules: unit.rules,
+                    evidence: { references: pass.references, contents: pass.contents },
+                    changedLineFacts: unit.changedLineFacts,
+                })
+            )
         );
+        expect(largestSentPass).toBeLessThanOrEqual(cap);
     });
 
     it('should answer a changed fact with a different cache identity', () => {
