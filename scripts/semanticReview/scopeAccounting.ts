@@ -151,6 +151,26 @@ const SCOPE_STATE_NAMES = [
     'dryRun',
 ] as const satisfies readonly (keyof SemanticScopeStates)[];
 
+/**
+ * Holds the unassessed list to one record per path. A unit is planned once per path, so it can be
+ * omitted once: a repeated path is malformed on its own, and it also hides a contradiction, because a
+ * reader taking the last record for a path would see only one of two disagreeing classes. The scope's
+ * arithmetic cannot see the duplicate — moving `assessed` and `eligible` together still balances — and
+ * the collector keeps its own exclusions to one entry per path for the same reason. An excluded path
+ * repeated is bounded by that arithmetic instead: keeping `eligible + excluded.length` equal to
+ * `discovered` forces a forger to inflate `discovered`, which the report publishes no independent list
+ * of paths to refute.
+ */
+export function assertUnassessedPathsAreDistinct(unassessed: readonly SemanticScopeExclusion[], label: string): void {
+    const seen = new Set<string>();
+    for (const entry of unassessed) {
+        if (seen.has(entry.path)) {
+            refuse('invalid_response', `${label} records ${entry.path} as unassessed more than once`);
+        }
+        seen.add(entry.path);
+    }
+}
+
 /** Reads the totals back. Absent is a report written before the field existed, which stays valid. */
 export function readScopeStates(value: unknown, label: string): SemanticScopeStates | undefined {
     if (value === undefined) {

@@ -799,6 +799,41 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         );
     });
 
+    it('refuses a path the scope records as unassessed more than once', async () => {
+        // The duplicate hides a contradiction: a reader taking the last record for the path would see
+        // only the class the plan publishes, while the first record disagrees with it. Everything else in
+        // the forgery is made to balance — the omitted record, `eligible`, `discovered`, the totals, and a
+        // fourth planned entry — so the duplicate is the only thing left to refuse, and it is refused
+        // before anything downstream reads one record per path.
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        const last = order[order.length - 1];
+        const states = report.scope.states;
+        if (last === undefined || states === undefined) {
+            throw new Error('the run published no plan or totals, so the case would assert nothing');
+        }
+        expect(order[0]?.path).toBe(SKIPPED_PATH);
+        expect(order[0]?.priorityClass).toBe('severe-production');
+        const contradicting: SemanticScopeExclusion = {
+            path: SKIPPED_PATH,
+            reason: 'missing-required-evidence',
+            priorityClass: 'severe-test',
+        };
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: {
+                    ...report.scope,
+                    discovered: report.scope.discovered + 1,
+                    eligible: report.scope.eligible + 1,
+                    requestOrder: [...order, { ...last, path: 'nope/fourth.ts' }],
+                    unassessed: [contradicting, ...report.scope.unassessed],
+                    states: { ...states, missingRequiredEvidence: states.missingRequiredEvidence + 1 },
+                },
+            })
+        ).toThrow(/records crates\/daw-dsp\/src\/big\.rs as unassessed more than once/);
+    });
+
     it('refuses a verify report that carries a planned order', async () => {
         // A verifier walks findings, never units, so an order beside its findings is a claim its mode
         // cannot produce and no ledger of its own can corroborate.
