@@ -282,9 +282,29 @@ export type SemanticScopeUnit = {
     evidenceIds: readonly string[];
 };
 
+/**
+ * The admission priority class of one planned unit, most-preferred first. It lives in the shared
+ * contracts rather than beside the ordering policy because it is published: an omitted unit is
+ * explained by the class its key placed it in, and the report validator must agree with the planner
+ * about the vocabulary it accepts.
+ */
+export const SEMANTIC_UNIT_PRIORITY_CLASSES = ['severe-production', 'severe-test', 'production', 'test'] as const;
+export type UnitPriorityClass = (typeof SEMANTIC_UNIT_PRIORITY_CLASSES)[number];
+
+const UNIT_PRIORITY_CLASS_SET: ReadonlySet<string> = new Set(SEMANTIC_UNIT_PRIORITY_CLASSES);
+
+export function isUnitPriorityClass(value: unknown): value is UnitPriorityClass {
+    return typeof value === 'string' && UNIT_PRIORITY_CLASS_SET.has(value);
+}
+
 export type SemanticScopeExclusion = {
     path: string;
     reason: string;
+    /**
+     * The priority class the planner's admission key gave the unit. Only an `unassessed` entry carries
+     * one: excluded and truncated entries describe a path the plan never ordered.
+     */
+    priorityClass?: UnitPriorityClass;
 };
 
 export type SemanticScopeManifest = {

@@ -35,8 +35,8 @@ import {
     resolveFromRefs,
     type ResolvedRevision,
 } from './semanticReview/gitSource.ts';
-import { interpretScanOutcome } from './semanticReview/interpret.ts';
 import { createFileCache, createSdkProviderPort, TYPESAFE_API_KEY_ENV } from './semanticReview/provider.ts';
+import { parseStoredResponses, replayScanSignals } from './semanticReview/replay.ts';
 import {
     parseReportJson,
     renderSummary,
@@ -451,20 +451,7 @@ function handlerReplay(parsed: ParsedArgs, primaryRoot: string): number {
     const overrides =
         parsed.policyPath === undefined ? undefined : parsePolicyOverrides(parsed.policyPath, primaryRoot);
 
-    const signals = responses.units.flatMap((unit) =>
-        unit.ruleIds.map((ruleId) => {
-            const rule = semanticRule(ruleId);
-            const thresholds = overrides?.[ruleId];
-            const effective = thresholds === undefined ? rule : { ...rule, thresholds };
-            return interpretScanOutcome({
-                answer: unit.answers[ruleId],
-                rule: effective,
-                unitId: unit.unitId,
-                path: unit.path,
-                missingEvidence: unit.missingEvidence[ruleId] ?? [],
-            });
-        })
-    );
+    const signals = replayScanSignals(responses, overrides ?? {});
 
     const replayedVersion = `${SEMANTIC_POLICY_VERSION}+replay${parsed.policyPath === undefined ? '' : `:${basenameOf(parsed.policyPath)}`}`;
     // The context is rebuilt rather than copied: it embeds the policy version in its own digest, so a
@@ -504,94 +491,6 @@ function handlerReplay(parsed: ParsedArgs, primaryRoot: string): number {
 function basenameOf(path: string): string {
     const parts = path.split('/');
     return parts[parts.length - 1] ?? path;
-}
-
-type StoredResponses = {
-    readonly contextDigest: string;
-    readonly rulesDigest: string;
-    readonly units: readonly {
-        readonly unitId: string;
-        readonly path: string;
-        readonly ruleIds: readonly SemanticRuleId[];
-        readonly answers: Readonly<Record<string, unknown>>;
-        readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
-        readonly passes: readonly {
-            readonly passId: string;
-            readonly evidenceIds: readonly string[];
-            readonly answerRuleIds: readonly SemanticRuleId[];
-        }[];
-    }[];
-};
-
-function parseStoredResponses(value: unknown, label: string): StoredResponses {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        refuse('invalid_response', `${label} must be an object`);
-    }
-    const record = value as Record<string, unknown>;
-    const units = record.units;
-    if (!Array.isArray(units)) {
-        refuse('invalid_response', `${label} must carry a units array`);
-    }
-    if (typeof record.contextDigest !== 'string' || typeof record.rulesDigest !== 'string') {
-        refuse('invalid_response', `${label} must record the identity of the assessment it belongs to`);
-    }
-    return {
-        contextDigest: record.contextDigest,
-        rulesDigest: record.rulesDigest,
-        units: units.map((entry, index) => {
-            const at = `${label}.units[${String(index)}]`;
-            if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-                refuse('invalid_response', `${at} must be an object`);
-            }
-            const record = entry as Record<string, unknown>;
-            if (typeof record.unitId !== 'string' || typeof record.path !== 'string') {
-                refuse('invalid_response', `${at} needs unitId and path`);
-            }
-            if (!Array.isArray(record.ruleIds) || typeof record.answers !== 'object' || record.answers === null) {
-                refuse('invalid_response', `${at} needs ruleIds and answers`);
-            }
-            const passes = record.passes;
-            let parsedPasses: ReturnType<typeof readStoredPasses> = [];
-            if (passes !== undefined) {
-                parsedPasses = readStoredPasses(passes, `${at}.passes`);
-            }
-            return {
-                unitId: record.unitId,
-                path: record.path,
-                ruleIds: record.ruleIds as SemanticRuleId[],
-                answers: record.answers as Record<string, unknown>,
-                missingEvidence: (record.missingEvidence ?? {}) as Record<string, readonly string[]>,
-                passes: parsedPasses,
-            };
-        }),
-    };
-}
-
-function readStoredPasses(
-    value: unknown,
-    label: string
-): readonly { passId: string; evidenceIds: readonly string[]; answerRuleIds: readonly SemanticRuleId[] }[] {
-    if (!Array.isArray(value)) {
-        refuse('invalid_response', `${label} must be an array`);
-    }
-    return value.map((entry, index) => {
-        const at = `${label}[${String(index)}]`;
-        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-            refuse('invalid_response', `${at} must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        if (typeof record.passId !== 'string' || record.passId === '') {
-            refuse('invalid_response', `${at} needs a passId`);
-        }
-        if (!Array.isArray(record.evidenceIds) || !Array.isArray(record.answerRuleIds)) {
-            refuse('invalid_response', `${at} needs evidenceIds and answerRuleIds arrays`);
-        }
-        return {
-            passId: record.passId,
-            evidenceIds: record.evidenceIds as string[],
-            answerRuleIds: record.answerRuleIds as SemanticRuleId[],
-        };
-    });
 }
 
 /** A local policy file may change interpretation thresholds; it can never change a question or model. */

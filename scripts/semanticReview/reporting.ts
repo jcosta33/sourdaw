@@ -8,6 +8,8 @@
 import { type SemanticScopeExclusion } from './contracts.ts';
 import { estimateCost, type SemanticUsageTotals } from './provider.ts';
 import { type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
+import { type SemanticScopeStates } from './scopeAccounting.ts';
+import { type SemanticPlannedRequest } from './unitPriority.ts';
 
 /** Builds the scope report from the plan's unit paths and the run's outcome counts. */
 export function scopeReport(input: {
@@ -17,6 +19,9 @@ export function scopeReport(input: {
     readonly assessed: number;
     readonly cacheHits: number;
     readonly unassessed: readonly SemanticScopeExclusion[];
+    /** The eligible units in admission order, with the class and evidence that placed each one. */
+    readonly requestOrder: readonly SemanticPlannedRequest[];
+    readonly states: SemanticScopeStates;
 }): SemanticScopeReport {
     const discovered = new Set<string>([...input.unitPaths, ...input.excluded.map((entry) => entry.path)]).size;
     return {
@@ -27,6 +32,8 @@ export function scopeReport(input: {
         excluded: [...input.excluded],
         unassessed: [...input.unassessed],
         truncated: [...input.truncated],
+        requestOrder: [...input.requestOrder],
+        states: input.states,
     };
 }
 

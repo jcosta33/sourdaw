@@ -23,6 +23,13 @@ import {
     type SemanticScopeExclusion,
 } from './contracts.ts';
 import { SCAN_OUTCOMES, type SemanticRuleId } from './rules.ts';
+import {
+    assertScopeStatesMatch,
+    readScopeExclusions,
+    readScopeStates,
+    type SemanticScopeStates,
+} from './scopeAccounting.ts';
+import { readPlannedRequests, type SemanticPlannedRequest } from './unitPriority.ts';
 
 import type { FindingAssessment, ScanAssessment } from './interpret.ts';
 
@@ -39,6 +46,13 @@ export type SemanticScopeReport = {
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly unassessed: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
+    /**
+     * The eligible units in the order admission walked them, with the class and evidence that placed
+     * each one. Absent on a report written before the plan published its order.
+     */
+    readonly requestOrder?: readonly SemanticPlannedRequest[];
+    /** The run's unit totals by state. Absent on a report written before the totals existed. */
+    readonly states?: SemanticScopeStates;
 };
 
 export type SemanticUsageReport = {
@@ -133,20 +147,20 @@ function readStringArray(value: unknown, label: string): string[] {
     });
 }
 
-function readExclusions(value: unknown, label: string): SemanticScopeExclusion[] {
-    if (!Array.isArray(value)) {
-        refuse('invalid_response', `${label} must be an array`);
+/**
+ * The totals are held to the lists they count, so no unit can be published in a state it was not
+ * recorded in and no recorded omission can go uncounted. A report written before the totals existed
+ * carries none and stays valid.
+ */
+function assertScopeTotals(scope: SemanticScopeReport): void {
+    if (scope.states === undefined) {
+        return;
     }
-    return value.map((entry, index) => {
-        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-            refuse('invalid_response', `${label}[${String(index)}] must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        return {
-            path: assertNonEmptyString(record.path, `${label}[${String(index)}].path`),
-            reason: assertNonEmptyString(record.reason, `${label}[${String(index)}].reason`),
-        };
-    });
+    assertScopeStatesMatch(
+        scope.states,
+        { excluded: scope.excluded.length, unassessed: scope.unassessed.length },
+        'semantic report scope'
+    );
 }
 
 function readRevisionContext(value: unknown, label: string): SemanticRevisionContext {
@@ -275,12 +289,15 @@ export function validateReport(value: unknown): SemanticReport {
         eligible: readNonNegativeInteger(rawScope.eligible, 'scope.eligible'),
         assessed: readNonNegativeInteger(rawScope.assessed, 'scope.assessed'),
         cacheHits: readNonNegativeInteger(rawScope.cacheHits, 'scope.cacheHits'),
-        excluded: readExclusions(rawScope.excluded, 'scope.excluded'),
-        unassessed: readExclusions(rawScope.unassessed, 'scope.unassessed'),
-        truncated: readExclusions(rawScope.truncated, 'scope.truncated'),
+        excluded: readScopeExclusions(rawScope.excluded, 'scope.excluded'),
+        unassessed: readScopeExclusions(rawScope.unassessed, 'scope.unassessed'),
+        truncated: readScopeExclusions(rawScope.truncated, 'scope.truncated'),
+        requestOrder: readPlannedRequests(rawScope.requestOrder, 'scope.requestOrder'),
+        states: readScopeStates(rawScope.states, 'scope.states'),
     };
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
+    assertScopeTotals(scope);
 
     if (typeof record.usage !== 'object' || record.usage === null) {
         refuse('invalid_response', 'semantic report usage must be an object');

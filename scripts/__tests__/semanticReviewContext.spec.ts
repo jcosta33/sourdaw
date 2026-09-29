@@ -1070,6 +1070,37 @@ describe('semantic review context', () => {
         expect(result.scope.unassessed).toEqual([{ path: 'src/modules/Project/big.ts', reason: 'request_too_large' }]);
     });
 
+    it('keeps the missing-required-evidence omission as a known scope reason', () => {
+        // A unit whose evidence never carried what its questions require is skipped without a request.
+        // An unregistered reason would project to `unrecognized-reason` and read as an unknown cause
+        // rather than as a unit the plan could not ask anything.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'crates/daw-dsp/src/big.rs', reason: 'missing-required-evidence' }],
+                            truncated: [{ path: 'src/b.ts', reason: 'unit-evidence-did-not-fit' }],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.unassessed).toEqual([
+            { path: 'crates/daw-dsp/src/big.rs', reason: 'missing-required-evidence' },
+        ]);
+    });
+
     it('keeps the deadline admission reason as a known scope reason', () => {
         // The units a run never attempted after its deadline are recorded with the deadline's own reason;
         // an unregistered one would project to `unrecognized-reason` and read as an unknown cause rather
