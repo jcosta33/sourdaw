@@ -1,0 +1,48 @@
+package.json
+  h_beb54bf43b47b7 57
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 15,84,603-610
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 1-248
+scripts/semanticReview/__tests__/multiPassTransport.spec.ts
+  h_beb54bf43b47b7 3,50
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 27-28,198-199,206,412,3005,4025,4147
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 1-160
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  h_beb54bf43b47b7 1-568
+scripts/semanticReview/evaluation/corpus.ts
+  h_beb54bf43b47b7 1-429
+scripts/semanticReview/evaluation/runEvaluation.ts
+  h_beb54bf43b47b7 1-370
+scripts/semanticReview/evaluation/semanticEvaluationCorpus.json
+  h_beb54bf43b47b7 1-297
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 88-89,144-149,169-170,713-725,742-745,842
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 20,106-175,180-181,183-184,186-188,199,209,223-226,231-287,345-347
+scripts/semanticReview/passes.ts
+  h_beb54bf43b47b7 17-18,390,398
+scripts/semanticReview/requestPayload.ts
+  h_beb54bf43b47b7 8-14,17,40-41,63-65,76-81,104-106,108-112,119
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 116,185-191,199,205-207,331
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 14,112-118,218-237,292-293,311,341,412,509
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 391-394
+scripts/semanticReviewEvaluation.ts
+  h_beb54bf43b47b7 1-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "888b5d491d2942b88c2f5da09b969fc6e12771f6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
