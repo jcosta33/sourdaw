@@ -35,6 +35,9 @@ export type LiveYeastIteration = {
     iterationStartBeat: number;
     iterationEndBeat: number;
     midiOffsetBeats: number;
+    /** Loop geometry of the owning clip; a descriptor without it never wraps. */
+    loopEnabled?: boolean;
+    loopLengthBeats?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -69,6 +72,10 @@ type PendingIdentifiedLiveYeastNote = {
     notes: LiveYeastNote[];
     index: number;
 };
+
+function positiveModulo(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
+}
 
 export async function processLiveYeastTrackBlock({
     context,
@@ -129,17 +136,33 @@ export async function processLiveYeastTrackBlock({
                 // midiOffsetBeats`. The offset locates the content inside the
                 // clip; selecting and owning on the un-offset beat and shifting
                 // back afterwards dropped every note whose offset was wider
-                // than one scheduler window. Content displaced before the
-                // iteration start sounds clamped to it — the same boundary
-                // clamp `projectClipMidiEvents` applies to the projected note —
-                // so the owned start is exactly the beat the window test sees.
-                // The release keeps its full audible time: a note longer than
-                // its loop rings past the iteration end and the owning window
-                // follows the release, as the loop-work bounds spec pins.
+                // than one scheduler window. Where a displaced start lands is
+                // the twin's law, not this module's: a non-looped clip clamps
+                // it to the iteration start — the boundary clamp
+                // `projectClipMidiEvents` applies to the projected note — while
+                // a looped iteration wraps it, the same
+                // `((offset % loopLength) + loopLength) % loopLength` re-anchor
+                // the twin applies to a looped clip's negative relative start.
+                // The release keeps its full audible time either way: a clamped
+                // note keeps its original end beat, and a wrapped note rings
+                // its full duration from the wrapped start, past the iteration
+                // end, with the owning window following the release, as the
+                // loop-work bounds spec pins.
                 const audibleStartBeat =
                     iteration.iterationStartBeat + groovedNote.startBeat - iteration.midiOffsetBeats;
-                const noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
-                const noteEndBeat = audibleStartBeat + groovedNote.duration;
+                const loopLengthBeats = iteration.loopLengthBeats ?? 0;
+                let noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
+                let noteEndBeat = audibleStartBeat + groovedNote.duration;
+                if (
+                    iteration.loopEnabled === true &&
+                    loopLengthBeats > 0 &&
+                    audibleStartBeat < iteration.iterationStartBeat
+                ) {
+                    noteStartBeat =
+                        iteration.iterationStartBeat +
+                        positiveModulo(audibleStartBeat - iteration.iterationStartBeat, loopLengthBeats);
+                    noteEndBeat = noteStartBeat + groovedNote.duration;
+                }
                 if (noteEndBeat <= noteStartBeat) {
                     continue;
                 }

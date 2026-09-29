@@ -174,14 +174,22 @@ describe('scheduleMidiNotes — Yeast track with a clip content offset', () => {
         shouldPlayProbability.mockImplementation(() => true);
     });
 
-    async function sweepScheduledPitches(
+    type ScheduledVoice = { beat: number; durationBeats: number; pitch: number };
+
+    // 120 BPM at 48 kHz: one beat lasts half a second, so a scheduled time or
+    // duration in seconds converts to beats by doubling it.
+    const BEATS_PER_SECOND = 2;
+    // Production grain: a 10 ms tick is 0.02 beats at 120 BPM.
+    const WINDOW_BEATS = 0.02;
+
+    async function sweepScheduledVoices(
         midiOffsetBeats: number,
         options: {
             clip?: Record<string, unknown>;
             note?: { startBeat: number; duration: number };
             sweepEndBeat?: number;
         } = {}
-    ): Promise<number[]> {
+    ): Promise<ScheduledVoice[]> {
         const note = { startBeat: 2.5, duration: 0.5, ...options.note };
         const track = midiTrack({
             clips: [midiClip({ midiOffsetBeats, ...options.clip })],
@@ -195,49 +203,85 @@ describe('scheduleMidiNotes — Yeast track with a clip content offset', () => {
             },
         };
         vi.mocked(scheduleNote).mockClear();
-        // Production grain: a 10 ms tick is 0.02 beats at 120 BPM.
-        const windowBeats = 0.02;
-        const windowCount = Math.round((options.sweepEndBeat ?? 4) / windowBeats);
+        const windowCount = Math.round((options.sweepEndBeat ?? 4) / WINDOW_BEATS);
         for (let step = 0; step < windowCount; step++) {
-            const fromBeat = step * windowBeats;
+            const fromBeat = step * WINDOW_BEATS;
+            // `accumulatedPosition` is anchored at 0, so every scheduled time is
+            // the note's absolute position from the transport start and the
+            // sweep reads positions, not per-window offsets.
             await scheduleMidiNotes(
                 fromBeat,
-                fromBeat + windowBeats,
-                fromBeat,
+                fromBeat + WINDOW_BEATS,
+                0,
                 new Set<string>(),
                 [],
                 defaultTransportState,
                 120
             );
         }
-        return vi.mocked(scheduleNote).mock.calls.map((call) => call[2]);
+        return vi.mocked(scheduleNote).mock.calls.map((call) => ({
+            pitch: call[2],
+            beat: call[3] * BEATS_PER_SECOND,
+            durationBeats: call[4] * BEATS_PER_SECOND,
+        }));
     }
 
-    it('plays the note once when the clip has no content offset', async () => {
-        expect(await sweepScheduledPitches(0)).toEqual([60]);
+    it('schedules the note at its content position when the clip has no content offset', async () => {
+        // The twin projects content 2.5 to `iterationStart + 2.5 − 0` inside
+        // the iteration with its full 0.5-beat duration.
+        expect(await sweepScheduledVoices(0)).toEqual([{ pitch: 60, beat: 2.5, durationBeats: 0.5 }]);
     });
 
-    it('plays the note once when the clip content is offset by half a beat', async () => {
-        expect(await sweepScheduledPitches(0.5)).toEqual([60]);
+    it('schedules the note at its audible beat when the clip content is offset by half a beat', async () => {
+        // The twin projects content 2.5 to `iterationStart + 2.5 − 0.5` = 2.
+        expect(await sweepScheduledVoices(0.5)).toEqual([{ pitch: 60, beat: 2, durationBeats: 0.5 }]);
     });
 
-    it('plays the note once when the clip content is offset negatively', async () => {
-        expect(await sweepScheduledPitches(-0.5)).toEqual([60]);
+    it('schedules the note at its audible beat when the clip content is offset negatively', async () => {
+        // The twin projects content 2.5 to `iterationStart + 2.5 + 0.5` = 3.
+        expect(await sweepScheduledVoices(-0.5)).toEqual([{ pitch: 60, beat: 3, durationBeats: 0.5 }]);
     });
 
-    it('plays each loop iteration once when a looped clip is offset', async () => {
+    it('schedules each loop iteration at its audible beat when a looped clip is offset', async () => {
+        // The twin projects content 2.5 to `iterationStart + 2.5 − 0.5` per
+        // iteration: 2 and 6, each with its full duration.
         expect(
-            await sweepScheduledPitches(0.5, {
+            await sweepScheduledVoices(0.5, {
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
                 sweepEndBeat: 8,
             })
-        ).toEqual([60, 60]);
+        ).toEqual([
+            { pitch: 60, beat: 2, durationBeats: 0.5 },
+            { pitch: 60, beat: 6, durationBeats: 0.5 },
+        ]);
     });
 
     it('clamps content displaced before the clip head to the clip start', async () => {
-        // Content 0.25 with offset 0.5 is audible at −0.25; the clip-start
-        // clamp sounds it at 0 with the tail truncated to 0.25 — the same
-        // segment the offline projection produces.
-        expect(await sweepScheduledPitches(0.5, { note: { startBeat: 0.25, duration: 0.5 } })).toEqual([60]);
+        // Content 0.25 with offset 0.5 is audible at −0.25. The twin's
+        // non-looped segment clamps the start to the clip start and truncates
+        // at the original end beat: [0, 0.25].
+        expect(await sweepScheduledVoices(0.5, { note: { startBeat: 0.25, duration: 0.5 } })).toEqual([
+            { pitch: 60, beat: 0, durationBeats: 0.25 },
+        ]);
+    });
+
+    it('wraps looped content displaced before an iteration head to where the twin re-anchors it', async () => {
+        // Content 0.25 with offset 0.5 is audible at −0.25 inside each loop
+        // iteration. Clamping it to the iteration heads owns the note at [0, 4]
+        // and loses it at every seam; the twin instead re-anchors a looped
+        // negative relative start with
+        // `((offset % loopLength) + loopLength) % loopLength`, landing each
+        // occurrence at `iterationStart + 3.75`, and the release keeps the full
+        // 0.5-beat duration from there, ringing across the seam.
+        expect(
+            await sweepScheduledVoices(0.5, {
+                clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
+                note: { startBeat: 0.25, duration: 0.5 },
+                sweepEndBeat: 8,
+            })
+        ).toEqual([
+            { pitch: 60, beat: 3.75, durationBeats: 0.5 },
+            { pitch: 60, beat: 7.75, durationBeats: 0.5 },
+        ]);
     });
 });

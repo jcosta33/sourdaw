@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createRendererSessionLifecycle } from '../rendererSessionLifecycle.js';
+import { createRendererSessionLifecycle, isRendererReplacingNavigation } from '../rendererSessionLifecycle.js';
 import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
 
 describe('renderer session lifecycle', () => {
@@ -45,5 +45,24 @@ describe('renderer session lifecycle', () => {
         coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-2' });
 
         expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
+    });
+});
+
+// The session-generation bump for a same-window reload must fire when the
+// replacing navigation begins (#4752): the incoming renderer's startup disarm
+// is not held back by module evaluation, so an arm the outgoing page left in
+// flight has to be stale before that disarm settles.
+describe('renderer-replacing navigation', () => {
+    it('begins a session for a main-frame cross-document navigation, a reload included', () => {
+        expect(isRendererReplacingNavigation({ isInPlace: false, isMainFrame: true })).toBe(true);
+    });
+
+    it('keeps the session for a sub-frame navigation', () => {
+        expect(isRendererReplacingNavigation({ isInPlace: false, isMainFrame: false })).toBe(false);
+    });
+
+    it('keeps the session for a same-document navigation', () => {
+        expect(isRendererReplacingNavigation({ isInPlace: true, isMainFrame: true })).toBe(false);
+        expect(isRendererReplacingNavigation({ isInPlace: true, isMainFrame: false })).toBe(false);
     });
 });

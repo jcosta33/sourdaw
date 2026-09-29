@@ -30,11 +30,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: mocks.stopPlayback,
 }));
 
-vi.mock('../../stores/projectLoadFailureStore', () => ({
+vi.mock('../../../stores/projectLoadFailureStore', () => ({
     projectLoadFailureStore: { set: vi.fn() },
 }));
 
-vi.mock('../../stores/projectStore', () => ({
+vi.mock('../../../stores/projectStore', () => ({
     projectStore: { value: null },
 }));
 

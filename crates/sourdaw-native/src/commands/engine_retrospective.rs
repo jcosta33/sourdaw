@@ -375,40 +375,68 @@ mod tests {
     fn an_arm_blocked_behind_a_batch_never_lands_after_a_successor_session_began() {
         // The issue's command-level reproduction (#4752): an arm parked behind
         // a held lock while the main process begins the successor session and
-        // its startup disarm completes. The test holds the engine lock — one
-        // step ahead of the arm's own graph → engine → record order — so the
-        // arm is deterministic in exactly the stages that matter: once it
-        // visibly holds the graph registry its generation stamp is behind it,
-        // and it stays parked on the engine lock until after the bump and the
-        // disarm have both run.
+        // its startup disarm completes. The test holds the graph registry —
+        // the arm's first lock — so the arm stamps its pre-bump session and
+        // parks where the disarm never reaches (disarm takes engine → record
+        // only). The disarm therefore completes while the arm is still parked,
+        // and only the release after it lets the arm reach the gate: without
+        // the gate the arm would land behind the disarm and re-record what the
+        // disarm cleared, reddening the final assertions. Parking on the
+        // engine lock cannot do this — the parked arm wins that mutex and
+        // lands before the disarm runs, so a gate-less build stays green.
         let state = Arc::new(AppState::default());
         let _commands = boot_capture_engine(&state);
         apply(&state, one_strip_batch());
 
-        let held_engine = state.engine.lock().expect("the test holds the engine lock");
+        let held_graph = state
+            .graph
+            .lock()
+            .expect("the test holds the graph registry");
 
+        let (arm_began, arm_began_rx) = std::sync::mpsc::channel();
         let arm_state = Arc::clone(&state);
         let arm = std::thread::spawn(move || {
-            block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &arm_state))
-                .expect("a refused arm is not an error")
+            // The runtime is built before the handshake so that, after the
+            // send, only a straight-line nanosecond-scale stretch separates
+            // the handshake from the command's generation stamp; the runtime
+            // `block_on_test` would build per call is work enough for the
+            // main thread's bump to systematically win that race.
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime should build");
+            let observed = arm_state.session_generation();
+            arm_began
+                .send(observed)
+                .expect("the test still waits on the arm's handshake");
+            runtime.block_on(async {
+                arm_retrospective_capture(STRIP.to_string(), 2, &arm_state)
+                    .await
+                    .expect("a refused arm is not an error")
+            })
         });
 
-        // The arm holds the graph registry only after its stamp, so visible
-        // contention here is the deterministic handshake that the successor
-        // session may now begin.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while state.graph.try_lock().is_ok() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the arm never reached the graph registry"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        // The stamp is the command's first act and nothing observable sits
+        // between it and the held graph registry, so the handshake — which
+        // proves the arm thread has begun — plus this pause give the arm's
+        // straight-line path to the stamp overwhelming room: the bump below
+        // cannot outrun it even on a loaded scheduler. A flip would land the
+        // arm as the new session's own and fail this test loudly, never
+        // silently.
+        let arm_generation = arm_began_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the arm thread begins and reads its session");
+        assert_eq!(
+            arm_generation,
+            state.session_generation(),
+            "the arm read the pre-bump generation"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         state.begin_renderer_session();
-        drop(held_engine);
         block_on_test(disarm_retrospective_capture(&state)).expect("the startup disarm resolves");
 
+        drop(held_graph);
         arm.join().expect("the blocked arm thread finishes");
 
         assert_eq!(

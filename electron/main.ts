@@ -74,7 +74,7 @@ import {
     resolveContentRoots,
 } from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
-import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
+import { createRendererSessionLifecycle, isRendererReplacingNavigation } from './rendererSessionLifecycle.js';
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
@@ -445,11 +445,16 @@ const createWindow = (): BrowserWindow => {
     });
     attachWebContentsPolicy(window);
     // A reload replaces this window's renderer without replacing the window,
-    // so the session begun at creation does not cover it: the page that
-    // finishes loading starts a session of its own, and every arm the
-    // previous page left in flight is stale from that moment (#4752).
-    window.webContents.on('did-finish-load', () => {
-        nativeHost?.beginRendererSession();
+    // so the session begun at creation does not cover it. The bump belongs at
+    // the moment the replacing navigation begins, not when the page finishes
+    // loading: module evaluation — dynamic imports included — does not hold
+    // the load event, so the incoming renderer's startup disarm can settle
+    // while the load is still in flight, and an arm the outgoing page left
+    // must already be stale when that happens (#4752).
+    window.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+        if (isRendererReplacingNavigation({ isInPlace, isMainFrame })) {
+            nativeHost?.beginRendererSession();
+        }
     });
     void window.loadURL(entryUrl);
     destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(

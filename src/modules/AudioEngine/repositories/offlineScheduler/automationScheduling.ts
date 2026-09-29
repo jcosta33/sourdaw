@@ -19,9 +19,15 @@ import {
 } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
-import { mergeAutomationSegmentStreams, type AutomationSegmentStream } from './mergeAutomationSegmentStreams';
+import { mergeAutomationEventStreams, type AutomationEventStream } from './mergeAutomationEventStreams';
+import {
+    mergeAutomationSegmentStreams,
+    type AutomationSegmentScope,
+    type AutomationSegmentStream,
+} from './mergeAutomationSegmentStreams';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
+import { scheduleCompiledEventsOnParam } from './scheduleCompiledEventsOnParam';
 
 type AutomationTempoChange = {
     beat: number;
@@ -39,6 +45,51 @@ type ScheduleTrackAutomationDeviceEntry = {
      */
     contributesAudio: boolean;
 };
+
+/**
+ * One AudioParam target's (or the curve-write pair's) collected streams on one
+ * (device, parameter) group, with the application call that consumes the one
+ * spliced stream the group resolves to.
+ */
+type AutomationEventTargetGroup = {
+    apply: (events: readonly CompiledAutomationEvent[]) => void;
+    streams: AutomationEventStream[];
+};
+
+type AutomationEventGroup = {
+    deviceId: string;
+    parameterId: string;
+    targets: AutomationEventTargetGroup[];
+};
+
+/**
+ * Collect one lane's compiled events onto its (device, parameter) group — the
+ * event-bound families' counterpart of the `segments` branch's group push. A
+ * group's targets fill in lane order; every lane that resolves the same
+ * binding visits the same targets in the same order, so the index is dense.
+ */
+function collectDeviceEventStream(
+    groups: Map<string, AutomationEventGroup>,
+    entry: {
+        groupKey: string;
+        deviceId: string;
+        parameterId: string;
+        laneId: string;
+        scope: AutomationSegmentScope;
+        targetIndex: number;
+        events: CompiledAutomationEvent[];
+        apply: (events: readonly CompiledAutomationEvent[]) => void;
+    }
+): void {
+    let group = groups.get(entry.groupKey);
+    if (!group) {
+        group = { deviceId: entry.deviceId, parameterId: entry.parameterId, targets: [] };
+        groups.set(entry.groupKey, group);
+    }
+    const targetGroup = group.targets[entry.targetIndex] ?? { apply: entry.apply, streams: [] };
+    group.targets[entry.targetIndex] = targetGroup;
+    targetGroup.streams.push({ laneId: entry.laneId, scope: entry.scope, events: entry.events });
+}
 
 /**
  * The two parts of the device-parameter contract the live apply path enforces,
@@ -215,7 +266,7 @@ function resolveLaneValueBound(
  */
 function scheduleCurveWritePoints(
     targets: OfflineCurveWriteTargets,
-    events: CompiledAutomationEvent[],
+    events: readonly CompiledAutomationEvent[],
     clampValue: (value: number) => number,
     compensationDelaySec: number,
     scheduleFrame: ScheduleCall
@@ -290,6 +341,20 @@ export function scheduleTrackAutomation({
             streams: AutomationSegmentStream[];
         }
     >();
+
+    /**
+     * Every `curveWrite`- or `audioParam`-bound lane on one (device, parameter)
+     * collects its compiled events here, keyed like `segmentGroupsByKey`, one
+     * target group per AudioParam target (a `curveWrite` binding has exactly
+     * one). Those families used to apply each overlapping lane immediately onto
+     * the same target, so web and stems exports resolved a track lane against a
+     * clip lane by lane-array insertion order while live played the clip lane;
+     * the group applies once, after the loop, through
+     * `mergeAutomationEventStreams` — the same scope law the segments branch
+     * applies, so the applied curve for one project is identical across the
+     * segments-bound, audioParam and curveWrite exports.
+     */
+    const eventGroupsByKey = new Map<string, AutomationEventGroup>();
 
     for (const lane of trackLanes) {
         let activeWindowSeconds: { startSeconds: number; endSeconds: number } | undefined;
@@ -593,17 +658,39 @@ export function scheduleTrackAutomation({
                     }
                     scheduleFrame(time, call);
                 };
-                scheduleCurveWritePoints(
-                    binding.targets,
+                // Collected, not applied — see `eventGroupsByKey` and the merge
+                // pass after this loop. The write schedule the group resolves
+                // applies once per parameter, by the scope law, instead of two
+                // lanes racing one target in lane-array order.
+                collectDeviceEventStream(eventGroupsByKey, {
+                    groupKey: `${candidate.deviceId}::${parameterId}`,
+                    deviceId: candidate.deviceId,
+                    parameterId,
+                    laneId: lane.id,
+                    scope: lane.clipId ? 'clip' : 'track',
+                    targetIndex: 0,
                     events,
-                    clampStep,
-                    compensationDelaySec,
-                    scheduleWithinRender
-                );
+                    apply: (mergedEvents) =>
+                        scheduleCurveWritePoints(
+                            binding.targets,
+                            mergedEvents,
+                            clampStep,
+                            compensationDelaySec,
+                            scheduleWithinRender
+                        ),
+                });
                 continue;
             }
-            for (const target of binding.targets) {
+            for (const [targetIndex, target] of binding.targets.entries()) {
                 const { audioParam, scale, offset, convert } = target;
+                // Every target of the parameter compiles the same timeline —
+                // the options below differ only in how values map into the
+                // param's units — so the group's scope resolution below, which
+                // is decided on frames and lane order and never on values, is
+                // consistent across the targets of one parameter.
+                const applyMergedEvents = (mergedEvents: readonly CompiledAutomationEvent[]): void => {
+                    scheduleCompiledEventsOnParam(audioParam, mergedEvents, compensationDelaySec);
+                };
                 if (convert) {
                     // Non-affine device→AudioParam law (dB→linear, a delay
                     // floor). Live slews, clamps and quantises in DEVICE units
@@ -613,15 +700,13 @@ export function scheduleTrackAutomation({
                     // applied at write time by `emitTransform`. Only the link
                     // scale composes with the device scalar, exactly as it
                     // composes before live's parameter-family transform.
-                    scheduleAutomationOnParam(
-                        audioParam,
+                    const events = compileAutomationEvents(
                         points,
                         durationSeconds,
                         defaultTempo,
                         changes,
                         regionStartSeconds,
                         projectBeatToSeconds,
-                        compensationDelaySec,
                         {
                             ...boundOptions,
                             slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
@@ -630,6 +715,18 @@ export function scheduleTrackAutomation({
                             emitTransform: convert,
                         }
                     );
+                    // Collected, not applied — see `eventGroupsByKey` and the
+                    // merge pass after this loop.
+                    collectDeviceEventStream(eventGroupsByKey, {
+                        groupKey: `${candidate.deviceId}::${parameterId}`,
+                        deviceId: candidate.deviceId,
+                        parameterId,
+                        laneId: lane.id,
+                        scope: lane.clipId ? 'clip' : 'track',
+                        targetIndex,
+                        events,
+                        apply: applyMergedEvents,
+                    });
                     continue;
                 }
                 // Compose linkScale with the device binding's unit scale/offset as
@@ -666,17 +763,27 @@ export function scheduleTrackAutomation({
                     valueScale: laneScale * scale,
                     valueOffset: offset,
                 };
-                scheduleAutomationOnParam(
-                    audioParam,
+                const events = compileAutomationEvents(
                     points,
                     durationSeconds,
                     defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    compensationDelaySec,
                     paramOptions
                 );
+                // Collected, not applied — see `eventGroupsByKey` and the merge
+                // pass after this loop.
+                collectDeviceEventStream(eventGroupsByKey, {
+                    groupKey: `${candidate.deviceId}::${parameterId}`,
+                    deviceId: candidate.deviceId,
+                    parameterId,
+                    laneId: lane.id,
+                    scope: lane.clipId ? 'clip' : 'track',
+                    targetIndex,
+                    events,
+                    apply: applyMergedEvents,
+                });
             }
         }
     }
@@ -697,6 +804,33 @@ export function scheduleTrackAutomation({
         }
         if (merged.segments.length > 0) {
             apply(merged.segments);
+        }
+    }
+
+    // The event-bound families apply once per (device, parameter) target the
+    // same way the segments family applies once per group above. A lone lane
+    // keeps the direct application its family always had — the merge of one
+    // stream is that stream, so both routes resolve identically. Overlapping
+    // lanes resolve by the scope law, and what each binding family receives is
+    // one spliced event stream — an AudioParam timeline, or the curve-write
+    // pair's write schedule — that plays the clip lane inside its window and
+    // the track lane around it, whichever order the lanes arrived in.
+    for (const { deviceId, parameterId, targets } of eventGroupsByKey.values()) {
+        for (const { apply, streams } of targets) {
+            if (streams.length <= 1) {
+                const single = streams[0];
+                if (single && single.events.length > 0) {
+                    apply(single.events);
+                }
+                continue;
+            }
+            const merged = mergeAutomationEventStreams(streams, sampleRate, durationSeconds);
+            if (merged.withheldLaneIds.length > 0) {
+                onWithheldDeviceLanes?.({ deviceId, parameterId, laneIds: merged.withheldLaneIds });
+            }
+            if (merged.events.length > 0) {
+                apply(merged.events);
+            }
         }
     }
 }
