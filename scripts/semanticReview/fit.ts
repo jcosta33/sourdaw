@@ -186,6 +186,93 @@ export function fitUnitEvidence(
     };
 }
 
+/** One ordered pass of a unit's evidence: the own and context regions it carries, kept distinct. */
+export type FittedPass = {
+    readonly own: readonly EvidenceReference[];
+    readonly context: readonly EvidenceReference[];
+    /** Own then context, the send order the provider receives. */
+    readonly references: readonly EvidenceReference[];
+    readonly contents: ReadonlyMap<string, string>;
+};
+
+/** A unit's evidence partitioned into ordered passes, with the regions no pass could carry. */
+export type PartitionedUnitEvidence = {
+    readonly passes: readonly FittedPass[];
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly dropped: number;
+};
+
+/**
+ * Partitions one unit's regions into ordered passes so every region travels even when the whole unit
+ * does not fit one request.
+ *
+ * Passes are filled greedily in admission order — the unit's own regions first, then its context
+ * regions — and a pass closes the moment the next region would push it over `maxBytes`. A region
+ * larger than `maxBytes` on its own can fit no pass and is dropped whole, counted, and its side
+ * recorded, exactly as `fitRegions` would: it is never cut to a fragment.
+ *
+ * The composition depends only on the unit's regions, their order, and `maxBytes`, so the same unit
+ * and profile always produce the same passes. No wall-clock, no map order, no concurrency.
+ */
+export function partitionUnitEvidence(
+    set: SemanticEvidenceSet,
+    own: readonly EvidenceReference[],
+    context: readonly EvidenceReference[],
+    maxBytes: number
+): PartitionedUnitEvidence {
+    const passes: FittedPass[] = [];
+    const ownDroppedSides = new Set<EvidenceSide>();
+    const contextDroppedSides = new Set<EvidenceSide>();
+    let dropped = 0;
+    let currentOwn: EvidenceReference[] = [];
+    let currentContext: EvidenceReference[] = [];
+    let currentContents = new Map<string, string>();
+    let used = 0;
+
+    const flush = (): void => {
+        if (currentOwn.length + currentContext.length === 0) {
+            return;
+        }
+        passes.push({
+            own: [...currentOwn],
+            context: [...currentContext],
+            references: [...currentOwn, ...currentContext],
+            contents: new Map(currentContents),
+        });
+        currentOwn = [];
+        currentContext = [];
+        currentContents = new Map();
+        used = 0;
+    };
+
+    const admit = (reference: EvidenceReference, isOwn: boolean): void => {
+        const text = set.contents.get(reference.evidenceId) ?? '';
+        const cost = regionCost(reference, text);
+        if (cost > maxBytes) {
+            dropped += 1;
+            (isOwn ? ownDroppedSides : contextDroppedSides).add(reference.side);
+            return;
+        }
+        if (used + cost > maxBytes) {
+            flush();
+        }
+        (isOwn ? currentOwn : currentContext).push(reference);
+        currentContents.set(reference.evidenceId, text);
+        used += cost;
+    };
+
+    for (const reference of own) {
+        admit(reference, true);
+    }
+    for (const reference of context) {
+        admit(reference, false);
+    }
+    flush();
+
+    return { passes, ownDroppedSides, contextDroppedSides, dropped };
+}
+
 /**
  * The reduced-unit record's reason. When the per-request fitter dropped sides, the reason names them
  * in the fixed side order so a reader can tell which side was cut. The caller emits it only for a unit

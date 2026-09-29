@@ -13,6 +13,7 @@
 
 import {
     buildRevisionContext,
+    evidenceIdSet,
     NO_EVIDENCE_ID,
     refuse,
     SEMANTIC_POLICY_VERSION,
@@ -33,22 +34,29 @@ import {
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from './evidence.ts';
-import { fitUnitEvidence, unitReductionReason } from './fit.ts';
+import { unitReductionReason } from './fit.ts';
 import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
+import {
+    choosePassIndexForRule,
+    composeUnitPasses,
+    passRequestPayload,
+    type SemanticUnitPass,
+    type StoredUnitPass,
+} from './passes.ts';
 import {
     assessUnit,
     createBudgetController,
-    estimateCost,
     estimateInputTokens,
     TYPESAFE_MODEL,
     TYPESAFE_SDK_VERSION_FOR_CACHE,
+    type SemanticAssessmentResult,
     type SemanticBudgetController,
     type SemanticCachePort,
     type SemanticProviderPort,
-    type SemanticUsageTotals,
 } from './provider.ts';
-import { type SemanticScanReport, type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
-import { unitRequestPayload, unitReservationBytes, unitStatePlusQuestionBytes } from './requestPayload.ts';
+import { type SemanticScanReport } from './report.ts';
+import { scopeReport, usageReport } from './reporting.ts';
+import { unitReservationBytes, unitStatePlusQuestionBytes } from './requestPayload.ts';
 import { missingRequiredEvidence } from './requiredEvidence.ts';
 import {
     applicableRules,
@@ -68,6 +76,7 @@ export type SemanticClock = { readonly now: () => number };
  * module owns the plan whose reservation has to agree with that measurement.
  */
 export { unitStatePlusQuestionBytes };
+export { usageReport } from './reporting.ts';
 
 export type SemanticPorts = {
     readonly source: SemanticSourcePort;
@@ -107,6 +116,13 @@ export type SemanticUnitEvidence = {
     /** The union of own and context, in send order: the payload the provider receives. */
     readonly references: readonly EvidenceReference[];
     readonly contents: ReadonlyMap<string, string>;
+    /**
+     * The ordered passes this unit's evidence travels in. Exactly one when everything fits one
+     * request; several when the unit exceeded the per-request budget and the region set was
+     * partitioned. A unit whose every region individually exceeds the budget has no passes and is
+     * excluded before assessment.
+     */
+    readonly passes: readonly SemanticUnitPass[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
     /**
@@ -291,45 +307,45 @@ export function planUnits(
             incomplete.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
             continue;
         }
-        const fitted = fitUnitEvidence(set, own, context, evidenceBudget);
-        const references = [...fitted.own.references, ...fitted.context.references];
-        if (references.length === 0) {
+        const unitId = `${file.path}`;
+        const composed = composeUnitPasses(set, own, context, unitId, evidenceBudget);
+        if (composed.references.length === 0) {
             excluded.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             incomplete.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             continue;
         }
-        const contents = new Map<string, string>([...fitted.own.contents, ...fitted.context.contents]);
         const unitTruncated = set.truncated.filter((entry) => entry.path === file.path);
         // Only reduction-specific text belongs here: the report already carries every collector-level
         // limitation, and filtering the same array by path printed each one twice.
         const unitLimitations: string[] = [];
-        if (fitted.dropped > 0) {
-            // The dropped regions were not sent at all, so the questions needing them report the
-            // evidence as not supplied rather than answering from a fragment of it.
+        if (composed.dropped > 0) {
+            // A region dropped because no pass could carry it was not sent at all, so the questions
+            // needing it report the evidence as not supplied rather than answering from a fragment.
             unitTruncated.push({ path: file.path, reason: 'unit-evidence-did-not-fit' });
             unitLimitations.push(
-                `evidence for ${file.path} did not fit the per-request state budget: ${String(fitted.dropped)} region(s) were not sent`
+                `evidence for ${file.path} did not fit the per-request state budget: ${String(composed.dropped)} region(s) were not sent`
             );
         }
         units.push({
-            unitId: `${file.path}`,
+            unitId,
             path: file.path,
             file,
             rules,
             evidence: {
-                own: fitted.own.references,
-                context: fitted.context.references,
-                references,
-                contents,
+                own: composed.passes.flatMap((pass) => pass.own),
+                context: composed.passes.flatMap((pass) => pass.context),
+                references: composed.references,
+                contents: composed.contents,
+                passes: composed.passes,
                 excluded: [],
                 truncated: unitTruncated,
                 limitations: unitLimitations,
-                ownDroppedSides: mergedDroppedSides(fitted.own.droppedSides, set.withheldSides.own.get(file.path)),
+                ownDroppedSides: mergedDroppedSides(composed.ownDroppedSides, set.withheldSides.own.get(file.path)),
                 contextDroppedSides: mergedDroppedSides(
-                    fitted.context.droppedSides,
+                    composed.contextDroppedSides,
                     withheldContextSides(set, files, file.path, needsImplementation)
                 ),
-                fittedDroppedSides: new Set<EvidenceSide>([...fitted.own.droppedSides, ...fitted.context.droppedSides]),
+                fittedDroppedSides: composed.fittedDroppedSides,
             },
         });
     }
@@ -337,7 +353,17 @@ export function planUnits(
 }
 
 function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestPreview {
-    const bodyBytes = Buffer.byteLength(JSON.stringify({ ...unitRequestPayload(unit), model }), 'utf8');
+    let bodyBytes = 0;
+    for (const pass of unit.evidence.passes) {
+        const payload = passRequestPayload({
+            unitId: unit.unitId,
+            path: unit.path,
+            file: unit.file,
+            rules: unit.rules,
+            pass,
+        });
+        bodyBytes += Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
+    }
     return {
         unitId: unit.unitId,
         path: unit.path,
@@ -345,43 +371,6 @@ function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestP
         evidenceIds: unit.evidence.references.map((reference) => reference.evidenceId),
         bodyBytes,
         estimatedInputTokens: estimateInputTokens(bodyBytes),
-    };
-}
-
-function scopeReport(input: {
-    units: readonly SemanticUnitPlan[];
-    excluded: readonly SemanticScopeExclusion[];
-    truncated: readonly SemanticScopeExclusion[];
-    assessed: number;
-    cacheHits: number;
-    unassessed: readonly SemanticScopeExclusion[];
-}): SemanticScopeReport {
-    const discovered = new Set<string>([
-        ...input.units.map((unit) => unit.path),
-        ...input.excluded.map((entry) => entry.path),
-    ]).size;
-    return {
-        discovered,
-        eligible: input.units.length,
-        assessed: input.assessed,
-        cacheHits: input.cacheHits,
-        excluded: [...input.excluded],
-        unassessed: [...input.unassessed],
-        truncated: [...input.truncated],
-    };
-}
-
-export function usageReport(usage: SemanticUsageTotals): SemanticUsageReport {
-    return {
-        networkAttempts: usage.networkAttempts,
-        logicalRequests: usage.logicalRequests,
-        retries: usage.retries,
-        submittedBytes: usage.submittedBytes,
-        actualInputTokens: usage.actualInputTokens,
-        estimatedInputTokens: usage.estimatedInputTokens,
-        attemptsWithUnknownUsage: usage.attemptsWithUnknownUsage,
-        estimatedCostUsd: estimateCost(usage.actualInputTokens).usd,
-        pricingConfigurationVersion: estimateCost(usage.actualInputTokens).pricingVersion,
     };
 }
 
@@ -426,6 +415,8 @@ export type StoredUnitResponse = {
     readonly ruleIds: readonly SemanticRuleId[];
     readonly answers: Readonly<Record<string, unknown>>;
     readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
+    /** The passes this unit's evidence travelled in; the merged answer names its source pass. */
+    readonly passes: readonly StoredUnitPass[];
 };
 
 type ScanAccumulation = {
@@ -442,7 +433,7 @@ type ScanAccumulation = {
 type UnitAssessment = {
     readonly signals: readonly ScanAssessment[];
     readonly stored: StoredUnitResponse;
-    readonly returnedModel: string;
+    readonly returnedModels: readonly string[];
     readonly fromCache: boolean;
 };
 
@@ -453,56 +444,98 @@ async function assessOneUnit(input: {
     readonly budget: SemanticBudgetController;
     readonly deadline: number;
 }): Promise<UnitAssessment> {
-    const references = input.unit.evidence.references;
+    const unit = input.unit;
+    // The unit-level missing evidence reads the whole carried set, so a question answered across
+    // several passes reports missing only when a region genuinely never left the machine.
     const missing = new Map<SemanticRuleId, string[]>(
-        input.unit.rules.map((rule) => [
+        unit.rules.map((rule) => [
             rule.id,
             missingRequiredEvidence(
                 rule,
-                input.unit.evidence.own,
-                input.unit.evidence.context,
-                input.unit.file.kind,
-                input.unit.evidence.ownDroppedSides,
-                input.unit.evidence.contextDroppedSides
+                unit.evidence.own,
+                unit.evidence.context,
+                unit.file.kind,
+                unit.evidence.ownDroppedSides,
+                unit.evidence.contextDroppedSides
             ),
         ])
     );
-    const present = new Set(references.map((reference) => reference.evidenceId));
-    const result = await assessUnit({
-        port: input.ports.provider,
-        cache: input.ports.cache,
-        budget: input.budget,
-        profile: input.profile,
-        deadline: input.deadline,
-        ...unitRequestPayload(input.unit),
-        requestedModel: TYPESAFE_MODEL,
-        signal: input.ports.signal,
-        now: input.ports.clock.now,
-    });
-    const signals = input.unit.rules.map((rule) => {
-        const answer = result.response.answers[rule.id];
+
+    const passResults: { pass: SemanticUnitPass; result: SemanticAssessmentResult }[] = [];
+    for (const pass of unit.evidence.passes) {
+        const payload = passRequestPayload({
+            unitId: unit.unitId,
+            path: unit.path,
+            file: unit.file,
+            rules: unit.rules,
+            pass,
+        });
+        const result = await assessUnit({
+            port: input.ports.provider,
+            cache: input.ports.cache,
+            budget: input.budget,
+            profile: input.profile,
+            deadline: input.deadline,
+            ...payload,
+            requestedModel: TYPESAFE_MODEL,
+            signal: input.ports.signal,
+            now: input.ports.clock.now,
+        });
+        passResults.push({ pass, result });
+    }
+
+    // Merge per question: the answer from the pass that best carries that rule's required evidence. A
+    // selected evidence id is validated against the ids that pass actually sent, never the unit's union,
+    // so a merged answer can cite only evidence its source pass carried.
+    const mergedAnswers: Record<string, unknown> = {};
+    const sourcePassByRule = new Map<SemanticRuleId, SemanticUnitPass>();
+    for (const rule of unit.rules) {
+        const chosen = choosePassIndexForRule({ kind: unit.file.kind, rule, passes: unit.evidence.passes });
+        const entry = passResults[chosen];
+        if (entry === undefined) {
+            refuse('invalid_response', `unit ${unit.unitId} has no assessed pass ${String(chosen)}`);
+        }
+        const answer = entry.result.response.answers[rule.id];
         if (answer === undefined) {
             refuse('invalid_response', `TypeSafe response is missing the required answer ${rule.id}`);
         }
-        return interpretScanOutcome({
-            answer: assertEvidenceIdsPresent(answer, present),
+        mergedAnswers[rule.id] = assertEvidenceIdsPresent(answer, evidenceIdSet(entry.pass.references));
+        sourcePassByRule.set(rule.id, entry.pass);
+    }
+
+    const signals = unit.rules.map((rule) =>
+        interpretScanOutcome({
+            answer: mergedAnswers[rule.id],
             rule,
-            unitId: input.unit.unitId,
-            path: input.unit.path,
+            unitId: unit.unitId,
+            path: unit.path,
             missingEvidence: missing.get(rule.id) ?? [],
-        });
-    });
+        })
+    );
+
+    const storedPasses = unit.evidence.passes.map((pass) => ({
+        passId: pass.passId,
+        evidenceIds: pass.references.map((reference) => reference.evidenceId),
+        answerRuleIds: unit.rules.filter((rule) => sourcePassByRule.get(rule.id) === pass).map((rule) => rule.id),
+    }));
+
+    const fromCache = passResults.every(({ result }) => result.fromCache);
+    const returnedModels = passResults
+        .filter(({ result }) => !result.fromCache)
+        .map(({ result }) => result.response.model);
+
     return {
         signals,
         stored: {
-            unitId: input.unit.unitId,
-            path: input.unit.path,
-            ruleIds: input.unit.rules.map((rule) => rule.id),
-            answers: result.response.answers,
+            unitId: unit.unitId,
+            path: unit.path,
+            ruleIds: unit.rules.map((rule) => rule.id),
+            answers: mergedAnswers,
             missingEvidence: Object.fromEntries(missing),
+            passes: storedPasses,
         },
-        returnedModel: result.response.model,
-        fromCache: result.fromCache,
+        returnedModels,
+        fromCache,
     };
 }
 
@@ -564,7 +597,9 @@ async function assessPlannedUnits(input: {
             if (outcome.fromCache) {
                 accumulation.cacheHits += 1;
             } else {
-                accumulation.returnedModels.add(outcome.returnedModel);
+                for (const model of outcome.returnedModels) {
+                    accumulation.returnedModels.add(model);
+                }
             }
         } catch (error) {
             const failure = asFailure(error);
@@ -661,7 +696,7 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
         completedAt,
         execution,
         scope: scopeReport({
-            units,
+            unitPaths: units.map((unit) => unit.path),
             excluded,
             truncated: [...evidenceSet.truncated, ...unitReductions],
             assessed,
