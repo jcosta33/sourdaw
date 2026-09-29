@@ -297,7 +297,6 @@ describe('delete time re-keys take-lane state (#4841)', () => {
                 retiredLanes: [],
                 reKeyedLanes: [
                     {
-                        laneIndex: 0,
                         laneId: lane.id,
                         trackId: 'track-1',
                         takesBefore: [take],

@@ -49,9 +49,8 @@ function splitFixture(clipId: string, trackId: string) {
     return { take, leftTake, rightTake, lane };
 }
 
-function splitTransition(fixture: ReturnType<typeof splitFixture>, laneIndex: number): TakeReKeyLaneTransition {
+function splitTransition(fixture: ReturnType<typeof splitFixture>): TakeReKeyLaneTransition {
     return {
-        laneIndex,
         laneId: fixture.lane.id,
         trackId: fixture.lane.trackId,
         takesBefore: [fixture.take],
@@ -95,7 +94,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [take],
@@ -131,7 +129,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [untouchedTake, rippledTake],
@@ -164,7 +161,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [take],
@@ -189,7 +185,7 @@ describe('writeTakeReKeyTransitions', () => {
             ],
         };
 
-        applyTakeReKeyTransitions([splitTransition(first, 0), splitTransition(second, 1)]);
+        applyTakeReKeyTransitions([splitTransition(first), splitTransition(second)]);
 
         const lanes = mocks.takeLaneStoreValue.value?.lanes;
         expect(lanes?.[0]?.takes).toEqual([first.leftTake, first.rightTake]);
@@ -206,7 +202,7 @@ describe('writeTakeReKeyTransitions', () => {
         // resolve against, so the replay leaves it missing.
         mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
 
-        applyTakeReKeyTransitions([splitTransition(fixture, 0)]);
+        applyTakeReKeyTransitions([splitTransition(fixture)]);
 
         expect(liveLane().takes).toEqual([fixture.leftTake]);
     });
@@ -222,7 +218,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [] }] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [],
@@ -245,7 +240,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [take],
@@ -271,7 +265,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [take],
@@ -295,7 +288,7 @@ describe('writeTakeReKeyTransitions', () => {
             tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }, { id: 'clip-1-right' }] }],
         };
 
-        restoreTakeReKeyTransitions([splitTransition(fixture, 0)]);
+        restoreTakeReKeyTransitions([splitTransition(fixture)]);
 
         // The restore direction reconciles toward the pre-split facet: the
         // original take lands on the re-created lane.
@@ -313,7 +306,6 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
 
         const transition: TakeReKeyLaneTransition = {
-            laneIndex: 0,
             laneId: lane.id,
             trackId: 'track-1',
             takesBefore: [take],

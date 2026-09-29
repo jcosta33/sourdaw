@@ -340,7 +340,7 @@ export function captureTakeReKeyTransitions(
     }
 
     const transitions: TakeReKeyLaneTransition[] = [];
-    for (const [laneIndex, lane] of state.lanes.entries()) {
+    for (const lane of state.lanes) {
         const windows = input.windowsByTrackId.get(lane.trackId);
         if (!windows) {
             continue;
@@ -371,7 +371,6 @@ export function captureTakeReKeyTransitions(
             continue;
         }
         transitions.push({
-            laneIndex,
             laneId: lane.id,
             trackId: lane.trackId,
             takesBefore: lane.takes,

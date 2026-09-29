@@ -54,7 +54,6 @@ export type TakeReKeyClipWindow = {
  * and carry no span law, so the duplicate is harmless.
  */
 export type TakeReKeyLaneTransition = {
-    laneIndex: number;
     laneId: string;
     trackId: string;
     takesBefore: readonly Take[];

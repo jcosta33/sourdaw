@@ -1150,7 +1150,6 @@ describe('prepareTimeOperationStateRestore', () => {
                 retiredLanes: [],
                 reKeyedLanes: [
                     {
-                        laneIndex: 0,
                         laneId: lane.id,
                         trackId: 'track-1',
                         takesBefore: [takeBefore],
@@ -1189,7 +1188,6 @@ describe('prepareTimeOperationStateRestore', () => {
         const takeBefore = createTake('clip-1', 'Re-keyed take', 4, 10);
         const takeAfter = { ...takeBefore, clipId: 'clip-1-frag', startBeat: 2, endBeat: 6 };
         const wellFormedEntry = {
-            laneIndex: 0,
             laneId: 'lane-1',
             trackId: 'track-1',
             takesBefore: [takeBefore],
@@ -1206,7 +1204,20 @@ describe('prepareTimeOperationStateRestore', () => {
         const malformedSlots: unknown[] = [
             { ...wellFormed, reKeyedLanes: 'lanes' },
             { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, extra: true }] },
-            { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, laneIndex: -1 }] },
+            // A missing facet key breaks the exact-key shape just as an extra
+            // one does.
+            {
+                ...wellFormed,
+                reKeyedLanes: [
+                    {
+                        laneId: 'lane-1',
+                        trackId: 'track-1',
+                        takesBefore: [takeBefore],
+                        takesAfter: [takeAfter],
+                        regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: takeAfter.id }],
+                    },
+                ],
+            },
             { ...wellFormed, reKeyedLanes: [{ ...wellFormedEntry, laneId: '' }] },
             // A region naming a take the same side does not hold breaks the
             // store's exactness law the writer's reconcile depends on.

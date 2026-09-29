@@ -10,7 +10,6 @@ const TAKE_LANE_TRANSITION_KEYS = ['version', 'appliedEffect', 'removedClipIds',
 // keep their exact-key shape; absent means the operation re-keyed nothing.
 const TAKE_LANE_TRANSITION_OPTIONAL_KEYS = ['reKeyedLanes'] as const;
 const RE_KEY_LANE_TRANSITION_KEYS = [
-    'laneIndex',
     'laneId',
     'trackId',
     'takesBefore',
@@ -75,10 +74,6 @@ function isReKeyLaneTransition(value: unknown): value is TakeReKeyLaneTransition
         Reflect.ownKeys(value).length !== RE_KEY_LANE_TRANSITION_KEYS.length ||
         !RE_KEY_LANE_TRANSITION_KEYS.every((key) => Object.hasOwn(value, key))
     ) {
-        return false;
-    }
-    const laneIndex: unknown = Reflect.get(value, 'laneIndex');
-    if (typeof laneIndex !== 'number' || !Number.isFinite(laneIndex) || laneIndex < 0) {
         return false;
     }
     const laneId: unknown = Reflect.get(value, 'laneId');

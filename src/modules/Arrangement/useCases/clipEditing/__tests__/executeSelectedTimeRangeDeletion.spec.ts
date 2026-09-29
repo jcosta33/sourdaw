@@ -1269,7 +1269,6 @@ describe('executeSelectedTimeRangeDeletion', () => {
                 retiredLanes: [],
                 reKeyedLanes: [
                     {
-                        laneIndex: 0,
                         laneId: lane.id,
                         trackId: 'target',
                         takesBefore: [spanTake],
