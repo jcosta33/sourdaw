@@ -1,0 +1,25 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  s_ed5aa36a3ba357::t_b275a187db6efe 153-181
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_ed5aa36a3ba357::t_813c81ad7b9c00 35,58,64-68,417-426,428-437,445-463,465,467-469
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/startYeastIdleDrain.spec.ts
+  s_ed5aa36a3ba357::t_41412a989b9220 6,72-85,204-247,280-338,342,346-358,360-361,363-367,370-372
+src/modules/Yeast/useCases/yeastSchedulingBridge/startYeastIdleDrain.ts
+  s_ed5aa36a3ba357::t_10ac0e0b7c4a2e 37-42,44-56,81,106-118,124,140-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "daf07d28f6d07076b228b0cd19f34891c1adb270",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
