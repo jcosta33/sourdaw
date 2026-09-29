@@ -114,32 +114,42 @@ export function buildScopeStates(input: {
 }
 
 /**
- * Holds the totals to the scope's own lists: an excluded entry is exactly one of the first two states,
- * and an unassessed entry exactly one of the other four. A report whose states disagree with its own
- * entries is refused rather than published, because a reader reading the totals would be reading a run
- * that never happened.
+ * Holds the published totals to the states the run's own lists add up to, field by field. Sums alone
+ * were not enough: buckets could be swapped while their total still balanced, so a report could publish
+ * a cause no entry recorded — a unit read as a provider failure while the entry behind it named a spent
+ * budget — and still validate. Every field is compared, so the published totals name exactly the states
+ * `buildScopeStates` derives from the same `excluded` and `unassessed` lists.
  */
-export function assertScopeStatesMatch(
-    states: SemanticScopeStates,
-    counts: { readonly excluded: number; readonly unassessed: number },
-    label: string
-): void {
-    const excludedTotal = states.notApplicable + states.excludedWithAssessmentOwed;
-    if (excludedTotal !== counts.excluded) {
-        refuse(
-            'invalid_response',
-            `${label} reports ${String(excludedTotal)} excluded state(s) for ${String(counts.excluded)} excluded entr(ies)`
-        );
+export function assertScopeStatesMatch(input: {
+    readonly states?: SemanticScopeStates;
+    readonly excluded: readonly SemanticScopeExclusion[];
+    readonly unassessed: readonly SemanticScopeExclusion[];
+    readonly label: string;
+}): void {
+    const published = input.states;
+    if (published === undefined) {
+        return;
     }
-    const unassessedTotal =
-        states.missingRequiredEvidence + states.omittedForBudgetOrDeadline + states.providerFailure + states.dryRun;
-    if (unassessedTotal !== counts.unassessed) {
-        refuse(
-            'invalid_response',
-            `${label} reports ${String(unassessedTotal)} unassessed state(s) for ${String(counts.unassessed)} unassessed entr(ies)`
-        );
+    const recorded = buildScopeStates({ excluded: input.excluded, unassessed: input.unassessed });
+    for (const state of SCOPE_STATE_NAMES) {
+        if (published[state] !== recorded[state]) {
+            refuse(
+                'invalid_response',
+                `${input.label} publishes ${String(published[state])} ${state} state(s), but its own entries record ${String(recorded[state])}`
+            );
+        }
     }
 }
+
+/** Every state field, so the comparison above names each one and a new field cannot be left unchecked. */
+const SCOPE_STATE_NAMES = [
+    'notApplicable',
+    'excludedWithAssessmentOwed',
+    'missingRequiredEvidence',
+    'omittedForBudgetOrDeadline',
+    'providerFailure',
+    'dryRun',
+] as const satisfies readonly (keyof SemanticScopeStates)[];
 
 /** Reads the totals back. Absent is a report written before the field existed, which stays valid. */
 export function readScopeStates(value: unknown, label: string): SemanticScopeStates | undefined {

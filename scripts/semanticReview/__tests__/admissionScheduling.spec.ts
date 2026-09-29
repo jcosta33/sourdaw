@@ -259,6 +259,58 @@ describe('a binding budget admits the risky unit first, whatever its path', () =
         expect(unassessedOf(report)).toEqual([{ path: more, reason: 'budget_exhausted', priorityClass: 'test' }]);
     });
 
+    it('keeps the production class for a rename across the test boundary', async () => {
+        // A rename offers both paths and the planner admits the rules of both. The class reads the same
+        // pair: classifying from the destination alone dropped a production file renamed into a test
+        // directory behind every production unit, so the rename — not the risk — decided what a binding
+        // budget assessed. The renamed unit sorts last and a plain test unit sorts first, so the class is
+        // the only thing that can keep the renamed unit admitted.
+        const renamedPath = 'electron/__tests__/zzz.spec.ts';
+        const previousPath = 'electron/zzz.ts';
+        const testPath = 'electron/__tests__/aaa.spec.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource(
+                    [changedFile(testPath), changedFile(renamedPath, { kind: 'renamed', previousPath })],
+                    {
+                        ...sides(testPath, 'it("a", () => {});\n', 'it("a", () => {});\nit("b", () => {});\n'),
+                        [`${MERGE_BASE}:${previousPath}`]: 'export const a = 1;\n',
+                        [`${HEAD}:${renamedPath}`]: 'export const a = 2;\n',
+                    }
+                ),
+                profile: { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 1 },
+            })
+        );
+        const order = report.scope.requestOrder ?? [];
+        expect(order.map((entry) => entry.path)).toEqual([renamedPath, testPath]);
+        expect(order[0]?.priorityClass).toBe('production');
+        expect(report.signals.some((signal) => signal.path === renamedPath)).toBe(true);
+        expect(unassessedOf(report)).toEqual([{ path: testPath, reason: 'budget_exhausted', priorityClass: 'test' }]);
+    });
+
+    it('keeps the production class when a test is renamed out of the boundary', async () => {
+        // The same rule read the other way: a unit is test-only only when every path the change offers
+        // is a test path, so a rename out of a test directory is production material like the rename
+        // into one — the class cannot flip with the direction of the move.
+        const renamedPath = 'electron/zzz.ts';
+        const previousPath = 'electron/__tests__/zzz.spec.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(renamedPath, { kind: 'renamed', previousPath })], {
+                    [`${MERGE_BASE}:${previousPath}`]: 'it("a", () => {});\n',
+                    [`${HEAD}:${renamedPath}`]: 'export const a = 2;\n',
+                }),
+            })
+        );
+        const order = report.scope.requestOrder ?? [];
+        expect(order.map((entry) => entry.path)).toEqual([renamedPath]);
+        expect(order[0]?.priorityClass).toBe('production');
+    });
+
     it('publishes the planned request order with the class and evidence that placed each unit', async () => {
         const provider = countingProvider();
         const { report } = await runScan(scanInput({ provider: provider.port, source: twoUnitSource(SEVERE_PATH) }));
@@ -476,51 +528,62 @@ describe('response caching follows the question membership', () => {
     });
 });
 
-describe('the run totals keep the four omission states apart', () => {
-    const EXCLUDED_PATH = 'docs/README.md';
-    const SKIPPED_PATH = 'crates/daw-dsp/src/big.rs';
-    const FAILED_PATH = 'electron/a-timeout.ts';
-    const STARVED_PATH = 'electron/b-budget.ts';
+const EXCLUDED_PATH = 'docs/README.md';
+const SKIPPED_PATH = 'crates/daw-dsp/src/big.rs';
+const FAILED_PATH = 'electron/a-timeout.ts';
+const STARVED_PATH = 'electron/b-budget.ts';
 
-    function stateSource(): SemanticSourcePort {
-        return fakeSource(
-            [
-                changedFile(EXCLUDED_PATH),
-                changedFile(SKIPPED_PATH, { added: 900, deleted: 1 }),
-                changedFile(FAILED_PATH),
-                changedFile(STARVED_PATH),
-            ],
-            {
-                ...sides(EXCLUDED_PATH, '# before\n', '# after\n'),
-                ...sides(SKIPPED_PATH, 'const before = 1;\n', 'const sample_value = 1;\n'.repeat(900)),
-                ...sides(FAILED_PATH, 'const a = 1;\n', 'const a = 2;\n'),
-                ...sides(STARVED_PATH, 'const b = 1;\n', 'const b = 2;\n'),
+/** The four-state fixture: an excluded path, a skipped unit, a failed unit, and a starved unit. */
+function stateSource(): SemanticSourcePort {
+    return fakeSource(
+        [
+            changedFile(EXCLUDED_PATH),
+            changedFile(SKIPPED_PATH, { added: 900, deleted: 1 }),
+            changedFile(FAILED_PATH),
+            changedFile(STARVED_PATH),
+        ],
+        {
+            ...sides(EXCLUDED_PATH, '# before\n', '# after\n'),
+            ...sides(SKIPPED_PATH, 'const before = 1;\n', 'const sample_value = 1;\n'.repeat(900)),
+            ...sides(FAILED_PATH, 'const a = 1;\n', 'const a = 2;\n'),
+            ...sides(STARVED_PATH, 'const b = 1;\n', 'const b = 2;\n'),
+        }
+    );
+}
+
+/** A provider that times out on the fixture's failed unit and answers everything else quietly. */
+function stateProvider(): SemanticProviderPort {
+    return {
+        systemOne: async ({ state, questions }) => {
+            if (JSON.stringify(state).includes(FAILED_PATH)) {
+                throw new APITimeoutError(SEMANTIC_BUDGET_PROFILES.local.attemptTimeoutMs);
             }
-        );
-    }
+            const answers: Record<string, unknown> = {};
+            for (const key of Object.keys(questions)) {
+                answers[key] = { type: 'noul', noul: 0.05 };
+            }
+            return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+        },
+    };
+}
 
+/** One scan of the four-state fixture: a spent attempt, a failed request, and a starved unit. */
+async function scannedFourStates() {
+    const { report } = await runScan(
+        scanInput({
+            provider: stateProvider(),
+            source: stateSource(),
+            // One attempt: the failed unit spends it, and the unit behind it is never admitted.
+            profile: { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 1 },
+        })
+    );
+    expect(() => validateReport(report)).not.toThrow();
+    return report;
+}
+
+describe('the run totals keep the four omission states apart', () => {
     it('counts exclusion, missing evidence, a provider failure, and a spent budget separately', async () => {
-        const provider: SemanticProviderPort = {
-            systemOne: async ({ state, questions }) => {
-                if (JSON.stringify(state).includes(FAILED_PATH)) {
-                    throw new APITimeoutError(SEMANTIC_BUDGET_PROFILES.local.attemptTimeoutMs);
-                }
-                const answers: Record<string, unknown> = {};
-                for (const key of Object.keys(questions)) {
-                    answers[key] = { type: 'noul', noul: 0.05 };
-                }
-                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
-            },
-        };
-        const { report } = await runScan(
-            scanInput({
-                provider,
-                source: stateSource(),
-                // One attempt: the failed unit spends it, and the unit behind it is never admitted.
-                profile: { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 1 },
-            })
-        );
-        expect(() => validateReport(report)).not.toThrow();
+        const report = await scannedFourStates();
         // The plan's order is what makes the four states reachable in one run: the severe unit asks
         // nothing, the timeout unit spends the attempt, and the last unit is starved behind it.
         expect((report.scope.requestOrder ?? []).map((entry) => entry.path)).toEqual([
@@ -547,20 +610,94 @@ describe('the run totals keep the four omission states apart', () => {
         expect(report.failureCode).toBe('budget_exhausted');
     });
 
-    it('refuses totals that do not match the entries they count', async () => {
-        const provider = countingProvider();
-        const { report } = await runScan(scanInput({ provider: provider.port, source: stateSource() }));
+    it('refuses totals whose buckets disagree with the entries although their sums balance', async () => {
+        // A swapped bucket leaves the sums intact: one unit read as a provider failure while the entry
+        // behind it names a spent budget. The totals are compared field by field, so it is refused.
+        const report = await scannedFourStates();
         const states = report.scope.states;
         expect(states).toBeDefined();
         if (states === undefined) {
             throw new Error('the run published no totals, so the case would assert nothing');
         }
+        expect(states.providerFailure).toBeGreaterThan(0);
         expect(() =>
             validateReport({
                 ...report,
-                scope: { ...report.scope, states: { ...states, missingRequiredEvidence: 7 } },
+                scope: {
+                    ...report.scope,
+                    states: {
+                        ...states,
+                        providerFailure: states.providerFailure - 1,
+                        omittedForBudgetOrDeadline: states.omittedForBudgetOrDeadline + 1,
+                    },
+                },
             })
-        ).toThrow(/unassessed state/);
+        ).toThrow(/omittedForBudgetOrDeadline state/);
+    });
+});
+
+describe('a stored report cannot publish a plan its own records refute', () => {
+    it('refuses a reversed planned order', async () => {
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        expect(order.length).toBeGreaterThan(1);
+        expect(() =>
+            validateReport({ ...report, scope: { ...report.scope, requestOrder: [...order].reverse() } })
+        ).toThrow(/admission key orders the other way/);
+    });
+
+    it('refuses an order that drops an entry', async () => {
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        expect(order.length).toBeGreaterThan(1);
+        expect(() => validateReport({ ...report, scope: { ...report.scope, requestOrder: order.slice(1) } })).toThrow(
+            /planned unit\(s\) for 3 eligible/
+        );
+    });
+
+    it('refuses an entry naming a path the scope recorded as excluded', async () => {
+        // The enforceable form of "never planned": the report's own excluded list says this path owed no
+        // plan, so an order entry naming it describes a walk the planner never took.
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        expect(report.scope.excluded.map((entry) => entry.path)).toEqual([EXCLUDED_PATH]);
+        const doctored = order.map((entry, index) => (index === 0 ? { ...entry, path: EXCLUDED_PATH } : entry));
+        expect(() => validateReport({ ...report, scope: { ...report.scope, requestOrder: doctored } })).toThrow(
+            /never planned it/
+        );
+    });
+
+    it('refuses an entry renamed to a path no signal of the report names', async () => {
+        // The general form: a path the report records nowhere, on a unit whose ledger the doctored entry
+        // still carries. Length, distinctness, the excluded list and the unassessed list all still agree,
+        // so only the agreement between the order and the report's own signals refutes it.
+        const path = 'src/infra/thing.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(path)], sides(path, 'const before = 1;\n', 'const after = 2;\n')),
+            })
+        );
+        expect(() => validateReport(report)).not.toThrow();
+        const entry = (report.scope.requestOrder ?? [])[0];
+        if (entry === undefined) {
+            throw new Error('the run published no planned entry, so the case would assert nothing');
+        }
+        expect(report.signals.some((signal) => signal.path === entry.path)).toBe(true);
+        // The refusal names the unit whose ledger the order no longer lists: the signal's own path.
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: { ...report.scope, requestOrder: [{ ...entry, path: 'nope/never-planned.ts' }] },
+            })
+        ).toThrow(/carries a signal for src\/infra\/thing.ts, which its planned order does not list/);
+    });
+
+    it('accepts the order the run itself published', async () => {
+        const report = await scannedFourStates();
+        expect(report.scope.requestOrder).toHaveLength(report.scope.eligible);
+        expect(() => validateReport(report)).not.toThrow();
     });
 });
 

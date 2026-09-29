@@ -33,10 +33,17 @@ export type UnitPassEvidence = {
  * A planned unit as every per-pass question about it is read: what it is, which rules apply, and the
  * evidence those rules are answered from. A plan satisfies this shape, so the ordering, the request
  * carriage, and the merge share one definition without importing the planner's own record.
+ *
+ * A rename's previous path is carried because the planner admits the rules of both offered paths, and
+ * the admission class reads the same pair: a cross-boundary rename must not be classified from its
+ * destination alone.
  */
 export type UnitQuestionPlan = {
     readonly path: string;
-    readonly file: { readonly kind: SemanticChangedFile['kind'] };
+    readonly file: {
+        readonly kind: SemanticChangedFile['kind'];
+        readonly previousPath?: string;
+    };
     readonly rules: readonly SemanticRule[];
     readonly evidence: UnitPassEvidence;
 };

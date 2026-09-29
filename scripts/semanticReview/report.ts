@@ -22,14 +22,19 @@ import {
     type SemanticRevisionContext,
     type SemanticScopeExclusion,
 } from './contracts.ts';
-import { SCAN_OUTCOMES, type SemanticRuleId } from './rules.ts';
+import { readFindingAssessments, readScanAssessments, readStringArray } from './reportAssessments.ts';
 import {
     assertScopeStatesMatch,
     readScopeExclusions,
     readScopeStates,
     type SemanticScopeStates,
 } from './scopeAccounting.ts';
-import { readPlannedRequests, type SemanticPlannedRequest } from './unitPriority.ts';
+import {
+    assertRequestOrderIsSorted,
+    assertSignalsNamePlannedUnits,
+    readPlannedRequests,
+    type SemanticPlannedRequest,
+} from './unitPriority.ts';
 
 import type { FindingAssessment, ScanAssessment } from './interpret.ts';
 
@@ -135,32 +140,36 @@ function readNonNegativeInteger(value: unknown, label: string): number {
     return value as number;
 }
 
-function readStringArray(value: unknown, label: string): string[] {
-    if (!Array.isArray(value)) {
-        refuse('invalid_response', `${label} must be an array`);
-    }
-    return value.map((entry, index) => {
-        if (typeof entry !== 'string') {
-            refuse('invalid_response', `${label}[${String(index)}] must be a string`);
-        }
-        return entry;
-    });
-}
-
 /**
- * The totals are held to the lists they count, so no unit can be published in a state it was not
- * recorded in and no recorded omission can go uncounted. A report written before the totals existed
- * carries none and stays valid.
+ * Reads the run's usage figures. The cost is the one field where a wrong type is a wrong number rather
+ * than a missing string, so it is checked as a finite number before the rest is assembled.
  */
-function assertScopeTotals(scope: SemanticScopeReport): void {
-    if (scope.states === undefined) {
-        return;
+function readUsageReport(value: unknown): SemanticUsageReport {
+    if (typeof value !== 'object' || value === null) {
+        refuse('invalid_response', 'semantic report usage must be an object');
     }
-    assertScopeStatesMatch(
-        scope.states,
-        { excluded: scope.excluded.length, unassessed: scope.unassessed.length },
-        'semantic report scope'
-    );
+    const rawUsage = value as Record<string, unknown>;
+    const rawCost = rawUsage.estimatedCostUsd;
+    if (typeof rawCost !== 'number' || !Number.isFinite(rawCost)) {
+        refuse('invalid_response', 'usage.estimatedCostUsd must be a finite number');
+    }
+    return {
+        networkAttempts: readNonNegativeInteger(rawUsage.networkAttempts, 'usage.networkAttempts'),
+        logicalRequests: readNonNegativeInteger(rawUsage.logicalRequests, 'usage.logicalRequests'),
+        retries: readNonNegativeInteger(rawUsage.retries, 'usage.retries'),
+        submittedBytes: readNonNegativeInteger(rawUsage.submittedBytes, 'usage.submittedBytes'),
+        actualInputTokens: readNonNegativeInteger(rawUsage.actualInputTokens, 'usage.actualInputTokens'),
+        estimatedInputTokens: readNonNegativeInteger(rawUsage.estimatedInputTokens, 'usage.estimatedInputTokens'),
+        attemptsWithUnknownUsage: readNonNegativeInteger(
+            rawUsage.attemptsWithUnknownUsage,
+            'usage.attemptsWithUnknownUsage'
+        ),
+        estimatedCostUsd: rawCost,
+        pricingConfigurationVersion: assertNonEmptyString(
+            rawUsage.pricingConfigurationVersion,
+            'usage.pricingConfigurationVersion'
+        ),
+    };
 }
 
 function readRevisionContext(value: unknown, label: string): SemanticRevisionContext {
@@ -297,33 +306,22 @@ export function validateReport(value: unknown): SemanticReport {
     };
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
-    assertScopeTotals(scope);
+    // The published totals and order are held to the scope's own records and to the admission key.
+    assertScopeStatesMatch({
+        states: scope.states,
+        excluded: scope.excluded,
+        unassessed: scope.unassessed,
+        label: SCOPE_LABEL,
+    });
+    assertRequestOrderIsSorted({
+        requestOrder: scope.requestOrder,
+        eligible: scope.eligible,
+        excluded: scope.excluded,
+        unassessed: scope.unassessed,
+        label: SCOPE_LABEL,
+    });
 
-    if (typeof record.usage !== 'object' || record.usage === null) {
-        refuse('invalid_response', 'semantic report usage must be an object');
-    }
-    const rawUsage = record.usage as Record<string, unknown>;
-    const rawCost = rawUsage.estimatedCostUsd;
-    if (typeof rawCost !== 'number' || !Number.isFinite(rawCost)) {
-        refuse('invalid_response', 'usage.estimatedCostUsd must be a finite number');
-    }
-    const usage: SemanticUsageReport = {
-        networkAttempts: readNonNegativeInteger(rawUsage.networkAttempts, 'usage.networkAttempts'),
-        logicalRequests: readNonNegativeInteger(rawUsage.logicalRequests, 'usage.logicalRequests'),
-        retries: readNonNegativeInteger(rawUsage.retries, 'usage.retries'),
-        submittedBytes: readNonNegativeInteger(rawUsage.submittedBytes, 'usage.submittedBytes'),
-        actualInputTokens: readNonNegativeInteger(rawUsage.actualInputTokens, 'usage.actualInputTokens'),
-        estimatedInputTokens: readNonNegativeInteger(rawUsage.estimatedInputTokens, 'usage.estimatedInputTokens'),
-        attemptsWithUnknownUsage: readNonNegativeInteger(
-            rawUsage.attemptsWithUnknownUsage,
-            'usage.attemptsWithUnknownUsage'
-        ),
-        estimatedCostUsd: rawCost,
-        pricingConfigurationVersion: assertNonEmptyString(
-            rawUsage.pricingConfigurationVersion,
-            'usage.pricingConfigurationVersion'
-        ),
-    };
+    const usage = readUsageReport(record.usage);
 
     let publicationCheckId: string | undefined;
     if (publication.checkId !== undefined) {
@@ -353,12 +351,18 @@ export function validateReport(value: unknown): SemanticReport {
     assertIdentityAgrees(base);
 
     if (record.mode === 'scan') {
-        return { ...base, mode: 'scan', signals: readScanAssessments(record.signals) };
+        const signals = readScanAssessments(record.signals);
+        // The ledger and the plan must name the same units: a signal for a unit the order does not list
+        // is a report whose order was rewritten around its own records.
+        assertSignalsNamePlannedUnits({ requestOrder: scope.requestOrder, signals, label: SCOPE_LABEL });
+        return { ...base, mode: 'scan', signals };
     }
     return { ...base, mode: 'verify', findingAssessments: readFindingAssessments(record.findingAssessments) };
 }
 
 const PUBLICATION_STATE_SET: ReadonlySet<string> = new Set(['not_requested', 'published', 'stale', 'failed']);
+/** One label for every check the validator runs over the scope, so a refusal names one place. */
+const SCOPE_LABEL = 'semantic report scope';
 const EXECUTION_STATE_SET: ReadonlySet<string> = new Set([
     'completed',
     'partial',
@@ -366,137 +370,9 @@ const EXECUTION_STATE_SET: ReadonlySet<string> = new Set([
     'cancelled',
     'skipped',
 ]);
-const SCAN_OUTCOME_SET: ReadonlySet<string> = new Set(SCAN_OUTCOMES);
 
 function isExecutionState(value: unknown): value is SemanticExecutionState {
     return typeof value === 'string' && EXECUTION_STATE_SET.has(value);
-}
-
-function readProbabilities<Label extends string>(
-    value: unknown,
-    labels: readonly Label[],
-    label: string
-): Record<Label, number> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        refuse('invalid_response', `${label} must be an object`);
-    }
-    const record = value as Record<string, unknown>;
-    const probabilities = {} as Record<Label, number>;
-    for (const name of labels) {
-        const entry = record[name];
-        if (typeof entry !== 'number' || !Number.isFinite(entry) || entry < 0 || entry > 1) {
-            refuse('invalid_response', `${label}.${name} must be a finite probability in [0, 1]`);
-        }
-        probabilities[name] = entry;
-    }
-    return probabilities;
-}
-
-function readScanAssessments(value: unknown): ScanAssessment[] {
-    if (!Array.isArray(value)) {
-        refuse('invalid_response', 'scan report signals must be an array');
-    }
-    return value.map((entry, index) => {
-        const label = `signals[${String(index)}]`;
-        if (typeof entry !== 'object' || entry === null) {
-            refuse('invalid_response', `${label} must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        if (!SCAN_OUTCOME_SET.has(record.outcome as string)) {
-            refuse('invalid_response', `${label}.outcome is not a known scan outcome`);
-        }
-        if (typeof record.confidence !== 'number' || !Number.isFinite(record.confidence)) {
-            refuse('invalid_response', `${label}.confidence must be a finite number`);
-        }
-        if (typeof record.probability !== 'number' || !Number.isFinite(record.probability)) {
-            refuse('invalid_response', `${label}.probability must be a finite number`);
-        }
-        if (record.probability < 0 || record.probability > 1) {
-            refuse('invalid_response', `${label}.probability must be in [0, 1]`);
-        }
-        return {
-            ruleId: assertNonEmptyString(record.ruleId, `${label}.ruleId`) as SemanticRuleId,
-            unitId: assertNonEmptyString(record.unitId, `${label}.unitId`),
-            path: assertNonEmptyString(record.path, `${label}.path`),
-            outcome: record.outcome as ScanAssessment['outcome'],
-            probability: record.probability,
-            confidence: record.confidence,
-            disposition: assertNonEmptyString(
-                record.disposition,
-                `${label}.disposition`
-            ) as ScanAssessment['disposition'],
-            investigationCategory: assertNonEmptyString(
-                record.investigationCategory,
-                `${label}.investigationCategory`
-            ) as ScanAssessment['investigationCategory'],
-            missingEvidence: readStringArray(record.missingEvidence, `${label}.missingEvidence`),
-            reasoning: assertNonEmptyString(record.reasoning, `${label}.reasoning`),
-        };
-    });
-}
-
-function readFindingAssessments(value: unknown): FindingAssessment[] {
-    if (!Array.isArray(value)) {
-        refuse('invalid_response', 'verify report findingAssessments must be an array');
-    }
-    return value.map((entry, index) => {
-        const label = `findingAssessments[${String(index)}]`;
-        if (typeof entry !== 'object' || entry === null) {
-            refuse('invalid_response', `${label} must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        if (typeof record.escalate !== 'boolean') {
-            refuse('invalid_response', `${label}.escalate must be a boolean`);
-        }
-        return {
-            findingId: assertNonEmptyString(record.findingId, `${label}.findingId`),
-            support: readAssessmentPart(
-                record.support,
-                ['supported', 'contradicted', 'insufficient_context'],
-                `${label}.support`
-            ),
-            attribution: readAssessmentPart(
-                record.attribution,
-                ['introduced_by_change', 'pre_existing', 'undetermined'],
-                `${label}.attribution`
-            ),
-            kind: readAssessmentPart(
-                record.kind,
-                ['behavioral_or_contract_issue', 'style_preference', 'undetermined'],
-                `${label}.kind`
-            ),
-            disposition: assertNonEmptyString(
-                record.disposition,
-                `${label}.disposition`
-            ) as FindingAssessment['disposition'],
-            escalate: record.escalate,
-            strongestEvidenceIds: readStringArray(record.strongestEvidenceIds, `${label}.strongestEvidenceIds`),
-            reasoning: assertNonEmptyString(record.reasoning, `${label}.reasoning`),
-        };
-    });
-}
-
-function readAssessmentPart<Outcome extends string>(
-    value: unknown,
-    labels: readonly Outcome[],
-    label: string
-): { outcome: Outcome; probabilities: Record<Outcome, number>; confidence: number } {
-    if (typeof value !== 'object' || value === null) {
-        refuse('invalid_response', `${label} must be an object`);
-    }
-    const record = value as Record<string, unknown>;
-    if (typeof record.confidence !== 'number' || !Number.isFinite(record.confidence)) {
-        refuse('invalid_response', `${label}.confidence must be a finite number`);
-    }
-    const known: readonly string[] = labels;
-    if (!known.includes(record.outcome as string)) {
-        refuse('invalid_response', `${label}.outcome is not a known value`);
-    }
-    return {
-        outcome: record.outcome as Outcome,
-        probabilities: readProbabilities(record.probabilities, labels, `${label}.probabilities`),
-        confidence: record.confidence,
-    };
 }
 
 /**

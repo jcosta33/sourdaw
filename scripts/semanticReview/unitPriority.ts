@@ -20,15 +20,9 @@
  */
 
 import { isUnitPriorityClass, refuse, type SemanticScopeExclusion, type UnitPriorityClass } from './contracts.ts';
-import { compareByPath } from './evidence.ts';
+import { compareLexicographic } from './evidence.ts';
 import { bestPassMissingEvidence, type UnitQuestionPlan } from './passes.ts';
-import {
-    isSemanticRuleId,
-    isTestPath,
-    SEVERE_INVESTIGATION_CATEGORIES,
-    type SemanticRule,
-    type SemanticRuleId,
-} from './rules.ts';
+import { isSemanticRuleId, isTestPath, SEVERE_INVESTIGATION_CATEGORIES, type SemanticRuleId } from './rules.ts';
 
 /** The escalation classes, read as a set so a rule's category joins the key by membership, never by a cast. */
 const SEVERE_CATEGORIES: ReadonlySet<string> = new Set(SEVERE_INVESTIGATION_CATEGORIES);
@@ -37,17 +31,25 @@ const SEVERE_CATEGORIES: ReadonlySet<string> = new Set(SEVERE_INVESTIGATION_CATE
  * The class this unit's key places it in. A severe rule's investigation category is the strongest signal
  * the plan carries, and production material outranks test-only material within it: a test unit asks
  * test-validity questions, while a production unit can carry the change's behaviour.
+ *
+ * A unit is test-only only when every path the change offers it is a test path. The planner admits a
+ * rename's rules from both offered paths, so classifying from the destination alone let a production
+ * file renamed into a test directory drop behind every production unit: the rename, not the risk,
+ * decided what a binding budget assessed. A cross-boundary rename keeps the production class whichever
+ * way it crosses, which is the safe side of the line — it carries a production path's questions.
  */
-export function unitPriorityClass(unit: {
-    readonly path: string;
-    readonly rules: readonly SemanticRule[];
-}): UnitPriorityClass {
+export function unitPriorityClass(unit: UnitQuestionPlan): UnitPriorityClass {
     const severe = unit.rules.some((rule) => SEVERE_CATEGORIES.has(rule.investigationCategory));
-    const test = isTestPath(unit.path);
+    const test = offeredPaths(unit).every(isTestPath);
     if (severe) {
         return test ? 'severe-test' : 'severe-production';
     }
     return test ? 'test' : 'production';
+}
+
+/** Every path the change offers for a unit: its destination, and a rename's previous path. */
+function offeredPaths(unit: UnitQuestionPlan): string[] {
+    return unit.file.previousPath === undefined ? [unit.path] : [unit.path, unit.file.previousPath];
 }
 
 /** The classes in admission order, most-preferred first. */
@@ -73,19 +75,46 @@ export function unitMissingRequiredEvidenceTokens(unit: UnitQuestionPlan): numbe
 
 /**
  * The admission key, total and deterministic: class first, then the fewer-missing-evidence measure, then
- * the path as the final tie-break. Two plans that differ only by an unrelated rename keep the same
- * classes and the same measure, so the rename cannot move a unit across a binding budget.
+ * the path as the final tie-break. The class reads every path the change offers, so a rename keeps it;
+ * the measure moves only when the rename changes which rules apply or what evidence the unit carries,
+ * and the path itself is reached only by two units that already key identically.
  */
 export function compareUnitPriority(left: UnitQuestionPlan, right: UnitQuestionPlan): number {
-    const byClass = PRIORITY_RANK[unitPriorityClass(left)] - PRIORITY_RANK[unitPriorityClass(right)];
+    return compareAdmissionKeys(
+        {
+            path: left.path,
+            priorityClass: unitPriorityClass(left),
+            missingRequiredEvidenceTokens: unitMissingRequiredEvidenceTokens(left),
+        },
+        {
+            path: right.path,
+            priorityClass: unitPriorityClass(right),
+            missingRequiredEvidenceTokens: unitMissingRequiredEvidenceTokens(right),
+        }
+    );
+}
+
+/**
+ * The three fields the admission key reads, in the order it reads them. The report publishes the same
+ * three for every planned unit, so the validator below holds a stored order to the key this comparator
+ * defines rather than to a second, restated one.
+ */
+type AdmissionKey = {
+    readonly path: string;
+    readonly priorityClass: UnitPriorityClass;
+    readonly missingRequiredEvidenceTokens: number;
+};
+
+function compareAdmissionKeys(left: AdmissionKey, right: AdmissionKey): number {
+    const byClass = PRIORITY_RANK[left.priorityClass] - PRIORITY_RANK[right.priorityClass];
     if (byClass !== 0) {
         return byClass;
     }
-    const byEvidence = unitMissingRequiredEvidenceTokens(left) - unitMissingRequiredEvidenceTokens(right);
+    const byEvidence = left.missingRequiredEvidenceTokens - right.missingRequiredEvidenceTokens;
     if (byEvidence !== 0) {
         return byEvidence;
     }
-    return compareByPath(left, right);
+    return compareLexicographic(left.path, right.path);
 }
 
 /** The planned units in admission order. The input order is not read: the key is total, so it never leaks. */
@@ -130,9 +159,9 @@ export function plannedRequest(unit: UnitQuestionPlan): SemanticPlannedRequest {
 }
 
 /**
- * Reads the published order back. Absent is a report written before the field existed, which stays
- * valid; a present value is validated in full, so a foreign or hand-edited order cannot pass as one
- * this planner produced.
+ * Reads one published order entry's shape. Shape alone proves nothing about the walk, so the report
+ * follows this with `assertRequestOrderIsSorted`, which holds the entries to the admission key and to
+ * the scope's own records; absent is a report written before the field existed, which stays valid.
  */
 export function readPlannedRequests(value: unknown, label: string): readonly SemanticPlannedRequest[] | undefined {
     if (value === undefined) {
@@ -165,6 +194,105 @@ export function readPlannedRequests(value: unknown, label: string): readonly Sem
             ruleIds: readRuleIds(record.ruleIds, `${at}.ruleIds`),
         };
     });
+}
+
+/**
+ * Holds a published order to the key it claims to be sorted by, and to the scope's own records.
+ *
+ * Enforced: the entries are distinct; they cover exactly the eligible units; no entry names a path the
+ * scope records as excluded, which the planner never planned; every unit the scope records as
+ * unassessed is listed; each entry's answerable count fits its rule list; and the entries read
+ * non-decreasing in the admission key — class rank, then the missing-evidence measure, then the path.
+ *
+ * Not enforced, because the published fields cannot support it: an entry's own rule set, class, and
+ * counts are never re-derived here. The report carries no plan and no previous path, so an entry whose
+ * figures and key position agree with each other passes however the run actually walked its units; a
+ * stored order can be refuted for disagreeing with the key or with the scope's records, never for
+ * disagreeing with a plan nobody published.
+ */
+export function assertRequestOrderIsSorted(input: {
+    readonly requestOrder?: readonly SemanticPlannedRequest[];
+    readonly eligible: number;
+    readonly excluded: readonly SemanticScopeExclusion[];
+    readonly unassessed: readonly SemanticScopeExclusion[];
+    readonly label: string;
+}): void {
+    const order = input.requestOrder;
+    if (order === undefined) {
+        return;
+    }
+    const planned = new Set<string>();
+    for (const entry of order) {
+        if (planned.has(entry.path)) {
+            refuse('invalid_response', `${input.label} lists ${entry.path} more than once in its planned order`);
+        }
+        planned.add(entry.path);
+        if (entry.ruleIds.length === 0 || entry.answerableRules > entry.ruleIds.length) {
+            refuse(
+                'invalid_response',
+                `${input.label} publishes ${entry.path} with ${String(entry.answerableRules)} answerable rule(s) out of ${String(entry.ruleIds.length)}`
+            );
+        }
+    }
+    if (order.length !== input.eligible) {
+        refuse(
+            'invalid_response',
+            `${input.label} publishes ${String(order.length)} planned unit(s) for ${String(input.eligible)} eligible`
+        );
+    }
+    const excluded = new Set(input.excluded.map((entry) => entry.path));
+    for (const entry of order) {
+        if (excluded.has(entry.path)) {
+            refuse(
+                'invalid_response',
+                `${input.label} publishes ${entry.path} as planned and as excluded; the planner never planned it`
+            );
+        }
+    }
+    for (const entry of input.unassessed) {
+        if (!planned.has(entry.path)) {
+            refuse(
+                'invalid_response',
+                `${input.label} records ${entry.path} as unassessed without listing it in the planned order`
+            );
+        }
+    }
+    let previous: SemanticPlannedRequest | undefined;
+    for (const entry of order) {
+        if (previous !== undefined && compareAdmissionKeys(previous, entry) > 0) {
+            refuse(
+                'invalid_response',
+                `${input.label} places ${entry.path} after ${previous.path}, which the admission key orders the other way`
+            );
+        }
+        previous = entry;
+    }
+}
+
+/**
+ * Holds the report's own signals to the plan it publishes: every unit a signal names must be a unit the
+ * order lists. Without this, an entry's path could be rewritten to any file the plan never contained and
+ * the order would still agree with the scope's counts — the displaced unit's ledger would simply name a
+ * unit the plan no longer holds. A report written before the order existed carries none and stays valid.
+ */
+export function assertSignalsNamePlannedUnits(input: {
+    readonly requestOrder?: readonly SemanticPlannedRequest[];
+    readonly signals: readonly { readonly path: string }[];
+    readonly label: string;
+}): void {
+    const order = input.requestOrder;
+    if (order === undefined) {
+        return;
+    }
+    const planned = new Set(order.map((entry) => entry.path));
+    for (const signal of input.signals) {
+        if (!planned.has(signal.path)) {
+            refuse(
+                'invalid_response',
+                `${input.label} carries a signal for ${signal.path}, which its planned order does not list`
+            );
+        }
+    }
 }
 
 function readCount(value: unknown, label: string): number {
