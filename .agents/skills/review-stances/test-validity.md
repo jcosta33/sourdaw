@@ -584,3 +584,5 @@ does not prove the external writer is isolated.
 The EDM status-bar E2E cases asserted rate and latency text but did not observe the console assertion emitted while the effect-free Supersaw loaded. The FaustWasm upgrade review's baseline probes covered node instantiation and passing tests, so they could not distinguish clean compilation from a caught, noisy failure followed by a successful fallback.
 
 Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
+
+When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
