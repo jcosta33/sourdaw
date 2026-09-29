@@ -1,0 +1,24 @@
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 262-313,531-552,554-559,561-568,570-584,586,613-616,622-688,692,694-700
+scripts/semanticReview/passes.ts
+  h_beb54bf43b47b7 36-39,43-46
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 25,32-37,144-145,147-149,151-172,309-322,324,354-358,364-365
+scripts/semanticReview/reportAssessments.ts
+  h_beb54bf43b47b7 1-154
+scripts/semanticReview/scopeAccounting.ts
+  h_beb54bf43b47b7 117-121,123-131,133-140,144-153
+scripts/semanticReview/unitPriority.ts
+  h_beb54bf43b47b7 23,25,34-39,41,43,50-54,78-80,83-109,113,117,162-164,199-297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "282366d4351e59d0cb869e13ab5cd038a3a71d73",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
