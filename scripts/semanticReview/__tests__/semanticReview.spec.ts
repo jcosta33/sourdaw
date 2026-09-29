@@ -2418,13 +2418,10 @@ describe('contract-carrying admission', () => {
         expect(unit?.evidence.context.map((reference) => reference.path)).toEqual(['.agents/decisions/README.md']);
     });
 
-    it('withholds a contract-needing unit below its request while the documents it charged are sent', async () => {
-        // The admission tier is an attempt order, not a protection. `fitUnitEvidence` reserves the
-        // bounded context share of the request before it offers the unit's own regions, so on a 280-line
-        // edit whose rules need the undo contract the charged documents are sent while both of the unit's
-        // own sides are withheld; with the documents absent the after side — attempted first, being the
-        // smaller — still fits the whole budget. Setting `CONTEXT_BUDGET_SHARE` to 0 hands the own sides
-        // the whole budget and fails the first arm of this case.
+    it('carries a contract-needing unit whole across passes instead of shedding its own sides', async () => {
+        // The multi-request transport: a 280-line edit whose rules need the undo contract used to shed
+        // both own sides so the charged documents could travel. The whole evidence now travels in ordered
+        // passes, so the unit keeps its own before/after sides alongside the documents.
         const path = 'src/modules/Project/undo.ts';
         const before = 'const beforeValue = 1;\n'.repeat(280);
         const after = 'const afterValue = 2;\n'.repeat(280);
@@ -2443,34 +2440,34 @@ describe('contract-carrying admission', () => {
                     fakeSource({ files: [changedFile(path, { added: 280, deleted: 280 })], blobs }),
                     fixedClock(1_000)
                 ),
-                // Large enough that collection withholds nothing: the reduction must come from fitting.
+                // Large enough that collection withholds nothing: the split must come from fitting.
                 limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
             });
         };
         const charged = await scanWith(true);
         const chargedUnit = charged.previews.find((preview) => preview.path === path);
-        expect(chargedUnit?.evidenceIds.length).toBeGreaterThan(0);
-        // The documents the unit's rules charged are the whole payload this unit was sent.
-        expect(chargedUnit?.evidenceIds.every((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
-        expect(charged.report.scope.truncated).toContainEqual({
-            path,
-            reason: 'unit-evidence-reduced-below-request-budget (before, after)',
-        });
+        expect(charged.report.scope.assessed).toBe(1);
+        // The charged documents travel, and so do both own sides — none is shed for the request budget.
+        expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
+        expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
+        expect(chargedUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
+        expect(charged.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
+            false
+        );
         const bare = await scanWith(false);
         const bareUnit = bare.previews.find((preview) => preview.path === path);
+        expect(bare.report.scope.assessed).toBe(1);
+        expect(bareUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
         expect(bareUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
-        expect(bare.report.scope.truncated).toContainEqual({
-            path,
-            reason: 'unit-evidence-reduced-below-request-budget (before)',
-        });
+        expect(bare.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
+            false
+        );
     });
 
-    it("sends the charged document when it fits the context share, even at an own side's expense", async () => {
-        // B, smaller-than-share regime: the charged document is 2,713 B and fits the 4,401 B share, so the
-        // reserve is taken and the document is sent while the unit's own after side is withheld below the
-        // request. Dropping the reserve hands the own sides the whole budget and the document is dropped
-        // instead, failing this case's first arm; that is the opposite rule, and the previous case fails
-        // under the reserve this one depends on.
+    it('carries the charged document and the unit own sides together instead of shedding one', async () => {
+        // The charged document and the unit's own sides used to compete for one request's budget, and the
+        // own after side lost. With the multi-request transport everything that fits travels: the document
+        // and both own sides are carried, and no side is recorded as reduced.
         const path = 'src/modules/Project/undo.ts';
         const own = 'const beforeValue = 1;\n'.repeat(175);
         const document = '# Decisions\n'.repeat(190);
@@ -2493,12 +2490,13 @@ describe('contract-carrying admission', () => {
             },
         });
         const unit = result.previews.find((preview) => preview.path === path);
+        expect(result.report.scope.assessed).toBe(1);
         expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
-        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(false);
-        expect(result.report.scope.truncated).toContainEqual({
-            path,
-            reason: 'unit-evidence-reduced-below-request-budget (after)',
-        });
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
+        expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
+            false
+        );
     });
 
     it('reserves the share for the implementation context a unit carries, at its own regions expense', () => {
@@ -4115,6 +4113,26 @@ function paddedUnits(sources: readonly PaddedSource[], cap: number): SemanticUni
 }
 
 /**
+ * The largest single request a planned unit actually sends: the provider's own measurement over each
+ * pass, not over the union of a multi-pass unit's evidence. A unit whose evidence exceeds one request
+ * is partitioned into passes, so the whole unit can legitimately measure above the cap while every pass
+ * stays inside it.
+ */
+function maxPassStateBytes(unit: SemanticUnitPlan): number {
+    return Math.max(
+        ...unit.evidence.passes.map((pass) =>
+            unitStatePlusQuestionBytes({
+                unitId: unit.unitId,
+                path: unit.path,
+                file: unit.file,
+                rules: unit.rules,
+                evidence: { references: pass.references, contents: pass.contents },
+            })
+        )
+    );
+}
+
+/**
  * The deepest padding at which `path` still carries all `regions` of its own evidence, searched with
  * the rest of the sources present at their current padding.
  *
@@ -4438,8 +4456,9 @@ describe('a planned unit measures inside the request budget the provider enforce
                 throw new Error(`the planner admitted no unit for ${String(regions)} saturated region(s)`);
             }
             expect(unit.evidence.own).toHaveLength(regions);
-            // Exactly the provider's own measurement: `{state, questions}` against the profile limit.
-            return { regions, overBy: Math.max(0, unitStatePlusQuestionBytes(unit) - SATURATION_CAP) };
+            // Exactly the provider's own measurement: `{state, questions}` against the profile limit,
+            // taken per pass because a multi-region unit may legitimately split across several requests.
+            return { regions, overBy: Math.max(0, maxPassStateBytes(unit) - SATURATION_CAP) };
         });
         expect(overages).toEqual([
             { regions: 1, overBy: 0 },
@@ -4459,13 +4478,11 @@ describe('a planned unit measures inside the request budget the provider enforce
         expect(
             units.map((unit) => ({
                 path: unit.path,
-                overBy: Math.max(0, unitStatePlusQuestionBytes(unit) - SATURATION_CAP),
+                overBy: Math.max(0, maxPassStateBytes(unit) - SATURATION_CAP),
             }))
         ).toEqual(layout.map((entry) => ({ path: entry.path, overBy: 0 })));
         // The fixture spends the cap, so the invariant is load-bearing rather than slack.
-        expect(Math.max(...units.map((unit) => unitStatePlusQuestionBytes(unit)))).toBeGreaterThan(
-            SATURATION_CAP - 1_024
-        );
+        expect(Math.max(...units.map((unit) => maxPassStateBytes(unit)))).toBeGreaterThan(SATURATION_CAP - 1_024);
     });
 
     it('keeps a unit whole at the shipped ci cap that the old 24 KiB cap had to cut', () => {
@@ -6048,15 +6065,16 @@ describe('question and policy identity', () => {
 });
 
 describe('incomplete-scope reporting', () => {
-    const big = 'const sample_value = 1;\n'.repeat(500);
+    const before = 'const before = 1;\n';
+    const after = 'const sample_value = 1;\n'.repeat(900);
 
     async function reducedScan() {
         const provider = constantProvider(0.05);
         const source = fakeSource({
-            files: [changedFile('crates/daw-dsp/src/big.rs')],
+            files: [changedFile('crates/daw-dsp/src/big.rs', { added: 900, deleted: 1 })],
             blobs: {
-                [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: big,
-                [`${HEAD}:crates/daw-dsp/src/big.rs`]: big,
+                [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: before,
+                [`${HEAD}:crates/daw-dsp/src/big.rs`]: after,
             },
         });
         const base = scanPorts(provider, source, fixedClock(1_000));
@@ -8014,10 +8032,10 @@ describe('usage validation', () => {
 });
 
 describe('reduced-unit reporting', () => {
-    it('surfaces a per-unit evidence reduction instead of a clean completion', async () => {
-        // A unit whose evidence the request budget had to cut still reported `completed` with an
-        // empty scope.truncated and a clean summary, so an operator saw exit 0 and "no additional
-        // semantic signals" for a unit whose after side had been cut to a fraction of itself.
+    it('carries a unit whose evidence exceeded one request instead of cutting it', async () => {
+        // A unit whose evidence the request budget had to cut once reported a clean completion while its
+        // after side was reduced to a fraction. The evidence now travels in ordered passes, so the whole
+        // unit is assessed and nothing is recorded as reduced.
         const big = 'const sample_value = 1;\n'.repeat(500);
         const provider = constantProvider(0.05);
         const source = fakeSource({
@@ -8030,25 +8048,28 @@ describe('reduced-unit reporting', () => {
         const base = scanPorts(provider, source, fixedClock(1_000));
         const result = await runScan({
             ...base,
-            // Large enough that collection records nothing: the reduction must come from fitting.
+            // Large enough that collection records nothing: any split must come from fitting.
             limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
         });
         expect(result.report.scope.assessed).toBe(1);
-        expect(result.report.scope.truncated.length).toBeGreaterThan(0);
-        expect(result.report.limitations.join(' ')).toContain('per-request state budget');
-        expect(renderSummary(result.report)).toContain('Incomplete');
+        expect(result.report.execution).toBe('completed');
+        expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-reduced'))).toBe(
+            false
+        );
     });
 
-    it('names the side the per-request fitter dropped in the reduced-unit entry', async () => {
+    it('names the side of a region no pass could carry in the reduced-unit entry', async () => {
         // The reduced-unit entry was recorded per unit with no side, so a reader could not tell which
-        // side was cut. The fitter knows the dropped sides, and the entry must name them.
-        const big = 'const sample_value = 1;\n'.repeat(500);
+        // side was cut. A region larger than one request cannot travel in any pass and is still named:
+        // its side appears in the entry.
+        const before = 'const before = 1;\n';
+        const after = 'const sample_value = 1;\n'.repeat(900);
         const provider = constantProvider(0.05);
         const source = fakeSource({
-            files: [changedFile('crates/daw-dsp/src/big.rs')],
+            files: [changedFile('crates/daw-dsp/src/big.rs', { added: 900, deleted: 1 })],
             blobs: {
-                [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: big,
-                [`${HEAD}:crates/daw-dsp/src/big.rs`]: big,
+                [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: before,
+                [`${HEAD}:crates/daw-dsp/src/big.rs`]: after,
             },
         });
         const result = await runScan({
@@ -8059,6 +8080,10 @@ describe('reduced-unit reporting', () => {
             path: 'crates/daw-dsp/src/big.rs',
             reason: 'unit-evidence-reduced-below-request-budget (after)',
         });
+        // The operator-facing limitation names the request budget and the dropped-region count, so a
+        // reader can tell how much evidence never left the machine. Deleting the push reddens this case.
+        expect(result.report.limitations.join(' ')).toContain('per-request state budget');
+        expect(result.report.limitations.join(' ')).toContain('1 region(s) were not sent');
     });
 
     it("does not record a request-budget reduction for the collector's own per-region withholding", async () => {

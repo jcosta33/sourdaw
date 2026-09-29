@@ -515,6 +515,11 @@ type StoredResponses = {
         readonly ruleIds: readonly SemanticRuleId[];
         readonly answers: Readonly<Record<string, unknown>>;
         readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
+        readonly passes: readonly {
+            readonly passId: string;
+            readonly evidenceIds: readonly string[];
+            readonly answerRuleIds: readonly SemanticRuleId[];
+        }[];
     }[];
 };
 
@@ -545,15 +550,48 @@ function parseStoredResponses(value: unknown, label: string): StoredResponses {
             if (!Array.isArray(record.ruleIds) || typeof record.answers !== 'object' || record.answers === null) {
                 refuse('invalid_response', `${at} needs ruleIds and answers`);
             }
+            const passes = record.passes;
+            let parsedPasses: ReturnType<typeof readStoredPasses> = [];
+            if (passes !== undefined) {
+                parsedPasses = readStoredPasses(passes, `${at}.passes`);
+            }
             return {
                 unitId: record.unitId,
                 path: record.path,
                 ruleIds: record.ruleIds as SemanticRuleId[],
                 answers: record.answers as Record<string, unknown>,
                 missingEvidence: (record.missingEvidence ?? {}) as Record<string, readonly string[]>,
+                passes: parsedPasses,
             };
         }),
     };
+}
+
+function readStoredPasses(
+    value: unknown,
+    label: string
+): readonly { passId: string; evidenceIds: readonly string[]; answerRuleIds: readonly SemanticRuleId[] }[] {
+    if (!Array.isArray(value)) {
+        refuse('invalid_response', `${label} must be an array`);
+    }
+    return value.map((entry, index) => {
+        const at = `${label}[${String(index)}]`;
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+            refuse('invalid_response', `${at} must be an object`);
+        }
+        const record = entry as Record<string, unknown>;
+        if (typeof record.passId !== 'string' || record.passId === '') {
+            refuse('invalid_response', `${at} needs a passId`);
+        }
+        if (!Array.isArray(record.evidenceIds) || !Array.isArray(record.answerRuleIds)) {
+            refuse('invalid_response', `${at} needs evidenceIds and answerRuleIds arrays`);
+        }
+        return {
+            passId: record.passId,
+            evidenceIds: record.evidenceIds as string[],
+            answerRuleIds: record.answerRuleIds as SemanticRuleId[],
+        };
+    });
 }
 
 /** A local policy file may change interpretation thresholds; it can never change a question or model. */
