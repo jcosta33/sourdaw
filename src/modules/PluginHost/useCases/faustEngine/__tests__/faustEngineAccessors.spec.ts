@@ -15,6 +15,7 @@ function sampleModule(id: string, name: string): FaustModule {
         paramDescriptors: [],
         compiled: false,
         isInstrument: false,
+        polyEffectMode: 'auto',
         generator: null,
     };
 }
