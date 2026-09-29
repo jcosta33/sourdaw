@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
+import { startRecording, stopRecording, stageRecordingTake } from '#/modules/Arrangement/useCases';
+
 import { defaultTransportState } from '../../../models/TransportState';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
@@ -386,5 +389,185 @@ describe('startPlayheadScheduler seam vs mid-playback edit', () => {
         expect(dying[0]!.time).toBeCloseTo(1.975, 3);
         expect(dying[1]!.time).toBeCloseTo(1.99, 3);
         expect(scheduled).toHaveLength(2);
+    });
+});
+
+/**
+ * #4905 on the seam-edit re-anchor arm's wrap sub-case. The arm runs when a
+ * transport edit lands while a seam is still pending; its wrap sub-case fires
+ * when the dying pass had already carried the edited region's loop end at the
+ * previous tick's instant. The re-anchored position is then the incoming
+ * pass's, so — the exact situation the late-wrap arm was fixed for — no later
+ * scan ever revisits the dying pass's tail, and on a region the edit shrank
+ * below the look-ahead no seam will serve it either. A punch recording open
+ * across that edit-induced wrap can therefore only see its punch-out at the
+ * wrap itself, and its pass-span take must stage after the punch checks, not
+ * inside the arm.
+ */
+const arrangementEvents = vi.hoisted(
+    () => [] as Array<{ kind: 'punch-in' | 'punch-out' | 'stage-take'; at: number; beat?: number }>
+);
+
+describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
+    const SEAM_TICK_TIME = 1.96;
+    const PUNCH_IN_BEAT = 3.85;
+    const PUNCH_OUT_BEAT = 4;
+    const EDITED_BPM = 210;
+    const EDITED_LOOP_START = 3.9;
+    const EDITED_LOOP_END = 4;
+
+    function armedRecordingTrack(): unknown {
+        return {
+            id: 'rec-1',
+            armed: true,
+            kind: 'audio',
+            inputId: 'dev-punch',
+            clips: [{ id: 'rec-clip-1', startBeat: PUNCH_IN_BEAT, endBeat: 8 }],
+        };
+    }
+
+    function recordingPunchState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
+        return playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_BEAT,
+            punchOutBeat: PUNCH_OUT_BEAT,
+            ...overrides,
+        });
+    }
+
+    function punchOutsAtBeat(beat: number): Array<{ at: number; beat?: number }> {
+        return arrangementEvents
+            .filter((event) => event.kind === 'punch-out' && Math.abs((event.beat ?? -1) - beat) < 1e-6)
+            .map((event) => ({ at: event.at, beat: event.beat }));
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        arrangementEvents.length = 0;
+        evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
+        tempoMapStoreState.value = { changes: [] };
+        midiStoreState.value = null;
+        // Module-global metronome dedup state; carried between tests otherwise.
+        metronomeSchedulingState.lastBeat = -1;
+        metronomeSchedulingState.firedClickTimes.clear();
+        ctxTime.now = 0;
+        schedulerTickSequence = 0;
+        disposePlayheadScheduler();
+        vi.stubGlobal(
+            'Worker',
+            class {
+                onmessage: ((event: { data: unknown }) => void) | null = null;
+                postMessage = vi.fn();
+                terminate = vi.fn();
+                addEventListener = vi.fn();
+                removeEventListener = vi.fn();
+            }
+        );
+        // Punch observation points, mirroring the sibling punch spec's harness:
+        // every arrangement event lands here with the audio-clock instant of
+        // its call, so the edit tick's finalize/stage ORDER is assertable.
+        vi.mocked(startRecording).mockImplementation((atBeat) => {
+            arrangementEvents.push({ kind: 'punch-in', at: ctxTime.now, beat: atBeat });
+            return [];
+        });
+        vi.mocked(stopRecording).mockImplementation(async (atBeat) => {
+            arrangementEvents.push({ kind: 'punch-out', at: ctxTime.now, beat: atBeat });
+        });
+        vi.mocked(stageRecordingTake).mockImplementation(() => {
+            arrangementEvents.push({ kind: 'stage-take', at: ctxTime.now });
+        });
+    });
+
+    afterEach(() => {
+        activeRecordingRef.current = [];
+        disposePlayheadScheduler();
+        vi.unstubAllGlobals();
+    });
+
+    it('finalizes the punch recording at the edit-induced wrap and stages its take after the punch checks', async () => {
+        trackStoreState.value = { tracks: [armedRecordingTrack()] };
+        transportStoreState.value = recordingPunchState();
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+
+        // Drive to the scheduled-seam tick — the first yeast panic marks it
+        // (t≈1.96 s, playhead ≈3.92, seam instant ≈2.0 s). The scan strides
+        // 0.14 beats, so the scan first sits inside [3.85, 4.0) on that very
+        // tick and the punch-in opens there, as in the sibling punch spec.
+        let ticks = 0;
+        while (panicYeastRuntimeSpy.mock.calls.length === 0 && ticks < 200) {
+            ticks++;
+            await runTick(worker);
+        }
+        expect(panicYeastRuntimeSpy).toHaveBeenCalled();
+        const punchIns = arrangementEvents.filter(
+            (event) => event.kind === 'punch-in' && Math.abs((event.beat ?? -1) - PUNCH_IN_BEAT) < 1e-6
+        );
+        expect(punchIns).toHaveLength(1);
+        expect(punchIns[0]!.at).toBeCloseTo(SEAM_TICK_TIME, 3);
+
+        // Fine ticks keep the pending seam alive (the stale instant is ≈2.0 s).
+        // After the first one, mirror the state a real punch-in leaves behind —
+        // the transport store's isRecording flag (the repository mock severs
+        // that write) and the actively-recording clip ref the take staging
+        // reads — so the edit tick runs against the production post-punch-in
+        // state.
+        await runTick(worker, 0.01);
+        transportStoreState.value = recordingPunchState({ isRecording: true });
+        activeRecordingRef.current = ['rec-clip-1'];
+        await runTick(worker, 0.01);
+        await runTick(worker, 0.01);
+        // The recording is open and nothing has closed it.
+        expect(arrangementEvents.some((event) => event.kind === 'punch-out')).toBe(false);
+
+        // The edit: the tempo map is replaced by a 210 BPM one and the loop
+        // region shrinks to [3.9, 4.0] — 0.1 beats against a 0.35 beat
+        // look-ahead, so no seam will ever serve it again. The dying pass
+        // integrates the still-pending seam's anchor to ≈4.025 at the PREVIOUS
+        // tick's instant — past the new loop end — so the re-anchor arm takes
+        // its wrap sub-case this tick: the position becomes the incoming
+        // pass's ≈3.925, and the punch checks scan from ≈3.96 on — below the
+        // punch-out beat — for the rest of the run.
+        tempoMapStoreState.value = {
+            changes: [{ id: 'tempo-edit', beat: 0, tempo: EDITED_BPM, curve: 'instant' }],
+        };
+        transportStoreState.value = recordingPunchState({
+            loopStart: EDITED_LOOP_START,
+            loopEnd: EDITED_LOOP_END,
+            isRecording: true,
+        });
+        await runTick(worker, 0.01);
+        const editTickTime = ctxTime.now;
+
+        // The punch-out is due at the edit-induced wrap itself. Unfixed, this
+        // tick stages the pass-span take inside the arm and fires no punch-out
+        // at all — the punch-out only lands at a later ordinary wrap, with the
+        // take staged before its recording ever finalized.
+        const editTickEvents = arrangementEvents.filter((event) => event.at === editTickTime);
+        const editTickPunchOuts = editTickEvents.filter(
+            (event) => event.kind === 'punch-out' && Math.abs((event.beat ?? -1) - PUNCH_OUT_BEAT) < 1e-6
+        );
+        expect(editTickPunchOuts).toHaveLength(1);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        // The pass-span take stages after the punch checks, on the same law as
+        // the seam path: a take staged before the finalization would name the
+        // punch clip with a full pass span it never recorded.
+        const editTickStages = editTickEvents.filter((event) => event.kind === 'stage-take');
+        expect(editTickStages).toHaveLength(1);
+        expect(editTickEvents.indexOf(editTickStages[0]!)).toBeGreaterThan(
+            editTickEvents.indexOf(editTickPunchOuts[0]!)
+        );
+
+        // Settle the following passes: the recording must not finalize twice —
+        // the ordinary wrap ticks after the edit see it already closed.
+        for (let index = 0; index < 5; index++) {
+            await runTick(worker, 0.01);
+        }
+        expect(punchOutsAtBeat(PUNCH_OUT_BEAT)).toHaveLength(1);
     });
 });

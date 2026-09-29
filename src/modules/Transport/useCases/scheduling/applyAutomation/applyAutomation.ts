@@ -703,8 +703,21 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     laneSlew = new Map<string, number>();
                     automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
-                const prev = laneSlew.get(fx.id) ?? value;
-                const slewedFxValue = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                // #4911: the first tick a lane drives this MIDI FX — entering
+                // its scope on a clip-window opening, or the first tick after
+                // load — has no previous value to glide from, so seeding it
+                // from the target and gating on movement would write nothing:
+                // a flat lane would sit on the manual value for ever. The
+                // entry tick snaps to the target and writes it once, the
+                // device branch's entry law (#4741). There is no offline slew
+                // to match here: the offline scheduler never schedules
+                // MIDI-FX parameters, so the live device semantics alone are
+                // the law being mirrored.
+                const previousSlew = laneSlew.get(fx.id);
+                const enteredLaneScope = previousSlew === undefined;
+                const seed = previousSlew ?? value;
+                const slewedFxValue =
+                    isDiscontinuity || enteredLaneScope ? value : slewStep(seed, value, AUTOMATION_SLEW_ALPHA);
                 const smoothed = clampDeviceParameterValue({
                     deviceType: fx.type,
                     paramId: lane.parameterId,
@@ -726,7 +739,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
                 // 13 wide. Closing that needs descriptors keyed by
                 // `ProcessorType`, which is its own change; it is not closed here.
-                if (isDiscontinuity || Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON) {
+                if (isDiscontinuity || enteredLaneScope || Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON) {
                     updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                 }
                 break;

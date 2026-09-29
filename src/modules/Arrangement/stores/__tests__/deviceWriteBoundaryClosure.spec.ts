@@ -629,7 +629,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // scheduleCompiledEventsOnParam, each delegating to the extracted
         // files that own the write loops. The file still writes no project
         // device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 8,
+        // Count provenance: measured 11 after the strip-scope merge (#4909) —
+        // the gain, pan, and send branches each issue their own
+        // compileAutomationEvents call when they join the merged-group
+        // collection, adding three bare family identifiers. The branches'
+        // scheduleCompiledEventsOnParam references sit inside the apply
+        // closures the post-loop pass owns; the file still writes no project
+        // device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 11,
         // Count provenance: new with the export scope law (#4912) — the
         // shared events-to-segments conversion compileAutomationSegments
         // also calls; one family member for its own conversion call.

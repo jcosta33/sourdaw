@@ -348,6 +348,11 @@ export function startPlayheadScheduler(): void {
         const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
         const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
         let rackDiscontinuity = false;
+        // #4905 — set when a wrap arm runs this tick (the seam-edit re-anchor
+        // below or the late wrap further down): the dying pass crossed loopEnd,
+        // and the wrap replaced the scanned position before the punch checks
+        // below.
+        let lateWrap = false;
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
@@ -400,7 +405,15 @@ export function startPlayheadScheduler(): void {
                     current.loopEnd > current.loopStart &&
                     dyingPositionAtPreviousTick >= current.loopEnd
                 ) {
-                    stageLoopWrapTakes(current);
+                    // #4905 — this arm carries the same wrap law as the late
+                    // wrap: the dying pass crossed loopEnd before the edit, the
+                    // re-anchored position below is the incoming pass's, and a
+                    // region at or below the look-ahead never presents a scan
+                    // at or past the punch-out beat afterwards — a punch
+                    // recording open across the wrap is due at the wrap itself.
+                    // Its pass-span takes stage with the late wrap's, after the
+                    // punch checks below, not here.
+                    lateWrap = true;
                     const loopLength = current.loopEnd - current.loopStart;
                     schedulerSession.accumulatedPosition =
                         current.loopStart + positiveModulo(dyingPositionAtPreviousTick - current.loopStart, loopLength);
@@ -485,7 +498,7 @@ export function startPlayheadScheduler(): void {
             // re-entered at loopStart — which with a flat map is the same
             // modulo as before, and with a tempo change at the seam no longer
             // carries the overshoot at the loop-end tempo.
-            stageLoopWrapTakes(current);
+            lateWrap = true;
 
             const loopLength = current.loopEnd - current.loopStart;
             const seamAudioTime = now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
@@ -691,6 +704,15 @@ export function startPlayheadScheduler(): void {
         // the seam tick was finalized empty in the same tick, every pass.
         const recordingOpenAtTickStart = schedulerSession.punchRecordingActive;
         const punchOutDueAtSeam = seam !== null && recordingOpenAtTickStart && current.punchOutBeat <= seam.passUpTo;
+        // #4905 — on a wrap tick (the seam-edit re-anchor or the late wrap) the
+        // scanned position is already the incoming pass's, and a region at or
+        // below the look-ahead never presents a scan at or past the punch-out
+        // beat afterwards: the crossing of the punch-out point happened inside
+        // the pass that just died, so the punch-out is due at the wrap itself.
+        // Same gating law as the seam arm — only for a recording already open
+        // when the tick began, so a punch-in opened this tick is never
+        // finalized empty.
+        const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
         if (
             current.punchInEnabled &&
             !current.isRecording &&
@@ -814,7 +836,7 @@ export function startPlayheadScheduler(): void {
         if (
             schedulerSession.punchRecordingActive &&
             current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam)
+            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam || punchOutDueAtWrap)
         ) {
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
@@ -931,6 +953,15 @@ export function startPlayheadScheduler(): void {
             );
             schedulerSession.lastScheduledBeat = seam.wrappedUpTo;
         } else {
+            // #4905 — a wrap tick's pass-span takes are staged here rather
+            // than in the detection branches, after the punch checks above, on
+            // the same law as the seam path: a punch-out due at the wrap
+            // finalizes its recording this tick, and a take staged before that
+            // finalization would name the punch clip with a full pass span it
+            // never recorded.
+            if (lateWrap) {
+                stageLoopWrapTakes(current);
+            }
             // The window opens at the committed position — after any follow
             // action relocation — exactly as the pre-seam code emitted it.
             const scheduleUpTo = newPosition + lookAheadBeats;

@@ -136,6 +136,7 @@ const {
     acquireLevainNativeBankMock,
     getLevainEngineParameterNameMock,
     initBranchStateMock,
+    initGrandBouleDocumentReconciliationMock,
     recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffectsMock,
     flushDeferredStorageNoticeMock,
@@ -222,6 +223,7 @@ const {
             paramId === 'masterGain' ? 'master_gain' : null
         ),
         initBranchStateMock: vi.fn(),
+        initGrandBouleDocumentReconciliationMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
             Promise.resolve({ recoveredRunIds: [] })
         ),
@@ -501,6 +503,7 @@ vi.mock('#/modules/Gluten/stores', () => ({
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
+    initGrandBouleDocumentReconciliation: initGrandBouleDocumentReconciliationMock,
     prepareOfflineGrandBoule: noop,
     captureOfflineGrandBoule: vi.fn(() => {
         throw new Error('bootstrap wiring fixture does not capture Grand Boule state');
@@ -1256,6 +1259,13 @@ describe('bootstrap', () => {
         // refused localStorage write threw during module evaluation and stopped
         // the app booting with no catch anywhere able to reach it. See #1557.
         expect(initBranchStateMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers Grand Boule document reconciliation as an explicit boot step', () => {
+        // A peer's device-state commit, an undo, or a bulk load rewrites the
+        // document without re-running any app action; without this registration
+        // the per-device store sits in the stale-mirror window #4894 describes.
+        expect(initGrandBouleDocumentReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('recovers interrupted AI runs as an explicit boot step', () => {

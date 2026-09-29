@@ -27,7 +27,6 @@ import {
     type AutomationSegmentStream,
 } from './mergeAutomationSegmentStreams';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
-import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 import { scheduleCompiledEventsOnParam } from './scheduleCompiledEventsOnParam';
 
 type AutomationTempoChange = {
@@ -351,16 +350,17 @@ export function scheduleTrackAutomation({
     >();
 
     /**
-     * Every `curveWrite`- or `audioParam`-bound lane on one (device, parameter)
-     * collects its compiled events here, keyed like `segmentGroupsByKey`, one
-     * target group per AudioParam target (a `curveWrite` binding has exactly
-     * one). Those families used to apply each overlapping lane immediately onto
-     * the same target, so web and stems exports resolved a track lane against a
-     * clip lane by lane-array insertion order while live played the clip lane;
-     * the group applies once, after the loop, through
-     * `mergeAutomationEventStreams` — the same scope law the segments branch
-     * applies, so the applied curve for one project is identical across the
-     * segments-bound, audioParam and curveWrite exports.
+     * Every `curveWrite`-, `audioParam`-, or strip-parameter-bound lane (`gain`,
+     * `pan`, an existing send) on one parameter collects its compiled events
+     * here, keyed so strip parameters group per track (`track:<trackId>::…`)
+     * and device parameters per device. Those families used to apply each
+     * overlapping lane immediately onto the same target, so exports resolved a
+     * track lane against a clip lane by lane-array insertion order — and a
+     * lone one-point clip lane's `set` interleaved into the track lane's
+     * timeline, re-anchoring its ramps, while live played the clip lane. The
+     * group applies once, after the loop, through `mergeAutomationEventStreams`
+     * — the same scope law the segments branch applies, so the applied curve
+     * for one project is identical across every export family.
      */
     const eventGroupsByKey = new Map<string, AutomationEventGroup>();
 
@@ -451,28 +451,42 @@ export function scheduleTrackAutomation({
             // back. `valueTransform` runs after linkScale, matching the live
             // order (scale the dB scalar, then convert, then clamp).
             const isDecibelLane = lane.minValue < 0;
-            scheduleAutomationOnParam(
-                trackGainNode.gain,
-                points,
-                durationSeconds,
-                defaultTempo,
-                changes,
-                regionStartSeconds,
-                projectBeatToSeconds,
-                compensationDelaySec,
-                {
-                    ...laneOptions,
-                    ...boundOptions,
-                    // The VCA group master composes in exactly where live puts
-                    // it: after the dB→linear conversion and before the fader
-                    // clamp (`dbToGain(value) * vcaMultiplier` handed to
-                    // `scheduleTrackGain`, clamped inside `TrackNode`). Folding
-                    // it into `valueScale` instead would apply it ahead of the
-                    // dB conversion and scale decibels, not amplitude.
-                    valueTransform: (value) =>
-                        clampFaderGain((isDecibelLane ? dbToGain(value) : value) * vcaMultiplier),
-                }
-            );
+            // Collected, not applied — see `eventGroupsByKey` and the merge
+            // pass after this loop. The strip families group per track: the
+            // fader is one param per track, and a clip lane and the track lane
+            // driving it must resolve by the scope law (#4909), not by write
+            // order on the shared AudioParam.
+            collectDeviceEventStream(eventGroupsByKey, {
+                groupKey: `track:${trackId}::gain`,
+                deviceId: trackId,
+                parameterId: 'gain',
+                laneId: lane.id,
+                scope: lane.clipId ? 'clip' : 'track',
+                targetIndex: 0,
+                events: compileAutomationEvents(
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
+                    {
+                        ...laneOptions,
+                        ...boundOptions,
+                        // The VCA group master composes in exactly where live puts
+                        // it: after the dB→linear conversion and before the fader
+                        // clamp (`dbToGain(value) * vcaMultiplier` handed to
+                        // `scheduleTrackGain`, clamped inside `TrackNode`). Folding
+                        // it into `valueScale` instead would apply it ahead of the
+                        // dB conversion and scale decibels, not amplitude.
+                        valueTransform: (value) =>
+                            clampFaderGain((isDecibelLane ? dbToGain(value) : value) * vcaMultiplier),
+                    }
+                ),
+                windowEndSeconds: clipWindowEndSeconds,
+                apply: (mergedEvents) =>
+                    scheduleCompiledEventsOnParam(trackGainNode.gain, mergedEvents, compensationDelaySec),
+            });
             continue;
         }
 
@@ -487,46 +501,66 @@ export function scheduleTrackAutomation({
             // lane persisted with a range narrower than [-1, 1] must be held to
             // its own range offline exactly as `getAutomationValueAtBeat` holds
             // it live, not released to the param's wider nominal range (#2538).
-            scheduleAutomationOnParam(
-                trackPanNode.pan,
-                points,
-                durationSeconds,
-                defaultTempo,
-                changes,
-                regionStartSeconds,
-                projectBeatToSeconds,
-                compensationDelaySec,
-                { ...laneOptions, ...boundOptions }
-            );
+            collectDeviceEventStream(eventGroupsByKey, {
+                groupKey: `track:${trackId}::pan`,
+                deviceId: trackId,
+                parameterId: 'pan',
+                laneId: lane.id,
+                scope: lane.clipId ? 'clip' : 'track',
+                targetIndex: 0,
+                events: compileAutomationEvents(
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
+                    { ...laneOptions, ...boundOptions }
+                ),
+                windowEndSeconds: clipWindowEndSeconds,
+                apply: (mergedEvents) =>
+                    scheduleCompiledEventsOnParam(trackPanNode.pan, mergedEvents, compensationDelaySec),
+            });
             continue;
         }
 
         const sendParam = sendAutomationParams?.get(lane.parameterId);
         if (sendParam) {
-            scheduleAutomationOnParam(
-                sendParam,
-                points,
-                durationSeconds,
-                defaultTempo,
-                changes,
-                regionStartSeconds,
-                projectBeatToSeconds,
-                compensationDelaySec,
-                {
-                    ...laneOptions,
-                    ...boundOptions,
-                    // The send pot's own [0, 1] law, in live's position: live
-                    // bounds the lane value in `getAutomationValueAtBeat`, then
-                    // `TrackNode.scheduleSendAutomation` clamps [0, 1] on the
-                    // write. `valueBound` (per segment, before this transform)
-                    // is the lane's declared range — NOT always [0, 1]. The
-                    // hardcoded clamp below used to be the only bound this
-                    // branch carried, so a lane declaring a narrower range
-                    // printed its overshoot into the bounce while the monitor
-                    // held it at the declared ceiling (#2538).
-                    valueTransform: (value) => Math.max(0, Math.min(1, value)),
-                }
-            );
+            // Collected, not applied — see `eventGroupsByKey` and the merge
+            // pass after this loop; the send pot groups per track like gain
+            // and pan do.
+            collectDeviceEventStream(eventGroupsByKey, {
+                groupKey: `track:${trackId}::${lane.parameterId}`,
+                deviceId: trackId,
+                parameterId: lane.parameterId,
+                laneId: lane.id,
+                scope: lane.clipId ? 'clip' : 'track',
+                targetIndex: 0,
+                events: compileAutomationEvents(
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
+                    {
+                        ...laneOptions,
+                        ...boundOptions,
+                        // The send pot's own [0, 1] law, in live's position: live
+                        // bounds the lane value in `getAutomationValueAtBeat`, then
+                        // `TrackNode.scheduleSendAutomation` clamps [0, 1] on the
+                        // write. `valueBound` (per segment, before this transform)
+                        // is the lane's declared range — NOT always [0, 1]. The
+                        // hardcoded clamp below used to be the only bound this
+                        // branch carried, so a lane declaring a narrower range
+                        // printed its overshoot into the bounce while the monitor
+                        // held it at the declared ceiling (#2538).
+                        valueTransform: (value) => Math.max(0, Math.min(1, value)),
+                    }
+                ),
+                windowEndSeconds: clipWindowEndSeconds,
+                apply: (mergedEvents) => scheduleCompiledEventsOnParam(sendParam, mergedEvents, compensationDelaySec),
+            });
             continue;
         }
 
@@ -855,12 +889,13 @@ export function scheduleTrackAutomation({
         }
     }
 
-    // The event-bound families apply once per (device, parameter) target the
-    // same way the segments family applies once per group above. A lone lane
-    // keeps the direct application its family always had — the merge of one
-    // stream is that stream, so both routes resolve identically. Overlapping
-    // lanes resolve by the scope law, and what each binding family receives is
-    // one spliced event stream — an AudioParam timeline, or the curve-write
+    // The event-bound families (device `audioParam`/`curveWrite` targets and
+    // the strip parameters) apply once per parameter group the same way the
+    // segments family applies once per group above. A lone lane keeps the
+    // direct application its family always had — the merge of one stream is
+    // that stream, so both routes resolve identically. Overlapping lanes
+    // resolve by the scope law, and what each consumer receives is one
+    // spliced event stream — an AudioParam timeline, or the curve-write
     // pair's write schedule — that plays the clip lane inside its window and
     // the track lane around it, whichever order the lanes arrived in.
     for (const { deviceId, parameterId, targets } of eventGroupsByKey.values()) {
