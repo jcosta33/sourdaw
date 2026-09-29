@@ -10,6 +10,7 @@ import {
     readStancesCheckAnswers,
     readStancesCheckRecord,
 } from '../checkStancesRecord.ts';
+import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
 import type { StanceAdmission, StancesCheckRecord } from '../checkStancesRecord.ts';
 
@@ -126,6 +127,21 @@ describe('readStancesCheckAnswers', () => {
             /TypeSafe response must carry an answers object/
         );
         expect(() => readStancesCheckAnswers(undefined)).toThrow(/TypeSafe response must carry an answers object/);
+    });
+
+    it('refuses a response whose model is not the pinned version', () => {
+        const answers = { stance_0: { type: 'noul', noul: 0.03 } };
+
+        expect(() => readStancesCheckAnswers({ model: 'jev-latest', answers })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-latest"`
+        );
+        expect(() => readStancesCheckAnswers({ model: undefined, answers })).toThrow(/TypeSafe response model must be/);
+    });
+});
+
+describe('model pin', () => {
+    it('pins the same versioned model as the scan provider', () => {
+        expect(TYPESAFE_STANCES_MODEL).toBe(TYPESAFE_MODEL);
     });
 });
 
