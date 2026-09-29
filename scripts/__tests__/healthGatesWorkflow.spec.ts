@@ -2722,6 +2722,12 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('uses HTTP/1.1 for the Rust and server health gate step', () => {
+        const rustHealthStep = stepNamed(jobAt(validationWorkflow, 'rust'), 'Server and Rust workspace health gates');
+        expect(stringAt(rustHealthStep, 'run')).toBe('pnpm health:server:full');
+        expect(recordAt(rustHealthStep, 'env').CARGO_HTTP_MULTIPLEXING).toBe('false');
+    });
+
     it('keeps the pull-request grouping key and forbids cancelling matrix shards', () => {
         const cancellingReview = asRecord(structuredClone(workflow), 'cancelling review workflow');
         recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] =
