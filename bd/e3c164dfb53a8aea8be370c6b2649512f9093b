@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_ed5aa36a3ba357::t_de44baa6794148 1-243
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationClipOverride.spec.ts
+  s_ed5aa36a3ba357::t_076319bd120afc 1-188
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationLaneEntry.spec.ts
+  s_ed5aa36a3ba357::t_7aa449d1a5236f 1-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bde3c164dfb53a8aea8be370c6b2649512f9093b",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
