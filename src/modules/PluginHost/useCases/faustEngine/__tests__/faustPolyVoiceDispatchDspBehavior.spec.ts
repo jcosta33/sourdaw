@@ -4,14 +4,16 @@ import { readFileSync } from 'node:fs';
 // The package's "main" CJS bundle exposes no runtime exports under Node SSR
 // resolution; the ESM build (what Vite serves the app) does.
 import {
-    FaustPolyDspGenerator,
     type FaustPolyDspGenerator as FaustPolyDspGeneratorType,
     type IFaustCompiler,
     type IFaustPolyOfflineProcessor,
 } from '@grame/faustwasm/dist/esm/index.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
+import { compileEffectFreeFaustPolyDsp } from '../compileEffectFreeFaustPolyDsp';
+
+vi.mock('@grame/faustwasm', async () => import('@grame/faustwasm/dist/esm/index.js'));
 
 /**
  * Audio oracle for Faust polyphonic voice dispatch (#3721).
@@ -128,8 +130,8 @@ describe('Faust poly instruments voice timeline/audition keyOn dispatch (#3721)'
         const compiler: IFaustCompiler = await loadFaustCompilerForSpec();
 
         const rhodesCode = readFileSync(`${DSP_DIR}/rhodes.dsp`, 'utf8');
-        const rhodesGenerator = new FaustPolyDspGenerator();
-        if (!(await rhodesGenerator.compile(compiler, 'Rhodes', rhodesCode, '-I libraries/'))) {
+        const rhodesGenerator = await compileEffectFreeFaustPolyDsp(compiler, 'Rhodes', rhodesCode, '-I libraries/');
+        if (!rhodesGenerator) {
             throw new Error('rhodes.dsp must compile as a poly instrument');
         }
         rhodes = rhodesGenerator;
@@ -137,8 +139,8 @@ describe('Faust poly instruments voice timeline/audition keyOn dispatch (#3721)'
         extractAddresses(rhodesJson.ui ?? []);
 
         const fmCode = readFileSync(`${DSP_DIR}/fm-synth.dsp`, 'utf8');
-        const fmGenerator = new FaustPolyDspGenerator();
-        if (!(await fmGenerator.compile(compiler, 'FM_Synth', fmCode, '-I libraries/'))) {
+        const fmGenerator = await compileEffectFreeFaustPolyDsp(compiler, 'FM_Synth', fmCode, '-I libraries/');
+        if (!fmGenerator) {
             throw new Error('fm-synth.dsp must compile as a poly instrument');
         }
         fmSynth = fmGenerator;

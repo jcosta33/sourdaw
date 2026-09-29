@@ -459,3 +459,9 @@ cannot be reproduced in a reference DAW is a finding unless a decision record na
 difference. Then quantize the output a second time: a destructive quantize must leave its own output
 in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
 an offset.
+
+### 2026-09-29 — Faust compiler upgrade exposed a throwing optional-effect probe (introduced by PR #4904; fixed in #4916)
+
+The FaustWasm 0.18.5 poly generator compiled `dsp_code.effect` before a voice even when the registered instrument had no effect. Libfaust threw `undefined symbol : effect`, and its generated Emscripten runtime printed an abort assertion before the generator caught the error and compiled the voice successfully. The upgrade review's runtime-instantiation stance checked node creation but missed this compiler input and its console consequence.
+
+Probe that would have caught it: for a compiler or DSP runtime upgrade, trace every factory input for one declared effect-free poly voice, one effectful voice, and one mono source. Require the effect-free route to compile its voice without a failed optional-effect factory, while the effectful route still compiles its effect and the resulting instrument still emits PCM after `keyOn`.

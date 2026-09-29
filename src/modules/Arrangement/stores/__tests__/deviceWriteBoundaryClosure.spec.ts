@@ -690,7 +690,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
-        'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,
+        // Count provenance: the helper declaration and the caller's import
+        // identifier, import path, declaration, and invocation compile Faust
+        // runtime voice/mixer factories. They hydrate the runtime module cache,
+        // not the project document.
+        'src/modules/PluginHost/useCases/faustEngine/compileEffectFreeFaustPolyDsp.ts': 1,
+        'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 4,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,

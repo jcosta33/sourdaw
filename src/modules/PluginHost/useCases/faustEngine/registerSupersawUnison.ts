@@ -119,6 +119,7 @@ export function registerSupersawUnison(): void {
                 type: 'button',
             },
         ],
-        true
+        true,
+        'none'
     );
 }

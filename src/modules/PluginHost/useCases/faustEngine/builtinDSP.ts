@@ -571,7 +571,8 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'button',
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // ── Rhodes Electric Piano ─────────────────────────────────
@@ -620,7 +621,8 @@ export function registerBuiltinFaustDSP(): void {
             },
             { address: '/Rhodes/gate', label: 'Gate', min: 0, max: 1, defaultValue: 0, step: 1, type: 'button' },
         ],
-        true
+        true,
+        'none'
     );
 
     // ── Noise Gate ────────────────────────────────────────────
@@ -838,7 +840,8 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'hslider',
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // ── Minimoog Lead ─────────────────────────────────────────
@@ -968,7 +971,8 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'hslider',
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // ── Acid Bass 303 ─────────────────────────────────────────
@@ -1061,7 +1065,8 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'hslider',
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // ── LUFS Meter (ITU-R BS.1770-4) ──────────────────────────
