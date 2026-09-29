@@ -142,6 +142,25 @@ function requireSignals(signals: readonly ScanAssessment[] | undefined): readonl
     return signals;
 }
 
+/**
+ * The one ledger a report's mode counts its assessments in: a scan's signals, keyed by unit path, or a
+ * verify report's finding ids. Exactly one is present, so the partition never reads one mode's ledger as
+ * the other's absence.
+ */
+function assessmentLedgers(
+    mode: SemanticMode,
+    signals: readonly ScanAssessment[] | undefined,
+    findingAssessments: readonly FindingAssessment[]
+): {
+    readonly signals?: readonly ScanAssessment[];
+    readonly findingIds?: readonly string[];
+} {
+    if (mode === 'scan') {
+        return { signals: requireSignals(signals) };
+    }
+    return { findingIds: findingAssessments.map((assessment) => assessment.findingId) };
+}
+
 function readNonNegativeInteger(value: unknown, label: string): number {
     if (!Number.isSafeInteger(value) || (value as number) < 0) {
         refuse('invalid_response', `${label} must be a non-negative safe integer`);
@@ -316,15 +335,15 @@ export function validateReport(value: unknown): SemanticReport {
     // The mode's own ledger is read before the scope's checks: the partition below needs the signals and
     // both omission lists at once, and it holds whatever the planned order carries. A verify report
     // publishes no signals, so its side of the partition is the two lists alone.
-    // The mode's own ledger: a scan publishes signals keyed by path, and a verify report keys its
-    // assessments by finding, so the partition's signal rows are left to the arrays that mode publishes.
+    // Each mode's assessment ledger: a scan's signals key their answers by path, and a verify report's
+    // assessments key theirs by finding id. Both are read here so the partition can count them.
     const signals = record.mode === 'scan' ? readScanAssessments(record.signals) : undefined;
     const findingAssessments = record.mode === 'verify' ? readFindingAssessments(record.findingAssessments) : [];
     assertScopeConsistency(scope, 'semantic report');
     assertExecutionMatchesScope(record.execution, scope, record.mode);
-    // A path is planned once, excluded once, and omitted once, and the ledgers say which: refused here,
-    // before the totals are compared and without reading the planned order.
-    assertLedgersPartition(scope, signals, SCOPE_LABEL);
+    // A path is planned once, excluded once, and omitted once, and the mode's assessment ledger says
+    // which were asked: refused here, before the totals are compared and without reading the planned order.
+    assertLedgersPartition(scope, assessmentLedgers(record.mode, signals, findingAssessments), SCOPE_LABEL);
     if (record.mode !== 'scan' && scope.requestOrder !== undefined) {
         // A verify report's own mode never walks units, so an order beside its findings is a claim no
         // verifier produced and no ledger of its can corroborate.

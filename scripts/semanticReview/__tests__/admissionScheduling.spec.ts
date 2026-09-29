@@ -1195,6 +1195,34 @@ describe('every mode the report has validates its own output', () => {
         expect(report.scope.states?.notApplicable).toBe(1);
     });
 
+    it('refuses a verify report whose assessed count has no assessment behind it', async () => {
+        // The forged clean bill in the other mode: an honest run over two evidence-less findings rewritten
+        // to claim two assessed findings, no omissions, and a completed execution — a record that reads as
+        // an assessed run with nothing to report. Nothing else refutes it: the scope arithmetic balances,
+        // and the scan rows never run without a signal ledger.
+        const provider = forbiddenProvider();
+        const { report } = await verifyScan(provider.port, [
+            VERIFY_EVIDENCE_LESS_FINDING,
+            { ...VERIFY_EVIDENCE_LESS_FINDING, findingId: 'f3' },
+        ]);
+        expect(() => validateReport(report)).not.toThrow();
+        expect(report.scope.assessed).toBe(0);
+        expect(report.execution).toBe('unavailable');
+        const forged = {
+            ...report,
+            execution: 'completed' as const,
+            scope: {
+                ...report.scope,
+                discovered: 2,
+                eligible: 2,
+                assessed: 2,
+                unassessed: [],
+                truncated: [],
+            },
+        };
+        expect(() => validateReport(forged)).toThrow(/reports 2 assessed finding\(s\) but its assessments name 0/);
+    });
+
     it('refuses duplicate finding ids before any provider call', async () => {
         // Two findings under one id would collapse into one record, and a run over two evidence-less ones
         // would write a report the validator refuses. The input is wrong, so it is refused before the

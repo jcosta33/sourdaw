@@ -165,10 +165,12 @@ const SCOPE_STATE_NAMES = [
  *   every rule of its set as signals, which is the coverage ledger. That reason is the one omission
  *   signals are legitimate for, and it is required there: an omission claiming a unit reported its rules
  *   without any signal is a coverage record that is not there.
- * - `assessed` counts the units the report holds answers for, so it equals the number of distinct
- *   signalled paths that are not recorded unassessed. An assessed unit carries one signal per rule, and
- *   the one signalled omission — the zero-call unit — is not an assessment. This is the row that keeps a
- *   report from claiming an assessed unit with nothing behind it: a clean bill with no ledger at all.
+ * - `assessed` counts the units the mode's own assessment ledger holds, so a scan's is the number of
+ *   distinct signalled paths that are not recorded unassessed, and a verify report's is the number of
+ *   distinct finding ids its assessments name. A scan's assessed unit carries one signal per rule, and
+ *   the one signalled omission — the zero-call unit — is not an assessment; a verify report's assessed
+ *   finding is never one it also records as omitted. These are the rows that keep a report from claiming
+ *   an assessed unit with nothing behind it: a clean bill with no ledger at all, in either mode.
  * - Every other omission reason — a dry run, a spent budget or elapsed deadline, a provider or request
  *   failure — means no request was made for that unit, so a signal for the same path contradicts it.
  * - `truncated` records regions rather than units and is deliberately outside the partition: a path
@@ -191,17 +193,18 @@ export function assertLedgersPartition(
         readonly excluded: readonly SemanticScopeExclusion[];
         readonly unassessed: readonly SemanticScopeExclusion[];
     },
-    signals: readonly { readonly path: string }[] | undefined,
+    ledger: {
+        /** A scan's answered-question ledger: one entry per signal, each naming the unit it answered. */
+        readonly signals?: readonly { readonly path: string }[];
+        /** A verify report's assessment ledger: the finding id each assessment names. */
+        readonly findingIds?: readonly string[];
+    },
     label: string
 ): void {
     assertDistinctPaths(scope.excluded, 'excluded', label);
     assertDistinctPaths(scope.unassessed, 'unassessed', label);
     const excludedPaths = new Set(scope.excluded.map((entry) => entry.path));
     const omissionPaths = new Set(scope.unassessed.map((entry) => entry.path));
-    // A mode with no signal ledger of its own (a verify report keys findings, not paths) leaves the
-    // signal rows and the assessed tie to the arrays that mode publishes.
-    const signalLedger = signals ?? [];
-    const signalledPaths = new Set(signalLedger.map((signal) => signal.path));
     for (const entry of scope.unassessed) {
         if (excludedPaths.has(entry.path)) {
             refuse(
@@ -209,6 +212,25 @@ export function assertLedgersPartition(
                 `${label} records ${entry.path} as excluded and as unassessed; a path is either owed nothing or planned and omitted, never both`
             );
         }
+    }
+    if (ledger.signals !== undefined) {
+        assertScanLedger(scope, ledger.signals, excludedPaths, omissionPaths, label);
+    }
+    if (ledger.findingIds !== undefined) {
+        assertVerifyLedger(scope, ledger.findingIds, omissionPaths, label);
+    }
+}
+
+/** The scan's rows: signals are the ledger of an asked unit, and `assessed` counts those units. */
+function assertScanLedger(
+    scope: { readonly assessed: number; readonly unassessed: readonly SemanticScopeExclusion[] },
+    signals: readonly { readonly path: string }[],
+    excludedPaths: ReadonlySet<string>,
+    omissionPaths: ReadonlySet<string>,
+    label: string
+): void {
+    const signalledPaths = new Set(signals.map((signal) => signal.path));
+    for (const entry of scope.unassessed) {
         const carriesLedger = entry.reason === MISSING_REQUIRED_EVIDENCE_REASON;
         if (signalledPaths.has(entry.path) && !carriesLedger) {
             refuse(
@@ -231,16 +253,40 @@ export function assertLedgersPartition(
             );
         }
     }
-    if (signals === undefined) {
-        return;
-    }
     const assessedFromLedger = new Set(
-        signalLedger.filter((signal) => !omissionPaths.has(signal.path)).map((signal) => signal.path)
+        signals.filter((signal) => !omissionPaths.has(signal.path)).map((signal) => signal.path)
     ).size;
     if (assessedFromLedger !== scope.assessed) {
         refuse(
             'invalid_response',
             `${label} reports ${String(scope.assessed)} assessed unit(s) but its ledger holds ${String(assessedFromLedger)}: a signalled unit that is not recorded unassessed is one assessed unit`
+        );
+    }
+}
+
+/** The verify report's rows: its assessments name finding ids, and `assessed` counts those findings. */
+function assertVerifyLedger(
+    scope: { readonly assessed: number },
+    findingIds: readonly string[],
+    omissionPaths: ReadonlySet<string>,
+    label: string
+): void {
+    const assessedIds = new Set(findingIds);
+    if (assessedIds.size !== findingIds.length) {
+        refuse('invalid_response', `${label} records an assessed finding id more than once`);
+    }
+    for (const findingId of assessedIds) {
+        if (omissionPaths.has(findingId)) {
+            refuse(
+                'invalid_response',
+                `${label} records ${findingId} as assessed and as unassessed; a finding is one or the other, never both`
+            );
+        }
+    }
+    if (assessedIds.size !== scope.assessed) {
+        refuse(
+            'invalid_response',
+            `${label} reports ${String(scope.assessed)} assessed finding(s) but its assessments name ${String(assessedIds.size)}: every assessed finding is one assessment`
         );
     }
 }
