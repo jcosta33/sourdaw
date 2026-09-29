@@ -172,7 +172,7 @@ describe('compileFaustDSP effect-free instrument', () => {
         const processor = await generator!.createOfflineProcessor(48_000, 128, 8);
         processor.start();
         processor.keyOn(0, 69, 127);
-        const output = [new Float64Array(128), new Float64Array(128)];
+        const output = [new Float32Array(128), new Float32Array(128)];
         let peak = 0;
         for (let block = 0; block < 64; block += 1) {
             processor.compute([], output);
