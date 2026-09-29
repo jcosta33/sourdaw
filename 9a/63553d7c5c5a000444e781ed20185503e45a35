@@ -1,0 +1,23 @@
+scripts/prValidationScope.ts
+  s_fe7d9519d0226e::t_9a22a044b9dba9 10,30,32,49
+.agents/skills/review-stances/correctness.md
+  s_fe7d9519d0226e::t_9a22a044b9dba9 83-90
+scripts/__tests__/prValidationScope.spec.ts
+  s_fe7d9519d0226e::t_bbcafa626464f8 91-105,207-223,239-254,262-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9a63553d7c5c5a000444e781ed20185503e45a35",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
