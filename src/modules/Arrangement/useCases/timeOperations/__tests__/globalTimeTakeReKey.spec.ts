@@ -643,4 +643,31 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         expect(liveLane().activeCompRegions).toEqual([{ startBeat: 0, endBeat: 2, takeId: take.id }]);
         expect(applied.inversePlan).toMatchObject({ takeLanes: null });
     });
+
+    it('drops a stale region wholly right of the span when a sibling clip ripples left', () => {
+        // The stale region sits wholly right of the span, but the track is
+        // not unmoved: the sibling mover ripples left across the freed span.
+        // The verbatim guarantee is track-level, so the region leaves the
+        // lane — a verbatim tail could overhang the rehomed material.
+        setTracks([
+            createClip({ id: 'stale-host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
+        ]);
+        const take = createTake('stale-host', 'Stale host', 0, 2);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+
+        expect(liveLane().activeCompRegions).toEqual([]);
+        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: Array<{ regionsAfter: unknown }> } | null;
+        expect(slot?.reKeyedLanes?.[0]?.regionsAfter).toEqual([]);
+    });
 });

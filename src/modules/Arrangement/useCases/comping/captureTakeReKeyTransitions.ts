@@ -239,16 +239,16 @@ function mapLaneRegions(
             // any shifted window drops the tail, whether or not the shift
             // reaches it.
             mapping.regionsBefore.push(region);
-            if (region.endBeat <= input.deleteStartBeat) {
-                mapping.regionsAfter.push(region);
-                continue;
-            }
-            if (rightSideUnmoved && region.startBeat >= input.deleteEndBeat) {
-                // Wholly right of the span on a track where nothing shifted:
-                // the region is already correct, so it rides the after side
-                // verbatim too — the region object itself, like the boundary
-                // case above — recording no change and emitting no no-op
-                // transition.
+            // Two shapes are already correct on the after side and ride it
+            // verbatim — the region object itself, recording no change and
+            // emitting no no-op transition: a region ending at or left of
+            // the span (its overhang never reaches deleted material), and a
+            // region wholly right of the span on a track where nothing
+            // shifted.
+            if (
+                region.endBeat <= input.deleteStartBeat ||
+                (rightSideUnmoved && region.startBeat >= input.deleteEndBeat)
+            ) {
                 mapping.regionsAfter.push(region);
                 continue;
             }
@@ -262,10 +262,12 @@ function mapLaneRegions(
             }
             if (rightSideUnmoved && region.endBeat > input.deleteEndBeat) {
                 // Partial tail: the span consumed the region's body, so the
-                // surviving right portion is a fresh literal — the change is
-                // already recorded above.
+                // surviving right portion is a fresh literal. It starts at
+                // the span's right edge exactly — the verbatim guard above
+                // already continued every region starting at or past it, so
+                // region.startBeat < input.deleteEndBeat here.
                 mapping.regionsAfter.push({
-                    startBeat: Math.max(region.startBeat, input.deleteEndBeat),
+                    startBeat: input.deleteEndBeat,
                     endBeat: region.endBeat,
                     takeId: region.takeId,
                 });

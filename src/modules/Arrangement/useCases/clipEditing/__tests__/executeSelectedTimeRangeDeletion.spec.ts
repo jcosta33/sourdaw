@@ -1442,6 +1442,65 @@ describe('executeSelectedTimeRangeDeletion', () => {
         ]);
     });
 
+    it('clamps a stale region starting inside the range to the range’s right edge on an unmoved track', () => {
+        // The region starts strictly inside the range: its in-range portion
+        // claims deleted material, and the surviving tail is anchored at the
+        // range's right edge — anchoring at the left edge instead would keep
+        // comping the deleted beats.
+        const host = createClip({ id: 'host', trackId: 'target', startBeat: 0, endBeat: 2 });
+        const cut = createClip({ id: 'cut', trackId: 'target', startBeat: 4, endBeat: 10 });
+        setArrangement([createTrack('target', [host, cut])]);
+        const hostTake = { ...createTake('host', 'Host take', 0, 2), id: 'take-host' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [hostTake],
+            activeCompRegions: [{ startBeat: 5, endBeat: 12, takeId: hostTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 6, endBeat: 12, takeId: hostTake.id },
+        ]);
+    });
+
+    it('emits no zero-width tail for a stale region ending at the range’s right edge', () => {
+        // The region ends exactly where the range ends: the clamp keeps the
+        // portion left of the range and there is no right tail. A boundary
+        // that admitted equality would emit a zero-width region into the
+        // plan — the write half filters those, so only the plan itself shows
+        // it.
+        const host = createClip({ id: 'host', trackId: 'target', startBeat: 0, endBeat: 2 });
+        const cut = createClip({ id: 'cut', trackId: 'target', startBeat: 4, endBeat: 10 });
+        setArrangement([createTrack('target', [host, cut])]);
+        const hostTake = { ...createTake('host', 'Host take', 0, 2), id: 'take-host' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [hostTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 6, takeId: hostTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+
+        expect(result.inversePlan).toMatchObject({
+            takeLanes: {
+                reKeyedLanes: [
+                    {
+                        regionsBefore: [{ startBeat: 0, endBeat: 6, takeId: hostTake.id }],
+                        regionsAfter: [{ startBeat: 0, endBeat: 2, takeId: hostTake.id }],
+                    },
+                ],
+            },
+        });
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: hostTake.id },
+        ]);
+    });
+
     it('re-keys a right-fragment take onto the fragment clip, keeping its id and geometry', () => {
         // The take covers exactly the material the right fragment carries: it
         // belongs to the fragment clip after the split, and only its clipId
