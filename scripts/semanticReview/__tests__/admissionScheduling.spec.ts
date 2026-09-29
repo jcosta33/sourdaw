@@ -722,6 +722,83 @@ describe('a stored report cannot publish a plan its own records refute', () => {
         ).toThrow(/neither a signal nor an unassessed entry names it/);
     });
 
+    it('refuses an entry whose class disagrees with the class recorded for the same path as unassessed', async () => {
+        // One function produced both classes for this path — the plan entry and the omission entry — so
+        // they must agree; here the entry claims the severe-test class while the scope records it as
+        // severe-production. Severity is unchanged, so only the cross-field comparison refutes it.
+        const report = await scannedFourStates();
+        const order = report.scope.requestOrder ?? [];
+        expect(order.map((entry) => entry.path)[0]).toBe(SKIPPED_PATH);
+        expect(report.scope.unassessed.map((entry) => entry.priorityClass)).toContain('severe-production');
+        const doctored = order.map((entry) =>
+            entry.path === SKIPPED_PATH ? { ...entry, priorityClass: 'severe-test' as const } : entry
+        );
+        expect(() => validateReport({ ...report, scope: { ...report.scope, requestOrder: doctored } })).toThrow(
+            /severe-test in its plan and as severe-production among the units it never assessed/
+        );
+    });
+
+    it('refuses a severe class its signals do not support', async () => {
+        // The severity of a class is re-derivable: the signals carry every applied rule's investigation
+        // category, and here they are all architecture-integration. The order stays sorted, the path has a
+        // signal, and no omission records a class, so only the severity comparison refutes the claim.
+        const path = 'src/infra/thing.ts';
+        const provider = countingProvider();
+        const { report } = await runScan(
+            scanInput({
+                provider: provider.port,
+                source: fakeSource([changedFile(path)], sides(path, 'const before = 1;\n', 'const after = 2;\n')),
+            })
+        );
+        expect(report.signals.map((signal) => signal.investigationCategory)).toEqual([
+            'architecture-integration',
+            'architecture-integration',
+        ]);
+        const entry = (report.scope.requestOrder ?? [])[0];
+        if (entry === undefined) {
+            throw new Error('the run published no planned entry, so the case would assert nothing');
+        }
+        expect(() =>
+            validateReport({
+                ...report,
+                scope: { ...report.scope, requestOrder: [{ ...entry, priorityClass: 'severe-production' }] },
+            })
+        ).toThrow(/severe-production while its signals carry no severe investigation category/);
+    });
+
+    it('refuses a non-severe class while its signals carry a severe category', async () => {
+        // The other direction of the same check, with both class fields rewritten together so severity is
+        // the only thing left to disagree with. The unit's realtime rules are severe, so a production
+        // claim is refuted even though every other published field now agrees with it.
+        const report = await scannedFourStates();
+        const entry = (report.scope.requestOrder ?? []).find((candidate) => candidate.path === SKIPPED_PATH);
+        if (entry === undefined) {
+            throw new Error('the run published no entry for the skipped unit, so the case would assert nothing');
+        }
+        expect(report.signals.some((signal) => signal.investigationCategory === 'realtime')).toBe(true);
+        const demotedPlan = (report.scope.requestOrder ?? []).map((candidate) => {
+            if (candidate.path !== SKIPPED_PATH) {
+                return candidate;
+            }
+            // The evidence figure is lowered with the class so the rewritten order still reads sorted by
+            // the key: severity is then the only claim left to disagree with.
+            return { ...candidate, priorityClass: 'production' as const, missingRequiredEvidenceTokens: 1 };
+        });
+        const demotedOmissions = report.scope.unassessed.map((candidate) => {
+            if (candidate.path !== SKIPPED_PATH) {
+                return candidate;
+            }
+            return { ...candidate, priorityClass: 'production' as const };
+        });
+        const doctored = {
+            ...report,
+            scope: { ...report.scope, requestOrder: demotedPlan, unassessed: demotedOmissions },
+        };
+        expect(() => validateReport(doctored)).toThrow(
+            /production while its signals carry a severe investigation category/
+        );
+    });
+
     it('refuses a verify report that carries a planned order', async () => {
         // A verifier walks findings, never units, so an order beside its findings is a claim its mode
         // cannot produce and no ledger of its own can corroborate.

@@ -206,12 +206,14 @@ export function readPlannedRequests(value: unknown, label: string): readonly Sem
  * Coverage is completed by `assertPlanMatchesLedger`, which refuses an entry for a unit the report
  * records no trace of.
  *
- * Not enforced, because the published fields cannot support it: an entry's own rule set, class, and
- * counts are never re-derived here. The report carries no plan and no previous path, so an entry whose
- * figures, key position, and ledger trace agree with each other passes however the run actually walked
- * its units — a forgery that raises the order, the signals, and the scope together is
- * indistinguishable from an honest report. These checks bound disagreement with the key and with the
- * report's own records; they do not prove that every entry had a unit.
+ * Not enforced, because the published fields cannot support it: an entry's own rule set and counts are
+ * never re-derived here, so an entry whose figures, key position, and ledger trace agree with each other
+ * passes however the run actually walked its units. The class is re-derived only as far as
+ * `assertPlanMatchesLedger` carries it — its severity from the path's signals, and its equality with the
+ * class the scope records for the same path; the production/test side of it stays unrefutable, because
+ * the report publishes no rename's previous path and a cross-boundary rename is classed production
+ * precisely because one of its offered paths is. These checks bound disagreement with the key, the
+ * ledger, and the recorded classes; they do not prove that every entry had a unit.
  */
 export function assertRequestOrderIsSorted(input: {
     readonly requestOrder?: readonly SemanticPlannedRequest[];
@@ -273,7 +275,7 @@ export function assertRequestOrderIsSorted(input: {
 }
 
 /**
- * Ties the published order to the report's own ledger in both directions.
+ * Ties the published order to the report's own ledger, in both directions and by class.
  *
  * Every unit a signal names must be in the order: a signal for a unit the plan does not list is a report
  * whose order was rewritten around its own records. And every order entry must be a unit the report
@@ -282,13 +284,22 @@ export function assertRequestOrderIsSorted(input: {
  * unit it holds: an asked unit reports each of its rules as a signal, and a unit no request could ask is
  * recorded as unassessed.
  *
- * What the tie cannot see is a forgery that raises the order, the signals, and the scope together: a
- * stored report is self-describing, and a consistent rewrite of all three is beyond what it can refute
- * about itself. A report written before the order existed carries none and stays valid.
+ * Each entry's class is held to the ledger as far as the report can re-derive it. An entry must carry
+ * the class the scope records for the same path among the units it never assessed, because one function
+ * produced both. And an entry's severity must equal the severity of the path's own signals, which carry
+ * every applied rule's investigation category: a severe class with only non-severe signals, and a
+ * non-severe class with only severe signals, are both refuted.
+ *
+ * What stays unrefutable is the production/test side of a class. The report publishes no rename's
+ * previous path, and a cross-boundary rename is classed production precisely because one of its offered
+ * paths is, so a class that gets severity right and picks the wrong side of that split passes. A forgery
+ * that raises the order, the signals, and the scope together passes for the same reason: a stored report
+ * is self-describing, and a consistent rewrite of all three is beyond what it can refute about itself. A
+ * report written before the order existed carries none and stays valid.
  */
 export function assertPlanMatchesLedger(input: {
     readonly requestOrder?: readonly SemanticPlannedRequest[];
-    readonly signals: readonly { readonly path: string }[];
+    readonly signals: readonly { readonly path: string; readonly investigationCategory: string }[];
     readonly unassessed: readonly SemanticScopeExclusion[];
     readonly label: string;
 }): void {
@@ -317,6 +328,44 @@ export function assertPlanMatchesLedger(input: {
             );
         }
     }
+    const classRecordedForOmission = new Map(input.unassessed.map((entry) => [entry.path, entry.priorityClass]));
+    for (const entry of order) {
+        const recordedClass = classRecordedForOmission.get(entry.path);
+        if (recordedClass !== undefined && recordedClass !== entry.priorityClass) {
+            refuse(
+                'invalid_response',
+                `${input.label} publishes ${entry.path} as ${entry.priorityClass} in its plan and as ${recordedClass} among the units it never assessed`
+            );
+        }
+    }
+    const severeSupport = severeSupportByPath(input.signals);
+    for (const entry of order) {
+        const severe = severeSupport.get(entry.path);
+        if (severe === undefined || severe === isSevereClass(entry.priorityClass)) {
+            continue;
+        }
+        refuse(
+            'invalid_response',
+            `${input.label} publishes ${entry.path} as ${entry.priorityClass} while its signals carry ${severe ? 'a severe' : 'no severe'} investigation category`
+        );
+    }
+}
+
+/** The classes whose name carries the severe mark, which is the one class dimension a report re-derives. */
+function isSevereClass(priorityClass: UnitPriorityClass): boolean {
+    return priorityClass === 'severe-production' || priorityClass === 'severe-test';
+}
+
+/** Whether any signal for each path carries a severe investigation category; a path with none is absent. */
+function severeSupportByPath(
+    signals: readonly { readonly path: string; readonly investigationCategory: string }[]
+): Map<string, boolean> {
+    const support = new Map<string, boolean>();
+    for (const signal of signals) {
+        const severe = support.get(signal.path) ?? false;
+        support.set(signal.path, severe || SEVERE_CATEGORIES.has(signal.investigationCategory));
+    }
+    return support;
 }
 
 function readCount(value: unknown, label: string): number {
