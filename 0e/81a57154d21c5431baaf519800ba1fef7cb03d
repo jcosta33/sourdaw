@@ -1,0 +1,20 @@
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1740
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 24,137-203,220-229,235-252,322-359,361
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 75-79,81-88,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e81a57154d21c5431baaf519800ba1fef7cb03d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
