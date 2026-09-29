@@ -1,0 +1,46 @@
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidiSparseNotes.integration.spec.ts
+  h_beb54bf43b47b7 1-383
+src/modules/MIDI/repositories/webMidi/realtimeMidiProcessorState.ts
+  h_beb54bf43b47b7 14-19,27-28
+src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts
+  h_beb54bf43b47b7 39-68
+src/modules/MIDI/transformers/isMidiNoteSnapshot.ts
+  h_beb54bf43b47b7 56-68,71-74
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  h_beb54bf43b47b7 1-197
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  h_beb54bf43b47b7 11-14,239-419
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  h_beb54bf43b47b7 1-153
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  h_beb54bf43b47b7 1-123
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  h_beb54bf43b47b7 7,20-21,870-1015
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  h_beb54bf43b47b7 1-125
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  h_beb54bf43b47b7 8,154-156
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  h_beb54bf43b47b7 4-10,15,17,27-32,35,57-59,64,117-290,304-312,314-318,400-403,411-431,437-445,459
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  h_beb54bf43b47b7 14,17,34-38,63-65,167-175,229-260,262-301,303-323,325-331,333-372,375-376
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/processRealtimeMidiInput.spec.ts
+  h_beb54bf43b47b7 3-4,8-9,17-39,90-239
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/startYeastIdleDrain.spec.ts
+  h_beb54bf43b47b7 1-248
+src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts
+  h_beb54bf43b47b7 6,23-30,43-53,80,97-98,102,106,108-131
+src/modules/Yeast/useCases/yeastSchedulingBridge/startYeastIdleDrain.ts
+  h_beb54bf43b47b7 1-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9ae96b37b6ce3f0ea4098636a293293cd482d78d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
