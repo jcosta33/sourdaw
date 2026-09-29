@@ -1,0 +1,20 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_ed5aa36a3ba357::t_93afca876d3624 1329-1334
+  s_ed5aa36a3ba357::t_6dd5de58a6e989 1339,1342,1344,1349,1351,1356,1359,1366,1369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0253253d654c2bd6c52880ff82cf72cf216493f5",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
