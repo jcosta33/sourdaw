@@ -388,6 +388,10 @@ function collectFindingEvidence(input: {
         references,
         contents,
         attribution: new Map(),
+        // A finding's request carries no unit change facts, and the only reader of `changedLines` is the
+        // scan planner, which no verification run reaches. The set is assembled without them rather than
+        // paying for a diff read nothing here consumes.
+        changedLines: new Map(),
         excluded: [],
         truncated,
         limitations,

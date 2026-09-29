@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { type PathChangedLines } from '../changeFacts.ts';
 import {
     semanticTextDigest,
     type EvidenceReference,
@@ -46,6 +47,7 @@ function fakeSource(
         changedFiles: () => files,
         readFile: (sha, path) => blobs[`${sha}:${path}`],
         changedHunks: () => hunks ?? new Map<string, PathHunks>(),
+        changedLines: () => new Map<string, PathChangedLines>(),
     };
 }
 

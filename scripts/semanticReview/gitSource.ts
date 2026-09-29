@@ -17,6 +17,7 @@ import { changedReviewPaths } from '../reviewDiffSummary.ts';
 
 import { refuse, type SemanticRevisionBase } from './contracts.ts';
 
+import type { ChangedSourceLine, PathChangedLines } from './changeFacts.ts';
 import type { LineRange, PathHunks, SemanticChangedFile, SemanticSourcePort } from './evidence.ts';
 
 const GIT_HARDENING = ['-c', 'core.safecrlf=false', '-c', 'diff.external='] as const;
@@ -102,16 +103,89 @@ function diffHeaderPath(header: string): string | undefined {
 }
 
 /**
- * The changed line ranges of every path in one unified diff, keyed by the post-change path.
+ * One path's parsed diff: the hunk ranges both sides are sliced at, and the added and removed lines the
+ * change facts are classified from. It is one parse and not two because the ranges and the lines have to
+ * describe the same diff: a hunk range read from one parse and lines from another could disagree about
+ * which hunk sits where, and the facts would then name lines the request never carried.
+ */
+type ParsedPathDiff = {
+    readonly path: string;
+    previousPath?: string;
+    readonly before: LineRange[];
+    readonly after: LineRange[];
+    readonly added: ChangedSourceLine[];
+    readonly removed: ChangedSourceLine[];
+};
+
+const HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/u;
+
+/** The line counters of one hunk body, advanced by the one function that reads a body line. */
+type HunkBody = {
+    remainingBefore: number;
+    remainingAfter: number;
+    beforeLine: number;
+    afterLine: number;
+};
+
+/**
+ * Records one line of an open hunk body. Returns false when the line is not a body line of an open hunk,
+ * which ends the body early so a malformed or truncated hunk cannot swallow the headers that follow it.
+ *
+ * A hunk's declared counts decide where its body ends, not the `-`/`+`/`@@` shape of a line: a removed line
+ * whose own text begins with `-- ` arrives as `--- …` and is a body line while the counts still owe one,
+ * never a file header.
+ */
+function recordBodyLine(line: string, target: ParsedPathDiff | undefined, body: HunkBody): boolean {
+    if (body.remainingBefore <= 0 && body.remainingAfter <= 0) {
+        return false;
+    }
+    if (line.startsWith('+')) {
+        target?.added.push({ line: body.afterLine, text: line.slice(1) });
+        body.afterLine += 1;
+        body.remainingAfter -= 1;
+        return true;
+    }
+    if (line.startsWith('-')) {
+        target?.removed.push({ line: body.beforeLine, text: line.slice(1) });
+        body.beforeLine += 1;
+        body.remainingBefore -= 1;
+        return true;
+    }
+    if (line.startsWith(' ')) {
+        body.beforeLine += 1;
+        body.afterLine += 1;
+        body.remainingBefore -= 1;
+        body.remainingAfter -= 1;
+        return true;
+    }
+    // Any other line ends the body, so a truncated hunk cannot swallow the headers that follow it: the
+    // next `--- `/`+++ ` pair would otherwise be read as a removed line while the counts still owed one.
+    // The `\ No newline at end of file` marker is the exception: it carries no line of its own, and the
+    // body stays open across it.
+    if (line.startsWith('\\')) {
+        return true;
+    }
+    body.remainingBefore = 0;
+    body.remainingAfter = 0;
+    return false;
+}
+
+/**
+ * The changed line ranges and changed lines of every path in one unified diff, keyed by the post-change
+ * path.
  *
  * Line numbers come from the source processing, never from a model, and the range a hunk names already
  * includes the margin the diff was taken at.
  */
-export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
-    const result = new Map<string, PathHunks>();
+function parseUnifiedDiff(raw: string): Map<string, ParsedPathDiff> {
+    const result = new Map<string, ParsedPathDiff>();
     let previousPath: string | undefined;
-    let current: { path: string; previousPath?: string; before: LineRange[]; after: LineRange[] } | undefined;
+    let current: ParsedPathDiff | undefined;
+    const body: HunkBody = { remainingBefore: 0, remainingAfter: 0, beforeLine: 0, afterLine: 0 };
     for (const line of raw.split('\n')) {
+        if (recordBodyLine(line, current, body)) {
+            continue;
+        }
         if (line.startsWith('--- ')) {
             previousPath = diffHeaderPath(line.slice(4));
             continue;
@@ -122,7 +196,7 @@ export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
                 current = undefined;
                 continue;
             }
-            current = { path, before: [], after: [] };
+            current = { path, before: [], after: [], added: [], removed: [] };
             if (previousPath !== undefined && previousPath !== path) {
                 current.previousPath = previousPath;
             }
@@ -132,7 +206,7 @@ export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
         if (current === undefined || !line.startsWith('@@')) {
             continue;
         }
-        const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/u.exec(line);
+        const match = HUNK_HEADER_PATTERN.exec(line);
         if (match === null) {
             continue;
         }
@@ -146,8 +220,69 @@ export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
         if (afterCount > 0) {
             current.after.push({ startLine: afterStart, endLine: afterStart + afterCount - 1 });
         }
+        body.remainingBefore = beforeCount;
+        body.remainingAfter = afterCount;
+        body.beforeLine = beforeStart;
+        body.afterLine = afterStart;
     }
     return result;
+}
+
+/**
+ * The changed line ranges of every path in one unified diff, keyed by the post-change path.
+ *
+ * Line numbers come from the source processing, never from a model, and the range a hunk names already
+ * includes the margin the diff was taken at.
+ */
+export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
+    const result = new Map<string, PathHunks>();
+    for (const [path, parsed] of parseUnifiedDiff(raw)) {
+        // A path with no previous name carries no `previousPath` key at all: the shape a caller compares
+        // against must not gain an undefined field from the shared parser's own record.
+        if (parsed.previousPath === undefined) {
+            result.set(path, { path: parsed.path, before: parsed.before, after: parsed.after });
+            continue;
+        }
+        result.set(path, {
+            path: parsed.path,
+            previousPath: parsed.previousPath,
+            before: parsed.before,
+            after: parsed.after,
+        });
+    }
+    return result;
+}
+
+/** The added and removed lines of every path in one unified diff, keyed by the post-change path. */
+export function parseChangedLines(raw: string): Map<string, PathChangedLines> {
+    const result = new Map<string, PathChangedLines>();
+    for (const [path, parsed] of parseUnifiedDiff(raw)) {
+        result.set(path, { added: parsed.added, removed: parsed.removed });
+    }
+    return result;
+}
+
+/**
+ * One diff for the whole change, at a fixed margin: the ranges it names are the regions and the lines it
+ * names are the change facts. Both reads issue this same command, so a diff read one way can never come
+ * from a different revision pair, rename detection, or margin than the same diff read the other way.
+ */
+function readChangeDiff(primaryRoot: string, mergeBaseSha: string, headSha: string): string {
+    return git(
+        [
+            'diff',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--no-color',
+            '-M',
+            '-C',
+            '--find-copies-harder',
+            `--unified=${String(HUNK_CONTEXT_LINES)}`,
+            `${mergeBaseSha}...${headSha}`,
+        ],
+        primaryRoot,
+        false
+    );
 }
 
 export function createGitSourcePort(primaryRoot: string): SemanticSourcePort {
@@ -207,25 +342,9 @@ export function createGitSourcePort(primaryRoot: string): SemanticSourcePort {
             const text = gitOrUndefined(['show', `${sha}:${path}`], primaryRoot);
             return text;
         },
-        changedHunks: (mergeBaseSha, headSha) => {
-            // One diff for the whole change, at a fixed margin: the ranges it names are the regions.
-            const raw = git(
-                [
-                    'diff',
-                    '--no-ext-diff',
-                    '--no-textconv',
-                    '--no-color',
-                    '-M',
-                    '-C',
-                    '--find-copies-harder',
-                    `--unified=${String(HUNK_CONTEXT_LINES)}`,
-                    `${mergeBaseSha}...${headSha}`,
-                ],
-                primaryRoot,
-                false
-            );
-            return parseUnifiedDiffRanges(raw);
-        },
+        changedHunks: (mergeBaseSha, headSha) =>
+            parseUnifiedDiffRanges(readChangeDiff(primaryRoot, mergeBaseSha, headSha)),
+        changedLines: (mergeBaseSha, headSha) => parseChangedLines(readChangeDiff(primaryRoot, mergeBaseSha, headSha)),
     };
 }
 
