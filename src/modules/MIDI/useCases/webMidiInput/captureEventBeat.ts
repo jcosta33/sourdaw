@@ -87,7 +87,10 @@ function invertTravelToSeam(elapsedSeconds: number, loopStart: number, loopEnd: 
  *
  * A parked transport answers from the store, the same defined fallback
  * `captureGestureBeat` has; an event stamped at or after the capture instant
- * keeps the now-beat.
+ * keeps the now-beat. Backwards travel is bounded at the rolling epoch's start
+ * — the store position the playing transition wrote — so a stamp older than
+ * the roll itself answers that start position instead of beats the transport
+ * never traversed (#4668).
  */
 export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number {
     const transport = transportStore.value;
@@ -110,16 +113,34 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
     const insideLoopRegion =
         transport.isLooping && loopLengthBeats > 0 && beatNow >= transport.loopStart && beatNow < transport.loopEnd;
 
+    // The rolling epoch's own origin: the playing transition (a start, or a
+    // seek's scheduler restart) writes the store position exactly at the epoch
+    // boundary and nothing writes it while playing, so it is the beat this roll
+    // began from — the same position the parked branch above answers from.
+    const epochStartBeat = transport.playheadPosition;
+    // Travel the event's age back from the cursor, bounded at the epoch start
+    // (#4668): a stamp older than the whole roll predates playback and answers
+    // the start position, exactly as the stop case answers the store. The
+    // pre-check also hands `invertTravelBackward` a floor that already spans
+    // the event's age, so its doubling phase can never dig past the epoch.
+    const travelBackBounded = (elapsed: number): number => {
+        if (travelSeconds(epochStartBeat, beatNow) < elapsed) {
+            return epochStartBeat;
+        }
+        return invertTravelBackward(beatNow, elapsed, epochStartBeat);
+    };
+
     if (insideLoopRegion) {
         const secondsFromSeam = travelSeconds(transport.loopStart, beatNow);
         if (elapsedSeconds <= secondsFromSeam) {
-            // Same pass as the cursor: travel back within the region.
-            return invertTravelBackward(beatNow, elapsedSeconds, transport.loopStart);
+            // Same pass as the cursor: travel back within the region, but
+            // never past where this roll began.
+            return travelBackBounded(elapsedSeconds);
         }
         // The event predates the wrap: it sits on the dying pass, above the
         // seam, and the recorded beat must re-enter the region from loopEnd.
         return invertTravelToSeam(elapsedSeconds - secondsFromSeam, transport.loopStart, transport.loopEnd);
     }
 
-    return invertTravelBackward(beatNow, elapsedSeconds);
+    return travelBackBounded(elapsedSeconds);
 }

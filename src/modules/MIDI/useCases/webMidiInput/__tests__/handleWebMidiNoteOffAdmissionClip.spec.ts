@@ -150,4 +150,33 @@ describe('handleWebMidiNoteOff recorded-note destination clip', () => {
         // Clip-relative beat 3.5 against clip-late's media origin (4).
         expect(create_midi_note).toHaveBeenCalledWith(60, 3.5, expect.any(Number), 100);
     });
+
+    // #4668 — selection and storage must share one coordinate: storage
+    // subtracts the input latency from the onset, so selection has to resolve
+    // the clip on the same compensated beat, or a note heard at 3.92 whose
+    // raw playhead read 4.02 is filed into the [4, 8) clip and clamped to its
+    // seam instead of landing in [0, 4).
+    it('selects the destination clip on the latency-compensated onset storage records', async () => {
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: { id: string } }) => void>();
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 3.92, duration: 2, velocity: 100 }));
+        // 0.05 s at 120 BPM rewinds the heard onset 4.02 to beat 3.92.
+        audio_clock.baseLatency = 0.05;
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: create_midi_note,
+                appendRecordedMidiNote: append_recorded_midi_note,
+                // The raw playhead beat at note-on sits past the seam; the
+                // musician's compensated onset does not.
+                playheadPositionRef: { current: 4.02 },
+            })
+        );
+        admitNote(4.02);
+
+        await fn(0, 60, 0);
+
+        expect(append_recorded_midi_note).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'clip-early' }));
+        // Clip-relative beat 3.92 against clip-early's media origin (0); the
+        // clip-late origin (4) would clamp the note to 0 in the wrong clip.
+        expect(create_midi_note).toHaveBeenCalledWith(60, expect.closeTo(3.92, 6), expect.any(Number), 100);
+    });
 });

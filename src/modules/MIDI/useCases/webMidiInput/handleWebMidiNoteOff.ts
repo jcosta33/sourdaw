@@ -32,7 +32,7 @@ import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 const FALLBACK_GENERATED_NOTE_SECONDS = 0.5;
 
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
-    function findActiveRecordingClip(trackId: string, admittedBeat: number): string | null {
+    function findActiveRecordingClip(trackId: string, compensatedOnsetBeat: number): string | null {
         const trackState = deps.getTrackStoreState();
         const transport = deps.getTransportStoreValue();
         if (!trackState || !transport) {
@@ -55,13 +55,17 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             // abutting clips satisfy both, so `find` files the note into
             // whichever clip happens to come first in array order.
             const intersecting = midiClips.find(
-                (clip) => admittedBeat >= clip.startBeat && admittedBeat < clip.endBeat
+                (clip) => compensatedOnsetBeat >= clip.startBeat && compensatedOnsetBeat < clip.endBeat
             );
             if (intersecting) {
                 return intersecting.id;
             }
 
-            if (transport.isLooping && admittedBeat >= transport.loopStart && admittedBeat <= transport.loopEnd) {
+            if (
+                transport.isLooping &&
+                compensatedOnsetBeat >= transport.loopStart &&
+                compensatedOnsetBeat <= transport.loopEnd
+            ) {
                 const loopClip = midiClips.find(
                     (clip) => clip.startBeat >= transport.loopStart && clip.endBeat <= transport.loopEnd
                 );
@@ -397,14 +401,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         const isRecording = transport?.isRecording ?? false;
 
         if (isRecording && isArmed) {
-            // The note belongs to the clip holding its admitted onset: a
-            // release processed after the playhead crossed a clip seam or a
-            // loop wrap must not move it (#4869).
-            const clipId = findActiveRecordingClip(targetTrackId, noteData.startBeat);
-            if (!clipId) {
-                return;
-            }
-
             const trackLatencySec = deps.getCompensationDelay(targetTrackId);
             const context = audioEngine.context;
             const totalLatencySec = (context.baseLatency || 0) + (context.outputLatency || 0) + trackLatencySec;
@@ -418,16 +414,27 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const defaultTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
             const flatTimeline = tempoChanges.length === 0;
             const onsetSeconds = readSecondsAtBeat({ beat: noteData.startBeat });
+            // The latency-rewound anchor: the timeline instant the musician
+            // heard the onset at — the take conversion's `originSeconds`
+            // (#3650). Start, end, and every expression offset integrate from
+            // this one coordinate, so the recorded span equals the beats the
+            // tempo map assigns the heard seconds (#4668).
+            const originSeconds = onsetSeconds - totalLatencySec;
+            let latencyAdjustedOnsetBeat = noteData.startBeat - (totalLatencySec * defaultTempo) / 60;
+            if (!flatTimeline) {
+                latencyAdjustedOnsetBeat = readBeatAtSamples({ samples: originSeconds, sampleRate: 1 });
+            }
 
-            const secondsToBeats = (seconds: number): number => {
-                if (flatTimeline) {
-                    return (seconds * defaultTempo) / 60;
-                }
-                return readBeatAtSamples({ samples: onsetSeconds + seconds, sampleRate: 1 }) - noteData.startBeat;
-            };
-
-            const durationSeconds = eventTime - noteData.startTime;
-            const durationBeats = secondsToBeats(durationSeconds);
+            // The note belongs to the clip holding its admitted onset: a
+            // release processed after the playhead crossed a clip seam or a
+            // loop wrap must not move it (#4869). Selection and storage share
+            // the compensated coordinate: resolving on the raw onset would
+            // file the note into the clip past the seam and clamp it to that
+            // clip's origin — a heard 3.92 whose raw read is 4.02 (#4668).
+            const clipId = findActiveRecordingClip(targetTrackId, latencyAdjustedOnsetBeat);
+            if (!clipId) {
+                return;
+            }
 
             // noteData.startBeat is timeline-absolute (playhead at note-on);
             // the store is clip-relative, so subtract the recording clip's
@@ -435,14 +442,32 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const recordingClip = track?.clips.find((candidate) => candidate.id === clipId);
             const clipMediaOrigin = recordingClip ? recordingClip.startBeat - (recordingClip.midiOffsetBeats ?? 0) : 0;
 
-            const latencyAdjustedOnsetBeat = (): number => {
-                if (flatTimeline) {
-                    return noteData.startBeat - (totalLatencySec * defaultTempo) / 60;
-                }
-                return readBeatAtSamples({ samples: onsetSeconds - totalLatencySec, sampleRate: 1 });
-            };
+            const compensatedStartBeat = Math.max(0, latencyAdjustedOnsetBeat - clipMediaOrigin);
 
-            const compensatedStartBeat = Math.max(0, latencyAdjustedOnsetBeat() - clipMediaOrigin);
+            // The end is read at the heard seconds from the SAME rewound
+            // origin the start was placed with — the take conversion's
+            // `originSeconds + buffer.duration` (#3650). Integrating from the
+            // raw onset misplaces the end of a hold across a tempo change by
+            // `latency × Δtempo`. The flat timeline keeps its closed form,
+            // which already composes: start − L·t/60 … start + (D−L)·t/60.
+            const durationSeconds = eventTime - noteData.startTime;
+            let durationBeats = (durationSeconds * defaultTempo) / 60;
+            if (!flatTimeline) {
+                durationBeats =
+                    readBeatAtSamples({ samples: originSeconds + durationSeconds, sampleRate: 1 }) -
+                    latencyAdjustedOnsetBeat;
+            }
+
+            // Expression offsets share the compensated origin, so a curve
+            // point lands on the beat its own heard instant maps to.
+            const secondsToBeats = (seconds: number): number => {
+                if (flatTimeline) {
+                    return (seconds * defaultTempo) / 60;
+                }
+                return (
+                    readBeatAtSamples({ samples: originSeconds + seconds, sampleRate: 1 }) - latencyAdjustedOnsetBeat
+                );
+            };
 
             // Preserve the played velocity (was hardcoded 100, M-143).
             const midiNote = deps.createMidiNote(

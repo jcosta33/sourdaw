@@ -61,7 +61,13 @@ function dispatch(data: number[], timeStamp?: number): Promise<void> | void {
 }
 
 function playTransport(
-    overrides: Partial<{ tempo: number; isLooping: boolean; loopStart: number; loopEnd: number }> = {}
+    overrides: Partial<{
+        tempo: number;
+        isLooping: boolean;
+        loopStart: number;
+        loopEnd: number;
+        playheadPosition: number;
+    }> = {}
 ): void {
     const previous = transportStore.value;
     transportStore.set({
@@ -71,6 +77,9 @@ function playTransport(
         isLooping: overrides.isLooping ?? false,
         loopStart: overrides.loopStart ?? 0,
         loopEnd: overrides.loopEnd ?? 0,
+        // The playing transition's start position: the rolling epoch's own
+        // origin, which the capture may never travel before.
+        playheadPosition: overrides.playheadPosition ?? defaultTransportState.playheadPosition,
     });
     restoreTransport = () => {
         transportStore.set(previous);
@@ -149,6 +158,45 @@ describe('event-time recording beat (#4875)', () => {
         await dispatch([0x91, 60, 100], 900);
 
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.8, 9);
+    });
+
+    // #4668 — backwards travel is bounded at the rolling epoch's start: a
+    // stamp older than the whole roll predates playback, so it answers the
+    // start position the store holds instead of beats the transport never
+    // traversed.
+    it('answers a stamp older than the whole roll with the start position at 120 BPM', async () => {
+        playTransport({ playheadPosition: 5 });
+        // The roll began at beat 5 and the cursor has only reached 5.1 (0.05 s
+        // of travel); the stamp is 0.5 s old — older than the roll itself.
+        cursorAt(5.1);
+
+        await dispatch([0x91, 60, 100], 600);
+
+        // Unbounded backwards integration answered 4.1.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(5, 9);
+    });
+
+    it('answers a stamp older than the whole roll with the start position at 300 BPM', async () => {
+        playTransport({ tempo: 300, playheadPosition: 5 });
+        // 0.07 s of travel since the roll; the stamp is 0.9 s old.
+        cursorAt(5.35);
+
+        await dispatch([0x91, 60, 100], 200);
+
+        // Unbounded backwards integration answered 0.85 — five beats per
+        // second for a roll that has barely moved.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(5, 9);
+    });
+
+    it('keeps integrating a delayed stamp that stays within the roll', async () => {
+        playTransport({ playheadPosition: 0 });
+        cursorAt(2.2);
+
+        // 0.5 s back from beat 2.2 is beat 1.2 — inside the roll from beat 0
+        // (1.1 s of travel so far), so the epoch bound does not engage.
+        await dispatch([0x91, 60, 100], 600);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(1.2, 9);
     });
 
     it('derives the beat from a native-mapped timestamp', async () => {
