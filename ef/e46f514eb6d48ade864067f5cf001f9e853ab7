@@ -1,0 +1,171 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ed5aa36a3ba357::t_9dbb940dde0041 441
+  s_ed5aa36a3ba357::t_8ca41a74b550d7 420-423,426-427,444
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  s_ed5aa36a3ba357::t_530e137b6dae46 1,170-208
+  s_ed5aa36a3ba357::t_dbde66773c89ed 209-214
+  s_ed5aa36a3ba357::t_e8051f9fa62c53 56-100
+  s_ed5aa36a3ba357::t_2dbd96d2e1ffc2 101-146
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 208-215,324-333,336
+  s_ed5aa36a3ba357::t_ea884acdd5d43b 38-40,159-161,175,191,205-207,216-230,302-305,334-335,337-339
+  s_fe7d9519d0226e::t_957e69ef1cd973 340
+  s_ed5aa36a3ba357::t_e5d8b9171fc557 13-18,107-111,114-116,139,238,275,301,306-323,384-390
+  s_ed5aa36a3ba357::t_30e7c4b0192e3a 391
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_e36bbbbaabc90e 71-76
+  s_ed5aa36a3ba357::t_3c650e71521eaf 59-67,97-104
+  s_ed5aa36a3ba357::t_28727c4af92b73 77-88
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e36bbbbaabc90e 90-95
+  s_ed5aa36a3ba357::t_e4ea182b105f13 78-86,96-103
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 60
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ed5aa36a3ba357::t_d77111fd9ea1fe 787
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_5d73f680a17891 3-6
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_ed5aa36a3ba357::t_658c63032169f7 17,23-24,114,125,132,150-151,156-179
+  s_ed5aa36a3ba357::t_3d2b6f672c06a1 5-8,152-155
+  s_ed5aa36a3ba357::t_7bc9401d1ee8fb 194-197,200
+  s_ed5aa36a3ba357::t_5fde34f4e13e5d 18-20,45,101-106,180-193,198-199,201-229
+  s_ed5aa36a3ba357::t_e0e00bee574e33 230
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 2,5
+  s_ed5aa36a3ba357::t_27c443673b4da3 6,12-13,15,18-20
+  s_ed5aa36a3ba357::t_6e908ae9921520 1,14,16-17
+  s_ed5aa36a3ba357::t_b0181a2b0f3450 4,7-10
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 3,11
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 58,474,597
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_5b2531acd8fa0e 2333
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 2302
+  s_ed5aa36a3ba357::t_02a4aa969e84c9 43,2294,2297,2312,2318,2340,2354,2358-2359,2373
+  s_ed5aa36a3ba357::t_b496f2789dba2a 2300-2301,2305-2311,2313-2317,2319-2332,2334-2339,2341-2353,2355-2357,2360-2372
+  s_ed5aa36a3ba357::t_4e36e81882b0b3 2303-2304,2374-2377
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ed5aa36a3ba357::t_e68df3a74533cf 118-126,601
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ed5aa36a3ba357::t_61baf207331a94 44-45,75
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ed5aa36a3ba357::t_e3366094fb1959 18-19,467-497
+  s_ed5aa36a3ba357::t_fd30e510099b07 498
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 647-651,662-664,670-671,686-692,695-699,701-703,726-730,1314-1318,1337-1339,1341-1342
+  s_ed5aa36a3ba357::t_4d7f5109ca9d46 679-685,693-694,700,704-725,731-750
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 12
+  s_ed5aa36a3ba357::t_3d8b5af219592c 63,141,652-658,669,672,1312-1313,1319-1320,1326,1332,1340,1343
+  s_ed5aa36a3ba357::t_b496f2789dba2a 751-859
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  s_ed5aa36a3ba357::t_27c443673b4da3 9
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 6,44,46
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_ed5aa36a3ba357::t_0b0a8a46575067 1-3,5,9-24,26,34-35,37-45,50-78,86-87,89-127,145,160-163,179,181-184,197-198,205-218,234-241,243,247-254,259-263,276-279,312-315,368
+  s_ed5aa36a3ba357::t_332de57b67b301 25,88,166,292-293,297-299
+  s_ed5aa36a3ba357::t_b0ca2c224787fe 270
+  s_ed5aa36a3ba357::t_ae73308add8085 316-317,324-325,338-360,363-367
+  s_ed5aa36a3ba357::t_5b2e677ff2da9d 242,258
+  s_ed5aa36a3ba357::t_a0d707741caba9 27-32,167
+  s_ed5aa36a3ba357::t_7fea905826b360 146,148,164,201-202
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 6,8
+  s_ed5aa36a3ba357::t_bdc28cfca0f8a5 46-49
+  s_ed5aa36a3ba357::t_add363ed661e9f 147,149,155-159,165,203,256,265
+  s_ed5aa36a3ba357::t_063b3739b871c4 4,233,283-291,300-303
+  s_ed5aa36a3ba357::t_856a0e342d32ef 7,33,36,318-323
+  s_ed5aa36a3ba357::t_4ed5b5787692dd 79-85,130-131,150-154,168-178,180,185-196,199-200,204,219-232,244-246,267-269,271-275,280-282,294-296,304-311,326-337,361-362
+  s_ed5aa36a3ba357::t_abfd1e07dfda7d 128-129,132-144,255,257,264,266
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ed5aa36a3ba357::t_a4feff6ede74fa 581,604,960
+  s_ed5aa36a3ba357::t_38ee260cff1c83 943-945,959,961-968,1200-1212
+src/modules/AudioEngine/useCases/engineAccess/waitForDevices.ts
+  s_ed5aa36a3ba357::t_6bf731a8c8ba56 3
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_ed5aa36a3ba357::t_a5ee95e5a9a624 36
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 35,2339-2340
+src/modules/AudioEngine/useCases/__tests__/engineAccess.spec.ts
+  s_ed5aa36a3ba357::t_e92c7a5c8514da 41,79,181
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ed5aa36a3ba357::t_944c4a427722bf 376
+  s_ed5aa36a3ba357::t_61baf207331a94 89-92,288-294,379-383,404
+  s_ed5aa36a3ba357::t_3e214a5757e211 295-298,366-367,405-408,414
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_ed5aa36a3ba357::t_61baf207331a94 8-9,11
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_8c85960315db6a 503-504
+src/modules/AudioEngine/repositories/__tests__/deviceContentReadinessTimeout.integration.spec.ts
+  s_ed5aa36a3ba357::t_9e007e9a691a08 147-148
+  s_ed5aa36a3ba357::t_cbbf1ff1885c74 149-151,183-187,228-231,271-274,297-300,315-318
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_ed5aa36a3ba357::t_e00ec942777eaf 329-335
+src/modules/Levain/useCases/levainParamBridge/__tests__/registerLevainDevice.spec.ts
+  s_ed5aa36a3ba357::t_61f74b929d24e2 28
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_ed5aa36a3ba357::t_cdc7e9e295dcd0 111
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_df96bfa1b00f33 1209
+.github/workflows/health-gates.yml
+  s_ed5aa36a3ba357::t_00bc8644234448 23,58
+.github/workflows/validation.yml
+  s_ed5aa36a3ba357::t_907a7dc231e1aa 13-17,37-39,60,217,236-239,253-268,276,284,335,339,346,350,357,364,368,374,524-551,1000-1048
+Cargo.lock
+  s_ed5aa36a3ba357::t_5d288fcd51d51b 119,121
+crates/daw-collab/Cargo.toml
+  s_ed5aa36a3ba357::t_ce851d2c35e15d 14
+docs/06-testing.md
+  s_ed5aa36a3ba357::t_b5673f17b7bcab 756-761
+package.json
+  s_ed5aa36a3ba357::t_0b5de13b067a0f 110,161,189
+pnpm-lock.yaml
+  s_ed5aa36a3ba357::t_804476e284814b 12-13,131,160-161,244-245,312-313,817-819,2966-2967,2969-2970,2975-2977,2979-2984,2994-2995,4413-4415,5280-5282,5559-5561,5566-5572,5575,5662-5664,5810,6350-6351,7462,7830,7840,8209,8212-8213,8219,8221-8223,8225,8227,8229-8230,8232,8236,9780-9783,11005,11272,11274-11276,11279,11281,11283,11287,11290,11364
+public/legal/DEPENDENCY-LICENSES.txt
+  s_ed5aa36a3ba357::t_0a3b1a1a9c2c8a 22,334,613,4063,17853,17856,17860-17862,17868,17884,18082-18114,19968
+release/dependency-license-proofs.json
+  s_ed5aa36a3ba357::t_0ac90fbec2f067 16,291,303,313,7806-7808,7813
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_ed5aa36a3ba357::t_172ed13588035c 384,394
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ed5aa36a3ba357::t_841e62c94c1213 30,78-79,380-385,412-415,438-439,472,479,521,526,535,540,549,558,563,568,723-758,1072-1104
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_552a374e40ace4 64,156,165,446,451,491,519-552,554-557,574,588-590,764-765,1349-1352,1415-1419,2781,2806,2823,2876-2971,2986,3151,3724-3757
+scripts/__tests__/prValidationScope.spec.ts
+  s_ed5aa36a3ba357::t_e3cb68974c742a 72-90,180,191-206,224-238,255-261,270-272
+scripts/healthGateWorkflowContract.ts
+  s_ed5aa36a3ba357::t_1d6dfa6837d2ab 146,192,328,339,351-360
+scripts/prValidationScope.ts
+  s_ed5aa36a3ba357::t_cd8eacb37ba9a0 33,53-79,83,105,143-145,157,165,204-210,276
+scripts/test-health-gate-scripts.sh
+  s_ed5aa36a3ba357::t_b3e3c8fd8c5248 287,394-395,403,412,426,430,518-519,521,530,607,611,615,618-627,664-665
+src/types/jest-dom-vitest.d.ts
+  s_ed5aa36a3ba357::t_41cf3f4bf1a4b8 1-8
+vite.config.ts
+  s_ed5aa36a3ba357::t_ee7a0a146b92d1 66
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_ed5aa36a3ba357::t_93afca876d3624 1329-1334
+  s_ed5aa36a3ba357::t_6dd5de58a6e989 1339,1342,1344,1349,1351,1356,1359,1366,1369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "efe46f514eb6d48ade864067f5cf001f9e853ab7",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
