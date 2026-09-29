@@ -44,17 +44,23 @@ export type MergedAutomationEventStreams = Readonly<{
  * value differs from what the timeline holds is the compiled stream's `set`
  * (a jump spelled on its frame, where a later insertion wins), a segment that
  * ramps spells one `linear` on its end frame, and a hold spells nothing —
- * Web Audio and the frame-addressed pair both hold their last value. Ramps
- * chain exactly as the source slew grid compiled them, so the rebuilt timeline
- * plays the same piecewise curve the segments do; only redundant same-value
- * rewrites of it are gone.
+ * Web Audio and the frame-addressed pair both hold their last value. A ramp
+ * whose opening value the timeline already holds still spells its `set` on
+ * the start frame whenever the last emitted event sits earlier, because Web
+ * Audio's `linearRampToValueAtTime` interpolates from the previous event's
+ * TIME as well as its value — without that anchor the ramp reaches back over
+ * the hold in front of it and drags the timeline off the curve the segments
+ * carry. A flat hold boundary still needs no anchor, so only redundant
+ * same-value rewrites of the timeline are gone.
  */
 function mergedSegmentsToEvents(
     segments: readonly OfflineAutomationSegment[],
     sampleRate: number
 ): CompiledAutomationEvent[] {
     const events: CompiledAutomationEvent[] = [];
+    let lastEventTime = -Infinity;
     const append = (event: CompiledAutomationEvent): void => {
+        lastEventTime = event.timeSeconds;
         const previous = events.at(-1);
         if (
             previous?.type === event.type &&
@@ -67,14 +73,20 @@ function mergedSegmentsToEvents(
     };
     let heldValue: number | undefined;
     for (const segment of segments) {
-        if (heldValue === undefined || segment.startValue !== heldValue) {
+        const segmentIsRamp = segment.endValue !== segment.startValue;
+        // Only a ramp that spans frames spells a `linear`, so only one can
+        // reach back past its own start frame; a zero-width segment's closing
+        // `set` is instantaneous and needs no anchor of its own.
+        const rampNeedsTimeAnchor =
+            segmentIsRamp && segment.endFrame > segment.startFrame && segment.startFrame / sampleRate > lastEventTime;
+        if (heldValue === undefined || segment.startValue !== heldValue || rampNeedsTimeAnchor) {
             append({ type: 'set', timeSeconds: segment.startFrame / sampleRate, value: segment.startValue });
         }
         if (segment.endFrame > segment.startFrame) {
-            if (segment.endValue !== segment.startValue) {
+            if (segmentIsRamp) {
                 append({ type: 'linear', timeSeconds: segment.endFrame / sampleRate, value: segment.endValue });
             }
-        } else if (segment.endValue !== segment.startValue) {
+        } else if (segmentIsRamp) {
             // A zero-width segment asserts its closing value on its frame — two
             // events that rounded onto one frame leave the later one's value
             // standing there.

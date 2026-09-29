@@ -22,33 +22,60 @@ import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture
  */
 type RecordedParamEvent = { type: 'set' | 'linear'; time: number; value: number };
 
-type ParamDouble = ReturnType<typeof makeParamDouble>;
-
 function makeParamDouble() {
     return { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), setTargetAtTime: vi.fn() };
 }
 
-function recordedParamEvents(param: ParamDouble): RecordedParamEvent[] {
-    const events: RecordedParamEvent[] = [];
-    for (const [value, time] of param.setValueAtTime.mock.calls as Array<[number, number]>) {
-        events.push({ type: 'set', time, value });
-    }
-    for (const [value, time] of param.linearRampToValueAtTime.mock.calls as Array<[number, number]>) {
-        events.push({ type: 'linear', time, value });
-    }
-    return events.sort((first, second) => first.time - second.time);
+/**
+ * Records the writes one schedule lands on an AudioParam in true insertion
+ * order — the order Web Audio breaks equal-time collisions with (a later
+ * insertion wins). The mock context's own AudioParam keeps two separate call
+ * arrays, which cannot say which of a same-time set/linear pair was inserted
+ * later, so `scheduleEqLanes` points the resolved param's writes at one of
+ * these instead.
+ */
+function makeParamRecorder() {
+    const journal: RecordedParamEvent[] = [];
+    return {
+        journal,
+        setValueAtTime: vi.fn((value: number, time: number) => {
+            journal.push({ type: 'set', time, value });
+        }),
+        linearRampToValueAtTime: vi.fn((value: number, time: number) => {
+            journal.push({ type: 'linear', time, value });
+        }),
+    };
 }
 
+type ParamRecorder = ReturnType<typeof makeParamRecorder>;
+
+function recordedParamEvents(param: ParamRecorder): RecordedParamEvent[] {
+    return [...param.journal].sort((first, second) => first.time - second.time);
+}
+
+function rampValueBetween(current: RecordedParamEvent, ramp: RecordedParamEvent, time: number): number {
+    const span = ramp.time - current.time;
+    return current.value + ((ramp.value - current.value) * (time - current.time)) / span;
+}
+
+/**
+ * The value the recorded timeline holds at `time`, under Web Audio's own
+ * semantics: a `linear` interpolates from the previous event's TIME as well
+ * as its value, so a query inside a pending ramp takes the fraction of that
+ * span — it must not return the value the timeline last held.
+ */
 function paramValueAt(events: RecordedParamEvent[], time: number): number {
     let value = 0;
     let current: RecordedParamEvent | undefined;
     for (const event of events) {
         if (event.time > time) {
+            if (event.type === 'linear' && current && event.time > current.time) {
+                value = rampValueBetween(current, event, time);
+            }
             break;
         }
         if (event.type === 'linear' && current && event.time > current.time) {
-            const span = event.time - current.time;
-            value = current.value + ((event.value - current.value) * (time - current.time)) / span;
+            value = rampValueBetween(current, event, time);
         } else {
             value = event.value;
         }
@@ -180,6 +207,62 @@ function onePointClipLane(): AutomationLane {
     });
 }
 
+/**
+ * A clip lane whose window opens on a ramp that starts at the exact value the
+ * track lane holds — a value-continuous boundary, where the merge could
+ * believe no event is needed at the window's start frame.
+ */
+function rampFromHeldClipLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-clip-ramp-from-held',
+        clipId: 'clip-a',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [
+            { beat: 2, value: 3, curve: 'linear', tension: 0 },
+            { beat: 6, value: 9, curve: 'linear', tension: 0 },
+        ],
+    });
+}
+
+/** A clip lane that holds 8 and stops two beats before its window does. */
+function heldShortClipLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-clip-held',
+        clipId: 'clip-a',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [
+            { beat: 2, value: 8, curve: 'linear', tension: 0 },
+            { beat: 4, value: 8, curve: 'linear', tension: 0 },
+        ],
+    });
+}
+
+/**
+ * A track lane that holds 8 through the clip's window end and only then ramps
+ * away — the stretched clip tail hands back into a ramp that opens on the
+ * value the timeline already holds.
+ */
+function rampAfterHandbackTrackLane(): AutomationLane {
+    return makeLane({
+        id: 'lane-track-handback',
+        parameterId: 'device-1:eq-low-gain',
+        parameterName: 'EQ Low Gain',
+        minValue: 0,
+        maxValue: 24,
+        points: [
+            { beat: 0, value: 8, curve: 'linear', tension: 0 },
+            { beat: 6, value: 8, curve: 'linear', tension: 0 },
+            { beat: 10, value: 16, curve: 'linear', tension: 0 },
+        ],
+    });
+}
+
 /** A clip lane scoped entirely before the export region. */
 function earlyClipLane(): AutomationLane {
     return makeLane({
@@ -216,7 +299,7 @@ const EARLY_CLIP_ORDERS = [
 function scheduleEqLanes(
     lanes: AutomationLane[],
     clipBoundsById: Map<string, { startBeat: number; endBeat: number }> = SHARED_CLIP_BOUNDS
-): ParamDouble {
+): ParamRecorder {
     const node = createOfflineDeviceNode({
         context: asBaseAudioContext(createMockAudioContext()),
         deviceType: 'builtin-eq',
@@ -228,6 +311,13 @@ function scheduleEqLanes(
     if (!eqParam) {
         throw new Error('expected eq-low-gain to resolve an AudioParam');
     }
+    const recorder = makeParamRecorder();
+    const writable = eqParam as unknown as {
+        setValueAtTime: ParamRecorder['setValueAtTime'];
+        linearRampToValueAtTime: ParamRecorder['linearRampToValueAtTime'];
+    };
+    writable.setValueAtTime = recorder.setValueAtTime;
+    writable.linearRampToValueAtTime = recorder.linearRampToValueAtTime;
     scheduleTrackAutomationFixture({
         lanes,
         trackId: 'track-1',
@@ -242,7 +332,7 @@ function scheduleEqLanes(
         slewTickSeconds: 1,
         clipBoundsById,
     });
-    return eqParam as unknown as ParamDouble;
+    return recorder;
 }
 
 /** Arrangement's shipped law for `builtin-limiter/lim-ceiling` (as the #4437 spec states it). */
@@ -340,6 +430,59 @@ const BOTH_LANE_ORDERS = [
     ['clip lane first', (): AutomationLane[] => [eqClipLane(), eqTrackLane()]],
 ] as const;
 
+const RAMP_FROM_HELD_ORDERS = [
+    ['track lane first', (): AutomationLane[] => [eqTrackLane(), rampFromHeldClipLane()]],
+    ['clip lane first', (): AutomationLane[] => [rampFromHeldClipLane(), eqTrackLane()]],
+] as const;
+
+const HANDBACK_ORDERS = [
+    ['track lane first', (): AutomationLane[] => [rampAfterHandbackTrackLane(), heldShortClipLane()]],
+    ['clip lane first', (): AutomationLane[] => [heldShortClipLane(), rampAfterHandbackTrackLane()]],
+] as const;
+
+/**
+ * The same lanes through the `segments`-bound consumer, at the audioParam
+ * fixture's sample rate — the merge the applied splice must be identical to.
+ * Sampled instants sit a quarter second off the integer slew grid, so no
+ * query lands on an event frame where equal-time insertion order would
+ * decide the value.
+ */
+function identityAssertAtSeams(
+    order: string,
+    events: RecordedParamEvent[],
+    segments: readonly OfflineAutomationSegment[]
+): void {
+    for (let time = 0.25; time <= 9.75; time += 0.5) {
+        expect(paramValueAt(events, time), `${order}: the splice holds at ${time}s`).toBeCloseTo(
+            segmentValueAtTime(segments, time * 100),
+            9
+        );
+    }
+}
+
+/** The merged `segments` stream the same lanes resolve on the segments-bound family. */
+function eqSegmentsStreamFor(lanes: AutomationLane[]): OfflineAutomationSegment[] {
+    const segmentCalls: OfflineAutomationSegment[][] = [];
+    scheduleTrackAutomationFixture({
+        lanes,
+        trackId: 'track-1',
+        trackGainNode: { gain: makeParam() } as unknown as GainNode,
+        trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+        deviceEntries: [segmentsEntry('eq-low-gain', segmentCalls)],
+        durationSeconds: 10,
+        defaultTempo: 120,
+        changes: [],
+        projectBeatToSeconds: IDENTITY_BEAT,
+        sampleRate: 100,
+        slewTickSeconds: 1,
+        clipBoundsById: SHARED_CLIP_BOUNDS,
+    });
+    if (segmentCalls.length !== 1) {
+        throw new Error('expected exactly one segments apply');
+    }
+    return segmentCalls[0]!;
+}
+
 describe('scheduleTrackAutomation — the scope law reaches the audioParam and curveWrite export families', () => {
     it('exports the clip lane curve inside its window in both lane orders on an audioParam device (builtin-eq eq-low-gain)', () => {
         for (const [order, buildLanes] of BOTH_LANE_ORDERS) {
@@ -375,6 +518,42 @@ describe('scheduleTrackAutomation — the scope law reaches the audioParam and c
             for (let time = 0.5; time <= 9.5; time += 0.5) {
                 expect(paramValueAt(events, time)).toBeCloseTo(segmentValueAtTime(segmentCalls[0]!, time * 100), 9);
             }
+        }
+    });
+
+    it('anchors a window-opening ramp that starts at the value the timeline already holds, in both lane orders', () => {
+        for (const [order, buildLanes] of RAMP_FROM_HELD_ORDERS) {
+            const lanes = buildLanes();
+            const events = recordedParamEvents(scheduleEqLanes(lanes));
+            const segments = eqSegmentsStreamFor(lanes);
+            expect(
+                events.some((event) => event.type === 'set' && event.time === 2),
+                `${order}: the ramp anchors on the window's first frame`
+            ).toBe(true);
+            // The clip ramp opens on the track's held 3. Web Audio interpolates
+            // the ramp from the previous event's time as well as its value, so
+            // without the anchor the ramp reaches back over the hold in front
+            // of it and the timeline drifts off 3 before the window even opens.
+            expect(paramValueAt(events, 1), `${order}: the hold in front of the window survives`).toBeCloseTo(3, 9);
+            identityAssertAtSeams(order, events, segments);
+        }
+    });
+
+    it('anchors the ramp a stretched clip tail hands back to, in both lane orders', () => {
+        for (const [order, buildLanes] of HANDBACK_ORDERS) {
+            const lanes = buildLanes();
+            const events = recordedParamEvents(scheduleEqLanes(lanes));
+            const segments = eqSegmentsStreamFor(lanes);
+            expect(
+                events.some((event) => event.type === 'set' && event.time === 6),
+                `${order}: the handback ramp anchors on the window's last frame`
+            ).toBe(true);
+            // The clip tail is stretched to the window end holding 8, and the
+            // track's ramp away opens on that same 8: without an anchor on the
+            // handback frame the ramp reaches back to the timeline's first
+            // event and bleeds into the stretched hold.
+            expect(paramValueAt(events, 5), `${order}: the stretched hold survives the handback`).toBeCloseTo(8, 9);
+            identityAssertAtSeams(order, events, segments);
         }
     });
 

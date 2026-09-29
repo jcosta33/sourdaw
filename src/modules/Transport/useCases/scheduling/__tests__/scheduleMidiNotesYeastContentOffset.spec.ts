@@ -479,6 +479,32 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
         ]);
     });
 
+    it('delivers the wrapped release of a groove-crossing note to the window that owns it', async () => {
+        // Slot-0 timingOffset −0.4 at full amount on a 1/8 grid displaces the
+        // note at 0.02 by −0.2 beats, across every iteration head (grooved
+        // relative start −0.18); each pass re-anchors it to
+        // `iterationStart + 3.82` and the release rings at
+        // `wrappedStart + 1.18`, one beat past the next head. The phase entry's
+        // `endPhaseBeat` stays at the raw `0.02 + 1.18`, a full loop away from
+        // that wrapped release, so the window owning 5.0 found zero candidates
+        // and skipped the owning iteration: the note-on sounded while its
+        // note-off never reached the processor.
+        await sweepScheduledVoices({
+            clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
+            note: { startBeat: 0.02, duration: 1.18 },
+            grooveState: clipGrooveState({ index: 0, timingOffset: -0.4 }),
+        });
+        const yeastEvents = vi.mocked(processYeastMidi).mock.calls.flatMap((call) => call[0].events);
+        const noteOnBeats = yeastEvents
+            .filter((event) => event.kind.type === 'noteOn')
+            .map((event) => event.timePpq ?? Number.NaN);
+        const noteOffBeats = yeastEvents
+            .filter((event) => event.kind.type === 'noteOff')
+            .map((event) => event.timePpq ?? Number.NaN);
+        expect(noteOnBeats).toEqual([expect.closeTo(3.82, 6), expect.closeTo(7.82, 6)]);
+        expect(noteOffBeats).toEqual([expect.closeTo(5, 6)]);
+    });
+
     it('keeps the mirrored crossing selected: a raw-negative start the groove pushes past the head sounds inside its iteration', async () => {
         // Slot-1 timingOffset +0.5 at full amount displaces the note at 0.375 by
         // +0.25 beats. Its raw relative start is −0.125 (the phase index holds

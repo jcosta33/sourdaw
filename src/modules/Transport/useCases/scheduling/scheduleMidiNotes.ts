@@ -402,7 +402,9 @@ function lowerBoundYeastLoopEnd(entries: readonly YeastLoopPhaseEntry[], endPhas
  * are indexed by their wrapped position (`phaseBeat`) and wrapped release
  * (`endPhaseBeat`). The release stays uncapped: a note longer than its loop
  * rings past the iteration end and the owning window follows the release, as
- * the loop-work bounds spec pins.
+ * the loop-work bounds spec pins. A start in `[0, displacement)` carries a
+ * second release entry one loop past its phase — only the groove can wrap it,
+ * and the wrapped release then rings a loop past the raw `endPhaseBeat`.
  */
 function getYeastLoopPhaseIndex({
     notes,
@@ -419,6 +421,7 @@ function getYeastLoopPhaseIndex({
 
     const orderByNote = new Map<ScheduledMidiNote, number>();
     const sortedEntries: YeastLoopPhaseEntry[] = [];
+    const sortedEnds: YeastLoopPhaseEntry[] = [];
     for (let index = 0; index < notes.length; index++) {
         const note = notes[index]!;
         orderByNote.set(note, index);
@@ -432,7 +435,24 @@ function getYeastLoopPhaseIndex({
             continue;
         }
         const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
-        sortedEntries.push({ endPhaseBeat: phaseBeat + note.duration, note, phaseBeat });
+        const entry = { endPhaseBeat: phaseBeat + note.duration, note, phaseBeat };
+        sortedEntries.push(entry);
+        sortedEnds.push(entry);
+        if (relativeStartBeat >= 0) {
+            // The groove-crossing class sounds un-wrapped only while the groove
+            // leaves the start on the head's near side; when it pulls the start
+            // across, ownership re-anchors it a full loop later and the release
+            // rings at `wrappedStart + duration`, past this entry's
+            // `endPhaseBeat`. Index that wrapped release too: it lands within
+            // one groove stage of `phaseBeat + loopLengthBeats + duration`,
+            // exactly the slack the release window already spends, so the
+            // window owning the wrapped release still finds the note here.
+            sortedEnds.push({
+                endPhaseBeat: phaseBeat + loopLengthBeats + note.duration,
+                note,
+                phaseBeat,
+            });
+        }
     }
     sortedEntries.sort(
         (left, right) => left.phaseBeat - right.phaseBeat || orderByNote.get(left.note)! - orderByNote.get(right.note)!
@@ -441,7 +461,7 @@ function getYeastLoopPhaseIndex({
         loopLengthBeats,
         midiOffsetBeats,
         orderByNote,
-        sortedEnds: [...sortedEntries].sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
+        sortedEnds: sortedEnds.sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
         sortedEntries,
     };
     yeastLoopPhaseIndexes.set(notes, created);
