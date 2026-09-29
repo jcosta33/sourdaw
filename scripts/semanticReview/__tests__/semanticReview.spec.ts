@@ -72,6 +72,7 @@ import {
     type SemanticProviderPort,
 } from '../provider.ts';
 import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
+import { unitReservationBytes } from '../requestPayload.ts';
 import { missingRequiredEvidence, RESOLVED_EVIDENCE_TOKENS } from '../requiredEvidence.ts';
 import {
     applicableRules,
@@ -501,6 +502,29 @@ describe('contract-carrying admission', () => {
         });
         expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:context']);
         expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
+    });
+
+    it('orders an unreadable contract-context document at zero admission bytes, ahead of a zero-byte readable one', () => {
+        // `admissionBytes: 0` is the unreadable-context default: a context path with no content at the
+        // contract source mints a unit that sorts at zero bytes, so its unavailability is recorded ahead
+        // of a readable-but-withheld context region. Reading `1` would reorder the two and move the
+        // unavailability entry behind the withheld one.
+        const big = 'x'.repeat(2_000);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [],
+                blobs: { [`${MERGE_BASE}:zzz-big.md`]: big },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 100, maxTotalBytes: 1_000_000 },
+            contractPaths: ['aaa-missing.md', 'zzz-big.md'],
+        });
+        expect(set.truncated).toEqual([
+            { path: 'aaa-missing.md', reason: 'evidence-unavailable-at-revision' },
+            { path: 'zzz-big.md', reason: 'region-exceeds-per-region-budget (context, contract)' },
+        ]);
     });
 
     it("admits the change's contract-carrying side before a larger contract-context document", () => {
@@ -3977,6 +4001,31 @@ describe('unit planning', () => {
         expect(units).toHaveLength(0);
         expect(incomplete).toEqual([{ path: 'crates/daw-dsp/src/a.rs', reason: 'no-evidence-region-within-budget' }]);
     });
+
+    it('excludes a unit whose reservation equals the state cap, not only one over it', () => {
+        // The planner guard reads `<=` so a reservation that exactly spends the state cap leaves no
+        // evidence budget and is excluded; reading `<` would admit it and then drop every region for a
+        // different reason. The cap is set to the reservation itself so the tie is exact.
+        const file = changedFile('crates/daw-dsp/src/a.rs');
+        const cap = unitReservationBytes(file, applicableRules([file.path]));
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [file],
+                blobs: {
+                    [`${MERGE_BASE}:crates/daw-dsp/src/a.rs`]: 'const a = 1;\n',
+                    [`${HEAD}:crates/daw-dsp/src/a.rs`]: 'const a = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const { units, excluded, incomplete } = planUnits([file], set, cap);
+        expect(units).toHaveLength(0);
+        expect(excluded).toEqual([{ path: file.path, reason: 'unit-overhead-exceeds-request-budget' }]);
+        expect(incomplete).toEqual([{ path: file.path, reason: 'unit-overhead-exceeds-request-budget' }]);
+    });
 });
 
 /**
@@ -4691,6 +4740,57 @@ describe('the deadline stops admission under its own name', () => {
             { path: lastPath, reason: 'deadline-elapsed-before-admission' },
         ]);
         expect(calls).toBe(1);
+    });
+
+    it('does not book an attempt or bytes for a request the pre-attempt deadline refuses', async () => {
+        // The pre-attempt deadline check sits before `budget.reserve`, so a request refused there books
+        // nothing. Reordering the reservation first would book a second network attempt and its bytes for
+        // a request never sent: `networkAttempts` would read 2 while the provider was called once.
+        const clock = fixedClock(1_000);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        let calls = 0;
+        const provider = constantProvider(0.05, {
+            systemOne: async ({ questions }) => {
+                calls += 1;
+                clock.advance(profile.overallDeadlineMs);
+                const answers: Record<string, unknown> = {};
+                for (const key of Object.keys(questions)) {
+                    answers[key] = { type: 'noul', noul: 0.05 };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        });
+        const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
+        expect(report.scope.assessed).toBe(1);
+        expect(calls).toBe(1);
+        expect(report.usage.networkAttempts).toBe(1);
+    });
+
+    it('still attempts the next unit one millisecond short of the deadline', async () => {
+        // The pre-attempt guard's near side reads `remaining <= 0`, so a unit with one millisecond of run
+        // time left is still attempted; reading `<= 1` would refuse it as `deadline_elapsed` before the
+        // provider ever saw it.
+        const clock = fixedClock(1_000);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        let calls = 0;
+        const provider = constantProvider(0.05, {
+            systemOne: async ({ questions }) => {
+                calls += 1;
+                if (calls === 1) {
+                    clock.advance(profile.overallDeadlineMs - 1);
+                }
+                const answers: Record<string, unknown> = {};
+                for (const key of Object.keys(questions)) {
+                    answers[key] = { type: 'noul', noul: 0.05 };
+                }
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        });
+        const { report } = await runScan(scanPorts(provider, deadlineSource(), clock));
+        expect(report.scope.assessed).toBe(3);
+        expect(report.scope.unassessed).toEqual([]);
+        expect(calls).toBe(3);
+        expect(report.failureCode).toBeUndefined();
     });
 
     it('still reports a request that overran its own attempt timeout as a timeout', async () => {
@@ -5553,6 +5653,28 @@ describe('provider adapter', () => {
         // The per-request limit belongs to the unit the request is for, so it carries its own code: the
         // whole-run budgets this controller also enforces are the only refusals that stop admission.
         expect('refused' in refused && refused.refused).toBe('request_too_large');
+    });
+
+    it('admits a request at exactly the per-request byte limit', () => {
+        // The per-request guard reads `>` so the limit itself is admissible; `>=` would refuse it. The
+        // controller is driven directly because the planner keeps admitted bodies under the state cap.
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxRequestBytes: 100, maxTotalSubmittedBytes: 1_000 };
+        const budget = createBudgetController(profile);
+        const admitted = budget.reserve(100);
+        expect('attempt' in admitted).toBe(true);
+        expect(budget.totals().submittedBytes).toBe(100);
+    });
+
+    it('admits the total byte cap itself and refuses only the byte past it', () => {
+        // The total guard reads `>` so the cap itself is admissible and the next byte is not; `>=` would
+        // refuse the exact-cap reservation before the run ever spent the budget.
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxRequestBytes: 1_000, maxTotalSubmittedBytes: 100 };
+        const budget = createBudgetController(profile);
+        expect('attempt' in budget.reserve(100)).toBe(true);
+        const refused = budget.reserve(1);
+        expect('refused' in refused && refused.refused).toBe('budget_exhausted');
+        expect(budget.totals().networkAttempts).toBe(1);
+        expect(budget.totals().submittedBytes).toBe(100);
     });
 
     it('invalidates the response cache when the model or question changes', () => {
