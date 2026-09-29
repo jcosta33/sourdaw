@@ -1,0 +1,37 @@
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_25bceb65446269 132,625-629
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ed5aa36a3ba357::t_8c559bf2864ef1 353-363,454-489,504-523,529-563,892-898
+src/modules/GrandBoule/useCases/index.ts
+  s_ed5aa36a3ba357::t_c319f2cca4a446 11-12
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_ed5aa36a3ba357::t_91821b684d9601 3-5,394-573
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_ed5aa36a3ba357::t_4fc07b1a4bf3d5 12-16,273-297,300,405-525
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ed5aa36a3ba357::t_bb3c312c97c90d 1184,1211-1215,1220-1225
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationLaneEntry.spec.ts
+  s_ed5aa36a3ba357::t_80706ed75be896 4,6,42-47,183-317
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ed5aa36a3ba357::t_e555c5e58f3201 706-720,742
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ed5aa36a3ba357::t_887227eebe7e79 1087-1102,1125
+tests/e2e/exportAudioEvidence.spec.ts
+  s_ed5aa36a3ba357::t_c9223f4db0e401 14-26,43,49-66,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e51c1d27279c32b04a901e9f42af74d09a88c72e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
