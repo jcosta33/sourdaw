@@ -3264,7 +3264,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
             ],
         };
-        const route = (items: typeof calls, structured: boolean) => {
+        const route = (items: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'], structured: boolean) => {
             if (!structured) {
                 return bridge(items, prompt, context);
             }
