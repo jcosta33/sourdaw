@@ -1,0 +1,33 @@
+electron/__tests__/scanWorker.spec.ts
+  s_ed5aa36a3ba357::t_9624a700a62762 213-215,228-231
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_fe7d9519d0226e::t_45e90bc2d2b676 60-65
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMapsRampBeatCount.spec.ts
+  s_fe7d9519d0226e::t_fc094c93d543e1 1-69
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_fe7d9519d0226e::t_43512b16049a37 24-36,203-227,264-271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8b5b5bcd24f72b905fb82715dc1eb1cd3f8e744b",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
