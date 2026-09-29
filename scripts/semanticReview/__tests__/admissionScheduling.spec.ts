@@ -1255,6 +1255,41 @@ describe('every mode the report has validates its own output', () => {
         );
     });
 
+    it('refuses a verify report that publishes an excluded finding', async () => {
+        // A verifier never excludes a path — a finding whose evidence it cannot use is an omission — so the
+        // list itself is refused, which closes both pairings at once: an exclusion contradicting an
+        // assessment, and one contradicting an omission. The arithmetic is balanced in each forgery, and
+        // the honest report validates first.
+        const provider = choiceProvider();
+        const { report } = await verifyScan(provider.port, [VERIFY_REGION_FINDING, VERIFY_EVIDENCE_LESS_FINDING]);
+        const assessment = report.findingAssessments[0];
+        const omission = report.scope.unassessed[0];
+        if (assessment === undefined || omission === undefined) {
+            throw new Error(
+                'the honest run assessed one finding and omitted another, so the case would assert nothing'
+            );
+        }
+        expect(() => validateReport(report)).not.toThrow();
+        const forgedFor = (excludedId: string) => ({
+            ...report,
+            execution: 'completed' as const,
+            scope: {
+                ...report.scope,
+                discovered: 2,
+                eligible: 1,
+                assessed: 1,
+                excluded: [{ path: excludedId, reason: 'no-applicable-rule' }],
+                unassessed: [],
+            },
+        });
+        // The excluded id is the one the report assesses, and then the one it omits.
+        for (const excludedId of [assessment.findingId, omission.path]) {
+            expect(() => validateReport(forgedFor(excludedId))).toThrow(
+                /publishes 1 excluded path\(s\), which no verify report produces/
+            );
+        }
+    });
+
     it('refuses a verify report that names one assessed finding id twice', async () => {
         // The scope counts exactly what the honest run counted; only the ledger names the same finding
         // twice, so the count tie would pass if the two entries were counted as one distinct id.

@@ -173,6 +173,10 @@ const SCOPE_STATE_NAMES = [
  *   an assessed unit with nothing behind it: a clean bill with no ledger at all, in either mode.
  * - Every other omission reason — a dry run, a spent budget or elapsed deadline, a provider or request
  *   failure — means no request was made for that unit, so a signal for the same path contradicts it.
+ * - `excluded` is a scan's list: a verify report publishes none, because a verifier walks findings and
+ *   records a finding it could not assess as an omission. An excluded path is checked against the scan's
+ *   signals and omissions; a verify report's list must be empty, which closes every pairing between it
+ *   and that mode's assessments and omissions at once.
  * - `truncated` records regions rather than units and is deliberately outside the partition: a path
  *   repeats there once per withheld region, and it may name a path no other list holds (a withheld
  *   context document), or a path that is excluded, omitted, or signalled.
@@ -264,13 +268,29 @@ function assertScanLedger(
     }
 }
 
-/** The verify report's rows: its assessments name finding ids, and `assessed` counts those findings. */
+/**
+ * The verify report's rows: a verifier publishes no exclusions at all, its assessments name finding ids,
+ * and `assessed` counts those findings.
+ *
+ * The exclusion row is the whole list rather than an overlap: `runVerify` builds its scope with no
+ * exclusions — a finding whose evidence is withheld or unusable is recorded as an omission, with the
+ * withheld region in `truncated` — and the scope arithmetic already forces that for any report that ever
+ * validated (`eligible + excluded.length === discovered` with `eligible === discovered`), so no stored
+ * verify report is refused by it. Refusing the list once closes every excluded-against-ledger pairing
+ * instead of one overlap at a time.
+ */
 function assertVerifyLedger(
-    scope: { readonly assessed: number },
+    scope: { readonly assessed: number; readonly excluded: readonly SemanticScopeExclusion[] },
     findingIds: readonly string[],
     omissionPaths: ReadonlySet<string>,
     label: string
 ): void {
+    if (scope.excluded.length > 0) {
+        refuse(
+            'invalid_response',
+            `${label} publishes ${String(scope.excluded.length)} excluded path(s), which no verify report produces; a verifier records what it could not assess as an omission`
+        );
+    }
     const assessedIds = new Set(findingIds);
     if (assessedIds.size !== findingIds.length) {
         refuse('invalid_response', `${label} records an assessed finding id more than once`);
