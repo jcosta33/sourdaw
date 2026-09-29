@@ -1,0 +1,858 @@
+{
+    "format": "semantic-review-measurement-v1",
+    "schemaVersion": 1,
+    "measuredAt": "2026-09-29T21:28:21.145Z",
+    "machine": {
+        "checkoutGitSha": "88faec2742144712e9c1dda94d7d355c4a4fdf2a",
+        "workingTree": "dirty",
+        "host": {
+            "platform": "darwin",
+            "release": "27.0.0",
+            "arch": "arm64",
+            "cores": 12
+        },
+        "loadAverage1m": 7.48
+    },
+    "advisory": "This record measures what the advisory semantic review cost and what its artifacts returned. A returned probability is a model answer, never an accuracy figure; a question no request asked is counted as not asked, never as a correct negative.",
+    "fieldSources": {
+        "acrossRuns": "the sum of the same figure over every run whose artifact carried it; a figure no artifact carried is null and is named in notComputable, and the runs that did carry it are counted beside it",
+        "acrossRuns.executionStates": "each run artifact's own #execution, counted: a partial, unavailable, cancelled or skipped run is named here rather than reading as completed",
+        "acrossRuns.failureCodes": "each run artifact's own #failureCode, counted over the runs that carry one",
+        "acrossRuns.reviewRounds": "dossiers deduplicated by (pull request, head) before summing: a head with both a scan and a verification sidecar is one round, and acrossRuns.reviewRounds.heads names how many distinct heads those are",
+        "acrossRuns.wallClockMs": "the sum of the runs' own spans, over the runs that recorded one",
+        "acrossRuns.repeatedWarnings": "the same (ruleId, path) fired on more than one distinct head of one pull request, keyed by repository and pull request number",
+        "acrossRuns.evidence.limitationsByText": "each run artifact's own #limitations, one entry per distinct text with the number of runs that recorded it",
+        "acrossRuns.ruleCoverage.notAskedByRule": "the same rule set the coverage figures count, read once for the whole set rather than repeated per run",
+        "acrossRuns.signals.byRule": "each run artifact's own #signals[].ruleId or an evaluation outcome's #outcomes[].ruleId, counted once per run across the set",
+        "acrossRuns.signals.byDisposition": "each run artifact's own #signals[].disposition or an evaluation outcome's #outcomes[].disposition, counted once per run across the set; null when no run carried a signal ledger",
+        "acrossRuns.signals.runsWithSignalLedger": "the runs that carry a signal ledger at all: a scan report or an evaluation outcome; a verification report assesses findings instead",
+        "acrossRuns.signals.byFindingDisposition": "each verification report's own #findingAssessments[].disposition, counted across the set; null when no run carried a finding ledger",
+        "acrossRuns.signalDispositions": "the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token",
+        "acrossRuns.labelledExpectations": "the evaluation runner's own #expectedConcernHeld count over the fixtures it ran",
+        "skippedArtifacts": "artifacts present on disk that the report validator or the dossier reader refused, with its message",
+        "runs[]": "not published at this detail level: the record was measured with the aggregate detail level, which carries the across-run figures and the gaps; measure again with --detail for one entry per run"
+    },
+    "sources": {
+        "sidecarRoot": "/Users/josecosta/dev/sourdaw/.agents/semantic-review",
+        "sidecarRootPresent": true,
+        "reviewBundleRoot": "/Users/josecosta/dev/sourdaw/.agents/review-bundles",
+        "reviewBundleRootPresent": true,
+        "evaluationOutcomePath": null,
+        "storedRunsRead": 108,
+        "dossiersRead": 449,
+        "evaluationFixturesRead": 0,
+        "detail": "aggregate",
+        "note": "retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact"
+    },
+    "runs": [],
+    "acrossRuns": {
+        "runCount": 108,
+        "runCountByKind": {
+            "scan": 67,
+            "verification": 41
+        },
+        "executionStates": {
+            "completed": 42,
+            "partial": 57,
+            "unavailable": 9
+        },
+        "failureCodes": {
+            "budget_exhausted": 18,
+            "invalid_response": 1
+        },
+        "usage": {
+            "networkAttempts": 856,
+            "logicalRequests": 860,
+            "retries": 0,
+            "submittedBytes": 27023086,
+            "actualInputTokens": 6952804,
+            "estimatedInputTokens": 6690837,
+            "attemptsWithUnknownUsage": 0,
+            "estimatedCostUsd": 0.29201776800000007,
+            "pricingConfigurationVersion": "typesafe-pricing-2026-09-20",
+            "cacheHits": 411
+        },
+        "wallClockMs": 414818,
+        "wallClockRuns": 108,
+        "derivedOutcomeStates": {
+            "notApplicable": 80,
+            "excludedWithAssessmentOwed": 15,
+            "missingRequiredEvidence": 0,
+            "omittedForBudgetOrDeadline": 312,
+            "providerFailure": 2,
+            "dryRun": 0
+        },
+        "derivedOutcomeRuns": 108,
+        "publishedOutcomeStates": null,
+        "publishedOutcomeRuns": 0,
+        "ruleCoverage": {
+            "applicableRules": 9039,
+            "applicableRulesCompleteEverywhere": false,
+            "unitsWithUnpublishedRuleSets": 314,
+            "askedRules": 5772,
+            "notAskedRules": 3267,
+            "notAskedByReason": {
+                "missing-required-evidence": 3267,
+                "no-answerable-question": 0,
+                "omitted-for-budget-or-deadline": 0,
+                "provider-failure": 0,
+                "dry-run": 0
+            },
+            "notAskedByRule": {
+                "admission_branch_completes_without_asserting": 50,
+                "advisory_result_claims_authority": 2,
+                "assertion_condition_loosened": 50,
+                "assertion_deleted": 50,
+                "audio_thread_allocation": 9,
+                "conditional_admission_added": 50,
+                "coverage_moved_to_weaker_tier": 50,
+                "duplicates_existing_mechanism": 1047,
+                "forbidden_dependency_direction": 89,
+                "gate_weakened": 2,
+                "mutation_outside_undo_path": 19,
+                "observable_assertion_removed": 50,
+                "observable_replaced_by_internal": 50,
+                "persisted_shape_changed_without_migration": 19,
+                "production_path_no_longer_reached": 436,
+                "public_contract_widened_silently": 577,
+                "real_collaborator_mocked": 50,
+                "silent_data_loss_possible": 3,
+                "stated_invariant_contradicted": 509,
+                "test_skipped_or_excluded": 50,
+                "timing_semantics_changed": 105
+            },
+            "runsWithoutRuleCoverage": 41
+        },
+        "evidence": {
+            "unitsMissingRequiredEvidence": 1249,
+            "requiredEvidenceTokensMissing": {
+                "after implementation source": 434,
+                "after source": 347,
+                "after test source": 500,
+                "before source": 26,
+                "before test source": 20,
+                "caller or contract": 577,
+                "decision or documented invariant": 509,
+                "finding evidence not supplied or not decisive": 115,
+                "migration or version contract": 19,
+                "related existing source": 1047,
+                "scheduling call-site": 105,
+                "undo contract": 19
+            },
+            "truncatedRegions": 715,
+            "truncatedPaths": 711,
+            "truncationReasons": {
+                "region-exceeds-per-region-budget (after)": 19,
+                "region-exceeds-per-region-budget (after, contract)": 2,
+                "region-exceeds-per-region-budget (context, contract)": 3,
+                "region-exceeds-per-region-budget (contract)": 51,
+                "unit-evidence-reduced-below-request-budget": 401,
+                "unit-evidence-reduced-below-request-budget (after)": 237,
+                "unit-evidence-reduced-below-request-budget (after, context)": 1,
+                "unit-evidence-reduced-below-request-budget (before, after, context)": 1
+            },
+            "runsWithoutTruncationLedger": 0,
+            "limitationsByText": {
+                "evidence for AGENTS.md (context) was not supplied: it exceeds the per-region budget": 3,
+                "evidence for AGENTS.md (contract) was not supplied: it exceeds the per-region budget": 51,
+                "evidence for crates/daw-dsp/src/levain/engine.rs did not fit the per-request state budget: 26 region(s) were not sent": 1,
+                "evidence for crates/daw-dsp/src/levain/voice.rs did not fit the per-request state budget: 33 region(s) were not sent": 1,
+                "evidence for crates/sourdaw-native/src/commands/graph.rs (after) was not supplied: it exceeds the per-region budget": 2,
+                "evidence for scripts/__tests__/agentDeliveryScripts.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/agentDeliveryScripts.spec.ts did not fit the per-request state budget: 42 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/agentDeliveryScripts.spec.ts did not fit the per-request state budget: 5 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/agentDeliveryScripts.spec.ts did not fit the per-request state budget: 6 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/agentDeliveryScripts.spec.ts did not fit the per-request state budget: 8 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/prContract.spec.ts did not fit the per-request state budget: 34 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/prepareReview.spec.ts did not fit the per-request state budget: 8 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/prepareReview.spec.ts did not fit the per-request state budget: 9 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishLane.spec.ts did not fit the per-request state budget: 9 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 12 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 14 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 32 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/publishReview.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossier.spec.ts did not fit the per-request state budget: 31 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossierPublication.spec.ts did not fit the per-request state budget: 30 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossierSemanticAssessment.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossierSemanticAssessment.spec.ts did not fit the per-request state budget: 32 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossierSemanticAssessment.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewDossierSemanticAssessment.spec.ts did not fit the per-request state budget: 5 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewRiskPolicy.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewRiskPolicy.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 2,
+                "evidence for scripts/__tests__/reviewRoundEscalation.spec.ts did not fit the per-request state budget: 10 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/reviewRoundEscalation.spec.ts did not fit the per-request state budget: 11 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/semanticReviewContext.spec.ts did not fit the per-request state budget: 11 region(s) were not sent": 1,
+                "evidence for scripts/__tests__/semanticReviewContext.spec.ts did not fit the per-request state budget: 6 region(s) were not sent": 2,
+                "evidence for scripts/__tests__/trustedGithubWriteBootstrap.spec.ts (after) was not supplied: it exceeds the per-region budget": 1,
+                "evidence for scripts/__tests__/trustedGithubWriteBootstrap.spec.ts did not fit the per-request state budget: 12 region(s) were not sent": 1,
+                "evidence for scripts/reviewDossier.ts did not fit the per-request state budget: 7 region(s) were not sent": 1,
+                "evidence for scripts/reviewDossierChain.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for scripts/reviewDossierSemanticAssessment.ts did not fit the per-request state budget: 1 region(s) were not sent": 2,
+                "evidence for scripts/reviewPublicationBinding.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for scripts/reviewPublicationBinding.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for scripts/semanticReview/__tests__/semanticReview.spec.ts did not fit the per-request state budget: 13 region(s) were not sent": 1,
+                "evidence for scripts/semanticReview/__tests__/semanticReview.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for scripts/semanticReview/evidence.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for scripts/semanticReview/evidence.ts did not fit the per-request state budget: 11 region(s) were not sent": 1,
+                "evidence for scripts/trustedGithubWriteBootstrap.ts (after) was not supplied: it exceeds the per-region budget": 1,
+                "evidence for scripts/trustedGithubWriteBootstrap.ts did not fit the per-request state budget: 1 region(s) were not sent": 3,
+                "evidence for scripts/trustedGithubWriteBootstrap.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for scripts/trustedGithubWriteBootstrap.ts did not fit the per-request state budget: 22 region(s) were not sent": 1,
+                "evidence for src/app/__tests__/bootstrap.spec.ts did not fit the per-request state budget: 48 region(s) were not sent": 2,
+                "evidence for src/app/__tests__/bootstrap.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 2,
+                "evidence for src/app/__tests__/bootstrap.spec.ts did not fit the per-request state budget: 54 region(s) were not sent": 2,
+                "evidence for src/app/__tests__/nativeModAssignments.spec.ts did not fit the per-request state budget: 48 region(s) were not sent": 3,
+                "evidence for src/app/__tests__/nativeModAssignments.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 2,
+                "evidence for src/app/__tests__/projectNativeDeviceState.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 2,
+                "evidence for src/app/__tests__/projectNativeDeviceState.spec.ts did not fit the per-request state budget: 25 region(s) were not sent": 6,
+                "evidence for src/modules/AiRuntime/models/SemanticCommandList.ts did not fit the per-request state budget: 3 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/models/SemanticCommandList.ts did not fit the per-request state budget: 4 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicStrictSchemaProjection.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiStrictSchemaProjection.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/selectAnthropicStrictTools.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/services/semanticCommandListCandidates.ts did not fit the per-request state budget: 1 region(s) were not sent": 5,
+                "evidence for src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/coreAutomationStrategy.spec.ts did not fit the per-request state budget: 45 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/coreAutomationStrategy.spec.ts did not fit the per-request state budget: 46 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts did not fit the per-request state budget: 51 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts did not fit the per-request state budget: 57 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts did not fit the per-request state budget: 6 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts did not fit the per-request state budget: 8 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts (after) was not supplied: it exceeds the per-region budget": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts (after) was not supplied: it exceeds the per-region budget": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 10 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 51 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 57 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts did not fit the per-request state budget: 9 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts (after) was not supplied: it exceeds the per-region budget": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts did not fit the per-request state budget: 10 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts did not fit the per-request state budget: 12 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts did not fit the per-request state budget: 9 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts (after) was not supplied: it exceeds the per-region budget": 4,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts did not fit the per-request state budget: 36 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts did not fit the per-request state budget: 36 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts did not fit the per-request state budget: 40 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts did not fit the per-request state budget: 44 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts did not fit the per-request state budget: 45 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts did not fit the per-request state budget: 31 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts did not fit the per-request state budget: 34 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts did not fit the per-request state budget: 37 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/semanticListPredicates.spec.ts (after) was not supplied: it exceeds the per-region budget": 5,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts did not fit the per-request state budget: 41 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts did not fit the per-request state budget: 47 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts did not fit the per-request state budget: 34 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts did not fit the per-request state budget: 38 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts did not fit the per-request state budget: 45 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts did not fit the per-request state budget: 1 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts did not fit the per-request state budget: 7 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts did not fit the per-request state budget: 35 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts did not fit the per-request state budget: 39 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts did not fit the per-request state budget: 36 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts did not fit the per-request state budget: 39 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts did not fit the per-request state budget: 42 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts did not fit the per-request state budget: 1 region(s) were not sent": 5,
+                "evidence for src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts did not fit the per-request state budget: 3 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts did not fit the per-request state budget: 7 region(s) were not sent": 5,
+                "evidence for src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts did not fit the per-request state budget: 47 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts did not fit the per-request state budget: 53 region(s) were not sent": 2,
+                "evidence for src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts did not fit the per-request state budget: 7 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/reproposePendingChatActions.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/AiRuntime/useCases/reproposePendingChatActions.ts did not fit the per-request state budget: 2 region(s) were not sent": 3,
+                "evidence for src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts did not fit the per-request state budget: 1 region(s) were not sent": 5,
+                "evidence for src/modules/Arrangement/handlers/clip/__tests__/handleArpeggiate.spec.ts did not fit the per-request state budget: 159 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts did not fit the per-request state budget: 152 region(s) were not sent": 2,
+                "evidence for src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 2,
+                "evidence for src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts did not fit the per-request state budget: 26 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts did not fit the per-request state budget: 28 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts did not fit the per-request state budget: 31 region(s) were not sent": 8,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts did not fit the per-request state budget: 5 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignatureClipEdits.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignatureClipEdits.spec.ts did not fit the per-request state budget: 14 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignatureClipEdits.spec.ts did not fit the per-request state budget: 17 region(s) were not sent": 8,
+                "evidence for src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts did not fit the per-request state budget: 15 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts did not fit the per-request state budget: 18 region(s) were not sent": 8,
+                "evidence for src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts did not fit the per-request state budget: 38 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts did not fit the per-request state budget: 6 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/useCases/__tests__/renderAgentMeasurementTarget.spec.ts did not fit the per-request state budget: 47 region(s) were not sent": 2,
+                "evidence for src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts did not fit the per-request state budget: 17 region(s) were not sent": 3,
+                "evidence for src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts did not fit the per-request state budget: 20 region(s) were not sent": 8,
+                "evidence for src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 3,
+                "evidence for src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts did not fit the per-request state budget: 51 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts did not fit the per-request state budget: 2 region(s) were not sent": 5,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts did not fit the per-request state budget: 15 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts did not fit the per-request state budget: 6 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts did not fit the per-request state budget: 9 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts did not fit the per-request state budget: 12 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts did not fit the per-request state budget: 5 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts did not fit the per-request state budget: 8 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts did not fit the per-request state budget: 51 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/deviceControls/__tests__/updateDevicePatch.spec.ts did not fit the per-request state budget: 48 region(s) were not sent": 3,
+                "evidence for src/modules/AudioEngine/useCases/deviceControls/__tests__/updateDevicePatch.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 3,
+                "evidence for src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeDeviceParameters.spec.ts did not fit the per-request state budget: 48 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeDeviceParameters.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeDeviceParameters.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 3,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts did not fit the per-request state budget: 27 region(s) were not sent": 8,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts did not fit the per-request state budget: 13 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts did not fit the per-request state budget: 7 region(s) were not sent": 1,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts did not fit the per-request state budget: 49 region(s) were not sent": 2,
+                "evidence for src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts did not fit the per-request state budget: 1 region(s) were not sent": 2,
+                "evidence for src/modules/AudioRendering/useCases/__tests__/agentMeasurementArtifactRetention.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 2,
+                "evidence for src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts did not fit the per-request state budget: 50 region(s) were not sent": 2,
+                "evidence for src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts did not fit the per-request state budget: 1 region(s) were not sent": 2,
+                "evidence for src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts did not fit the per-request state budget: 1 region(s) were not sent": 3,
+                "evidence for src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts did not fit the per-request state budget: 13 region(s) were not sent": 1,
+                "evidence for src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts did not fit the per-request state budget: 15 region(s) were not sent": 1,
+                "evidence for src/modules/Automation/useCases/modulation/applyModulationToEngine.ts did not fit the per-request state budget: 1 region(s) were not sent": 2,
+                "evidence for src/modules/Bacteria/models/__tests__/BacteriaModulationIds.spec.ts did not fit the per-request state budget: 47 region(s) were not sent": 2,
+                "evidence for src/modules/Bacteria/models/__tests__/BacteriaModulationIds.spec.ts did not fit the per-request state budget: 48 region(s) were not sent": 2,
+                "evidence for src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts did not fit the per-request state budget: 43 region(s) were not sent": 1,
+                "evidence for src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts did not fit the per-request state budget: 44 region(s) were not sent": 1,
+                "evidence for src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts did not fit the per-request state budget: 45 region(s) were not sent": 1,
+                "evidence for src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts did not fit the per-request state budget: 46 region(s) were not sent": 2,
+                "evidence for src/modules/Command/useCases/versionedCommandArgumentKeys.ts did not fit the per-request state budget: 166 region(s) were not sent": 4,
+                "evidence for src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 16 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/handlers/__tests__/handleSetGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 19 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/models/__tests__/GrandBouleDeviceState.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/models/__tests__/GrandBouleDeviceState.spec.ts did not fit the per-request state budget: 18 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/models/__tests__/GrandBouleDeviceState.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/captureOfflineGrandBoule.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/captureOfflineGrandBoule.spec.ts did not fit the per-request state budget: 16 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/captureOfflineGrandBoule.spec.ts did not fit the per-request state budget: 19 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 16 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts did not fit the per-request state budget: 19 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/dispatchGrandBouleMorphEdit.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/dispatchGrandBouleMorphEdit.spec.ts did not fit the per-request state budget: 18 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/dispatchGrandBouleMorphEdit.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/grandBouleTemperamentPresetDropped.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/grandBouleTemperamentPresetDropped.spec.ts did not fit the per-request state budget: 18 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/grandBouleTemperamentPresetDropped.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts did not fit the per-request state budget: 20 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts did not fit the per-request state budget: 23 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts did not fit the per-request state budget: 23 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts did not fit the per-request state budget: 26 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/reconcileGrandBouleDeviceStateFromProject.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/reconcileGrandBouleDeviceStateFromProject.spec.ts did not fit the per-request state budget: 19 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/reconcileGrandBouleDeviceStateFromProject.spec.ts did not fit the per-request state budget: 22 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts did not fit the per-request state budget: 18 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 8,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 3,
+                "evidence for src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 8,
+                "evidence for src/modules/Levain/presentations/components/MicBlendSlider.tsx did not fit the per-request state budget: 1 region(s) were not sent": 4,
+                "evidence for src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx did not fit the per-request state budget: 23 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx did not fit the per-request state budget: 26 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx did not fit the per-request state budget: 27 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx did not fit the per-request state budget: 29 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx did not fit the per-request state budget: 23 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx did not fit the per-request state budget: 26 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx did not fit the per-request state budget: 28 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx did not fit the per-request state budget: 27 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx did not fit the per-request state budget: 29 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts did not fit the per-request state budget: 27 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts did not fit the per-request state budget: 29 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts did not fit the per-request state budget: 21 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts did not fit the per-request state budget: 26 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/stores/__tests__/levainStore.spec.ts did not fit the per-request state budget: 24 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/stores/__tests__/levainStore.spec.ts did not fit the per-request state budget: 27 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/stores/__tests__/levainStore.spec.ts did not fit the per-request state budget: 29 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts did not fit the per-request state budget: 23 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts did not fit the per-request state budget: 26 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts did not fit the per-request state budget: 30 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts did not fit the per-request state budget: 26 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts did not fit the per-request state budget: 29 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts did not fit the per-request state budget: 31 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts did not fit the per-request state budget: 25 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts did not fit the per-request state budget: 27 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts did not fit the per-request state budget: 25 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts did not fit the per-request state budget: 27 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts did not fit the per-request state budget: 29 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts did not fit the per-request state budget: 31 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts did not fit the per-request state budget: 25 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts did not fit the per-request state budget: 35 region(s) were not sent": 2,
+                "evidence for src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts did not fit the per-request state budget: 37 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/levainParamBridge/helpers.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Levain/useCases/levainParamBridge/helpers.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/services/__tests__/sliceMidiNoteExtent.spec.ts did not fit the per-request state budget: 152 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/services/__tests__/sliceMidiNoteExtent.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/services/__tests__/sliceMidiNoteExtent.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts did not fit the per-request state budget: 153 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/services/transformMidiGlobalTimeState.ts did not fit the per-request state budget: 3 region(s) were not sent": 4,
+                "evidence for src/modules/MIDI/stores/__tests__/midiStore.spec.ts did not fit the per-request state budget: 153 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/stores/__tests__/midiStore.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/stores/__tests__/midiStore.spec.ts did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts did not fit the per-request state budget: 161 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts did not fit the per-request state budget: 164 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts did not fit the per-request state budget: 166 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts did not fit the per-request state budget: 150 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts did not fit the per-request state budget: 153 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/quantizeMidiNoteLengths.spec.ts did not fit the per-request state budget: 153 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/transformers/__tests__/quantizeMidiNoteLengths.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts did not fit the per-request state budget: 151 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/resizeMidiNote.spec.ts did not fit the per-request state budget: 151 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/resizeMidiNote.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/resizeMidiNote.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts did not fit the per-request state budget: 152 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/legatoNotes.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/legatoNotes.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectDrumPreviewCandidateNotes.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectDrumPreviewCandidateNotes.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectShortMidiOverlapRemoval.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectShortMidiOverlapRemoval.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectSyncopatedArpeggio.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/splitNoteAtBeat.spec.ts did not fit the per-request state budget: 151 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/splitNoteAtBeat.spec.ts did not fit the per-request state budget: 154 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/midiNoteTransforms/__tests__/splitNoteAtBeat.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts did not fit the per-request state budget: 152 region(s) were not sent": 2,
+                "evidence for src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts did not fit the per-request state budget: 153 region(s) were not sent": 2,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 2,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts did not fit the per-request state budget: 160 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts did not fit the per-request state budget: 152 region(s) were not sent": 2,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts did not fit the per-request state budget: 155 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts did not fit the per-request state budget: 157 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts did not fit the per-request state budget: 46 region(s) were not sent": 1,
+                "evidence for src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts did not fit the per-request state budget: 52 region(s) were not sent": 2,
+                "evidence for src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx did not fit the per-request state budget: 153 region(s) were not sent": 2,
+                "evidence for src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx did not fit the per-request state budget: 1 region(s) were not sent": 4,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx did not fit the per-request state budget: 155 region(s) were not sent": 2,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx did not fit the per-request state budget: 160 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx did not fit the per-request state budget: 153 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx did not fit the per-request state budget: 156 region(s) were not sent": 1,
+                "evidence for src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx did not fit the per-request state budget: 158 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts did not fit the per-request state budget: 14 region(s) were not sent": 2,
+                "evidence for src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts did not fit the per-request state budget: 7 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts did not fit the per-request state budget: 20 region(s) were not sent": 3,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts did not fit the per-request state budget: 23 region(s) were not sent": 8,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts did not fit the per-request state budget: 13 region(s) were not sent": 3,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts did not fit the per-request state budget: 16 region(s) were not sent": 8,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts did not fit the per-request state budget: 1 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts did not fit the per-request state budget: 20 region(s) were not sent": 3,
+                "evidence for src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts did not fit the per-request state budget: 23 region(s) were not sent": 8,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts did not fit the per-request state budget: 14 region(s) were not sent": 2,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts did not fit the per-request state budget: 5 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts did not fit the per-request state budget: 8 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts did not fit the per-request state budget: 10 region(s) were not sent": 2,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts did not fit the per-request state budget: 2 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts did not fit the per-request state budget: 3 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts did not fit the per-request state budget: 4 region(s) were not sent": 1,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts did not fit the per-request state budget: 2 region(s) were not sent": 3,
+                "evidence for src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts did not fit the per-request state budget: 3 region(s) were not sent": 2
+            }
+        },
+        "signals": {
+            "runsWithSignalLedger": 67,
+            "runsWithFindingLedger": 41,
+            "total": 9039,
+            "byDisposition": {
+                "no_additional_recommendation": 5569,
+                "recommend_investigation": 203,
+                "unresolved": 3267
+            },
+            "byRule": {
+                "admission_branch_completes_without_asserting": 441,
+                "advisory_result_claims_authority": 11,
+                "assertion_condition_loosened": 441,
+                "assertion_deleted": 441,
+                "audio_thread_allocation": 105,
+                "conditional_admission_added": 441,
+                "coverage_moved_to_weaker_tier": 441,
+                "duplicates_existing_mechanism": 1047,
+                "forbidden_dependency_direction": 1096,
+                "gate_weakened": 11,
+                "mutation_outside_undo_path": 37,
+                "observable_assertion_removed": 441,
+                "observable_replaced_by_internal": 441,
+                "persisted_shape_changed_without_migration": 37,
+                "production_path_no_longer_reached": 441,
+                "public_contract_widened_silently": 1096,
+                "real_collaborator_mocked": 441,
+                "silent_data_loss_possible": 37,
+                "stated_invariant_contradicted": 1047,
+                "test_skipped_or_excluded": 441,
+                "timing_semantics_changed": 105
+            },
+            "fired": 203,
+            "byFindingDisposition": {
+                "disputed": 2,
+                "needs_more_evidence": 115
+            }
+        },
+        "signalDispositions": {
+            "recorded": 0,
+            "byToken": {},
+            "dismissedFiredSignals": 10,
+            "undismissedFiredSignals": 63,
+            "withoutDossier": 2
+        },
+        "reviewRounds": {
+            "heads": 61,
+            "dossiers": 61,
+            "stanceDraws": 198,
+            "findingsAccepted": 148,
+            "findingsDiscarded": 90,
+            "reviewsPublished": 61
+        },
+        "labelledExpectations": null,
+        "repeatedWarnings": [
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4774,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts",
+                "heads": [
+                    "12f353ee1d320c07fc78d3f848573a8bbf8b2760",
+                    "4894ca6e22ecf0a849eab02461f642fbec41fa9d",
+                    "6d98763264b294c2bf8e04fbfa310c3114173756",
+                    "7d9163c63e1aa795aa3743ac4ddde053c1205f0c",
+                    "91f34ffe0511678ab39433a061fe181aec703e83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4774,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts",
+                "heads": [
+                    "4894ca6e22ecf0a849eab02461f642fbec41fa9d",
+                    "91f34ffe0511678ab39433a061fe181aec703e83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4774,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts",
+                "heads": [
+                    "4894ca6e22ecf0a849eab02461f642fbec41fa9d",
+                    "91f34ffe0511678ab39433a061fe181aec703e83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4774,
+                "ruleId": "conditional_admission_added",
+                "path": "src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts",
+                "heads": [
+                    "4894ca6e22ecf0a849eab02461f642fbec41fa9d",
+                    "91f34ffe0511678ab39433a061fe181aec703e83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4774,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts",
+                "heads": [
+                    "12f353ee1d320c07fc78d3f848573a8bbf8b2760",
+                    "4894ca6e22ecf0a849eab02461f642fbec41fa9d",
+                    "6d98763264b294c2bf8e04fbfa310c3114173756",
+                    "7d9163c63e1aa795aa3743ac4ddde053c1205f0c",
+                    "91f34ffe0511678ab39433a061fe181aec703e83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4791,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "scripts/__tests__/publishReview.spec.ts",
+                "heads": [
+                    "13f0b17dc6668e4f984abd4aa87400a300a4da2a",
+                    "ffbb2cd088a89609f96035ed2ab604f294a0ec83"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4810,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts",
+                "heads": [
+                    "07f864e2941ba7014aa02eb84344f6f96aa76256",
+                    "207d989c1f390e92a4a413dfba572f8583708f8c",
+                    "9a6440759e999991bf1617e0ae04dbae69e43e1e"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignatureClipEdits.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Arrangement/useCases/adjustmentLayer/__tests__/restoreAdjustmentLayerMutation.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/AudioEngine/useCases/offlineRender/__tests__/frozenPrintMixerParity.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/commitGrandBouleDeviceState.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/dispatchGrandBouleMorphEdit.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/grandBouleTemperamentPresetDropped.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/setGrandBouleTemperament.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/GrandBoule/useCases/__tests__/setGrandBouleVelocityCurve.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            },
+            {
+                "repository": "jcosta33/sourdaw",
+                "prNumber": 4884,
+                "ruleId": "admission_branch_completes_without_asserting",
+                "path": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts",
+                "heads": [
+                    "307c1bc4b753103d7742a14bd735b34e551d774c",
+                    "46a6dd4b8a2f9eac88f2888f969d37b0272b258d",
+                    "cc1bf9d1eb31013538d7e92d0bb2edee95989bd2"
+                ]
+            }
+        ]
+    },
+    "skippedArtifacts": [
+        {
+            "path": "/Users/josecosta/dev/sourdaw/.agents/semantic-review/1f7a4ae5d1bf4b14ab89c8fdab1447af1b1eb4389cf73148e3ad171663c0d3d5/scan.json",
+            "reason": "signals[0].probability must be a finite number"
+        },
+        {
+            "path": "/Users/josecosta/dev/sourdaw/.agents/semantic-review/69bb1e583eab3528e9e707e5f86eec0f077b611e3a3de07cfc0e68db2804a4b6/scan.json",
+            "reason": "signals[0].probability must be a finite number"
+        },
+        {
+            "path": "/Users/josecosta/dev/sourdaw/.agents/semantic-review/9f33b0a0f30413d0b840457308bcb5c2ce1a763f118a8c414eb82e999bc0e82e/scan.json",
+            "reason": "signals[0].probability must be a finite number"
+        },
+        {
+            "path": "/Users/josecosta/dev/sourdaw/.agents/semantic-review/aa06364762584db3079658cc533cec5ada10031c3dc1aeaec09ce73957136415/scan.json",
+            "reason": "signals[0].probability must be a finite number"
+        }
+    ],
+    "notComputable": [
+        {
+            "figure": "every figure /Users/josecosta/dev/sourdaw/.agents/semantic-review/1f7a4ae5d1bf4b14ab89c8fdab1447af1b1eb4389cf73148e3ad171663c0d3d5/scan.json would contribute",
+            "reason": "the artifact was skipped rather than read: signals[0].probability must be a finite number"
+        },
+        {
+            "figure": "every figure /Users/josecosta/dev/sourdaw/.agents/semantic-review/69bb1e583eab3528e9e707e5f86eec0f077b611e3a3de07cfc0e68db2804a4b6/scan.json would contribute",
+            "reason": "the artifact was skipped rather than read: signals[0].probability must be a finite number"
+        },
+        {
+            "figure": "every figure /Users/josecosta/dev/sourdaw/.agents/semantic-review/9f33b0a0f30413d0b840457308bcb5c2ce1a763f118a8c414eb82e999bc0e82e/scan.json would contribute",
+            "reason": "the artifact was skipped rather than read: signals[0].probability must be a finite number"
+        },
+        {
+            "figure": "every figure /Users/josecosta/dev/sourdaw/.agents/semantic-review/aa06364762584db3079658cc533cec5ada10031c3dc1aeaec09ce73957136415/scan.json would contribute",
+            "reason": "the artifact was skipped rather than read: signals[0].probability must be a finite number"
+        },
+        {
+            "figure": "acrossRuns.publishedOutcomeStates",
+            "reason": "67 stored scan report(s) were written before scope.states existed; their omission totals here are derived from their own excluded and unassessed entries"
+        },
+        {
+            "figure": "acrossRuns.ruleCoverage.applicableRules",
+            "reason": "67 stored scan report(s) carry no scope.requestOrder, so the rule set of each unit omitted before admission is in no artifact; those runs' applicable counts are floors over the units whose rules the report publishes, and their notAskedByReason under-counts an omission whose rules are unpublished"
+        },
+        {
+            "figure": "acrossRuns.ruleCoverage",
+            "reason": "41 verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change"
+        },
+        {
+            "figure": "acrossRuns.signals",
+            "reason": "41 verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does"
+        },
+        {
+            "figure": "acrossRuns.signals.byFindingDisposition",
+            "reason": "67 run(s) assess units rather than candidate findings, so they carry no finding ledger; acrossRuns.signals.runsWithFindingLedger names how many runs do"
+        },
+        {
+            "figure": "acrossRuns.signalDispositions.undismissedFiredSignals",
+            "reason": "2 fired signal(s) sit on a head with no stored dossier, so whether the round disposed of them is in no artifact"
+        },
+        {
+            "figure": "acrossRuns.reviewRounds",
+            "reason": "5 scan run(s) have no stored dossier for their head, so the round's draws, findings and typed dispositions are absent rather than zero"
+        },
+        {
+            "figure": "acrossRuns.signalDispositions.recorded",
+            "reason": "62 run(s) matched a dossier that records no typed disposition for this head — a historical record written before the field existed, or a round that disposed by citation text alone"
+        }
+    ]
+}
