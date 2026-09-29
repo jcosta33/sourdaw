@@ -281,12 +281,15 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
     async function voicesInSingleWindow(options: {
         fromBeat: number;
         toBeat: number;
+        clip?: Record<string, unknown>;
+        /** The audio clock's beat this window schedules against; defaults to the transport start, 0. */
+        clockBeat?: number;
         note: { startBeat: number; duration: number };
         grooveState: GrooveTemplateState;
     }): Promise<ScheduledVoice[]> {
         grooveTemplateStore.set(options.grooveState);
         const track = midiTrack({
-            clips: [midiClip()],
+            clips: [midiClip(options.clip)],
             devices: [{ id: 'yeast-rack', type: 'yeast' }],
         });
         (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -304,7 +307,15 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             },
         };
         vi.mocked(scheduleNote).mockClear();
-        await scheduleMidiNotes(options.fromBeat, options.toBeat, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(
+            options.fromBeat,
+            options.toBeat,
+            options.clockBeat ?? 0,
+            new Set<string>(),
+            [],
+            defaultTransportState,
+            120
+        );
         return vi.mocked(scheduleNote).mock.calls.map((call) => ({
             pitch: call[2],
             beat: call[3] * BEATS_PER_SECOND,
@@ -464,5 +475,78 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             { pitch: 60, beat: 4, durationBeats: 0.28125 },
             { pitch: 60, beat: 7.78125, durationBeats: 0.21875 },
         ]);
+    });
+
+    // #4924 round two — the grace bound above keeps a wrap tail only while it
+    // lands more than one groove stage behind the owning window, but a duration
+    // tail is re-anchored to the iteration head at its note's own loop phase —
+    // arbitrarily close behind it. The clock, not a window grace, decides
+    // staleness: these cases run a single window with `clockBeat` at the window
+    // start (the wrap tick where the scheduler sits at the position it
+    // re-opened), so a voice's read position is its landing minus the clock —
+    // 0 reads "due exactly now", a negative read is a start in the past that
+    // Web Audio clamps to an immediate fire.
+    describe('when a duration tail is re-anchored behind the audio clock', () => {
+        const loopedClip = { endBeat: 8, loopEnabled: true, loopLength: 4 };
+
+        it('drops the stale tail at loop phase 0.1 and still voices the on-time segment', async () => {
+            // A 4.05-beat note at phase 0.1 rings 0.1 beats past its iteration;
+            // the projection re-anchors that tail to the iteration head: start
+            // 0, just 0.1 beats behind the window that owns the note at 0.1 —
+            // inside the 0.25 grace, so the landed bound voiced it — yet behind
+            // the clock at 0.1. Its time computes to 0.05 s before the audio
+            // clock, which clamps it to an immediate fire: a flam on the true
+            // onset, every pass. The clock at the window start decides instead:
+            // the tail drops and the on-time head sounds at the clock.
+            expect(
+                await voicesInSingleWindow({
+                    fromBeat: 0.1,
+                    toBeat: 0.12,
+                    clip: loopedClip,
+                    clockBeat: 0.1,
+                    note: { startBeat: 0.1, duration: 4.05 },
+                    grooveState: defaultGrooveTemplateState,
+                })
+            ).toEqual([{ pitch: 60, beat: 0, durationBeats: 3.9 }]);
+        });
+
+        it('drops the same stale tail at loop phase 0.25 where the grace bound ends exactly', async () => {
+            // The phase where the landed grace bound ended: the re-anchored
+            // tail at 0 sits exactly at `fromBeat − 0.25`, which the strict `<`
+            // admitted, while the clock at 0.25 makes it a 0.125 s past start.
+            // Same flam, and the same clock bound drops it while the on-time
+            // head sounds at the clock.
+            expect(
+                await voicesInSingleWindow({
+                    fromBeat: 0.25,
+                    toBeat: 0.27,
+                    clip: loopedClip,
+                    clockBeat: 0.25,
+                    note: { startBeat: 0.25, duration: 4.05 },
+                    grooveState: defaultGrooveTemplateState,
+                })
+            ).toEqual([{ pitch: 60, beat: 0, durationBeats: 3.75 }]);
+        });
+
+        it('schedules a landing at the clock position — only a start behind it by more than rounding is stale', async () => {
+            // Boundary of the time formula `now + (landing − clock) in seconds`:
+            // a landing on the clock computes `now` — the onset is due that
+            // instant, so scheduling it is the correct fire, not an early one.
+            // The tail-free note at phase 0.1 isolates that landing, and the
+            // projection's modulo round-trip really returns it a few ulp below
+            // the clock (0.09999999999999964), so this case also pins the
+            // rounding tolerance that keeps wrap noise from reading as
+            // staleness; any wider grace or a `<=` bound without it fails here.
+            expect(
+                await voicesInSingleWindow({
+                    fromBeat: 0.1,
+                    toBeat: 0.12,
+                    clip: loopedClip,
+                    clockBeat: 0.1,
+                    note: { startBeat: 0.1, duration: 0.5 },
+                    grooveState: defaultGrooveTemplateState,
+                })
+            ).toEqual([{ pitch: 60, beat: 0, durationBeats: 0.5 }]);
+        });
     });
 });

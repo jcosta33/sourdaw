@@ -30,7 +30,7 @@ import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midi
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
-import { beatToSamples } from '../../models/TempoMap';
+import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -704,6 +704,20 @@ export async function scheduleMidiNotes(
 
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
+    // #4924 — the earliest start an admitted Yeast segment may still schedule
+    // (the gate below). A wrap re-anchors a duration tail to the iteration head
+    // at its note's own loop phase — arbitrarily close behind the owning window
+    // — so staleness is a clock question, not a window-grace question:
+    // `accumulatedPosition` is the beat `getCurrentTime()` stands for this tick
+    // (the same position the note time formula measures against), and a start
+    // behind it computes a time in the past that Web Audio clamps to an
+    // immediate fire. The window's groove-reach bound stays as the floor for
+    // clocks trailing the window by more than one groove stage, where it still
+    // drops the far-behind wraps. `BEAT_EPSILON` absorbs the wrap re-anchor's
+    // modulo round-trip noise — ulp-scale, orders below any musical distance —
+    // so a landing at the clock reads as due, not stale.
+    const admittedSegmentFloorBeat =
+        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, accumulatedPosition) - BEAT_EPSILON;
     // #4591 — the MIDI twin of scheduleAudioClips' cue-send rule: the strip's
     // mute sits downstream of the pre-fader tap, so a muted MIDI track still
     // feeds its pre-fader (cue) sends, and the offline mixdown schedules those
@@ -1124,17 +1138,18 @@ export async function scheduleMidiNotes(
                         const unswungStartBeat = projectedNote.startBeat;
                         // #4910 admitted the note on its owned coordinate, so its
                         // segments schedule where the projection lands them — a
-                        // groove displacement past `toBeat` included. One bound
-                        // survives (#4924): a segment whose start sits further
-                        // behind the window than one groove stage can reach was
-                        // re-anchored there by the wrap (a duration tail lands a
-                        // full loop behind the owning window), so scheduling it
-                        // computes a start seconds behind the audio clock, which
-                        // Web Audio clamps to an immediate fire. Every other
-                        // path keeps the exact window semantics its selector
-                        // owns.
+                        // groove displacement past `toBeat` included. What they may
+                        // never do is start before the audio clock: the wrap lands
+                        // a tail behind the owning window at its note's loop phase
+                        // — arbitrarily small — so `admittedSegmentFloorBeat` gates
+                        // on the clock position instead of a window grace, and the
+                        // drop is strict beyond its rounding tolerance: a landing
+                        // on the clock computes `getCurrentTime()`, the onset's own
+                        // due instant, and still schedules (#4924). Swing only
+                        // delays a start, so the unswung coordinate is the safe
+                        // comparison.
                         if (admittedOnOwnedBeat) {
-                            if (unswungStartBeat < fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+                            if (unswungStartBeat < admittedSegmentFloorBeat) {
                                 continue;
                             }
                         } else if (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat) {
