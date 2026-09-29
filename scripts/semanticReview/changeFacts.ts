@@ -94,14 +94,20 @@ const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * The `expect.<member>(` heads that are not assertions, read from the shipped Vitest 5.0.2 declarations —
- * `ExpectStatic` in `vitest/dist/chunks/task-utils.d.BZm4GSQD.d.ts` and `config.d.CU_b-wJj.d.ts`, plus
- * chai's `fail` — and from Playwright's configuration helper: the asymmetric matchers, which build the
- * value an assertion compares against, and the registration, serialization, configuration, and state
- * helpers. The `assert` member is a namespace rather than a call, and `not` is a property, so neither can
+ * The `expect.<member>(` heads that are not assertions: the framework's asymmetric matchers, which build
+ * the value an assertion compares against, and its registration, serialization, configuration, and state
+ * helpers. The `assert` member is a namespace rather than a call and `not` is a property, so neither can
  * appear as `expect.<member>(` and neither needs a name here.
+ *
+ * The asymmetric-matcher half is not hand-picked: the spec derives every member of the shipped
+ * `AsymmetricMatchersContaining` and `CustomMatcher` interfaces from the installed `vitest` declarations
+ * and fails when one is missing here, which is how `toSatisfy` and `toBeOneOf` were found — both are
+ * matcher *values* (`expect.toEqual(expect.toBeOneOf(['a']))`), and a removed `expect.toBeOneOf([...])`
+ * would otherwise have published as a removed assertion. Exported so that drift guard reads the one list
+ * rather than a copy of it.
  */
-const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
+export const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
+    // Asymmetric matchers, the complete shipped set.
     'any',
     'anything',
     'arrayContaining',
@@ -110,6 +116,9 @@ const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
     'stringMatching',
     'closeTo',
     'schemaMatching',
+    'toSatisfy',
+    'toBeOneOf',
+    // Registration, serialization, configuration, and expect state.
     'extend',
     'addEqualityTesters',
     'addSnapshotSerializer',
@@ -131,6 +140,54 @@ const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
  */
 function expectMemberHead(text: string): string | undefined {
     return /\bexpect\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/u.exec(text)?.[1];
+}
+
+/** Whether a line ends with a bare `expect` identifier, which the next line in the file may complete. */
+function opensExpectHead(text: string): boolean {
+    return /\bexpect\s*$/u.test(text);
+}
+
+/**
+ * Whether a line completes an open `expect` head: a `.member(` call outside the non-assertion list, or the
+ * direct `(` of `expect(actual)`.
+ */
+function completesExpectHead(text: string): boolean {
+    const member = /^\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/u.exec(text)?.[1];
+    if (member !== undefined) {
+        return !NON_ASSERTION_EXPECT_MEMBERS.has(member);
+    }
+    return /^\s*\(/u.test(text);
+}
+
+/**
+ * The line numbers of one side's changed lines that carry an assertion call, carrying an open head across
+ * a line break.
+ *
+ * This repository spells a session head split from its call — `expect` on one line and
+ * `.soft(result.actions)` on the next, twice in one AiRuntime spec — and neither line alone is an
+ * assertion, so a per-line predicate published zero removed assertions for a removed soft check. A line
+ * that ends with a bare `expect` opens a head, and the next line *in the file* completes it when it
+ * spells a `.member(` head outside the non-assertion list or the direct call; both lines are reported,
+ * because either one can be the line an edit removed. Pairing only consecutive lines keeps two adjacent
+ * additions from different hunks from reading as one split assertion.
+ */
+function assertionLineNumbers(lines: readonly ChangedSourceLine[]): number[] {
+    const reported: number[] = [];
+    let openHead: number | undefined;
+    for (const line of lines) {
+        if (isAssertionLine(line.text)) {
+            reported.push(line.line);
+            openHead = undefined;
+            continue;
+        }
+        if (openHead !== undefined && line.line === openHead + 1 && completesExpectHead(line.text)) {
+            reported.push(openHead, line.line);
+            openHead = undefined;
+            continue;
+        }
+        openHead = opensExpectHead(line.text) ? line.line : undefined;
+    }
+    return reported;
 }
 
 /**
@@ -191,14 +248,10 @@ export function changedLineFacts(lines: PathChangedLines | undefined): UnitChang
     return {
         basis: 'unified-diff',
         before: {
-            removedAssertions: changedLineGroup(
-                lines.removed.filter((line) => isAssertionLine(line.text)).map((line) => line.line)
-            ),
+            removedAssertions: changedLineGroup(assertionLineNumbers(lines.removed)),
         },
         after: {
-            addedAssertions: changedLineGroup(
-                lines.added.filter((line) => isAssertionLine(line.text)).map((line) => line.line)
-            ),
+            addedAssertions: changedLineGroup(assertionLineNumbers(lines.added)),
             addedControlFlow: changedLineGroup(
                 lines.added.filter((line) => isControlFlowLine(line.text)).map((line) => line.line)
             ),

@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { assertEvaluationIsOptIn, parseEvaluationArgs } from '../../../semanticReviewEvaluation.ts';
+import { assertEvaluationIsOptIn, exitCodeFor, parseEvaluationArgs } from '../../../semanticReviewEvaluation.ts';
 import { changedLineFacts, type UnitChangedLineFacts } from '../../changeFacts.ts';
 import { SemanticFailure } from '../../contracts.ts';
 import { createMemoryCache, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
@@ -502,6 +502,29 @@ describe('the opt-in runner', () => {
         // The stub answered every rule the request asked, and only those.
         expect(stub.asked).toContain('assertion_deleted');
         expect(stub.asked).toContain('admission_branch_completes_without_asserting');
+    });
+
+    it('should report a negative as not held when its rule fires, and exit nonzero', async () => {
+        // The corpus's own recorded disagreement: the label-retarget negative fired `assertion_deleted` in
+        // the one live run. A negative branch that answered "held" whatever the model said would report
+        // every label held, so this case drives that fixture above its threshold and reads the count back.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const firedNegativePath = fixtureOf(corpus, 'grid-label-retarget').path;
+        const stub = stubProvider(({ ruleId, path }) => {
+            if (positives.get(path) === ruleId) {
+                return 0.95;
+            }
+            return path === firedNegativePath && ruleId === 'assertion_deleted' ? 0.72 : 0.02;
+        });
+        const result = await evaluateWith(corpus, stub.port);
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'grid-label-retarget');
+        expect(negative?.outcomes.find((entry) => entry.ruleId === 'assertion_deleted')?.outcome).toBe('signal');
+        // The held count and the exit are what a softened negative branch would corrupt: every label would
+        // read as held and the run would exit zero over the very disagreement the corpus records.
+        expect(result.expectationsHeld).toBe(3);
+        expect(negative?.expectedConcernHeld).toBe(false);
+        expect(exitCodeFor(result)).not.toBe(0);
     });
 
     it('should refuse to call a positive held when the rule it labels never fires', async () => {

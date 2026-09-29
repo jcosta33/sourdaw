@@ -8,6 +8,10 @@
  * the response cache keys on.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -15,6 +19,7 @@ import {
     changedLineFacts,
     isAssertionLine,
     isControlFlowLine,
+    NON_ASSERTION_EXPECT_MEMBERS,
     type PathChangedLines,
     type UnitChangedLineFacts,
 } from '../changeFacts.ts';
@@ -134,6 +139,63 @@ function unitPayload(
     });
 }
 
+/** Every declaration file the installed `vitest` ships, so the guard reads the framework's own surface. */
+function vitestDeclarationTexts(): string[] {
+    const packageFile = createRequire(import.meta.url).resolve('vitest/package.json');
+    const texts: string[] = [];
+    const walk = (directory: string): void => {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+            const path = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                walk(path);
+                continue;
+            }
+            if (entry.name.endsWith('.d.ts')) {
+                texts.push(readFileSync(path, 'utf8'));
+            }
+        }
+    };
+    walk(join(dirname(packageFile), 'dist'));
+    return texts;
+}
+
+/**
+ * The members one declared interface contributes, read from its body at the single-tab member indentation
+ * the shipped declarations use. A nested object type's members sit one level deeper and are not part of
+ * the interface's own surface.
+ */
+function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
+    const members = new Set<string>();
+    for (const declaration of declarations) {
+        const start = declaration.indexOf(`interface ${name}`);
+        if (start === -1) {
+            continue;
+        }
+        const open = declaration.indexOf('{', start);
+        if (open === -1) {
+            continue;
+        }
+        let depth = 0;
+        let end = declaration.length;
+        for (let index = open; index < declaration.length; index += 1) {
+            const character = declaration[index];
+            if (character === '{') {
+                depth += 1;
+            } else if (character === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    end = index;
+                    break;
+                }
+            }
+        }
+        for (const match of declaration.slice(open + 1, end).matchAll(/^\t([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu)) {
+            members.add(match[1] ?? '');
+        }
+    }
+    return [...members];
+}
+
 /** How many single-line hunks the saturation witness is sliced into. */
 const WITNESS_REGIONS = 3;
 
@@ -242,6 +304,9 @@ describe('a changed line is classified by its text alone', () => {
             "expect.stringContaining('snap'),",
             'expect.stringMatching(/^snap/u),',
             'expect.closeTo(0.25, 5),',
+            // Matcher values the framework ships beyond the containing helpers.
+            'expect.toBeOneOf([1, 2]),',
+            'expect.toSatisfy((value) => value > 0),',
             'expect.extend({ toBeWithinRange() {} });',
             'expect.addSnapshotSerializer(plugin);',
             'expect.setState({ assertionCalls: 1 });',
@@ -285,6 +350,72 @@ describe('a changed line is classified by its text alone', () => {
                 addedControlFlow: { count: 0, lines: [], truncated: false },
             },
         });
+    });
+
+    it('should report a head split from its call as one assertion on both lines', () => {
+        // The repository's own split spelling, twice in one AiRuntime spec: `expect` on one line and
+        // `.soft(result.actions)` on the next. Neither line alone is an assertion, so a removed soft check
+        // published zero removed assertions before the head was carried across the break.
+        const facts = changedLineFacts({
+            added: [],
+            removed: [
+                { line: 1349, text: '            expect' },
+                { line: 1350, text: '                .soft(result.actions)' },
+                { line: 1351, text: "                .toEqual([{ type: 'glueClips' }]);" },
+            ],
+        });
+        expect(facts).toEqual({
+            basis: 'unified-diff',
+            before: { removedAssertions: { count: 2, lines: [1349, 1350], truncated: false } },
+            after: {
+                addedAssertions: { count: 0, lines: [], truncated: false },
+                addedControlFlow: { count: 0, lines: [], truncated: false },
+            },
+        });
+    });
+
+    it('should not read a split matcher value as an assertion, and should not pair lines that are not adjacent', () => {
+        const value = changedLineFacts({
+            added: [],
+            removed: [
+                { line: 10, text: '        const sample = expect' },
+                { line: 11, text: '            .objectContaining({ gain: 0.5 });' },
+            ],
+        });
+        if (value.basis !== 'unified-diff') {
+            throw new Error('the fixture must derive its block from the diff');
+        }
+        expect(value.before.removedAssertions).toEqual({ count: 0, lines: [], truncated: false });
+        // A head at the end of one hunk's lines and an unrelated continuation at the start of the next are
+        // not one assertion: only the next line in the file completes an open head.
+        const acrossHunks = changedLineFacts({
+            added: [],
+            removed: [
+                { line: 40, text: '        await expect' },
+                { line: 90, text: '                .soft(result.rejections)' },
+            ],
+        });
+        if (acrossHunks.basis !== 'unified-diff') {
+            throw new Error('the fixture must derive its block from the diff');
+        }
+        expect(acrossHunks.before.removedAssertions).toEqual({ count: 0, lines: [], truncated: false });
+    });
+
+    it('should treat every asymmetric matcher the framework declares as a non-assertion', () => {
+        // The non-assertion list is not allowed to be a hand-picked one: this derives the shipped
+        // asymmetric-matcher surface from vitest's own declarations and fails when a member is missing.
+        // `toSatisfy` and `toBeOneOf` are matcher values (`expect(x).toEqual(expect.toBeOneOf(['a']))`),
+        // and a removed `expect.toBeOneOf([...])` would otherwise publish as a removed assertion.
+        const declarations = vitestDeclarationTexts();
+        const declared = [
+            ...declaredInterfaceMembers(declarations, 'AsymmetricMatchersContaining'),
+            ...declaredInterfaceMembers(declarations, 'CustomMatcher'),
+        ];
+        expect(declarations.length).toBeGreaterThan(0);
+        for (const pinned of ['objectContaining', 'toSatisfy', 'toBeOneOf']) {
+            expect(declared).toContain(pinned);
+        }
+        expect(declared.filter((member) => !NON_ASSERTION_EXPECT_MEMBERS.has(member))).toEqual([]);
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {

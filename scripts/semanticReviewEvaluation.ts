@@ -207,8 +207,12 @@ function exitCodeForFailure(code: SemanticFailureCode): number {
     return code === 'unsupported_scope' || code === 'invalid_response' ? EXIT_INVALID : EXIT_INCOMPLETE;
 }
 
-/** A label that did not hold, or a scope that was not delivered, is not an exit-zero run. */
-function exitCodeFor(result: SemanticEvaluationResult): number {
+/**
+ * A label that did not hold, or a scope that was not delivered, is not an exit-zero run. Exported so the
+ * suite can pin that a negative the provider fires is reported as not held and exits nonzero, instead of
+ * trusting the entry point's own reading of the same value.
+ */
+export function exitCodeFor(result: SemanticEvaluationResult): number {
     if (result.outcomes.some((outcome) => !outcome.expectedConcernHeld)) {
         return EXIT_MISMATCH;
     }
