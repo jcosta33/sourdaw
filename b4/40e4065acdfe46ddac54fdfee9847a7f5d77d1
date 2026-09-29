@@ -1,0 +1,26 @@
+measurements/semantic-review/retained-sidecars.json
+  h_beb54bf43b47b7 4,6,14,26-30,42,492-493,532-533,837-844
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  h_beb54bf43b47b7 274-291,295-298,301-302,304-315,317-320,914,1161,1277-1495
+scripts/semanticReviewMeasurement.ts
+  h_beb54bf43b47b7 468-479,532,537-539,542
+scripts/semanticReviewMeasurement/artifacts.ts
+  h_beb54bf43b47b7 385-423,429,432-433,454,457-458,462,507-509,513
+scripts/semanticReviewMeasurement/contracts.ts
+  h_beb54bf43b47b7 319-327,329-332,335,351-360
+scripts/semanticReviewMeasurement/gaps.ts
+  h_beb54bf43b47b7 1-181
+scripts/semanticReviewMeasurement/record.ts
+  h_beb54bf43b47b7 22,29,39,181-182,189-234,242-243,251,257,261-274,354-360,366,368-370,412-422,478-487,534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b440e4065acdfe46ddac54fdfee9847a7f5d77d1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
