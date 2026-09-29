@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "b20e19e351e5c7b24cb3531bbf3fedbe1ec2060108009eeadaf6bf19e33ddb97"
+                "sha256": "5eb455747d5f95aaa014a53d7236bf629865c2bc439cbe3b0ecd167897573e48"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -7931,14 +7931,14 @@
                 ]
             }
         },
-        "npm:@grame/faustwasm@0.16.7": {
-            "source": "https://registry.npmjs.org/@grame/faustwasm/-/faustwasm-0.16.7.tgz",
-            "revision": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+        "npm:@grame/faustwasm@0.18.5": {
+            "source": "https://registry.npmjs.org/@grame/faustwasm/-/faustwasm-0.18.5.tgz",
+            "revision": "sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "27ab25305d38ab8a24cf478339be742af2a8deee3a021c66b2102ab81ae74e3a"
+                        "sha256": "0041a3b18dfb797eece149643114769779b6e9b89e4310b77930be8fc3c3a8ed"
                     }
                 ],
                 "licenses": [

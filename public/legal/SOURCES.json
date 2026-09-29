@@ -4,11 +4,11 @@
         {
             "id": "faustwasm",
             "package": "@grame/faustwasm",
-            "version": "0.16.7",
-            "specifier": "0.16.7",
-            "integrity": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
+            "version": "0.18.5",
+            "specifier": "0.18.5",
+            "integrity": "sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
             "repository": "https://github.com/grame-cncm/faustwasm",
-            "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+            "revision": "ba611eaeefcb41f935cab1481ea9580b470ae8eb",
             "modifications": "none",
             "distribution": "copied-byte-for-byte",
             "packageLicense": "LGPL-3.0",
@@ -18,9 +18,9 @@
             },
             "packageFiles": {
                 "COPYING.txt": "sha256:c747ba23f84a8b47ebc6007bf536215b3ceeab6bfa2f803cab422a512e3f1ed3",
-                "libfaust-wasm/libfaust-wasm.data": "sha256:1a5acda82475a3196eb09444fc6cc42951ae3b8c062828fc4b6f0155a6f23f3f",
-                "libfaust-wasm/libfaust-wasm.js": "sha256:3e582a8a47128ae1eb594c7e39c9a706844304d2377f11439cf3a9f8a8be2622",
-                "libfaust-wasm/libfaust-wasm.wasm": "sha256:c84e10786d9090eb5a70cab806f66b1cf82009d5c0836c473d3cb76fae7e76db"
+                "libfaust-wasm/libfaust-wasm.data": "sha256:12e89b91e9b9fce899b1cdf6f62fdea18d95ce1ae63a69a61d76c3d365e52050",
+                "libfaust-wasm/libfaust-wasm.js": "sha256:73b9ee9ba0368f8a52d1e5feeeaee528930e38420acc9ea65b1198b480ed9e25",
+                "libfaust-wasm/libfaust-wasm.wasm": "sha256:b81cd9c08c5d230a193194286974a5403d0ca6c9fb2768987af8defca6527202"
             },
             "shippedFiles": {
                 "public/faust/libfaust-wasm.data": "libfaust-wasm/libfaust-wasm.data",
@@ -31,17 +31,17 @@
                 {
                     "id": "faustwasm",
                     "repository": "https://github.com/grame-cncm/faustwasm",
-                    "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+                    "revision": "ba611eaeefcb41f935cab1481ea9580b470ae8eb",
                     "relationship": "npm-gitHead",
-                    "archive": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
+                    "archive": "https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz"
                 },
                 {
                     "id": "faust-core",
                     "repository": "https://github.com/grame-cncm/faust",
-                    "revision": "011423ab76674cd96009385af15cadcd281a3259",
-                    "version": "2.86.2",
+                    "revision": "ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8",
+                    "version": "2.89.2",
                     "relationship": "embedded-version-match",
-                    "archive": "https://github.com/grame-cncm/faust/archive/011423ab76674cd96009385af15cadcd281a3259.tar.gz"
+                    "archive": "https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz"
                 }
             ]
         },

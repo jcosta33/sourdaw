@@ -561,6 +561,62 @@ describe('playhead scheduler tick', () => {
         );
     });
 
+    // The scheduled seam hands the pass over one look-ahead early, so the wrap's
+    // epoch advance and rack panic land on the seam tick — and the pending
+    // window's following ticks must not add a second one. A region shorter than
+    // the look-ahead cannot be served by the seam at all (its horizon re-crosses
+    // every tick) and is pinned to one discontinuity per wrap by the late-wrap
+    // case above; this case pins the seam path itself on a region longer than
+    // the look-ahead.
+    it('advances the discontinuity epoch exactly once on a scheduled-seam wrap', async () => {
+        harness.transport_store.value = {
+            ...playingTransport,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 8,
+        };
+        startPlayheadScheduler();
+
+        // 8 beats on the flat 120 BPM map is 4 s, and the look-ahead first
+        // reaches the boundary at 3.9 s. Ticks of 0.05 s: the accumulated
+        // position drops when the seam tick wraps the scheduling window.
+        let beforeEpoch: number | undefined;
+        let beforeGeneration: number | undefined;
+        let ticks = 0;
+        let wraps = 0;
+        let previousPosition = schedulerSession.accumulatedPosition;
+        while (wraps < 1 && ticks < 200) {
+            ticks++;
+            harness.clock = 0.05 * ticks;
+            await fireTick();
+            if (ticks === 70) {
+                const beforeSeam = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+                beforeEpoch = beforeSeam?.discontinuityEpoch;
+                // `generation` is a plain property on the cancellation, safe to
+                // read after later ticks; the epoch getter is live and is not.
+                beforeGeneration = beforeSeam?.generation;
+            }
+            if (schedulerSession.accumulatedPosition < previousPosition) {
+                wraps++;
+            }
+            previousPosition = schedulerSession.accumulatedPosition;
+        }
+        expect(wraps).toBe(1);
+
+        // One tick into the pending window — before the seam instant arrives —
+        // so the assertions cover the whole handover, not just the seam tick.
+        harness.clock = 0.05 * (ticks + 1);
+        await fireTick();
+
+        expect(beforeEpoch).toEqual(expect.any(Number));
+        expect(schedulerSession.discontinuityEpoch).toBeGreaterThan(beforeEpoch ?? 0);
+        expect(schedulerSession.generation).toBe(beforeGeneration);
+        expect(panicYeastRuntime).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(panicYeastRuntime).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(scheduleMidiNotes).mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY
+        );
+    });
+
     it('uses a new semantic discontinuity epoch when the scheduler restarts', async () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
