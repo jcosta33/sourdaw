@@ -3145,6 +3145,80 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { trackId: referenceId } });
     });
 
+    it('refuses to borrow an ordering anchor owner as the new device parent', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; create an audio track named Bass; add a Filter to the new Lead track; add a Compressor to the new Bass track after the Filter on the new Lead track',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [
+                    { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                    { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+                ],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 3,
+                name: 'addDevice',
+                reason: 'Batch-local parent is not unambiguously grounded in the user request',
+            })
+        );
+    });
+
+    it('keeps an ordering anchor on the same requested new track', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [
+                    { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                    { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+                ],
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addDevice', 'addDevice']);
+        const firstDeviceId = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addDevice'
+        )?.deviceId;
+        expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { afterDeviceId: firstDeviceId } });
+    });
+
     it.each([
         ['Lead', 0],
         ['Bass', 1],
@@ -3195,6 +3269,79 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(
             result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
         ).toEqual(names);
+    });
+
+    it('does not borrow named creation clauses across compiled and ordinary producers', () => {
+        const compiledBass = {
+            callId: 'compile-bass',
+            revision: 'revision-named-producers',
+            commands: [
+                {
+                    key: 'bass',
+                    stepId: 'bass',
+                    operation: 'addTrack',
+                    arguments: { name: 'Bass', kind: 'audio' },
+                    reason: 'review probe',
+                    expectedEffect: 'review probe',
+                    binding: 'bass',
+                    dependencyKeys: [],
+                },
+            ],
+        };
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+            ],
+            prompt: 'create an audio track named Lead, then create a MIDI track named Bass',
+            context: { ...projectContext, tracks: [] },
+            projectRevision: 'revision-named-producers',
+            transformProof: {
+                revision: 'revision-named-producers',
+                creativeAuthorityId: null,
+                compilations: [compiledBass],
+            },
+        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('keeps each named track kind across compiled and ordinary producers', () => {
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            ],
+            prompt: 'create an audio track named Lead, then create a MIDI track named Bass',
+            context: { ...projectContext, tracks: [] },
+            projectRevision: 'revision-named-producers',
+            transformProof: {
+                revision: 'revision-named-producers',
+                creativeAuthorityId: null,
+                compilations: [
+                    {
+                        callId: 'compile-bass',
+                        revision: 'revision-named-producers',
+                        commands: [
+                            {
+                                key: 'bass',
+                                stepId: 'bass',
+                                operation: 'addTrack',
+                                arguments: { name: 'Bass', kind: 'midi' },
+                                reason: 'test fixture',
+                                expectedEffect: 'test fixture',
+                                binding: 'bass',
+                                dependencyKeys: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addTrack']);
+        expect(result.actions[0]).toMatchObject({ payload: { name: 'Bass', kind: 'midi' } });
+        expect(result.actions[1]).toMatchObject({ payload: { name: 'Lead', kind: 'audio' } });
     });
 
     it('keeps one requested bass track slot while allowing its new clip and notes', () => {

@@ -4621,20 +4621,37 @@ function getNamedCreationSegments(scope: PromptClause, actionType: BatchLocalBin
     });
 }
 
-function getNamedCreationMembers(scope: PromptClause, actionType: BatchLocalBindingProducerName): string[] {
-    return getNamedCreationSegments(scope, actionType).flatMap((segment) => {
-        const members: string[] = [];
-        const masked = scanPromptQuotedText(segment).maskedText;
-        let start = 0;
-        for (const separator of masked.matchAll(/,\s*(?:and\b\s*)?|\s+and\s+/giu)) {
-            if (separator.index === undefined) {
-                continue;
-            }
-            members.push(segment.slice(start, separator.index).trim());
-            start = separator.index + separator[0].length;
+function splitNamedCreationMembers(segment: string): string[] {
+    const members: string[] = [];
+    const masked = scanPromptQuotedText(segment).maskedText;
+    let start = 0;
+    for (const separator of masked.matchAll(/,\s*(?:and\b\s*)?|\s+and\s+/giu)) {
+        if (separator.index === undefined) {
+            continue;
         }
-        members.push(segment.slice(start).trim());
-        return members.filter((member) => member.length > 0);
+        members.push(segment.slice(start, separator.index).trim());
+        start = separator.index + separator[0].length;
+    }
+    members.push(segment.slice(start).trim());
+    return members.filter((member) => member.length > 0);
+}
+
+function getNamedCreationMembers(scope: PromptClause, actionType: BatchLocalBindingProducerName): string[] {
+    return getNamedCreationSegments(scope, actionType).flatMap(splitNamedCreationMembers);
+}
+
+function getNamedTrackMembersWithKinds(scope: PromptClause): { name: string; kind: 'audio' | 'midi' | null }[] {
+    const matches = [...scope.masked.matchAll(/\btracks?\s+(?:named|called)\b/giu)];
+    return matches.flatMap((match, index) => {
+        if (match.index === undefined) {
+            return [];
+        }
+        const prefix = scope.masked.slice(0, match.index);
+        const requestedKind = /\b(audio|midi)\s*$/iu.exec(prefix)?.[1]?.toLowerCase();
+        const kind = requestedKind === 'audio' || requestedKind === 'midi' ? requestedKind : null;
+        const start = match.index + match[0].length;
+        const end = matches[index + 1]?.index ?? scope.text.length;
+        return splitNamedCreationMembers(scope.text.slice(start, end)).map((name) => ({ name, kind }));
     });
 }
 
@@ -4768,6 +4785,7 @@ function getCreatedObjectRequestIndexes(input: {
             }
             const quantity = new RegExp(`\\b(\\d+)\\s+(?:\\w+\\s+){0,2}${noun.source}`, 'u').exec(normalized);
             const namedMembers = getNamedCreationMembers(scope, actionType);
+            const namedTrackMembers = actionType === 'addTrack' ? getNamedTrackMembersWithKinds(scope) : [];
             const slots = quantity
                 ? Math.min(Number(quantity[1]), SEMANTIC_COMMAND_LIST_MAX_CREATIONS)
                 : Math.min(Math.max(namedMembers.length, 1), SEMANTIC_COMMAND_LIST_MAX_CREATIONS);
@@ -4784,19 +4802,23 @@ function getCreatedObjectRequestIndexes(input: {
                     if (namedMembers.length === 0) {
                         return true;
                     }
-                    const matchingMembers = namedMembers.filter((member) =>
-                        namesNamedCreationMember(member, binding.name)
-                    ).length;
+                    const matchingMembers =
+                        actionType === 'addTrack'
+                            ? namedTrackMembers.filter(
+                                  (member) =>
+                                      namesNamedCreationMember(member.name, binding.name) &&
+                                      (member.kind === null || member.kind === binding.trackKind)
+                              ).length
+                            : namedMembers.filter((member) => namesNamedCreationMember(member, binding.name)).length;
                     const permittedCount = namedMembers.length === 1 ? slots : matchingMembers;
-                    return (
-                        matchingMembers > 0 && (spentNames.get(normalizePromptText(binding.name)) ?? 0) < permittedCount
-                    );
+                    const identity = `${normalizePromptText(binding.name)}:${binding.trackKind ?? ''}`;
+                    return matchingMembers > 0 && (spentNames.get(identity) ?? 0) < permittedCount;
                 });
                 if (!matching) {
                     break;
                 }
                 authorized.add(matching[0]);
-                const name = normalizePromptText(matching[1].name);
+                const name = `${normalizePromptText(matching[1].name)}:${matching[1].trackKind ?? ''}`;
                 spentNames.set(name, (spentNames.get(name) ?? 0) + 1);
             }
         }
@@ -5090,6 +5112,21 @@ function namesProducedCreationInClause(clause: PromptClause, actionName: string,
     return namesWholeCreatedObject(clause.text, name);
 }
 
+function getCreatedParentEvidenceClause<TClause extends PromptClause>(clause: TClause, actionName: string): TClause {
+    if (actionName !== 'addDevice') {
+        return clause;
+    }
+    const orderingAnchor = /\bafter\b/iu.exec(clause.masked);
+    if (orderingAnchor?.index === undefined) {
+        return clause;
+    }
+    const beforeAnchor = clause.masked.slice(0, orderingAnchor.index);
+    if (!/\b(?:to|on|in|into)\b/iu.test(beforeAnchor)) {
+        return clause;
+    }
+    return { ...clause, masked: beforeAnchor, text: clause.text.slice(0, orderingAnchor.index) };
+}
+
 function getExplicitCreatedTargetIntent(input: {
     bindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
@@ -5132,15 +5169,21 @@ function getExplicitCreatedTargetIntent(input: {
     const quoteScan = scanPromptQuotedText(input.prompt);
     const isCreation = isBatchLocalCreationActionType(input.call.name);
     const promptClauses = getPromptClauses(input.prompt, quoteScan.maskedText);
-    const actionClauses = promptClauses.filter(
-        (clause) =>
-            (resolveClauseActionIntent(clause.masked, input.catalog, input.call.name)?.actionType === input.call.name ||
-                (input.call.name === 'renameClip' && /\brename\b.*\bclip\b/iu.test(clause.masked))) &&
-            (!isCreation ||
-                ((input.producedName === undefined ||
-                    namesProducedCreationInClause(clause, input.call.name, input.producedName)) &&
-                    /\b(?:on|in|into|to)\s+(?!beats?\b|bars?\b|measures?\b|\d+\b)/iu.test(clause.masked)))
-    );
+    const actionClauses = promptClauses
+        .filter(
+            (clause) =>
+                (resolveClauseActionIntent(clause.masked, input.catalog, input.call.name)?.actionType ===
+                    input.call.name ||
+                    (input.call.name === 'renameClip' && /\brename\b.*\bclip\b/iu.test(clause.masked))) &&
+                (!isCreation ||
+                    input.producedName === undefined ||
+                    namesProducedCreationInClause(clause, input.call.name, input.producedName))
+        )
+        .map((clause) => getCreatedParentEvidenceClause(clause, input.call.name))
+        .filter(
+            (clause) =>
+                !isCreation || /\b(?:on|in|into|to)\s+(?!beats?\b|bars?\b|measures?\b|\d+\b)/iu.test(clause.masked)
+        );
     if (actionClauses.length === 0) {
         return 'none';
     }
