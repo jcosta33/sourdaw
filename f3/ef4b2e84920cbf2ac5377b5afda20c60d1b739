@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_cbeb3378adfdb9 3115-3121
+  s_ed5aa36a3ba357::t_4707e685b375f8 3124-3137,3141-3144
+  s_ed5aa36a3ba357::t_6e188c09a82a7e 3105,3111
+  s_ed5aa36a3ba357::t_df7f46dc4e1f66 3100-3104,3106-3110,3112-3114,3122-3123
+  s_ed5aa36a3ba357::t_7397160fdc7382 3138-3140
+  s_ed5aa36a3ba357::t_daf6182905193c 3078-3099
+  s_ed5aa36a3ba357::t_4f00b246536cff 3145-3147
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_c7bb79bf11b27f 5152,5182-5185,5220
+  s_ed5aa36a3ba357::t_abe65aff5ca081 5107-5109,5137-5138
+  s_ed5aa36a3ba357::t_f3d7fbb5ab1203 4929,5100,5133,5139,5142,5200,5212-5219,6160
+  s_ed5aa36a3ba357::t_81b121b4ce76eb 5134-5135,5147-5151,5153-5158,5168-5181,5186-5189
+  s_ed5aa36a3ba357::t_1d9b95acb567aa 5098,5159-5167,6158
+  s_ed5aa36a3ba357::t_84dcd9fdca708f 5075-5092,5140-5141,5190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f3ef4b2e84920cbf2ac5377b5afda20c60d1b739",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
