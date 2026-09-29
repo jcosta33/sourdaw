@@ -670,4 +670,32 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: Array<{ regionsAfter: unknown }> } | null;
         expect(slot?.reKeyedLanes?.[0]?.regionsAfter).toEqual([]);
     });
+
+    it('drops a stale region wholly right of the span when the track carries mixed windows', () => {
+        // The splitting clip contributes one unmoved window (its left piece)
+        // and one shifted window (its right piece, rippled -4). The verbatim
+        // guarantee requires every window unmoved; a `some` check would pass
+        // on the left piece and let the stale region ride verbatim over
+        // rippled beats.
+        setTracks([
+            createClip({ id: 'host', startBeat: 0, endBeat: 2 }),
+            createClip({ id: 'span', startBeat: 2, endBeat: 12 }),
+        ]);
+        const take = createTake('host', 'Host take', 0, 2);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 10, endBeat: 14, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } })
+        );
+
+        expect(liveLane().activeCompRegions).toEqual([]);
+        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: Array<{ regionsAfter: unknown }> } | null;
+        expect(slot?.reKeyedLanes?.[0]?.regionsAfter).toEqual([]);
+    });
 });

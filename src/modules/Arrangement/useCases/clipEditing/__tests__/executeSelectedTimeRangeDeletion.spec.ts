@@ -1411,6 +1411,32 @@ describe('executeSelectedTimeRangeDeletion', () => {
         ]);
     });
 
+    it('records no take-lane slot for a region starting exactly at the range’s right edge', () => {
+        // The boundary twin of the wholly-right pin: the region starts
+        // exactly where the excised range ends, so nothing under it moved and
+        // it is already correct on the after side. A guard requiring a
+        // strictly-later start would record a content-equal transition — plan
+        // noise on every excise beside a parked comp.
+        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4 });
+        const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 6, endBeat: 12 });
+        setArrangement([createTrack('target', [left, keeper])]);
+        const keeperTake = { ...createTake('keeper', 'Keeper take', 6, 12), id: 'take-keeper' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [keeperTake],
+            activeCompRegions: [{ startBeat: 6, endBeat: 12, takeId: keeperTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        const laneStateBefore = takeLaneStore.value;
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+
+        expect(result.inversePlan).toMatchObject({ takeLanes: null });
+        expect(takeLaneStore.value).toBe(laneStateBefore);
+    });
+
     it('keeps a stale region’s right-of-range tail verbatim when the excise moves nothing there', () => {
         // The stale region overhangs its take across the whole range. The
         // excise consumes the in-range portion, but the tail right of the
@@ -1521,6 +1547,28 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([{ ...tailTake, clipId: 'clip-dtr-12345678' }]);
         expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
             { startBeat: 6, endBeat: 10, takeId: tailTake.id },
+        ]);
+    });
+
+    it('re-points a region covering exactly the right fragment at the minted fragment take', () => {
+        // The region covers exactly the material the split's right fragment
+        // carries. It must re-point at the minted fragment take: riding
+        // verbatim on equal beats would keep it naming the trimmed source
+        // take — the #4841 orphan shape.
+        const span = createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10 });
+        setArrangement([createTrack('target', [span])]);
+        const spanTake = { ...createTake('span', 'Span take', 0, 10), id: 'take-span' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [spanTake],
+            activeCompRegions: [{ startBeat: 6, endBeat: 10, takeId: spanTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 6, endBeat: 10, takeId: 'take-span:time-delete-right:2:6' },
         ]);
     });
 });

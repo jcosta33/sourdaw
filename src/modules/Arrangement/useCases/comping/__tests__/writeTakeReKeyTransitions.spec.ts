@@ -4,6 +4,7 @@ import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeL
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { applyTakeReKeyTransitions } from '../applyTakeReKeyTransitions';
+import { restoreTakeReKeyTransitions } from '../restoreTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from '../takeReKeyTransition';
 
 const mocks = vi.hoisted(() => {
@@ -281,5 +282,23 @@ describe('writeTakeReKeyTransitions', () => {
         applyTakeReKeyTransitions([transition]);
 
         expect(liveLane().takes).toEqual([{ ...reKeyedTake, selected: true }]);
+    });
+
+    it('finds the lane by track when a remove-add cycle gave it a fresh id', () => {
+        // The lane was removed and re-added between capture and replay: a
+        // fresh id, same track. The transition's laneId matches nothing, and
+        // only the trackId fallback lands the restore on the re-created lane.
+        const fixture = splitFixture('clip-1', 'track-1');
+        const recreatedLane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [recreatedLane] };
+        mocks.trackState.value = {
+            tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }, { id: 'clip-1-right' }] }],
+        };
+
+        restoreTakeReKeyTransitions([splitTransition(fixture, 0)]);
+
+        // The restore direction reconciles toward the pre-split facet: the
+        // original take lands on the re-created lane.
+        expect(liveLane().takes).toEqual([fixture.take]);
     });
 });
