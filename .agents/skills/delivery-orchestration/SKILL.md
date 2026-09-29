@@ -370,8 +370,8 @@ assessment, and the literal token keeps working. An entry matches by that exact
 rule-and-path pair rather than by the space-joined citation text, and a
 free-text citation disposes wherever it names the signal — trailing
 punctuation never blocks it — unless another fired signal's longer citation
-continues at that position, so a longer fired path's token never disposes a
-shorter one. The read is structural: an
+contains that occurrence, wherever inside it the token sits, so a longer fired
+path's token never disposes a shorter one. The read is structural: an
 unknown token, an entry naming a signal the delivered record did not fire, two
 entries for one signal, or any entry when the record delivered nothing
 (`no-assessment`) is refused; no disposition requires a posted comment or an

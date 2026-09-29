@@ -217,8 +217,8 @@ of the signal it names whatever disposition it records, and the literal token ke
 round is never forced to agree with the model or to write prose to dismiss a false alarm. Entries match
 a fired signal by its exact `ruleId` and `path` pair, never by their space-joined citation text, and a
 free-text citation disposes wherever it names that signal — prose after it, punctuation included,
-never blocks it — unless another fired signal's longer citation continues at that same position, where
-the token names that longer signal instead. Validation
+never blocks it — unless another fired signal's longer citation contains that occurrence, wherever
+inside that longer citation the token sits, where the token names that longer signal instead. Validation
 is structural only: an unknown disposition token, an entry naming a signal the delivered assessment
 did not fire, two entries for one signal, or any entry when the record delivered nothing
 (`no-assessment`) is refused, and no disposition requires a posted comment or an issue — a

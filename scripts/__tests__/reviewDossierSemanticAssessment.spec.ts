@@ -750,6 +750,73 @@ describe('signal identity at publication', () => {
         );
     });
 
+    /**
+     * Suffix and interior containment are crafted rather than ordinary inputs: a citation token is
+     * `semantic-signal <ruleId> <path>` and both fields are free text from the delivered record, so a
+     * longer token can carry a shorter one anywhere inside it. Only the longer citation is named, and
+     * the shorter signal must still report as undisposed rather than being disposed by text that never
+     * names it.
+     */
+    it('does not dispose a shorter signal named only inside a longer citation’s suffix', () => {
+        const contained = { ruleId: 'r', path: 'src/a.ts' };
+        const containing = { ruleId: 'outer', path: `semantic-signal ${contained.ruleId} ${contained.path}` };
+
+        expect(firedSignalCitationToken(containing).endsWith(firedSignalCitationToken(contained))).toBe(true);
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(containing)}`,
+                    ],
+                }),
+                coverageWith([contained, containing]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(r at src\/a\.ts\): name each as semantic-signal <ruleId> <path>/u
+        );
+    });
+
+    it('does not dispose a shorter signal named only inside a longer citation’s interior', () => {
+        const contained = { ruleId: 'r', path: 'src/a.ts' };
+        const containing = { ruleId: 'w', path: `x semantic-signal ${contained.ruleId} ${contained.path} and more` };
+
+        const containingToken = firedSignalCitationToken(containing);
+        const containedToken = firedSignalCitationToken(contained);
+        expect(containingToken.indexOf(containedToken)).toBeGreaterThan(0);
+        expect(containingToken.endsWith(containedToken)).toBe(false);
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [`the assessment run semantic-review-42-1 fired ${containingToken}`],
+                }),
+                coverageWith([contained, containing]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(r at src\/a\.ts\): name each as semantic-signal <ruleId> <path>/u
+        );
+    });
+
+    it('disposes the shorter signal when its own citation is named beside a containing one', () => {
+        const contained = { ruleId: 'r', path: 'src/a.ts' };
+        const containing = { ruleId: 'outer', path: `semantic-signal ${contained.ruleId} ${contained.path}` };
+
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired ${firedSignalCitationToken(contained)}`,
+                    ],
+                }),
+                coverageWith([contained, containing]),
+                EXPECTED
+            )
+        ).toThrow(
+            /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(outer at semantic-signal r src\/a\.ts\)/u
+        );
+    });
+
     it('disposes a shorter path from a citation that ends the text', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(

@@ -47,8 +47,9 @@
  * (`no-assessment`) refuses any entry at all — the round cannot record outcomes for signals that were
  * never delivered. The free-text citation token disposes of its signal wherever the text carries that
  * citation, whatever prose follows it — a period, a comma, or a semicolon never blocks it — and only
- * another fired signal's longer citation continuing at that same position displaces it, so a token
- * that is merely the prefix of a longer fired path's citation names that longer signal instead.
+ * another fired signal's longer citation containing that occurrence displaces it, wherever inside
+ * that longer citation the token sits, so a token that is merely part of a longer fired citation
+ * names that longer signal instead.
  */
 
 import { fail } from './prContract.ts';
@@ -254,12 +255,16 @@ function firedSignalIdentity(signal: { readonly ruleId: string; readonly path: s
 }
 
 /**
- * Whether another fired signal's longer citation continues `token` at `index`, which makes that
- * occurrence the longer signal's rather than this one's. Exactness is decided against the delivered
+ * Whether another fired signal's longer citation contains this occurrence, which makes it that
+ * signal's rather than this one's. Containment is not only a prefix relationship: fired tokens are
+ * built from the record's own rule and path, and both are free text, so one citation can carry
+ * another as its suffix or in its interior. Displacement needs both halves — a longer fired token
+ * that contains the token at some offset, and the text actually carrying that longer citation at the
+ * position the offset implies — so a longer citation appearing elsewhere in the prose, or sharing
+ * only characters with the token, displaces nothing. Exactness is decided against the delivered
  * record's own fired set, never against a character class: a path continues with a letter or a dot
- * just as a sentence continues with a period, so a class that refuses a dot blocks the ordinary
- * sentence-final citation. Only a longer citation the record actually fired, continuing at that
- * exact position, displaces the shorter signal's own token.
+ * just as a sentence continues with a period, so a class that refuses a dot would block the ordinary
+ * sentence-final citation.
  */
 function extendsAnotherFiredSignal(
     text: string,
@@ -267,13 +272,23 @@ function extendsAnotherFiredSignal(
     token: string,
     firedTokens: readonly string[]
 ): boolean {
-    return firedTokens.some((other) => other !== token && other.startsWith(token) && text.startsWith(other, index));
+    return firedTokens.some((other) => {
+        if (other === token) {
+            return false;
+        }
+        for (let offset = other.indexOf(token); offset !== -1; offset = other.indexOf(token, offset + 1)) {
+            if (index >= offset && text.startsWith(other, index - offset)) {
+                return true;
+            }
+        }
+        return false;
+    });
 }
 
 /**
  * Whether `text` carries `token` as a citation of this signal: an occurrence counts when no other
- * fired signal's longer citation continues at its position, and every other character after it —
- * a period, a semicolon, a comma, whitespace, the end of the text — is prose the round wrote.
+ * fired signal's longer citation contains it, and every other character after it — a period, a
+ * semicolon, a comma, whitespace, the end of the text — is prose the round wrote.
  */
 function citesFiredSignal(text: string, token: string, firedTokens: readonly string[]): boolean {
     let index = text.indexOf(token);
