@@ -29,15 +29,17 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
  * The takes facet of one lane, reconciled toward the transition's target side.
  *
  * The rule set mirrors `reconcileLane`'s: only the transition's own deltas
- * move. A take the transform removed leaves; a take it added comes back when
- * its clip is live (a take whose clip is gone has no material to resolve
- * against — the liveness rule every take replay follows); a take it re-keyed,
- * split, trimmed, or shifted takes the target side's fields, except `selected`
- * — interaction state the operation never owns, so a live toggle survives
- * either direction. A take identical on both sides (including one the paired
- * retirement removes: it is verbatim in both captures) is never touched here,
- * and a take the transition never heard of — a collaborator's write that
- * landed after the capture — survives untouched.
+ * move. A take the transform removed leaves; a take it added or moved comes
+ * back when its clip is live (a take whose clip is gone has no material to
+ * resolve against — the liveness rule every take replay follows); a take it
+ * re-keyed, split, trimmed, or shifted takes the target side's fields, except
+ * `selected` — interaction state the operation never owns, so a live toggle
+ * survives either direction. A take identical on both sides (including one
+ * the paired retirement removes: it is verbatim in both captures) is never
+ * touched here — and when live no longer holds it, it stays absent: its
+ * deletion is a write the capture never recorded, the resurrection doctrine
+ * `reconcileLane` documents. A take the transition never heard of — a
+ * collaborator's write that landed after the capture — survives untouched.
  *
  * `requireLiveClipIds` answers the liveness question, computing the
  * project-wide clip-id set on first use and caching it for the rest of the
@@ -66,6 +68,13 @@ function reconcileTransitionTakes(
     for (const target of toTakes) {
         const liveTake = liveById.get(target.id);
         if (!liveTake) {
+            // Re-add only takes the transition itself moved — minted across
+            // the facets, or re-keyed between them. A take verbatim on both
+            // facets and missing from live was deleted by a write the capture
+            // never recorded: it stays absent rather than being resurrected.
+            if (fromById.has(target.id) && !modifiedIds.has(target.id)) {
+                continue;
+            }
             if (liveClipIds === null) {
                 liveClipIds = requireLiveClipIds();
             }

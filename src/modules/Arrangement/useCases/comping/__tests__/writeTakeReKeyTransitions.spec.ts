@@ -301,4 +301,28 @@ describe('writeTakeReKeyTransitions', () => {
         // original take lands on the re-created lane.
         expect(liveLane().takes).toEqual([fixture.take]);
     });
+
+    it('does not resurrect a verbatim-facet take a collaborator deleted after the capture', () => {
+        // The take is identical on both transition facets, so the transition
+        // never moved it: its absence from the live lane is a collaborator's
+        // write the capture never recorded, and the restore leg must not undo
+        // it — the resurrection doctrine reconcileLane documents.
+        const take = createTake('clip-1', 'The take', 0, 10);
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+
+        const transition: TakeReKeyLaneTransition = {
+            laneIndex: 0,
+            laneId: lane.id,
+            trackId: 'track-1',
+            takesBefore: [take],
+            takesAfter: [take],
+            regionsBefore: [],
+            regionsAfter: [],
+        };
+        restoreTakeReKeyTransitions([transition]);
+
+        expect(liveLane().takes).toEqual([]);
+    });
 });
