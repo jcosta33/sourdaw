@@ -623,7 +623,26 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // device specs are what observe that the ceiling gain and the rebuilt
         // `WaveShaper` clip curve are written. The file still writes no project
         // device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
+        // Count provenance: measured 8 after the export scope law (#4912) —
+        // the six below plus the two merged-group application calls the
+        // post-loop pass adds: one scheduleCurveWritePoints and one
+        // scheduleCompiledEventsOnParam, each delegating to the extracted
+        // files that own the write loops. The file still writes no project
+        // device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 8,
+        // Count provenance: new with the export scope law (#4912) — the
+        // shared events-to-segments conversion compileAutomationSegments
+        // also calls; one family member for its own conversion call.
+        'src/modules/AudioEngine/repositories/offlineScheduler/compiledEventsToSegments.ts': 1,
+        // Count provenance: new with the export scope law (#4912) — resolves
+        // overlapping event streams through the segment merge; one family
+        // member for the merged-stream call it issues.
+        'src/modules/AudioEngine/repositories/offlineScheduler/mergeAutomationEventStreams.ts': 1,
+        // Count provenance: new with the export scope law (#4912) — the
+        // param write loop extracted verbatim from
+        // scheduleAutomationOnParam; one family member for the loop's own
+        // write call.
+        'src/modules/AudioEngine/repositories/offlineScheduler/scheduleCompiledEventsOnParam.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
