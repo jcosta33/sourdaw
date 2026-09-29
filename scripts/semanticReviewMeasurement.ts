@@ -439,13 +439,23 @@ export function readMeasurementInputs(input: {
 }
 
 function mebibytes(bytes: number): string {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+    const mebibyteCount = bytes / (1024 * 1024);
+    return `${mebibyteCount.toFixed(1)} MiB`;
 }
 
-/** The human reading of the record. Every line names the figures it prints; none of them is a verdict. */
+/**
+ * The human reading of the record. Every line names the figures it prints; none of them is a verdict.
+ *
+ * The two derived spans are computed before the lines that print them on purpose: a division inside a
+ * template interpolation after a parenthesized member expression (`${(a.b / c)}`) sends the trusted
+ * snapshot's import scanner (`snapshotImportSpecifiers` in `scripts/trustedGithubWriteBootstrap.ts`)
+ * into unbounded recursion, and the advisory semantic review scans this file as a changed path. That
+ * scanner defect is reported rather than worked around silently; this file simply does not feed it.
+ */
 export function renderMeasurementSummary(record: MeasurementRecord): string {
     const { acrossRuns: across, sources } = record;
     const states = across.publishedOutcomeRuns > 0 ? across.publishedOutcomeStates : across.derivedOutcomeStates;
+    const wallClockSeconds = (across.wallClockMs / 1000).toFixed(1);
     const lines = [
         `semantic review measurement — ${record.format} — ${record.measuredAt}`,
         `sources: ${String(sources.storedRunsRead)} stored run(s) under ${sources.sidecarRoot}, ${String(sources.dossiersRead)} dossier(s) under ${sources.reviewBundleRoot}, ${String(sources.evaluationFixturesRead)} evaluation fixture(s)`,
@@ -460,7 +470,7 @@ export function renderMeasurementSummary(record: MeasurementRecord): string {
         `evidence: ${String(across.evidence.unitsMissingRequiredEvidence)} unit(s) missing required evidence, ${String(across.evidence.truncatedRegions)} truncated region(s) over ${String(across.evidence.truncatedPaths)} path(s)`,
         `outcome states: notApplicable ${String(states.notApplicable)}, excludedWithAssessmentOwed ${String(states.excludedWithAssessmentOwed)}, missingRequiredEvidence ${String(states.missingRequiredEvidence)}, omittedForBudgetOrDeadline ${String(states.omittedForBudgetOrDeadline)}, providerFailure ${String(states.providerFailure)}, dryRun ${String(states.dryRun)}`,
         `usage: ${String(across.usage.networkAttempts)} network attempt(s), ${mebibytes(across.usage.submittedBytes)} submitted, ${String(across.usage.actualInputTokens)} input token(s), ~$${across.usage.estimatedCostUsd.toFixed(4)}, ${String(across.usage.cacheHits)} cache hit(s)`,
-        `wall clock: ${(across.wallClockMs / 1000).toFixed(1)} s over ${String(across.wallClockRuns)} run(s), from their own startedAt/completedAt`,
+        `wall clock: ${wallClockSeconds} s over ${String(across.wallClockRuns)} run(s), from their own startedAt/completedAt`,
         `signals: ${String(across.signals.total)} (${Object.entries(across.signals.byDisposition)
             .map(([disposition, count]) => `${disposition} ${String(count)}`)
             .join(', ')})`,

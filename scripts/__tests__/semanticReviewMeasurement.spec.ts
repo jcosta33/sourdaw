@@ -9,9 +9,10 @@
  * not computable rather than as a count of none.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -25,6 +26,7 @@ import {
 import { parseReportJson } from '../semanticReview/report.ts';
 import { buildScopeStates, type SemanticScopeStates } from '../semanticReview/scopeAccounting.ts';
 import { measureCheckout } from '../semanticReviewMeasurement.ts';
+import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
 
 import type { MeasurementMachine, MeasurementRecord } from '../semanticReviewMeasurement/contracts.ts';
 
@@ -1001,5 +1003,26 @@ describe('the record itself', () => {
         expect(record.fieldSources['runs[].usage']).toContain('#usage');
         expect(record.fieldSources['runs[].wallClock']).toContain('span');
         expect(record.runs[0]?.artifact.sha256).toMatch(/^[0-9a-f]{64}$/u);
+    });
+});
+
+/**
+ * The advisory semantic review scans every changed TypeScript file with the trusted snapshot's import
+ * scanner, and that scanner ends the process with `Maximum call stack size exceeded` on one shape this
+ * lane's entry briefly carried: a division after a parenthesized member expression inside a template
+ * interpolation (`${(a.b / c)}`). The defect is in `snapshotImportSpecifiers`, not here, and these
+ * sources must not feed it until it is fixed — a red advisory check on this lane is what this case
+ * catches, and it stays true after the fix.
+ */
+describe("the trusted import scanner reads this lane's sources", () => {
+    it.each([
+        ['the measurement entry', '../semanticReviewMeasurement.ts'],
+        ['the record shape', '../semanticReviewMeasurement/contracts.ts'],
+        ['the per-artifact derivation', '../semanticReviewMeasurement/artifacts.ts'],
+        ['the across-run aggregation', '../semanticReviewMeasurement/record.ts'],
+    ])('scans %s without recursing without bound', (_label, relativePath) => {
+        const source = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
+
+        expect(() => snapshotImportSpecifiers(source)).not.toThrow();
     });
 });
