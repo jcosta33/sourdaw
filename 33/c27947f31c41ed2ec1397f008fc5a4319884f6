@@ -1,0 +1,120 @@
+package.json
+  h_beb54bf43b47b7 57
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 15,84,603-610
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 1-10,11-14,15-21,22,23-28,29,30-141,142-164,165-177,178-180,181-184,185-188,189-214,215-222,223-227,228-240,241-307,308-317,318-324,325-330,331-340,341-348,349,350-351,352,353-355,356-360,361-378,379-397,398-446,447-464,465-466,467-535,536-573,574,575,576-591
+scripts/semanticReview/__tests__/multiPassTransport.spec.ts
+  h_beb54bf43b47b7 3,50
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 27-28,198-199,206,412,3005,4025,4147
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 1-74,75-79,80,81-88,89-91,92-93,94-95,96,97-101,102,103-110,111,112,113,114-116,117,118-122,123-125,126-148,149-196,197-218,219-222,223-254,255,256-257,258,259-264
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  h_beb54bf43b47b7 1-5,7-9,13,15,23-44,46-217,235-398,399-412,413-546,547-569,570-612,659-688,689-703,704-712,713-714
+  s_ed5aa36a3ba357::t_2f99437330abdc 6,10-12,14,16-19,21-22,45,218-234,613-619,621-623,641-658
+scripts/semanticReview/evaluation/corpus.ts
+  h_beb54bf43b47b7 1-24,25-30,31-170,171-251,252-298,299-305,306-520
+scripts/semanticReview/evaluation/runEvaluation.ts
+  h_beb54bf43b47b7 1-361,374-382
+  s_ed5aa36a3ba357::t_6a095e32b878dc 362-373
+scripts/semanticReview/evaluation/semanticEvaluationCorpus.json
+  h_beb54bf43b47b7 1-297
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 88-89,144-149,169-170,713-725,742-745,842
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 20,106-175,180-181,183-184,186-188,199,209,223-226,231-287,345-347
+scripts/semanticReview/passes.ts
+  h_beb54bf43b47b7 17-18,390,398
+scripts/semanticReview/requestPayload.ts
+  h_beb54bf43b47b7 8-14,17,40-41,63-65,76-81,104-106,108-112,119
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 116,185-191,199,205-207,331
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 14,112-118,218-237,292-293,311,341,412,509
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 391-394
+scripts/semanticReviewEvaluation.ts
+  h_beb54bf43b47b7 1-32,34,36-121,122-124,125,126-130,131-133,134-213,229-234,235-243,259,261-263,264-265,295-301,304,305,307-312
+  s_ed5aa36a3ba357::t_e1debff5739165 33,216-218
+  s_ed5aa36a3ba357::t_69dbe87239d6b7 35,214-215,219-228,244-258,260,266-294,302-303,306
+measurements/semantic-review/retained-sidecars.json
+  s_ed5aa36a3ba357::t_6b62465de944d7 1-858
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  s_ed5aa36a3ba357::t_83492684ae09bf 1-1495
+scripts/checkBarrelMockCoverage.ts
+  s_ed5aa36a3ba357::t_671cb779eae1bd 281-292
+scripts/semanticReviewMeasurement.ts
+  s_ed5aa36a3ba357::t_504df711d1f553 1-635
+scripts/semanticReviewMeasurement/artifacts.ts
+  s_ed5aa36a3ba357::t_902a4e8956b626 1-562
+scripts/semanticReviewMeasurement/contracts.ts
+  s_ed5aa36a3ba357::t_12004cafea0b55 1-444
+scripts/semanticReviewMeasurement/gaps.ts
+  s_ed5aa36a3ba357::t_55a37b08664763 1-181
+scripts/semanticReviewMeasurement/record.ts
+  s_ed5aa36a3ba357::t_7984f983f2c456 1-536
+src/app/__tests__/bootstrap.spec.ts
+  s_ed5aa36a3ba357::t_13e88c2f46a2d1 139,226,506,1264-1270
+src/app/__tests__/projectNativeDeviceState.spec.ts
+  s_ed5aa36a3ba357::t_52106844177b43 15,17,23,27-36,121-125,171-215,316-366
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_e9a5ce057d7778 132,625-629
+src/app/projectNativeDeviceState.ts
+  s_ed5aa36a3ba357::t_73df3794b98bcb 84-88
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ed5aa36a3ba357::t_77c4c3d1841f0d 640-647
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/singlePointClipLaneWindowHold.spec.ts
+  s_ed5aa36a3ba357::t_c99056c3dfdbd6 1-506
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ed5aa36a3ba357::t_ce77dfb892062d 353-363,454-489,504-523,529-563,892-898
+src/modules/GrandBoule/AGENTS.md
+  s_ed5aa36a3ba357::t_56d6da81af065e 7
+src/modules/GrandBoule/useCases/__tests__/initGrandBouleDocumentReconciliation.spec.ts
+  s_ed5aa36a3ba357::t_df14ab0276a40f 1-311
+src/modules/GrandBoule/useCases/index.ts
+  s_ed5aa36a3ba357::t_6afb4bbb38d62a 11-12
+src/modules/GrandBoule/useCases/initGrandBouleDocumentReconciliation.ts
+  s_ed5aa36a3ba357::t_0c3663a3f783bb 1-67
+src/modules/GrandBoule/useCases/reconcileGrandBouleDevicesFromProject.ts
+  s_ed5aa36a3ba357::t_9030f0c3712ec9 1-22
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_ed5aa36a3ba357::t_0f61a9a9f440a5 3-5,394-573
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_ed5aa36a3ba357::t_14ca16f380db6b 12-16,273-297,300,405-525
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ed5aa36a3ba357::t_92549fa11afdc2 351-355,408-416,501,707-715,839,956-964
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ed5aa36a3ba357::t_af3316643db634 1-552
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ed5aa36a3ba357::t_96ef6344a97271 1184,1211-1215,1220-1225
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationLaneEntry.spec.ts
+  s_ed5aa36a3ba357::t_0b70a070c78c52 4,6,42-47,183-317
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ed5aa36a3ba357::t_55efc038b45996 706-720,742
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ed5aa36a3ba357::t_8f5ba6f5880427 33,707-720,1101-1116,1139-1155
+tests/e2e/exportAudioEvidence.spec.ts
+  s_ed5aa36a3ba357::t_7c20f862b6290a 14-26,43,49-66,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "33c27947f31c41ed2ec1397f008fc5a4319884f6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
