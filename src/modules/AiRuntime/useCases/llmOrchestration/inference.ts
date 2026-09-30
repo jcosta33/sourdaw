@@ -154,11 +154,12 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
         const requiredProperties = new Set(Array.isArray(schema.required) ? schema.required : []);
         const admissible: Record<string, unknown> = {};
         for (const [key, item] of Object.entries(value)) {
-            if (item === null && !requiredProperties.has(key)) {
+            const propertyIsDeclared = Object.hasOwn(schema.properties, key);
+            if (item === null && propertyIsDeclared && !requiredProperties.has(key)) {
                 continue;
             }
             const propertySchema = schema.properties[key];
-            admissible[key] = propertySchema === undefined ? item : admissibleSchemaValue(item, propertySchema);
+            admissible[key] = propertyIsDeclared ? admissibleSchemaValue(item, propertySchema) : item;
         }
         return admissible;
     }

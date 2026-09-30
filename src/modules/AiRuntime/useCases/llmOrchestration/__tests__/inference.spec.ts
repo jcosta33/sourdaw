@@ -379,6 +379,14 @@ describe('generateToolPlanningOutcome', () => {
     it.each([
         ['a missing argument leaf', { name: 'addDevice' }],
         ['mixed encoded and object leaves', { name: 'addDevice', argumentsJson: '{}', arguments: {} }],
+        [
+            'mixed encoded and null object leaves',
+            {
+                name: 'addDevice',
+                argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                arguments: null,
+            },
+        ],
     ])('rejects hosted proposal items with %s', async (_reason, item) => {
         mocks.backendChain.value = ['cloud'];
         mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
@@ -389,6 +397,43 @@ describe('generateToolPlanningOutcome', () => {
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
             calls: [{ id: 'invalid-proposal', name: 'command.batch.propose', arguments: { commands: [item] } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!])).rejects.toThrow(
+            'The model provider request failed.'
+        );
+    });
+
+    it('rejects a hosted semantic-list item carrying encoded and null object leaves', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'invalid-proposal',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'eq',
+                                    name: 'addDevice',
+                                    argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                                    arguments: null,
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
             strictToolSchemas: true,
             usage: null,
         });
