@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_ed5aa36a3ba357::t_eef82b518e7365 321,337,339,363,365-368
+  s_ed5aa36a3ba357::t_7911d44f0d55f6 322-336,338,340-362,364,369-370
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_ed5aa36a3ba357::t_5192e04b6f2a7c 286-292,296-302
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_794c703fe97b3c 597-602
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_ed5aa36a3ba357::t_c6de797d9f551e 39,77,157-166,168-174,176-185,187-194,240-243,431-437,442-444,446-461,466-498
+  s_ed5aa36a3ba357::t_eef82b518e7365 438,440-441,445,462-465
+  s_ed5aa36a3ba357::t_a0316d8f6a03d6 127,129
+  s_ed5aa36a3ba357::t_73d83c6f94c6e3 24,195-239
+  s_ed5aa36a3ba357::t_8b346b146e0c38 439
+  s_ed5aa36a3ba357::t_367734bbbe20c9 128,130
+  s_ed5aa36a3ba357::t_ece701b9a7f941 167,175,186
+  s_ed5aa36a3ba357::t_94ac91c871651f 499
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_ed5aa36a3ba357::t_d2572a82f6d9e4 39-78,198-249
+  s_ed5aa36a3ba357::t_76986f60f5ee32 250-251
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_ed5aa36a3ba357::t_fc6f21bd75572a 292-318
+  s_ed5aa36a3ba357::t_b61f124c67dfaf 963,973-975,980
+  s_ed5aa36a3ba357::t_d4c7ee9c193aa4 5,237-291,319-335,962,964-972,976-979,981-1010
+  s_ed5aa36a3ba357::t_610d7606aea91b 1011
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_a2fd8929a20439 2377-2403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b3783d9a74f891897ae27a879ec3582843b14cf5",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
