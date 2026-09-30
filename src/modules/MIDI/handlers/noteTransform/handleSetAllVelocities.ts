@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { setMidiVelocities } from '../../transformers/setMidiVelocities';
 import { setAllVelocities } from '../../useCases/midiNoteTransforms/setAllVelocities';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -17,6 +18,9 @@ function prepareSetAllVelocities(action: Extract<AppAction, { type: 'setAllVeloc
 
 export const handleSetAllVelocities = createHandler<'setAllVelocities'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written = setAllVelocities(action.payload.clipId, action.payload.velocity);
         return { status: written ? 'written' : 'no-write' };
     },

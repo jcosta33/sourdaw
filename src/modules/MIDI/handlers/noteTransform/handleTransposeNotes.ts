@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { transposeMidiNotes } from '../../transformers/transposeMidiNotes';
 import { transposeNotes } from '../../useCases/midiNoteTransforms/transposeNotes';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -26,6 +27,9 @@ function prepareTransposeNotes(action: Extract<AppAction, { type: 'transposeNote
 
 export const handleTransposeNotes = createHandler<'transposeNotes'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written =
             action.payload.noteIds !== undefined
                 ? transposeNotes(action.payload.clipId, action.payload.semitones, action.payload.noteIds)
