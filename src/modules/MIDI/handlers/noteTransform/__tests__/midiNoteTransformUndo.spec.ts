@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
@@ -35,8 +37,9 @@ let notifications: NotifyPayload[] = [];
 let unsubscribeFromNotifications: () => void = () => undefined;
 
 const CLIP_ID = 'clip-1';
+const TRACK_ID = 'track-1';
 
-function note(id: string, pitch: number, startBeat: number): MidiNote {
+function note(id: string, pitch: number, startBeat: number, overrides: Partial<MidiNote> = {}): MidiNote {
     return {
         id,
         pitch,
@@ -49,7 +52,16 @@ function note(id: string, pitch: number, startBeat: number): MidiNote {
         pitchBend: 1_024,
         pitchBendRangeSemitones: 12,
         channel: 3,
+        ...overrides,
     };
+}
+
+function atomicNote(id: 'a' | 'b', pitch: number, startBeat: number, overrides: Partial<MidiNote> = {}): MidiNote {
+    return note(id, pitch, startBeat, {
+        duration: id === 'a' ? 0.5 : 0.75,
+        velocity: id === 'a' ? 80 : 101,
+        ...overrides,
+    });
 }
 
 function seedNotes(notes: MidiNote[]): MidiNote[] {
@@ -60,6 +72,59 @@ function seedNotes(notes: MidiNote[]): MidiNote[] {
         pitchBendByClipId: {},
     });
     return snapshot;
+}
+
+function resetMidiClipTopology(): void {
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: TRACK_ID, kind: 'midi', name: 'MIDI' })],
+    });
+    if (
+        addClip({
+            id: CLIP_ID,
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 4,
+            name: 'MIDI clip',
+            type: 'midi',
+        }) === null
+    ) {
+        throw new Error('Expected MIDI clip fixture');
+    }
+}
+
+type InvalidMidiTarget = 'missing' | 'wrong-kind' | 'frozen' | 'locked' | 'ambiguous';
+
+function setInvalidMidiTarget(invalidTarget: InvalidMidiTarget): void {
+    const track = trackStore.value!.tracks[0]!;
+    const clip = track.clips[0]!;
+    if (invalidTarget === 'missing') {
+        setTrackStoreState({ ...defaultTrackState, tracks: [] });
+        return;
+    }
+    if (invalidTarget === 'wrong-kind') {
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [{ ...track, clips: [{ ...clip, type: 'audio' }] }],
+        });
+        return;
+    }
+    if (invalidTarget === 'frozen') {
+        setTrackStoreState({ ...defaultTrackState, tracks: [{ ...track, frozen: true }] });
+        return;
+    }
+    if (invalidTarget === 'locked') {
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [{ ...track, clips: [{ ...clip, locked: true }] }],
+        });
+        return;
+    }
+    const duplicateTrack = createTrack({ id: 'track-duplicate', kind: 'midi', name: 'Duplicate MIDI' });
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [track, { ...duplicateTrack, clips: [{ ...clip, trackId: duplicateTrack.id }] }],
+    });
 }
 
 function currentNotes(): MidiNote[] {
@@ -77,6 +142,7 @@ function requireRestoreAction(
 
 describe('MIDI note transform handlers', () => {
     beforeEach(() => {
+        resetMidiClipTopology();
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
 
@@ -194,8 +260,23 @@ describe('MIDI note transform handlers', () => {
             expect(transform.execute()).toEqual({ status: 'written' });
             const transformed = currentNotes().map((candidate) => ({ ...candidate }));
             expect(transformed).not.toEqual(before);
-            expect(inverse.payload).toEqual({ clipId: CLIP_ID, notes: before, expectedNotes: transformed });
-            expect(replay.payload).toEqual({ clipId: CLIP_ID, notes: transformed, expectedNotes: before });
+            const noteTransformReplayGuard = {
+                trackId: TRACK_ID,
+                expectedTrackFrozen: false as const,
+                expectedClipLocked: false as const,
+            };
+            expect(inverse.payload).toEqual({
+                clipId: CLIP_ID,
+                notes: before,
+                expectedNotes: transformed,
+                noteTransformReplayGuard,
+            });
+            expect(replay.payload).toEqual({
+                clipId: CLIP_ID,
+                notes: transformed,
+                expectedNotes: before,
+                noteTransformReplayGuard,
+            });
 
             expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
             expect(currentNotes()).toEqual(before);
@@ -287,6 +368,7 @@ describe('MIDI note transforms through AppAction execution', () => {
         });
         setNotificationEventBus(notificationEventBus);
         clearUndoHistory();
+        resetMidiClipTopology();
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
 
@@ -325,6 +407,192 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(undoStore.value?.future).toHaveLength(0);
         expect(notifications).toEqual([]);
     });
+
+    const atomicTransformCases = [
+        {
+            name: 'quantize notes',
+            label: 'Quantize notes',
+            action: { type: 'quantizeNotes', payload: { clipId: CLIP_ID, gridSize: 0.25 } } as const,
+            expectedNotes: [atomicNote('a', 60, 0.25), atomicNote('b', 67, 1.25)],
+        },
+        {
+            name: 'transpose notes',
+            label: 'Transpose +5 semitones',
+            action: { type: 'transposeNotes', payload: { clipId: CLIP_ID, semitones: 5 } } as const,
+            expectedNotes: [atomicNote('a', 65, 0.125), atomicNote('b', 72, 1.25)],
+        },
+        {
+            name: 'invert notes',
+            label: 'Invert notes',
+            action: { type: 'invertNotes', payload: { clipId: CLIP_ID } } as const,
+            expectedNotes: [atomicNote('a', 67, 0.125), atomicNote('b', 60, 1.25)],
+        },
+        {
+            name: 'retrograde notes',
+            label: 'Retrograde notes',
+            action: { type: 'retrogradeNotes', payload: { clipId: CLIP_ID } } as const,
+            expectedNotes: [atomicNote('a', 60, 1.5), atomicNote('b', 67, 0.125)],
+        },
+        {
+            name: 'quantize note lengths',
+            label: 'Quantize note lengths',
+            action: { type: 'quantizeNoteLengths', payload: { clipId: CLIP_ID, gridSize: 0.5 } } as const,
+            expectedNotes: [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25, { duration: 1 })],
+        },
+        {
+            name: 'scale velocities',
+            label: 'Scale velocities ×0.5',
+            action: { type: 'scaleAllVelocities', payload: { clipId: CLIP_ID, factor: 0.5 } } as const,
+            expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 40 }), atomicNote('b', 67, 1.25, { velocity: 51 })],
+        },
+        {
+            name: 'set velocities',
+            label: 'Set all velocities to 96',
+            action: { type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } } as const,
+            expectedNotes: [atomicNote('a', 60, 0.125, { velocity: 96 }), atomicNote('b', 67, 1.25, { velocity: 96 })],
+        },
+        {
+            name: 'humanize notes with a fixed seed',
+            label: 'Humanize notes',
+            action: {
+                type: 'humanizeNotes',
+                payload: { clipId: CLIP_ID, amount: 0.4, velocityAmount: 0.5, seed: 42 },
+            } as const,
+            expectedNotes: [
+                atomicNote('a', 60, 0.13511037519201635, { velocity: 80 }),
+                atomicNote('b', 67, 1.285246579349041, { velocity: 102 }),
+            ],
+        },
+    ];
+
+    it.each(atomicTransformCases)('$name commits atomically and preserves exact undo and redo', async (testCase) => {
+        const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+        seedNotes(before);
+
+        const result = await executeAppActionBatch([structuredClone(testCase.action)], {
+            groupId: `atomic-${testCase.action.type}`,
+            groupLabel: testCase.label,
+            requireCompensation: true,
+        });
+
+        expect(result).toMatchObject({
+            status: 'committed',
+            actions: [{ action: { type: testCase.action.type } }],
+        });
+        expect(currentNotes()).toEqual(testCase.expectedNotes);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]?.label).toBe(testCase.label);
+        expect(undoStore.value?.future).toEqual([]);
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(currentNotes()).toEqual(before);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(currentNotes()).toEqual(testCase.expectedNotes);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'ambiguous'] as const)(
+        'refuses an atomic transform against a %s target before notes or undo change',
+        async (invalidTarget) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            seedNotes(before);
+            setInvalidMidiTarget(invalidTarget);
+
+            const result = await executeAppActionBatch(
+                [{ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } }],
+                { requireCompensation: true }
+            );
+
+            expect(result).toEqual({
+                status: 'rejected',
+                reason: 'Action is not compensable inside an atomic batch: setAllVelocities',
+                actions: [],
+            });
+            expect(currentNotes()).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
+
+    it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'ambiguous'] as const)(
+        'refuses a direct transform against a %s target without losing undo authority',
+        async (invalidTarget) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            seedNotes(before);
+            setInvalidMidiTarget(invalidTarget);
+
+            await expect(
+                executeAppAction({ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } })
+            ).rejects.toThrow('Action conflicts with current project state: setAllVelocities');
+
+            expect(currentNotes()).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
+
+    it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'moved', 'changed-notes'] as const)(
+        'keeps the guarded atomic undo pending when the target is %s',
+        async (divergence) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            const transformed = [
+                atomicNote('a', 60, 0.125, { velocity: 96 }),
+                atomicNote('b', 67, 1.25, { velocity: 96 }),
+            ];
+            seedNotes(before);
+            await expect(
+                executeAppActionBatch([{ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } }], {
+                    requireCompensation: true,
+                })
+            ).resolves.toMatchObject({ status: 'committed' });
+
+            const track = trackStore.value!.tracks[0]!;
+            const clip = track.clips[0]!;
+            if (divergence === 'missing') {
+                setTrackStoreState({ ...defaultTrackState, tracks: [] });
+            } else if (divergence === 'wrong-kind') {
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: [{ ...track, clips: [{ ...clip, type: 'audio' }] }],
+                });
+            } else if (divergence === 'frozen') {
+                setTrackStoreState({ ...defaultTrackState, tracks: [{ ...track, frozen: true }] });
+            } else if (divergence === 'locked') {
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: [{ ...track, clips: [{ ...clip, locked: true }] }],
+                });
+            } else if (divergence === 'moved') {
+                const movedTrack = createTrack({ id: 'track-2', kind: 'midi', name: 'Moved MIDI' });
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: [
+                        { ...track, clips: [] },
+                        { ...movedTrack, clips: [{ ...clip, trackId: movedTrack.id }] },
+                    ],
+                });
+            } else {
+                const laterNote = atomicNote('b', 72, 2.5, { id: 'later' });
+                midiStore.set({
+                    ...midiStore.value!,
+                    notesByClipId: { ...midiStore.value!.notesByClipId, [CLIP_ID]: [...transformed, laterNote] },
+                });
+            }
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+            let expectedCurrentNotes = transformed;
+            if (divergence === 'changed-notes') {
+                expectedCurrentNotes = [...transformed, atomicNote('b', 72, 2.5, { id: 'later' })];
+            }
+            expect(currentNotes()).toEqual(expectedCurrentNotes);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
 
     it('keeps a stale redo entry and preserves edits made after undo', async () => {
         const before = seedNotes([note('a', 60, 0.11)]);

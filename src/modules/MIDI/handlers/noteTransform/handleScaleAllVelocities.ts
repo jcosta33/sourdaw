@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { scaleMidiVelocities } from '../../transformers/scaleMidiVelocities';
 import { scaleAllVelocities } from '../../useCases/midiNoteTransforms/scaleAllVelocities';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -17,6 +18,9 @@ function prepareScaleAllVelocities(action: Extract<AppAction, { type: 'scaleAllV
 
 export const handleScaleAllVelocities = createHandler<'scaleAllVelocities'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written = scaleAllVelocities(action.payload.clipId, action.payload.factor);
         return { status: written ? 'written' : 'no-write' };
     },
