@@ -10,7 +10,7 @@
 
 import { isUnitPriorityClass, refuse, type SemanticScopeExclusion, type UnitPriorityClass } from './contracts.ts';
 import { compareLexicographic } from './pathOrder.ts';
-import { isSemanticRuleId, SEVERE_INVESTIGATION_CATEGORIES, type SemanticRuleId } from './rules.ts';
+import { isSemanticRuleId, semanticRule, SEVERE_INVESTIGATION_CATEGORIES, type SemanticRuleId } from './rules.ts';
 
 /** The escalation classes, read as a set so a rule's category joins the key by membership, never by a cast. */
 const SEVERE_CATEGORIES: ReadonlySet<string> = new Set(SEVERE_INVESTIGATION_CATEGORIES);
@@ -188,11 +188,21 @@ export function assertRequestOrderIsSorted(input: {
  * refuses it. An honest plan leaves one of the two traces for every unit it holds: an asked unit reports
  * each of its rules as a signal, and a unit no request could ask is recorded as unassessed.
  *
+ * Each entry's own ledger is re-derived from the signals that carry it. A planned unit's signals are one
+ * per published rule — the merge stores every rule of the unit, answered or not — so the multiset of the
+ * signals' rule ids must equal the entry's `ruleIds`, one each: a severed, duplicated, extra or missing
+ * signal is a plan its own answers do not support. And the entry's `answerableRules` must equal the
+ * signals whose `missingEvidence` is empty, which is what that figure counts in the producer: a rule
+ * whose best pass carries all its required evidence is answerable, and one whose evidence is missing is
+ * not. The zero-call coverage omission falls out of the same form rather than needing a case of its own:
+ * every rule of its set reports missing evidence, so its answerable count is zero while its rule ledger
+ * is complete.
+ *
  * Each entry's class is held to the ledger as far as the report can re-derive it. An entry must carry
  * the class the scope records for the same path among the units it never assessed, because one function
- * produced both. And an entry's severity must equal the severity of the path's own signals, which carry
- * every applied rule's investigation category: a severe class with only non-severe signals, and a
- * non-severe class with only severe signals, are both refuted.
+ * produced both. Severity comes from the entry's rules either way: from the investigation category the
+ * path's signals report, or, for a unit no request was made for and which therefore carries no signal,
+ * from the published `ruleIds` themselves, because a unit's class is derived from those rules' categories.
  *
  * What stays unrefutable is the production/test side of a class. The report publishes no rename's
  * previous path, and a cross-boundary rename is classed production precisely because one of its offered
@@ -203,7 +213,7 @@ export function assertRequestOrderIsSorted(input: {
  */
 export function assertPlanMatchesLedger(input: {
     readonly requestOrder?: readonly SemanticPlannedRequest[];
-    readonly signals: readonly { readonly path: string; readonly investigationCategory: string }[];
+    readonly signals: readonly ScanLedgerSignal[];
     readonly unassessed: readonly SemanticScopeExclusion[];
     readonly label: string;
 }): void {
@@ -230,34 +240,101 @@ export function assertPlanMatchesLedger(input: {
             );
         }
     }
-    const severeSupport = severeSupportByPath(input.signals);
+    const carriedSignals = groupSignalsByPath(input.signals);
     for (const entry of order) {
-        const severe = severeSupport.get(entry.path);
-        if (severe === undefined || severe === isSevereClass(entry.priorityClass)) {
+        const carried = carriedSignals.get(entry.path);
+        if (carried !== undefined) {
+            assertEntryLedgerMatches(entry, carried, input.label);
+        }
+        const severe = carried === undefined ? severeRulesCarry(entry.ruleIds) : severeSignalsCarry(carried);
+        if (severe === isSevereClass(entry.priorityClass)) {
             continue;
         }
         refuse(
             'invalid_response',
-            `${input.label} publishes ${entry.path} as ${entry.priorityClass} while its signals carry ${severe ? 'a severe' : 'no severe'} investigation category`
+            `${input.label} publishes ${entry.path} as ${entry.priorityClass} while ${
+                carried === undefined
+                    ? `its planned rule(s) ${entry.ruleIds.join(', ')} carry ${severe ? 'a severe' : 'no severe'} investigation category`
+                    : `its signals carry ${severe ? 'a severe' : 'no severe'} investigation category`
+            }`
         );
     }
+}
+
+/** One signal of a stored report, as far as the plan's own re-derivation reads it. */
+type ScanLedgerSignal = {
+    readonly path: string;
+    readonly ruleId: string;
+    readonly investigationCategory: string;
+    readonly missingEvidence: readonly string[];
+};
+
+/**
+ * Holds one planned entry to the signals that carry it: the same rules, one signal each, and the
+ * answerable count the signals themselves prove. Both comparisons are set-wise in the rule ids and
+ * count-wise in the answerable figure, so a signal that repeats a rule cannot pass for the rule it
+ * replaced.
+ */
+function assertEntryLedgerMatches(
+    entry: SemanticPlannedRequest,
+    signals: readonly ScanLedgerSignal[],
+    label: string
+): void {
+    const published = [...entry.ruleIds].sort();
+    const carried = signals.map((signal) => signal.ruleId).sort();
+    if (!carriesOneSignalPerRule(published, carried)) {
+        refuse(
+            'invalid_response',
+            `${label} publishes ${entry.path} with rule(s) ${published.join(', ')} while its ledger holds ${carried.length === 0 ? 'none' : carried.join(', ')}; a scan's unit carries one signal per published rule`
+        );
+    }
+    const answerable = signals.filter((signal) => signal.missingEvidence.length === 0).length;
+    if (entry.answerableRules !== answerable) {
+        refuse(
+            'invalid_response',
+            `${label} publishes ${entry.path} as ${String(entry.answerableRules)} answerable rule(s) while its ledger holds ${String(answerable)} whose required evidence was supplied`
+        );
+    }
+}
+
+/**
+ * Whether two sorted rule-id lists are the same multiset. Sorting first is what makes a repeat visible:
+ * a list that answers one rule twice cannot match a plan that names two rules.
+ */
+function carriesOneSignalPerRule(published: readonly SemanticRuleId[], carried: readonly string[]): boolean {
+    if (published.length !== carried.length) {
+        return false;
+    }
+    return published.every((ruleId, index) => ruleId === carried[index]);
+}
+
+/** The signals of each path, so one walk of the ledger answers every entry. */
+function groupSignalsByPath(signals: readonly ScanLedgerSignal[]): Map<string, ScanLedgerSignal[]> {
+    const byPath = new Map<string, ScanLedgerSignal[]>();
+    for (const signal of signals) {
+        const carried = byPath.get(signal.path);
+        if (carried === undefined) {
+            byPath.set(signal.path, [signal]);
+            continue;
+        }
+        carried.push(signal);
+    }
+    return byPath;
+}
+
+/** Whether any of a path's signals carries a severe investigation category. */
+function severeSignalsCarry(signals: readonly ScanLedgerSignal[]): boolean {
+    return signals.some((signal) => SEVERE_CATEGORIES.has(signal.investigationCategory));
+}
+
+/** Whether any of the rules an entry publishes carries a severe investigation category. */
+function severeRulesCarry(ruleIds: readonly SemanticRuleId[]): boolean {
+    return ruleIds.some((ruleId) => SEVERE_CATEGORIES.has(semanticRule(ruleId).investigationCategory));
 }
 
 /** The classes whose name carries the severe mark, which is the one class dimension a report re-derives. */
 function isSevereClass(priorityClass: UnitPriorityClass): boolean {
     return priorityClass === 'severe-production' || priorityClass === 'severe-test';
-}
-
-/** Whether any signal for each path carries a severe investigation category; a path with none is absent. */
-function severeSupportByPath(
-    signals: readonly { readonly path: string; readonly investigationCategory: string }[]
-): Map<string, boolean> {
-    const support = new Map<string, boolean>();
-    for (const signal of signals) {
-        const severe = support.get(signal.path) ?? false;
-        support.set(signal.path, severe || SEVERE_CATEGORIES.has(signal.investigationCategory));
-    }
-    return support;
 }
 
 function readCount(value: unknown, label: string): number {

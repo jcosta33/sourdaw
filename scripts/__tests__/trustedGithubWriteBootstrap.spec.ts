@@ -73,6 +73,24 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers(source)).toEqual(['yaml']);
     });
 
+    it('bounds the walk on a division after a parenthesized member expression inside a template', () => {
+        // #4934: the regex-prefix question re-entered itself through this shape, one frame per round,
+        // until the scan threw RangeError. Each of the four expressions names one part of the shape.
+        expect(snapshotImportSpecifiers('const x = `${(a.b / 1000).toFixed(1)}`;')).toEqual([]);
+        expect(snapshotImportSpecifiers('const x = `${(a / 1000).toFixed(1)}`;')).toEqual([]);
+        expect(snapshotImportSpecifiers('const x = (a.b / 1000).toFixed(1);')).toEqual([]);
+        expect(snapshotImportSpecifiers('const x = `${a.b / 1000}`;')).toEqual([]);
+    });
+
+    it('keeps scanning past that shape instead of stopping at the bounded walk', () => {
+        // The bound answers the re-entrant question with a division, which keeps the walk moving. A
+        // reading that consumed the region as a regex would hide both of these loads (#4934).
+        expect(snapshotImportSpecifiers("const x = `${(a.b / 1000).toFixed(1)}`;\nimport 'yaml';")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const x = `${(a.b / 1000).toFixed(1)}${await import('yaml')}`;")).toEqual([
+            'yaml',
+        ]);
+    });
+
     it('ends // comments at CR so a following import is still collected', () => {
         const source = "// comment\rimport fs from 'fs';\n";
 

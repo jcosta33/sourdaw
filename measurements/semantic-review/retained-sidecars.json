@@ -1,9 +1,9 @@
 {
     "format": "semantic-review-measurement-v1",
     "schemaVersion": 1,
-    "measuredAt": "2026-09-29T21:28:21.145Z",
+    "measuredAt": "2026-09-29T23:33:38.745Z",
     "machine": {
-        "checkoutGitSha": "88faec2742144712e9c1dda94d7d355c4a4fdf2a",
+        "checkoutGitSha": "2475bff5141b4752c6d6dfa858a555a46604a399",
         "workingTree": "dirty",
         "host": {
             "platform": "darwin",
@@ -11,7 +11,7 @@
             "arch": "arm64",
             "cores": 12
         },
-        "loadAverage1m": 7.48
+        "loadAverage1m": 6.58
     },
     "advisory": "This record measures what the advisory semantic review cost and what its artifacts returned. A returned probability is a model answer, never an accuracy figure; a question no request asked is counted as not asked, never as a correct negative.",
     "fieldSources": {
@@ -27,8 +27,8 @@
         "acrossRuns.signals.byDisposition": "each run artifact's own #signals[].disposition or an evaluation outcome's #outcomes[].disposition, counted once per run across the set; null when no run carried a signal ledger",
         "acrossRuns.signals.runsWithSignalLedger": "the runs that carry a signal ledger at all: a scan report or an evaluation outcome; a verification report assesses findings instead",
         "acrossRuns.signals.byFindingDisposition": "each verification report's own #findingAssessments[].disposition, counted across the set; null when no run carried a finding ledger",
-        "acrossRuns.signalDispositions": "the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token",
-        "acrossRuns.labelledExpectations": "the evaluation runner's own #expectedConcernHeld count over the fixtures it ran",
+        "acrossRuns.signalDispositions": "the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token; every figure is null when no artifact read carries a signal ledger, which is named in notComputable rather than shown as zeros",
+        "acrossRuns.labelledExpectations": "the evaluation runner's own #expectedConcernHeld count over the fixtures whose own ledger asked the rule they labelled; a fixture that never asked it, or that the runner never assessed, is counted in notAssessed instead",
         "skippedArtifacts": "artifacts present on disk that the report validator or the dossier reader refused, with its message",
         "runs[]": "not published at this detail level: the record was measured with the aggregate detail level, which carries the across-run figures and the gaps; measure again with --detail for one entry per run"
     },
@@ -38,21 +38,21 @@
         "reviewBundleRoot": "/Users/josecosta/dev/sourdaw/.agents/review-bundles",
         "reviewBundleRootPresent": true,
         "evaluationOutcomePath": null,
-        "storedRunsRead": 108,
-        "dossiersRead": 449,
+        "storedRunsRead": 109,
+        "dossiersRead": 455,
         "evaluationFixturesRead": 0,
         "detail": "aggregate",
         "note": "retained artifacts from earlier work in this checkout, not a controlled experiment; each run is the pipeline run that wrote the artifact"
     },
     "runs": [],
     "acrossRuns": {
-        "runCount": 108,
+        "runCount": 109,
         "runCountByKind": {
             "scan": 67,
-            "verification": 41
+            "verification": 42
         },
         "executionStates": {
-            "completed": 42,
+            "completed": 43,
             "partial": 57,
             "unavailable": 9
         },
@@ -61,19 +61,19 @@
             "invalid_response": 1
         },
         "usage": {
-            "networkAttempts": 856,
-            "logicalRequests": 860,
+            "networkAttempts": 862,
+            "logicalRequests": 866,
             "retries": 0,
-            "submittedBytes": 27023086,
-            "actualInputTokens": 6952804,
-            "estimatedInputTokens": 6690837,
+            "submittedBytes": 27046375,
+            "actualInputTokens": 6960971,
+            "estimatedInputTokens": 6696663,
             "attemptsWithUnknownUsage": 0,
-            "estimatedCostUsd": 0.29201776800000007,
+            "estimatedCostUsd": 0.2923607820000001,
             "pricingConfigurationVersion": "typesafe-pricing-2026-09-20",
             "cacheHits": 411
         },
-        "wallClockMs": 414818,
-        "wallClockRuns": 108,
+        "wallClockMs": 416506,
+        "wallClockRuns": 109,
         "derivedOutcomeStates": {
             "notApplicable": 80,
             "excludedWithAssessmentOwed": 15,
@@ -82,7 +82,7 @@
             "providerFailure": 2,
             "dryRun": 0
         },
-        "derivedOutcomeRuns": 108,
+        "derivedOutcomeRuns": 109,
         "publishedOutcomeStates": null,
         "publishedOutcomeRuns": 0,
         "ruleCoverage": {
@@ -121,10 +121,10 @@
                 "test_skipped_or_excluded": 50,
                 "timing_semantics_changed": 105
             },
-            "runsWithoutRuleCoverage": 41
+            "runsWithoutRuleCoverage": 42
         },
         "evidence": {
-            "unitsMissingRequiredEvidence": 1249,
+            "unitsMissingRequiredEvidence": 1255,
             "requiredEvidenceTokensMissing": {
                 "after implementation source": 434,
                 "after source": 347,
@@ -133,7 +133,7 @@
                 "before test source": 20,
                 "caller or contract": 577,
                 "decision or documented invariant": 509,
-                "finding evidence not supplied or not decisive": 115,
+                "finding evidence not supplied or not decisive": 121,
                 "migration or version contract": 19,
                 "related existing source": 1047,
                 "scheduling call-site": 105,
@@ -490,7 +490,7 @@
         },
         "signals": {
             "runsWithSignalLedger": 67,
-            "runsWithFindingLedger": 41,
+            "runsWithFindingLedger": 42,
             "total": 9039,
             "byDisposition": {
                 "no_additional_recommendation": 5569,
@@ -523,7 +523,7 @@
             "fired": 203,
             "byFindingDisposition": {
                 "disputed": 2,
-                "needs_more_evidence": 115
+                "needs_more_evidence": 121
             }
         },
         "signalDispositions": {
@@ -534,12 +534,12 @@
             "withoutDossier": 2
         },
         "reviewRounds": {
-            "heads": 61,
-            "dossiers": 61,
-            "stanceDraws": 198,
-            "findingsAccepted": 148,
+            "heads": 62,
+            "dossiers": 62,
+            "stanceDraws": 204,
+            "findingsAccepted": 152,
             "findingsDiscarded": 90,
-            "reviewsPublished": 61
+            "reviewsPublished": 62
         },
         "labelledExpectations": null,
         "repeatedWarnings": [
@@ -832,11 +832,15 @@
         },
         {
             "figure": "acrossRuns.ruleCoverage",
-            "reason": "41 verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change"
+            "reason": "42 verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change"
+        },
+        {
+            "figure": "acrossRuns.labelledExpectations",
+            "reason": "no evaluation artifact was read, so no fixture carried a labelled expectation; sources.evaluationFixturesRead names how many were read, and the held rate is null rather than a rate over nothing"
         },
         {
             "figure": "acrossRuns.signals",
-            "reason": "41 verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does"
+            "reason": "42 verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does"
         },
         {
             "figure": "acrossRuns.signals.byFindingDisposition",

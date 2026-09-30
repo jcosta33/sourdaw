@@ -183,6 +183,11 @@ export type MeasurementRun = {
     readonly reviewRounds: readonly ReviewRoundSummary[];
     /** The labelled-expectation count an evaluation fixture carries; never an accuracy figure. */
     readonly labelledExpectationHeld: boolean | null;
+    /**
+     * Whether the fixture's own rule ledger asked the rule its label is about. Null for every artifact
+     * that carries no label, because only an evaluation fixture states which rule it labelled.
+     */
+    readonly labelledRuleAsked: boolean | null;
 };
 
 /**
@@ -332,12 +337,16 @@ export type AcrossRuns = {
         readonly byFindingDisposition: Readonly<Record<string, number>> | null;
     };
     readonly signalDispositions: {
-        /** One entry per disposed signal, counted once however many runs of that head read the dossier. */
-        readonly recorded: number;
-        readonly byToken: Readonly<Record<string, number>>;
-        readonly dismissedFiredSignals: number;
-        readonly undismissedFiredSignals: number;
-        readonly withoutDossier: number;
+        /**
+         * One entry per disposed signal, counted once however many runs of that head read the dossier.
+         * Null when no artifact read carries a signal ledger: nothing fired, so nothing could be
+         * disposed of, and a zero here would read as a head that dismissed nothing.
+         */
+        readonly recorded: number | null;
+        readonly byToken: Readonly<Record<string, number>> | null;
+        readonly dismissedFiredSignals: number | null;
+        readonly undismissedFiredSignals: number | null;
+        readonly withoutDossier: number | null;
     };
     readonly reviewRounds: {
         /** Distinct (pull request, head) pairs with a stored dossier, so one head counts one round. */
@@ -349,9 +358,12 @@ export type AcrossRuns = {
         readonly reviewsPublished: number;
     };
     /**
-     * The evaluation runner's own held-label count, over the fixtures that completed. A fixture the
-     * runner did not assess is counted in `notAssessed` instead: its label says nothing about the
-     * rules, and folding it in would read an absent answer as a wrong one.
+     * The evaluation runner's own held-label count, over the fixtures that produced an answer to the rule
+     * their label is about. A label is evidence only when the fixture both completed and asked its
+     * labelled rule: a fixture the runner did not assess is counted in `notAssessed` instead — its label
+     * says nothing about the rules, and folding it in would read an absent answer as a wrong one — and so
+     * is a fixture that completed without ever asking, because a finished run is not an answered question.
+     * The held rate is over what the fixtures' own ledgers record as asked.
      */
     readonly labelledExpectations: {
         readonly held: number;
