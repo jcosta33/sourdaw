@@ -1304,6 +1304,7 @@ describe('generateToolPlanningOutcome', () => {
         'find a warm reverb preset for the vocal and load it',
         'show the command history',
         'the bass is muddy, clean it up',
+        'compile a transform for each selected MIDI clip',
     ])('never advertises recipe.discover or analysis.measure to WebLLM for "%s"', async (prompt) => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
@@ -1324,6 +1325,7 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
         expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
         expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
+        expect(advertisedNames).not.toContain('transform.compile');
     });
 
     it('still advertises recipe.discover and analysis.measure to a hosted cloud backend', async () => {
@@ -1350,6 +1352,14 @@ describe('generateToolPlanningOutcome', () => {
         const sentNames = sentTools.map((tool: ToolSchema) => tool.function.name);
         expect(sentNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
         expect(sentNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
+        expect(sentNames).toContain('transform.compile');
+        expect(
+            sentTools.find((tool: ToolSchema) => tool.function.name === 'transform.compile')?.function.parameters
+        ).toMatchObject({
+            properties: {
+                document: { type: 'string', description: expect.stringContaining('Valid complete document JSON text') },
+            },
+        });
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(

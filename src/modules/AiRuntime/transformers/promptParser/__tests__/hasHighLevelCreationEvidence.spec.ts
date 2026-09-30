@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { hasHighLevelCreationEvidence } from '../hasHighLevelCreationEvidence';
+import { hasHighLevelContentCreationEvidence, hasHighLevelCreationEvidence } from '../hasHighLevelCreationEvidence';
 
 describe('hasHighLevelCreationEvidence', () => {
     it.each([
@@ -167,5 +167,34 @@ describe('hasHighLevelCreationEvidence', () => {
         // No preposition precedes the determiner in any of these; the article, possessive or
         // demonstrative inside the phrase is what names objects the project already holds.
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
+    });
+});
+
+describe('hasHighLevelContentCreationEvidence', () => {
+    it.each(['create a jazz MIDI track', 'make a lo-fi MIDI track'])(
+        'recognizes genre-led musical content: %s',
+        (request) => {
+            expect(hasHighLevelContentCreationEvidence(request)).toBe(true);
+        }
+    );
+
+    it.each([
+        'create a beat on a new MIDI track',
+        'write a melody on a new MIDI track',
+        'lay down a groove on a new MIDI track',
+        'add some chords on a new MIDI track',
+    ])('recognizes introduced musical content: %s', (request) => {
+        expect(hasHighLevelContentCreationEvidence(request)).toBe(true);
+    });
+
+    it.each([
+        'do not create a beat on a new MIDI track',
+        'do not create a jazz MIDI track',
+        'make the beat harder on a new MIDI track',
+        'add 8 more beats to the loop',
+        'add automation to the beat',
+        'create a MIDI track named Beat',
+    ])('does not grant content creation for existing, negated, duration, or literal-name text: %s', (request) => {
+        expect(hasHighLevelContentCreationEvidence(request)).toBe(false);
     });
 });

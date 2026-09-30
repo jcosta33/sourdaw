@@ -62,12 +62,15 @@ import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
+import { executeTransformCompile } from './executeTransformCompile';
+import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import {
@@ -76,7 +79,9 @@ import {
     type ProviderAttemptAdmissionResult,
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
+import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -87,6 +92,10 @@ type CreateFastPathResultInput = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
 }
 
 /**
@@ -492,6 +501,10 @@ const planPromptIntent = inject({ logger })(
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
+                const transformSnapshot =
+                    projectRevision === undefined || projectRevision === ''
+                        ? null
+                        : projectDeclarativeTransformSnapshot(context, projectRevision);
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
                     limits: {
@@ -500,6 +513,20 @@ const planPromptIntent = inject({ logger })(
                     },
                     terminalToolNames,
                     signal,
+                    transform:
+                        transformSnapshot === null
+                            ? undefined
+                            : {
+                                  toolName: TRANSFORM_COMPILE_TOOL_NAME,
+                                  revision: transformSnapshot.revision,
+                                  execute: (call, { callId, turn }) =>
+                                      executeTransformCompile({
+                                          call,
+                                          callId,
+                                          turn,
+                                          snapshot: transformSnapshot,
+                                      }),
+                              },
                     interpretation: {
                         toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
                         admit: (call) => {
@@ -634,8 +661,26 @@ const planPromptIntent = inject({ logger })(
                 }
                 const providerProposal =
                     planningOutcome.proposal ?? extractAgentPlanProposal(planningOutcome.toolCalls);
+                const proposedBatch = planningOutcome.toolCalls.find(
+                    (call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                );
+                const selectedIds = proposedBatch?.arguments.compiledCallIds;
+                const selectedTransforms = Array.isArray(selectedIds)
+                    ? selectedIds.flatMap((callId) =>
+                          planningOutcome.compiledTransforms.filter((compiled) => compiled.callId === callId)
+                      )
+                    : [];
+                const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
+                    if (call !== proposedBatch || !Array.isArray(selectedIds)) {
+                        return call;
+                    }
+                    const argumentsWithoutReferences = Object.fromEntries(
+                        Object.entries(call.arguments).filter(([key]) => key !== 'compiledCallIds')
+                    );
+                    return { ...call, arguments: argumentsWithoutReferences };
+                });
                 const compiledList = compileArbitraryCommandList({
-                    calls: planningOutcome.toolCalls,
+                    calls: ordinaryProposalCalls,
                     context,
                     revision: projectRevision ?? '',
                     ...creativeAuthorityFields,
@@ -665,7 +710,19 @@ const planPromptIntent = inject({ logger })(
                         },
                     };
                 }
-                const expandedProposal = expandCatalogProposals(compiledList.calls);
+                const transformCommands = materializeTransformToolCalls(selectedTransforms);
+                const transformTargetIds = getCompiledTransformTargetIds(transformCommands, context);
+                const combinedProposalCalls = compiledList.calls.map((call) => {
+                    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || transformCommands.length === 0) {
+                        return call;
+                    }
+                    const commands: unknown = call.arguments.commands;
+                    if (!isUnknownArray(commands)) {
+                        return call;
+                    }
+                    return { ...call, arguments: { ...call.arguments, commands: [...transformCommands, ...commands] } };
+                });
+                const expandedProposal = expandCatalogProposals(combinedProposalCalls);
                 if (expandedProposal.status === 'invalid') {
                     return {
                         actions: [],
@@ -806,6 +863,15 @@ const planPromptIntent = inject({ logger })(
                     sectionSignatures,
                     prompt,
                     compilerEvidence: compiledList.compilerEvidence,
+                    ...(selectedTransforms.length === 0
+                        ? {}
+                        : {
+                              transformProof: {
+                                  revision: projectRevision ?? '',
+                                  creativeAuthorityId: creativeAuthority?.authorityId ?? null,
+                                  compilations: selectedTransforms,
+                              },
+                          }),
                     projectRevision,
                     workflowCapabilityId,
                     ...creativeAuthorityFields,
@@ -909,6 +975,7 @@ const planPromptIntent = inject({ logger })(
                     const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
                         actions: guarded.actions,
                         compilerEvidence: compiledList.compilerEvidence,
+                        ...(transformCommands.length === 0 ? {} : { appOwnedTargetIds: transformTargetIds }),
                         context,
                         prompt,
                         workflowCapabilityId,
@@ -942,7 +1009,7 @@ const planPromptIntent = inject({ logger })(
                     }
 
                     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-                        deriveMatchSelectorPredicates(compiledList.compilerEvidence);
+                        deriveMatchSelectorPredicates(compiledList.compilerEvidence, transformCommands.length);
 
                     return {
                         actions: guarded.actions,
@@ -954,9 +1021,16 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        ...(compiledList.compilerEvidence === undefined
+                        ...(compiledList.compilerEvidence === undefined && transformCommands.length === 0
                             ? {}
-                            : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
+                            : {
+                                  providerKnownTargetIds: [
+                                      ...new Set([
+                                          ...(compiledList.compilerEvidence?.providerKnownTargetIds ?? []),
+                                          ...transformTargetIds,
+                                      ]),
+                                  ],
+                              }),
                         ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,

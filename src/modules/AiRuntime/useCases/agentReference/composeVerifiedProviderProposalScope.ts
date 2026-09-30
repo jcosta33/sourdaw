@@ -28,6 +28,7 @@ function addProtectedTargetIds(scope: AgentRunScope, protectedTargetIds: readonl
 export function composeVerifiedProviderProposalScope(input: {
     actions: readonly AppAction[];
     compilerEvidence: ArbitraryCommandListEvidence | undefined;
+    appOwnedTargetIds?: readonly string[];
     context: ProjectContext;
     prompt: string;
     workflowCapabilityId: WorkflowCapabilityId | undefined;
@@ -44,12 +45,19 @@ export function composeVerifiedProviderProposalScope(input: {
         workflowCapabilityId: input.workflowCapabilityId,
     }).map((object) => object.id);
     const resolvedTargetIds = input.compilerEvidence?.providerKnownTargetIds;
-    if (resolvedTargetIds === undefined) {
+    if (resolvedTargetIds === undefined && input.appOwnedTargetIds === undefined) {
         return undefined;
     }
 
+    const targetIds: string[] = [];
+    if (resolvedTargetIds !== undefined) {
+        targetIds.push(...resolvedTargetIds);
+    }
+    if (input.appOwnedTargetIds !== undefined) {
+        targetIds.push(...input.appOwnedTargetIds);
+    }
     const scope: AgentRunScope = {
-        targetIds: [...resolvedTargetIds],
+        targetIds: uniqueIds(targetIds),
         targetRanges,
         protectedTargetIds: applicationProtectedTargetIds,
         protectedRanges: [],

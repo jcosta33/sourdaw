@@ -52,6 +52,7 @@ import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
@@ -438,10 +439,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
                             tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
                     );
-                    // Recipe discovery and measurement are dropped from the WebLLM pool rather than made
-                    // mandatory or left eligible for the single prompt-selected slot: either place would
-                    // cost the local tier a planning tool (usually project.discover) it already had.
-                    // Hosted backends never take this branch, so they keep both unchanged.
+                    // #4371 owns mandatory transform availability on WebLLM. Until its budget route
+                    // lands, keep new catalog tools out of this single optional slot so the local
+                    // planning contract retains project.discover; hosted backends see the full catalog.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
@@ -452,7 +452,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
                             tool.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME &&
                             tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME &&
-                            tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME
+                            tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME &&
+                            tool.function.name !== TRANSFORM_COMPILE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,

@@ -146,7 +146,121 @@ const siblingDeviceProviderItems = [
     },
 ] as const;
 
-type WorkflowProviderItems = typeof providerItems | typeof siblingDeviceProviderItems;
+const orderedDevicePrompt =
+    'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track';
+
+const orderedDeviceProviderItems = [
+    { id: 'make-lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+    {
+        id: 'add-filter',
+        name: 'addDevice',
+        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' },
+        dependsOn: ['make-lead'],
+    },
+    {
+        id: 'add-limiter',
+        name: 'addDevice',
+        arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'limiter' },
+        dependsOn: ['make-lead'],
+    },
+    {
+        id: 'add-compressor',
+        name: 'addDevice',
+        arguments: {
+            trackId: '$lead',
+            deviceType: 'builtin-compressor',
+            binding: 'compressor',
+            afterDeviceId: '$filter',
+        },
+        dependsOn: ['add-filter'],
+    },
+] as const;
+
+const twoTrackOrderedPrompt =
+    'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track';
+
+const twoTrackOrderedProviderItems = [
+    orderedDeviceProviderItems[0],
+    {
+        ...orderedDeviceProviderItems[1],
+        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'lead-filter' },
+    },
+    {
+        ...orderedDeviceProviderItems[2],
+        arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'lead-limiter' },
+    },
+    {
+        ...orderedDeviceProviderItems[3],
+        arguments: {
+            trackId: '$lead',
+            deviceType: 'builtin-compressor',
+            binding: 'lead-compressor',
+            afterDeviceId: '$lead-filter',
+        },
+        dependsOn: ['add-filter'],
+    },
+    { id: 'make-bass', name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+    {
+        id: 'add-bass-filter',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-filter', binding: 'bass-filter' },
+        dependsOn: ['make-bass'],
+    },
+    {
+        id: 'add-bass-limiter',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-limiter', binding: 'bass-limiter' },
+        dependsOn: ['make-bass'],
+    },
+    {
+        id: 'add-bass-compressor',
+        name: 'addDevice',
+        arguments: { trackId: '$bass', deviceType: 'builtin-compressor', binding: 'bass-compressor' },
+        dependsOn: ['make-bass'],
+    },
+] as const;
+
+const bassOrderedPrompt =
+    'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track after the Filter';
+
+const bassOrderedProviderItems = twoTrackOrderedProviderItems.map((item, index) => {
+    if (index === 3) {
+        return {
+            ...item,
+            arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'lead-compressor' },
+        };
+    }
+    if (index === 7) {
+        return {
+            ...item,
+            arguments: {
+                trackId: '$bass',
+                deviceType: 'builtin-compressor',
+                binding: 'bass-compressor',
+                afterDeviceId: '$bass-filter',
+            },
+            dependsOn: ['add-bass-filter'],
+        };
+    }
+    return item;
+});
+
+type WorkflowProviderItems = ReadonlyArray<{
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    dependsOn?: readonly string[];
+}>;
+
+const missingAnchorDeviceProviderItems = [
+    orderedDeviceProviderItems[0],
+    orderedDeviceProviderItems[1],
+    orderedDeviceProviderItems[2],
+    {
+        ...orderedDeviceProviderItems[3],
+        arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'compressor' },
+    },
+] as const;
 
 function materializeWorkflow(
     projectRevision: string,
@@ -175,7 +289,11 @@ function materializeWorkflow(
         prompt: workflowPrompt,
     });
     if (bridged.rejections.length > 0) {
-        throw new Error(bridged.rejections.map((rejection) => rejection.reason).join('; '));
+        throw new Error(
+            bridged.rejections
+                .map((rejection) => `${String(rejection.index)}:${rejection.name}: ${rejection.reason}`)
+                .join('; ')
+        );
     }
     const identified = materializeBatchLocalActionIdentities(bridged.actions, bridged.batchLocalActionIdentities ?? []);
     if (identified.status !== 'accepted') {
@@ -194,7 +312,8 @@ function materializeWorkflow(
 function compileWorkflowCommandBatch(
     input: ReturnType<typeof materializeWorkflow>,
     projectRevision: string,
-    id: string
+    id: string,
+    workflowPrompt: string = prompt
 ) {
     return compilePlannedActionCommandBatch({
         actions: input.actions,
@@ -204,7 +323,7 @@ function compileWorkflowCommandBatch(
         autoCommitApproval: () => ({ status: 'valid' as const }),
         context: input.context,
         group: { groupId: `group-${id}`, groupLabel: 'Create filtered MIDI phrase' },
-        intent: prompt,
+        intent: workflowPrompt,
         mode: 'commit',
         projectRevision,
         runId: `run-${id}`,
@@ -245,6 +364,107 @@ describe('typed created-device binding Command workflow', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.restoreAllMocks();
+    });
+
+    it('requires and applies the requested device anchor ahead of an intervening sibling', async () => {
+        const revision = captureProjectRevision();
+        expect(() => materializeWorkflow(revision, orderedDevicePrompt, missingAnchorDeviceProviderItems)).toThrow(
+            'Requested device insertion anchor is missing or mismatched'
+        );
+        expect(trackStore.value?.tracks).toEqual([]);
+
+        const workflow = materializeWorkflow(revision, orderedDevicePrompt, orderedDeviceProviderItems);
+        const [trackAction, filterAction, limiterAction, compressorAction] = workflow.actions;
+        if (
+            trackAction?.type !== 'addTrack' ||
+            filterAction?.type !== 'addDevice' ||
+            limiterAction?.type !== 'addDevice' ||
+            compressorAction?.type !== 'addDevice'
+        ) {
+            throw new Error('Expected Lead, Filter, Limiter, Compressor');
+        }
+        expect(compressorAction.payload.afterDeviceId).toBe(filterAction.payload.deviceId);
+        expect(workflow.actionCommandGraph.dependenciesByActionIndex[3]).toContain(1);
+        expect(trackStore.value?.tracks).toEqual([]);
+
+        const commandBatch = compileWorkflowCommandBatch(workflow, revision, 'ordered-devices', orderedDevicePrompt);
+        const outcome = await executeVersionedCommandBatchEnvelope(commandBatch);
+        expect(outcome).toMatchObject({ status: 'committed' });
+        const createdTrack = trackStore.value?.tracks[0];
+        expect(createdTrack?.devices.map((device) => device.id)).toEqual([
+            filterAction.payload.deviceId,
+            compressorAction.payload.deviceId,
+            limiterAction.payload.deviceId,
+        ]);
+        const committedTrack = structuredClone(createdTrack);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual([committedTrack]);
+    });
+
+    it('commits distinct requested device orders on two new tracks and round-trips the batch', async () => {
+        const revision = captureProjectRevision();
+        const workflow = materializeWorkflow(revision, twoTrackOrderedPrompt, twoTrackOrderedProviderItems);
+        expect(workflow.actions).toHaveLength(8);
+        expect(trackStore.value?.tracks).toEqual([]);
+        const leadDeviceIds = workflow.actions.slice(1, 4).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Lead device');
+            }
+            return action.payload.deviceId;
+        });
+        const bassDeviceIds = workflow.actions.slice(5).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Bass device');
+            }
+            return action.payload.deviceId;
+        });
+        const commandBatch = compileWorkflowCommandBatch(workflow, revision, 'two-track-order', twoTrackOrderedPrompt);
+        expect(await executeVersionedCommandBatchEnvelope(commandBatch)).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks.map((track) => [track.name, track.devices.map((device) => device.id)])).toEqual(
+            [
+                ['Lead', [leadDeviceIds[0], leadDeviceIds[2], leadDeviceIds[1]]],
+                ['Bass', bassDeviceIds],
+            ]
+        );
+        const committedTracks = structuredClone(trackStore.value?.tracks);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+    });
+
+    it('keeps a later Bass insertion anchor off the earlier Lead chain through approval and undo', async () => {
+        const revision = captureProjectRevision();
+        const workflow = materializeWorkflow(revision, bassOrderedPrompt, bassOrderedProviderItems);
+        expect(workflow.actions).toHaveLength(8);
+        expect(trackStore.value?.tracks).toEqual([]);
+        const leadDeviceIds = workflow.actions.slice(1, 4).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Lead device');
+            }
+            return action.payload.deviceId;
+        });
+        const bassDeviceIds = workflow.actions.slice(5).map((action) => {
+            if (action.type !== 'addDevice') {
+                throw new Error('Expected Bass device');
+            }
+            return action.payload.deviceId;
+        });
+        const commandBatch = compileWorkflowCommandBatch(workflow, revision, 'bass-ordered', bassOrderedPrompt);
+        expect(await executeVersionedCommandBatchEnvelope(commandBatch)).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks.map((track) => [track.name, track.devices.map((device) => device.id)])).toEqual(
+            [
+                ['Lead', leadDeviceIds],
+                ['Bass', [bassDeviceIds[0], bassDeviceIds[2], bassDeviceIds[1]]],
+            ]
+        );
+        const committedTracks = structuredClone(trackStore.value?.tracks);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
     });
 
     it('retains guarded sibling device producers when partially accepting the later device', async () => {

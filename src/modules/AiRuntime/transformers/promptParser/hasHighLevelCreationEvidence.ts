@@ -12,7 +12,7 @@ const CREATION_VERB_PATTERN = /\b(?:create|add|begin|build|make|start|compose|wr
  * a little more bass" would read as creation; only `bass line` names the part.
  */
 const INTRODUCED_OBJECT_PATTERN =
-    /\b(?:a|an|new|some|another|\d+)\s+((?:\w+\s+){0,2}?)(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melod(?:y|ies)|beats?|grooves?|loops?|riffs?|comps?|progressions?|chords?|drums|bass\s?lines?|drum\s+parts?)\b/giu;
+    /\b(?:a|an|new|some|another|\d+)\s+((?:\w+\s+){0,2}?)(?:(tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle)|(melod(?:y|ies)|beats?|grooves?|loops?|riffs?|comps?|progressions?|chords?|drums|bass\s?lines?|drum\s+parts?))\b/giu;
 
 /**
  * A preposition right before the determiner makes the phrase an edit's destination. `with` is
@@ -112,22 +112,32 @@ function hasUnnegatedCreationVerb(clause: string): boolean {
  * to objects the same batch creates — so a false positive here buys no authority over anything that
  * already exists, exactly as with the genre term.
  */
+function introducedObjects(clause: string): { musicalContent: boolean }[] {
+    return Array.from(clause.matchAll(INTRODUCED_OBJECT_PATTERN))
+        .filter(
+            (match) =>
+                match.index !== undefined &&
+                !PRECEDING_PREPOSITION_PATTERN.test(clause.slice(0, match.index)) &&
+                !REFERRING_GAP_PATTERN.test(match[1] ?? '') &&
+                !(
+                    PARTITIVE_GAP_PATTERN.test(match[1] ?? '') &&
+                    namesAnExistingIdentifier(clause.slice(match.index + match[0].length))
+                ) &&
+                !MEASURE_PHRASE_PATTERN.test(match[0])
+        )
+        .map((match) => ({ musicalContent: match[3] !== undefined }));
+}
+
 function introducesSomethingNew(clause: string): boolean {
-    return [...clause.matchAll(INTRODUCED_OBJECT_PATTERN)].some(
-        (match) =>
-            match.index !== undefined &&
-            !PRECEDING_PREPOSITION_PATTERN.test(clause.slice(0, match.index)) &&
-            !REFERRING_GAP_PATTERN.test(match[1] ?? '') &&
-            !(
-                PARTITIVE_GAP_PATTERN.test(match[1] ?? '') &&
-                namesAnExistingIdentifier(clause.slice(match.index + match[0].length))
-            ) &&
-            !MEASURE_PHRASE_PATTERN.test(match[0])
-    );
+    return introducedObjects(clause).length > 0;
 }
 
 function namesSomethingToCreate(clause: string): boolean {
     return MUSICAL_GENRE_PATTERN.test(clause) || introducesSomethingNew(clause);
+}
+
+function namesMusicalContentToCreate(clause: string): boolean {
+    return MUSICAL_GENRE_PATTERN.test(clause) || introducedObjects(clause).some((object) => object.musicalContent);
 }
 
 /**
@@ -141,4 +151,10 @@ export function hasHighLevelCreationEvidence(request: string): boolean {
     return request
         .split(CLAUSE_SEPARATOR_PATTERN)
         .some((clause) => hasUnnegatedCreationVerb(clause) && namesSomethingToCreate(clause));
+}
+
+export function hasHighLevelContentCreationEvidence(request: string): boolean {
+    return request
+        .split(CLAUSE_SEPARATOR_PATTERN)
+        .some((clause) => hasUnnegatedCreationVerb(clause) && namesMusicalContentToCreate(clause));
 }

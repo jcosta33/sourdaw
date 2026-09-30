@@ -415,6 +415,72 @@ function radioProviderTurns(input: {
  */
 const COMBINED_PROMPT = `${BLUES_PROMPT}, and make it sound like a radio`;
 
+const BEAT_AND_RADIO_PROMPT = 'create a beat on a new MIDI track and make Guitar sound like a radio';
+const JAZZ_AND_RADIO_PROMPT = 'create a jazz MIDI track and make Guitar sound like a radio';
+const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
+
+function beatAndRadioProviderTurns(): ScriptedTurn[] {
+    return [
+        () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
+        (userMessage) => [
+            selectCreativeInterpretationCall({
+                catalog: readCreativeInterpretationCatalog(userMessage),
+                modeId: 'create',
+                targetObjectIds: [GUITAR_TRACK_ID],
+                dimensions: ['arrangement', 'midi-content', 'processing'],
+                creationSlotObjectTypes: ['track', 'device'],
+                nestedCreationSlotObjectTypes: ['clip'],
+            }),
+        ],
+        (userMessage) => {
+            assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
+            return [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            ...radioBatchPlan(GUITAR_TRACK_ID),
+                            objective: 'Create a beat on a new MIDI track and treat Guitar as a radio.',
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'make-beat-track',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Beat Track', kind: 'midi', binding: 'beat-track' },
+                                },
+                                {
+                                    id: 'make-beat-clip',
+                                    name: 'addClip',
+                                    arguments: {
+                                        trackId: '$beat-track',
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        name: 'Beat',
+                                        binding: 'beat-clip',
+                                    },
+                                    dependsOn: ['make-beat-track'],
+                                },
+                                {
+                                    id: 'write-beat',
+                                    name: 'addNotes',
+                                    arguments: {
+                                        clipId: '$beat-clip',
+                                        notes: [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }],
+                                    },
+                                    dependsOn: ['make-beat-clip'],
+                                },
+                                ...radioDeviceItems('Guitar'),
+                            ],
+                        },
+                    },
+                },
+            ];
+        },
+    ];
+}
+
 const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
 /** What a read-only authority answers to every writing command, whoever else would have grounded it. */
@@ -817,6 +883,54 @@ describe('creative interpretation execution', () => {
         expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
     });
+
+    it.each([
+        { requestKind: 'requested', prompt: BEAT_AND_RADIO_PROMPT },
+        { requestKind: 'genre-led', prompt: JAZZ_AND_RADIO_PROMPT },
+    ])(
+        'previews and approves the $requestKind new-track beat beside the Guitar treatment as one batch',
+        async ({ prompt }) => {
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, beatAndRadioProviderTurns());
+
+            await sendChatMessage(prompt);
+            const confirmation = requireConfirmation();
+            expect(confirmation.actions.map((action) => action.type)).toEqual([
+                'addTrack',
+                'addClip',
+                'addNotes',
+                PROPOSED_COMMAND_NAME,
+                PARAMETER_COMMAND_NAME,
+            ]);
+            expect(getTrackNames()).toEqual(['Guitar', 'Bass']);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([]);
+            expect(Object.keys(midiStore.value?.notesByClipId ?? {})).toEqual([]);
+
+            await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const beatTrack = requireCreatedTrack('Beat Track');
+            const beatClip = beatTrack.clips.find((clip) => clip.name === 'Beat');
+            if (!beatClip) {
+                throw new TypeError('Expected the Beat clip');
+            }
+            expect(beatClip).toMatchObject({ startBeat: 0, endBeat: 4 });
+            const beatNotes = [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }];
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toMatchObject(beatNotes);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+            expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+            expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
+
+            await undo();
+            expect(getTrackNames()).toEqual(['Guitar', 'Bass']);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([]);
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toBeUndefined();
+            await redo();
+            expect(requireCreatedTrack('Beat Track').clips).toHaveLength(1);
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toMatchObject(beatNotes);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+            expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+        }
+    );
 
     it('undoes the invented phrase and the delegated device together, then redoes both', async () => {
         scriptProviderTurns(

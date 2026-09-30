@@ -375,6 +375,7 @@ describe('application-owned tool loop', () => {
             'project.resolve',
             'recipe.discover',
             'render.request',
+            'transform.compile',
         ]);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
