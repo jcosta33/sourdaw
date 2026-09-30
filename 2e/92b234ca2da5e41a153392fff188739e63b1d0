@@ -1,0 +1,19 @@
+scripts/semanticReview/evaluation/runEvaluation.ts
+  s_ed5aa36a3ba357::t_a1d0ce9aefa23d 20,74-75,209,227,294-321,348-360,378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e92b234ca2da5e41a153392fff188739e63b1d0",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
