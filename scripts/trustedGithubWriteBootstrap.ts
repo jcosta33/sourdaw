@@ -4865,20 +4865,38 @@ function skipRegexLiteral(source: string, index: number): number | undefined {
  * (`'} / '.repeat(32)` cost ~2.3 s, #4828). The memo ends that: every index is answered once, so the
  * nested walks only revisit a region whose question is already answered. One source is retained,
  * because a scan threads a single source through every nested call.
+ *
+ * One nested walk can ask the question its own opener is still answering. A division after a member
+ * expression inside a template interpolation — `` `${(a.b / c)}` `` — reads the token before the `/` as
+ * the member name `b`, which asks the line-comment walk to re-read the line, which walks the
+ * interpolation as its own region and reaches that same `/` again; every round adds a frame and no round
+ * decides anything, so the scan ended with `RangeError: Maximum call stack size exceeded` and a pull
+ * request carrying the shape got no assessment at all (#4934). The re-entrant ask is answered `false`,
+ * the division reading, because that keeps the walk moving over the rest of the region: the regex
+ * reading would consume it up to the next `/` and could carry a later `import('…')` with it. The answer
+ * is deliberately not memoised — the outermost call for that index stores the reading it derives once
+ * the cycle is broken, and every later ask reads that.
  */
 let regexPrefixSource: string | undefined;
 let regexPrefixAnswers = new Map<number, boolean>();
+const regexPrefixInProgress = new Set<number>();
 
 function canStartRegexLiteral(source: string, index: number): boolean {
     if (regexPrefixSource !== source) {
         regexPrefixSource = source;
         regexPrefixAnswers = new Map();
+        regexPrefixInProgress.clear();
     }
     const answered = regexPrefixAnswers.get(index);
     if (answered !== undefined) {
         return answered;
     }
+    if (regexPrefixInProgress.has(index)) {
+        return false;
+    }
+    regexPrefixInProgress.add(index);
     const answer = readCanStartRegexLiteral(source, index);
+    regexPrefixInProgress.delete(index);
     regexPrefixAnswers.set(index, answer);
     return answer;
 }

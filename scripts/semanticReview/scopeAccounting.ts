@@ -278,6 +278,13 @@ function assertScanLedger(
  * validated (`eligible + excluded.length === discovered` with `eligible === discovered`), so no stored
  * verify report is refused by it. Refusing the list once closes every excluded-against-ledger pairing
  * instead of one overlap at a time.
+ *
+ * What stays unrefutable here is the finding list itself. A verify report publishes no list of the
+ * candidates it was handed, so an assessment or an omission naming a finding id that never existed
+ * cannot be refuted from the record: the ids are the whole ledger, and nothing beside them says which
+ * findings the change carried. These rows hold the ledger to itself — distinct ids, no id both assessed
+ * and omitted, and `assessed` equal to the ids the assessments name — and a doctored report that invents
+ * a finding id consistently across the assessments, the omissions, and the totals is beyond them.
  */
 function assertVerifyLedger(
     scope: { readonly assessed: number; readonly excluded: readonly SemanticScopeExclusion[] },
