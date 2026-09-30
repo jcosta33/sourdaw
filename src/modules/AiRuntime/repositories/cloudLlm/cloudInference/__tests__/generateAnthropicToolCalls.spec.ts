@@ -8,6 +8,7 @@ import {
 import { type ToolSchema } from '../../../../models/Tools/Types';
 import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../../../useCases/applicationOwnedToolLoop';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
+import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 import { AUTO_TOOL_CHOICE } from '../hostedToolPlan';
@@ -439,6 +440,40 @@ describe('generateAnthropicToolCalls', () => {
             cacheWriteInputTokens: 8,
             reasoningTokens: null,
         });
+    });
+
+    it('advertises the registered proposal with encoded argument leaves and structured fields', async () => {
+        const canonical = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+        );
+        expect(canonical).toBeDefined();
+        returnPayload({ content: [], stop_reason: 'end_turn' });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'add EQ',
+            toolSchemas: [getHostedProposalWireToolSchema(canonical!)],
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        expect(request).toBeDefined();
+        const body = JSON.parse(request!.body) as { tools: Array<{ input_schema: Record<string, unknown> }> };
+        const schema = body.tools[0]?.input_schema;
+        expect(schema).toHaveProperty(
+            ['properties', 'commands', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(schema).toHaveProperty(
+            ['properties', 'list', 'properties', 'items', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(schema).not.toHaveProperty(['properties', 'commands', 'items', 'properties', 'arguments']);
+        expect(schema).toHaveProperty(['properties', 'plan', 'properties', 'objective', 'type'], 'string');
+        expect(schema).toHaveProperty(['properties', 'compiledCallIds', 'items', 'type'], 'string');
     });
 
     it.each([

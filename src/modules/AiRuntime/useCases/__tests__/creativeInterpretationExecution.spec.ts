@@ -19,12 +19,16 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    executeVersionedCommandBatchEnvelope,
+    issueCommandApprovalBinding,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -44,7 +48,10 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
+import { parsePromptToActions } from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
@@ -110,7 +117,7 @@ const RADIO_LOW_GAIN_VALUE = -24;
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
-    return { backend, generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
+    return { backend, generateCloudToolCalls: vi.fn(), generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
 });
 
 /**
@@ -195,6 +202,18 @@ vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
 
 vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
     generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
+}));
+
+vi.mock('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
+    generateCloudToolCalls: runtimeMocks.generateCloudToolCalls,
+}));
+
+vi.mock('../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: () => ({ provider: 'openai', model: 'hosted-model', baseUrl: 'https://api.openai.com/v1' }),
+}));
+
+vi.mock('../../repositories/cloudLlm/usesStrictCloudToolSchemas', () => ({
+    usesStrictCloudToolSchemas: () => true,
 }));
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
@@ -796,6 +815,91 @@ describe('creative interpretation execution', () => {
         // and a single undo reverts the group, which the next case reads.
         expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
+    });
+
+    it('carries strict hosted argument leaves through confirmation, approval, and undo', async () => {
+        runtimeMocks.backend.value = 'cloud';
+        const turns = radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID });
+        let turnIndex = 0;
+        runtimeMocks.generateCloudToolCalls.mockImplementation((_systemPrompt, userMessage) => {
+            const turn = turns[turnIndex];
+            if (!turn) {
+                throw new Error('Unexpected hosted planning turn');
+            }
+            turnIndex += 1;
+            const scriptedCalls = turnIndex === 3 ? [proposeAddDeviceCall(GUITAR_TRACK_ID)] : turn(userMessage);
+            const calls = scriptedCalls.map((call, index) => {
+                const id = `hosted-${String(turnIndex)}-${String(index)}`;
+                if (call.name !== 'command.batch.propose') {
+                    return { id, name: call.name, arguments: call.arguments };
+                }
+                return {
+                    id,
+                    name: call.name,
+                    arguments: {
+                        plan: radioBatchPlan(GUITAR_TRACK_ID),
+                        commands: [
+                            {
+                                name: PROPOSED_COMMAND_NAME,
+                                argumentsJson: JSON.stringify({
+                                    trackId: GUITAR_TRACK_ID,
+                                    deviceType: RADIO_DEVICE_TYPE,
+                                    binding: RADIO_DEVICE_BINDING,
+                                }),
+                            },
+                            {
+                                name: PARAMETER_COMMAND_NAME,
+                                argumentsJson: JSON.stringify({
+                                    deviceId: `$${RADIO_DEVICE_BINDING}`,
+                                    paramId: RADIO_LOW_GAIN_PARAM,
+                                    value: RADIO_LOW_GAIN_VALUE,
+                                }),
+                            },
+                        ],
+                    },
+                };
+            });
+            return Promise.resolve({ providerRequestId: null, calls, strictToolSchemas: true, usage: null });
+        });
+
+        const revision = captureProjectRevision();
+        const context = getProjectContext();
+        const parsed = await parsePromptToActions(RADIO_PROMPT, context, undefined, revision);
+
+        expect(parsed.rejectionReason).toBeUndefined();
+        expect(turnIndex).toBe(3);
+        expect(parsed.requiresConfirmation).toBe(true);
+        expect(parsed.actions.map((action) => action.type)).toEqual([PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME]);
+        expectNoDevicesAnywhere();
+        expect(undoStore.value?.past ?? []).toEqual([]);
+
+        const commandBatch = compilePlannedActionCommandBatch({
+            actions: parsed.actions,
+            actionCommandGraph: parsed.actionCommandGraph,
+            actionLabels: [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME],
+            autoCommit: false,
+            context,
+            group: { groupId: 'group-hosted-radio', groupLabel: 'Radio treatment' },
+            intent: RADIO_PROMPT,
+            mode: 'commit',
+            projectRevision: revision,
+            runId: 'run-hosted-radio',
+        }).commandBatch;
+        expect(parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority).status).toBe(
+            'valid'
+        );
+        expectNoDevicesAnywhere();
+        const approvalBinding = issueCommandApprovalBinding({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+            validate: () => ({ status: 'valid' }),
+        });
+        const committed = await executeVersionedCommandBatchEnvelope({ ...commandBatch, approvalBinding });
+        expect(committed.status).toBe('committed');
+        expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expectNoDevicesAnywhere();
     });
 
     it('undoes the committed device off the admitted track and redoes it back onto it', async () => {

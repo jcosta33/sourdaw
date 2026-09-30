@@ -37,6 +37,7 @@ import {
     type HostedToolPlan,
 } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
+import { usesStrictCloudToolSchemas } from '../../repositories/cloudLlm/usesStrictCloudToolSchemas';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
@@ -59,6 +60,8 @@ import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
+import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
+import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
 // The mandatory planning contract (workflow selector, six application tools, the workflow action
 // tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
@@ -151,11 +154,12 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
         const requiredProperties = new Set(Array.isArray(schema.required) ? schema.required : []);
         const admissible: Record<string, unknown> = {};
         for (const [key, item] of Object.entries(value)) {
-            if (item === null && !requiredProperties.has(key)) {
+            const propertyIsDeclared = Object.hasOwn(schema.properties, key);
+            if (item === null && propertyIsDeclared && !requiredProperties.has(key)) {
                 continue;
             }
             const propertySchema = schema.properties[key];
-            admissible[key] = propertySchema === undefined ? item : admissibleSchemaValue(item, propertySchema);
+            admissible[key] = propertyIsDeclared ? admissibleSchemaValue(item, propertySchema) : item;
         }
         return admissible;
     }
@@ -425,7 +429,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let providerTools = toolSchemas;
+                const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
+                let providerTools = strictHostedProposalWire
+                    ? toolSchemas.map(getHostedProposalWireToolSchema)
+                    : toolSchemas;
                 if (backend === 'webllm') {
                     const workflowSelectionTools = toolSchemas.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
@@ -693,6 +700,25 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         name: call.name,
                         arguments: call.arguments,
                     }));
+                    if (strictHostedProposalWire) {
+                        const canonicalProposalSchema = toolSchemas.find(
+                            (tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                        );
+                        for (const [index, call] of normalizedToolCalls.entries()) {
+                            if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
+                                continue;
+                            }
+                            const decoded =
+                                canonicalProposalSchema === undefined
+                                    ? null
+                                    : decodeHostedProposalWireCall(call, canonicalProposalSchema);
+                            if (decoded === null) {
+                                llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                                return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };
+                            }
+                            normalizedToolCalls[index] = decoded;
+                        }
+                    }
                     const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
                     // Every hosted turn is reported, so the run's evidence survives in the history
                     // whatever the provider named its calls. The items themselves are replayed
