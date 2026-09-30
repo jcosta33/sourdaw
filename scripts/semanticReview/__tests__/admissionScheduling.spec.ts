@@ -12,6 +12,7 @@
 import { APITimeoutError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
+import { type PathChangedLines } from '../changeFacts.ts';
 import {
     buildRevisionContext,
     SEMANTIC_POLICY_VERSION,
@@ -80,6 +81,7 @@ function fakeSource(
         changedFiles: () => files,
         readFile: (sha, path) => blobs[`${sha}:${path}`],
         changedHunks: () => hunks,
+        changedLines: () => new Map<string, PathChangedLines>(),
     };
 }
 
@@ -598,7 +600,14 @@ describe('response caching follows the question membership', () => {
             evidence: unit.evidence,
         });
         const payloadFor = (rules: typeof unit.rules) =>
-            passRequestPayload({ unitId: unit.unitId, path: unit.path, file: unit.file, rules, pass });
+            passRequestPayload({
+                unitId: unit.unitId,
+                path: unit.path,
+                file: unit.file,
+                rules,
+                pass,
+                changedLineFacts: unit.changedLineFacts,
+            });
         const askedPayload = payloadFor(asked);
         const wholePayload = payloadFor(unit.rules);
         // The question sets differ, so the identities must: an answer bought for one membership cannot

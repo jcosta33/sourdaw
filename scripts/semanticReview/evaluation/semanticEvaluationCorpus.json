@@ -1,0 +1,297 @@
+{
+    "format": "semantic-evaluation-corpus-v1",
+    "labelBasis": "human-adjudication",
+    "labelNote": "Every label here is a human adjudication about what the change does. No model score is recorded, and a provider run over this corpus is evidence about the provider, never about a label.",
+    "fixtures": [
+        {
+            "id": "descriptor-hash-retarget",
+            "fixture": "adjudicated-negative",
+            "path": "src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts",
+            "ruleId": "admission_branch_completes_without_asserting",
+            "revisions": {
+                "mergeBaseSha": "713084e2edaa2717dcce5d3b01a2091d7d96f69a",
+                "headSha": "30373c8859215e2ab97f1ccdacc0545940972faa"
+            },
+            "expected": {
+                "applies": true,
+                "concern": "none"
+            },
+            "adjudication": "The diff replaces one descriptor hash and adds two explanatory comments; it adds no branch, so no path through the case can complete without asserting.",
+            "adjudicatedFrom": "Audit of the advisory review for pull request 4848 at head 30373c88.",
+            "pairedWith": "early-exit-without-asserting",
+            "changedLines": {
+                "added": [
+                    {
+                        "line": 78,
+                        "text": "    // Yeast undeclares its four arpeggiator parameters (#4650): the rack's"
+                    },
+                    {
+                        "line": 79,
+                        "text": "    // arpeggiator never read them, so they move to per-processor commands."
+                    },
+                    {
+                        "line": 80,
+                        "text": "    yeast: 'descriptor-v1:f319bc9b',"
+                    }
+                ],
+                "removed": [
+                    {
+                        "line": 78,
+                        "text": "    yeast: 'descriptor-v1:e58d800b',"
+                    }
+                ]
+            },
+            "changedLineFacts": {
+                "basis": "unified-diff",
+                "before": {
+                    "removedAssertions": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    }
+                },
+                "after": {
+                    "addedAssertions": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    },
+                    "addedControlFlow": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    }
+                }
+            }
+        },
+        {
+            "id": "grid-label-retarget",
+            "fixture": "adjudicated-negative",
+            "path": "src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx",
+            "ruleId": "assertion_deleted",
+            "revisions": {
+                "mergeBaseSha": "713084e2edaa2717dcce5d3b01a2091d7d96f69a",
+                "headSha": "30373c8859215e2ab97f1ccdacc0545940972faa"
+            },
+            "expected": {
+                "applies": true,
+                "concern": "none"
+            },
+            "adjudication": "The diff retargets obsolete grid labels to note values and replaces every removed assertion with a note-value assertion; the visibility, pressed-state and callback checks all remain.",
+            "adjudicatedFrom": "Audit of the advisory review for pull request 4848 at head 30373c88.",
+            "pairedWith": "assertion-removed-without-replacement",
+            "changedLines": {
+                "added": [
+                    {
+                        "line": 166,
+                        "text": "        // Note-value labels (#4801): the pills cover grid values 1, 0.5, 0.25, 0.125 beats."
+                    },
+                    {
+                        "line": 169,
+                        "text": "        expect(screen.getByText('1/16')).toBeInTheDocument();"
+                    },
+                    {
+                        "line": 170,
+                        "text": "        expect(screen.getByText('1/32')).toBeInTheDocument();"
+                    },
+                    {
+                        "line": 175,
+                        "text": "        expect(screen.getByRole('button', { name: '1/16' })).toHaveAttribute('aria-pressed', 'true');"
+                    },
+                    {
+                        "line": 176,
+                        "text": "        expect(screen.getByRole('button', { name: '1/32' })).toHaveAttribute('aria-pressed', 'false');"
+                    },
+                    {
+                        "line": 182,
+                        "text": "        fireEvent.click(screen.getByText('1/16'));"
+                    }
+                ],
+                "removed": [
+                    {
+                        "line": 166,
+                        "text": "        expect(screen.getByText('1')).toBeInTheDocument();"
+                    },
+                    {
+                        "line": 167,
+                        "text": "        expect(screen.getByText('1/2')).toBeInTheDocument();"
+                    },
+                    {
+                        "line": 174,
+                        "text": "        expect(screen.getByRole('button', { name: '1/4' })).toHaveAttribute('aria-pressed', 'true');"
+                    },
+                    {
+                        "line": 176,
+                        "text": "        expect(screen.getByRole('button', { name: '1/2' })).toHaveAttribute('aria-pressed', 'false');"
+                    },
+                    {
+                        "line": 181,
+                        "text": "        fireEvent.click(screen.getByText('1/4'));"
+                    }
+                ]
+            },
+            "changedLineFacts": {
+                "basis": "unified-diff",
+                "before": {
+                    "removedAssertions": {
+                        "count": 4,
+                        "lines": [166, 167, 174, 176],
+                        "truncated": false
+                    }
+                },
+                "after": {
+                    "addedAssertions": {
+                        "count": 4,
+                        "lines": [169, 170, 175, 176],
+                        "truncated": false
+                    },
+                    "addedControlFlow": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    }
+                }
+            }
+        },
+        {
+            "id": "assertion-removed-without-replacement",
+            "fixture": "synthetic-positive",
+            "path": "src/modules/Arrangement/useCases/__tests__/setTrackGain.spec.ts",
+            "ruleId": "assertion_deleted",
+            "revisions": {
+                "mergeBaseSha": "0000000000000000000000000000000000000000",
+                "headSha": "ffffffffffffffffffffffffffffffffffffffff"
+            },
+            "expected": {
+                "applies": true,
+                "concern": "assertion_deleted"
+            },
+            "adjudication": "The diff removes the assertion on the clamped gain and adds nothing in its place, so the second case now ends without checking the value it set.",
+            "adjudicatedFrom": "Authored for this corpus: a labelled synthetic fixture, not a revision of this repository.",
+            "pairedWith": "grid-label-retarget",
+            "source": {
+                "before": "import { describe, expect, it } from 'vitest';\n\nimport { setTrackGain } from '../setTrackGain.ts';\n\ndescribe('setTrackGain', () => {\n    it('clamps the gain to the mixer range', () => {\n        const track = { gain: 0.5 };\n        setTrackGain(track, 4);\n        expect(track.gain).toBe(1);\n    });\n\n    it('ignores a non-finite gain', () => {\n        const track = { gain: 0.5 };\n        setTrackGain(track, Number.NaN);\n        expect(track.gain).toBe(0.5);\n    });\n});\n",
+                "after": "import { describe, expect, it } from 'vitest';\n\nimport { setTrackGain } from '../setTrackGain.ts';\n\ndescribe('setTrackGain', () => {\n    it('clamps the gain to the mixer range', () => {\n        const track = { gain: 0.5 };\n        setTrackGain(track, 4);\n        expect(track.gain).toBe(1);\n    });\n\n    it('ignores a non-finite gain', () => {\n        const track = { gain: 0.5 };\n        setTrackGain(track, Number.NaN);\n    });\n});\n"
+            },
+            "hunks": {
+                "before": [
+                    {
+                        "startLine": 6,
+                        "endLine": 17
+                    }
+                ],
+                "after": [
+                    {
+                        "startLine": 6,
+                        "endLine": 16
+                    }
+                ]
+            },
+            "changedLines": {
+                "added": [],
+                "removed": [
+                    {
+                        "line": 15,
+                        "text": "        expect(track.gain).toBe(0.5);"
+                    }
+                ]
+            },
+            "changedLineFacts": {
+                "basis": "unified-diff",
+                "before": {
+                    "removedAssertions": {
+                        "count": 1,
+                        "lines": [15],
+                        "truncated": false
+                    }
+                },
+                "after": {
+                    "addedAssertions": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    },
+                    "addedControlFlow": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    }
+                }
+            }
+        },
+        {
+            "id": "early-exit-without-asserting",
+            "fixture": "synthetic-positive",
+            "path": "src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbarAdmission.spec.tsx",
+            "ruleId": "admission_branch_completes_without_asserting",
+            "revisions": {
+                "mergeBaseSha": "0000000000000000000000000000000000000000",
+                "headSha": "ffffffffffffffffffffffffffffffffffffffff"
+            },
+            "expected": {
+                "applies": true,
+                "concern": "admission_branch_completes_without_asserting"
+            },
+            "adjudication": "The diff adds an early return guarded by `toolbar.mounted`, so the case completes without asserting whenever the toolbar reports itself unmounted.",
+            "adjudicatedFrom": "Authored for this corpus: a labelled synthetic fixture, not a revision of this repository.",
+            "pairedWith": "descriptor-hash-retarget",
+            "source": {
+                "before": "import { describe, expect, it } from 'vitest';\n\ntype Toolbar = { readonly snapValue: string; readonly mounted: boolean };\n\nasync function readToolbar(): Promise<Toolbar> {\n    return { snapValue: '1/16', mounted: await Promise.resolve(true) };\n}\n\ndescribe('snap toolbar admission', () => {\n    it('exposes the snap value control', async () => {\n        const toolbar = await readToolbar();\n        expect(toolbar.snapValue).toBe('1/16');\n    });\n});\n",
+                "after": "import { describe, expect, it } from 'vitest';\n\ntype Toolbar = { readonly snapValue: string; readonly mounted: boolean };\n\nasync function readToolbar(): Promise<Toolbar> {\n    return { snapValue: '1/16', mounted: await Promise.resolve(true) };\n}\n\ndescribe('snap toolbar admission', () => {\n    it('exposes the snap value control', async () => {\n        const toolbar = await readToolbar();\n        if (!toolbar.mounted) {\n            return;\n        }\n        expect(toolbar.snapValue).toBe('1/16');\n    });\n});\n"
+            },
+            "hunks": {
+                "before": [
+                    {
+                        "startLine": 9,
+                        "endLine": 14
+                    }
+                ],
+                "after": [
+                    {
+                        "startLine": 9,
+                        "endLine": 17
+                    }
+                ]
+            },
+            "changedLines": {
+                "added": [
+                    {
+                        "line": 12,
+                        "text": "        if (!toolbar.mounted) {"
+                    },
+                    {
+                        "line": 13,
+                        "text": "            return;"
+                    },
+                    {
+                        "line": 14,
+                        "text": "        }"
+                    }
+                ],
+                "removed": []
+            },
+            "changedLineFacts": {
+                "basis": "unified-diff",
+                "before": {
+                    "removedAssertions": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    }
+                },
+                "after": {
+                    "addedAssertions": {
+                        "count": 0,
+                        "lines": [],
+                        "truncated": false
+                    },
+                    "addedControlFlow": {
+                        "count": 2,
+                        "lines": [12, 13],
+                        "truncated": false
+                    }
+                }
+            }
+        }
+    ]
+}

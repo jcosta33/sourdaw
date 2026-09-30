@@ -113,8 +113,7 @@ const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
  * drift apart; this set remains because applicability also admits an assertion-carrying code file
  * without a runner suffix.
  */
-const CODE_EXTENSION_SET = '(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)';
-const CODE_EXTENSIONS = new RegExp(`\\.${CODE_EXTENSION_SET}$`, 'u');
+const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
 
 /**
  * Whether some runner executes this path as a test.
@@ -183,6 +182,13 @@ const TEST_RULE = {
     investigationCategory: 'test-validity',
 } as const;
 
+/**
+ * The change facts are named in the two rules below rather than declared as a `requiredEvidence` token:
+ * required evidence is a claim about the source regions a question must be given, and the block is derived
+ * from the same diff those regions came from and reports itself `unavailable` when the source could not
+ * read the lines. Naming it in `instructions` changes `rulesDigest`, which is deliberate.
+ */
+
 export const SEMANTIC_RULES: readonly SemanticRule[] = [
     {
         ...TEST_RULE,
@@ -190,15 +196,15 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         version: '1',
         purpose: 'Whether the change removes an assertion the test previously made.',
         instructions:
-            'Does `before` contain an assertion that no assertion in `after` replaces? An assertion moved to another supplied region is replaced; an assertion whose expectation changed is not deleted.',
+            'Does `before` contain an assertion that no assertion in `after` replaces? An assertion moved to another supplied region is replaced; an assertion whose expectation changed is not deleted. `state.unit.changedLines` carries line-level facts about this edit: `before.removedAssertions` names the removed lines whose text carries an assertion call, and `after.addedAssertions` names the added ones, each with a count and line numbers. Those are facts about which lines the diff added and removed, never proof about behaviour: a removed line says the diff removed that line and nothing about whether a check survives, and its count cannot show what an `after` region it does not carry contains. When `state.unit.changedLines.basis` is `unavailable` the edit was not read line by line: answer from the supplied sides alone, and never read a missing fact as absence.',
         criteria: {
             true: 'An assertion present in `before` has no counterpart in `after`, and nothing in `after` checks the same thing.',
             false: 'Every assertion in `before` is still made in `after`, possibly reworded, moved, or strengthened.',
         },
         counterexamples: [
-            'An assertion reworded or split across two assertions that together check the same thing',
-            'An assertion moved to another supplied region',
-            'An assertion replaced by a stronger assertion of the same behaviour',
+            'An assertion reworded, split across two assertions that together check the same thing, moved to another supplied region, or replaced by a stronger assertion of the same behaviour',
+            'A removed line the edit retargeted — an updated descriptor hash, label, or fixture value no assertion read — or a removed assertion line whose replacement sits outside the regions this request carries',
+            'A `changedLines` block reporting `basis` `unavailable`, which records that the edit was not read line by line rather than that it removed nothing',
         ],
     },
     {
@@ -322,7 +328,7 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         version: '1',
         purpose: 'Whether a new branch in the case asserts nothing.',
         instructions:
-            'Does `after` add a branch whose body contains no assertion and does not fail — an early return, a `catch` that swallows, or an alternative path that simply ends?',
+            'Does `after` add a branch whose body contains no assertion and does not fail — an early return, a `catch` that swallows, or an alternative path that simply ends? `state.unit.changedLines.after.addedControlFlow` names the added lines whose text introduces control flow — `if (`, `else`, `catch`, `switch`, `throw`, and a bare `return` — with a count and line numbers. Those are facts about which lines the edit added, never proof about behaviour: the text of an added line cannot show what its branch body does, whether a `catch` rethrows, or whether an assertion outside the regions this request carries covers the path a branch skips. When `state.unit.changedLines.basis` is `unavailable` the edit was not read line by line: answer from the supplied sides alone, and never read a missing fact as absence.',
         criteria: {
             true: 'At least one new branch can complete without asserting and without failing the case.',
             false: 'Every branch asserts, fails, or throws.',

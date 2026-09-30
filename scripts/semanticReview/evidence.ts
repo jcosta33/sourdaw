@@ -85,6 +85,8 @@ import {
     type WithheldRegionCause,
 } from './withheldReasons.ts';
 
+import type { PathChangedLines } from './changeFacts.ts';
+
 export { compareByPath, compareLexicographic } from './evidenceOrdering.ts';
 export type { LineRange } from './slicing.ts';
 export { isContractCarryingContent, isContractCarryingPath } from './contractCarrying.ts';
@@ -116,10 +118,6 @@ export type SemanticChangedFile = {
 };
 
 /**
- * The only source access this module has. The caller supplies Git-object reads; this module never
- * decides how they are performed.
- */
-/**
  * The changed lines of one path, per side, with the margin the diff was taken at already applied.
  *
  * A review unit is the *change*, not the file it lands in: 17 of this change's 32 paths carried more
@@ -143,6 +141,12 @@ export type SemanticSourcePort = {
      * could not be read, and the collector then supplies each changed file's whole sides.
      */
     changedHunks: (mergeBaseSha: string, headSha: string) => ReadonlyMap<string, PathHunks>;
+    /**
+     * The added and removed lines per path, keyed by the post-change path, which the request's change
+     * facts are derived from. A source that cannot read them returns no entry for that path rather than
+     * an empty one: an empty entry would report "this edit changed no line" as a fact.
+     */
+    changedLines: (mergeBaseSha: string, headSha: string) => ReadonlyMap<string, PathChangedLines>;
 };
 
 export type SemanticEvidenceLimits = {
@@ -162,6 +166,8 @@ export type SemanticEvidenceSet = {
      * unit can select its own set from attribution rather than from the region's content path.
      */
     readonly attribution: ReadonlyMap<string, readonly string[]>;
+    /** Each changed path's own added and removed lines; a path that could not be read is absent. */
+    readonly changedLines: ReadonlyMap<string, PathChangedLines>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -705,6 +711,19 @@ function contractContextCandidates(port: SemanticSourcePort, contractSourceSha: 
 }
 
 /**
+ * One per-path read of the change's diff, or an empty map when the port cannot perform it. A unit whose
+ * path is then absent carries its change facts as unavailable rather than as a zero the model reads as
+ * "this edit changed nothing".
+ */
+function readOrEmpty<Entry>(read: () => ReadonlyMap<string, Entry>): ReadonlyMap<string, Entry> {
+    try {
+        return read();
+    } catch {
+        return new Map();
+    }
+}
+
+/**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
  * content. Deleted code keeps its before-side identity.
@@ -720,14 +739,10 @@ export function collectEvidence(input: {
     includeDefaultContractContext?: boolean;
 }): SemanticEvidenceSet {
     const changed = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)];
-    // Read once for the whole change: one `git diff` answers for every path, and an empty map means
-    // the hunks were unavailable and each changed file is supplied whole.
-    let hunksByPath: ReadonlyMap<string, PathHunks>;
-    try {
-        hunksByPath = input.port.changedHunks(input.mergeBaseSha, input.headSha);
-    } catch {
-        hunksByPath = new Map();
-    }
+    // Read once for the whole change. An empty hunk map means the hunks were unavailable and each changed
+    // file is supplied whole; an absent changed-lines entry means that path's facts are unavailable.
+    const hunksByPath = readOrEmpty(() => input.port.changedHunks(input.mergeBaseSha, input.headSha));
+    const changedLines = readOrEmpty(() => input.port.changedLines(input.mergeBaseSha, input.headSha));
 
     // Screen each changed path before any read, so excluded, binary, generated and lockfile paths are
     // never read. The screen is content-free; only the surviving paths reach the source port.
@@ -824,6 +839,7 @@ export function collectEvidence(input: {
         references: admission.references,
         contents: admission.contents,
         attribution,
+        changedLines,
         excluded: admission.excluded,
         truncated: admission.truncated,
         limitations: admission.limitations,

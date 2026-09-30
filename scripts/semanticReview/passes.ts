@@ -14,6 +14,8 @@ import { unitRequestPayload } from './requestPayload.ts';
 import { missingRequiredEvidence } from './requiredEvidence.ts';
 import { type SemanticRule, type SemanticRuleId } from './rules.ts';
 
+import type { UnitChangedLineFacts } from './changeFacts.ts';
+
 /**
  * One unit's evidence as every per-pass question about it is asked: the passes it travels in, the
  * regions it carries whole, and the sides the fitter or the collector dropped. A planned unit
@@ -385,6 +387,7 @@ export function passRequestPayload(input: {
     readonly file: SemanticChangedFile;
     readonly rules: readonly SemanticRule[];
     readonly pass: SemanticUnitPass;
+    readonly changedLineFacts: UnitChangedLineFacts;
 }): { readonly state: Record<string, unknown>; readonly questions: Record<string, unknown> } {
     return unitRequestPayload({
         unitId: input.unitId,
@@ -392,5 +395,6 @@ export function passRequestPayload(input: {
         file: input.file,
         rules: input.rules,
         evidence: { references: input.pass.references, contents: input.pass.contents },
+        changedLineFacts: input.changedLineFacts,
     });
 }
