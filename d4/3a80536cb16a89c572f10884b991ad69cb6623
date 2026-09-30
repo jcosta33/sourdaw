@@ -1,0 +1,66 @@
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  s_ed5aa36a3ba357::t_9780c2c6c88820 1-22,24-42,45-46
+  s_ed5aa36a3ba357::t_4e2c6665785fa2 23,43-44
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_ed5aa36a3ba357::t_978ae439fe5bf7 40,63-64,431-434,702-719
+  s_ed5aa36a3ba357::t_2e0f0771d7ab7b 720
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_a022fe962c99fe 162
+  s_ed5aa36a3ba357::t_a1947947725fd7 5-6,140-161,163
+  s_ed5aa36a3ba357::t_7a0bd0df81f2c4 164-171
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_92de683cf290ef 6-8,51-52,65,333-356
+  s_ed5aa36a3ba357::t_34fc2c073ef257 357-374
+src/modules/AiRuntime/validators/matchesJsonSchema.ts
+  s_ed5aa36a3ba357::t_2f174b70db234f 70,95-108,111-151,156-161,163,166-167,173-194
+  s_ed5aa36a3ba357::t_d7add75077ca95 1-69,71-94,109-110,152-155,162,164-165,168-172,195
+  s_ed5aa36a3ba357::t_f32fcca43a500a 196-199
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_e7c0fc14f8646c 468-480
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_ed5aa36a3ba357::t_7d10188ff2bb61 22-24,31,51,53-54,865-867,871,874-887,891-895,897-898
+  s_ed5aa36a3ba357::t_1e4a7765367363 120,207-217
+  s_ed5aa36a3ba357::t_c7ff34587b5ade 820-829,862-864,868,870,873,896,899-904
+  s_ed5aa36a3ba357::t_dc5420329a63e6 830,869
+  s_ed5aa36a3ba357::t_3cd01fda22065b 831-861,872,888-890
+  s_ed5aa36a3ba357::t_f6e32e19019326 218
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_ed5aa36a3ba357::t_d7add75077ca95 23
+src/modules/AiRuntime/repositories/cloudLlm/usesStrictCloudToolSchemas.ts
+  s_ed5aa36a3ba357::t_94212e0b9329c6 1-6
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ed5aa36a3ba357::t_3d906587aeee62 346
+  s_ed5aa36a3ba357::t_1ebbb0552dde6e 376-395,399-409,417-424
+  s_ed5aa36a3ba357::t_a6c093e3be991d 248-259,261,271-280,306-323,326,336-343,362-368,438-448,471-480,482
+  s_ed5aa36a3ba357::t_41cb78a9385179 45,68-71
+  s_ed5aa36a3ba357::t_dcea8792de8df9 189,240
+  s_ed5aa36a3ba357::t_473ee5d1ef90b8 396-398,410-416
+  s_ed5aa36a3ba357::t_8852f87adc0812 462-470,481,483-492
+  s_ed5aa36a3ba357::t_4532a9a1416d58 238-239,241-247,260,262-270,281-284
+  s_ed5aa36a3ba357::t_559e007669aa28 285-305,324-325,327-335,344-345,347-361,369-375,425-427
+  s_ed5aa36a3ba357::t_11ab94ffc4263b 428-437,449-461,1497-1501
+src/modules/AiRuntime/useCases/llmOrchestration/decodeHostedProposalWireCall.ts
+  s_ed5aa36a3ba357::t_f67bf2fccaa126 35-36
+  s_ed5aa36a3ba357::t_04c3cd1a339a39 1
+  s_ed5aa36a3ba357::t_4e2c6665785fa2 19,34,40,46-48
+  s_ed5aa36a3ba357::t_a43c9befda14b9 2-18,20-33,37-39,41-45,49-54
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_4f809f63ee0262 11,445-470
+  s_ed5aa36a3ba357::t_ab12c7f811934e 471-478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d43a80536cb16a89c572f10884b991ad69cb6623",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
