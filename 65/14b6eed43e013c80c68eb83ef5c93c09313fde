@@ -1,0 +1,72 @@
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_ed5aa36a3ba357::t_5a2f751e04f6ec 7,9,40,77-95,145,371,411-415,417-421,423-427,429-433,435-439,441-445,447-451,453-461,464-468,470-495
+  s_ed5aa36a3ba357::t_e43caaef158612 42,55,59-66,416,422,428,434,440,463
+  s_ed5aa36a3ba357::t_0c8123d89443da 96-129,496,498,503,515-531
+  s_ed5aa36a3ba357::t_21aa4b284cea74 6,462,497,499-502,504-514,532-547,551-586,592-595
+  s_ed5aa36a3ba357::t_650dbb732c50e2 446,452,469,548-550,587-591
+  s_ed5aa36a3ba357::t_53c2039711cfe0 263-279
+  s_ed5aa36a3ba357::t_5b4e22029b8b85 596
+src/modules/MIDI/handlers/getWritableMidiClipReplayGuard.ts
+  s_ed5aa36a3ba357::t_c3d1dcfab86240 1-6,15-20,22-25,27-56,62-98
+  s_ed5aa36a3ba357::t_dc6100c253365b 7-14,21,26,57-61
+src/modules/MIDI/handlers/noteTransform/handleScaleAllVelocities.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,21-23
+src/modules/MIDI/handlers/noteTransform/__tests__/handleTransposeAndRestoreSoloSafe.spec.ts
+  s_ed5aa36a3ba357::t_b9767bb0c3e6e4 12-18
+  s_ed5aa36a3ba357::t_22102694acf699 11
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_ed5aa36a3ba357::t_c3d1dcfab86240 2,9,97
+src/modules/MIDI/handlers/noteTransform/prepareMidiNoteTransformUndo.ts
+  s_ed5aa36a3ba357::t_c3d1dcfab86240 6,33-36,43,47
+src/modules/MIDI/handlers/noteTransform/handleTransposeNotes.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,30-32
+src/modules/MIDI/handlers/noteTransform/__tests__/handleQuantizeNotes.spec.ts
+  s_ed5aa36a3ba357::t_22102694acf699 11
+  s_ed5aa36a3ba357::t_b9767bb0c3e6e4 12-18
+src/modules/MIDI/handlers/noteTransform/__tests__/handleQuantizeNoteLengths.spec.ts
+  s_ed5aa36a3ba357::t_22102694acf699 11
+  s_ed5aa36a3ba357::t_b9767bb0c3e6e4 12-18
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNoteLengths.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,29-31
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNotes.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,29-31
+src/modules/MIDI/handlers/noteTransform/__tests__/handleHumanizeNotes.spec.ts
+  s_ed5aa36a3ba357::t_b9767bb0c3e6e4 1-2,4-9
+  s_ed5aa36a3ba357::t_22102694acf699 3
+src/modules/MIDI/handlers/noteTransform/handleHumanizeNotes.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 8,56-58
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e27badb40c5664 598,600-605
+  s_ed5aa36a3ba357::t_fd2d12c0b096d9 597,599,606-612
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_fd2d12c0b096d9 156,158,165-167
+  s_ed5aa36a3ba357::t_e27badb40c5664 157,159-164,168-172
+src/modules/MIDI/handlers/noteTransform/__tests__/prepareMidiNoteTransformUndo.spec.ts
+  s_ed5aa36a3ba357::t_d96d1910a2b990 3-5,14-15,36-51,94,97-105,117-139
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_ed5aa36a3ba357::t_1f8098742a8cc7 887
+  s_ed5aa36a3ba357::t_7e2c603cacc757 852-856,861-862,864-886,888-911,915-918
+  s_ed5aa36a3ba357::t_650dbb732c50e2 857-860,863,912-914
+src/modules/MIDI/handlers/noteTransform/handleInvertNotes.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,20-22
+src/modules/MIDI/handlers/noteTransform/handleRetrogradeNotes.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,20-22
+src/modules/MIDI/handlers/noteTransform/handleSetAllVelocities.ts
+  s_ed5aa36a3ba357::t_5072f84b20c7c2 6,21-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6514b6eed43e013c80c68eb83ef5c93c09313fde",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
