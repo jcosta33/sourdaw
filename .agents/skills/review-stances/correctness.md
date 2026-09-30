@@ -465,3 +465,16 @@ an offset.
 The FaustWasm 0.18.5 poly generator compiled `dsp_code.effect` before a voice even when the registered instrument had no effect. Libfaust threw `undefined symbol : effect`, and its generated Emscripten runtime printed an abort assertion before the generator caught the error and compiled the voice successfully. The upgrade review's runtime-instantiation stance checked node creation but missed this compiler input and its console consequence.
 
 Probe that would have caught it: for a compiler or DSP runtime upgrade, trace every factory input for one declared effect-free poly voice, one effectful voice, and one mono source. Require the effect-free route to compile its voice without a failed optional-effect factory, while the effectful route still compiles its effect and the resulting instrument still emits PCM after `keyOn`.
+
+### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
+
+The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector
+closed each open argument object with no properties. A provider could not produce a valid `addDevice`
+proposal even though the application compiler accepted it. The earlier review checked projection
+keywords and flags without passing one real registered command through the outbound wire and back.
+
+Probe that would have caught it: take a current discovered command with nonempty arguments, inspect
+the actual provider advertisement for both primitive and semantic-list proposal forms, then return
+each through the common provider admission and canonical decoder. Verify the proposal reaches the
+normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
+and local WebLLM control so wire repair does not change their canonical arguments.
