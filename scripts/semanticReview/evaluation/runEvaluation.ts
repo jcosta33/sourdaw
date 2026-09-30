@@ -17,7 +17,7 @@ import { type SemanticUsageReport } from '../report.ts';
 import { semanticRule, type SemanticBudgetProfile, type SemanticRuleId, type ScanOutcome } from '../rules.ts';
 import { runScan, type SemanticClock } from '../run.ts';
 
-import type { UnitChangedLineFacts } from '../changeFacts.ts';
+import type { PathChangedLines, UnitChangedLineFacts } from '../changeFacts.ts';
 import type { SemanticExecutionState, SemanticRevisionBase } from '../contracts.ts';
 import type { SemanticSourcePort } from '../evidence.ts';
 import type { EvaluationCorpus, EvaluationExpectation, EvaluationFixture } from './corpus.ts';
@@ -71,6 +71,8 @@ export type EvaluationFixtureOutcome = {
     readonly factsCarried?: UnitChangedLineFacts;
     /** Whether the carried facts are the block the corpus records; absent when nothing was carried. */
     readonly factsMatchCorpus?: boolean;
+    /** Whether the changed lines the plan's source reported are the lines the corpus records for the path. */
+    readonly linesMatchCorpus: boolean;
     readonly outcomes: readonly EvaluationRuleOutcome[];
     readonly expected: EvaluationExpectation;
     /** Whether the labelled expectation held: asked, and answered on the side the label claims. */
@@ -204,6 +206,7 @@ async function evaluateFixture(input: {
     }
     const outcomes = ruleOutcomes(result.report.signals);
     const carried = requests.find((request) => request.changedLineFacts !== undefined)?.changedLineFacts;
+    const reported = reportedChangedLines(input.plan, input.fixture.path);
     const fixtureOutcome: EvaluationFixtureOutcome = {
         fixtureId: input.fixture.id,
         kind: input.fixture.fixture,
@@ -221,6 +224,7 @@ async function evaluateFixture(input: {
         thresholds,
         factsCarried: carried,
         factsMatchCorpus: recordedFactsMatch(carried, input.fixture.changedLineFacts),
+        linesMatchCorpus: reportedLinesMatch(reported, input.fixture.changedLines),
         outcomes,
         expected: input.fixture.expected,
         expectedConcernHeld: expectationHeld(
@@ -287,6 +291,34 @@ function recordedFactsMatch(
     return JSON.stringify(carried) === JSON.stringify(recorded);
 }
 
+/**
+ * The changed lines the plan's own source reports for one fixture's path, or undefined when it reports
+ * none — including a source whose read of them fails, which ties the fixture to no revision at all. The
+ * collector tolerates that failure the same way; a source that cannot answer here must not fail a run
+ * that otherwise delivered its assessment.
+ */
+function reportedChangedLines(plan: EvaluationFixturePlan, path: string): PathChangedLines | undefined {
+    try {
+        return plan.source.changedLines(plan.revision.mergeBaseSha, plan.revision.headSha).get(path);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Whether the source reported exactly the changed lines the corpus records for this fixture's path.
+ *
+ * Why the fact block above is not enough. An adjudicated negative records its lines from a real revision
+ * and re-derives them from Git at run time, so a recorded line that no longer matches that revision can
+ * leave the derived block identical — a dropped comment and a retargeted comment both derive the all-zero
+ * block — and the block comparison then reports agreement for a fixture that no longer describes the
+ * change it grades. Comparing the lines ties the fixture to the revisions it records, which is the only
+ * check available for a negative: its sides have no text the corpus could derive them from.
+ */
+function reportedLinesMatch(reported: PathChangedLines | undefined, recorded: PathChangedLines): boolean {
+    return reported !== undefined && JSON.stringify(reported) === JSON.stringify(recorded);
+}
+
 function renderRuleList(ruleIds: readonly SemanticRuleId[]): string {
     return ruleIds.length === 0 ? 'none' : ruleIds.join(', ');
 }
@@ -313,6 +345,19 @@ function renderOutcome(outcome: EvaluationRuleOutcome): string {
     return `${outcome.ruleId}: probability ${outcome.probability.toFixed(3)}, ${outcome.outcome}, ${outcome.disposition}`;
 }
 
+/**
+ * One fixture's drift notice: the block the provider was handed, and whether the source reported the lines
+ * the corpus records. The two are separate because a negative whose recorded lines drift can still carry
+ * the recorded block, and a notice reading only the block would call that fixture a match.
+ */
+function renderFacts(fixture: EvaluationFixtureOutcome): string {
+    const linesVerdict = `lines match corpus: ${String(fixture.linesMatchCorpus)}`;
+    if (fixture.factsCarried === undefined) {
+        return `no request carried a fact block (${linesVerdict})`;
+    }
+    return `${JSON.stringify(fixture.factsCarried)} (matches corpus: ${String(fixture.factsMatchCorpus)}; ${linesVerdict})`;
+}
+
 function renderFixture(fixture: EvaluationFixtureOutcome): string[] {
     const lines: string[] = [];
     const expectation =
@@ -330,13 +375,7 @@ function renderFixture(fixture: EvaluationFixtureOutcome): string[] {
     lines.push(`  unasked   ${renderNotAsked(fixture.rulesNotAsked)}`);
     lines.push(`  evidence  ${fixture.evidenceSupplied.length === 0 ? 'none' : fixture.evidenceSupplied.join(', ')}`);
     lines.push(`  thresholds ${renderThresholds(fixture.thresholds)}`);
-    lines.push(
-        `  facts     ${
-            fixture.factsCarried === undefined
-                ? 'no request carried a fact block'
-                : `${JSON.stringify(fixture.factsCarried)} (matches corpus: ${String(fixture.factsMatchCorpus)})`
-        }`
-    );
+    lines.push(`  facts     ${renderFacts(fixture)}`);
     for (const outcome of fixture.outcomes) {
         lines.push(`  outcome   ${renderOutcome(outcome)}`);
     }

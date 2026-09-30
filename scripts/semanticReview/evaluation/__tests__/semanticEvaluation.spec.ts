@@ -20,7 +20,7 @@ import {
     runEvaluationCommand,
 } from '../../../semanticReviewEvaluation.ts';
 import { measureCheckout, readEvaluationOutcome } from '../../../semanticReviewMeasurement.ts';
-import { changedLineFacts, type UnitChangedLineFacts } from '../../changeFacts.ts';
+import { changedLineFacts, type PathChangedLines, type UnitChangedLineFacts } from '../../changeFacts.ts';
 import { SemanticFailure } from '../../contracts.ts';
 import { createMemoryCache, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
 import { SEMANTIC_BUDGET_PROFILES, semanticRule } from '../../rules.ts';
@@ -92,8 +92,11 @@ function entryById(document: Record<string, unknown>, id: string): Record<string
  * A source port over a fixture the corpus records lines for but no text: the adjudicated negatives, whose
  * regions the live runner reads from Git. The stand-in places each recorded line at the number the corpus
  * records it at, so the plan and the request carry the corpus's facts without any revision being read.
+ *
+ * `secondPath` adds one more changed file under that path, serving the same text: the shape a revision
+ * pair that touched two paths has, which is what a case driving a scope the run could not deliver needs.
  */
-function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
+function standInSource(fixture: EvaluationFixture, secondPath?: string): SemanticSourcePort {
     const lineCount =
         Math.max(
             1,
@@ -114,21 +117,26 @@ function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
         const numbers = lines.map((line) => line.line);
         return { startLine: Math.min(...numbers, 1), endLine: Math.max(...numbers, lineCount) };
     };
+    const changedFileFor = (path: string) => ({
+        path,
+        kind: 'modified' as const,
+        binary: false,
+        generated: false,
+        added: fixture.changedLines.added.length,
+        deleted: fixture.changedLines.removed.length,
+    });
+    const hunksFor = (path: string) => ({
+        path,
+        before: [rangeFor(fixture.changedLines.removed)],
+        after: [rangeFor(fixture.changedLines.added)],
+    });
+    const paths = secondPath === undefined ? [fixture.path] : [fixture.path, secondPath];
     const before = textFor(fixture.changedLines.removed);
     const after = textFor(fixture.changedLines.added);
     return {
-        changedFiles: () => [
-            {
-                path: fixture.path,
-                kind: 'modified',
-                binary: false,
-                generated: false,
-                added: fixture.changedLines.added.length,
-                deleted: fixture.changedLines.removed.length,
-            },
-        ],
+        changedFiles: () => paths.map(changedFileFor),
         readFile: (sha, path) => {
-            if (path !== fixture.path) {
+            if (!paths.includes(path)) {
                 return undefined;
             }
             if (sha === fixture.revisions.mergeBaseSha) {
@@ -136,19 +144,18 @@ function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
             }
             return sha === fixture.revisions.headSha ? after : undefined;
         },
-        changedHunks: () =>
-            new Map([
-                [
-                    fixture.path,
-                    {
-                        path: fixture.path,
-                        before: [rangeFor(fixture.changedLines.removed)],
-                        after: [rangeFor(fixture.changedLines.added)],
-                    },
-                ],
-            ]),
-        changedLines: () => new Map([[fixture.path, fixture.changedLines]]),
+        changedHunks: () => new Map(paths.map((path) => [path, hunksFor(path)])),
+        changedLines: () => new Map(paths.map((path) => [path, fixture.changedLines])),
     };
+}
+
+/**
+ * The stand-in source of one fixture with its recorded changed lines replaced: the state an adjudicated
+ * negative reaches when the lines recorded beside its revisions have drifted from them, which no check on
+ * the corpus's own text can see because a negative records no text.
+ */
+function driftedSource(fixture: EvaluationFixture, changedLines: PathChangedLines): SemanticSourcePort {
+    return { ...standInSource(fixture), changedLines: () => new Map([[fixture.path, changedLines]]) };
 }
 
 /** The unit path a request's own state names, read without trusting the shape. */
@@ -215,6 +222,27 @@ function planForAll(): (fixture: EvaluationFixture) => EvaluationFixturePlan {
     };
 }
 
+/**
+ * The same plan with one fixture's source replaced, which is how a case drives the state a live run reaches
+ * for one fixture without changing what the others are assessed over.
+ */
+function planWithOneSource(
+    fixtureId: string,
+    sourceFor: (fixture: EvaluationFixture) => SemanticSourcePort
+): (fixture: EvaluationFixture) => EvaluationFixturePlan {
+    const standard = planForAll();
+    return (fixture) => {
+        if (fixture.id !== fixtureId) {
+            return standard(fixture);
+        }
+        return {
+            source: sourceFor(fixture),
+            sourceKind: 'git-revisions',
+            revision: fixtureEvaluationRevision(fixture),
+        };
+    };
+}
+
 /** The machine identity the measurement record carries; this case reads the fixtures it recorded, not it. */
 const MEASUREMENT_MACHINE: MeasurementMachine = {
     checkoutGitSha: 'f'.repeat(40),
@@ -232,7 +260,11 @@ afterEach(() => {
     }
 });
 
-async function evaluateWith(corpus: EvaluationCorpus, provider: SemanticProviderPort) {
+async function evaluateWith(
+    corpus: EvaluationCorpus,
+    provider: SemanticProviderPort,
+    planFor: (fixture: EvaluationFixture) => EvaluationFixturePlan = planForAll()
+) {
     return await runEvaluation({
         corpus,
         ports: {
@@ -243,7 +275,7 @@ async function evaluateWith(corpus: EvaluationCorpus, provider: SemanticProvider
             log: () => undefined,
         },
         profile: PROFILE,
-        planFor: planForAll(),
+        planFor,
         runId: 'evaluation-spec',
     });
 }
@@ -528,6 +560,71 @@ describe('the opt-in runner', () => {
         }
     });
 
+    it('should report a negative whose source no longer reports the lines the corpus records', async () => {
+        // A negative's recorded lines can drift from the revisions it names, and the block comparison
+        // cannot see it: dropping the two added comment lines leaves the all-zero block the corpus records
+        // on both sides, so a notice reading only the block calls the fixture a match. The lines
+        // comparison is the check that ties a negative — the one kind of fixture with no text of its own —
+        // to the revisions it grades.
+        const corpus = shippedCorpus();
+        const drifted: PathChangedLines = {
+            added: [{ line: 80, text: "    yeast: 'descriptor-v1:f319bc9b'," }],
+            removed: [{ line: 78, text: "    yeast: 'descriptor-v1:e58d800b'," }],
+        };
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => driftedSource(fixture, drifted))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(negative?.linesMatchCorpus).toBe(false);
+        // The block the notice used to read alone still agrees, so this case cannot be passing on a block
+        // mismatch instead of on the drift it exists to report.
+        expect(negative?.factsMatchCorpus).toBe(true);
+        expect(renderEvaluation(result)).toContain('matches corpus: true; lines match corpus: false');
+    });
+
+    it('should report a carried block that is not the block the corpus records', async () => {
+        // The false half of the drift notice: a request whose own lines derive a non-empty block while the
+        // corpus records the all-zero one. A notice that answered a match whatever it was handed would
+        // report the corpus as agreeing with a classifier that no longer derives its block.
+        const corpus = shippedCorpus();
+        const drifted: PathChangedLines = {
+            added: [{ line: 80, text: "    expect(descriptorVersion).toBe('descriptor-v1:f319bc9b');" }],
+            removed: [{ line: 78, text: "    yeast: 'descriptor-v1:e58d800b'," }],
+        };
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => driftedSource(fixture, drifted))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        // The block the request carried is the classifier's own derivation from the source's lines, which
+        // is what makes this case about the notice rather than about a hand-built block.
+        expect(negative?.factsCarried).toEqual(changedLineFacts(drifted));
+        expect(negative?.factsMatchCorpus).toBe(false);
+        expect(renderEvaluation(result)).toContain('matches corpus: false');
+    });
+
+    it('should report a fixture no request asked as carrying nothing rather than as disagreeing', async () => {
+        // The notice's third state: a source that offers no changed file leaves the run nothing to ask, so
+        // no request carried a block and neither verdict is a disagreement with the corpus. `false` here
+        // would report a drift for a fixture whose lines were never read.
+        const corpus = shippedCorpus();
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                ...standInSource(fixture),
+                changedFiles: () => [],
+            }))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(negative?.factsCarried).toBeUndefined();
+        expect(negative?.factsMatchCorpus).toBeUndefined();
+        expect(renderEvaluation(result)).toContain('no request carried a fact block (lines match corpus: true)');
+    });
+
     it('should hold a negative when its rule stays quiet and a positive when its rule fires', async () => {
         const corpus = shippedCorpus();
         const positives = positiveRules(corpus);
@@ -683,6 +780,76 @@ describe("the evaluation command's own exit code", () => {
             log: () => undefined,
         });
         expect(exitCode).toBe(1);
+    });
+});
+
+describe("the evaluation command's refusal exits", () => {
+    it('should return the invalid-invocation exit when the invocation is refused', async () => {
+        // The command's catch, through the refusal it is most likely to hold: `parseEvaluationArgs`
+        // refuses an unsupported profile before the corpus is read or a port is built, and `failureExit`
+        // answers the documented invalid-invocation code. A catch that answered the success code whatever
+        // it caught would let a misspelled invocation report a delivered evaluation.
+        const exitCode = await runEvaluationCommand({
+            argv: ['--profile', 'extended'],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: stubProvider(() => 0.02).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(2);
+    });
+
+    it('should return the provider-incomplete exit when the provider cannot be built', async () => {
+        // What the entry point does with no TypeSafe key: `loadApiKey` refuses with `missing_credentials`
+        // while the ports are built, so no request is ever made. The failure is a `SemanticFailure` whose
+        // code is neither invocation nor response, which is the documented "the provider did not deliver
+        // an assessment" code.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => {
+                throw new SemanticFailure('missing_credentials', 'no TypeSafe key in the environment');
+            },
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when a provider failure leaves part of a run undelivered', async () => {
+        // `exitCodeFor`'s undelivered branch, which the shipped fixture shape cannot reach: a fixture whose
+        // own unit fails is a label that did not hold, so it reads as the mismatch exit instead. This case
+        // gives one fixture the two-path shape a revision pair can have and fails only the second path's
+        // request, so the run delivered part of its scope while every label it asked held. Only the
+        // undelivered branch answers that with a nonzero exit, so the code asserted below is that branch's
+        // own reading of the run.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const undeliveredPath = 'src/modules/Arrangement/useCases/__tests__/zzUndelivered.spec.ts';
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planWithOneSource('descriptor-hash-retarget', (fixture) =>
+                standInSource(fixture, undeliveredPath)
+            ),
+            portsFor: () => ({
+                provider: stubProvider(({ ruleId, path }) => {
+                    if (path === undeliveredPath) {
+                        throw new SemanticFailure('provider_unavailable', 'the provider did not answer this file');
+                    }
+                    return positives.get(path) === ruleId ? 0.95 : 0.02;
+                }).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
     });
 });
 

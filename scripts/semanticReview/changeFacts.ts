@@ -100,14 +100,20 @@ const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
  * rather than a call and `not` is a property, so neither can appear as `expect.<member>(` and neither
  * needs a name here.
  *
- * The asymmetric-matcher half is not hand-picked: the spec derives every member of vitest's
- * `AsymmetricMatchersContaining` and `CustomMatcher` and of playwright's `AsymmetricMatchers` from the
- * installed declarations, and fails when one is missing here. That is how `toSatisfy` and `toBeOneOf`
- * (vitest) and `arrayOf` (playwright, reachable in the end-to-end specs through `@playwright/test`, which
- * re-exports `playwright/test`) were found: all three are matcher *values*
- * (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed `expect.arrayOf(Example)` would otherwise
- * have published as a removed assertion. Exported so that drift guard reads the one list rather than a
- * copy of it.
+ * Neither half is hand-picked. The spec derives every member of vitest's `AsymmetricMatchersContaining`
+ * and `CustomMatcher` and of playwright's `AsymmetricMatchers` from the installed declarations, and fails
+ * when one is missing here. That is how `toSatisfy` and `toBeOneOf` (vitest) and `arrayOf` (playwright,
+ * reachable in the end-to-end specs through `@playwright/test`, which re-exports `playwright/test`) were
+ * found: all three are matcher *values* (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed
+ * `expect.arrayOf(Example)` would otherwise have published as a removed assertion.
+ *
+ * The helper half is pinned by name against those same declarations, because a declaration cannot say
+ * which kind a member is: vitest's `ExpectStatic` declares `assertions: (expected: number) => void` beside
+ * `addEqualityTesters: (testers: Array<Tester>) => void`, and only one of the two is a check. The spec
+ * derives the `expect` surface of each installed framework — vitest's `ExpectStatic` and playwright's
+ * `Expect` type alias — requires every name here to be declared on one of them, and holds this list equal
+ * to the derived matcher values plus those helpers, so a name deleted from either side fails. Exported so
+ * that drift guard reads the one list rather than a copy of it.
  */
 export const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
     // Asymmetric matchers, the complete shipped set of both frameworks.

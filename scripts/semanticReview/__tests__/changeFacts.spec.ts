@@ -182,11 +182,44 @@ function declarationTexts(packageName: string, directories: readonly string[]): 
 }
 
 /**
- * The members one declared interface contributes: the body's shallowest-indented `name:`/`name(`
- * declarations, which is the interface's own surface. A nested object type's members sit deeper, and the
- * shipped vitest declarations indent members with a tab and playwright's with two spaces, so the depth is
- * measured per interface rather than assumed.
+ * The brace-delimited body one declaration opens at `open`, or undefined when its braces never balance.
+ * The walk is shared by the interface and type-alias readers because both spell their members the same
+ * way once the body is found; only how the body starts differs.
  */
+function declarationBody(declaration: string, open: number): string | undefined {
+    let depth = 0;
+    for (let index = open; index < declaration.length; index += 1) {
+        const character = declaration[index];
+        if (character === '{') {
+            depth += 1;
+            continue;
+        }
+        if (character === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return declaration.slice(open + 1, index);
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The members one declaration body contributes: its shallowest-indented `name:`/`name(` declarations,
+ * which is the declaration's own surface. A nested object type's members sit deeper, and the shipped
+ * vitest declarations indent members with a tab and playwright's with two spaces, so the depth is
+ * measured per declaration rather than assumed.
+ */
+function declaredMembers(body: string): string[] {
+    const declared = [...body.matchAll(/^([ \t]*)([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu)];
+    if (declared.length === 0) {
+        return [];
+    }
+    const shallowest = Math.min(...declared.map((match) => (match[1] ?? '').length));
+    return declared.filter((match) => (match[1] ?? '').length === shallowest).map((match) => match[2] ?? '');
+}
+
+/** The members one declared interface contributes, in every file that declares it. */
 function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
     const members = new Set<string>();
     for (const declaration of declarations) {
@@ -198,28 +231,50 @@ function declaredInterfaceMembers(declarations: readonly string[], name: string)
         if (open === -1) {
             continue;
         }
-        let depth = 0;
-        let end = declaration.length;
-        for (let index = open; index < declaration.length; index += 1) {
+        const body = declarationBody(declaration, open);
+        for (const member of body === undefined ? [] : declaredMembers(body)) {
+            members.add(member);
+        }
+    }
+    return [...members];
+}
+
+/**
+ * The members one declared type alias contributes, for the surface a framework spells as an alias over an
+ * object type rather than an interface: playwright declares its expect as
+ * `type Expect<ExtendedMatchers = {}> = { … } & AsymmetricMatchers`. Angle brackets are tracked so the
+ * generic default's own braces are not read as the alias body.
+ */
+function declaredTypeAliasMembers(declarations: readonly string[], name: string): string[] {
+    const members = new Set<string>();
+    for (const declaration of declarations) {
+        const start = new RegExp(`\\btype\\s+${name}\\b`, 'u').exec(declaration)?.index;
+        if (start === undefined) {
+            continue;
+        }
+        let angleDepth = 0;
+        let open: number | undefined;
+        for (let index = start; index < declaration.length; index += 1) {
             const character = declaration[index];
-            if (character === '{') {
-                depth += 1;
-            } else if (character === '}') {
-                depth -= 1;
-                if (depth === 0) {
-                    end = index;
-                    break;
-                }
+            if (character === '<') {
+                angleDepth += 1;
+                continue;
+            }
+            if (character === '>') {
+                angleDepth -= 1;
+                continue;
+            }
+            if (character === '{' && angleDepth === 0) {
+                open = index;
+                break;
             }
         }
-        const declared = [
-            ...declaration.slice(open + 1, end).matchAll(/^([ \t]*)([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu),
-        ];
-        const shallowest = Math.min(...declared.map((match) => (match[1] ?? '').length));
-        for (const match of declared) {
-            if ((match[1] ?? '').length === shallowest) {
-                members.add(match[2] ?? '');
-            }
+        if (open === undefined) {
+            continue;
+        }
+        const body = declarationBody(declaration, open);
+        for (const member of body === undefined ? [] : declaredMembers(body)) {
+            members.add(member);
         }
     }
     return [...members];
@@ -237,6 +292,65 @@ function installedMatcherSurfaces(): Record<string, string[]> {
         })
     );
 }
+
+/**
+ * Every framework this repository's specs run on, with the declaration that carries its `expect` object's
+ * own members: vitest's `ExpectStatic` interface and playwright's `Expect` type alias.
+ */
+const EXPECT_DECLARATION_SOURCES: readonly {
+    readonly framework: string;
+    readonly packageName: string;
+    readonly directories: readonly string[];
+    readonly interfaces: readonly string[];
+    readonly typeAliases: readonly string[];
+}[] = [
+    {
+        framework: 'vitest',
+        packageName: 'vitest',
+        directories: ['dist'],
+        interfaces: ['ExpectStatic'],
+        typeAliases: [],
+    },
+    {
+        framework: 'playwright',
+        packageName: 'playwright',
+        directories: ['types'],
+        interfaces: [],
+        typeAliases: ['Expect'],
+    },
+];
+
+/** Every member each installed framework declares on `expect` itself, keyed by framework. */
+function installedExpectSurfaces(): Record<string, string[]> {
+    return Object.fromEntries(
+        EXPECT_DECLARATION_SOURCES.map((source) => {
+            const declarations = declarationTexts(source.packageName, source.directories);
+            return [
+                source.framework,
+                [
+                    ...source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                    ...source.typeAliases.flatMap((name) => declaredTypeAliasMembers(declarations, name)),
+                ],
+            ];
+        })
+    );
+}
+
+/**
+ * The `expect.<member>(` heads that configure, register, or report rather than check, pinned by name
+ * because the declarations do not separate the kinds: vitest declares `assertions: (expected: number) =>
+ * void` beside `addEqualityTesters: (testers: Array<Tester>) => void`, and a call to either returns
+ * nothing to read. The case below derives each framework's `expect` surface and requires every name here
+ * to be declared on one of them, so this list cannot outlive the helpers it claims are shipped.
+ */
+const EXPECT_HELPER_MEMBERS: readonly string[] = [
+    'addEqualityTesters',
+    'addSnapshotSerializer',
+    'configure',
+    'extend',
+    'getState',
+    'setState',
+];
 
 /** How many single-line hunks the saturation witness is sliced into. */
 const WITNESS_REGIONS = 3;
@@ -353,6 +467,11 @@ describe('a changed line is classified by its text alone', () => {
             'expect.extend({ toBeWithinRange() {} });',
             'expect.addSnapshotSerializer(plugin);',
             'expect.setState({ assertionCalls: 1 });',
+            // Helpers the asymmetric-matcher derivation cannot reach: they are declared on the frameworks'
+            // own `expect` surfaces, where a check and a helper are spelled the same way.
+            'expect.configure({ timeout: 5000 });',
+            'expect.getState().assertionCalls,',
+            'expect.addEqualityTesters([tester]);',
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
@@ -462,6 +581,25 @@ describe('a changed line is classified by its text alone', () => {
                 .filter(([, members]) => (members as string[]).length > 0)
         );
         expect(missing).toEqual({});
+    });
+
+    it('should treat every expect helper the installed frameworks declare as a non-assertion, and hold nothing else', () => {
+        // The matcher case above covers the value half of the list. This one covers the helper half, which
+        // no declaration can classify: vitest's `ExpectStatic` declares `assertions` and `addEqualityTesters`
+        // with the same `void` return, so which names are checks is pinned in EXPECT_HELPER_MEMBERS and the
+        // installed declarations are what keep that pin honest.
+        const declared = new Set(Object.values(installedExpectSurfaces()).flat());
+        expect(EXPECT_HELPER_MEMBERS.filter((member) => !declared.has(member))).toEqual([]);
+        // The pin itself: each helper's own head is not an assertion call. Deleting one from
+        // NON_ASSERTION_EXPECT_MEMBERS fails here, which the two cases above cannot see.
+        expect(EXPECT_HELPER_MEMBERS.filter((member) => isAssertionLine(`expect.${member}(value);`))).toEqual([]);
+        // And the whole list is the derived matcher values plus those helpers, so a member added or
+        // deleted without a declaration behind it fails in both directions rather than leaving a head
+        // classified differently from what the installed frameworks ship.
+        const matchers = new Set(Object.values(installedMatcherSurfaces()).flat());
+        expect([...NON_ASSERTION_EXPECT_MEMBERS].sort()).toEqual(
+            [...new Set([...matchers, ...EXPECT_HELPER_MEMBERS])].sort()
+        );
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {
