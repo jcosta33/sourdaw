@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_2bfd55a4393d7c::t_1434369667df7d 746
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_2bfd55a4393d7c::t_18eba8ec8d420c 3,895-904
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_2bfd55a4393d7c::t_6827b522812f61 514-527,579,597
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c40b221b533fde27061c05c2249c4dfc195df74e",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
