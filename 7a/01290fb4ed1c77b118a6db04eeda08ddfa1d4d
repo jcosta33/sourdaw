@@ -1,0 +1,19 @@
+crates/daw-dsp/tests/grand_boule_pedal_offsets.rs
+  s_2bfd55a4393d7c::t_6956b6662e5801 228-274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7a01290fb4ed1c77b118a6db04eeda08ddfa1d4d",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
