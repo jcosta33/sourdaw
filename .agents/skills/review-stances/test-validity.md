@@ -87,6 +87,14 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
+
+The trusted-write closure spec walked all 13 command graphs in one Vitest case. Each walk independently proved its command's exact closure, but the accumulated work took 5547 ms against the default 5000 ms case timeout and failed the CI shard. The failure was test granularity, not evidence that a command graph was wrong.
+
+Blind spot: independent obligations shared one per-test deadline, so their cumulative cost could fail the aggregate case without identifying a slow command by its own named result.
+
+Probe that would have caught it: when a spec repeats an independent invariant across a registered population, probe the cumulative work under the actual default deadline. Keep each population member as a named parameterized case with its own fresh inputs and deadline, preserve a mutation-discriminating assertion for every member, and do not raise the shared timeout to mask aggregate work.
+
 ### 2026-09-28 — an elapsed-time readiness test omitted the real progress producer
 
 The existing timeout cases exercised stalled Crumbs loads and captured-generation isolation, but no check drove Levain's decoded-bank progress into all five live TrackNodes across the 10-second boundary. A green timeout test therefore could not distinguish a healthy cold bank from a stall. PR #3982's review explicitly scoped out progressing-load policy and caller-visible outcomes; the test gap is the missing #3318 acceptance probe, not a failed #3982 cohort oracle.

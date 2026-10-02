@@ -11,6 +11,7 @@
  * clean-review claim either.
  */
 
+import { changedLineFacts, type UnitChangedLineFacts } from './changeFacts.ts';
 import {
     buildRevisionContext,
     refuse,
@@ -108,6 +109,13 @@ export type SemanticUnitPlan = {
     readonly file: SemanticChangedFile;
     readonly rules: readonly SemanticRule[];
     readonly evidence: SemanticUnitEvidence;
+    /**
+     * The deterministic facts about this unit's own added and removed lines. They travel in the unit's
+     * request so the two test-validity rules the audit found false-alarming read the edit itself rather
+     * than inferring it from surrounding source, and they are computed once here so the reservation and
+     * the payload cannot disagree about their size.
+     */
+    readonly changedLineFacts: UnitChangedLineFacts;
 };
 
 /**
@@ -208,6 +216,26 @@ function withheldContextSides(
 }
 
 /**
+ * Whether a rule of this unit declares it needs the changed implementation's source. A rule that does is
+ * asking about a path that is usually not the one under assessment, so the planner supplies the changed
+ * implementation's after side as context: without this the declaration was unsatisfiable and the rule
+ * silently scored anyway, and with it a change whose implementation is unchanged reports the evidence as
+ * missing.
+ */
+function unitNeedsImplementationSource(rules: readonly SemanticRule[]): boolean {
+    return rules.some((rule) => rule.requiredEvidence.some((token) => /implementation/iu.test(token)));
+}
+
+/**
+ * The deterministic facts about one unit's own changed lines. The map is keyed by each change's own
+ * post-change path, so a unit never carries another file's lines, and a path the source could not read
+ * leaves the facts unavailable rather than reporting an empty edit.
+ */
+function unitChangeFacts(set: SemanticEvidenceSet, file: SemanticChangedFile): UnitChangedLineFacts {
+    return changedLineFacts(set.changedLines.get(file.path));
+}
+
+/**
  * Plans one unit per eligible changed file. A unit carries the rules whose applicability predicate
  * admits that path, and the context regions those rules require.
  */
@@ -261,13 +289,8 @@ export function planUnits(
             continue;
         }
         const needsContract = unitNeedsContractContext(rules);
-        // A rule that declares it needs the implementation is asking about a path that is usually not
-        // the one under assessment, so the planner supplies the changed implementation's after side as
-        // context. Without this the declaration was unsatisfiable and the rule silently scored anyway;
-        // with it, a change whose implementation is unchanged reports the evidence as missing.
-        const needsImplementation = rules.some((rule) =>
-            rule.requiredEvidence.some((token) => /implementation/iu.test(token))
-        );
+        const unitChangedLineFacts = unitChangeFacts(set, file);
+        const needsImplementation = unitNeedsImplementationSource(rules);
         let context: EvidenceReference[] = [];
         if (needsContract) {
             context = set.references.filter((reference) => reference.side === 'context');
@@ -285,7 +308,7 @@ export function planUnits(
         // The request carries the state plus every question, so the evidence budget is what remains
         // after the questions and the state's own envelope are paid for — measured by the same builder
         // the provider refuses over, with the evidence map still empty because no region is chosen yet.
-        const evidenceBudget = maxStatePlusQuestionBytes - unitReservationBytes(file, rules);
+        const evidenceBudget = maxStatePlusQuestionBytes - unitReservationBytes(file, rules, unitChangedLineFacts);
         if (evidenceBudget <= 0) {
             excluded.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
             incomplete.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
@@ -315,6 +338,7 @@ export function planUnits(
             path: file.path,
             file,
             rules,
+            changedLineFacts: unitChangedLineFacts,
             evidence: {
                 own: composed.passes.flatMap((pass) => pass.own),
                 context: composed.passes.flatMap((pass) => pass.context),
@@ -385,6 +409,7 @@ function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestP
             file: unit.file,
             rules: entry.rules,
             pass: entry.pass,
+            changedLineFacts: unit.changedLineFacts,
         });
         bodyBytes += Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
     }
@@ -481,6 +506,7 @@ async function assessOneUnit(input: {
             file: unit.file,
             rules,
             pass,
+            changedLineFacts: unit.changedLineFacts,
         });
         const result = await assessUnit({
             port: input.ports.provider,

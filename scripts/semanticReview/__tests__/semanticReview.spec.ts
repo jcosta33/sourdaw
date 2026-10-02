@@ -24,6 +24,8 @@ import {
     isVitestCollected,
     specFilePattern,
 } from '../../vitestCollectionPatterns.ts';
+import { type PathChangedLines } from '../changeFacts.ts';
+import { changedLineFacts } from '../changeFacts.ts';
 import {
     assertAdvisoryWording,
     buildRevisionContext,
@@ -193,12 +195,15 @@ function fakeSource(input: {
     blobs?: Readonly<Record<string, string>>;
     /** Hunks by path. Absent means no hunks were read, so each side is supplied whole. */
     hunks?: ReadonlyMap<string, PathHunks>;
+    /** The diff's added and removed lines by path. Absent means the change facts are unavailable. */
+    changedLines?: ReadonlyMap<string, PathChangedLines>;
 }): SemanticSourcePort {
     const blobs = input.blobs ?? {};
     return {
         changedFiles: () => input.files,
         readFile: (sha, path) => blobs[`${sha}:${path}`],
         changedHunks: () => input.hunks ?? new Map<string, PathHunks>(),
+        changedLines: () => input.changedLines ?? new Map<string, PathChangedLines>(),
     };
 }
 
@@ -404,6 +409,7 @@ describe('evidence collection', () => {
                 return blobs[`${sha}:${path}`];
             },
             changedHunks: () => new Map<string, PathHunks>(),
+            changedLines: () => new Map<string, PathChangedLines>(),
         };
         const set = collectEvidence({
             port,
@@ -2996,6 +3002,7 @@ describe('contract-carrying admission', () => {
                 return blobs[`${sha}:${path}`];
             },
             changedHunks: () => new Map<string, PathHunks>(),
+            changedLines: () => new Map<string, PathChangedLines>(),
         };
         const result = await runScan(scanPorts(constantProvider(0.05), source, fixedClock(1_000)));
         // No context document is read, so none is charged; the small bulk competitor still plans a unit.
@@ -4015,7 +4022,7 @@ describe('unit planning', () => {
         // evidence budget and is excluded; reading `<` would admit it and then drop every region for a
         // different reason. The cap is set to the reservation itself so the tie is exact.
         const file = changedFile('crates/daw-dsp/src/a.rs');
-        const cap = unitReservationBytes(file, applicableRules([file.path]));
+        const cap = unitReservationBytes(file, applicableRules([file.path]), changedLineFacts(undefined));
         const set = collectEvidence({
             port: fakeSource({
                 files: [file],
@@ -4137,6 +4144,7 @@ function maxPassStateBytes(unit: SemanticUnitPlan): number {
                 file: unit.file,
                 rules: unit.rules,
                 evidence: { references: pass.references, contents: pass.contents },
+                changedLineFacts: unit.changedLineFacts,
             })
         )
     );

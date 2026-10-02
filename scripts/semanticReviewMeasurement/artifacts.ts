@@ -379,6 +379,8 @@ export function aggregateStoredReport(input: {
             reviewRoundSummary
         ),
         labelledExpectationHeld: null,
+        // Only an evaluation fixture states which rule its label is about.
+        labelledRuleAsked: null,
     };
 }
 
@@ -489,6 +491,9 @@ export function aggregateEvaluationFixture(input: {
         findingOutcome: null,
         reviewRounds: [],
         labelledExpectationHeld: fixture.expectedConcernHeld,
+        // The same ledger the coverage figures are read from, so a fixture whose labelled rule was never
+        // asked is not counted as an answer.
+        labelledRuleAsked: askedRules.includes(fixture.ruleId),
     };
 }
 
@@ -530,14 +535,15 @@ export function addFixtureExtras(extras: RecordExtras, fixture: EvaluationFixtur
  * is the number of runs that recorded the text rather than the number of times it appears.
  */
 export function addReportExtras(extras: RecordExtras, report: SemanticReport): RecordExtras {
+    const limitationsByText = mergeCounts(
+        extras.limitationsByText,
+        countBy([...new Set(report.limitations)], (text) => text)
+    );
     if (!isScanReport(report)) {
         return {
             notAskedByRule: extras.notAskedByRule,
             signalsByRule: extras.signalsByRule,
-            limitationsByText: mergeCounts(
-                extras.limitationsByText,
-                countBy(report.limitations, (text) => text)
-            ),
+            limitationsByText,
         };
     }
     return {
@@ -546,10 +552,7 @@ export function addReportExtras(extras: RecordExtras, report: SemanticReport): R
             extras.signalsByRule,
             countBy(report.signals, (signal) => signal.ruleId)
         ),
-        limitationsByText: mergeCounts(
-            extras.limitationsByText,
-            countBy(report.limitations, (text) => text)
-        ),
+        limitationsByText,
     };
 }
 

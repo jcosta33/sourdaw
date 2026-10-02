@@ -80,6 +80,14 @@ function ledgerGaps(runs: readonly MeasurementRun[], detail: MeasurementDetail):
             reason: `${String(withoutSignalLedger)} verification run(s) assess candidate findings rather than units, so they carry no signal ledger; acrossRuns.signals.runsWithSignalLedger names how many runs do, and the signal figures are null when none does`,
         });
     }
+    if (runs.length === withoutSignalLedger) {
+        // Nothing fired, so nothing could be disposed of: the dispositions block is null rather than a
+        // row of zeros however many dossiers were read.
+        figures.push({
+            figure: 'acrossRuns.signalDispositions',
+            reason: `no artifact read carries a signal ledger, so no fired signal could be disposed of; every figure in the dispositions block is null rather than zero`,
+        });
+    }
     const withoutFindingLedger = runs.filter((run) => run.findingOutcome === null).length;
     if (withoutFindingLedger > 0) {
         figures.push({
@@ -157,6 +165,15 @@ function gapFigures(runs: readonly MeasurementRun[], detail: MeasurementDetail):
         figures.push({
             figure: gapFigure(detail, 'runs[].ruleCoverage for verification runs', 'acrossRuns.ruleCoverage'),
             reason: `${String(shape.verifyRuns)} verification run(s) assess candidate findings rather than rule applicability; no artifact records which rules would have applied to the change`,
+        });
+    }
+    // The held rate is null exactly when no artifact carried a label, which only an evaluation fixture
+    // can: this is the same predicate `sumLabelledExpectations` returns null on, so the gap and the null
+    // figure cannot disagree about whether any corpus was read.
+    if (runs.every((run) => run.labelledExpectationHeld === null)) {
+        figures.push({
+            figure: gapFigure(detail, 'runs[].labelledExpectationHeld', 'acrossRuns.labelledExpectations'),
+            reason: 'no evaluation artifact was read, so no fixture carried a labelled expectation; sources.evaluationFixturesRead names how many were read, and the held rate is null rather than a rate over nothing',
         });
     }
     const noPr = runs.filter(

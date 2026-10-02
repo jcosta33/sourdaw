@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
+import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
+import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../../providerAdapterRegistry';
 import { type OpenAiCloudRuntime } from '../../cloudSession';
 import { generateOpenAiResponsesToolCalls } from '../generateOpenAiResponsesToolCalls';
@@ -133,6 +135,38 @@ describe('generateOpenAiResponsesToolCalls', () => {
             stream: false,
             store: false,
         });
+    });
+
+    it('advertises the registered proposal with encoded argument leaves and structured fields', async () => {
+        const canonical = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(canonical).toBeDefined();
+        respondWith({ id: 'resp_proposal', status: 'completed', output: [] });
+
+        await generateOpenAiResponsesToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'add EQ',
+            toolSchemas: [getHostedProposalWireToolSchema(canonical!)],
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+
+        const body = readSentBody() as { tools: Array<{ strict: boolean; parameters: Record<string, unknown> }> };
+        const tool = body.tools[0];
+        expect(tool?.strict).toBe(true);
+        expect(tool?.parameters).toHaveProperty(
+            ['properties', 'commands', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(tool?.parameters).toHaveProperty(
+            ['properties', 'list', 'properties', 'items', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(tool?.parameters).not.toHaveProperty(['properties', 'commands', 'items', 'properties', 'arguments']);
+        expect(tool?.parameters).toHaveProperty(['properties', 'plan', 'properties', 'objective', 'type'], 'string');
+        expect(tool?.parameters).toHaveProperty(['properties', 'compiledCallIds', 'items', 'type'], 'string');
     });
 
     it('forces the allowed-tools set on a required directive while leaving the advertised tools list full, dropping a directive name with no advertised schema', async () => {

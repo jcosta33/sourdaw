@@ -352,22 +352,52 @@ function sumWallClock(runs: readonly MeasurementRun[]): { wallClockMs: number; w
 }
 
 /**
- * The runner's own held-label count, over the fixtures it completed.
+ * The runner's own held-label count, over the fixtures that asked the rule their label is about.
  *
- * A fixture the runner did not assess carries a label the runner already read as not held, because it
- * reads an absent answer as a wrong one; folding those in would turn `unavailable` into evidence about
- * the rules. They are counted in `notAssessed` instead, and the held rate is over what was assessed.
+ * A label is evidence only when the fixture produced an answer to it, which takes both facts the record
+ * carries: the runner assessed the fixture at all — a fixture it did not assess carries a label the
+ * runner already read as not held, because it reads an absent answer as a wrong one — and the fixture's
+ * own ledger asked its labelled rule. A finished run whose question was never put is the same absent
+ * answer as an unassessed run, so either gap lands the fixture in `notAssessed`, and the held rate is
+ * over the fixtures that both completed and asked.
  */
 function sumLabelledExpectations(runs: readonly MeasurementRun[]): AcrossRuns['labelledExpectations'] {
     const labelled = runs.filter((run) => run.labelledExpectationHeld !== null);
     if (labelled.length === 0) {
         return null;
     }
-    const assessed = labelled.filter((run) => run.execution === 'completed');
+    const assessed = labelled.filter((run) => run.execution === 'completed' && run.labelledRuleAsked === true);
     return {
         held: assessed.filter((run) => run.labelledExpectationHeld === true).length,
         total: assessed.length,
         notAssessed: labelled.length - assessed.length,
+    };
+}
+
+/**
+ * What the rounds disposed of, or null figures when no artifact read carries a signal ledger.
+ *
+ * A verification-only measurement fires no signal, so no round could dispose of one; a row of zeros
+ * would read as a round that dismissed nothing, the same silent zero `signals.total` no longer
+ * publishes. `signals.runsWithSignalLedger` names how many runs carried the ledger, and the gap is
+ * named in `notComputable`.
+ */
+function summedDispositions(signals: SignalTotals): AcrossRuns['signalDispositions'] {
+    if (signals.runsWithSignalLedger === 0) {
+        return {
+            recorded: null,
+            byToken: null,
+            dismissedFiredSignals: null,
+            undismissedFiredSignals: null,
+            withoutDossier: null,
+        };
+    }
+    return {
+        recorded: signals.dispositions,
+        byToken: sortedCounts(signals.dispositionTokens),
+        dismissedFiredSignals: signals.dismissed,
+        undismissedFiredSignals: signals.undismissed,
+        withoutDossier: signals.withoutDossier,
     };
 }
 
@@ -421,13 +451,7 @@ function acrossRuns(runs: readonly MeasurementRun[], extras: RecordExtras): Acro
             byFindingDisposition:
                 signals.runsWithFindingLedger === 0 ? null : sortedCounts(signals.byFindingDisposition),
         },
-        signalDispositions: {
-            recorded: signals.dispositions,
-            byToken: sortedCounts(signals.dispositionTokens),
-            dismissedFiredSignals: signals.dismissed,
-            undismissedFiredSignals: signals.undismissed,
-            withoutDossier: signals.withoutDossier,
-        },
+        signalDispositions: summedDispositions(signals),
         reviewRounds: sumDossiers(runs),
         labelledExpectations: sumLabelledExpectations(runs),
         repeatedWarnings: repeatedWarnings(runs),
@@ -449,7 +473,7 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
     'runs[].wallClock': "the stored report's own #startedAt and #completedAt, stated as the run's own span",
     'runs[].usage': "the stored report's own #usage block plus #scope.cacheHits",
     'runs[].ruleCoverage':
-        "scan.json #signals[].{path,ruleId,missingEvidence}, #scope.requestOrder[].ruleIds, and #scope.unassessed[].reason; an evaluation outcome's #rulesAsked and #rulesNotAsked[].missingEvidence; not computable for a verification run, which assesses findings rather than rule applicability",
+        "scan.json #signals[].{path,ruleId,missingEvidence}, #scope.requestOrder[].ruleIds, and #scope.unassessed[].reason; an evaluation outcome's #outcomes[].ruleId with #missingEvidenceByRule, and #rulesNotAsked[].{ruleId,missingEvidence} for a rule no outcome carries; not computable for a verification run, which assesses findings rather than rule applicability",
     'runs[].evidenceCompleteness':
         'scan.json #signals[].missingEvidence and #scope.truncated[].reason; verification.json #findingAssessments[].disposition; an evaluation outcome has no truncation ledger',
     'runs[].outcomeAccounting':
@@ -461,6 +485,8 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
         '.agents/review-bundles/<pr>-<head>/dossier.json #events, #recommendation, #assessmentImpact',
     'runs[].labelledExpectationHeld':
         "the evaluation runner's own #expectedConcernHeld per fixture: a count of labelled expectations that held, over the rules under test, never an accuracy figure",
+    'runs[].labelledRuleAsked':
+        "the evaluation runner's own #outcomes[].ruleId and #missingEvidenceByRule: whether the fixture's own ledger asked the #ruleId it labelled, which decides whether its label counts at all",
     acrossRuns:
         'the sum of the same figure over every run whose artifact carried it; a figure no artifact carried is null and is named in notComputable, and the runs that did carry it are counted beside it',
     'acrossRuns.executionStates':
@@ -484,9 +510,9 @@ const FIELD_SOURCES: Readonly<Record<string, string>> = {
     'acrossRuns.signals.byFindingDisposition':
         "each verification report's own #findingAssessments[].disposition, counted across the set; null when no run carried a finding ledger",
     'acrossRuns.signalDispositions':
-        'the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token',
+        'the typed dispositions and the dismissed signals, counted once per (pull request, head) however many sidecars that head has, from each matched dossier and from the literal semantic-signal token; every figure is null when no artifact read carries a signal ledger, which is named in notComputable rather than shown as zeros',
     'acrossRuns.labelledExpectations':
-        "the evaluation runner's own #expectedConcernHeld count over the fixtures it ran",
+        "the evaluation runner's own #expectedConcernHeld count over the fixtures whose own ledger asked the rule they labelled; a fixture that never asked it, or that the runner never assessed, is counted in notAssessed instead",
     skippedArtifacts:
         'artifacts present on disk that the report validator or the dossier reader refused, with its message',
 };

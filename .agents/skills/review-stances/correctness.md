@@ -473,3 +473,15 @@ The bulk MIDI remediation commit widened `joinNotes`' run-extension tolerance fr
 Blind spot: the remediation's review tested the tolerance against the cases that motivated it — jitter gaps and genuine rests — and never enumerated what the old value refused that the new one accepts.
 
 Probe that would have caught it: for any widening of a tolerance or threshold on an admission predicate, construct an input inside the newly admitted band and outside every case the change names — here two same-pitch notes sharing `startBeat` whose first duration sits under the new tolerance — and require the changed behavior for it to be stated. A band a widening adds is a behavior change in its own right.
+### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
+
+The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector
+closed each open argument object with no properties. A provider could not produce a valid `addDevice`
+proposal even though the application compiler accepted it. The earlier review checked projection
+keywords and flags without passing one real registered command through the outbound wire and back.
+
+Probe that would have caught it: take a current discovered command with nonempty arguments, inspect
+the actual provider advertisement for both primitive and semantic-list proposal forms, then return
+each through the common provider admission and canonical decoder. Verify the proposal reaches the
+normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
+and local WebLLM control so wire repair does not change their canonical arguments.

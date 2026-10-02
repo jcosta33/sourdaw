@@ -19,12 +19,16 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    executeVersionedCommandBatchEnvelope,
+    issueCommandApprovalBinding,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -44,7 +48,10 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
+import { parsePromptToActions } from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
@@ -110,7 +117,7 @@ const RADIO_LOW_GAIN_VALUE = -24;
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
-    return { backend, generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
+    return { backend, generateCloudToolCalls: vi.fn(), generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() };
 });
 
 /**
@@ -195,6 +202,18 @@ vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
 
 vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
     generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
+}));
+
+vi.mock('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
+    generateCloudToolCalls: runtimeMocks.generateCloudToolCalls,
+}));
+
+vi.mock('../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: () => ({ provider: 'openai', model: 'hosted-model', baseUrl: 'https://api.openai.com/v1' }),
+}));
+
+vi.mock('../../repositories/cloudLlm/usesStrictCloudToolSchemas', () => ({
+    usesStrictCloudToolSchemas: () => true,
 }));
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
@@ -414,6 +433,72 @@ function radioProviderTurns(input: {
  * delegates a sound on an existing track, which only the admitted creative authority reaches.
  */
 const COMBINED_PROMPT = `${BLUES_PROMPT}, and make it sound like a radio`;
+
+const BEAT_AND_RADIO_PROMPT = 'create a beat on a new MIDI track and make Guitar sound like a radio';
+const JAZZ_AND_RADIO_PROMPT = 'create a jazz MIDI track and make Guitar sound like a radio';
+const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
+
+function beatAndRadioProviderTurns(): ScriptedTurn[] {
+    return [
+        () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
+        (userMessage) => [
+            selectCreativeInterpretationCall({
+                catalog: readCreativeInterpretationCatalog(userMessage),
+                modeId: 'create',
+                targetObjectIds: [GUITAR_TRACK_ID],
+                dimensions: ['arrangement', 'midi-content', 'processing'],
+                creationSlotObjectTypes: ['track', 'device'],
+                nestedCreationSlotObjectTypes: ['clip'],
+            }),
+        ],
+        (userMessage) => {
+            assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
+            return [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            ...radioBatchPlan(GUITAR_TRACK_ID),
+                            objective: 'Create a beat on a new MIDI track and treat Guitar as a radio.',
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'make-beat-track',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Beat Track', kind: 'midi', binding: 'beat-track' },
+                                },
+                                {
+                                    id: 'make-beat-clip',
+                                    name: 'addClip',
+                                    arguments: {
+                                        trackId: '$beat-track',
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        name: 'Beat',
+                                        binding: 'beat-clip',
+                                    },
+                                    dependsOn: ['make-beat-track'],
+                                },
+                                {
+                                    id: 'write-beat',
+                                    name: 'addNotes',
+                                    arguments: {
+                                        clipId: '$beat-clip',
+                                        notes: [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }],
+                                    },
+                                    dependsOn: ['make-beat-clip'],
+                                },
+                                ...radioDeviceItems('Guitar'),
+                            ],
+                        },
+                    },
+                },
+            ];
+        },
+    ];
+}
 
 const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
@@ -732,6 +817,91 @@ describe('creative interpretation execution', () => {
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
     });
 
+    it('carries strict hosted argument leaves through confirmation, approval, and undo', async () => {
+        runtimeMocks.backend.value = 'cloud';
+        const turns = radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID });
+        let turnIndex = 0;
+        runtimeMocks.generateCloudToolCalls.mockImplementation((_systemPrompt, userMessage) => {
+            const turn = turns[turnIndex];
+            if (!turn) {
+                throw new Error('Unexpected hosted planning turn');
+            }
+            turnIndex += 1;
+            const scriptedCalls = turnIndex === 3 ? [proposeAddDeviceCall(GUITAR_TRACK_ID)] : turn(userMessage);
+            const calls = scriptedCalls.map((call, index) => {
+                const id = `hosted-${String(turnIndex)}-${String(index)}`;
+                if (call.name !== 'command.batch.propose') {
+                    return { id, name: call.name, arguments: call.arguments };
+                }
+                return {
+                    id,
+                    name: call.name,
+                    arguments: {
+                        plan: radioBatchPlan(GUITAR_TRACK_ID),
+                        commands: [
+                            {
+                                name: PROPOSED_COMMAND_NAME,
+                                argumentsJson: JSON.stringify({
+                                    trackId: GUITAR_TRACK_ID,
+                                    deviceType: RADIO_DEVICE_TYPE,
+                                    binding: RADIO_DEVICE_BINDING,
+                                }),
+                            },
+                            {
+                                name: PARAMETER_COMMAND_NAME,
+                                argumentsJson: JSON.stringify({
+                                    deviceId: `$${RADIO_DEVICE_BINDING}`,
+                                    paramId: RADIO_LOW_GAIN_PARAM,
+                                    value: RADIO_LOW_GAIN_VALUE,
+                                }),
+                            },
+                        ],
+                    },
+                };
+            });
+            return Promise.resolve({ providerRequestId: null, calls, strictToolSchemas: true, usage: null });
+        });
+
+        const revision = captureProjectRevision();
+        const context = getProjectContext();
+        const parsed = await parsePromptToActions(RADIO_PROMPT, context, undefined, revision);
+
+        expect(parsed.rejectionReason).toBeUndefined();
+        expect(turnIndex).toBe(3);
+        expect(parsed.requiresConfirmation).toBe(true);
+        expect(parsed.actions.map((action) => action.type)).toEqual([PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME]);
+        expectNoDevicesAnywhere();
+        expect(undoStore.value?.past ?? []).toEqual([]);
+
+        const commandBatch = compilePlannedActionCommandBatch({
+            actions: parsed.actions,
+            actionCommandGraph: parsed.actionCommandGraph,
+            actionLabels: [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME],
+            autoCommit: false,
+            context,
+            group: { groupId: 'group-hosted-radio', groupLabel: 'Radio treatment' },
+            intent: RADIO_PROMPT,
+            mode: 'commit',
+            projectRevision: revision,
+            runId: 'run-hosted-radio',
+        }).commandBatch;
+        expect(parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority).status).toBe(
+            'valid'
+        );
+        expectNoDevicesAnywhere();
+        const approvalBinding = issueCommandApprovalBinding({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+            validate: () => ({ status: 'valid' }),
+        });
+        const committed = await executeVersionedCommandBatchEnvelope({ ...commandBatch, approvalBinding });
+        expect(committed.status).toBe('committed');
+        expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expectNoDevicesAnywhere();
+    });
+
     it('undoes the committed device off the admitted track and redoes it back onto it', async () => {
         await commitRadioDevice();
 
@@ -817,6 +987,54 @@ describe('creative interpretation execution', () => {
         expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
     });
+
+    it.each([
+        { requestKind: 'requested', prompt: BEAT_AND_RADIO_PROMPT },
+        { requestKind: 'genre-led', prompt: JAZZ_AND_RADIO_PROMPT },
+    ])(
+        'previews and approves the $requestKind new-track beat beside the Guitar treatment as one batch',
+        async ({ prompt }) => {
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, beatAndRadioProviderTurns());
+
+            await sendChatMessage(prompt);
+            const confirmation = requireConfirmation();
+            expect(confirmation.actions.map((action) => action.type)).toEqual([
+                'addTrack',
+                'addClip',
+                'addNotes',
+                PROPOSED_COMMAND_NAME,
+                PARAMETER_COMMAND_NAME,
+            ]);
+            expect(getTrackNames()).toEqual(['Guitar', 'Bass']);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([]);
+            expect(Object.keys(midiStore.value?.notesByClipId ?? {})).toEqual([]);
+
+            await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const beatTrack = requireCreatedTrack('Beat Track');
+            const beatClip = beatTrack.clips.find((clip) => clip.name === 'Beat');
+            if (!beatClip) {
+                throw new TypeError('Expected the Beat clip');
+            }
+            expect(beatClip).toMatchObject({ startBeat: 0, endBeat: 4 });
+            const beatNotes = [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }];
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toMatchObject(beatNotes);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+            expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+            expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
+
+            await undo();
+            expect(getTrackNames()).toEqual(['Guitar', 'Bass']);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([]);
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toBeUndefined();
+            await redo();
+            expect(requireCreatedTrack('Beat Track').clips).toHaveLength(1);
+            expect(midiStore.value?.notesByClipId[beatClip.id]).toMatchObject(beatNotes);
+            expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+            expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
+        }
+    );
 
     it('undoes the invented phrase and the delegated device together, then redoes both', async () => {
         scriptProviderTurns(
