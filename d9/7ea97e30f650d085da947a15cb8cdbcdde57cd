@@ -1,0 +1,24 @@
+vite.config.ts
+  s_1c08b47ac3792f::t_9d0377f4da8670 79-81
+  s_1c08b47ac3792f::t_f6a012d60e9736 95
+scripts/checkVitestCollectionScope.ts
+  s_1c08b47ac3792f::t_0e8433d35b0cb8 67-68
+  s_1c08b47ac3792f::t_d5d3eba230dc6b 209,215-217,227-239
+  s_1c08b47ac3792f::t_239e910c717e48 147,153,157-158,171,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d97ea97e30f650d085da947a15cb8cdbcdde57cd",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
