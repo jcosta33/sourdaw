@@ -1,0 +1,79 @@
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_2bfd55a4393d7c::t_733b14bfc59f4f 65-78,95-98,103-110,273-286,289-297,300-308,311-314,332-333,335-339,341,402-423,436-449,502-508
+crates/daw-dsp/tests/device_process_rt.rs
+  s_2bfd55a4393d7c::t_6cfb42b4bde189 1250-1291
+crates/daw-dsp/tests/grand_boule_pedal_offsets.rs
+  s_2bfd55a4393d7c::t_dcf8721547827c 1-367
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_7c6dacf07a1aa7 1,432-433,435-439,548-549,551-561,563-564,566,568-569,571,1090-1180
+public/wasm/daw-dsp/daw_dsp.js
+  s_2bfd55a4393d7c::t_af963393918cb7 868-869,871-875,1070-1107
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_2a51773014b728 1,129-219
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_785a4d71143541 12,15-18,20-21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_ba8e392697c31d 1343,1349,1768
+src/modules/AudioEngine/AGENTS.md
+  s_2bfd55a4393d7c::t_e334e1e04725c9 30
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_2bfd55a4393d7c::t_2a6050784d8f85 77-79,661-662,664-665,667-668
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_2bfd55a4393d7c::t_3ac1b3db0e8e6c 32,182-183
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_2bfd55a4393d7c::t_4dddddec9eea40 908-920
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_2bfd55a4393d7c::t_a6670de2601814 223-235
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_2bfd55a4393d7c::t_7135bd3fd7646e 216,218-220,330-332,380
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_2bfd55a4393d7c::t_8777ee30e66012 821-898
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_2bfd55a4393d7c::t_bfa035c348d463 13,130,158-159,450-462,465,513-517,526-527
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_e18f924fa853e0 1,432-433,435-439,548-549,551-561,563-564,566,568-569,571,1090-1180
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_2bfd55a4393d7c::t_3a0ca992e86853 1045-1046,1048-1052,1247-1284
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_2bfd55a4393d7c::t_eb566076d4f2e6 44-46,48-50,52-54,305-307
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_2bfd55a4393d7c::t_a51692c4bda36b 64-72
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_2bfd55a4393d7c::t_59c396670d7570 45-47
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_2bfd55a4393d7c::t_9d555dc93b3ea5 86-88,90-92,94-96,178-181,188,311-313,319-321
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_f0f00e239521ca 53-55,375-482
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_2bfd55a4393d7c::t_1b5d20c6f72ea4 64-72
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_2bfd55a4393d7c::t_a6f327816b6616 95-103
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_2bfd55a4393d7c::t_393074b9e946b7 55-63
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineTransport.spec.ts
+  s_2bfd55a4393d7c::t_07c9001df91574 57-65
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_569fc39b10829b 97-102,105-111,121-123,243-248,250-252,294,296,298,349,426,446-450,452-458
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_2bfd55a4393d7c::t_a4e6b350462372 238,268,287,308,312,317,337,340,345-347,402-404,415-465,494-496,548,563,568,585
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_2bfd55a4393d7c::t_43fd4cb7e6c543 156-160,173,190
+src/modules/MIDI/useCases/webMidiInput/routePedalToBodies.ts
+  s_2bfd55a4393d7c::t_c2ff66ef254a9a 25-29,104,106,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "90f011653b1f432299567392199eafd8b59dad2b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
