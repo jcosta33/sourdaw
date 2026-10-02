@@ -322,30 +322,20 @@ function createSplitRightHalf(note: MidiNote, fromOffset: number, duration: numb
     return rightHalf;
 }
 
-function transformSplit(
-    state: MidiGlobalTimeState,
+type SplitNotesResult = { status: 'rejected' } | { status: 'ready'; left: MidiNote[]; right: MidiNote[] };
+
+function splitSourceNotes(
+    sourceNotes: readonly MidiNote[],
     command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
     cursor: IdentityCursor
-): TransformCommandResult {
-    if (!Number.isFinite(command.splitBeat)) {
-        return { status: 'rejected', state };
-    }
-    if (command.discardBeforeBeat !== undefined && !Number.isFinite(command.discardBeforeBeat)) {
-        return { status: 'rejected', state };
-    }
-
-    const sourceNotes = state.notesByClipId[command.sourceClipId];
-    if (!sourceNotes || sourceNotes.length === 0) {
-        return { status: 'ready', hasChanges: false, state };
-    }
-
+): SplitNotesResult {
     const leftNotes: MidiNote[] = [];
     const rightNotes: MidiNote[] = [];
 
     for (const [sourceNoteIndex, note] of sourceNotes.entries()) {
         const noteEnd = note.startBeat + note.duration;
         if (!Number.isFinite(noteEnd)) {
-            return { status: 'rejected', state };
+            return { status: 'rejected' };
         }
 
         if (command.discardBeforeBeat !== undefined) {
@@ -356,13 +346,13 @@ function transformSplit(
             if (note.startBeat < command.discardBeforeBeat) {
                 const leftDuration = command.discardBeforeBeat - note.startBeat;
                 if (!Number.isFinite(leftDuration)) {
-                    return { status: 'rejected', state };
+                    return { status: 'rejected' };
                 }
                 leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
                 if (noteEnd > command.splitBeat) {
                     const rightDuration = noteEnd - command.splitBeat;
                     if (!Number.isFinite(rightDuration)) {
-                        return { status: 'rejected', state };
+                        return { status: 'rejected' };
                     }
                     const request: MidiGeneratedNoteIdentityRequest = {
                         role: 'split-right',
@@ -373,7 +363,7 @@ function transformSplit(
                     };
                     const targetNoteId = takeTargetNoteId(cursor, request);
                     if (!targetNoteId) {
-                        return { status: 'rejected', state };
+                        return { status: 'rejected' };
                     }
                     rightNotes.push(
                         createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId)
@@ -384,7 +374,7 @@ function transformSplit(
             if (note.startBeat >= command.splitBeat) {
                 const rebasedStartBeat = note.startBeat - command.splitBeat;
                 if (!Number.isFinite(rebasedStartBeat)) {
-                    return { status: 'rejected', state };
+                    return { status: 'rejected' };
                 }
                 rightNotes.push({ ...note, startBeat: rebasedStartBeat });
                 continue;
@@ -392,7 +382,7 @@ function transformSplit(
             if (noteEnd > command.splitBeat) {
                 const rightDuration = noteEnd - command.splitBeat;
                 if (!Number.isFinite(rightDuration)) {
-                    return { status: 'rejected', state };
+                    return { status: 'rejected' };
                 }
                 const request: MidiGeneratedNoteIdentityRequest = {
                     role: 'split-right',
@@ -403,7 +393,7 @@ function transformSplit(
                 };
                 const targetNoteId = takeTargetNoteId(cursor, request);
                 if (!targetNoteId) {
-                    return { status: 'rejected', state };
+                    return { status: 'rejected' };
                 }
                 rightNotes.push(
                     createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId)
@@ -419,7 +409,7 @@ function transformSplit(
         if (note.startBeat >= command.splitBeat) {
             const rebasedStartBeat = note.startBeat - command.splitBeat;
             if (!Number.isFinite(rebasedStartBeat)) {
-                return { status: 'rejected', state };
+                return { status: 'rejected' };
             }
             rightNotes.push({ ...note, startBeat: rebasedStartBeat });
             continue;
@@ -428,7 +418,7 @@ function transformSplit(
         const leftDuration = command.splitBeat - note.startBeat;
         const rightDuration = noteEnd - command.splitBeat;
         if (!Number.isFinite(leftDuration) || !Number.isFinite(rightDuration)) {
-            return { status: 'rejected', state };
+            return { status: 'rejected' };
         }
         leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
         const request: MidiGeneratedNoteIdentityRequest = {
@@ -440,24 +430,173 @@ function transformSplit(
         };
         const targetNoteId = takeTargetNoteId(cursor, request);
         if (!targetNoteId) {
-            return { status: 'rejected', state };
+            return { status: 'rejected' };
         }
         rightNotes.push(createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId));
     }
 
-    const existingRightNotes = state.notesByClipId[command.targetClipId] ?? [];
-    return {
-        status: 'ready',
-        hasChanges: true,
-        state: {
-            ...state,
+    return { status: 'ready', left: leftNotes, right: rightNotes };
+}
+
+type SplitEventRow = { id: string; beat: number };
+
+type SplitEventsInput<TRow extends SplitEventRow> = {
+    events: readonly TRow[];
+    command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>;
+    existingRightEvents: readonly TRow[];
+    /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
+    laneKey: (event: TRow) => string;
+    idPrefix: string;
+};
+
+type SplitEventsResult<TRow extends SplitEventRow> =
+    { status: 'rejected' } | { status: 'ready'; left: TRow[]; right: TRow[] };
+
+/**
+ * Partitions recorded controller events at the cut the way notes are: the left
+ * clip keeps what precedes the kept range, the deleted window is dropped, and
+ * the right clip takes what follows rebased onto its own origin. Every lane
+ * whose value in force at the cut was set earlier starts the right clip with
+ * that value, so a held pedal or bend keeps sounding across the cut.
+ *
+ * Right-clip ids derive from the target clip id and the source row's index, so
+ * the same command on the same state yields the same ids without the replay
+ * plan that note identities need.
+ */
+function splitSourceEvents<TRow extends SplitEventRow>({
+    events,
+    command,
+    existingRightEvents,
+    laneKey,
+    idPrefix,
+}: SplitEventsInput<TRow>): SplitEventsResult<TRow> {
+    const keptEnd = command.discardBeforeBeat ?? command.splitBeat;
+    const left: TRow[] = [];
+    const moved: TRow[] = [];
+    const inForceAtCut = new Map<string, { event: TRow; sourceIndex: number }>();
+    const createRightId = (sourceIndex: number) => `${idPrefix}:${command.targetClipId}:${sourceIndex}`;
+
+    for (const [sourceIndex, event] of events.entries()) {
+        if (!Number.isFinite(event.beat)) {
+            return { status: 'rejected' };
+        }
+        if (event.beat < keptEnd) {
+            left.push(event);
+        }
+        if (event.beat < command.splitBeat) {
+            const current = inForceAtCut.get(laneKey(event));
+            if (!current || current.event.beat <= event.beat) {
+                inForceAtCut.set(laneKey(event), { event, sourceIndex });
+            }
+            continue;
+        }
+
+        const rebasedBeat = event.beat - command.splitBeat;
+        if (!Number.isFinite(rebasedBeat)) {
+            return { status: 'rejected' };
+        }
+        moved.push({ ...event, id: createRightId(sourceIndex), beat: rebasedBeat });
+    }
+
+    const lanesStartingAtOrigin = new Set(
+        [...existingRightEvents, ...moved].filter((event) => event.beat === 0).map(laneKey)
+    );
+    const carried: TRow[] = [];
+    for (const [key, { event, sourceIndex }] of inForceAtCut) {
+        if (!lanesStartingAtOrigin.has(key)) {
+            carried.push({ ...event, id: createRightId(sourceIndex), beat: 0 });
+        }
+    }
+
+    return { status: 'ready', left, right: [...carried, ...moved] };
+}
+
+function transformSplit(
+    state: MidiGlobalTimeState,
+    command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
+    cursor: IdentityCursor
+): TransformCommandResult {
+    if (!Number.isFinite(command.splitBeat)) {
+        return { status: 'rejected', state };
+    }
+    if (command.discardBeforeBeat !== undefined && !Number.isFinite(command.discardBeforeBeat)) {
+        return { status: 'rejected', state };
+    }
+
+    const sourceNotes = state.notesByClipId[command.sourceClipId] ?? [];
+    const sourceControlChanges = state.ccByClipId[command.sourceClipId] ?? [];
+    const sourcePitchBends = state.pitchBendByClipId[command.sourceClipId] ?? [];
+    if (sourceNotes.length === 0 && sourceControlChanges.length === 0 && sourcePitchBends.length === 0) {
+        return { status: 'ready', hasChanges: false, state };
+    }
+
+    let nextState = state;
+
+    if (sourceNotes.length > 0) {
+        const notes = splitSourceNotes(sourceNotes, command, cursor);
+        if (notes.status === 'rejected') {
+            return { status: 'rejected', state };
+        }
+        const existingRightNotes = state.notesByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
             notesByClipId: {
-                ...state.notesByClipId,
-                [command.sourceClipId]: leftNotes,
-                [command.targetClipId]: [...existingRightNotes, ...rightNotes],
+                ...nextState.notesByClipId,
+                [command.sourceClipId]: notes.left,
+                [command.targetClipId]: [...existingRightNotes, ...notes.right],
             },
-        },
-    };
+        };
+    }
+
+    if (sourceControlChanges.length > 0) {
+        const existingRightEvents = state.ccByClipId[command.targetClipId] ?? [];
+        const controlChanges = splitSourceEvents({
+            events: sourceControlChanges,
+            command,
+            existingRightEvents,
+            laneKey: (event) => `${event.channel}:${event.controller}`,
+            idPrefix: 'cc-split',
+        });
+        if (controlChanges.status === 'rejected') {
+            return { status: 'rejected', state };
+        }
+        nextState = {
+            ...nextState,
+            ccByClipId: {
+                ...nextState.ccByClipId,
+                [command.sourceClipId]: controlChanges.left,
+                ...(controlChanges.right.length > 0
+                    ? { [command.targetClipId]: [...existingRightEvents, ...controlChanges.right] }
+                    : {}),
+            },
+        };
+    }
+
+    if (sourcePitchBends.length > 0) {
+        const existingRightEvents = state.pitchBendByClipId[command.targetClipId] ?? [];
+        const pitchBends = splitSourceEvents({
+            events: sourcePitchBends,
+            command,
+            existingRightEvents,
+            laneKey: (event) => `${event.channel}`,
+            idPrefix: 'pb-split',
+        });
+        if (pitchBends.status === 'rejected') {
+            return { status: 'rejected', state };
+        }
+        nextState = {
+            ...nextState,
+            pitchBendByClipId: {
+                ...nextState.pitchBendByClipId,
+                [command.sourceClipId]: pitchBends.left,
+                ...(pitchBends.right.length > 0
+                    ? { [command.targetClipId]: [...existingRightEvents, ...pitchBends.right] }
+                    : {}),
+            },
+        };
+    }
+
+    return { status: 'ready', hasChanges: true, state: nextState };
 }
 
 function createDuplicateClone(note: MidiNote, id: string): MidiNote {

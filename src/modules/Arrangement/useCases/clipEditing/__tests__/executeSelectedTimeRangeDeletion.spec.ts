@@ -712,6 +712,49 @@ describe('executeSelectedTimeRangeDeletion', () => {
         );
     });
 
+    it('deletes the sustain moves inside the range, starts the right part from the pedal in force, and restores them on undo', () => {
+        const span = createClip({
+            id: 'span',
+            trackId: 'target',
+            startBeat: 0,
+            endBeat: 10,
+            type: 'midi',
+        });
+        setArrangement([createTrack('target', [span])]);
+        midiStore.set({
+            notesByClipId: {},
+            ccByClipId: {
+                span: [
+                    { id: 'down', controller: 64, value: 127, beat: 1, channel: 0 },
+                    { id: 'inside-up', controller: 64, value: 0, beat: 4, channel: 0 },
+                    { id: 'inside-down', controller: 64, value: 127, beat: 5, channel: 0 },
+                    { id: 'after-up', controller: 64, value: 0, beat: 8, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {},
+        });
+        const originalMidiState = midiStore.value;
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 3,
+                endBeat: 7,
+                trackIds: ['target'],
+            })
+        );
+
+        expect(midiStore.value?.ccByClipId['span']).toEqual([
+            { id: 'down', controller: 64, value: 127, beat: 1, channel: 0 },
+        ]);
+        expect(midiStore.value?.ccByClipId['clip-dtr-12345678']).toEqual([
+            { id: 'cc-split:clip-dtr-12345678:2', controller: 64, value: 127, beat: 0, channel: 0 },
+            { id: 'cc-split:clip-dtr-12345678:3', controller: 64, value: 0, beat: 1, channel: 0 },
+        ]);
+
+        expect(result.undo()).toBe(true);
+        expect(midiStore.value).toBe(originalMidiState);
+    });
+
     it('rejects missing, reordered, and operation-mismatched replay identities without allocation', () => {
         const firstSpan = createClip({ id: 'first', trackId: 'target', startBeat: 0, endBeat: 10 });
         const secondSpan = createClip({ id: 'second', trackId: 'target', startBeat: 0, endBeat: 12 });
