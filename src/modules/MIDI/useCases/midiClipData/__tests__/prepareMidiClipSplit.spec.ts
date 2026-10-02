@@ -98,9 +98,16 @@ describe('prepareMidiClipSplit controllers and pitch bends', () => {
         };
 
         expect(restoreMidiClipSplitState(restoreInput)).toBe(true);
-        expect(mocks.state.value?.ccByClipId.source).toEqual(plan.nextSource.controlChanges.value);
-        expect(mocks.state.value?.ccByClipId.right).toEqual(plan.nextRight.controlChanges.value);
-        expect(mocks.state.value?.pitchBendByClipId.right).toEqual(plan.nextRight.pitchBends.value);
+        expect(mocks.state.value?.ccByClipId.source?.map((event) => event.id)).toEqual(['down', 'up']);
+        expect(mocks.state.value?.ccByClipId.right?.map((event) => event.id)).toEqual([
+            'cc-split:right:1',
+            'cc-split:right:2',
+        ]);
+        expect(mocks.state.value?.pitchBendByClipId.source?.map((event) => event.id)).toEqual(['bend-early']);
+        expect(mocks.state.value?.pitchBendByClipId.right?.map((event) => event.id)).toEqual([
+            'pb-split:right:0',
+            'pb-split:right:1',
+        ]);
 
         expect(
             restoreMidiClipSplitState({
