@@ -1,0 +1,19 @@
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  s_1c08b47ac3792f::t_aa29658f8489d4 823-852,854-859
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2a0277f5e99622de01e8d0d9f6cba2c0407715d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
