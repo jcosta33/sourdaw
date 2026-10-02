@@ -92,9 +92,15 @@ class GrandBouleInstanceMock {
         paramDispatches.push({ name, value, block: currentBlock() });
         engineEvents.push(`param:${name}:${String(value)}`);
     }
-    set_sustain(_position: number): void {}
-    set_una_corda(_engaged: boolean): void {}
-    set_sostenuto(_engaged: boolean): void {}
+    push_sustain(_position: number, _offset: number): boolean {
+        return true;
+    }
+    push_una_corda(_engaged: boolean, _offset: number): boolean {
+        return true;
+    }
+    push_sostenuto(_engaged: boolean, _offset: number): boolean {
+        return true;
+    }
     note_on_midi2(): void {}
     set_temperament(_index: number): void {}
     all_notes_off(): void {}

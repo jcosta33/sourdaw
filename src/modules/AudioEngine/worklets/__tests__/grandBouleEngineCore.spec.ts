@@ -50,9 +50,9 @@ function createRecordingInstance(): RecordingInstance {
         push_note_off_on_channel: recordPush('push_note_off_on_channel'),
         push_note_expression: recordPush('push_note_expression'),
         set_param: record('set_param'),
-        set_sustain: record('set_sustain'),
-        set_una_corda: record('set_una_corda'),
-        set_sostenuto: record('set_sostenuto'),
+        push_sustain: recordPush('push_sustain'),
+        push_una_corda: recordPush('push_una_corda'),
+        push_sostenuto: recordPush('push_sostenuto'),
         note_on_midi2: record('note_on_midi2'),
         set_temperament: record('set_temperament'),
         all_notes_off: record('all_notes_off'),
@@ -370,5 +370,113 @@ describe('the Grand Boule frame queue', () => {
             calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
+    });
+});
+
+describe('a Grand Boule pedal message', () => {
+    it('is pushed at its own offset when its frame lies inside the block about to render', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(
+            instance,
+            queue,
+            { type: 'sustain', position: 1, sampleFrame: 1_200 },
+            { startFrame: 1_152, endFrame: 1_280 }
+        );
+
+        expect({ calls, queued: queue.size() }).toEqual({
+            calls: [{ method: 'push_sustain', args: [1, 48] }],
+            queued: 0,
+        });
+    });
+
+    it('is queued when its frame lies past the block and delivered at its offset in the block that holds it', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 500 }, { startFrame: 0, endFrame: 128 });
+        const queuedAtArrival = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 384, 512);
+
+        expect({ queuedAtArrival, calls, queued: queue.size() }).toEqual({
+            queuedAtArrival: { calls: [], queued: 1 },
+            calls: [{ method: 'push_sustain', args: [0, 116] }],
+            queued: 0,
+        });
+    });
+
+    it('is pushed at offset 0 when its frame is behind the block or it carries no frame', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 1_152, endFrame: 1_280 };
+
+        receive(instance, queue, { type: 'sustain', position: 0.5, sampleFrame: 10 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0.25 }, block);
+
+        expect({ calls, queued: queue.size() }).toEqual({
+            calls: [
+                { method: 'push_sustain', args: [0.5, 0] },
+                { method: 'push_sustain', args: [0.25, 0] },
+            ],
+            queued: 0,
+        });
+    });
+
+    it('places sostenuto and una corda like a note, in order with the notes around them', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'sostenuto', engaged: true, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'unaCorda', engaged: true, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'noteOff', midiNote: 60, sampleFrame: 501 }, block);
+        queue.drain(instance, 384, 512);
+
+        expect(calls).toEqual([
+            { method: 'push_note_on', args: [60, 1, 0, 116] },
+            { method: 'push_sostenuto', args: [true, 116] },
+            { method: 'push_una_corda', args: [true, 116] },
+            { method: 'push_note_off', args: [60, 117] },
+        ]);
+    });
+
+    it('is held with everything behind it for the next block when the engine refuses it', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        refuseNextPushes(1);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 100 }, block);
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 1 },
+            calls: [{ method: 'push_sustain', args: [1, 0] }],
+            queued: 0,
+        });
+    });
+
+    it('survives a panic that discards the pending notes', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.drain(instance, 384, 512);
+
+        // The engine keeps its pedal state through a panic, so a queued pedal-up
+        // is state the player already performed; dropping it with the notes
+        // would leave the pedal down.
+        expect(calls).toEqual([
+            { method: 'all_notes_off', args: [] },
+            { method: 'push_sustain', args: [0, 116] },
+        ]);
     });
 });

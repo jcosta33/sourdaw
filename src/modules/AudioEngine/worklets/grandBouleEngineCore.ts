@@ -94,9 +94,21 @@ export type GrandBouleNoteExpressionMsg = {
 
 export type GrandBouleParamMsg = { type: 'param'; name: string; value: number; sampleFrame?: number };
 
+export type GrandBouleSustainMsg = { type: 'sustain'; position: number; sampleFrame?: number };
+
+export type GrandBouleUnaCordaMsg = { type: 'unaCorda'; engaged: boolean; sampleFrame?: number };
+
+export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; sampleFrame?: number };
+
 /** Messages that address a moment in time rather than only the device. */
 export type GrandBouleFramedMsg =
-    GrandBouleNoteOnMsg | GrandBouleNoteOffMsg | GrandBouleNoteExpressionMsg | GrandBouleParamMsg;
+    | GrandBouleNoteOnMsg
+    | GrandBouleNoteOffMsg
+    | GrandBouleNoteExpressionMsg
+    | GrandBouleParamMsg
+    | GrandBouleSustainMsg
+    | GrandBouleUnaCordaMsg
+    | GrandBouleSostenutoMsg;
 
 /** A framed message that actually carries a usable frame, so it can be queued. */
 export type GrandBouleQueuedMsg = GrandBouleFramedMsg & { sampleFrame: number };
@@ -106,9 +118,9 @@ export type GrandBouleDispatchMsg =
     | GrandBouleNoteOffMsg
     | GrandBouleNoteExpressionMsg
     | GrandBouleParamMsg
-    | { type: 'sustain'; position: number }
-    | { type: 'unaCorda'; engaged: boolean }
-    | { type: 'sostenuto'; engaged: boolean }
+    | GrandBouleSustainMsg
+    | GrandBouleUnaCordaMsg
+    | GrandBouleSostenutoMsg
     | { type: 'noteOnMidi2'; midiNote: number; velocity16bit: number; pitchOffsetQ24: number }
     | { type: 'temperament'; index: number }
     | { type: 'allNotesOff' };
@@ -228,15 +240,16 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
  * Apply one control message to the engine, `offset` samples into the block it
  * is about to render.
  *
- * Notes take the engine's offset-queued API, so a scheduled note sounds on its
- * own sample rather than at the block boundary; an offset of 0 is the "voice
- * now" case both hosts use for a message with no frame of its own. Everything
- * else — params, pedals, temperament, MIDI 2.0 notes, the panic — is block-rate
- * and applies immediately, which is what those controls mean.
+ * Notes and pedals take the engine's offset-queued API, so a scheduled note or
+ * pedal lands on its own sample rather than at the block boundary and in push
+ * order with the notes around it; an offset of 0 is the "voice now" case both
+ * hosts use for a message with no frame of its own. Everything else — params,
+ * temperament, MIDI 2.0 notes, the panic — is block-rate and applies
+ * immediately, which is what those controls mean.
  *
- * Answers `false` only when the engine's block event list refused a note, so
- * the caller can hold that message (and everything behind it) back for the next
- * block. Every other message returns `true`.
+ * Answers `false` only when the engine's block event list refused a note or
+ * pedal, so the caller can hold that message (and everything behind it) back
+ * for the next block. Every other message returns `true`.
  *
  * The `default` arm is the whole point of centralising this: a new member of
  * `GrandBouleDispatchMsg` that nobody handles fails to compile here rather than
@@ -278,14 +291,11 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
             instance.set_param(PARAM_MAP[msg.name] ?? msg.name, msg.value);
             break;
         case 'sustain':
-            instance.set_sustain(msg.position);
-            break;
+            return instance.push_sustain(msg.position, offset);
         case 'unaCorda':
-            instance.set_una_corda(msg.engaged);
-            break;
+            return instance.push_una_corda(msg.engaged, offset);
         case 'sostenuto':
-            instance.set_sostenuto(msg.engaged);
-            break;
+            return instance.push_sostenuto(msg.engaged, offset);
         case 'noteOnMidi2':
             instance.note_on_midi2(msg.midiNote, msg.velocity16bit, msg.pitchOffsetQ24);
             break;
@@ -336,7 +346,7 @@ export type GrandBouleFrameQueue = {
     drain: (instance: GrandBouleInstance, blockStartFrame: number, blockEndFrame: number) => void;
     /** Drop every pending framed message. */
     clear: () => void;
-    /** Drop pending notes/expression while preserving scheduled parameter state. */
+    /** Drop pending notes/expression while preserving scheduled parameter and pedal state. */
     discardNotes: () => void;
     /** Pending messages, for tests and for host-side assertions. */
     size: () => number;
@@ -413,7 +423,7 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
             let retained = 0;
             for (let index = head; index < queue.length; index++) {
                 const queued = queue[index];
-                if (queued?.type === 'param') {
+                if (queued && !isNoteMsg(queued)) {
                     queue[retained] = queued;
                     retained++;
                 }
@@ -433,8 +443,19 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
     return msg.sampleFrame !== undefined && Number.isFinite(msg.sampleFrame);
 }
 
+/** True for the messages that strike, release or bend a note. */
+function isNoteMsg(msg: GrandBouleDispatchMsg): boolean {
+    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression';
+}
+
 export function isFramedGrandBouleMsg(msg: GrandBouleDispatchMsg): msg is GrandBouleFramedMsg {
-    return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'param';
+    return (
+        isNoteMsg(msg) ||
+        msg.type === 'param' ||
+        msg.type === 'sustain' ||
+        msg.type === 'unaCorda' ||
+        msg.type === 'sostenuto'
+    );
 }
 
 /**

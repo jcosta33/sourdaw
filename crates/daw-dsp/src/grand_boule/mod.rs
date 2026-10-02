@@ -62,8 +62,20 @@ const GRAND_BOULE_EVENT_NOTE_OFF: u8 = 0;
 const GRAND_BOULE_EVENT_NOTE_ON: u8 = 1;
 /// [`GrandBouleEvent::kind`] — MPE per-note expression on a sounding voice.
 const GRAND_BOULE_EVENT_NOTE_EXPRESSION: u8 = 2;
+/// [`GrandBouleEvent::kind`] — move the sustain pedal to
+/// [`GrandBouleEvent::pedal_position`].
+const GRAND_BOULE_EVENT_SUSTAIN: u8 = 3;
+/// [`GrandBouleEvent::kind`] — engage or release the sostenuto pedal, per
+/// [`GrandBouleEvent::pedal_position`].
+const GRAND_BOULE_EVENT_SOSTENUTO: u8 = 4;
+/// [`GrandBouleEvent::kind`] — engage or release the una corda pedal, per
+/// [`GrandBouleEvent::pedal_position`].
+const GRAND_BOULE_EVENT_UNA_CORDA: u8 = 5;
 
-/// One note event queued for the block [`GrandBouleInstance::process`] is about
+/// A pedal event engages its on/off pedal at or above this position.
+const PEDAL_ENGAGED_THRESHOLD: f32 = 0.5;
+
+/// One note or pedal event queued for the block [`GrandBouleInstance::process`] is about
 /// to render, carrying the sample offset inside that block it takes effect on.
 #[derive(Clone, Copy, Default)]
 struct GrandBouleEvent {
@@ -80,8 +92,20 @@ struct GrandBouleEvent {
     bend_semitones: f32,
     pressure: f32,
     slide: f32,
+    /// Pedal payload; read only by the pedal kinds. The sustain position in
+    /// `0..1`, or `1.0` / `0.0` for an engaged / released sostenuto or una
+    /// corda pedal.
+    pedal_position: f32,
     /// Sample offset within the block about to render.
     offset: u32,
+}
+
+/// True for the event kinds that move a pedal rather than address a note.
+fn is_pedal_event(event: &GrandBouleEvent) -> bool {
+    matches!(
+        event.kind,
+        GRAND_BOULE_EVENT_SUSTAIN | GRAND_BOULE_EVENT_SOSTENUTO | GRAND_BOULE_EVENT_UNA_CORDA
+    )
 }
 
 /// Grand Boule host instance for native and WASM integration.
@@ -246,25 +270,48 @@ impl GrandBouleInstance {
         })
     }
 
+    /// Queue a sustain pedal position (`0..1`) at `offset` samples into the
+    /// next rendered block.
+    ///
+    /// A pedal belongs on the offset-queued tier for the same reason a note
+    /// does: a pedal pressed between two notes of one block must damp the first
+    /// and sustain the second, which only holds if it lands on its own frame
+    /// in push order with them. Ordering and refusal as [`Self::push_note_on`].
+    pub fn push_sustain(&mut self, position: f32, offset: u32) -> bool {
+        self.push_event(GrandBouleEvent {
+            kind: GRAND_BOULE_EVENT_SUSTAIN,
+            pedal_position: position,
+            offset,
+            ..GrandBouleEvent::default()
+        })
+    }
+
+    /// Queue the sostenuto pedal engaging or releasing at `offset` samples into
+    /// the next rendered block. Ordering and refusal as [`Self::push_sustain`].
+    pub fn push_sostenuto(&mut self, engaged: bool, offset: u32) -> bool {
+        self.push_event(GrandBouleEvent {
+            kind: GRAND_BOULE_EVENT_SOSTENUTO,
+            pedal_position: if engaged { 1.0 } else { 0.0 },
+            offset,
+            ..GrandBouleEvent::default()
+        })
+    }
+
+    /// Queue the una corda pedal engaging or releasing at `offset` samples into
+    /// the next rendered block. Ordering and refusal as [`Self::push_sustain`].
+    pub fn push_una_corda(&mut self, engaged: bool, offset: u32) -> bool {
+        self.push_event(GrandBouleEvent {
+            kind: GRAND_BOULE_EVENT_UNA_CORDA,
+            pedal_position: if engaged { 1.0 } else { 0.0 },
+            offset,
+            ..GrandBouleEvent::default()
+        })
+    }
+
     /// Set a global parameter (`master_gain`, `soundboard_send`,
     /// `sympathetic_send`).
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.engine.set_param(name, value);
-    }
-
-    /// Set the sustain pedal position (0..1).
-    pub fn set_sustain(&mut self, position: f32) {
-        self.engine.set_sustain(position);
-    }
-
-    /// Set the una-corda pedal state.
-    pub fn set_una_corda(&mut self, engaged: bool) {
-        self.engine.set_una_corda(engaged);
-    }
-
-    /// Set the sostenuto pedal state.
-    pub fn set_sostenuto(&mut self, engaged: bool) {
-        self.engine.set_sostenuto(engaged);
     }
 
     /// Trigger a MIDI 2.0 note-on with 16-bit velocity and Q24 pitch offset.
@@ -282,13 +329,16 @@ impl GrandBouleInstance {
         self.engine.set_temperament(Temperament::from_u8(index));
     }
 
-    /// Panic: silence every voice immediately, and drop what has not sounded.
+    /// Panic: silence every voice immediately, and drop the notes that have
+    /// not sounded.
     ///
-    /// The queued list is cleared with the voices: a panic asks for silence,
-    /// and an event still waiting for its offset would strike a note after the
-    /// user pressed the button.
+    /// Queued note events are dropped with the voices: a panic asks for
+    /// silence, and an event still waiting for its offset would strike a note
+    /// after the user pressed the button. Queued pedal events stay, in order,
+    /// because the engine keeps pedal state through a panic and a dropped
+    /// pedal-up would leave the pedal down for good.
     pub fn all_notes_off(&mut self) {
-        self.event_count = 0;
+        self.retain_pedal_events();
         self.engine.all_notes_off();
     }
 
@@ -349,6 +399,28 @@ impl GrandBouleInstance {
 /// rewrites the generated glue and with it the committed wasm artifacts, and
 /// nothing about the size of a buffer belongs on the worklet's wire.
 impl GrandBouleInstance {
+    /// Set the sustain pedal position (0..1), effective immediately.
+    ///
+    /// The immediate tier of the pedal API, kept for the native engine, which
+    /// applies a controller at a block boundary of its own. A browser host
+    /// places a pedal on its frame through [`Self::push_sustain`] instead, so
+    /// this is not exported to JavaScript.
+    pub fn set_sustain(&mut self, position: f32) {
+        self.engine.set_sustain(position);
+    }
+
+    /// Set the una-corda pedal state, effective immediately. See
+    /// [`Self::set_sustain`].
+    pub fn set_una_corda(&mut self, engaged: bool) {
+        self.engine.set_una_corda(engaged);
+    }
+
+    /// Set the sostenuto pedal state, effective immediately. See
+    /// [`Self::set_sustain`].
+    pub fn set_sostenuto(&mut self, engaged: bool) {
+        self.engine.set_sostenuto(engaged);
+    }
+
     /// Append to the block's event list. Bounded by
     /// [`GRAND_BOULE_MAX_BLOCK_EVENTS`], so this writes into already-owned
     /// storage and never allocates.
@@ -359,6 +431,20 @@ impl GrandBouleInstance {
         self.events[self.event_count] = event;
         self.event_count += 1;
         true
+    }
+
+    /// Drop every queued event that is not a pedal event, keeping the pedal
+    /// events in their push order. Compacts in place: no allocation.
+    fn retain_pedal_events(&mut self) {
+        let mut retained = 0;
+        for index in 0..self.event_count {
+            let event = self.events[index];
+            if is_pedal_event(&event) {
+                self.events[retained] = event;
+                retained += 1;
+            }
+        }
+        self.event_count = retained;
     }
 
     /// Render `size` frames, splitting at each queued event's offset and
@@ -413,6 +499,13 @@ impl GrandBouleInstance {
                 event.pressure,
                 event.slide,
             ),
+            GRAND_BOULE_EVENT_SUSTAIN => self.engine.set_sustain(event.pedal_position),
+            GRAND_BOULE_EVENT_SOSTENUTO => self
+                .engine
+                .set_sostenuto(event.pedal_position > PEDAL_ENGAGED_THRESHOLD),
+            GRAND_BOULE_EVENT_UNA_CORDA => self
+                .engine
+                .set_una_corda(event.pedal_position > PEDAL_ENGAGED_THRESHOLD),
             _ => {}
         }
     }
