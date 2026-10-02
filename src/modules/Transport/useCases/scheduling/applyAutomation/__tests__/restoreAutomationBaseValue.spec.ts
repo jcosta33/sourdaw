@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { scheduleSendAutomation, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { scheduleSendAutomation, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
@@ -24,6 +24,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         scheduleTrackGain: vi.fn(),
         scheduleTrackPan: vi.fn(),
         updateDeviceParam: vi.fn(),
+        updateMidiFxParam: vi.fn(),
     };
 });
 vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
@@ -128,6 +129,10 @@ describe('restoreAutomationBaseValue', () => {
         });
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
+        // The refusal must hold against the keyed write too: the track carries
+        // the MIDI-FX holding the lane's parameter, the way production truth
+        // does, and a resurrected restore loop would land exactly here.
+        expect(updateMidiFxParam).not.toHaveBeenCalled();
     });
 });
 

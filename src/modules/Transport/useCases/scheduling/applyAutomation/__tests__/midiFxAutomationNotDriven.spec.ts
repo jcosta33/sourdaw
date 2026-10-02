@@ -125,6 +125,10 @@ describe('MIDI-FX parameters are not automation targets (#4789)', () => {
                 gain: 0.4,
                 pan: 12,
                 devices: [],
+                // The track carries the MIDI-FX holding the lane's parameter,
+                // the way production truth does, so the refusal below observes
+                // the keyed write a resurrected restore loop would make.
+                midiFx: [{ id: 'arp-1', type: 'arp', parameterValues: { rate: 0.25 } }],
             },
             landTime: 7,
         });

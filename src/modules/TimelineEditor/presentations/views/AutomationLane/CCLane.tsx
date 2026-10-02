@@ -63,10 +63,11 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
         const channel = 0;
-        // addMidiCC replaces any point already sitting at this (beat, channel, controller)
-        // key under a fresh id; the undo entry must name that replaced point, or Cmd+Z
-        // would leave the beat empty instead of restoring it (#4840).
-        const replaced = allCc.find(
+        // addMidiCC dedupes EVERY point sitting at this (beat, channel, controller)
+        // key under a fresh id, and a key can hold more than one point because
+        // moveMidiCC maps without a key dedupe — so the undo entry must name every
+        // replaced point, or Cmd+Z would strand all but the first (#4840).
+        const replacedPoints = allCc.filter(
             (context: MidiCC) =>
                 context.beat === beat && context.channel === channel && context.controller === controller
         );
@@ -76,15 +77,27 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const redo = (): void => {
             addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
         };
-        if (replaced === undefined) {
+        if (replacedPoints.length === 0) {
             pushUndoEntry('Add CC point', () => removeMidiCC(clipId, cc.id), redo);
             return;
         }
         pushUndoEntry(
             'Add CC point',
-            // Re-adding the replaced point under its own id replaces the clicked point
-            // at the same key, restoring the pre-click state exactly.
-            () => addMidiCC(clipId, replaced.controller, replaced.value, replaced.beat, replaced.channel, replaced.id),
+            // Re-adding every replaced point under its own id re-triggers the key
+            // dedupe per call, so the last match ends up holding the key and the
+            // array keeps its shape: every point is named, none stranded.
+            () => {
+                for (const replaced of replacedPoints) {
+                    addMidiCC(
+                        clipId,
+                        replaced.controller,
+                        replaced.value,
+                        replaced.beat,
+                        replaced.channel,
+                        replaced.id
+                    );
+                }
+            },
             redo
         );
     };

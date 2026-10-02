@@ -30,6 +30,9 @@ type RestoreTargetTrack = {
     pan: number;
     devices: RestoreTargetDevice[];
     sends?: Array<{ busId: string; level: number; preFader: boolean }>;
+    // The persisted MIDI-FX strip is the refused input shape (#4789): nothing
+    // consumes its parameter values, so the restore loop below must not read it.
+    midiFx?: ReadonlyArray<{ id: string; type: string; parameterValues: Record<string, number> }>;
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -82,8 +85,8 @@ function deviceAcceptsAutomationParameter(
  * what this restores.
  *
  * The base is read from the same project truth the UI edits: `track.gain` /
- * `track.pan` for the fader families, and the device's or MIDI-FX's own
- * `parameterValues` entry for everything else. Device eligibility is re-checked
+ * `track.pan` for the fader families, and the device's own `parameterValues`
+ * entry for everything else. Device eligibility is re-checked
  * exactly as the drive path checks it, so a restore never writes to a device
  * another track owns.
  *

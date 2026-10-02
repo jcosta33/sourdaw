@@ -255,6 +255,44 @@ describe('CCLane', () => {
             ]);
         });
 
+        it('restores the points a doubly-occupied key held before the click replaced them (#4840)', () => {
+            // moveMidiCC maps without a key dedupe, so a drag can strand two
+            // points on one (beat, channel, controller) key; seeding writes
+            // them the way the store actually holds them. The click below
+            // replaces BOTH, and the undo entry must name every one of them.
+            const preClick = [
+                { id: 'cc-first', controller: 1, value: 40, beat: 1, channel: 0 },
+                { id: 'cc-second', controller: 1, value: 60, beat: 1, channel: 0 },
+            ];
+            laneMocks.midiState.ccByClipId['clip-1'] = [...preClick];
+            render(<CCLane {...defaultProps} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+
+            // The click replaced the whole key rather than stacking a third point.
+            const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+            expect(afterAdd).toHaveLength(1);
+            const clickedId = afterAdd[0]?.id;
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // Every replaced point is re-added under its own id, and each call
+            // re-triggers addMidiCC's per-key dedupe, so the last match ends up
+            // holding the key. That observable discriminates the repair: the
+            // stranded-first bug left cc-first here; the second match only
+            // occupies the key because its own re-add ran.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([preClick[1]]);
+
+            redoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: clickedId, controller: 1, value: valueFromY(40, 80), beat: 1, channel: 0 },
+            ]);
+        });
+
         it('should not add a point when the click target is an existing CC point', () => {
             laneMocks.midiState.ccByClipId['clip-1'] = [{ id: 'cc-a', controller: 1, value: 10, beat: 0, channel: 0 }];
             const { container } = render(<CCLane {...defaultProps} />);
