@@ -1,0 +1,162 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 476-487
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 90-97
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 374,527
+measurements/semantic-review/retained-sidecars.json
+  h_beb54bf43b47b7 4,6,14,30-31,41-42,49,52,55,64-65,67-69,71,75-76,85,124,127,136,493,526,537-540,542,835-839,843
+package.json
+  h_beb54bf43b47b7 57
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1740
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  h_beb54bf43b47b7 25,28-33,130-132,138-172,203-210,213,215-219,651-672,1110-1113,1405-1419,1452-1473,1522-1541,1571-1609
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 76-93
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 15,84,603-610,768-788,954-1041,1151-1157
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 1-591
+scripts/semanticReview/__tests__/multiPassTransport.spec.ts
+  h_beb54bf43b47b7 3,50
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 27-28,198-199,206,412,3005,4025,4147
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 1-264
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  h_beb54bf43b47b7 1-714
+scripts/semanticReview/evaluation/corpus.ts
+  h_beb54bf43b47b7 1-520
+scripts/semanticReview/evaluation/runEvaluation.ts
+  h_beb54bf43b47b7 1-382
+scripts/semanticReview/evaluation/semanticEvaluationCorpus.json
+  h_beb54bf43b47b7 1-297
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 88-89,144-149,169-170,713-725,742-745,842
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 20,106-175,180-181,183-184,186-188,199,209,223-226,231-287,345-347
+scripts/semanticReview/passes.ts
+  h_beb54bf43b47b7 17-18,390,398
+scripts/semanticReview/planPublication.ts
+  h_beb54bf43b47b7 13,191-200,203-205,216,243,245-250,255-259,264-297,300-313,315-320,322-337
+scripts/semanticReview/requestPayload.ts
+  h_beb54bf43b47b7 8-14,17,40-41,63-65,76-81,104-106,108-112,119
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 116,185-191,199,205-207,331
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 14,112-118,218-237,292-293,311,341,412,509
+scripts/semanticReview/scopeAccounting.ts
+  h_beb54bf43b47b7 281-287
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 391-394
+scripts/semanticReviewEvaluation.ts
+  h_beb54bf43b47b7 1-312
+scripts/semanticReviewMeasurement.ts
+  h_beb54bf43b47b7 480-491,540
+scripts/semanticReviewMeasurement/artifacts.ts
+  h_beb54bf43b47b7 382-383,494-496,538-541,546,555
+scripts/semanticReviewMeasurement/contracts.ts
+  h_beb54bf43b47b7 186-190,340-349,361-366
+scripts/semanticReviewMeasurement/gaps.ts
+  h_beb54bf43b47b7 83-90,170-178
+scripts/semanticReviewMeasurement/record.ts
+  h_beb54bf43b47b7 355,357-362,369,377-403,454,476,488-489,513,515
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 4868-4878,4882,4888,4894-4897,4899
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  h_beb54bf43b47b7 21
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  h_beb54bf43b47b7 11,445-478
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  h_beb54bf43b47b7 6-8,51-52,65,333-374
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  h_beb54bf43b47b7 5-6,140-171
+src/modules/AiRuntime/repositories/cloudLlm/usesStrictCloudToolSchemas.ts
+  h_beb54bf43b47b7 1-6
+src/modules/AiRuntime/transformers/parseUniqueKeyJson.ts
+  h_beb54bf43b47b7 1-43
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  h_beb54bf43b47b7 3,172-200
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  h_beb54bf43b47b7 15,115-130,132,139-142,155-160
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  h_beb54bf43b47b7 6,42,55,79
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  h_beb54bf43b47b7 269
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_beb54bf43b47b7 378
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  h_beb54bf43b47b7 22-24,31,51,53-54,120,207-218,437-502,820-904,991-1038
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 12,841
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  h_beb54bf43b47b7 1-312
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  h_beb54bf43b47b7 1-2354
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  h_beb54bf43b47b7 149-263,292-296,315-316,326,369-469
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  h_beb54bf43b47b7 2923-3805
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  h_beb54bf43b47b7 1076-1158
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  h_beb54bf43b47b7 214-320
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_beb54bf43b47b7 9,15-19,29-32,34,38,40-41,53,71,83,138,151-155,182-184,272-273,482,1069-1135,1262-1333,1340-1341,1348-1349,1458-1474,1477-1481,1485-1494,1529,3619-3620,3655-3659,3661-3673,3676,3706-3709,3769,3898-3912,3927,3935,3954-3960,4087-4089,4102-4117,4128-4129,4155-4157,4263-4288,4495,4587-5353,5519,5524-5554,5560,5568-5585,5590,6110-6117,6134-6149,6157-6249,6268-6282,6284-6301,6303-6313,6324-6330,6345-6349
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  h_beb54bf43b47b7 31,48,52-58,60
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  h_beb54bf43b47b7 5,22-27,31,37,39,57,87,90,92-95,99-103,110,115-117,121,142-149,173-183,189-192,195-218,223
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  h_beb54bf43b47b7 3,23,52,270-275,303,316-321
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 52,56,100-106,120,187-191,1082-1083,1089,1091,1096-1112,1114,1117-1131,1134-1137,1190-1191,1196,1198-1217,1227-1231,1308-1310,1324,1328-1337,1342-1355,1621,1789,1833,1855-1860,1882,1889,1901,1907,1909-1912,1933-1949
+src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts
+  h_beb54bf43b47b7 18-19,46
+src/modules/AiRuntime/useCases/executeTransformCompile.ts
+  h_beb54bf43b47b7 1-79
+src/modules/AiRuntime/useCases/getCompiledTransformTargetIds.ts
+  h_beb54bf43b47b7 1-34
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 45,68-71,189,238-537,1542-1546,1618,1639,1666-1673
+src/modules/AiRuntime/useCases/llmOrchestration/decodeHostedProposalWireCall.ts
+  h_beb54bf43b47b7 1-54
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  h_beb54bf43b47b7 1-46
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 40,56,63-64,157-158,162,432-435,449-451,462-463,703-721
+src/modules/AiRuntime/useCases/materializeTransformToolCalls.ts
+  h_beb54bf43b47b7 1-15
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  h_beb54bf43b47b7 23
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 65,72-73,82,84,97-100,504-507,516-529,664-681,683,713-725,866-874,978,1012,1024,1026-1033
+src/modules/AiRuntime/useCases/projectDeclarativeTransformSnapshot.ts
+  h_beb54bf43b47b7 1-25
+src/modules/AiRuntime/validators/matchesJsonSchema.ts
+  h_beb54bf43b47b7 1-199
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_beb54bf43b47b7 541-543,569-571,598-600
+src/modules/Command/AGENTS.md
+  h_beb54bf43b47b7 11,31
+src/modules/Command/useCases/getDeclarativeTransformDocumentSchema.ts
+  h_beb54bf43b47b7 1-86
+src/modules/Command/useCases/index.ts
+  h_beb54bf43b47b7 48-50
+src/modules/Command/useCases/parseDeclarativeTransformDocument.ts
+  h_beb54bf43b47b7 1-466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0f51aa16cda8d8853b7b94d2f97c96f4f925b78a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
