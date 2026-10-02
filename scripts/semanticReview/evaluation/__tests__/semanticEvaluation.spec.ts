@@ -577,11 +577,11 @@ describe('the opt-in runner', () => {
             planWithOneSource('descriptor-hash-retarget', (fixture) => driftedSource(fixture, drifted))
         );
         const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
-        expect(negative?.linesMatchCorpus).toBe(false);
+        expect(negative?.linesVerdict).toBe('differ');
         // The block the notice used to read alone still agrees, so this case cannot be passing on a block
         // mismatch instead of on the drift it exists to report.
         expect(negative?.factsMatchCorpus).toBe(true);
-        expect(renderEvaluation(result)).toContain('matches corpus: true; lines match corpus: false');
+        expect(renderEvaluation(result)).toContain('matches corpus: true; lines: differ');
     });
 
     it('should report a carried block that is not the block the corpus records', async () => {
@@ -608,8 +608,8 @@ describe('the opt-in runner', () => {
 
     it('should report a fixture no request asked as carrying nothing rather than as disagreeing', async () => {
         // The notice's third state: a source that offers no changed file leaves the run nothing to ask, so
-        // no request carried a block and neither verdict is a disagreement with the corpus. `false` here
-        // would report a drift for a fixture whose lines were never read.
+        // no request carried a block and neither verdict is a disagreement with the corpus. A `differ` here
+        // would report a drift for a fixture whose block was never derived.
         const corpus = shippedCorpus();
         const result = await evaluateWith(
             corpus,
@@ -622,7 +622,44 @@ describe('the opt-in runner', () => {
         const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
         expect(negative?.factsCarried).toBeUndefined();
         expect(negative?.factsMatchCorpus).toBeUndefined();
-        expect(renderEvaluation(result)).toContain('no request carried a fact block (lines match corpus: true)');
+        expect(renderEvaluation(result)).toContain('no request carried a fact block (lines: match)');
+    });
+
+    it('should report lines that could not be read as unread rather than as a disagreement', async () => {
+        // The unread state, from both reads that really fail: `gitSource.changedLines` throws on any git
+        // failure, and a source whose map carries no entry for the fixture reports nothing either. The
+        // collector tolerates both, so the fixture arrives with an `unavailable` block. A `differ` for
+        // either clause would report a drift nobody observed — the same infrastructure-outcome-as-semantic
+        // confusion the exit codes keep apart.
+        const corpus = shippedCorpus();
+        const unreadable: readonly (() => ReadonlyMap<string, PathChangedLines>)[] = [
+            () => {
+                throw new Error('git could not read the diff');
+            },
+            () => new Map<string, PathChangedLines>(),
+        ];
+        for (const changedLines of unreadable) {
+            const result = await evaluateWith(
+                corpus,
+                stubProvider(() => 0.02).port,
+                planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                    ...standInSource(fixture),
+                    changedLines,
+                }))
+            );
+            const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+            expect(negative?.factsCarried).toEqual({ basis: 'unavailable' });
+            expect(negative?.factsMatchCorpus).toBeUndefined();
+            expect(negative?.linesVerdict).toBe('unread');
+            expect(renderEvaluation(result)).toContain('{"basis":"unavailable"} (block: unread; lines: unread)');
+            // The fixtures whose lines the same run could read keep their verdict, so `unread` is a property
+            // of the read that failed and not a blanket answer: the other adjudicated negative still matches.
+            expect(
+                result.outcomes
+                    .filter((outcome) => outcome.fixtureId !== 'descriptor-hash-retarget')
+                    .every((outcome) => outcome.linesVerdict === 'match')
+            ).toBe(true);
+        }
     });
 
     it('should hold a negative when its rule stays quiet and a positive when its rule fires', async () => {
