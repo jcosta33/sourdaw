@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_1c08b47ac3792f::t_99d9332d9eb99e 33-35,88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b9aa1286e5562c62c1f637ec9ffd4787da39b417",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
