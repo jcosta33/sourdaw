@@ -441,7 +441,7 @@ function splitSourceNotes(
 type SplitEventRow = { id: string; beat: number };
 
 type SplitEventsInput<TRow extends SplitEventRow> = {
-    events: readonly TRow[];
+    events: TRow[];
     command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>;
     existingRightEvents: readonly TRow[];
     /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
@@ -508,7 +508,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         }
     }
 
-    return { status: 'ready', left, right: [...carried, ...moved] };
+    return { status: 'ready', left: left.length === events.length ? events : left, right: [...carried, ...moved] };
 }
 
 function transformSplit(
