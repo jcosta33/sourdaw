@@ -820,13 +820,43 @@ describe("the evaluation command's refusal exits", () => {
         expect(exitCode).toBe(3);
     });
 
+    it('should return the incomplete exit when the provider delivers nothing at all', async () => {
+        // A total outage: every request fails, so no fixture is assessed and no label was ever asked. Both
+        // conditions hold at once here — nothing was delivered *and* no label held — which is the point of
+        // the priority: the exit names the non-delivery, and reading the mismatch first reports an
+        // infrastructure outcome as a label that disagreed with its recording.
+        const corpus = shippedCorpus();
+        const outage = (): SemanticProviderPort =>
+            stubProvider(() => {
+                throw new SemanticFailure('provider_unavailable', 'the provider refused every request');
+            }).port;
+        const result = await evaluateWith(corpus, outage());
+        expect(result.expectationsHeld).toBe(0);
+        expect(result.outcomes.every((outcome) => outcome.expectedConcernHeld)).toBe(false);
+        expect(result.outcomes.every((outcome) => outcome.execution !== 'completed')).toBe(true);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: outage(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
     it('should return the incomplete exit when a provider failure leaves part of a run undelivered', async () => {
-        // `exitCodeFor`'s undelivered branch, which the shipped fixture shape cannot reach: a fixture whose
-        // own unit fails is a label that did not hold, so it reads as the mismatch exit instead. This case
-        // gives one fixture the two-path shape a revision pair can have and fails only the second path's
-        // request, so the run delivered part of its scope while every label it asked held. Only the
-        // undelivered branch answers that with a nonzero exit, so the code asserted below is that branch's
-        // own reading of the run.
+        // Non-delivery outranking the held labels, not only the disagreed ones: this run asked and held
+        // every label it assessed, and one fixture's second changed file was never assessed. A success code
+        // here would report a scope the run did not deliver. The shipped corpus's own fixture shape cannot
+        // produce the state — a fixture whose own unit fails carries no held label either, so it reads as
+        // non-delivery too — which is why this case gives one fixture the two-path shape a revision pair
+        // can have and fails only the second path's request.
         const corpus = shippedCorpus();
         const positives = positiveRules(corpus);
         const undeliveredPath = 'src/modules/Arrangement/useCases/__tests__/zzUndelivered.spec.ts';

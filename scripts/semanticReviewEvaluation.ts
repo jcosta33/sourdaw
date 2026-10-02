@@ -63,8 +63,10 @@ const USAGE = [
     '  --out <path>          Also write the raw outcomes here as JSON.',
     '',
     `Requires ${TYPESAFE_API_KEY_ENV} in the environment or in <primary-root>/.env.sourdaw-semantic.`,
-    'Exit codes: 0 every labelled expectation held, 1 a label or a scope was not as recorded, 2 invalid',
-    'invocation, 3 the provider did not deliver an assessment.',
+    'Exit codes: 0 every fixture was assessed and every labelled expectation held, 1 a delivered',
+    'assessment whose label or scope was not as recorded, 2 invalid invocation, 3 the provider did not',
+    'deliver an assessment. Non-delivery outranks a disagreement: a fixture no request assessed exits 3',
+    'however the labels it never asked would read.',
 ].join('\n');
 
 export type ParsedEvaluationArgs = {
@@ -227,23 +229,36 @@ function failureExit(error: unknown): number {
 }
 
 /**
- * A label that did not hold, or a scope that was not delivered, is not an exit-zero run. Exported so the
- * suite can pin that a negative the provider fires is reported as not held and exits nonzero, instead of
- * trusting the entry point's own reading of the same value.
+ * The run's exit code, in the priority the usage table names: non-delivery first, then disagreement.
+ *
+ * "Not delivered" is one fixture's own report that its execution was neither completed nor skipped: a
+ * provider that failed or refused every request, a unit no request could ask, a scope the fitter had to
+ * reduce. Such a run carries no assessment to disagree with, so it exits 3 whatever its labels read — the
+ * mismatch exit names a delivered answer that contradicts its recording, and answering an infrastructure
+ * outcome with the semantic code reports a disagreement nobody observed. A run that delivered everything
+ * keeps the distinction: a label that did not hold still exits 1, and only a delivered, held run exits 0.
+ *
+ * Exported so the suite pins the negative a provider fires as reported not held and exited 1, and a
+ * provider that delivers nothing as exited 3, instead of trusting the entry point's own reading.
  */
 export function exitCodeFor(result: SemanticEvaluationResult): number {
+    const delivered = result.outcomes.every(
+        (outcome) => outcome.execution === 'completed' || outcome.execution === 'skipped'
+    );
+    if (!delivered) {
+        return EXIT_INCOMPLETE;
+    }
     if (result.outcomes.some((outcome) => !outcome.expectedConcernHeld)) {
         return EXIT_MISMATCH;
     }
-    const undelivered = result.outcomes.some(
-        (outcome) => outcome.execution !== 'completed' && outcome.execution !== 'skipped'
-    );
-    return undelivered ? EXIT_INCOMPLETE : EXIT_OK;
+    return EXIT_OK;
 }
 
 /**
  * The command's whole body once its environment is known: parse the invocation, read the corpus, run the
- * evaluation, render the report, and write the outcome file the measurement command reads.
+ * evaluation, render the report, and write the outcome file the measurement command reads. It answers with
+ * `exitCodeFor`'s own code for a completed run — non-delivery outranking a disagreement — and with
+ * `failureExit`'s for a refusal, which is why the usage table lists 2 beside the three run outcomes.
  *
  * The source port factory, the ports, the log, and the arguments are parameters so the suite drives this
  * exact path — including the `--out` write — with stubs. A case that called a write helper of its own could
