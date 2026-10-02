@@ -352,6 +352,52 @@ const EXPECT_HELPER_MEMBERS: readonly string[] = [
     'setState',
 ];
 
+/**
+ * The `expect.<member>(` heads an installed framework registers at run time through `expect.extend`, which
+ * no declaration carries as an `expect` surface: vitest declares its bench pair on `Assertion` — the
+ * chained `expect(result).toBeFasterThan(baseline)` form — and reaches them as values only because the
+ * bench runner registers them, and a package that augments the framework from its own types, jest-dom's
+ * matchers among them, is registered rather than declared too.
+ *
+ * The bound is the registration itself, read from the live framework in the case below: a name here must
+ * be absent from every derived surface, present on the installed `expect`, and answer with an
+ * asymmetric-matcher value. A declaration member placed here fails, which is what keeps this category from
+ * hiding a check the equality would then admit.
+ */
+const EXPECT_REGISTERED_MATCHER_MEMBERS: readonly string[] = ['toBeFasterThan', 'toBeSlowerThan'];
+
+/**
+ * The argument the case below hands a registered matcher to read its shape. A registered matcher builds a
+ * matcher value from its expectation without judging it — the comparison happens when the value is matched
+ * — so any sample works, and this one is shaped like the benchmark result the bench pair expects.
+ */
+const REGISTERED_MATCHER_SAMPLE = { latency: { mean: 1 } };
+
+/**
+ * Whether one name reaches `expect.<member>(` as a matcher value because an installed framework registered
+ * it through `expect.extend`, rather than because a declaration carries it: absent from every derived
+ * surface, and a live member of the given `expect` object that answers with an asymmetric matcher.
+ *
+ * The parameter is the live object rather than the module's own `expect` so the rule can be exercised over
+ * a stand-in for a package the case cannot register, and so the two directions — a name the declarations
+ * carry is never registered, whatever the live object answers — are the rule rather than a convention.
+ */
+function isRegisteredMatcher(
+    member: string,
+    declared: ReadonlySet<string>,
+    live: Readonly<Record<string, unknown>>
+): boolean {
+    if (declared.has(member)) {
+        return false;
+    }
+    const registered = live[member];
+    if (typeof registered !== 'function') {
+        return false;
+    }
+    const produced = (registered as (input: unknown) => unknown)(REGISTERED_MATCHER_SAMPLE);
+    return typeof (produced as { asymmetricMatch?: unknown }).asymmetricMatch === 'function';
+}
+
 /** How many single-line hunks the saturation witness is sliced into. */
 const WITNESS_REGIONS = 3;
 
@@ -472,6 +518,10 @@ describe('a changed line is classified by its text alone', () => {
             'expect.configure({ timeout: 5000 });',
             'expect.getState().assertionCalls,',
             'expect.addEqualityTesters([tester]);',
+            // Matchers vitest registers at run time, reached as values rather than as chained matchers: a
+            // removed one is a removed matcher, not a removed assertion.
+            'expect.toBeFasterThan(baseline),',
+            'expect.toBeSlowerThan(baseline),',
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
@@ -593,13 +643,57 @@ describe('a changed line is classified by its text alone', () => {
         // The pin itself: each helper's own head is not an assertion call. Deleting one from
         // NON_ASSERTION_EXPECT_MEMBERS fails here, which the two cases above cannot see.
         expect(EXPECT_HELPER_MEMBERS.filter((member) => isAssertionLine(`expect.${member}(value);`))).toEqual([]);
-        // And the whole list is the derived matcher values plus those helpers, so a member added or
-        // deleted without a declaration behind it fails in both directions rather than leaving a head
-        // classified differently from what the installed frameworks ship.
+        // And the whole list is the derived matcher values plus those helpers and the registered matchers,
+        // so a member added or deleted without a declaration or a registration behind it fails in both
+        // directions rather than leaving a head classified differently from what the installed frameworks
+        // ship.
         const matchers = new Set(Object.values(installedMatcherSurfaces()).flat());
         expect([...NON_ASSERTION_EXPECT_MEMBERS].sort()).toEqual(
-            [...new Set([...matchers, ...EXPECT_HELPER_MEMBERS])].sort()
+            [...new Set([...matchers, ...EXPECT_HELPER_MEMBERS, ...EXPECT_REGISTERED_MATCHER_MEMBERS])].sort()
         );
+    });
+
+    it('should treat every matcher the installed frameworks register at run time as a non-assertion', () => {
+        // The registration route `expect.extend` opens after the declarations are written: a matcher it
+        // adds is a value (`expect.toBeFasterThan(baseline)`), which is the shape that made a removed bench
+        // matcher publish as a removed assertion. The bound is read from the live framework, not assumed.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        const live = expect as unknown as Record<string, unknown>;
+        for (const member of EXPECT_REGISTERED_MATCHER_MEMBERS) {
+            expect(isRegisteredMatcher(member, declared, live)).toBe(true);
+            // The pin itself: the head a removed line spells is not an assertion call.
+            expect(isAssertionLine(`expect.${member}(baseline),`)).toBe(false);
+        }
+    });
+
+    it('should admit a name through the registration route rather than through the pair it pins', () => {
+        // The route in general, exercised over a stand-in for the augmentation a package contributes from
+        // its own types — jest-dom's matchers arrive the way this one does — so the category is the
+        // registration and not a list of the two names that happened to need it. A name the declarations
+        // already carry is refused whatever the live object answers, and a live name that answers with
+        // something other than a matcher value is no registration at all.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        const augmented: Readonly<Record<string, unknown>> = {
+            toBeInTheDocument: () => ({ asymmetricMatch: () => true }),
+            toBeFasterThan: () => ({ asymmetricMatch: () => true }),
+            // A declared matcher value and a declared helper, both matcher-shaped here so the refusal is
+            // the declaration and not the shape, and a live function that is not a matcher value at all.
+            objectContaining: () => ({ asymmetricMatch: () => true }),
+            configure: () => ({ asymmetricMatch: () => true }),
+            plainFunction: () => ({}),
+        };
+        expect(isRegisteredMatcher('toBeInTheDocument', declared, augmented)).toBe(true);
+        expect(isRegisteredMatcher('toBeFasterThan', declared, augmented)).toBe(true);
+        expect(isRegisteredMatcher('objectContaining', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('configure', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('plainFunction', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('toBeFasterThan', declared, {})).toBe(false);
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {

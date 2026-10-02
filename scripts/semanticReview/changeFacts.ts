@@ -95,25 +95,33 @@ const ASSERTION_LINE_PATTERNS: readonly RegExp[] = [
 
 /**
  * The `expect.<member>(` heads that are not assertions, across both frameworks this repository's specs
- * run on: the asymmetric matchers, which build the value an assertion compares against, and vitest's
- * registration, serialization, configuration, and state helpers. The `assert` member is a namespace
- * rather than a call and `not` is a property, so neither can appear as `expect.<member>(` and neither
- * needs a name here.
+ * run on: the asymmetric matchers, which build the value an assertion compares against; the matchers a
+ * framework registers at run time through `expect.extend`; and vitest's registration, serialization,
+ * configuration, and state helpers. The `assert` member is a namespace rather than a call and `not` is a
+ * property, so neither can appear as `expect.<member>(` and neither needs a name here.
  *
- * Neither half is hand-picked. The spec derives every member of vitest's `AsymmetricMatchersContaining`
- * and `CustomMatcher` and of playwright's `AsymmetricMatchers` from the installed declarations, and fails
- * when one is missing here. That is how `toSatisfy` and `toBeOneOf` (vitest) and `arrayOf` (playwright,
- * reachable in the end-to-end specs through `@playwright/test`, which re-exports `playwright/test`) were
- * found: all three are matcher *values* (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed
- * `expect.arrayOf(Example)` would otherwise have published as a removed assertion.
+ * The matcher half is not hand-picked. The spec derives every member of vitest's
+ * `AsymmetricMatchersContaining` and `CustomMatcher` and of playwright's `AsymmetricMatchers` from the
+ * installed declarations, and fails when one is missing here. That is how `toSatisfy` and `toBeOneOf`
+ * (vitest) and `arrayOf` (playwright, reachable in the end-to-end specs through `@playwright/test`, which
+ * re-exports `playwright/test`) were found: all three are matcher *values*
+ * (`expect(x).toEqual(expect.toBeOneOf(['a']))`), and a removed `expect.arrayOf(Example)` would otherwise
+ * have published as a removed assertion.
+ *
+ * The registered half is what `expect.extend` adds after the declarations are written: vitest's bench
+ * runner registers `toBeFasterThan` and `toBeSlowerThan`, which its types declare only in the chained
+ * `expect(result).toBeFasterThan(baseline)` form, and a package that augments the framework from its own
+ * types — jest-dom's matchers are the same case — is registered rather than declared too. A removed
+ * `expect.toBeFasterThan(baseline)` is a removed matcher value, not a removed assertion.
  *
  * The helper half is pinned by name against those same declarations, because a declaration cannot say
  * which kind a member is: vitest's `ExpectStatic` declares `assertions: (expected: number) => void` beside
  * `addEqualityTesters: (testers: Array<Tester>) => void`, and only one of the two is a check. The spec
  * derives the `expect` surface of each installed framework — vitest's `ExpectStatic` and playwright's
- * `Expect` type alias — requires every name here to be declared on one of them, and holds this list equal
- * to the derived matcher values plus those helpers, so a name deleted from either side fails. Exported so
- * that drift guard reads the one list rather than a copy of it.
+ * `Expect` type alias — requires every helper name here to be declared on one of them, checks every
+ * registered name against the live framework's own registration, and holds this list equal to the derived
+ * matcher values plus those two categories, so a name deleted from any of them fails. Exported so that
+ * drift guard reads the one list rather than a copy of it.
  */
 export const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
     // Asymmetric matchers, the complete shipped set of both frameworks.
@@ -128,6 +136,10 @@ export const NON_ASSERTION_EXPECT_MEMBERS: ReadonlySet<string> = new Set([
     'schemaMatching',
     'toSatisfy',
     'toBeOneOf',
+    // Matchers a framework registers at run time through `expect.extend`: vitest's bench pair, which is a
+    // matcher value when it is spelled `expect.toBeFasterThan(baseline)`.
+    'toBeFasterThan',
+    'toBeSlowerThan',
     // Registration, serialization, configuration, and expect state.
     'extend',
     'addEqualityTesters',
