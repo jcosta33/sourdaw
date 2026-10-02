@@ -511,6 +511,20 @@ function splitSourceEvents<TRow extends SplitEventRow>({
     return { status: 'ready', left: left.length === events.length ? events : left, right: [...carried, ...moved] };
 }
 
+/** The right clip gets an entry only when it received events, so a split never mints an empty lane. */
+function placeSplitEvents<TRow extends SplitEventRow>(
+    eventsByClipId: Record<string, TRow[]>,
+    command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
+    existingRightEvents: readonly TRow[],
+    split: { left: TRow[]; right: TRow[] }
+): Record<string, TRow[]> {
+    const next = { ...eventsByClipId, [command.sourceClipId]: split.left };
+    if (split.right.length > 0) {
+        next[command.targetClipId] = [...existingRightEvents, ...split.right];
+    }
+    return next;
+}
+
 function transformSplit(
     state: MidiGlobalTimeState,
     command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
@@ -562,13 +576,7 @@ function transformSplit(
         }
         nextState = {
             ...nextState,
-            ccByClipId: {
-                ...nextState.ccByClipId,
-                [command.sourceClipId]: controlChanges.left,
-                ...(controlChanges.right.length > 0
-                    ? { [command.targetClipId]: [...existingRightEvents, ...controlChanges.right] }
-                    : {}),
-            },
+            ccByClipId: placeSplitEvents(nextState.ccByClipId, command, existingRightEvents, controlChanges),
         };
     }
 
@@ -586,13 +594,7 @@ function transformSplit(
         }
         nextState = {
             ...nextState,
-            pitchBendByClipId: {
-                ...nextState.pitchBendByClipId,
-                [command.sourceClipId]: pitchBends.left,
-                ...(pitchBends.right.length > 0
-                    ? { [command.targetClipId]: [...existingRightEvents, ...pitchBends.right] }
-                    : {}),
-            },
+            pitchBendByClipId: placeSplitEvents(nextState.pitchBendByClipId, command, existingRightEvents, pitchBends),
         };
     }
 

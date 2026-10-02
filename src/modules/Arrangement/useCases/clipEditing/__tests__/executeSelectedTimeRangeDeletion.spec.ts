@@ -743,7 +743,7 @@ describe('executeSelectedTimeRangeDeletion', () => {
             })
         );
 
-        expect(midiStore.value?.ccByClipId['span']).toEqual([
+        expect(midiStore.value?.ccByClipId.span).toEqual([
             { id: 'down', controller: 64, value: 127, beat: 1, channel: 0 },
         ]);
         expect(midiStore.value?.ccByClipId['clip-dtr-12345678']).toEqual([

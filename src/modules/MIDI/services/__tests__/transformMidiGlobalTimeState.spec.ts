@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { transformMidiGlobalTimeState } from '../transformMidiGlobalTimeState';
+import { transformMidiGlobalTimeState, type MidiGlobalTimeCommand } from '../transformMidiGlobalTimeState';
 
 import type { MidiStoreState } from '../../stores/midiStore';
 
@@ -892,19 +892,16 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
     }
 
     function split(prepared: MidiStoreState, splitBeat: number, discardBeforeBeat?: number) {
-        return transformMidiGlobalTimeState({
-            state: prepared,
-            commands: [
-                {
-                    type: 'split-notes',
-                    sourceClipId: 'source',
-                    targetClipId: 'right',
-                    splitBeat,
-                    ...(discardBeforeBeat === undefined ? {} : { discardBeforeBeat }),
-                },
-            ],
-            targetNoteIds: [],
-        });
+        const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
+            type: 'split-notes',
+            sourceClipId: 'source',
+            targetClipId: 'right',
+            splitBeat,
+        };
+        if (discardBeforeBeat !== undefined) {
+            command.discardBeforeBeat = discardBeforeBeat;
+        }
+        return transformMidiGlobalTimeState({ state: prepared, commands: [command], targetNoteIds: [] });
     }
 
     it('partitions a sustain lane at the cut and starts the right clip from the pedal state in force', () => {
