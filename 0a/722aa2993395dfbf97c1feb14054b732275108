@@ -1,0 +1,16 @@
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 355-400,521-524,646-649,652,656-698
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 98-101,103-115,121-124,139-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0a722aa2993395dfbf97c1feb14054b732275108",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
