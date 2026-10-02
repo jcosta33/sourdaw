@@ -64,8 +64,8 @@ const collectableRoots = ['src', 'scripts', 'electron'] as const;
 /** Specs owned by the dedicated server test gate, not root Vitest. */
 const serverRoot = 'server';
 
-/** The directory the exclusion under test is responsible for. */
-const worktreeRoot = '.agents/worktrees';
+/** Directories the exclusions under test are responsible for. */
+const excludedWorktreeRoots = ['.agents/worktrees', '.agents/review-worktrees'] as const;
 
 /** Directories a walk must not descend into, matching the config's `exclude`. */
 const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);
@@ -144,17 +144,18 @@ function enumerateServerRunnerSpecs(): { command: unknown; specs: string[] } {
 }
 
 type PlantedFixture = {
+    root: string;
     directory: string;
     specPath: string;
 };
 
 /**
- * Writes a real spec into a throwaway directory under `.agents/worktrees/`, so the
+ * Writes a real spec into a throwaway directory under the specified root, so the
  * absence assertion has a subject on a clean clone. The directory name is unique
  * per process: two runs in the same checkout must not delete each other's fixture.
  */
-function plantWorktreeFixture(): PlantedFixture {
-    const absoluteWorktreeRoot = join(repoRoot, worktreeRoot);
+function plantWorktreeFixture(root: string): PlantedFixture {
+    const absoluteWorktreeRoot = join(repoRoot, root);
     mkdirSync(absoluteWorktreeRoot, { recursive: true });
     const directory = mkdtempSync(join(absoluteWorktreeRoot, 'collection-scope-guard-'));
     const specDirectory = join(directory, 'src');
@@ -167,7 +168,7 @@ function plantWorktreeFixture(): PlantedFixture {
             '',
             "describe('vitest collection scope guard fixture', () => {",
             "    it('must never be collected — it stands in for an agent worktree', () => {",
-            "        expect.unreachable('a spec under .agents/worktrees/ was collected by the root run');",
+            `        expect.unreachable('a spec under ${root}/ was collected by the root run');`,
             '    });',
             '});',
             '',
@@ -175,6 +176,7 @@ function plantWorktreeFixture(): PlantedFixture {
         'utf8'
     );
     return {
+        root,
         directory,
         specPath: relative(repoRoot, absoluteSpecPath).split(sep).join('/'),
     };
@@ -204,13 +206,15 @@ function formatSample(paths: string[], limit = 5): string {
 
 function main(): number {
     const failures: string[] = [];
-    const fixture = plantWorktreeFixture();
+    const fixtures = excludedWorktreeRoots.map((root) => plantWorktreeFixture(root));
 
     let collected: string[];
     try {
         collected = collectWithVitest();
     } finally {
-        rmSync(fixture.directory, { recursive: true, force: true });
+        for (const fixture of fixtures) {
+            rmSync(fixture.directory, { recursive: true, force: true });
+        }
     }
 
     const collectedSet = new Set(collected);
@@ -220,17 +224,19 @@ function main(): number {
     const serverRunner = enumerateServerRunnerSpecs();
 
     // 1. Absence, with the subject planted.
-    const collectedWorktreeSpecs = collected.filter((path) => path.startsWith(`${worktreeRoot}/`));
-    if (collectedWorktreeSpecs.length === 0) {
-        console.log(`  ✓ no spec under ${worktreeRoot}/ was collected (fixture planted at ${fixture.specPath})`);
-    } else {
-        failures.push(
-            [
-                `  ✗ the root run collected ${collectedWorktreeSpecs.length} spec(s) under ${worktreeRoot}/.`,
-                '    The exclusion in vite.config.ts is not matching agent worktrees.',
-                formatSample(collectedWorktreeSpecs),
-            ].join('\n')
-        );
+    for (const fixture of fixtures) {
+        const collectedSpecsForRoot = collected.filter((path) => path.startsWith(`${fixture.root}/`));
+        if (collectedSpecsForRoot.length === 0) {
+            console.log(`  ✓ no spec under ${fixture.root}/ was collected (fixture planted at ${fixture.specPath})`);
+        } else {
+            failures.push(
+                [
+                    `  ✗ the root run collected ${collectedSpecsForRoot.length} spec(s) under ${fixture.root}/.`,
+                    '    The exclusion in vite.config.ts is not matching agent worktrees.',
+                    formatSample(collectedSpecsForRoot),
+                ].join('\n')
+            );
+        }
     }
 
     // 2. Exact ownership parity between every server spec and the actual npm test glob.
