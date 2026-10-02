@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { transformMidiGlobalTimeState } from '../transformMidiGlobalTimeState';
+import { transformMidiGlobalTimeState, type MidiGlobalTimeCommand } from '../transformMidiGlobalTimeState';
 
 import type { MidiStoreState } from '../../stores/midiStore';
 
@@ -879,5 +879,153 @@ describe('transformMidiGlobalTimeState targetNoteId resolution', () => {
         });
         expect(result.status).toBe('ready');
         expect(result.state.notesByClipId.target?.[0]?.id).toBe('planned-midi-note-0');
+    });
+});
+
+describe('transformMidiGlobalTimeState split controllers and pitch bends', () => {
+    function cc(id: string, beat: number, value: number, controller = 64, channel = 0) {
+        return { id, controller, value, beat, channel };
+    }
+
+    function pitchBend(id: string, beat: number, value: number, channel: number) {
+        return { id, value, beat, channel };
+    }
+
+    function split(prepared: MidiStoreState, splitBeat: number, discardBeforeBeat?: number) {
+        const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
+            type: 'split-notes',
+            sourceClipId: 'source',
+            targetClipId: 'right',
+            splitBeat,
+        };
+        if (discardBeforeBeat !== undefined) {
+            command.discardBeforeBeat = discardBeforeBeat;
+        }
+        return transformMidiGlobalTimeState({ state: prepared, commands: [command], targetNoteIds: [] });
+    }
+
+    it('partitions a sustain lane at the cut and starts the right clip from the pedal state in force', () => {
+        const prepared = state({
+            notesByClipId: { source: [{ id: 'n', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 127), cc('b', 3, 0)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 0), cc('cc-split:right:2', 1, 127)]);
+    });
+
+    it('splits the controllers of a clip that holds no notes', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.notesByClipId).toBe(prepared.notesByClipId);
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 127), cc('b', 3, 0)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 0), cc('cc-split:right:2', 1, 127)]);
+    });
+
+    it('carries and rebases each pitch bend channel independently', () => {
+        const prepared = state({
+            pitchBendByClipId: {
+                source: [
+                    pitchBend('p0', 1, 0.2, 0),
+                    pitchBend('p1', 6, 0.8, 0),
+                    pitchBend('p2', 3, -0.5, 1),
+                    pitchBend('p3', 7, 0.1, 1),
+                ],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.pitchBendByClipId.source).toEqual([
+            pitchBend('p0', 1, 0.2, 0),
+            pitchBend('p2', 3, -0.5, 1),
+        ]);
+        expect(result.state.pitchBendByClipId.right).toEqual([
+            pitchBend('pb-split:right:0', 0, 0.2, 0),
+            pitchBend('pb-split:right:2', 0, -0.5, 1),
+            pitchBend('pb-split:right:1', 2, 0.8, 0),
+            pitchBend('pb-split:right:3', 3, 0.1, 1),
+        ]);
+    });
+
+    it('keeps controller lanes on different controllers and channels apart when carrying', () => {
+        const prepared = state({
+            ccByClipId: {
+                source: [cc('mod', 1, 10, 1, 0), cc('pedal', 2, 127, 64, 0), cc('modOtherChannel', 3, 33, 1, 1)],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.right).toEqual([
+            cc('cc-split:right:0', 0, 10, 1, 0),
+            cc('cc-split:right:1', 0, 127, 64, 0),
+            cc('cc-split:right:2', 0, 33, 1, 1),
+        ]);
+    });
+
+    it('drops controllers inside the deleted window and carries the value in force at the cut', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 10, 1), cc('b', 3, 50, 1), cc('c', 7, 90, 1)] },
+        });
+
+        const result = split(prepared, 6, 2);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 10, 1)]);
+        expect(result.state.ccByClipId.right).toEqual([
+            cc('cc-split:right:1', 0, 50, 1),
+            cc('cc-split:right:2', 1, 90, 1),
+        ]);
+    });
+
+    it('moves an event exactly at the cut to the right clip origin without a second carried event', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 2, 10), cc('b', 4, 99), cc('other', 1, 5, 1)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 2, 10), cc('other', 1, 5, 1)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:2', 0, 5, 1), cc('cc-split:right:1', 0, 99)]);
+    });
+
+    it('produces the same right clip event ids every time the command is applied to the same state', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.2, 0), pitchBend('p1', 6, 0.8, 0)] },
+        });
+
+        const first = split(prepared, 4);
+        const second = split(prepared, 4);
+
+        expect(second.state.ccByClipId.right?.map((event) => event.id)).toEqual(
+            first.state.ccByClipId.right?.map((event) => event.id)
+        );
+        expect(second.state.pitchBendByClipId.right?.map((event) => event.id)).toEqual(
+            first.state.pitchBendByClipId.right?.map((event) => event.id)
+        );
+        expect(first.state.ccByClipId.right).toHaveLength(2);
+        expect(first.state.pitchBendByClipId.right).toHaveLength(2);
+    });
+
+    it('rejects a split whose controller beat is not finite', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', Number.NaN, 127)] } });
+
+        expect(split(prepared, 4).status).toBe('rejected');
+    });
+
+    it('starts the right clip from the last value when every controller event precedes the cut', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 10), cc('b', 2, 20)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 10), cc('b', 2, 20)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 20)]);
     });
 });
