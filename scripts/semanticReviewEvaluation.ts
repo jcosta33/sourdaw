@@ -13,7 +13,7 @@
  * provider and the rules rather than about any change.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { parseDotenv, resolvePrimaryRoot } from './githubAppIdentity.ts';
@@ -137,21 +137,53 @@ export function assertEvaluationIsOptIn(environment: NodeJS.ProcessEnv = process
     }
 }
 
+/** The `code` one failed filesystem read reports, or undefined when it reports none. */
+function readFailureCode(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return undefined;
+    }
+    const code = (error as { readonly code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+}
+
+/**
+ * One value from a gitignored dotenv file, or undefined when there is no file to read it from.
+ *
+ * The read is what decides whether the file is there: a path that answers `ENOENT` is the documented "no
+ * dotenv file" path, and any other failure is raised rather than read as an absent credential, so a file
+ * that cannot be read is reported as the read failure it is instead of as a missing key. Nothing probes the
+ * path first, which is also what keeps the file from being checked in one call and used in another.
+ */
+function dotenvValue(path: string, key: string): string | undefined {
+    let text: string;
+    try {
+        text = readFileSync(path, 'utf8');
+    } catch (error) {
+        if (readFailureCode(error) === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
+    return parseDotenv(text)[key];
+}
+
 /**
  * The API key comes from the environment, or from the primary root's gitignored dotenv file, exactly as
  * `review:semantic` resolves it. It is never printed, never written into an outcome, and never cached.
+ *
+ * Exported, with its environment as a parameter, so the suite pins the resolution and its refusal instead
+ * of trusting the entry point: a case reading the ambient environment would assert whichever branch the
+ * running shell happened to provide.
  */
-function loadApiKey(primaryRoot: string): string {
-    const fromEnv = process.env[TYPESAFE_API_KEY_ENV];
+export function loadApiKey(primaryRoot: string, environment: NodeJS.ProcessEnv = process.env): string {
+    const fromEnv = environment[TYPESAFE_API_KEY_ENV];
     if (fromEnv !== undefined && fromEnv.trim() !== '') {
         return fromEnv.trim();
     }
     const path = `${primaryRoot}/.env.sourdaw-semantic`;
-    if (existsSync(path)) {
-        const value = parseDotenv(readFileSync(path, 'utf8'))[TYPESAFE_API_KEY_ENV];
-        if (value !== undefined && value.trim() !== '') {
-            return value.trim();
-        }
+    const value = dotenvValue(path, TYPESAFE_API_KEY_ENV);
+    if (value !== undefined && value.trim() !== '') {
+        return value.trim();
     }
     return refuse(
         'missing_credentials',

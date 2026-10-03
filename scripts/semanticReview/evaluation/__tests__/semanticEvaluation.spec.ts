@@ -7,7 +7,7 @@
  * deliberately outside this suite.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,13 +16,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
     assertEvaluationIsOptIn,
     exitCodeFor,
+    loadApiKey,
     parseEvaluationArgs,
     runEvaluationCommand,
 } from '../../../semanticReviewEvaluation.ts';
 import { measureCheckout, readEvaluationOutcome } from '../../../semanticReviewMeasurement.ts';
 import { changedLineFacts, type PathChangedLines, type UnitChangedLineFacts } from '../../changeFacts.ts';
 import { SemanticFailure } from '../../contracts.ts';
-import { createMemoryCache, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
+import { createMemoryCache, TYPESAFE_API_KEY_ENV, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
 import { SEMANTIC_BUDGET_PROFILES, semanticRule } from '../../rules.ts';
 import {
     parseEvaluationCorpus,
@@ -1045,5 +1046,60 @@ describe('the live command line is opt-in', () => {
         expect(() => assertEvaluationIsOptIn({ CI: 'true', VITEST: 'true' })).toThrow(/never run from a unit test/u);
         expect(() => assertEvaluationIsOptIn({})).not.toThrow();
         expect(() => assertEvaluationIsOptIn({ CI: 'false' })).not.toThrow();
+    });
+});
+
+describe('the credential the live evaluation needs', () => {
+    /** The refusal the loader owes when neither source has a key, with the path it looked in. */
+    function refusalFor(root: string): SemanticFailure {
+        try {
+            loadApiKey(root, {});
+        } catch (error) {
+            if (error instanceof SemanticFailure) {
+                return error;
+            }
+            throw error;
+        }
+        throw new Error('the loader returned a key where it owed a refusal');
+    }
+
+    it('should take the key from the environment, then the primary root dotenv, and refuse when neither has one', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-credentials-'));
+        outcomeRoots.push(root);
+        expect(loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '  from-environment  ' })).toBe('from-environment');
+        // A missing dotenv file is the documented path to the refusal, and the read is what finds it: the
+        // pre-checked form this replaced probed the path first, a check and its use another writer can split.
+        const refusal = refusalFor(root);
+        expect(refusal.code).toBe('missing_credentials');
+        expect(refusal.message).toBe(
+            `refusing to call TypeSafe: ${TYPESAFE_API_KEY_ENV} is not set in the environment or in ${root}/.env.sourdaw-semantic`
+        );
+        // A key in a blank environment entry is no key, and one in the file is the file's answer.
+        expect(() => loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '   ' })).toThrow(SemanticFailure);
+        writeFileSync(join(root, '.env.sourdaw-semantic'), `${TYPESAFE_API_KEY_ENV}=from-dotenv\n`);
+        expect(loadApiKey(root, {})).toBe('from-dotenv');
+    });
+
+    it('should raise a dotenv path it cannot read rather than report a missing credential', () => {
+        // The classification the loader owes: only a path that is not there is "no dotenv file". A primary
+        // root that is a file, and a dotenv path that is a directory rather than a file, are read failures;
+        // answering the refusal for either would report a configuration shape problem as a missing key, and
+        // a pre-checked existence probe answers exactly that for both.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-credentials-'));
+        outcomeRoots.push(root);
+        const fileRoot = join(root, 'not-a-directory');
+        writeFileSync(fileRoot, 'not a primary root\n');
+        const directoryRoot = join(root, 'as-directory');
+        mkdirSync(join(directoryRoot, '.env.sourdaw-semantic'), { recursive: true });
+        for (const primaryRoot of [fileRoot, directoryRoot]) {
+            let failure: unknown;
+            try {
+                loadApiKey(primaryRoot, {});
+            } catch (error) {
+                failure = error;
+            }
+            expect(failure).toBeInstanceOf(Error);
+            expect(failure).not.toBeInstanceOf(SemanticFailure);
+        }
     });
 });
