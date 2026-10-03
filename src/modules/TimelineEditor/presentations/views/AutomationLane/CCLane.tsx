@@ -5,7 +5,7 @@ import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
+import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
@@ -65,41 +65,24 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const channel = 0;
         // addMidiCC dedupes EVERY point sitting at this (beat, channel, controller)
         // key under a fresh id, and a key can hold more than one point because
-        // moveMidiCC maps without a key dedupe — so the undo entry must name every
-        // replaced point, or Cmd+Z would strand all but the first (#4840).
-        const replacedPoints = allCc.filter(
+        // moveMidiCC maps without a key dedupe — so undo must restore the captured
+        // pre-click array, not re-add points through the deduping add path (#4840).
+        const keyWasOccupied = allCc.some(
             (context: MidiCC) =>
                 context.beat === beat && context.channel === channel && context.controller === controller
         );
+        const preClickPoints = [...allCc];
         const cc = addMidiCC(clipId, controller, value, beat, channel);
         // Redo must re-create the clicked point under the SAME id: a fresh id would
         // leave the undo side removing an id the store no longer holds.
         const redo = (): void => {
             addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
         };
-        if (replacedPoints.length === 0) {
+        if (!keyWasOccupied) {
             pushUndoEntry('Add CC point', () => removeMidiCC(clipId, cc.id), redo);
             return;
         }
-        pushUndoEntry(
-            'Add CC point',
-            // Re-adding every replaced point under its own id re-triggers the key
-            // dedupe per call, so the last match ends up holding the key and the
-            // array keeps its shape: every point is named, none stranded.
-            () => {
-                for (const replaced of replacedPoints) {
-                    addMidiCC(
-                        clipId,
-                        replaced.controller,
-                        replaced.value,
-                        replaced.beat,
-                        replaced.channel,
-                        replaced.id
-                    );
-                }
-            },
-            redo
-        );
+        pushUndoEntry('Add CC point', () => restoreMidiCCPoints(clipId, preClickPoints), redo);
     };
 
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
@@ -159,13 +142,14 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         }
         const point = points.find((param) => param.id === ccId);
         if (point) {
-            const { controller: ctrl, value, beat, channel } = point;
+            // Undo restores the pre-double-click array: re-adding through addMidiCC
+            // would run its key dedupe and delete a sibling sharing the removed
+            // point's key (reachable when moveMidiCC stacked two points on a beat).
+            const beforeRemoval = [...points];
             removeMidiCC(clipId, ccId);
             pushUndoEntry(
                 'Remove CC point',
-                // Re-add under the removed point's own id so the redo side's
-                // remove still names a point the store holds.
-                () => addMidiCC(clipId, ctrl, value, beat, channel, ccId),
+                () => restoreMidiCCPoints(clipId, beforeRemoval),
                 () => removeMidiCC(clipId, ccId)
             );
         } else {
