@@ -1,0 +1,23 @@
+src/modules/MIDI/useCases/index.ts
+  s_1c08b47ac3792f::t_593352f042ef7b 90
+src/modules/MIDI/useCases/midiEvent/__tests__/restoreMidiCCPoints.spec.ts
+  s_1c08b47ac3792f::t_b30e3af8922e1a 1-51
+src/modules/MIDI/useCases/midiEvent/restoreMidiCCPoints.ts
+  s_1c08b47ac3792f::t_5c1f1f4a6c2bdd 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "db42584ecdbbeb5194267af2734fbfabffaef1eb",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
