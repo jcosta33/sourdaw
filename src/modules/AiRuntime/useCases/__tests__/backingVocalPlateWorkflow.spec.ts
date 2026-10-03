@@ -463,9 +463,9 @@ function getHostedUserMessage(requestBody: string): string {
 
 /**
  * Reverb device types EX-01 is allowed to remove from a backing-vocal track.
- * Mirrors `getBackingVocalPlatePromptScope`'s own list without importing it,
- * so this fixture proves the round trip rather than sharing an implementation
- * with the code it exercises.
+ * An independent statement of the family `getBackingVocalPlatePromptScope`
+ * derives from descriptor metadata, so this fixture proves the round trip
+ * rather than sharing an implementation with the code it exercises.
  */
 const REVERB_DEVICE_TYPES = new Set([
     'builtin-reverb',

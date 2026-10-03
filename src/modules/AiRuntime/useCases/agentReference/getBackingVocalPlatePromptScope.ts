@@ -1,27 +1,20 @@
-import { getPluginById } from '#/modules/Arrangement/useCases';
+import { getPluginById, isReverbDeviceType } from '#/modules/Arrangement/useCases';
 import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 
 import { type BackingVocalPlateCapability } from '../../models/BackingVocalPlateCapability';
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../../models/ProjectContext';
 
+import { resolveAvailableCharacterDevice } from './resolveAvailableCharacterDevice';
+
 const BUS_NAME = 'Backing Vocal Plate';
 const BUS_BINDING = 'backing-vocal-plate';
 const FILTER_DEVICE_TYPE = 'builtin-filter';
-const PLATE_DEVICE_TYPE = 'dutch-oven';
+const PLATE_CHARACTER = 'plate';
 const SEND_LEVEL_DB = -18;
 const SEND_LEVEL = 10 ** (SEND_LEVEL_DB / 20);
 const AUTOMATION_TAIL_BARS = 4;
 const AUTOMATION_TARGET_LEVEL_DB = -10;
 const RENDER_SAMPLE_RATE = 44_100;
-
-const REVERB_DEVICE_TYPES = new Set([
-    'builtin-reverb',
-    'builtin-convolution-reverb',
-    'dutch-oven',
-    'proof-chamber',
-    'faust-zita-rev1-reverb',
-    'faust-spring-reverb',
-]);
 
 type BackingVocalPlatePromptScope =
     | { status: 'invalid'; reason: string }
@@ -85,7 +78,7 @@ function classifyChorusSection(section: ProjectContextSection): 'chorus' | 'not-
 }
 
 function isReverbDevice(device: ProjectContextTrack['devices'][number]): boolean {
-    return REVERB_DEVICE_TYPES.has(device.type);
+    return isReverbDeviceType(device.type);
 }
 
 function getProtectedObjects(context: ProjectContext, backingVocals: readonly ProjectContextTrack[]) {
@@ -110,8 +103,8 @@ function getProtectedObjects(context: ProjectContext, backingVocals: readonly Pr
     return protections;
 }
 
-function getPlateRenderTailSeconds(): number | null {
-    const descriptor = getPluginById(PLATE_DEVICE_TYPE);
+function getPlateRenderTailSeconds(plateDeviceType: string): number | null {
+    const descriptor = getPluginById(plateDeviceType);
     if (!descriptor?.tail) {
         return null;
     }
@@ -160,8 +153,16 @@ export function getBackingVocalPlatePromptScope(
         return { status: 'invalid', reason: `EX-01 bus name is already in use: ${BUS_NAME}` };
     }
     const availableDeviceTypes = new Set((context.availableDeviceTypes ?? []).map((device) => device.id));
-    if (!availableDeviceTypes.has(FILTER_DEVICE_TYPE) || !availableDeviceTypes.has(PLATE_DEVICE_TYPE)) {
-        return { status: 'invalid', reason: 'EX-01 requires the built-in Filter and Dutch Oven devices' };
+    if (!availableDeviceTypes.has(FILTER_DEVICE_TYPE)) {
+        return { status: 'invalid', reason: 'EX-01 requires the built-in Filter device' };
+    }
+    const plateDevice = resolveAvailableCharacterDevice(PLATE_CHARACTER);
+    if (plateDevice.status === 'unresolved') {
+        return { status: 'invalid', reason: `EX-01 requires an available plate reverb: ${plateDevice.reason}` };
+    }
+    const plateDeviceType = plateDevice.deviceType;
+    if (!availableDeviceTypes.has(plateDeviceType)) {
+        return { status: 'invalid', reason: `EX-01 plate reverb ${plateDeviceType} is not in the planner catalogue` };
     }
 
     const [numerator, denominator] = context.timeSignature;
@@ -205,9 +206,12 @@ export function getBackingVocalPlatePromptScope(
     if (removableReverbs.length === 0) {
         return { status: 'invalid', reason: 'EX-01 found no backing-vocal reverb device to remove' };
     }
-    const renderTailSeconds = getPlateRenderTailSeconds();
+    const renderTailSeconds = getPlateRenderTailSeconds(plateDeviceType);
     if (renderTailSeconds === null) {
-        return { status: 'invalid', reason: 'EX-01 requires a bounded Dutch Oven render-tail declaration' };
+        return {
+            status: 'invalid',
+            reason: `EX-01 requires a bounded render-tail declaration for ${plateDeviceType}`,
+        };
     }
     const protectedObjects = getProtectedObjects(context, backingVocals);
     const sectionIds = chorusSections.map((section) => section.id);
@@ -229,7 +233,7 @@ export function getBackingVocalPlatePromptScope(
             name: 'addDevice',
             arguments: {
                 trackId: `$${BUS_BINDING}`,
-                deviceType: PLATE_DEVICE_TYPE,
+                deviceType: plateDeviceType,
             },
         },
         ...trackIds.map((trackId) => ({
@@ -269,7 +273,7 @@ export function getBackingVocalPlatePromptScope(
             filterDeviceType: FILTER_DEVICE_TYPE,
             filterType: 1,
             highPassHz: 250,
-            plateDeviceType: PLATE_DEVICE_TYPE,
+            plateDeviceType,
             sendLevelDb: SEND_LEVEL_DB,
             sendLevel: SEND_LEVEL,
             sendPreFader: false,

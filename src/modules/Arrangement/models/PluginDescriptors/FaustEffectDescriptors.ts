@@ -44,6 +44,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
+        effectFamily: 'reverb',
         hasCustomUI: false,
         tail: { kind: 'decaySeconds', parameterId: 'decay_time', defaultSeconds: 3 },
         parameters: [
@@ -145,6 +146,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
+        effectFamily: 'reverb',
         hasCustomUI: false,
         characterTags: ['spring'],
         tail: { kind: 'decaySeconds', parameterId: 'decay', defaultSeconds: 2 },

@@ -171,6 +171,13 @@ export const DEVICE_CHARACTER_TAGS = ['plate', 'hall', 'room', 'spring', 'tape',
 
 export type DeviceCharacterTag = (typeof DEVICE_CHARACTER_TAGS)[number];
 
+/**
+ * The kind of effect a device is, for callers that select a family rather than
+ * a device. Unlike a character, a family says what the device does, so every
+ * device of the family declares it whatever algorithm it runs.
+ */
+export type DeviceEffectFamily = 'reverb';
+
 export type PluginDescriptor = {
     id: string;
     name: string;
@@ -196,4 +203,6 @@ export type PluginDescriptor = {
     guidance?: PluginDescriptorGuidance;
     /** Owner-authored algorithm characters for bounded catalog discovery. */
     characterTags?: readonly DeviceCharacterTag[];
+    /** Owner-authored effect family, so no caller keeps its own list of device ids. */
+    effectFamily?: DeviceEffectFamily;
 };
