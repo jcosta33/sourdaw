@@ -24,7 +24,7 @@ export type BackingVocalPlateCapability = {
         filterDeviceType: 'builtin-filter';
         filterType: 1;
         highPassHz: 250;
-        plateDeviceType: 'dutch-oven';
+        plateDeviceType: string;
         sendLevelDb: -18;
         sendLevel: number;
         sendPreFader: false;

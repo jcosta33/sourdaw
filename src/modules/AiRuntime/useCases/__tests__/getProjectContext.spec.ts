@@ -181,7 +181,21 @@ describe('getProjectContext', () => {
                     },
                 ],
             },
-            { id: 'crust', name: 'Crust' },
+            {
+                id: 'crust',
+                name: 'Crust',
+                parameters: [
+                    {
+                        id: 'ceiling',
+                        name: 'Ceiling',
+                        type: 'float',
+                        defaultValue: -0.3,
+                        minValue: -6,
+                        maxValue: 0,
+                        unit: 'dBTP',
+                    },
+                ],
+            },
         ]);
     });
 
@@ -298,6 +312,21 @@ describe('getProjectContext', () => {
                         maxValue: 2,
                         unit: '',
                         choices: ['Low', 'Bell', 'High'],
+                    },
+                ],
+            },
+            {
+                id: 'crust',
+                name: 'Crust',
+                parameters: [
+                    {
+                        id: 'ceiling',
+                        name: 'Ceiling',
+                        type: 'float',
+                        value: -0.3,
+                        minValue: -6,
+                        maxValue: 0,
+                        unit: 'dBTP',
                     },
                 ],
             },

@@ -156,13 +156,11 @@ export function getProjectContext(): ProjectContext {
         masterGain: (transportState?.masterGain ?? 80) / 100,
         masterGainDb: toLevelDb((transportState?.masterGain ?? 80) / 100),
         levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
-        availableDeviceTypes: getPlatformPlugins()
-            .filter((plugin) => plugin.id !== 'crust')
-            .map((plugin) => ({
-                id: plugin.id,
-                name: plugin.name,
-                parameters: projectDeviceDescriptorParameters(plugin.parameters),
-            })),
+        availableDeviceTypes: getPlatformPlugins().map((plugin) => ({
+            id: plugin.id,
+            name: plugin.name,
+            parameters: projectDeviceDescriptorParameters(plugin.parameters),
+        })),
         adjustmentLayers: (adjustmentLayerState?.layers ?? []).map((layer) => ({
             id: layer.id,
             name: layer.name,
