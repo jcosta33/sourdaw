@@ -83,14 +83,17 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         this.record('set_param', [name, value]);
     }
-    set_sustain(position: number): void {
-        this.record('set_sustain', [position]);
+    push_sustain(position: number, offset: number): boolean {
+        this.record('push_sustain', [position, offset]);
+        return true;
     }
-    set_una_corda(engaged: boolean): void {
-        this.record('set_una_corda', [engaged]);
+    push_una_corda(engaged: boolean, offset: number): boolean {
+        this.record('push_una_corda', [engaged, offset]);
+        return true;
     }
-    set_sostenuto(engaged: boolean): void {
-        this.record('set_sostenuto', [engaged]);
+    push_sostenuto(engaged: boolean, offset: number): boolean {
+        this.record('push_sostenuto', [engaged, offset]);
+        return true;
     }
     note_on_midi2(note: number, velocity16bit: number, pitchOffsetQ24: number): void {
         this.record('note_on_midi2', [note, velocity16bit, pitchOffsetQ24]);
@@ -172,13 +175,17 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     { type: 'noteOff', midiNote: 60, sampleFrame: 12, releaseVelocity: 0.5, channel: 3 },
     // Framed with no channel: releases every voice at the pitch.
     { type: 'noteOff', midiNote: 62, sampleFrame: 20 },
+    // Pedals carry their frame like notes do and land at the same offset.
+    { type: 'sustain', position: 1, sampleFrame: 21 },
+    { type: 'sostenuto', engaged: true, sampleFrame: 22 },
+    { type: 'unaCorda', engaged: false, sampleFrame: 23 },
     // Framed with no frame at all: voices now, at offset 0.
     { type: 'noteOn', midiNote: 64, velocity: 0.4 },
     // Framed beyond the first block: both hosts must queue these, so neither may
     // record a call for them.
     { type: 'noteOn', midiNote: 67, velocity: 0.9, sampleFrame: 5_000 },
     { type: 'noteOff', midiNote: 67, sampleFrame: 6_000 },
-    // Unframed control messages.
+    // Control messages with no frame to place.
     { type: 'param', name: 'masterGain', value: 0.7 },
     { type: 'param', name: 'lidPosition', value: 0.5 },
     { type: 'param', name: 'micPosition', value: 2 },
@@ -301,14 +308,17 @@ describe('the worker and the offline processor dispatch identically', () => {
             { method: 'push_note_expression', args: [60, 3, 1.5, 0.2, 0.4, 11] },
             { method: 'push_note_off_on_channel', args: [60, 3, 12] },
             { method: 'push_note_off', args: [62, 20] },
+            { method: 'push_sustain', args: [1, 21] },
+            { method: 'push_sostenuto', args: [true, 22] },
+            { method: 'push_una_corda', args: [false, 23] },
             { method: 'push_note_on', args: [64, 0.4, 0, 0] },
             { method: 'set_param', args: ['master_gain', 0.7] },
             { method: 'set_param', args: ['lid_position', 0.5] },
             { method: 'set_param', args: ['mic_position', 2] },
             { method: 'set_param', args: ['already_snake_case', 0.25] },
-            { method: 'set_sustain', args: [0.6] },
-            { method: 'set_una_corda', args: [true] },
-            { method: 'set_sostenuto', args: [false] },
+            { method: 'push_sustain', args: [0.6, 0] },
+            { method: 'push_una_corda', args: [true, 0] },
+            { method: 'push_sostenuto', args: [false, 0] },
             { method: 'note_on_midi2', args: [72, 32_000, 1_024] },
             { method: 'set_temperament', args: [4] },
             { method: 'all_notes_off', args: [] },

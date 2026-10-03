@@ -41,14 +41,17 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
     }
-    set_sustain(position: number): void {
-        calls.push({ method: 'set_sustain', args: [position] });
+    push_sustain(position: number, offset: number): boolean {
+        calls.push({ method: 'push_sustain', args: [position, offset] });
+        return true;
     }
-    set_una_corda(engaged: boolean): void {
-        calls.push({ method: 'set_una_corda', args: [engaged] });
+    push_una_corda(engaged: boolean, offset: number): boolean {
+        calls.push({ method: 'push_una_corda', args: [engaged, offset] });
+        return true;
     }
-    set_sostenuto(engaged: boolean): void {
-        calls.push({ method: 'set_sostenuto', args: [engaged] });
+    push_sostenuto(engaged: boolean, offset: number): boolean {
+        calls.push({ method: 'push_sostenuto', args: [engaged, offset] });
+        return true;
     }
     note_on_midi2(note: number, vel: number, pitch: number): void {
         calls.push({ method: 'note_on_midi2', args: [note, vel, pitch] });
@@ -299,9 +302,9 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'unaCorda', engaged: true });
         send({ type: 'sostenuto', engaged: false });
 
-        expect(method('set_sustain')!.args).toEqual([0.9]);
-        expect(method('set_una_corda')!.args).toEqual([true]);
-        expect(method('set_sostenuto')!.args).toEqual([false]);
+        expect(method('push_sustain')!.args).toEqual([0.9, 0]);
+        expect(method('push_una_corda')!.args).toEqual([true, 0]);
+        expect(method('push_sostenuto')!.args).toEqual([false, 0]);
     });
 
     it('forwards MIDI 2.0 noteOn and temperament index', async () => {

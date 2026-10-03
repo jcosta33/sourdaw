@@ -42,9 +42,9 @@
  *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide, sampleFrame? }
  *   ← { type: 'noteOff', midiNote, sampleFrame?, releaseVelocity }
  *   ← { type: 'param', name, value, sampleFrame? }
- *   ← { type: 'sustain', position }
- *   ← { type: 'unaCorda', engaged }
- *   ← { type: 'sostenuto', engaged }
+ *   ← { type: 'sustain', position, sampleFrame? }
+ *   ← { type: 'unaCorda', engaged, sampleFrame? }
+ *   ← { type: 'sostenuto', engaged, sampleFrame? }
  *   ← { type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 }
  *   ← { type: 'temperament', index }
  *   ← { type: 'allNotesOff' }

@@ -29,7 +29,7 @@ export type LevainNodeResult = {
     ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
-    handleCc: (cc: number, value: number) => void;
+    handleCc: (cc: number, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -179,8 +179,8 @@ export async function createLevainNode(
         node.port.postMessage({ type: 'param', name, value });
     };
 
-    const handleCc = (cc: number, value: number): void => {
-        node.port.postMessage({ type: 'cc', cc, value });
+    const handleCc = (cc: number, value: number, sampleFrame?: number): void => {
+        node.port.postMessage({ type: 'cc', cc, value, sampleFrame });
     };
 
     const setBypass = (b: boolean): void => {

@@ -61,9 +61,15 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         framedParams.push({ name, value, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
     }
-    set_sustain(): void {}
-    set_una_corda(): void {}
-    set_sostenuto(): void {}
+    push_sustain(): boolean {
+        return true;
+    }
+    push_una_corda(): boolean {
+        return true;
+    }
+    push_sostenuto(): boolean {
+        return true;
+    }
     note_on_midi2(): void {}
     set_temperament(): void {}
     all_notes_off(): void {}

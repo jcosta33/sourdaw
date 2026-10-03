@@ -818,6 +818,84 @@ describe('LevainProcessor message handling', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
+    it('places a controller at its frame in order with the notes around it', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        // currentFrame is 0, so every frame below is inside the first block. The
+        // controller at frame 5 is posted after the note-off at frame 10 and has
+        // to drain ahead of it; the two frame-5 messages and the note between
+        // them keep the order they arrived in.
+        send(proc, { type: 'noteOff', note: 60, sampleFrame: 10 });
+        send(proc, { type: 'cc', cc: 64, value: 0, sampleFrame: 5 });
+        send(proc, { type: 'noteOn', note: 62, velocity: 90, sampleFrame: 5 });
+        send(proc, { type: 'cc', cc: 66, value: 127, sampleFrame: 5 });
+        expect(calls).toEqual([]);
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.filter((c) => c.method !== 'process')).toEqual([
+            { method: 'handle_cc', args: [64, 0] },
+            { method: 'note_on', args: [62, 90] },
+            { method: 'handle_cc', args: [66, 127] },
+            { method: 'note_off', args: [60] },
+        ]);
+    });
+
+    it('holds a controller until the block that contains its frame', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        send(proc, { type: 'cc', cc: 64, value: 127, sampleFrame: 128 });
+
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.filter((c) => c.method === 'handle_cc')).toEqual([]);
+
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.filter((c) => c.method === 'handle_cc')).toEqual([{ method: 'handle_cc', args: [64, 127] }]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('applies a controller with no frame or a frame already passed at once', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+        vi.stubGlobal('currentFrame', 1_000);
+
+        send(proc, { type: 'cc', cc: 1, value: 40 });
+        send(proc, { type: 'cc', cc: 11, value: 50, sampleFrame: 900 });
+
+        expect(calls).toEqual([
+            { method: 'handle_cc', args: [1, 40] },
+            { method: 'handle_cc', args: [11, 50] },
+        ]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('keeps a queued controller when a panic discards the queued notes', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 64 });
+        send(proc, { type: 'cc', cc: 64, value: 0, sampleFrame: 64 });
+        send(proc, { type: 'allNotesOff' });
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        // The pedal-up the player performed still lands; only the note is gone.
+        expect(calls.filter((c) => c.method !== 'process')).toEqual([
+            { method: 'all_notes_off', args: [] },
+            { method: 'handle_cc', args: [64, 0] },
+        ]);
+    });
+
     it('process guards: not-ready and <2-channel outputs bail without instance calls', async () => {
         const proc = await loadProcessor();
         // not ready

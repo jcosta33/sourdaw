@@ -10,7 +10,7 @@
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' }
  *   { type: 'param', name, value }
- *   { type: 'cc', cc, value }
+ *   { type: 'cc', cc, value, sampleFrame? }
  *   { type: 'bypass', bypassed }
  *   { type: 'beginSampleBank', bankKey, instrumentId, loadToken }
  *   { type: 'abortSampleBank', loadToken }
@@ -127,7 +127,7 @@ type LevainMsg =
     | NoteExpressionMsg
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
-    | { type: 'cc'; cc: number; value: number }
+    | { type: 'cc'; cc: number; value: number; sampleFrame?: number }
     | { type: 'bypass'; bypassed: boolean }
     | { type: 'beginSampleBank'; bankKey: string; instrumentId: string; loadToken: number }
     | { type: 'abortSampleBank'; loadToken: number }
@@ -155,7 +155,8 @@ type LevainQueued =
           articulationId?: number;
       }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
-    | (NoteExpressionMsg & { sampleFrame: number });
+    | (NoteExpressionMsg & { sampleFrame: number })
+    | { type: 'cc'; cc: number; value: number; sampleFrame: number };
 
 type BankRole = 'owner' | 'follower' | 'ready';
 type BankBuild = { numArticulations: number; numMics: number };
@@ -446,9 +447,22 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._queue.splice(lo, 0, msg);
     }
 
+    _discardQueuedNotes(): void {
+        let retained = 0;
+        for (let index = this._queueHead; index < this._queue.length; index++) {
+            const queued = this._queue[index];
+            if (queued?.type === 'cc') {
+                this._queue[retained] = queued;
+                retained++;
+            }
+        }
+        this._queue.length = retained;
+        this._queueHead = 0;
+    }
+
     _handleMessage(msg: LevainMsg): void {
         if (
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
+            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'cc') &&
             msg.sampleFrame !== undefined &&
             msg.sampleFrame > currentFrame
         ) {
@@ -496,10 +510,11 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'allNotesOff':
                 // Drop any not-yet-dispatched scheduled notes first so a queued
                 // future noteOn cannot retrigger after the release, nor a stale
-                // queued noteOff cut the next take short (#4631). Clearing in
-                // place allocates nothing on the audio thread.
-                this._queue.length = 0;
-                this._queueHead = 0;
+                // queued noteOff cut the next take short (#4631). Queued
+                // controllers stay: a controller change is state, not a note,
+                // and a dropped pedal-up would leave the pedal down. Compacting
+                // in place allocates nothing on the audio thread.
+                this._discardQueuedNotes();
                 inst.all_notes_off();
                 break;
             case 'param': {
@@ -508,6 +523,8 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             }
             case 'cc':
+                // Reached with a frame when a queued controller falls due, and
+                // without one for a controller that has no frame to wait for.
                 inst.handle_cc(msg.cc, msg.value);
                 break;
             case 'bypass':

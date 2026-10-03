@@ -905,6 +905,19 @@ describe('createGrandBouleNode', () => {
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'sostenuto', engaged: false });
     });
 
+    it('should post the frame a pedal message should land on', async () => {
+        const node = await createGrandBouleNode(ctx);
+        workerPostMessage.mockClear();
+
+        node.setSustain(1, 4_096);
+        node.setUnaCorda(true, 4_097);
+        node.setSostenuto(false, 4_098);
+
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'sustain', position: 1, sampleFrame: 4_096 });
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'unaCorda', engaged: true, sampleFrame: 4_097 });
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'sostenuto', engaged: false, sampleFrame: 4_098 });
+    });
+
     it('should post noteOnMidi2 to the engine worker unless bypassed', async () => {
         const node = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();
