@@ -1124,6 +1124,11 @@ describe('the credential the live evaluation needs', () => {
         expect(() => loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '   ' })).toThrow(SemanticFailure);
         writeFileSync(join(root, '.env.sourdaw-semantic'), `${TYPESAFE_API_KEY_ENV}=from-dotenv\n`);
         expect(loadApiKey(root, {})).toBe('from-dotenv');
+        // Both sources at once, holding different values: the environment wins. That precedence is the
+        // documented one — the loader resolves the environment first, exactly as `review:semantic` does — and
+        // it is the only assertion a loader reading the file first would fail, since every other case here
+        // sets one source and leaves the other empty.
+        expect(loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: 'from-environment' })).toBe('from-environment');
     });
 
     it('should answer the refusal for a missing file alone, over every code a read can report', () => {
