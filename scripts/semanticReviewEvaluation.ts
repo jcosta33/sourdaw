@@ -149,15 +149,23 @@ function readFailureCode(error: unknown): string | undefined {
 /**
  * One value from a gitignored dotenv file, or undefined when there is no file to read it from.
  *
- * The read is what decides whether the file is there: a path that answers `ENOENT` is the documented "no
- * dotenv file" path, and any other failure is raised rather than read as an absent credential, so a file
- * that cannot be read is reported as the read failure it is instead of as a missing key. Nothing probes the
- * path first, which is also what keeps the file from being checked in one call and used in another.
+ * The read is what decides whether the file is there: only `ENOENT` — no file at that path — is the
+ * documented "no dotenv file" path. Every other failure is raised rather than read as an absent credential,
+ * a permission the process does not have included, so a file that cannot be read is never reported as a
+ * missing key. Nothing probes the path first, which is also what keeps the file from being checked in one
+ * call and used in another.
+ *
+ * Exported, with its reader as a parameter, so the suite drives the classification over every code a read
+ * can report rather than only over the ones a portable filesystem can be made to produce.
  */
-function dotenvValue(path: string, key: string): string | undefined {
+export function dotenvValue(
+    path: string,
+    key: string,
+    read: (path: string) => string = (source) => readFileSync(source, 'utf8')
+): string | undefined {
     let text: string;
     try {
-        text = readFileSync(path, 'utf8');
+        text = read(path);
     } catch (error) {
         if (readFailureCode(error) === 'ENOENT') {
             return undefined;

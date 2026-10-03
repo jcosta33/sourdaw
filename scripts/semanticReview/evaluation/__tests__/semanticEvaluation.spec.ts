@@ -11,10 +11,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     assertEvaluationIsOptIn,
+    dotenvValue,
     exitCodeFor,
     loadApiKey,
     parseEvaluationArgs,
@@ -793,29 +794,46 @@ describe('the outcome file the measurement command reads', () => {
     it('should keep the held run exit when the outcome file cannot be written', async () => {
         // The write is the command's own side effect, not part of the assessment: classifying a failed write
         // with the run's non-delivery sent a fully assessed, held run — which the usage table maps to 0 — to
-        // the incomplete exit. The run's code stands, and the failure is reported instead.
+        // the incomplete exit. The run's code stands, and the writer reports the failure it answered rather
+        // than announcing a file that is not there.
         const corpus = shippedCorpus();
         const positives = positiveRules(corpus);
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-evaluation-unwritable-'));
         outcomeRoots.push(root);
         // A directory that does not exist is a write that fails whoever runs it, with no permissions to set.
         const outcomePath = join(root, 'absent', 'outcomes.json');
-        const exitCode = await runEvaluationCommand({
-            argv: ['--out', outcomePath],
-            sourceFor: planForAll(),
-            portsFor: () => ({
-                provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
-                cache: createMemoryCache(),
-                clock: { now: () => 1_700_000_000_000 },
-                signal: new AbortController().signal,
-                log: () => undefined,
-            }),
-            log: () => undefined,
-        });
+        const reported = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        const logged: string[] = [];
+        let exitCode = -1;
+        let reportedMessage = '';
+        try {
+            exitCode = await runEvaluationCommand({
+                argv: ['--out', outcomePath],
+                sourceFor: planForAll(),
+                portsFor: () => ({
+                    provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
+                    cache: createMemoryCache(),
+                    clock: { now: () => 1_700_000_000_000 },
+                    signal: new AbortController().signal,
+                    log: () => undefined,
+                }),
+                log: (message) => {
+                    logged.push(message);
+                },
+            });
+            // Read before the spy goes: restoring it clears what it recorded.
+            reportedMessage = String(reported.mock.calls[0]?.[0]);
+        } finally {
+            reported.mockRestore();
+        }
         // 1 would be a label that did not hold and 3 an assessment that was not delivered; only the run's own
         // success code shows the write was classified on its own terms.
         expect(exitCode).toBe(0);
         expect(readdirSync(root)).toEqual([]);
+        expect(reportedMessage).toContain(`the outcomes file ${outcomePath} was not written`);
+        // And the command never announces a file it did not write, which answering `true` from the failed
+        // write would do while both codes and the stderr report still looked right.
+        expect(logged.filter((message) => message.startsWith('outcomes:'))).toEqual([]);
     });
 });
 
@@ -871,6 +889,34 @@ describe("the evaluation command's own exit code", () => {
             sourceFor: plan,
             portsFor: () => ({
                 provider: nothingToAssess(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the run was cancelled', async () => {
+        // The `cancelled` execution: a provider refusing every request with that code leaves each fixture
+        // unassessed and the report says so. It is non-delivery like the others — nothing was assessed, so no
+        // label can have disagreed — and an assessed test widened to accept it would report an infrastructure
+        // outcome as a delivered disagreement.
+        const corpus = shippedCorpus();
+        const cancelled = (): SemanticProviderPort =>
+            stubProvider(() => {
+                throw new SemanticFailure('cancelled', 'the run was cancelled');
+            }).port;
+        const result = await evaluateWith(corpus, cancelled());
+        expect(result.outcomes.every((outcome) => outcome.execution === 'cancelled')).toBe(true);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: cancelled(),
                 cache: createMemoryCache(),
                 clock: { now: () => 1_700_000_000_000 },
                 signal: new AbortController().signal,
@@ -1078,6 +1124,31 @@ describe('the credential the live evaluation needs', () => {
         expect(() => loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '   ' })).toThrow(SemanticFailure);
         writeFileSync(join(root, '.env.sourdaw-semantic'), `${TYPESAFE_API_KEY_ENV}=from-dotenv\n`);
         expect(loadApiKey(root, {})).toBe('from-dotenv');
+    });
+
+    it('should answer the refusal for a missing file alone, over every code a read can report', () => {
+        // The classification, driven over the codes rather than over the shapes a portable filesystem can be
+        // made to produce: only a path that is not there is "no dotenv file". A permission the process does
+        // not have, a path that is a directory, and every other read failure are raised, because answering
+        // the documented refusal for one of them would report an access or shape problem as a missing key.
+        const path = join(tmpdir(), 'sourdaw-semantic-credentials', '.env.sourdaw-semantic');
+        for (const code of ['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EIO', 'EBUSY', 'EMFILE']) {
+            let thrown: unknown;
+            try {
+                dotenvValue(path, TYPESAFE_API_KEY_ENV, () => {
+                    throw Object.assign(new Error(`${code}: the dotenv file`), { code });
+                });
+            } catch (error) {
+                thrown = error;
+            }
+            expect(thrown).toBeInstanceOf(Error);
+            expect((thrown as { readonly code?: unknown }).code).toBe(code);
+        }
+        expect(
+            dotenvValue(path, TYPESAFE_API_KEY_ENV, () => {
+                throw Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+            })
+        ).toBeUndefined();
     });
 
     it('should raise a dotenv path it cannot read rather than report a missing credential', () => {
