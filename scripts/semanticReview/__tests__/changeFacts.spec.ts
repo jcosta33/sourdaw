@@ -8,8 +8,9 @@
  * the response cache keys on.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -167,31 +168,82 @@ const MATCHER_DECLARATION_SOURCES: readonly {
 /** The repository root, resolved from this file so the guard reads the program wherever it is run from. */
 const REPOSITORY_ROOT = dirname(createRequire(import.meta.url).resolve('../../../package.json'));
 
-/**
- * The repository's own ambient declarations, where the program augments the framework interfaces:
- * `src/types/jest-dom-vitest.d.ts` declares `interface AsymmetricMatchersContaining extends
- * TestingLibraryMatchers<unknown, unknown>` inside `declare module 'vitest'`.
- */
-const REPOSITORY_DECLARATIONS = declarationTextsAt(join(REPOSITORY_ROOT, 'src', 'types'));
+/** A declaration file, in any of the extensions TypeScript writes them with. */
+const DECLARATION_FILE_PATTERN = /\.d\.[cm]?ts$/u;
 
-/** Every declaration file under one directory, recursively. */
-function declarationTextsAt(directory: string): string[] {
-    const texts: string[] = [];
+/**
+ * Every declaration file under one included root, recursively, minus the paths the program excludes. The
+ * root is a directory, a glob, or one named file, which is what the include set may spell.
+ */
+function declarationFilesUnder(
+    root: string,
+    excluded: readonly string[] = []
+): { readonly path: string; readonly text: string }[] {
+    const files: { path: string; text: string }[] = [];
     const walk = (path: string): void => {
-        for (const entry of readdirSync(path, { withFileTypes: true })) {
-            const child = join(path, entry.name);
-            if (entry.isDirectory()) {
-                walk(child);
-                continue;
+        if (excluded.some((entry) => path === entry || path.startsWith(`${entry}${sep}`))) {
+            return;
+        }
+        const stats = statSync(path, { throwIfNoEntry: false });
+        if (stats === undefined) {
+            return;
+        }
+        if (!stats.isDirectory()) {
+            if (DECLARATION_FILE_PATTERN.test(path)) {
+                files.push({ path, text: readFileSync(path, 'utf8') });
             }
-            if (entry.name.endsWith('.d.ts')) {
-                texts.push(readFileSync(child, 'utf8'));
-            }
+            return;
+        }
+        for (const entry of readdirSync(path)) {
+            walk(join(path, entry));
         }
     };
-    walk(directory);
-    return texts;
+    walk(root);
+    return files;
 }
+
+/** Every declaration file one directory tree carries. */
+function declarationTextsAt(directory: string): string[] {
+    return declarationFilesUnder(directory).map((file) => file.text);
+}
+
+/**
+ * The program's own include set, read from the repository's `tsconfig.json`: the roots to walk and the
+ * paths to keep out of them. The config carries comments, so they are stripped before it is parsed, and one
+ * whose include set cannot be read fails loudly rather than walking nothing and reporting a smaller
+ * surface. A root is a directory, a glob, or one named file, which is what the include set may spell.
+ */
+function programIncludeSet(): { readonly roots: readonly string[]; readonly excluded: readonly string[] } {
+    const text = readFileSync(join(REPOSITORY_ROOT, 'tsconfig.json'), 'utf8').replaceAll(/^[ \t]*\/\/.*$/gmu, '');
+    const config = JSON.parse(text) as { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
+    const include = config.include;
+    if (include === undefined || include.length === 0) {
+        throw new Error(
+            "the repository's tsconfig.json declares no include set to read the program's declarations from"
+        );
+    }
+    return {
+        roots: include.map((entry) => join(REPOSITORY_ROOT, entry.split('*')[0]?.replace(/\/$/u, '') ?? '')),
+        excluded: (config.exclude ?? []).map((entry) => join(REPOSITORY_ROOT, entry)),
+    };
+}
+
+/**
+ * The declaration files the program itself carries, derived from that include set rather than from one
+ * directory: an ambient augmentation may live anywhere in the program, and a derivation that read the
+ * ambient directory alone would miss one declared elsewhere, leaving its names looking like runtime
+ * registrations.
+ */
+function programDeclarationFiles(): { readonly path: string; readonly text: string }[] {
+    const include = programIncludeSet();
+    return include.roots.flatMap((root) => declarationFilesUnder(root, include.excluded));
+}
+
+/** The program's declaration files, whose texts are read for the framework augmentations they carry. */
+const PROGRAM_DECLARATION_FILES = programDeclarationFiles();
+
+/** The program's own declarations, where it augments the framework interfaces. */
+const REPOSITORY_DECLARATIONS = PROGRAM_DECLARATION_FILES.map((file) => file.text);
 
 /** Every declaration file one installed framework ships under the given directories. */
 function declarationTexts(packageName: string, directories: readonly string[]): string[] {
@@ -366,7 +418,10 @@ function extendedInterfaceNames(header: string): string[] {
  * declarations of the same set; a base that resolves nowhere contributes nothing here and is named by the
  * case below, so an augmentation cannot add names the derived surface never sees.
  */
-function augmentedInterfaceMembers(name: string): string[] {
+function augmentedInterfaceMembers(
+    name: string,
+    declarations: readonly string[] = AUGMENTATION_DECLARATIONS
+): string[] {
     const members = new Set<string>();
     const visited = new Set<string>();
     const visit = (interfaceName: string): void => {
@@ -374,7 +429,7 @@ function augmentedInterfaceMembers(name: string): string[] {
             return;
         }
         visited.add(interfaceName);
-        for (const declaration of AUGMENTATION_DECLARATIONS) {
+        for (const declaration of declarations) {
             for (const found of findInterfaceDeclarations(declaration, interfaceName)) {
                 for (const member of declaredMembers(found.body)) {
                     members.add(member);
@@ -389,15 +444,20 @@ function augmentedInterfaceMembers(name: string): string[] {
     return [...members];
 }
 
-/** The extended interfaces the repository's declarations name and no declaration the guard reads carries. */
+/**
+ * The extended interfaces the program's declarations of a tracked interface name and no declaration the
+ * guard reads carries. Scoped to the interfaces the derived surfaces are read from, because an unrelated
+ * declaration in the program is none of this guard's business — but one that names a base the guard cannot
+ * find is a surface it cannot read, and it is named rather than silently contributing nothing.
+ */
 function unresolvedAugmentationBases(): string[] {
+    const tracked = new Set([
+        ...MATCHER_DECLARATION_SOURCES.flatMap((source) => source.interfaces),
+        ...EXPECT_DECLARATION_SOURCES.flatMap((source) => source.interfaces),
+    ]);
     const unresolved = new Set<string>();
     for (const declaration of REPOSITORY_DECLARATIONS) {
-        for (const match of declaration.matchAll(/\binterface\s+([A-Za-z_$][A-Za-z0-9_$]*)/gu)) {
-            const name = match[1];
-            if (name === undefined) {
-                continue;
-            }
+        for (const name of tracked) {
             for (const found of findInterfaceDeclarations(declaration, name)) {
                 for (const base of extendedInterfaceNames(found.header)) {
                     const declared = AUGMENTATION_DECLARATIONS.some(
@@ -868,6 +928,44 @@ describe('a changed line is classified by its text alone', () => {
         // An augmentation whose extended interface the guard cannot find is a hole in the surface, so it is
         // named here rather than silently contributing nothing.
         expect(unresolvedAugmentationBases()).toEqual([]);
+    });
+
+    it('should read the program declarations wherever the program carries them, not one directory', () => {
+        // The declaration set is the program's own include set read from `tsconfig.json`, not the ambient
+        // directory: an augmentation declared anywhere in that set augments the interface the guard derives,
+        // and a set that stopped at `src/types` would leave such a name looking like a registration. The
+        // `src` root is walked whole, so `src/helpers` is inside the surface the same way `src/types` is.
+        const include = programIncludeSet();
+        expect(include.roots).toContain(join(REPOSITORY_ROOT, 'src'));
+        const paths = PROGRAM_DECLARATION_FILES.map((file) => file.path);
+        expect(paths).toContain(join(REPOSITORY_ROOT, 'src', 'types', 'jest-dom-vitest.d.ts'));
+        expect(paths).toContain(join(REPOSITORY_ROOT, 'vite-env.d.ts'));
+        // And the reader behind it takes a declaration wherever an included root points, at any depth: the
+        // stand-in augmentation below is read, its extended interface resolved, and its members named.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-program-declarations-'));
+        try {
+            const elsewhere = join(root, 'elsewhere', 'deeper');
+            mkdirSync(elsewhere, { recursive: true });
+            const declaration = join(elsewhere, 'augmentation.d.ts');
+            writeFileSync(
+                declaration,
+                [
+                    "declare module 'vitest' {",
+                    '    interface CustomMatcher extends ProjectMatchers {}',
+                    '    interface ProjectMatchers {',
+                    '        toBeAProjectMatcher: () => void;',
+                    '    }',
+                    '}',
+                    '',
+                ].join('\n')
+            );
+            const files = declarationFilesUnder(root);
+            expect(files.map((file) => file.path)).toEqual([declaration]);
+            const texts = files.map((file) => file.text);
+            expect(augmentedInterfaceMembers('CustomMatcher', texts)).toEqual(['toBeAProjectMatcher']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('should admit a name through the registration route rather than through the pair it pins', () => {

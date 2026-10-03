@@ -64,9 +64,10 @@ const USAGE = [
     '',
     `Requires ${TYPESAFE_API_KEY_ENV} in the environment or in <primary-root>/.env.sourdaw-semantic.`,
     'Exit codes: 0 every fixture was assessed and every labelled expectation held, 1 a delivered',
-    'assessment whose label or scope was not as recorded, 2 invalid invocation, 3 the provider did not',
-    'deliver an assessment. Non-delivery outranks a disagreement: a fixture no request assessed exits 3',
-    'however the labels it never asked would read.',
+    'assessment whose label or scope was not as recorded, 2 an invocation the command refused, 3 an',
+    'assessment that was not delivered - a fixture no request assessed, a provider that failed or',
+    'answered unusably, or a source read that failed. Non-delivery outranks a disagreement: a run that',
+    'assessed nothing exits 3 however the labels it never asked would read.',
 ].join('\n');
 
 export type ParsedEvaluationArgs = {
@@ -209,8 +210,14 @@ function planForFixture(input: {
     };
 }
 
+/**
+ * The exit code one typed refusal earns: the invalid-invocation code is for an invocation the command
+ * itself refused — an unknown option, an unsupported profile, a corpus it could not read or parse, a run
+ * started where the evaluation is not admitted. Every other code is an assessment that was not delivered,
+ * the provider's own answer contract included, and reports the incomplete exit.
+ */
 function exitCodeForFailure(code: SemanticFailureCode): number {
-    return code === 'unsupported_scope' || code === 'invalid_response' ? EXIT_INVALID : EXIT_INCOMPLETE;
+    return code === 'unsupported_scope' ? EXIT_INVALID : EXIT_INCOMPLETE;
 }
 
 /** Writes the outcome file the measurement command reads: the result itself, never an envelope. */
@@ -218,34 +225,40 @@ function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResu
     writeFileSync(outPath, serializeEvaluationOutcomes(result));
 }
 
-/** The exit code one thrown failure earns, shared by the entry point and the command body. */
+/**
+ * The exit code one thrown failure earns, shared by the entry point and the command body.
+ *
+ * A refusal the command states keeps its own code; anything else is a run that delivered nothing — a
+ * source whose read failed, a bug in the command — and that is the incomplete exit, never the
+ * invalid-invocation one: a failure at run time is not a misspelled invocation.
+ */
 function failureExit(error: unknown): number {
     if (error instanceof SemanticFailure) {
         console.error(`review:semantic:evaluate: ${error.code}: ${error.message}`);
         return exitCodeForFailure(error.code);
     }
     console.error(error instanceof Error ? error.message : String(error));
-    return EXIT_INVALID;
+    return EXIT_INCOMPLETE;
 }
 
 /**
  * The run's exit code, in the priority the usage table names: non-delivery first, then disagreement.
  *
- * "Not delivered" is one fixture's own report that its execution was neither completed nor skipped: a
- * provider that failed or refused every request, a unit no request could ask, a scope the fitter had to
- * reduce. Such a run carries no assessment to disagree with, so it exits 3 whatever its labels read — the
- * mismatch exit names a delivered answer that contradicts its recording, and answering an infrastructure
- * outcome with the semantic code reports a disagreement nobody observed. A run that delivered everything
- * keeps the distinction: a label that did not hold still exits 1, and only a delivered, held run exits 0.
+ * "Not delivered" is one fixture's own report that its execution is not `completed` — a provider that
+ * failed or refused requests, a unit no request could ask, a scope the fitter had to reduce, a source that
+ * reported no changed file for the fixture at all, which is the `skipped` state. Such a run carries an
+ * assessment nobody made, so it exits 3 whatever its labels read: `skipped` counted as delivery let a run
+ * that assessed nothing fall through to the disagreement exit, which the usage table does not promise.
+ *
+ * A run that delivered every fixture keeps the distinction: a label that did not hold still exits 1, and
+ * only a fully assessed, held run exits 0.
  *
  * Exported so the suite pins the negative a provider fires as reported not held and exited 1, and a
  * provider that delivers nothing as exited 3, instead of trusting the entry point's own reading.
  */
 export function exitCodeFor(result: SemanticEvaluationResult): number {
-    const delivered = result.outcomes.every(
-        (outcome) => outcome.execution === 'completed' || outcome.execution === 'skipped'
-    );
-    if (!delivered) {
+    const assessedEveryFixture = result.outcomes.every((outcome) => outcome.execution === 'completed');
+    if (!assessedEveryFixture) {
         return EXIT_INCOMPLETE;
     }
     if (result.outcomes.some((outcome) => !outcome.expectedConcernHeld)) {

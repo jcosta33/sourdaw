@@ -818,6 +818,63 @@ describe("the evaluation command's own exit code", () => {
         });
         expect(exitCode).toBe(1);
     });
+    it('should return the incomplete exit when a fixture reports nothing to assess', async () => {
+        // The `skipped` state: a source whose changed files carry no entry for the fixture, which is what a
+        // fixture whose path is absent from its recorded revision reaches. No request assessed it, so the
+        // run is non-delivery — counting `skipped` as delivered sent it to the disagreement exit over the
+        // labels it never asked, which the usage table does not promise.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const nothingToAssess = (): SemanticProviderPort =>
+            stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port;
+        const plan = planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+            ...standInSource(fixture),
+            changedFiles: () => [],
+        }));
+        const result = await evaluateWith(corpus, nothingToAssess(), plan);
+        const unassessed = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(unassessed?.execution).toBe('skipped');
+        // Every label the run could ask held, which is exactly the state the disagreement exit misread.
+        expect(result.expectationsHeld).toBe(3);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: plan,
+            portsFor: () => ({
+                provider: nothingToAssess(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the source cannot be read at all', async () => {
+        // A read that fails is a run that delivered nothing, not a bad invocation: `gitSource` throws on any
+        // git failure, and the usage table reserves the invalid-invocation exit for an invocation the
+        // command itself refused.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                ...standInSource(fixture),
+                changedFiles: () => {
+                    throw new Error('git could not read the change');
+                },
+            })),
+            portsFor: () => ({
+                provider: stubProvider(() => 0.02).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
 });
 
 describe("the evaluation command's refusal exits", () => {
@@ -851,6 +908,22 @@ describe("the evaluation command's refusal exits", () => {
             sourceFor: planForAll(),
             portsFor: () => {
                 throw new SemanticFailure('missing_credentials', 'no TypeSafe key in the environment');
+            },
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the provider answer contract is refused', async () => {
+        // A refusal the run cannot route to a fixture: the ports are built before the first request, and an
+        // answer contract the provider cannot honour is an assessment that was not delivered. Only the
+        // command's own refusals — an unknown option, an unsupported profile, a corpus it cannot read —
+        // earn the invalid-invocation exit.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => {
+                throw new SemanticFailure('invalid_response', 'the provider answer contract cannot be honoured');
             },
             log: () => undefined,
         });
