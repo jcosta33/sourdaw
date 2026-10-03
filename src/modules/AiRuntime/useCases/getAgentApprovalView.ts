@@ -1,3 +1,4 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
@@ -34,6 +35,11 @@ type ApprovalIntentGroup = {
     destructiveChanges: readonly ApprovalDestructiveChange[];
 };
 
+type AdoptedRecipe = NonNullable<ApprovalSnapshot['adoptedRecipes']>[number];
+
+/** A recipe the batch adopted, with the name of the track it was expanded onto, or `null` once that track is gone. */
+type ApprovalRecipe = AdoptedRecipe & { targetName: string | null };
+
 type ApprovalFreshness =
     | { status: 'current'; currentRevision: string | null }
     | { status: 'stale'; reason: string; currentRevision: string | null }
@@ -61,6 +67,8 @@ export type AgentApprovalView = {
         reasons: readonly string[];
         requiredTrustMode: NonNullable<ApprovalSnapshot['agentApproval']>['policy']['requiredTrustMode'];
     } | null;
+    /** The recipes the proposal adopted, in adoption order; empty when no recipe built any of it. */
+    recipes: readonly ApprovalRecipe[];
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: ReadonlyArray<ApprovalDestructiveChange & { groupId: string }>;
     audioImpact: SemanticDiff['estimatedAudioImpact'];
@@ -193,6 +201,14 @@ function projectSemanticDiff(semanticDiff: SemanticDiff | undefined) {
     };
 }
 
+function projectRecipes(adoptedRecipes: ApprovalSnapshot['adoptedRecipes']): AgentApprovalView['recipes'] {
+    const tracks = trackStore.value?.tracks ?? [];
+    return (adoptedRecipes ?? []).map((recipe) => ({
+        ...recipe,
+        targetName: tracks.find((track) => track.id === recipe.targetId)?.name ?? null,
+    }));
+}
+
 function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApprovalView['risk'] {
     if (!agentApproval) {
         return null;
@@ -216,7 +232,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
     if (!confirmation) {
         return null;
     }
-    const { agentApproval, commandBatch, semanticDiff } = confirmation.approvalSnapshot;
+    const { adoptedRecipes, agentApproval, commandBatch, semanticDiff } = confirmation.approvalSnapshot;
     const freshness = getFreshness(confirmation);
     const routeView = getProviderRouteView({ runId: confirmation.runId });
     return {
@@ -230,6 +246,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         supersededBy: confirmation.supersededBy,
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
+        recipes: projectRecipes(adoptedRecipes),
         ...projectSemanticDiff(semanticDiff),
         baseRevision: confirmation.projectRevision,
         freshness,

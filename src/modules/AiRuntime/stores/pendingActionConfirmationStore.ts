@@ -6,6 +6,7 @@ import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRet
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
@@ -113,6 +114,8 @@ type PendingActionApprovalSnapshot = {
     protectedUnchanged: PendingActionProtectedObject[];
     /** Every `match` selector the compiled batch carried, for re-resolution before an approval rebind. */
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
+    /** The recipe expansions the batch adopted, so an approval can say which recipe built a chain. */
+    adoptedRecipes?: AdoptedRecipe[];
 };
 
 type PendingActionConfirmationBase = {
@@ -310,6 +313,7 @@ type ProposePendingActionConfirmationInput = {
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
+    adoptedRecipes?: AdoptedRecipe[];
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -352,6 +356,7 @@ export function proposePendingActionConfirmation(
         semanticDiff: input.semanticDiff ? structuredClone(input.semanticDiff) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
         matchSelectorPredicates,
+        adoptedRecipes: input.adoptedRecipes && structuredClone(input.adoptedRecipes),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

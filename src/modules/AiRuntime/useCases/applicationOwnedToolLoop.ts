@@ -24,6 +24,7 @@ import {
     type HostedTurnRecord,
 } from '../models/HostedTurnHistory';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import { type AdoptedRecipe, type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
@@ -49,10 +50,12 @@ import {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    type RECIPE_EXPANSION_TOOL_NAME,
     type TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
+import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
@@ -98,11 +101,7 @@ export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' | 'clarified';
 
 type TransformCompileResult = ReturnType<typeof executeTransformCompile>;
-export type RetainedTransformCompilation = {
-    callId: string;
-    revision: string;
-    commands: NonNullable<TransformCompileResult['commands']>;
-};
+type RecipeExpansionResult = ReturnType<typeof executeRecipeExpansion>;
 
 export type ApplicationOwnedToolLoopOutcome =
     | {
@@ -117,7 +116,8 @@ export type ApplicationOwnedToolLoopOutcome =
           turns: number;
           /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
           interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
-          compiledTransforms: readonly RetainedTransformCompilation[];
+          /** Every successful transform compilation and recipe expansion, for the proposal to adopt by call id. */
+          retainedCompilations: readonly RetainedCompilation[];
       }
     | {
           status: 'rejected';
@@ -189,9 +189,22 @@ type RunApplicationOwnedToolLoopInput = {
         revision: string;
         execute: (call: ToolCallResult, context: MeasurementCallContext) => TransformCompileResult;
     };
+    /**
+     * Recipe expansion, bound to the same captured project read model and revision as the transform
+     * compiler. Without a revision the tool stays unavailable, because an expansion could never be
+     * adopted against a project it was not read from.
+     */
+    recipe?: {
+        toolName: typeof RECIPE_EXPANSION_TOOL_NAME;
+        revision: string;
+        execute: (call: ToolCallResult, context: RecipeExpansionCallContext) => RecipeExpansionResult;
+    };
 };
 
 type MeasurementCallContext = { callId: string; turn: number; loopId: string; signal?: AbortSignal };
+
+/** `ordinal` numbers this run's expansions from 1, so the batch-local names two of them mint never collide. */
+type RecipeExpansionCallContext = { callId: string; turn: number; ordinal: number };
 
 type ParsedQuery = { status: 'valid'; input: QueryInput } | { status: 'invalid'; reason: string };
 
@@ -1079,7 +1092,12 @@ async function executeMeasurement(
  * One turn's reads, in call order. Only the turn's first measurement call executes: each renders
  * the project offline, so a later one in the same turn is refused without rendering.
  */
-type ExecutedRead = { receipt: ApplicationToolReceipt; commands: TransformCompileResult['commands'] };
+type ExecutedRead = {
+    receipt: ApplicationToolReceipt;
+    commands: readonly RetainedCommand[] | null;
+    /** Set only by a recipe expansion; it is what makes the entry the loop retains a recipe, not a transform. */
+    recipe?: AdoptedRecipe | null;
+};
 
 function executeTurnReads(input: {
     calls: readonly IdentifiedToolCall[];
@@ -1087,6 +1105,8 @@ function executeTurnReads(input: {
     loopId: string;
     measurement: RunApplicationOwnedToolLoopInput['measurement'];
     transform: RunApplicationOwnedToolLoopInput['transform'];
+    recipe: RunApplicationOwnedToolLoopInput['recipe'];
+    nextRecipeOrdinal: () => number;
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
@@ -1105,6 +1125,23 @@ function executeTurnReads(input: {
                         turn,
                         code: 'tool-execution-failed',
                         safeMessage: 'Transform compilation failed inside the application authority.',
+                        retryable: false,
+                    }),
+                };
+            }
+        }
+        if (input.recipe !== undefined && call.name === input.recipe.toolName) {
+            try {
+                return input.recipe.execute(call, { callId, turn, ordinal: input.nextRecipeOrdinal() });
+            } catch {
+                return {
+                    commands: null,
+                    receipt: failureReceipt({
+                        callId,
+                        toolName: call.name,
+                        turn,
+                        code: 'tool-execution-failed',
+                        safeMessage: 'Recipe expansion failed inside the application authority.',
                         retryable: false,
                     }),
                 };
@@ -1188,7 +1225,7 @@ function recordSearchedIntents(
 function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>,
-    compiledTransforms: ReadonlyMap<string, RetainedTransformCompilation>
+    retainedCompilations: ReadonlyMap<string, RetainedCompilation>
 ): string | null {
     const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
     const list = isRecord(call.arguments.list) ? call.arguments.list : null;
@@ -1204,12 +1241,12 @@ function validateCommandBatchProposal(
                     typeof entry === 'string' && entry.length > 0 && entry.length <= MAX_CALL_ID_LENGTH
             ) ||
             new Set(references).size !== references.length ||
-            references.some((entry) => !compiledTransforms.has(entry)))
+            references.some((entry) => !retainedCompilations.has(entry)))
     ) {
-        return 'Provider referenced an unknown, duplicate, or failed transform compilation.';
+        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion.';
     }
     const selectedCount = Array.isArray(references)
-        ? references.reduce((count, callId) => count + (compiledTransforms.get(callId)?.commands.length ?? 0), 0)
+        ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
         : 0;
     if (
         Object.keys(call.arguments).some(
@@ -1306,8 +1343,8 @@ function validateOneProposalPerTurn(calls: readonly { call: ToolCallResult }[]):
 function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>,
-    compiledTransforms: ReadonlyMap<string, RetainedTransformCompilation>,
-    transformRevision: string | undefined
+    retainedCompilations: ReadonlyMap<string, RetainedCompilation>,
+    compilationRevisions: Readonly<Record<RetainedCompilation['kind'], string | undefined>>
 ): ValidatedTerminalCalls {
     const declineValidation = validateDeclineIsAlone(calls);
     if (declineValidation.status === 'rejected') {
@@ -1321,19 +1358,22 @@ function validateCatalogTerminalCalls(
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
-        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas, compiledTransforms);
+        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas, retainedCompilations);
         if (rejection !== null) {
             return { status: 'rejected', reason: rejection };
         }
         const references = call.arguments.compiledCallIds;
         if (
             Array.isArray(references) &&
-            references.some(
-                (callId: unknown) =>
-                    typeof callId !== 'string' || compiledTransforms.get(callId)?.revision !== transformRevision
-            )
+            references.some((callId: unknown) => {
+                const retained = typeof callId === 'string' ? retainedCompilations.get(callId) : undefined;
+                return retained === undefined || retained.revision !== compilationRevisions[retained.kind];
+            })
         ) {
-            return { status: 'rejected', reason: 'Provider referenced a stale transform compilation.' };
+            return {
+                status: 'rejected',
+                reason: 'Provider referenced a stale transform compilation or recipe expansion.',
+            };
         }
     }
     return declineValidation;
@@ -1618,8 +1658,13 @@ export async function runApplicationOwnedToolLoop(
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
-    const compiledTransforms = new Map<string, RetainedTransformCompilation>();
+    const retainedCompilations = new Map<string, RetainedCompilation>();
     const searchedIntents: string[] = [];
+    let recipeExpansionCount = 0;
+    const nextRecipeOrdinal = (): number => {
+        recipeExpansionCount += 1;
+        return recipeExpansionCount;
+    };
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
@@ -1786,7 +1831,7 @@ export async function runApplicationOwnedToolLoop(
                     receipts,
                     turns: turn,
                     interpretation: 'clarified',
-                    compiledTransforms: [],
+                    retainedCompilations: [],
                 };
             }
             const overBudget = admitTurnReceipts(
@@ -1831,6 +1876,7 @@ export async function runApplicationOwnedToolLoop(
             RECIPE_DISCOVERY_TOOL_NAME,
             ...(input.measurement === undefined ? [] : [input.measurement.toolName]),
             ...(input.transform === undefined ? [] : [input.transform.toolName]),
+            ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(
@@ -1855,8 +1901,8 @@ export async function runApplicationOwnedToolLoop(
         const terminalValidation = validateCatalogTerminalCalls(
             terminalCalls,
             disclosedCommandSchemas,
-            compiledTransforms,
-            input.transform?.revision
+            retainedCompilations,
+            { transform: input.transform?.revision, recipe: input.recipe?.revision }
         );
         if (terminalValidation.status === 'rejected') {
             return {
@@ -1886,7 +1932,7 @@ export async function runApplicationOwnedToolLoop(
                 receipts,
                 turns: turn,
                 interpretation,
-                compiledTransforms: [...compiledTransforms.values()],
+                retainedCompilations: [...retainedCompilations.values()],
             };
         }
         if (isFinalTurn) {
@@ -1905,6 +1951,8 @@ export async function runApplicationOwnedToolLoop(
                 loopId: input.loopId,
                 measurement: input.measurement,
                 transform: input.transform,
+                recipe: input.recipe,
+                nextRecipeOrdinal,
                 signal: input.signal,
             })
         );
@@ -1941,11 +1989,16 @@ export async function runApplicationOwnedToolLoop(
             ) {
                 continue;
             }
-            compiledTransforms.set(admitted.callId, {
+            const retainable = {
                 callId: admitted.callId,
                 revision: admitted.revision,
                 commands: executed.commands,
-            });
+            };
+            if (executed.recipe === undefined || executed.recipe === null) {
+                retainedCompilations.set(admitted.callId, { kind: 'transform', ...retainable });
+            } else {
+                retainedCompilations.set(admitted.callId, { kind: 'recipe', ...retainable, recipe: executed.recipe });
+            }
         }
     }
 

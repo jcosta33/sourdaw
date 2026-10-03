@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "3edea25bcc96fa043dc9a6b856a7af9198c28564bc2dbec409ec64dab247c37d"
+                    "digest": "0ff890809b30d891cee396d3b320c474e13ae06c98133a60139fee8e4eae86d1"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "7200f0966afe327e60755db793aafd3fc37239e15504f8294633f2bee808da45"
+                    "digest": "0e4364582314e8a509b945947101e2e7d1a0e7e843baa76673b6ab2e2091c87e"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "53ec2730b3336a02e646d51d18f1ac1098f0fe5f2060c5a43999d46bd6bc1e93"
+                    "digest": "4184b78486b50271b9d96ffc17376d48bd093e5f335e33bdb3e3ae730c448625"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

@@ -1063,4 +1063,24 @@ describe('submitAdmittedPromptRequest', () => {
             approvalSnapshot: { matchSelectorPredicates },
         });
     });
+
+    // Red when the prompt-bar route stops carrying the adopted recipes from the planned result to the approval.
+    it('carries the planned adopted recipes onto the persisted confirmation', async () => {
+        const adoptedRecipes = [{ recipeId: 'vocal-warm', title: 'Chest-register lift', targetId: 'track-lead' }];
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: { actions: [action], rawText: 'Play', requiresConfirmation: true, adoptedRecipes },
+            projectRevision: 'revision-1',
+        });
+
+        const result = await submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' });
+
+        expect(result.status).toBe('awaiting-approval');
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(result.status);
+        }
+        expect(getPendingActionConfirmation(result.confirmationId)).toMatchObject({
+            approvalSnapshot: { adoptedRecipes },
+        });
+    });
 });
