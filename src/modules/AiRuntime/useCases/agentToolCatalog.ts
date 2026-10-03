@@ -19,6 +19,7 @@ import {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
@@ -31,6 +32,12 @@ import {
 } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import {
+    RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH,
+    RECIPE_EXPANSION_MAX_STEP_INDEX,
+    RECIPE_EXPANSION_MAX_TARGET_ID_LENGTH,
+    RECIPE_EXPANSION_MAX_VALUES,
+} from '../models/RecipeExpansionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
@@ -48,6 +55,7 @@ export {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
@@ -204,6 +212,39 @@ function getRecipeDiscoverySchema(): ToolSchema {
             limit: { type: 'integer', minimum: 1, maximum: 8 },
         },
         ['descriptors']
+    );
+}
+
+function getRecipeExpansionSchema(): ToolSchema {
+    const roles = getMixRecipeCatalog().roles;
+    return tool(
+        RECIPE_EXPANSION_TOOL_NAME,
+        "Expand one recipe found by recipe.discover against one track into the ordinary device commands the application builds for you: an addDevice for each insert step and a setDeviceParameter for each authored parameter, in the recipe's order. This is a preview: it does not mutate the project. Use the returned callId in command.batch.propose compiledCallIds to adopt its exact commands; the application grounds and validates them like any command you write. Each parameter takes the middle of its range unless values names it, and a supplied value must lie inside that parameter's range.",
+        {
+            recipeId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH },
+            targetId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_TARGET_ID_LENGTH },
+            role: { type: 'string', enum: [...roles] },
+            values: {
+                type: 'array',
+                maxItems: RECIPE_EXPANSION_MAX_VALUES,
+                items: {
+                    type: 'object',
+                    properties: {
+                        step: {
+                            type: 'integer',
+                            minimum: 0,
+                            maximum: RECIPE_EXPANSION_MAX_STEP_INDEX,
+                            description: "Zero-based position of the step in the recipe's steps list.",
+                        },
+                        paramId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH },
+                        value: { type: 'number', description: "Value in the parameter's native unit." },
+                    },
+                    required: ['step', 'paramId', 'value'],
+                    additionalProperties: false,
+                },
+            },
+        },
+        ['recipeId', 'targetId']
     );
 }
 
@@ -417,5 +458,6 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         getAnalysisMeasureSchema(),
         getRecipeDiscoverySchema(),
+        getRecipeExpansionSchema(),
     ];
 }

@@ -27,6 +27,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
@@ -1616,7 +1617,7 @@ describe('generateToolPlanningOutcome', () => {
         'show the command history',
         'the bass is muddy, clean it up',
         'compile a transform for each selected MIDI clip',
-    ])('never advertises recipe.discover or analysis.measure to WebLLM for "%s"', async (prompt) => {
+    ])('never advertises recipe.discover, recipe.expand or analysis.measure to WebLLM for "%s"', async (prompt) => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
@@ -1635,11 +1636,12 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
         expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(advertisedNames).not.toContain(RECIPE_EXPANSION_TOOL_NAME);
         expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
         expect(advertisedNames).not.toContain('transform.compile');
     });
 
-    it('still advertises recipe.discover and analysis.measure to a hosted cloud backend', async () => {
+    it('still advertises recipe.discover, recipe.expand and analysis.measure to a hosted cloud backend', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
@@ -1662,6 +1664,7 @@ describe('generateToolPlanningOutcome', () => {
         const sentTools = mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? [];
         const sentNames = sentTools.map((tool: ToolSchema) => tool.function.name);
         expect(sentNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(sentNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
         expect(sentNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
         expect(sentNames).toContain('transform.compile');
         expect(
