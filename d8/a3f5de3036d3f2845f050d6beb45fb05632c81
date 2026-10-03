@@ -1,0 +1,20 @@
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementScope.ts
+  s_1c08b47ac3792f::t_fe78805344b99e 97-105,107-108
+  s_1c08b47ac3792f::t_d792672d8ad0fe 129-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8a3f5de3036d3f2845f050d6beb45fb05632c81",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
