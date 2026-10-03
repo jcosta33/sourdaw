@@ -67,7 +67,8 @@ const USAGE = [
     'assessment whose label or scope was not as recorded, 2 an invocation the command refused, 3 an',
     'assessment that was not delivered - a fixture no request assessed, a provider that failed or',
     'answered unusably, or a source read that failed. Non-delivery outranks a disagreement: a run that',
-    'assessed nothing exits 3 however the labels it never asked would read.',
+    'assessed nothing exits 3 however the labels it never asked would read. An --out file that cannot be',
+    "written is reported on stderr and leaves the run's own exit in place: it is not an assessment.",
 ].join('\n');
 
 export type ParsedEvaluationArgs = {
@@ -220,9 +221,23 @@ function exitCodeForFailure(code: SemanticFailureCode): number {
     return code === 'unsupported_scope' ? EXIT_INVALID : EXIT_INCOMPLETE;
 }
 
-/** Writes the outcome file the measurement command reads: the result itself, never an envelope. */
-function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResult): void {
-    writeFileSync(outPath, serializeEvaluationOutcomes(result));
+/**
+ * Writes the outcome file the measurement command reads: the result itself, never an envelope. Answers
+ * whether it was written; a write that fails is printed and reported as `false` instead of thrown, so the
+ * caller that asked for the file is told it is absent while the run keeps the exit its assessment earned —
+ * the documented codes describe the assessment, and a file the command could not write is not an assessment
+ * that was not delivered.
+ */
+function writeEvaluationOutcomes(outPath: string, result: SemanticEvaluationResult): boolean {
+    try {
+        writeFileSync(outPath, serializeEvaluationOutcomes(result));
+        return true;
+    } catch (error) {
+        console.error(
+            `review:semantic:evaluate: the outcomes file ${outPath} was not written: ${error instanceof Error ? error.message : String(error)}`
+        );
+        return false;
+    }
 }
 
 /**
@@ -300,9 +315,11 @@ export async function runEvaluationCommand(input: {
         if (parsed.outPath !== undefined) {
             // The measurement reader reads this file as the result itself, so the command writes exactly
             // that: an envelope here left `pnpm review:semantic:measure --evaluation` refusing the file this
-            // command had just written.
-            writeEvaluationOutcomes(parsed.outPath, result);
-            input.log(`outcomes: ${parsed.outPath}`);
+            // command had just written. A write that fails is reported by the writer and does not change the
+            // exit: the run's own code describes the assessment, not the file.
+            if (writeEvaluationOutcomes(parsed.outPath, result)) {
+                input.log(`outcomes: ${parsed.outPath}`);
+            }
         }
         return exitCodeFor(result);
     } catch (error) {

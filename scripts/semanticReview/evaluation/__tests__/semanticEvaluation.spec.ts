@@ -7,7 +7,7 @@
  * deliberately outside this suite.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -787,6 +787,34 @@ describe('the outcome file the measurement command reads', () => {
         });
         expect(record.acrossRuns.runCountByKind).toEqual({ 'evaluation-fixture': corpus.fixtures.length });
         expect(record.sources.evaluationFixturesRead).toBe(corpus.fixtures.length);
+    });
+
+    it('should keep the held run exit when the outcome file cannot be written', async () => {
+        // The write is the command's own side effect, not part of the assessment: classifying a failed write
+        // with the run's non-delivery sent a fully assessed, held run — which the usage table maps to 0 — to
+        // the incomplete exit. The run's code stands, and the failure is reported instead.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-evaluation-unwritable-'));
+        outcomeRoots.push(root);
+        // A directory that does not exist is a write that fails whoever runs it, with no permissions to set.
+        const outcomePath = join(root, 'absent', 'outcomes.json');
+        const exitCode = await runEvaluationCommand({
+            argv: ['--out', outcomePath],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        // 1 would be a label that did not hold and 3 an assessment that was not delivered; only the run's own
+        // success code shows the write was classified on its own terms.
+        expect(exitCode).toBe(0);
+        expect(readdirSync(root)).toEqual([]);
     });
 });
 

@@ -8,7 +8,7 @@
  * the response cache keys on.
  */
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, type Dirent } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
@@ -171,33 +171,82 @@ const REPOSITORY_ROOT = dirname(createRequire(import.meta.url).resolve('../../..
 /** A declaration file, in any of the extensions TypeScript writes them with. */
 const DECLARATION_FILE_PATTERN = /\.d\.[cm]?ts$/u;
 
+/** The `code` one failed filesystem read reports, or undefined when it reports none. */
+function readFailureCode(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return undefined;
+    }
+    const code = (error as { readonly code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+}
+
 /**
  * Every declaration file under one included root, recursively, minus the paths the program excludes. The
  * root is a directory, a glob, or one named file, which is what the include set may spell.
+ *
+ * Every directory is read once and its entries are acted on, and an included root that is one named file is
+ * read because the directory read said so: the walk never asks whether a path exists before using it, so no
+ * check and its use can be separated by another writer. A read that fails is answered by what it reports —
+ * a directory read that answers `ENOTDIR` found a named file, one that answers `ENOENT` found nothing, a
+ * file read that answers `EISDIR` found a directory — and any other failure is raised rather than silently
+ * dropped, so a surface the walk cannot read stays loud.
  */
 function declarationFilesUnder(
     root: string,
     excluded: readonly string[] = []
 ): { readonly path: string; readonly text: string }[] {
     const files: { path: string; text: string }[] = [];
-    const walk = (path: string): void => {
-        if (excluded.some((entry) => path === entry || path.startsWith(`${entry}${sep}`))) {
-            return;
-        }
-        const stats = statSync(path, { throwIfNoEntry: false });
-        if (stats === undefined) {
-            return;
-        }
-        if (!stats.isDirectory()) {
-            if (DECLARATION_FILE_PATTERN.test(path)) {
-                files.push({ path, text: readFileSync(path, 'utf8') });
+
+    const read = (path: string): void => {
+        let text: string;
+        try {
+            text = readFileSync(path, 'utf8');
+        } catch (error) {
+            const code = readFailureCode(error);
+            if (code === 'EISDIR') {
+                walk(path);
+                return;
             }
-            return;
+            if (code === 'ENOENT') {
+                return;
+            }
+            throw error;
         }
-        for (const entry of readdirSync(path)) {
-            walk(join(path, entry));
+        if (DECLARATION_FILE_PATTERN.test(path)) {
+            files.push({ path, text });
         }
     };
+
+    const walk = (directory: string): void => {
+        if (excluded.some((entry) => directory === entry || directory.startsWith(`${entry}${sep}`))) {
+            return;
+        }
+        let entries: Dirent[];
+        try {
+            entries = readdirSync(directory, { withFileTypes: true });
+        } catch (error) {
+            const code = readFailureCode(error);
+            if (code === 'ENOTDIR') {
+                read(directory);
+                return;
+            }
+            if (code === 'ENOENT') {
+                return;
+            }
+            throw error;
+        }
+        for (const entry of entries) {
+            const child = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                walk(child);
+                continue;
+            }
+            if (entry.isFile() || entry.isSymbolicLink()) {
+                read(child);
+            }
+        }
+    };
+
     walk(root);
     return files;
 }
@@ -208,23 +257,26 @@ function declarationTextsAt(directory: string): string[] {
 }
 
 /**
- * The program's own include set, read from the repository's `tsconfig.json`: the roots to walk and the
- * paths to keep out of them. The config carries comments, so they are stripped before it is parsed, and one
- * whose include set cannot be read fails loudly rather than walking nothing and reporting a smaller
- * surface. A root is a directory, a glob, or one named file, which is what the include set may spell.
+ * The program's own include set, read from a `tsconfig.json`: the roots to walk and the paths to keep out of
+ * them, each resolved beside the config that names it. The config carries comments, so they are stripped
+ * before it is parsed, and one whose include set cannot be read fails loudly rather than walking nothing and
+ * reporting a smaller surface. A root is a directory, a glob, or one named file, which is what an include
+ * set may spell.
  */
-function programIncludeSet(): { readonly roots: readonly string[]; readonly excluded: readonly string[] } {
-    const text = readFileSync(join(REPOSITORY_ROOT, 'tsconfig.json'), 'utf8').replaceAll(/^[ \t]*\/\/.*$/gmu, '');
+function programIncludeSet(configPath: string = join(REPOSITORY_ROOT, 'tsconfig.json')): {
+    readonly roots: readonly string[];
+    readonly excluded: readonly string[];
+} {
+    const text = readFileSync(configPath, 'utf8').replaceAll(/^[ \t]*\/\/.*$/gmu, '');
     const config = JSON.parse(text) as { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
     const include = config.include;
     if (include === undefined || include.length === 0) {
-        throw new Error(
-            "the repository's tsconfig.json declares no include set to read the program's declarations from"
-        );
+        throw new Error(`${configPath} declares no include set to read the program's declarations from`);
     }
+    const base = dirname(configPath);
     return {
-        roots: include.map((entry) => join(REPOSITORY_ROOT, entry.split('*')[0]?.replace(/\/$/u, '') ?? '')),
-        excluded: (config.exclude ?? []).map((entry) => join(REPOSITORY_ROOT, entry)),
+        roots: include.map((entry) => join(base, entry.split('*')[0]?.replace(/\/$/u, '') ?? '')),
+        excluded: (config.exclude ?? []).map((entry) => join(base, entry)),
     };
 }
 
@@ -234,8 +286,8 @@ function programIncludeSet(): { readonly roots: readonly string[]; readonly excl
  * ambient directory alone would miss one declared elsewhere, leaving its names looking like runtime
  * registrations.
  */
-function programDeclarationFiles(): { readonly path: string; readonly text: string }[] {
-    const include = programIncludeSet();
+function programDeclarationFiles(configPath?: string): { readonly path: string; readonly text: string }[] {
+    const include = programIncludeSet(configPath);
     return include.roots.flatMap((root) => declarationFilesUnder(root, include.excluded));
 }
 
@@ -940,8 +992,10 @@ describe('a changed line is classified by its text alone', () => {
         const paths = PROGRAM_DECLARATION_FILES.map((file) => file.path);
         expect(paths).toContain(join(REPOSITORY_ROOT, 'src', 'types', 'jest-dom-vitest.d.ts'));
         expect(paths).toContain(join(REPOSITORY_ROOT, 'vite-env.d.ts'));
-        // And the reader behind it takes a declaration wherever an included root points, at any depth: the
-        // stand-in augmentation below is read, its extended interface resolved, and its members named.
+        // And the reader behind it takes a declaration wherever an included root points, at any depth, minus
+        // what the exclude list names: a stand-in program below carries one augmentation beside one excluded
+        // declaration, and the set the guard reads is the include minus the exclude. The shipped exclude list
+        // overlaps no walked root today, so this subtraction is observed nowhere else.
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-program-declarations-'));
         try {
             const elsewhere = join(root, 'elsewhere', 'deeper');
@@ -959,10 +1013,28 @@ describe('a changed line is classified by its text alone', () => {
                     '',
                 ].join('\n')
             );
-            const files = declarationFilesUnder(root);
+            const excluded = join(root, 'excluded');
+            mkdirSync(excluded, { recursive: true });
+            writeFileSync(
+                join(excluded, 'ignored.d.ts'),
+                ["declare module 'vitest' {", '    interface ExcludedMatchers {}', '}', ''].join('\n')
+            );
+            const config = join(root, 'tsconfig.json');
+            writeFileSync(
+                config,
+                JSON.stringify({ include: ['elsewhere', 'excluded'], exclude: ['excluded'] }, null, 4)
+            );
+            const files = programDeclarationFiles(config);
             expect(files.map((file) => file.path)).toEqual([declaration]);
             const texts = files.map((file) => file.text);
             expect(augmentedInterfaceMembers('CustomMatcher', texts)).toEqual(['toBeAProjectMatcher']);
+            // Without the subtraction the excluded declaration is part of the program, so the case above
+            // cannot be passing on a walk that never read the exclude list.
+            expect(
+                declarationFilesUnder(root)
+                    .map((file) => file.path)
+                    .sort()
+            ).toEqual([declaration, join(excluded, 'ignored.d.ts')].sort());
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
