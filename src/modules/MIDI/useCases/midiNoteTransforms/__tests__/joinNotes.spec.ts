@@ -287,6 +287,40 @@ describe('joinNotes', () => {
         expect(notes?.length).toBe(4);
     });
 
+    it('does not merge simultaneous stacked notes sharing a start beat', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 0.1),
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 0.05, value: 20 }] },
+                    },
+                    {
+                        ...note('b', 60, 0, 1),
+                        pressure: 80,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 100 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b']);
+        const notes = midiStore.value?.notesByClipId.clip1;
+        expect(notes?.length).toBe(2);
+        expect(notes?.find((node) => node.id === 'a')).toMatchObject({
+            duration: 0.1,
+            pressure: 10,
+            expression: { pressure: [{ offsetBeats: 0.05, value: 20 }] },
+        });
+        expect(notes?.find((node) => node.id === 'b')).toMatchObject({
+            duration: 1,
+            pressure: 80,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 100 }] },
+        });
+    });
+
     it('should merge multiple adjacent notes into one', () => {
         midiStore.set({
             notesByClipId: {

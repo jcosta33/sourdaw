@@ -9,7 +9,6 @@ import {
     scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
-    updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { getSendAutomationBusId } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
@@ -30,8 +29,10 @@ type RestoreTargetTrack = {
     gain: number;
     pan: number;
     devices: RestoreTargetDevice[];
-    midiFx: { id: string; type: string; parameterValues: Record<string, number> }[];
     sends?: Array<{ busId: string; level: number; preFader: boolean }>;
+    // The persisted MIDI-FX strip is the refused input shape (#4789): nothing
+    // consumes its parameter values, so the restore loop below must not read it.
+    midiFx?: ReadonlyArray<{ id: string; type: string; parameterValues: Record<string, number> }>;
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -84,8 +85,8 @@ function deviceAcceptsAutomationParameter(
  * what this restores.
  *
  * The base is read from the same project truth the UI edits: `track.gain` /
- * `track.pan` for the fader families, and the device's or MIDI-FX's own
- * `parameterValues` entry for everything else. Device eligibility is re-checked
+ * `track.pan` for the fader families, and the device's own `parameterValues`
+ * entry for everything else. Device eligibility is re-checked
  * exactly as the drive path checks it, so a restore never writes to a device
  * another track owns.
  *
@@ -94,10 +95,12 @@ function deviceAcceptsAutomationParameter(
  * project truth. See `deviceAcceptsAutomationParameter` below for why that is
  * the contract and not an omission.
  *
- * gain/pan/send land as a-rate ramps, so those restores are smooth. Device and
- * MIDI-FX parameters reach their DSP by
- * worklet message and step to the base in one tick — 'off' is a discrete state
- * change, not a glide, and the AutoMatch ramp is the touch-release path.
+ * gain/pan/send land as a-rate ramps, so those restores are smooth. Device
+ * parameters reach their DSP by worklet message and step to the base in one
+ * tick — 'off' is a discrete state change, not a glide, and the AutoMatch ramp
+ * is the touch-release path. MIDI-FX parameters are not automation targets
+ * (#4789): no processing consumes their values, so nothing drives them and
+ * nothing restores them.
  */
 export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAutomationBaseValueInput): void {
     if (lane.parameterId === 'gain') {
@@ -166,21 +169,8 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
         return;
     }
 
-    for (const fx of track.midiFx) {
-        const baseValue = fx.parameterValues[lane.parameterId];
-        if (baseValue === undefined) {
-            continue;
-        }
-
-        // Same acceptance law as the MIDI-FX apply branch: a lane that may not
-        // drive the parameter may not restore it either — and, as there, the
-        // base is delivered UNQUANTISED. `fx.type` is a Yeast `ProcessorType`
-        // and both laws key on `PluginDescriptor.id`, so neither resolves for
-        // any processor that exists (`ProcessorCatalog.spec.ts`). The gate stays
-        // as the seam a `ProcessorType`-keyed descriptor would flow through.
-        if (isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
-            updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
-        }
-        return;
-    }
+    // A bare parameter id that resolved no device names no drivable target.
+    // It used to fall through to a MIDI-FX restore here, but MIDI-FX
+    // parameters are not automation targets (#4789): nothing consumes their
+    // values, so nothing drives them and there is no base worth restoring.
 }

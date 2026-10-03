@@ -865,22 +865,6 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).not.toHaveBeenCalled();
         });
 
-        it('skips device-param dispatch for a track kind that does not accept device updates', () => {
-            // A MIDI track kind whose eligibility rejects device updates, with a
-            // parameter that does not resolve to any device and no matching midiFx.
-            seedDeviceLane({
-                devices: [],
-                laneParameterId: 'eq-low-gain',
-                trackKind: 'return',
-            });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
-        });
-
         // The native session stamps a carried device's parameters from the
         // engine's own queue, block-accurately and ahead of the playhead
         // (#3568). The tick-grid IPC write is then a second, later writer on one
@@ -1145,84 +1129,6 @@ describe('applyAutomation', () => {
             // 1_000, on the node the engine is not driving.
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-f1', 'cutoff', 1_000);
-        });
-    });
-
-    describe('MIDI-FX automation slew', () => {
-        it('dispatches a midiFx param when the smoothed value crosses the epsilon threshold', () => {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
-                    },
-                ],
-            };
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: 'lane-fx',
-                        trackId: 'track-1',
-                        parameterId: 'fx-param',
-                        minValue: 0,
-                        points: [{ beat: 0, value: 0.9 }],
-                    },
-                ],
-            };
-            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.9);
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', expect.any(Number));
-        });
-
-        it('writes a fresh flat lane once on entry and does not repeat while the value holds', () => {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
-                    },
-                ],
-            };
-            // Distinct lane id so the module-level slew Map is fresh for this
-            // test (the shared automationState.pluginParamSlew is not reset
-            // between tests, only the mock call records are).
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: 'lane-fx-steady',
-                        trackId: 'track-1',
-                        parameterId: 'fx-param',
-                        minValue: 0,
-                        points: [{ beat: 0, value: 0.5 }],
-                    },
-                ],
-            };
-            // #4911: the entry tick snaps to the target and writes it once —
-            // a fresh flat lane used to seed its slew at the target and never
-            // write at all. The change gate's surviving subject is what the
-            // second tick locks: a value the engine already holds is not sent
-            // again (the device path's symmetric guard).
-            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5);
-
-            applyAutomation(0);
-
-            expect(updateMidiFxParam).toHaveBeenCalledTimes(1);
-            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', 0.5);
-
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -1684,66 +1590,6 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-low', 'mix', 0);
-        });
-
-        // The MIDI-FX branch reaches its DSP through updateMidiFxParam, not the
-        // device write surface, so it carries its own copy of the acceptance
-        // predicate. No shipped MIDI FX type declares a descriptor yet, so
-        // `dutch-oven` stands in for the day one does — the branch reads
-        // `fx.type` generically, and these lock it to the same law rather than
-        // to the absence of data.
-        function seedMidiFxLane(options: { laneId: string; paramId: string; curveValue: number }): void {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [
-                            {
-                                id: 'fx-descriptor',
-                                type: 'dutch-oven',
-                                parameterValues: { [options.paramId]: 0.2 },
-                            },
-                        ],
-                        gain: 0.5,
-                        pan: 0,
-                    },
-                ],
-            };
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: options.laneId,
-                        trackId: 'track-1',
-                        parameterId: options.paramId,
-                        minValue: 0,
-                        points: [{ beat: 0, value: options.curveValue }],
-                    },
-                ],
-            };
-            vi.mocked(getAutomationValueAtBeat).mockReset();
-            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(options.curveValue);
-        }
-
-        it('refuses to drive a non-automatable MIDI-FX parameter', () => {
-            seedMidiFxLane({ laneId: 'lane-fx-non-automatable', paramId: 'shimmer_pitch', curveValue: 0.75 });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
-        });
-
-        it('holds an out-of-range MIDI-FX curve value to the declared maximum', () => {
-            seedMidiFxLane({ laneId: 'lane-fx-overshoot', paramId: 'mix', curveValue: 4.2 });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).toHaveBeenLastCalledWith('track-1', 'fx-descriptor', 'mix', 1);
         });
     });
 });

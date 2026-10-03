@@ -162,9 +162,12 @@ export function joinNotes(clipId: string, selectedIds: string[], gridSize: numbe
             let index = 0;
             while (index < sorted.length) {
                 let jIndex = index;
-                // Extend the run while notes are adjacent (end of j meets start of j+1)
+                // Extend the run while notes are adjacent (end of j meets start of j+1).
+                // A next note starting on the same beat is a simultaneous stack, not a
+                // continuation; joining it would discard one note's values (#4860).
                 while (
                     jIndex + 1 < sorted.length &&
+                    sorted[jIndex + 1]!.startBeat > sorted[jIndex]!.startBeat &&
                     Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) <=
                         adjacencyTolerance
                 ) {
