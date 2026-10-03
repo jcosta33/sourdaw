@@ -10,7 +10,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -143,6 +143,11 @@ function unitPayload(
  * Every framework this repository's specs run on, with the package that *declares* its expect surface and
  * the interfaces that declare its asymmetric matchers. `@playwright/test` re-exports `playwright/test`, so
  * resolving the playwright package is what finds the interface the end-to-end specs' `expect` carries.
+ *
+ * The declared surface of one interface is what the installed package ships *plus* what this repository's
+ * own declarations add to it: the program augments `AsymmetricMatchersContaining` with jest-dom's matchers,
+ * and a derivation that read only the installed package would leave every one of them looking like a
+ * runtime registration.
  */
 const MATCHER_DECLARATION_SOURCES: readonly {
     readonly framework: string;
@@ -159,27 +164,91 @@ const MATCHER_DECLARATION_SOURCES: readonly {
     { framework: 'playwright', packageName: 'playwright', directories: ['types'], interfaces: ['AsymmetricMatchers'] },
 ];
 
-/** Every declaration file one installed framework ships under the given directories. */
-function declarationTexts(packageName: string, directories: readonly string[]): string[] {
-    const packageFile = createRequire(import.meta.url).resolve(`${packageName}/package.json`);
+/** The repository root, resolved from this file so the guard reads the program wherever it is run from. */
+const REPOSITORY_ROOT = dirname(createRequire(import.meta.url).resolve('../../../package.json'));
+
+/**
+ * The repository's own ambient declarations, where the program augments the framework interfaces:
+ * `src/types/jest-dom-vitest.d.ts` declares `interface AsymmetricMatchersContaining extends
+ * TestingLibraryMatchers<unknown, unknown>` inside `declare module 'vitest'`.
+ */
+const REPOSITORY_DECLARATIONS = declarationTextsAt(join(REPOSITORY_ROOT, 'src', 'types'));
+
+/** Every declaration file under one directory, recursively. */
+function declarationTextsAt(directory: string): string[] {
     const texts: string[] = [];
-    const walk = (directory: string): void => {
-        for (const entry of readdirSync(directory, { withFileTypes: true })) {
-            const path = join(directory, entry.name);
+    const walk = (path: string): void => {
+        for (const entry of readdirSync(path, { withFileTypes: true })) {
+            const child = join(path, entry.name);
             if (entry.isDirectory()) {
-                walk(path);
+                walk(child);
                 continue;
             }
             if (entry.name.endsWith('.d.ts')) {
-                texts.push(readFileSync(path, 'utf8'));
+                texts.push(readFileSync(child, 'utf8'));
             }
         }
     };
-    for (const directory of directories) {
-        walk(join(dirname(packageFile), directory));
+    walk(directory);
+    return texts;
+}
+
+/** Every declaration file one installed framework ships under the given directories. */
+function declarationTexts(packageName: string, directories: readonly string[]): string[] {
+    const packageFile = createRequire(import.meta.url).resolve(`${packageName}/package.json`);
+    return directories.flatMap((directory) => declarationTextsAt(join(dirname(packageFile), directory)));
+}
+
+/** The package root one resolved module path belongs to: the path up to its own `node_modules` entry. */
+function packageRootOf(resolvedPath: string): string | undefined {
+    const marker = `${sep}node_modules${sep}`;
+    const at = resolvedPath.lastIndexOf(marker);
+    if (at === -1) {
+        return undefined;
+    }
+    const root = resolvedPath.slice(0, at + marker.length);
+    const [first, second] = resolvedPath.slice(at + marker.length).split(sep);
+    const name = first?.startsWith('@') === true ? `${String(first)}/${String(second)}` : first;
+    return name === undefined ? undefined : join(root, name);
+}
+
+/**
+ * The declarations of the packages the repository's own files import from.
+ *
+ * Why they are needed. An augmentation adds names by extending an interface of its own — the repository's
+ * extends `TestingLibraryMatchers`, whose members are jest-dom's fifty matchers — so the added names are
+ * declared in the imported package rather than in the augmenting file. The specifier is read from the file
+ * instead of naming the package here, so an augmentation that imports from anywhere is followed, and one
+ * whose base still cannot be found fails the case below rather than contributing nothing.
+ */
+function importedDeclarationTexts(declarations: readonly string[]): string[] {
+    const texts: string[] = [];
+    const roots = new Set<string>();
+    for (const declaration of declarations) {
+        for (const match of declaration.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)) {
+            const specifier = match[1];
+            if (specifier === undefined || specifier.startsWith('.')) {
+                continue;
+            }
+            let resolved: string | undefined;
+            try {
+                resolved = createRequire(import.meta.url).resolve(specifier);
+            } catch {
+                resolved = undefined;
+            }
+            const root = resolved === undefined ? undefined : packageRootOf(resolved);
+            if (root === undefined || roots.has(root)) {
+                continue;
+            }
+            roots.add(root);
+            texts.push(...declarationTextsAt(root));
+        }
     }
     return texts;
 }
+
+/** The repository's declarations together with the packages they import their extended interfaces from. */
+const AUGMENTATION_DECLARATIONS = [...REPOSITORY_DECLARATIONS, ...importedDeclarationTexts(REPOSITORY_DECLARATIONS)];
 
 /**
  * The brace-delimited body one declaration opens at `open`, or undefined when its braces never balance.
@@ -219,24 +288,129 @@ function declaredMembers(body: string): string[] {
     return declared.filter((match) => (match[1] ?? '').length === shallowest).map((match) => match[2] ?? '');
 }
 
-/** The members one declared interface contributes, in every file that declares it. */
-function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
-    const members = new Set<string>();
-    for (const declaration of declarations) {
-        const start = declaration.indexOf(`interface ${name}`);
-        if (start === -1) {
-            continue;
-        }
+/**
+ * Every declaration of one interface in one text: the header through its `{`, and the body. A name is
+ * matched only when the character after it starts a generic argument, an extends clause, or a body, so
+ * `interface CustomMatcher` is not read out of a longer name.
+ */
+function findInterfaceDeclarations(
+    declaration: string,
+    name: string
+): { readonly header: string; readonly body: string }[] {
+    const found: { header: string; body: string }[] = [];
+    const pattern = new RegExp(`\\binterface\\s+${name}(?![A-Za-z0-9_$])`, 'gu');
+    for (const match of declaration.matchAll(pattern)) {
+        const start = match.index;
         const open = declaration.indexOf('{', start);
         if (open === -1) {
             continue;
         }
         const body = declarationBody(declaration, open);
-        for (const member of body === undefined ? [] : declaredMembers(body)) {
-            members.add(member);
+        if (body !== undefined) {
+            found.push({ header: declaration.slice(start, open), body });
+        }
+    }
+    return found;
+}
+
+/** The members one declared interface contributes, in every file that declares it. */
+function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
+    const members = new Set<string>();
+    for (const declaration of declarations) {
+        for (const found of findInterfaceDeclarations(declaration, name)) {
+            for (const member of declaredMembers(found.body)) {
+                members.add(member);
+            }
         }
     }
     return [...members];
+}
+
+/**
+ * The interface names one declaration header extends, with each base's generic arguments removed. The
+ * commas inside a generic argument (`Matchers<any, void>`) separate arguments rather than bases, so the
+ * split tracks angle brackets.
+ */
+function extendedInterfaceNames(header: string): string[] {
+    const at = header.indexOf(' extends ');
+    if (at === -1) {
+        return [];
+    }
+    const names: string[] = [];
+    let current = '';
+    let angleDepth = 0;
+    for (const character of header.slice(at + ' extends '.length)) {
+        if (character === '<') {
+            angleDepth += 1;
+        } else if (character === '>') {
+            angleDepth -= 1;
+        }
+        if (character === ',' && angleDepth === 0) {
+            names.push(current);
+            current = '';
+            continue;
+        }
+        current += character;
+    }
+    names.push(current);
+    return names.map((base) => base.split('<')[0]?.trim() ?? '').filter((base) => base !== '');
+}
+
+/**
+ * The members this repository's own declarations add to one framework interface.
+ *
+ * A program augments an interface by extending one of its own — `src/types/jest-dom-vitest.d.ts` declares
+ * `interface AsymmetricMatchersContaining extends TestingLibraryMatchers<unknown, unknown>` — so the added
+ * names belong to the extended interface and the augmenting body is empty. The base is resolved by name
+ * across the repository's declarations and the packages they import, and followed through further
+ * declarations of the same set; a base that resolves nowhere contributes nothing here and is named by the
+ * case below, so an augmentation cannot add names the derived surface never sees.
+ */
+function augmentedInterfaceMembers(name: string): string[] {
+    const members = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (interfaceName: string): void => {
+        if (visited.has(interfaceName)) {
+            return;
+        }
+        visited.add(interfaceName);
+        for (const declaration of AUGMENTATION_DECLARATIONS) {
+            for (const found of findInterfaceDeclarations(declaration, interfaceName)) {
+                for (const member of declaredMembers(found.body)) {
+                    members.add(member);
+                }
+                for (const base of extendedInterfaceNames(found.header)) {
+                    visit(base);
+                }
+            }
+        }
+    };
+    visit(name);
+    return [...members];
+}
+
+/** The extended interfaces the repository's declarations name and no declaration the guard reads carries. */
+function unresolvedAugmentationBases(): string[] {
+    const unresolved = new Set<string>();
+    for (const declaration of REPOSITORY_DECLARATIONS) {
+        for (const match of declaration.matchAll(/\binterface\s+([A-Za-z_$][A-Za-z0-9_$]*)/gu)) {
+            const name = match[1];
+            if (name === undefined) {
+                continue;
+            }
+            for (const found of findInterfaceDeclarations(declaration, name)) {
+                for (const base of extendedInterfaceNames(found.header)) {
+                    const declared = AUGMENTATION_DECLARATIONS.some(
+                        (text) => findInterfaceDeclarations(text, base).length > 0
+                    );
+                    if (!declared) {
+                        unresolved.add(base);
+                    }
+                }
+            }
+        }
+    }
+    return [...unresolved];
 }
 
 /**
@@ -287,7 +461,12 @@ function installedMatcherSurfaces(): Record<string, string[]> {
             const declarations = declarationTexts(source.packageName, source.directories);
             return [
                 source.framework,
-                source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                [
+                    ...source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                    // What the program itself adds to those interfaces counts as declared, or a name this
+                    // repository augments the framework with would read as a runtime registration.
+                    ...source.interfaces.flatMap((name) => augmentedInterfaceMembers(name)),
+                ],
             ];
         })
     );
@@ -522,6 +701,8 @@ describe('a changed line is classified by its text alone', () => {
             // removed one is a removed matcher, not a removed assertion.
             'expect.toBeFasterThan(baseline),',
             'expect.toBeSlowerThan(baseline),',
+            // A matcher this repository's own augmentation declares, reached the same way.
+            "expect.toHaveValue('1/4'),",
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
@@ -669,29 +850,52 @@ describe('a changed line is classified by its text alone', () => {
         }
     });
 
+    it('should read the matchers this repository augments the frameworks with, and refuse them as registrations', () => {
+        // The program's own augmentation is part of the declared surface:
+        // `src/types/jest-dom-vitest.d.ts` extends vitest's `AsymmetricMatchersContaining` with jest-dom's
+        // set, so each of those names is declared and none can pass the registration rule, which admits
+        // only a name no declaration carries. A derivation reading the installed package alone would admit
+        // them and would count a removed `expect.toHaveValue('1/4'),` as a removed assertion.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        expect(declared.has('toHaveValue')).toBe(true);
+        expect(declared.has('toBeInTheDocument')).toBe(true);
+        const live = expect as unknown as Record<string, unknown>;
+        expect(isRegisteredMatcher('toHaveValue', declared, live)).toBe(false);
+        expect(isAssertionLine("expect.toHaveValue('1/4'),")).toBe(false);
+        // An augmentation whose extended interface the guard cannot find is a hole in the surface, so it is
+        // named here rather than silently contributing nothing.
+        expect(unresolvedAugmentationBases()).toEqual([]);
+    });
+
     it('should admit a name through the registration route rather than through the pair it pins', () => {
-        // The route in general, exercised over a stand-in for the augmentation a package contributes from
-        // its own types — jest-dom's matchers arrive the way this one does — so the category is the
-        // registration and not a list of the two names that happened to need it. A name the declarations
-        // already carry is refused whatever the live object answers, and a live name that answers with
+        // The route in general, exercised over a stand-in for a registration the declarations cannot carry
+        // — a project-local `expect.extend`, or an augmentation of a package the guard cannot read — so the
+        // category is the registration and not a list of the names that happened to need it. A name the
+        // declarations carry is refused whatever the live object answers, and a live name that answers with
         // something other than a matcher value is no registration at all.
         const declared = new Set([
             ...Object.values(installedMatcherSurfaces()).flat(),
             ...Object.values(installedExpectSurfaces()).flat(),
         ]);
         const augmented: Readonly<Record<string, unknown>> = {
-            toBeInTheDocument: () => ({ asymmetricMatch: () => true }),
+            someProjectMatcher: () => ({ asymmetricMatch: () => true }),
             toBeFasterThan: () => ({ asymmetricMatch: () => true }),
-            // A declared matcher value and a declared helper, both matcher-shaped here so the refusal is
-            // the declaration and not the shape, and a live function that is not a matcher value at all.
+            // A declared matcher value, a declared helper, and a name this repository's own augmentation
+            // declares, all matcher-shaped here so the refusal is the declaration and not the shape, plus a
+            // live function that is not a matcher value at all.
             objectContaining: () => ({ asymmetricMatch: () => true }),
             configure: () => ({ asymmetricMatch: () => true }),
+            toBeInTheDocument: () => ({ asymmetricMatch: () => true }),
             plainFunction: () => ({}),
         };
-        expect(isRegisteredMatcher('toBeInTheDocument', declared, augmented)).toBe(true);
+        expect(isRegisteredMatcher('someProjectMatcher', declared, augmented)).toBe(true);
         expect(isRegisteredMatcher('toBeFasterThan', declared, augmented)).toBe(true);
         expect(isRegisteredMatcher('objectContaining', declared, augmented)).toBe(false);
         expect(isRegisteredMatcher('configure', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('toBeInTheDocument', declared, augmented)).toBe(false);
         expect(isRegisteredMatcher('plainFunction', declared, augmented)).toBe(false);
         expect(isRegisteredMatcher('toBeFasterThan', declared, {})).toBe(false);
     });
