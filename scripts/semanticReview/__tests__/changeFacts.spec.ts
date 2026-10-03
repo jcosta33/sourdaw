@@ -8,9 +8,10 @@
  * the response cache keys on.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, type Dirent } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -143,6 +144,11 @@ function unitPayload(
  * Every framework this repository's specs run on, with the package that *declares* its expect surface and
  * the interfaces that declare its asymmetric matchers. `@playwright/test` re-exports `playwright/test`, so
  * resolving the playwright package is what finds the interface the end-to-end specs' `expect` carries.
+ *
+ * The declared surface of one interface is what the installed package ships *plus* what this repository's
+ * own declarations add to it: the program augments `AsymmetricMatchersContaining` with jest-dom's matchers,
+ * and a derivation that read only the installed package would leave every one of them looking like a
+ * runtime registration.
  */
 const MATCHER_DECLARATION_SOURCES: readonly {
     readonly framework: string;
@@ -159,67 +165,402 @@ const MATCHER_DECLARATION_SOURCES: readonly {
     { framework: 'playwright', packageName: 'playwright', directories: ['types'], interfaces: ['AsymmetricMatchers'] },
 ];
 
-/** Every declaration file one installed framework ships under the given directories. */
-function declarationTexts(packageName: string, directories: readonly string[]): string[] {
-    const packageFile = createRequire(import.meta.url).resolve(`${packageName}/package.json`);
-    const texts: string[] = [];
-    const walk = (directory: string): void => {
-        for (const entry of readdirSync(directory, { withFileTypes: true })) {
-            const path = join(directory, entry.name);
-            if (entry.isDirectory()) {
+/** The repository root, resolved from this file so the guard reads the program wherever it is run from. */
+const REPOSITORY_ROOT = dirname(createRequire(import.meta.url).resolve('../../../package.json'));
+
+/** A declaration file, in any of the extensions TypeScript writes them with. */
+const DECLARATION_FILE_PATTERN = /\.d\.[cm]?ts$/u;
+
+/** The `code` one failed filesystem read reports, or undefined when it reports none. */
+function readFailureCode(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return undefined;
+    }
+    const code = (error as { readonly code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+}
+
+/**
+ * Every declaration file under one included root, recursively, minus the paths the program excludes. The
+ * root is a directory, a glob, or one named file, which is what the include set may spell.
+ *
+ * Every directory is read once and its entries are acted on, and an included root that is one named file is
+ * read because the directory read said so: the walk never asks whether a path exists before using it, so no
+ * check and its use can be separated by another writer. A read that fails is answered by what it reports —
+ * a directory read that answers `ENOTDIR` found a named file, one that answers `ENOENT` found nothing, a
+ * file read that answers `EISDIR` found a directory — and any other failure is raised rather than silently
+ * dropped, so a surface the walk cannot read stays loud.
+ */
+function declarationFilesUnder(
+    root: string,
+    excluded: readonly string[] = []
+): { readonly path: string; readonly text: string }[] {
+    const files: { path: string; text: string }[] = [];
+
+    const read = (path: string): void => {
+        let text: string;
+        try {
+            text = readFileSync(path, 'utf8');
+        } catch (error) {
+            const code = readFailureCode(error);
+            if (code === 'EISDIR') {
                 walk(path);
+                return;
+            }
+            if (code === 'ENOENT') {
+                return;
+            }
+            throw error;
+        }
+        if (DECLARATION_FILE_PATTERN.test(path)) {
+            files.push({ path, text });
+        }
+    };
+
+    const walk = (directory: string): void => {
+        if (excluded.some((entry) => directory === entry || directory.startsWith(`${entry}${sep}`))) {
+            return;
+        }
+        let entries: Dirent[];
+        try {
+            entries = readdirSync(directory, { withFileTypes: true });
+        } catch (error) {
+            const code = readFailureCode(error);
+            if (code === 'ENOTDIR') {
+                read(directory);
+                return;
+            }
+            if (code === 'ENOENT') {
+                return;
+            }
+            throw error;
+        }
+        for (const entry of entries) {
+            const child = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                walk(child);
                 continue;
             }
-            if (entry.name.endsWith('.d.ts')) {
-                texts.push(readFileSync(path, 'utf8'));
+            if (entry.isFile() || entry.isSymbolicLink()) {
+                read(child);
             }
         }
     };
-    for (const directory of directories) {
-        walk(join(dirname(packageFile), directory));
+
+    walk(root);
+    return files;
+}
+
+/** Every declaration file one directory tree carries. */
+function declarationTextsAt(directory: string): string[] {
+    return declarationFilesUnder(directory).map((file) => file.text);
+}
+
+/**
+ * The program's own include set, read from a `tsconfig.json`: the roots to walk and the paths to keep out of
+ * them, each resolved beside the config that names it. The config carries comments, so they are stripped
+ * before it is parsed, and one whose include set cannot be read fails loudly rather than walking nothing and
+ * reporting a smaller surface. A root is a directory, a glob, or one named file, which is what an include
+ * set may spell.
+ */
+function programIncludeSet(configPath: string = join(REPOSITORY_ROOT, 'tsconfig.json')): {
+    readonly roots: readonly string[];
+    readonly excluded: readonly string[];
+} {
+    const text = readFileSync(configPath, 'utf8').replaceAll(/^[ \t]*\/\/.*$/gmu, '');
+    const config = JSON.parse(text) as { readonly include?: readonly string[]; readonly exclude?: readonly string[] };
+    const include = config.include;
+    if (include === undefined || include.length === 0) {
+        throw new Error(`${configPath} declares no include set to read the program's declarations from`);
+    }
+    const base = dirname(configPath);
+    return {
+        roots: include.map((entry) => join(base, entry.split('*')[0]?.replace(/\/$/u, '') ?? '')),
+        excluded: (config.exclude ?? []).map((entry) => join(base, entry)),
+    };
+}
+
+/**
+ * The declaration files the program itself carries, derived from that include set rather than from one
+ * directory: an ambient augmentation may live anywhere in the program, and a derivation that read the
+ * ambient directory alone would miss one declared elsewhere, leaving its names looking like runtime
+ * registrations.
+ */
+function programDeclarationFiles(configPath?: string): { readonly path: string; readonly text: string }[] {
+    const include = programIncludeSet(configPath);
+    return include.roots.flatMap((root) => declarationFilesUnder(root, include.excluded));
+}
+
+/** The program's declaration files, whose texts are read for the framework augmentations they carry. */
+const PROGRAM_DECLARATION_FILES = programDeclarationFiles();
+
+/** The program's own declarations, where it augments the framework interfaces. */
+const REPOSITORY_DECLARATIONS = PROGRAM_DECLARATION_FILES.map((file) => file.text);
+
+/** Every declaration file one installed framework ships under the given directories. */
+function declarationTexts(packageName: string, directories: readonly string[]): string[] {
+    const packageFile = createRequire(import.meta.url).resolve(`${packageName}/package.json`);
+    return directories.flatMap((directory) => declarationTextsAt(join(dirname(packageFile), directory)));
+}
+
+/** The package root one resolved module path belongs to: the path up to its own `node_modules` entry. */
+function packageRootOf(resolvedPath: string): string | undefined {
+    const marker = `${sep}node_modules${sep}`;
+    const at = resolvedPath.lastIndexOf(marker);
+    if (at === -1) {
+        return undefined;
+    }
+    const root = resolvedPath.slice(0, at + marker.length);
+    const [first, second] = resolvedPath.slice(at + marker.length).split(sep);
+    const name = first?.startsWith('@') === true ? `${String(first)}/${String(second)}` : first;
+    return name === undefined ? undefined : join(root, name);
+}
+
+/**
+ * The declarations of the packages the repository's own files import from.
+ *
+ * Why they are needed. An augmentation adds names by extending an interface of its own — the repository's
+ * extends `TestingLibraryMatchers`, whose members are jest-dom's fifty matchers — so the added names are
+ * declared in the imported package rather than in the augmenting file. The specifier is read from the file
+ * instead of naming the package here, so an augmentation that imports from anywhere is followed, and one
+ * whose base still cannot be found fails the case below rather than contributing nothing.
+ */
+function importedDeclarationTexts(declarations: readonly string[]): string[] {
+    const texts: string[] = [];
+    const roots = new Set<string>();
+    for (const declaration of declarations) {
+        for (const match of declaration.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)) {
+            const specifier = match[1];
+            if (specifier === undefined || specifier.startsWith('.')) {
+                continue;
+            }
+            let resolved: string | undefined;
+            try {
+                resolved = createRequire(import.meta.url).resolve(specifier);
+            } catch {
+                resolved = undefined;
+            }
+            const root = resolved === undefined ? undefined : packageRootOf(resolved);
+            if (root === undefined || roots.has(root)) {
+                continue;
+            }
+            roots.add(root);
+            texts.push(...declarationTextsAt(root));
+        }
     }
     return texts;
 }
 
+/** The repository's declarations together with the packages they import their extended interfaces from. */
+const AUGMENTATION_DECLARATIONS = [...REPOSITORY_DECLARATIONS, ...importedDeclarationTexts(REPOSITORY_DECLARATIONS)];
+
 /**
- * The members one declared interface contributes: the body's shallowest-indented `name:`/`name(`
- * declarations, which is the interface's own surface. A nested object type's members sit deeper, and the
- * shipped vitest declarations indent members with a tab and playwright's with two spaces, so the depth is
- * measured per interface rather than assumed.
+ * The brace-delimited body one declaration opens at `open`, or undefined when its braces never balance.
+ * The walk is shared by the interface and type-alias readers because both spell their members the same
+ * way once the body is found; only how the body starts differs.
  */
-function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
-    const members = new Set<string>();
-    for (const declaration of declarations) {
-        const start = declaration.indexOf(`interface ${name}`);
-        if (start === -1) {
+function declarationBody(declaration: string, open: number): string | undefined {
+    let depth = 0;
+    for (let index = open; index < declaration.length; index += 1) {
+        const character = declaration[index];
+        if (character === '{') {
+            depth += 1;
             continue;
         }
+        if (character === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return declaration.slice(open + 1, index);
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The members one declaration body contributes: its shallowest-indented `name:`/`name(` declarations,
+ * which is the declaration's own surface. A nested object type's members sit deeper, and the shipped
+ * vitest declarations indent members with a tab and playwright's with two spaces, so the depth is
+ * measured per declaration rather than assumed.
+ */
+function declaredMembers(body: string): string[] {
+    const declared = [...body.matchAll(/^([ \t]*)([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu)];
+    if (declared.length === 0) {
+        return [];
+    }
+    const shallowest = Math.min(...declared.map((match) => (match[1] ?? '').length));
+    return declared.filter((match) => (match[1] ?? '').length === shallowest).map((match) => match[2] ?? '');
+}
+
+/**
+ * Every declaration of one interface in one text: the header through its `{`, and the body. A name is
+ * matched only when the character after it starts a generic argument, an extends clause, or a body, so
+ * `interface CustomMatcher` is not read out of a longer name.
+ */
+function findInterfaceDeclarations(
+    declaration: string,
+    name: string
+): { readonly header: string; readonly body: string }[] {
+    const found: { header: string; body: string }[] = [];
+    const pattern = new RegExp(`\\binterface\\s+${name}(?![A-Za-z0-9_$])`, 'gu');
+    for (const match of declaration.matchAll(pattern)) {
+        const start = match.index;
         const open = declaration.indexOf('{', start);
         if (open === -1) {
             continue;
         }
-        let depth = 0;
-        let end = declaration.length;
-        for (let index = open; index < declaration.length; index += 1) {
-            const character = declaration[index];
-            if (character === '{') {
-                depth += 1;
-            } else if (character === '}') {
-                depth -= 1;
-                if (depth === 0) {
-                    end = index;
-                    break;
+        const body = declarationBody(declaration, open);
+        if (body !== undefined) {
+            found.push({ header: declaration.slice(start, open), body });
+        }
+    }
+    return found;
+}
+
+/** The members one declared interface contributes, in every file that declares it. */
+function declaredInterfaceMembers(declarations: readonly string[], name: string): string[] {
+    const members = new Set<string>();
+    for (const declaration of declarations) {
+        for (const found of findInterfaceDeclarations(declaration, name)) {
+            for (const member of declaredMembers(found.body)) {
+                members.add(member);
+            }
+        }
+    }
+    return [...members];
+}
+
+/**
+ * The interface names one declaration header extends, with each base's generic arguments removed. The
+ * commas inside a generic argument (`Matchers<any, void>`) separate arguments rather than bases, so the
+ * split tracks angle brackets.
+ */
+function extendedInterfaceNames(header: string): string[] {
+    const at = header.indexOf(' extends ');
+    if (at === -1) {
+        return [];
+    }
+    const names: string[] = [];
+    let current = '';
+    let angleDepth = 0;
+    for (const character of header.slice(at + ' extends '.length)) {
+        if (character === '<') {
+            angleDepth += 1;
+        } else if (character === '>') {
+            angleDepth -= 1;
+        }
+        if (character === ',' && angleDepth === 0) {
+            names.push(current);
+            current = '';
+            continue;
+        }
+        current += character;
+    }
+    names.push(current);
+    return names.map((base) => base.split('<')[0]?.trim() ?? '').filter((base) => base !== '');
+}
+
+/**
+ * The members this repository's own declarations add to one framework interface.
+ *
+ * A program augments an interface by extending one of its own — `src/types/jest-dom-vitest.d.ts` declares
+ * `interface AsymmetricMatchersContaining extends TestingLibraryMatchers<unknown, unknown>` — so the added
+ * names belong to the extended interface and the augmenting body is empty. The base is resolved by name
+ * across the repository's declarations and the packages they import, and followed through further
+ * declarations of the same set; a base that resolves nowhere contributes nothing here and is named by the
+ * case below, so an augmentation cannot add names the derived surface never sees.
+ */
+function augmentedInterfaceMembers(
+    name: string,
+    declarations: readonly string[] = AUGMENTATION_DECLARATIONS
+): string[] {
+    const members = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (interfaceName: string): void => {
+        if (visited.has(interfaceName)) {
+            return;
+        }
+        visited.add(interfaceName);
+        for (const declaration of declarations) {
+            for (const found of findInterfaceDeclarations(declaration, interfaceName)) {
+                for (const member of declaredMembers(found.body)) {
+                    members.add(member);
+                }
+                for (const base of extendedInterfaceNames(found.header)) {
+                    visit(base);
                 }
             }
         }
-        const declared = [
-            ...declaration.slice(open + 1, end).matchAll(/^([ \t]*)([A-Za-z_$][A-Za-z0-9_$]*)\s*[:(]/gmu),
-        ];
-        const shallowest = Math.min(...declared.map((match) => (match[1] ?? '').length));
-        for (const match of declared) {
-            if ((match[1] ?? '').length === shallowest) {
-                members.add(match[2] ?? '');
+    };
+    visit(name);
+    return [...members];
+}
+
+/**
+ * The extended interfaces the program's declarations of a tracked interface name and no declaration the
+ * guard reads carries. Scoped to the interfaces the derived surfaces are read from, because an unrelated
+ * declaration in the program is none of this guard's business — but one that names a base the guard cannot
+ * find is a surface it cannot read, and it is named rather than silently contributing nothing.
+ */
+function unresolvedAugmentationBases(): string[] {
+    const tracked = new Set([
+        ...MATCHER_DECLARATION_SOURCES.flatMap((source) => source.interfaces),
+        ...EXPECT_DECLARATION_SOURCES.flatMap((source) => source.interfaces),
+    ]);
+    const unresolved = new Set<string>();
+    for (const declaration of REPOSITORY_DECLARATIONS) {
+        for (const name of tracked) {
+            for (const found of findInterfaceDeclarations(declaration, name)) {
+                for (const base of extendedInterfaceNames(found.header)) {
+                    const declared = AUGMENTATION_DECLARATIONS.some(
+                        (text) => findInterfaceDeclarations(text, base).length > 0
+                    );
+                    if (!declared) {
+                        unresolved.add(base);
+                    }
+                }
             }
+        }
+    }
+    return [...unresolved];
+}
+
+/**
+ * The members one declared type alias contributes, for the surface a framework spells as an alias over an
+ * object type rather than an interface: playwright declares its expect as
+ * `type Expect<ExtendedMatchers = {}> = { … } & AsymmetricMatchers`. Angle brackets are tracked so the
+ * generic default's own braces are not read as the alias body.
+ */
+function declaredTypeAliasMembers(declarations: readonly string[], name: string): string[] {
+    const members = new Set<string>();
+    for (const declaration of declarations) {
+        const start = new RegExp(`\\btype\\s+${name}\\b`, 'u').exec(declaration)?.index;
+        if (start === undefined) {
+            continue;
+        }
+        let angleDepth = 0;
+        let open: number | undefined;
+        for (let index = start; index < declaration.length; index += 1) {
+            const character = declaration[index];
+            if (character === '<') {
+                angleDepth += 1;
+                continue;
+            }
+            if (character === '>') {
+                angleDepth -= 1;
+                continue;
+            }
+            if (character === '{' && angleDepth === 0) {
+                open = index;
+                break;
+            }
+        }
+        if (open === undefined) {
+            continue;
+        }
+        const body = declarationBody(declaration, open);
+        for (const member of body === undefined ? [] : declaredMembers(body)) {
+            members.add(member);
         }
     }
     return [...members];
@@ -232,10 +573,120 @@ function installedMatcherSurfaces(): Record<string, string[]> {
             const declarations = declarationTexts(source.packageName, source.directories);
             return [
                 source.framework,
-                source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                [
+                    ...source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                    // What the program itself adds to those interfaces counts as declared, or a name this
+                    // repository augments the framework with would read as a runtime registration.
+                    ...source.interfaces.flatMap((name) => augmentedInterfaceMembers(name)),
+                ],
             ];
         })
     );
+}
+
+/**
+ * Every framework this repository's specs run on, with the declaration that carries its `expect` object's
+ * own members: vitest's `ExpectStatic` interface and playwright's `Expect` type alias.
+ */
+const EXPECT_DECLARATION_SOURCES: readonly {
+    readonly framework: string;
+    readonly packageName: string;
+    readonly directories: readonly string[];
+    readonly interfaces: readonly string[];
+    readonly typeAliases: readonly string[];
+}[] = [
+    {
+        framework: 'vitest',
+        packageName: 'vitest',
+        directories: ['dist'],
+        interfaces: ['ExpectStatic'],
+        typeAliases: [],
+    },
+    {
+        framework: 'playwright',
+        packageName: 'playwright',
+        directories: ['types'],
+        interfaces: [],
+        typeAliases: ['Expect'],
+    },
+];
+
+/** Every member each installed framework declares on `expect` itself, keyed by framework. */
+function installedExpectSurfaces(): Record<string, string[]> {
+    return Object.fromEntries(
+        EXPECT_DECLARATION_SOURCES.map((source) => {
+            const declarations = declarationTexts(source.packageName, source.directories);
+            return [
+                source.framework,
+                [
+                    ...source.interfaces.flatMap((name) => declaredInterfaceMembers(declarations, name)),
+                    ...source.typeAliases.flatMap((name) => declaredTypeAliasMembers(declarations, name)),
+                ],
+            ];
+        })
+    );
+}
+
+/**
+ * The `expect.<member>(` heads that configure, register, or report rather than check, pinned by name
+ * because the declarations do not separate the kinds: vitest declares `assertions: (expected: number) =>
+ * void` beside `addEqualityTesters: (testers: Array<Tester>) => void`, and a call to either returns
+ * nothing to read. The case below derives each framework's `expect` surface and requires every name here
+ * to be declared on one of them, so this list cannot outlive the helpers it claims are shipped.
+ */
+const EXPECT_HELPER_MEMBERS: readonly string[] = [
+    'addEqualityTesters',
+    'addSnapshotSerializer',
+    'configure',
+    'extend',
+    'getState',
+    'setState',
+];
+
+/**
+ * The `expect.<member>(` heads an installed framework registers at run time through `expect.extend`, which
+ * no declaration carries as an `expect` surface: vitest declares its bench pair on `Assertion` — the
+ * chained `expect(result).toBeFasterThan(baseline)` form — and reaches them as values only because the
+ * bench runner registers them, and a package that augments the framework from its own types, jest-dom's
+ * matchers among them, is registered rather than declared too.
+ *
+ * The bound is the registration itself, read from the live framework in the case below: a name here must
+ * be absent from every derived surface, present on the installed `expect`, and answer with an
+ * asymmetric-matcher value. A declaration member placed here fails, which is what keeps this category from
+ * hiding a check the equality would then admit.
+ */
+const EXPECT_REGISTERED_MATCHER_MEMBERS: readonly string[] = ['toBeFasterThan', 'toBeSlowerThan'];
+
+/**
+ * The argument the case below hands a registered matcher to read its shape. A registered matcher builds a
+ * matcher value from its expectation without judging it — the comparison happens when the value is matched
+ * — so any sample works, and this one is shaped like the benchmark result the bench pair expects.
+ */
+const REGISTERED_MATCHER_SAMPLE = { latency: { mean: 1 } };
+
+/**
+ * Whether one name reaches `expect.<member>(` as a matcher value because an installed framework registered
+ * it through `expect.extend`, rather than because a declaration carries it: absent from every derived
+ * surface, and a live member of the given `expect` object that answers with an asymmetric matcher.
+ *
+ * The parameter is the live object rather than the module's own `expect` so the rule can be exercised over
+ * a stand-in for a package the case cannot register, and so the two directions — a name the declarations
+ * carry is never registered, whatever the live object answers — are the rule rather than a convention.
+ */
+function isRegisteredMatcher(
+    member: string,
+    declared: ReadonlySet<string>,
+    live: Readonly<Record<string, unknown>>
+): boolean {
+    if (declared.has(member)) {
+        return false;
+    }
+    const registered = live[member];
+    if (typeof registered !== 'function') {
+        return false;
+    }
+    const produced = (registered as (input: unknown) => unknown)(REGISTERED_MATCHER_SAMPLE);
+    return typeof (produced as { asymmetricMatch?: unknown }).asymmetricMatch === 'function';
 }
 
 /** How many single-line hunks the saturation witness is sliced into. */
@@ -353,6 +804,17 @@ describe('a changed line is classified by its text alone', () => {
             'expect.extend({ toBeWithinRange() {} });',
             'expect.addSnapshotSerializer(plugin);',
             'expect.setState({ assertionCalls: 1 });',
+            // Helpers the asymmetric-matcher derivation cannot reach: they are declared on the frameworks'
+            // own `expect` surfaces, where a check and a helper are spelled the same way.
+            'expect.configure({ timeout: 5000 });',
+            'expect.getState().assertionCalls,',
+            'expect.addEqualityTesters([tester]);',
+            // Matchers vitest registers at run time, reached as values rather than as chained matchers: a
+            // removed one is a removed matcher, not a removed assertion.
+            'expect.toBeFasterThan(baseline),',
+            'expect.toBeSlowerThan(baseline),',
+            // A matcher this repository's own augmentation declares, reached the same way.
+            "expect.toHaveValue('1/4'),",
         ];
         expect(assertions.filter(isAssertionLine)).toEqual(assertions);
         expect(notAssertions.filter(isAssertionLine)).toEqual([]);
@@ -462,6 +924,150 @@ describe('a changed line is classified by its text alone', () => {
                 .filter(([, members]) => (members as string[]).length > 0)
         );
         expect(missing).toEqual({});
+    });
+
+    it('should treat every expect helper the installed frameworks declare as a non-assertion, and hold nothing else', () => {
+        // The matcher case above covers the value half of the list. This one covers the helper half, which
+        // no declaration can classify: vitest's `ExpectStatic` declares `assertions` and `addEqualityTesters`
+        // with the same `void` return, so which names are checks is pinned in EXPECT_HELPER_MEMBERS and the
+        // installed declarations are what keep that pin honest.
+        const declared = new Set(Object.values(installedExpectSurfaces()).flat());
+        expect(EXPECT_HELPER_MEMBERS.filter((member) => !declared.has(member))).toEqual([]);
+        // The pin itself: each helper's own head is not an assertion call. Deleting one from
+        // NON_ASSERTION_EXPECT_MEMBERS fails here, which the two cases above cannot see.
+        expect(EXPECT_HELPER_MEMBERS.filter((member) => isAssertionLine(`expect.${member}(value);`))).toEqual([]);
+        // And the whole list is the derived matcher values plus those helpers and the registered matchers,
+        // so a member added or deleted without a declaration or a registration behind it fails in both
+        // directions rather than leaving a head classified differently from what the installed frameworks
+        // ship.
+        const matchers = new Set(Object.values(installedMatcherSurfaces()).flat());
+        expect([...NON_ASSERTION_EXPECT_MEMBERS].sort()).toEqual(
+            [...new Set([...matchers, ...EXPECT_HELPER_MEMBERS, ...EXPECT_REGISTERED_MATCHER_MEMBERS])].sort()
+        );
+    });
+
+    it('should treat every matcher the installed frameworks register at run time as a non-assertion', () => {
+        // The registration route `expect.extend` opens after the declarations are written: a matcher it
+        // adds is a value (`expect.toBeFasterThan(baseline)`), which is the shape that made a removed bench
+        // matcher publish as a removed assertion. The bound is read from the live framework, not assumed.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        const live = expect as unknown as Record<string, unknown>;
+        for (const member of EXPECT_REGISTERED_MATCHER_MEMBERS) {
+            expect(isRegisteredMatcher(member, declared, live)).toBe(true);
+            // The pin itself: the head a removed line spells is not an assertion call.
+            expect(isAssertionLine(`expect.${member}(baseline),`)).toBe(false);
+        }
+    });
+
+    it('should read the matchers this repository augments the frameworks with, and refuse them as registrations', () => {
+        // The program's own augmentation is part of the declared surface:
+        // `src/types/jest-dom-vitest.d.ts` extends vitest's `AsymmetricMatchersContaining` with jest-dom's
+        // set, so each of those names is declared and none can pass the registration rule, which admits
+        // only a name no declaration carries. A derivation reading the installed package alone would admit
+        // them and would count a removed `expect.toHaveValue('1/4'),` as a removed assertion.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        expect(declared.has('toHaveValue')).toBe(true);
+        expect(declared.has('toBeInTheDocument')).toBe(true);
+        const live = expect as unknown as Record<string, unknown>;
+        expect(isRegisteredMatcher('toHaveValue', declared, live)).toBe(false);
+        expect(isAssertionLine("expect.toHaveValue('1/4'),")).toBe(false);
+        // An augmentation whose extended interface the guard cannot find is a hole in the surface, so it is
+        // named here rather than silently contributing nothing.
+        expect(unresolvedAugmentationBases()).toEqual([]);
+    });
+
+    it('should read the program declarations wherever the program carries them, not one directory', () => {
+        // The declaration set is the program's own include set read from `tsconfig.json`, not the ambient
+        // directory: an augmentation declared anywhere in that set augments the interface the guard derives,
+        // and a set that stopped at `src/types` would leave such a name looking like a registration. The
+        // `src` root is walked whole, so `src/helpers` is inside the surface the same way `src/types` is.
+        const include = programIncludeSet();
+        expect(include.roots).toContain(join(REPOSITORY_ROOT, 'src'));
+        const paths = PROGRAM_DECLARATION_FILES.map((file) => file.path);
+        expect(paths).toContain(join(REPOSITORY_ROOT, 'src', 'types', 'jest-dom-vitest.d.ts'));
+        expect(paths).toContain(join(REPOSITORY_ROOT, 'vite-env.d.ts'));
+        // And the reader behind it takes a declaration wherever an included root points, at any depth, minus
+        // what the exclude list names: a stand-in program below carries one augmentation beside one excluded
+        // declaration, and the set the guard reads is the include minus the exclude. The shipped exclude list
+        // overlaps no walked root today, so this subtraction is observed nowhere else.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-program-declarations-'));
+        try {
+            const elsewhere = join(root, 'elsewhere', 'deeper');
+            mkdirSync(elsewhere, { recursive: true });
+            const declaration = join(elsewhere, 'augmentation.d.ts');
+            writeFileSync(
+                declaration,
+                [
+                    "declare module 'vitest' {",
+                    '    interface CustomMatcher extends ProjectMatchers {}',
+                    '    interface ProjectMatchers {',
+                    '        toBeAProjectMatcher: () => void;',
+                    '    }',
+                    '}',
+                    '',
+                ].join('\n')
+            );
+            const excluded = join(root, 'excluded');
+            mkdirSync(excluded, { recursive: true });
+            writeFileSync(
+                join(excluded, 'ignored.d.ts'),
+                ["declare module 'vitest' {", '    interface ExcludedMatchers {}', '}', ''].join('\n')
+            );
+            const config = join(root, 'tsconfig.json');
+            writeFileSync(
+                config,
+                JSON.stringify({ include: ['elsewhere', 'excluded'], exclude: ['excluded'] }, null, 4)
+            );
+            const files = programDeclarationFiles(config);
+            expect(files.map((file) => file.path)).toEqual([declaration]);
+            const texts = files.map((file) => file.text);
+            expect(augmentedInterfaceMembers('CustomMatcher', texts)).toEqual(['toBeAProjectMatcher']);
+            // Without the subtraction the excluded declaration is part of the program, so the case above
+            // cannot be passing on a walk that never read the exclude list.
+            expect(
+                declarationFilesUnder(root)
+                    .map((file) => file.path)
+                    .sort()
+            ).toEqual([declaration, join(excluded, 'ignored.d.ts')].sort());
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('should admit a name through the registration route rather than through the pair it pins', () => {
+        // The route in general, exercised over a stand-in for a registration the declarations cannot carry
+        // — a project-local `expect.extend`, or an augmentation of a package the guard cannot read — so the
+        // category is the registration and not a list of the names that happened to need it. A name the
+        // declarations carry is refused whatever the live object answers, and a live name that answers with
+        // something other than a matcher value is no registration at all.
+        const declared = new Set([
+            ...Object.values(installedMatcherSurfaces()).flat(),
+            ...Object.values(installedExpectSurfaces()).flat(),
+        ]);
+        const augmented: Readonly<Record<string, unknown>> = {
+            someProjectMatcher: () => ({ asymmetricMatch: () => true }),
+            toBeFasterThan: () => ({ asymmetricMatch: () => true }),
+            // A declared matcher value, a declared helper, and a name this repository's own augmentation
+            // declares, all matcher-shaped here so the refusal is the declaration and not the shape, plus a
+            // live function that is not a matcher value at all.
+            objectContaining: () => ({ asymmetricMatch: () => true }),
+            configure: () => ({ asymmetricMatch: () => true }),
+            toBeInTheDocument: () => ({ asymmetricMatch: () => true }),
+            plainFunction: () => ({}),
+        };
+        expect(isRegisteredMatcher('someProjectMatcher', declared, augmented)).toBe(true);
+        expect(isRegisteredMatcher('toBeFasterThan', declared, augmented)).toBe(true);
+        expect(isRegisteredMatcher('objectContaining', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('configure', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('toBeInTheDocument', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('plainFunction', declared, augmented)).toBe(false);
+        expect(isRegisteredMatcher('toBeFasterThan', declared, {})).toBe(false);
     });
 
     it('should read the control-flow heads the rules name and a bare return, not a return with a value', () => {

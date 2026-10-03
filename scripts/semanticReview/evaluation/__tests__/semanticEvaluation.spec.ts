@@ -7,22 +7,24 @@
  * deliberately outside this suite.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     assertEvaluationIsOptIn,
+    dotenvValue,
     exitCodeFor,
+    loadApiKey,
     parseEvaluationArgs,
     runEvaluationCommand,
 } from '../../../semanticReviewEvaluation.ts';
 import { measureCheckout, readEvaluationOutcome } from '../../../semanticReviewMeasurement.ts';
-import { changedLineFacts, type UnitChangedLineFacts } from '../../changeFacts.ts';
+import { changedLineFacts, type PathChangedLines, type UnitChangedLineFacts } from '../../changeFacts.ts';
 import { SemanticFailure } from '../../contracts.ts';
-import { createMemoryCache, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
+import { createMemoryCache, TYPESAFE_API_KEY_ENV, TYPESAFE_MODEL, type SemanticProviderPort } from '../../provider.ts';
 import { SEMANTIC_BUDGET_PROFILES, semanticRule } from '../../rules.ts';
 import {
     parseEvaluationCorpus,
@@ -92,8 +94,11 @@ function entryById(document: Record<string, unknown>, id: string): Record<string
  * A source port over a fixture the corpus records lines for but no text: the adjudicated negatives, whose
  * regions the live runner reads from Git. The stand-in places each recorded line at the number the corpus
  * records it at, so the plan and the request carry the corpus's facts without any revision being read.
+ *
+ * `secondPath` adds one more changed file under that path, serving the same text: the shape a revision
+ * pair that touched two paths has, which is what a case driving a scope the run could not deliver needs.
  */
-function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
+function standInSource(fixture: EvaluationFixture, secondPath?: string): SemanticSourcePort {
     const lineCount =
         Math.max(
             1,
@@ -114,21 +119,26 @@ function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
         const numbers = lines.map((line) => line.line);
         return { startLine: Math.min(...numbers, 1), endLine: Math.max(...numbers, lineCount) };
     };
+    const changedFileFor = (path: string) => ({
+        path,
+        kind: 'modified' as const,
+        binary: false,
+        generated: false,
+        added: fixture.changedLines.added.length,
+        deleted: fixture.changedLines.removed.length,
+    });
+    const hunksFor = (path: string) => ({
+        path,
+        before: [rangeFor(fixture.changedLines.removed)],
+        after: [rangeFor(fixture.changedLines.added)],
+    });
+    const paths = secondPath === undefined ? [fixture.path] : [fixture.path, secondPath];
     const before = textFor(fixture.changedLines.removed);
     const after = textFor(fixture.changedLines.added);
     return {
-        changedFiles: () => [
-            {
-                path: fixture.path,
-                kind: 'modified',
-                binary: false,
-                generated: false,
-                added: fixture.changedLines.added.length,
-                deleted: fixture.changedLines.removed.length,
-            },
-        ],
+        changedFiles: () => paths.map(changedFileFor),
         readFile: (sha, path) => {
-            if (path !== fixture.path) {
+            if (!paths.includes(path)) {
                 return undefined;
             }
             if (sha === fixture.revisions.mergeBaseSha) {
@@ -136,19 +146,18 @@ function standInSource(fixture: EvaluationFixture): SemanticSourcePort {
             }
             return sha === fixture.revisions.headSha ? after : undefined;
         },
-        changedHunks: () =>
-            new Map([
-                [
-                    fixture.path,
-                    {
-                        path: fixture.path,
-                        before: [rangeFor(fixture.changedLines.removed)],
-                        after: [rangeFor(fixture.changedLines.added)],
-                    },
-                ],
-            ]),
-        changedLines: () => new Map([[fixture.path, fixture.changedLines]]),
+        changedHunks: () => new Map(paths.map((path) => [path, hunksFor(path)])),
+        changedLines: () => new Map(paths.map((path) => [path, fixture.changedLines])),
     };
+}
+
+/**
+ * The stand-in source of one fixture with its recorded changed lines replaced: the state an adjudicated
+ * negative reaches when the lines recorded beside its revisions have drifted from them, which no check on
+ * the corpus's own text can see because a negative records no text.
+ */
+function driftedSource(fixture: EvaluationFixture, changedLines: PathChangedLines): SemanticSourcePort {
+    return { ...standInSource(fixture), changedLines: () => new Map([[fixture.path, changedLines]]) };
 }
 
 /** The unit path a request's own state names, read without trusting the shape. */
@@ -215,6 +224,27 @@ function planForAll(): (fixture: EvaluationFixture) => EvaluationFixturePlan {
     };
 }
 
+/**
+ * The same plan with one fixture's source replaced, which is how a case drives the state a live run reaches
+ * for one fixture without changing what the others are assessed over.
+ */
+function planWithOneSource(
+    fixtureId: string,
+    sourceFor: (fixture: EvaluationFixture) => SemanticSourcePort
+): (fixture: EvaluationFixture) => EvaluationFixturePlan {
+    const standard = planForAll();
+    return (fixture) => {
+        if (fixture.id !== fixtureId) {
+            return standard(fixture);
+        }
+        return {
+            source: sourceFor(fixture),
+            sourceKind: 'git-revisions',
+            revision: fixtureEvaluationRevision(fixture),
+        };
+    };
+}
+
 /** The machine identity the measurement record carries; this case reads the fixtures it recorded, not it. */
 const MEASUREMENT_MACHINE: MeasurementMachine = {
     checkoutGitSha: 'f'.repeat(40),
@@ -232,7 +262,11 @@ afterEach(() => {
     }
 });
 
-async function evaluateWith(corpus: EvaluationCorpus, provider: SemanticProviderPort) {
+async function evaluateWith(
+    corpus: EvaluationCorpus,
+    provider: SemanticProviderPort,
+    planFor: (fixture: EvaluationFixture) => EvaluationFixturePlan = planForAll()
+) {
     return await runEvaluation({
         corpus,
         ports: {
@@ -243,7 +277,7 @@ async function evaluateWith(corpus: EvaluationCorpus, provider: SemanticProvider
             log: () => undefined,
         },
         profile: PROFILE,
-        planFor: planForAll(),
+        planFor,
         runId: 'evaluation-spec',
     });
 }
@@ -528,6 +562,108 @@ describe('the opt-in runner', () => {
         }
     });
 
+    it('should report a negative whose source no longer reports the lines the corpus records', async () => {
+        // A negative's recorded lines can drift from the revisions it names, and the block comparison
+        // cannot see it: dropping the two added comment lines leaves the all-zero block the corpus records
+        // on both sides, so a notice reading only the block calls the fixture a match. The lines
+        // comparison is the check that ties a negative — the one kind of fixture with no text of its own —
+        // to the revisions it grades.
+        const corpus = shippedCorpus();
+        const drifted: PathChangedLines = {
+            added: [{ line: 80, text: "    yeast: 'descriptor-v1:f319bc9b'," }],
+            removed: [{ line: 78, text: "    yeast: 'descriptor-v1:e58d800b'," }],
+        };
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => driftedSource(fixture, drifted))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(negative?.linesVerdict).toBe('differ');
+        // The block the notice used to read alone still agrees, so this case cannot be passing on a block
+        // mismatch instead of on the drift it exists to report.
+        expect(negative?.factsMatchCorpus).toBe(true);
+        expect(renderEvaluation(result)).toContain('matches corpus: true; lines: differ');
+    });
+
+    it('should report a carried block that is not the block the corpus records', async () => {
+        // The false half of the drift notice: a request whose own lines derive a non-empty block while the
+        // corpus records the all-zero one. A notice that answered a match whatever it was handed would
+        // report the corpus as agreeing with a classifier that no longer derives its block.
+        const corpus = shippedCorpus();
+        const drifted: PathChangedLines = {
+            added: [{ line: 80, text: "    expect(descriptorVersion).toBe('descriptor-v1:f319bc9b');" }],
+            removed: [{ line: 78, text: "    yeast: 'descriptor-v1:e58d800b'," }],
+        };
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => driftedSource(fixture, drifted))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        // The block the request carried is the classifier's own derivation from the source's lines, which
+        // is what makes this case about the notice rather than about a hand-built block.
+        expect(negative?.factsCarried).toEqual(changedLineFacts(drifted));
+        expect(negative?.factsMatchCorpus).toBe(false);
+        expect(renderEvaluation(result)).toContain('matches corpus: false');
+    });
+
+    it('should report a fixture no request asked as carrying nothing rather than as disagreeing', async () => {
+        // The notice's third state: a source that offers no changed file leaves the run nothing to ask, so
+        // no request carried a block and neither verdict is a disagreement with the corpus. A `differ` here
+        // would report a drift for a fixture whose block was never derived.
+        const corpus = shippedCorpus();
+        const result = await evaluateWith(
+            corpus,
+            stubProvider(() => 0.02).port,
+            planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                ...standInSource(fixture),
+                changedFiles: () => [],
+            }))
+        );
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(negative?.factsCarried).toBeUndefined();
+        expect(negative?.factsMatchCorpus).toBeUndefined();
+        expect(renderEvaluation(result)).toContain('no request carried a fact block (lines: match)');
+    });
+
+    it('should report lines that could not be read as unread rather than as a disagreement', async () => {
+        // The unread state, from both reads that really fail: `gitSource.changedLines` throws on any git
+        // failure, and a source whose map carries no entry for the fixture reports nothing either. The
+        // collector tolerates both, so the fixture arrives with an `unavailable` block. A `differ` for
+        // either clause would report a drift nobody observed — the same infrastructure-outcome-as-semantic
+        // confusion the exit codes keep apart.
+        const corpus = shippedCorpus();
+        const unreadable: readonly (() => ReadonlyMap<string, PathChangedLines>)[] = [
+            () => {
+                throw new Error('git could not read the diff');
+            },
+            () => new Map<string, PathChangedLines>(),
+        ];
+        for (const changedLines of unreadable) {
+            const result = await evaluateWith(
+                corpus,
+                stubProvider(() => 0.02).port,
+                planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                    ...standInSource(fixture),
+                    changedLines,
+                }))
+            );
+            const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+            expect(negative?.factsCarried).toEqual({ basis: 'unavailable' });
+            expect(negative?.factsMatchCorpus).toBeUndefined();
+            expect(negative?.linesVerdict).toBe('unread');
+            expect(renderEvaluation(result)).toContain('{"basis":"unavailable"} (block: unread; lines: unread)');
+            // The fixtures whose lines the same run could read keep their verdict, so `unread` is a property
+            // of the read that failed and not a blanket answer: the other adjudicated negative still matches.
+            expect(
+                result.outcomes
+                    .filter((outcome) => outcome.fixtureId !== 'descriptor-hash-retarget')
+                    .every((outcome) => outcome.linesVerdict === 'match')
+            ).toBe(true);
+        }
+    });
+
     it('should hold a negative when its rule stays quiet and a positive when its rule fires', async () => {
         const corpus = shippedCorpus();
         const positives = positiveRules(corpus);
@@ -654,6 +790,51 @@ describe('the outcome file the measurement command reads', () => {
         expect(record.acrossRuns.runCountByKind).toEqual({ 'evaluation-fixture': corpus.fixtures.length });
         expect(record.sources.evaluationFixturesRead).toBe(corpus.fixtures.length);
     });
+
+    it('should keep the held run exit when the outcome file cannot be written', async () => {
+        // The write is the command's own side effect, not part of the assessment: classifying a failed write
+        // with the run's non-delivery sent a fully assessed, held run — which the usage table maps to 0 — to
+        // the incomplete exit. The run's code stands, and the writer reports the failure it answered rather
+        // than announcing a file that is not there.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-evaluation-unwritable-'));
+        outcomeRoots.push(root);
+        // A directory that does not exist is a write that fails whoever runs it, with no permissions to set.
+        const outcomePath = join(root, 'absent', 'outcomes.json');
+        const reported = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        const logged: string[] = [];
+        let exitCode = -1;
+        let reportedMessage = '';
+        try {
+            exitCode = await runEvaluationCommand({
+                argv: ['--out', outcomePath],
+                sourceFor: planForAll(),
+                portsFor: () => ({
+                    provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
+                    cache: createMemoryCache(),
+                    clock: { now: () => 1_700_000_000_000 },
+                    signal: new AbortController().signal,
+                    log: () => undefined,
+                }),
+                log: (message) => {
+                    logged.push(message);
+                },
+            });
+            // Read before the spy goes: restoring it clears what it recorded.
+            reportedMessage = String(reported.mock.calls[0]?.[0]);
+        } finally {
+            reported.mockRestore();
+        }
+        // 1 would be a label that did not hold and 3 an assessment that was not delivered; only the run's own
+        // success code shows the write was classified on its own terms.
+        expect(exitCode).toBe(0);
+        expect(readdirSync(root)).toEqual([]);
+        expect(reportedMessage).toContain(`the outcomes file ${outcomePath} was not written`);
+        // And the command never announces a file it did not write, which answering `true` from the failed
+        // write would do while both codes and the stderr report still looked right.
+        expect(logged.filter((message) => message.startsWith('outcomes:'))).toEqual([]);
+    });
 });
 
 describe("the evaluation command's own exit code", () => {
@@ -684,6 +865,207 @@ describe("the evaluation command's own exit code", () => {
         });
         expect(exitCode).toBe(1);
     });
+    it('should return the incomplete exit when a fixture reports nothing to assess', async () => {
+        // The `skipped` state: a source whose changed files carry no entry for the fixture, which is what a
+        // fixture whose path is absent from its recorded revision reaches. No request assessed it, so the
+        // run is non-delivery — counting `skipped` as delivered sent it to the disagreement exit over the
+        // labels it never asked, which the usage table does not promise.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const nothingToAssess = (): SemanticProviderPort =>
+            stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port;
+        const plan = planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+            ...standInSource(fixture),
+            changedFiles: () => [],
+        }));
+        const result = await evaluateWith(corpus, nothingToAssess(), plan);
+        const unassessed = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(unassessed?.execution).toBe('skipped');
+        // Every label the run could ask held, which is exactly the state the disagreement exit misread.
+        expect(result.expectationsHeld).toBe(3);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: plan,
+            portsFor: () => ({
+                provider: nothingToAssess(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the run was cancelled', async () => {
+        // The `cancelled` execution: a provider refusing every request with that code leaves each fixture
+        // unassessed and the report says so. It is non-delivery like the others — nothing was assessed, so no
+        // label can have disagreed — and an assessed test widened to accept it would report an infrastructure
+        // outcome as a delivered disagreement.
+        const corpus = shippedCorpus();
+        const cancelled = (): SemanticProviderPort =>
+            stubProvider(() => {
+                throw new SemanticFailure('cancelled', 'the run was cancelled');
+            }).port;
+        const result = await evaluateWith(corpus, cancelled());
+        expect(result.outcomes.every((outcome) => outcome.execution === 'cancelled')).toBe(true);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: cancelled(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the source cannot be read at all', async () => {
+        // A read that fails is a run that delivered nothing, not a bad invocation: `gitSource` throws on any
+        // git failure, and the usage table reserves the invalid-invocation exit for an invocation the
+        // command itself refused.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planWithOneSource('descriptor-hash-retarget', (fixture) => ({
+                ...standInSource(fixture),
+                changedFiles: () => {
+                    throw new Error('git could not read the change');
+                },
+            })),
+            portsFor: () => ({
+                provider: stubProvider(() => 0.02).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+});
+
+describe("the evaluation command's refusal exits", () => {
+    it('should return the invalid-invocation exit when the invocation is refused', async () => {
+        // The command's catch, through the refusal it is most likely to hold: `parseEvaluationArgs`
+        // refuses an unsupported profile before the corpus is read or a port is built, and `failureExit`
+        // answers the documented invalid-invocation code. A catch that answered the success code whatever
+        // it caught would let a misspelled invocation report a delivered evaluation.
+        const exitCode = await runEvaluationCommand({
+            argv: ['--profile', 'extended'],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: stubProvider(() => 0.02).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(2);
+    });
+
+    it('should return the provider-incomplete exit when the provider cannot be built', async () => {
+        // What the entry point does with no TypeSafe key: `loadApiKey` refuses with `missing_credentials`
+        // while the ports are built, so no request is ever made. The failure is a `SemanticFailure` whose
+        // code is neither invocation nor response, which is the documented "the provider did not deliver
+        // an assessment" code.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => {
+                throw new SemanticFailure('missing_credentials', 'no TypeSafe key in the environment');
+            },
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the provider answer contract is refused', async () => {
+        // A refusal the run cannot route to a fixture: the ports are built before the first request, and an
+        // answer contract the provider cannot honour is an assessment that was not delivered. Only the
+        // command's own refusals — an unknown option, an unsupported profile, a corpus it cannot read —
+        // earn the invalid-invocation exit.
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => {
+                throw new SemanticFailure('invalid_response', 'the provider answer contract cannot be honoured');
+            },
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when the provider delivers nothing at all', async () => {
+        // A total outage: every request fails, so no fixture is assessed and no label was ever asked. Both
+        // conditions hold at once here — nothing was delivered *and* no label held — which is the point of
+        // the priority: the exit names the non-delivery, and reading the mismatch first reports an
+        // infrastructure outcome as a label that disagreed with its recording.
+        const corpus = shippedCorpus();
+        const outage = (): SemanticProviderPort =>
+            stubProvider(() => {
+                throw new SemanticFailure('provider_unavailable', 'the provider refused every request');
+            }).port;
+        const result = await evaluateWith(corpus, outage());
+        expect(result.expectationsHeld).toBe(0);
+        expect(result.outcomes.every((outcome) => outcome.expectedConcernHeld)).toBe(false);
+        expect(result.outcomes.every((outcome) => outcome.execution !== 'completed')).toBe(true);
+        expect(exitCodeFor(result)).toBe(3);
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planForAll(),
+            portsFor: () => ({
+                provider: outage(),
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
+
+    it('should return the incomplete exit when a provider failure leaves part of a run undelivered', async () => {
+        // Non-delivery outranking the held labels, not only the disagreed ones: this run asked and held
+        // every label it assessed, and one fixture's second changed file was never assessed. A success code
+        // here would report a scope the run did not deliver. The shipped corpus's own fixture shape cannot
+        // produce the state — a fixture whose own unit fails carries no held label either, so it reads as
+        // non-delivery too — which is why this case gives one fixture the two-path shape a revision pair
+        // can have and fails only the second path's request.
+        const corpus = shippedCorpus();
+        const positives = positiveRules(corpus);
+        const undeliveredPath = 'src/modules/Arrangement/useCases/__tests__/zzUndelivered.spec.ts';
+        const exitCode = await runEvaluationCommand({
+            argv: [],
+            sourceFor: planWithOneSource('descriptor-hash-retarget', (fixture) =>
+                standInSource(fixture, undeliveredPath)
+            ),
+            portsFor: () => ({
+                provider: stubProvider(({ ruleId, path }) => {
+                    if (path === undeliveredPath) {
+                        throw new SemanticFailure('provider_unavailable', 'the provider did not answer this file');
+                    }
+                    return positives.get(path) === ruleId ? 0.95 : 0.02;
+                }).port,
+                cache: createMemoryCache(),
+                clock: { now: () => 1_700_000_000_000 },
+                signal: new AbortController().signal,
+                log: () => undefined,
+            }),
+            log: () => undefined,
+        });
+        expect(exitCode).toBe(3);
+    });
 });
 
 describe('the live command line is opt-in', () => {
@@ -710,5 +1092,90 @@ describe('the live command line is opt-in', () => {
         expect(() => assertEvaluationIsOptIn({ CI: 'true', VITEST: 'true' })).toThrow(/never run from a unit test/u);
         expect(() => assertEvaluationIsOptIn({})).not.toThrow();
         expect(() => assertEvaluationIsOptIn({ CI: 'false' })).not.toThrow();
+    });
+});
+
+describe('the credential the live evaluation needs', () => {
+    /** The refusal the loader owes when neither source has a key, with the path it looked in. */
+    function refusalFor(root: string): SemanticFailure {
+        try {
+            loadApiKey(root, {});
+        } catch (error) {
+            if (error instanceof SemanticFailure) {
+                return error;
+            }
+            throw error;
+        }
+        throw new Error('the loader returned a key where it owed a refusal');
+    }
+
+    it('should take the key from the environment, then the primary root dotenv, and refuse when neither has one', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-credentials-'));
+        outcomeRoots.push(root);
+        expect(loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '  from-environment  ' })).toBe('from-environment');
+        // A missing dotenv file is the documented path to the refusal, and the read is what finds it: the
+        // pre-checked form this replaced probed the path first, a check and its use another writer can split.
+        const refusal = refusalFor(root);
+        expect(refusal.code).toBe('missing_credentials');
+        expect(refusal.message).toBe(
+            `refusing to call TypeSafe: ${TYPESAFE_API_KEY_ENV} is not set in the environment or in ${root}/.env.sourdaw-semantic`
+        );
+        // A key in a blank environment entry is no key, and one in the file is the file's answer.
+        expect(() => loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: '   ' })).toThrow(SemanticFailure);
+        writeFileSync(join(root, '.env.sourdaw-semantic'), `${TYPESAFE_API_KEY_ENV}=from-dotenv\n`);
+        expect(loadApiKey(root, {})).toBe('from-dotenv');
+        // Both sources at once, holding different values: the environment wins. That precedence is the
+        // documented one — the loader resolves the environment first, exactly as `review:semantic` does — and
+        // it is the only assertion a loader reading the file first would fail, since every other case here
+        // sets one source and leaves the other empty.
+        expect(loadApiKey(root, { [TYPESAFE_API_KEY_ENV]: 'from-environment' })).toBe('from-environment');
+    });
+
+    it('should answer the refusal for a missing file alone, over every code a read can report', () => {
+        // The classification, driven over the codes rather than over the shapes a portable filesystem can be
+        // made to produce: only a path that is not there is "no dotenv file". A permission the process does
+        // not have, a path that is a directory, and every other read failure are raised, because answering
+        // the documented refusal for one of them would report an access or shape problem as a missing key.
+        const path = join(tmpdir(), 'sourdaw-semantic-credentials', '.env.sourdaw-semantic');
+        for (const code of ['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EIO', 'EBUSY', 'EMFILE']) {
+            let thrown: unknown;
+            try {
+                dotenvValue(path, TYPESAFE_API_KEY_ENV, () => {
+                    throw Object.assign(new Error(`${code}: the dotenv file`), { code });
+                });
+            } catch (error) {
+                thrown = error;
+            }
+            expect(thrown).toBeInstanceOf(Error);
+            expect((thrown as { readonly code?: unknown }).code).toBe(code);
+        }
+        expect(
+            dotenvValue(path, TYPESAFE_API_KEY_ENV, () => {
+                throw Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+            })
+        ).toBeUndefined();
+    });
+
+    it('should raise a dotenv path it cannot read rather than report a missing credential', () => {
+        // The classification the loader owes: only a path that is not there is "no dotenv file". A primary
+        // root that is a file, and a dotenv path that is a directory rather than a file, are read failures;
+        // answering the refusal for either would report a configuration shape problem as a missing key, and
+        // a pre-checked existence probe answers exactly that for both.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-credentials-'));
+        outcomeRoots.push(root);
+        const fileRoot = join(root, 'not-a-directory');
+        writeFileSync(fileRoot, 'not a primary root\n');
+        const directoryRoot = join(root, 'as-directory');
+        mkdirSync(join(directoryRoot, '.env.sourdaw-semantic'), { recursive: true });
+        for (const primaryRoot of [fileRoot, directoryRoot]) {
+            let failure: unknown;
+            try {
+                loadApiKey(primaryRoot, {});
+            } catch (error) {
+                failure = error;
+            }
+            expect(failure).toBeInstanceOf(Error);
+            expect(failure).not.toBeInstanceOf(SemanticFailure);
+        }
     });
 });
