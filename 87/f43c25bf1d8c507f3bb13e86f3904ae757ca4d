@@ -1,0 +1,66 @@
+src/modules/Arrangement/useCases/getDeviceContractVersionForCommand.ts
+  s_1c08b47ac3792f::t_8440786b294bc8 6,8
+src/modules/AiRuntime/models/BackingVocalPlateCapability.ts
+  s_1c08b47ac3792f::t_5c70672bd81eba 27
+src/modules/Arrangement/AGENTS.md
+  s_1c08b47ac3792f::t_f17aa4fc509312 8
+  s_1c08b47ac3792f::t_0df69410a06580 27
+src/modules/AiRuntime/useCases/agentReference/resolveAvailableCharacterDevice.ts
+  s_1c08b47ac3792f::t_133e916a58898f 1-40
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_c186c83bd8733b 216-232
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_1c08b47ac3792f::t_e23636103f5c5f 206-207
+  s_1c08b47ac3792f::t_bd804d1450984d 174-180
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_1c08b47ac3792f::t_dbb7a47846da0b 24
+src/modules/Arrangement/useCases/index.ts
+  s_1c08b47ac3792f::t_2cb29364ad5faa 272
+src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts
+  s_1c08b47ac3792f::t_7fb5924d20db08 276
+  s_1c08b47ac3792f::t_f8ebc194cd31f1 1,7-8,12
+  s_1c08b47ac3792f::t_a691ab9ebca130 106-107
+  s_1c08b47ac3792f::t_53cc11908b6f20 156-165
+  s_1c08b47ac3792f::t_26023259ce7f96 209,211-214
+  s_1c08b47ac3792f::t_cf56c25e36cd7c 236
+  s_1c08b47ac3792f::t_d84759e0523bda 81
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_1c08b47ac3792f::t_8b0bbde378ee49 318-332
+  s_1c08b47ac3792f::t_c525c4c0b8db95 184-198
+src/modules/Arrangement/useCases/__tests__/isReverbDeviceType.spec.ts
+  s_1c08b47ac3792f::t_109da1a6140496 1-48
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_1c08b47ac3792f::t_1bc0bbd1ad8d23 231
+  s_1c08b47ac3792f::t_865a092e1a0d36 1025
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_1c08b47ac3792f::t_5eaeb474fa67a6 466-468
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_1c08b47ac3792f::t_f8a2fda2b5e147 159-163
+src/modules/Arrangement/useCases/isReverbDeviceType.ts
+  s_1c08b47ac3792f::t_9076bef0d2641d 1-12
+src/modules/AiRuntime/useCases/__tests__/deviceCharacterResolution.spec.ts
+  s_1c08b47ac3792f::t_371e75cd4563ff 236,241-243,255-279
+  s_1c08b47ac3792f::t_bcfbbc898b8921 296
+  s_1c08b47ac3792f::t_69d24e6b0212f9 3-4,6-11,21-156,193-235,237-240,244-254,280-295,297-340
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_1c08b47ac3792f::t_603bd2289385fa 47
+  s_1c08b47ac3792f::t_8956d381ae52ee 149
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_993cdfce0e8900 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "87f43c25bf1d8c507f3bb13e86f3904ae757ca4d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
