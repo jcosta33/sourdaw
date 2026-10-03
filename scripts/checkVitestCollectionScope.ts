@@ -51,6 +51,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Brings in vitest's `test` augmentation of Vite's `ResolvedConfig`, which `resolveConfig` returns.
+import type {} from 'vitest/config';
 import { resolveConfig } from 'vitest/node';
 
 import {
@@ -370,7 +372,9 @@ async function main(): Promise<number> {
     // 6. Exclude mirror, from the resolved config.
     const mirrorDrift = describeExcludeMirrorDrift(await readConfigExcludePrefixes(), vitestExcludePrefixes);
     if (mirrorDrift.length === 0) {
-        console.log(`  ✓ vitestExcludePrefixes matches the ${vitestExcludePrefixes.length} directory prefixes in the resolved exclude`);
+        console.log(
+            `  ✓ vitestExcludePrefixes matches the ${vitestExcludePrefixes.length} directory prefixes in the resolved exclude`
+        );
     } else {
         failures.push(mirrorDrift.join('\n'));
     }
