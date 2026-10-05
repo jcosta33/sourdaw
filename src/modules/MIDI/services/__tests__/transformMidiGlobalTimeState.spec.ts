@@ -1028,4 +1028,36 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
         expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 10), cc('b', 2, 20)]);
         expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 20)]);
     });
+
+    it('carries the later row of two controller events on the same beat as the value in force at the cut', () => {
+        const prepared = state({ ccByClipId: { source: [cc('up', 2, 0), cc('down', 2, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 127)]);
+    });
+
+    it('carries the latest-beat controller value when the source rows are not in beat order', () => {
+        const prepared = state({ ccByClipId: { source: [cc('late', 3, 0), cc('early', 1, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('late', 3, 0), cc('early', 1, 127)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:0', 0, 0)]);
+    });
+
+    it('carries the latest-beat pitch bend of each channel when the source rows are not in beat order', () => {
+        const prepared = state({
+            pitchBendByClipId: {
+                source: [pitchBend('late', 3, 0.6, 0), pitchBend('early', 1, 0.3, 0), pitchBend('other', 2, -0.4, 1)],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.pitchBendByClipId.right).toEqual([
+            pitchBend('pb-split:right:0', 0, 0.6, 0),
+            pitchBend('pb-split:right:2', 0, -0.4, 1),
+        ]);
+    });
 });
