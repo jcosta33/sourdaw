@@ -31,8 +31,28 @@ import { withRecordedNoteExpression } from './withRecordedNoteExpression';
  */
 const FALLBACK_GENERATED_NOTE_SECONDS = 0.5;
 
+type RecordedClip = { id: string; startBeat: number; endBeat: number };
+
+/**
+ * Distance from a beat to a half-open [startBeat, endBeat) clip: zero inside,
+ * otherwise the beats to the nearer edge. The onset reaching this helper is
+ * outside every candidate, so one of the two terms is always positive.
+ */
+function clipDistance(clip: RecordedClip, beat: number): number {
+    return Math.max(clip.startBeat - beat, beat - clip.endBeat);
+}
+
+/** The clip whose span sits nearest the beat, earlier clip winning a tie. */
+function nearestClip(clips: RecordedClip[], beat: number): RecordedClip {
+    return clips.reduce((best, clip) => (clipDistance(clip, beat) < clipDistance(best, beat) ? clip : best));
+}
+
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
-    function findActiveRecordingClip(trackId: string, compensatedOnsetBeat: number): string | null {
+    function findActiveRecordingClip(
+        trackId: string,
+        compensatedOnsetBeat: number,
+        rawOnsetBeat: number
+    ): string | null {
         const trackState = deps.getTrackStoreState();
         const transport = deps.getTransportStoreValue();
         if (!trackState || !transport) {
@@ -49,33 +69,42 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             return null;
         }
 
-        if (transport.isRecording && transport.overdubEnabled) {
-            // Half-open [startBeat, endBeat), matching every other clip range
-            // test in this module. An inclusive end makes the seam beat of two
-            // abutting clips satisfy both, so `find` files the note into
-            // whichever clip happens to come first in array order.
-            const intersecting = midiClips.find(
-                (clip) => compensatedOnsetBeat >= clip.startBeat && compensatedOnsetBeat < clip.endBeat
-            );
-            if (intersecting) {
-                return intersecting.id;
-            }
+        if (!(transport.isRecording && transport.overdubEnabled)) {
+            return midiClips[midiClips.length - 1]!.id;
+        }
 
-            if (
-                transport.isLooping &&
-                compensatedOnsetBeat >= transport.loopStart &&
-                compensatedOnsetBeat <= transport.loopEnd
-            ) {
-                const loopClip = midiClips.find(
-                    (clip) => clip.startBeat >= transport.loopStart && clip.endBeat <= transport.loopEnd
-                );
-                if (loopClip) {
-                    return loopClip.id;
-                }
+        // Half-open [startBeat, endBeat), matching every other clip range
+        // test in this module. An inclusive end makes the seam beat of two
+        // abutting clips satisfy both, so `find` files the note into
+        // whichever clip happens to come first in array order.
+        const intersecting = midiClips.find(
+            (clip) => compensatedOnsetBeat >= clip.startBeat && compensatedOnsetBeat < clip.endBeat
+        );
+        if (intersecting) {
+            return intersecting.id;
+        }
+
+        // The loop rescue keys on the region either coordinate puts the onset
+        // in (#4869): a latency-rewound onset can sit before loopStart while
+        // the musician's raw onset was inside the region, and the wrap must
+        // not cost the note its loop clip.
+        const insideLoopRegion = (beat: number): boolean =>
+            transport.isLooping && beat >= transport.loopStart && beat <= transport.loopEnd;
+        if (insideLoopRegion(compensatedOnsetBeat) || insideLoopRegion(rawOnsetBeat)) {
+            const loopClips = midiClips.filter(
+                (clip) => clip.startBeat >= transport.loopStart && clip.endBeat <= transport.loopEnd
+            );
+            if (loopClips.length > 0) {
+                return nearestClip(loopClips, compensatedOnsetBeat).id;
             }
         }
 
-        return midiClips[midiClips.length - 1]!.id;
+        // An onset outside every clip still belongs to the clip it played
+        // against: the nearest one in time (#4869). Before-all onsets take
+        // the first clip and in-gap onsets the nearer neighbor; the old
+        // last-clip fallback filed a seam-rewound onset into the track's
+        // last clip, half the arrangement away.
+        return nearestClip(midiClips, compensatedOnsetBeat).id;
     }
 
     return async function handleWebMidiNoteOff(
@@ -114,7 +143,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const pendingRelease = pendingYeastRelease.begin(
                 `${instrumentTrackId}:${yeastDevice.id}`,
                 noteData.yeastVoiceReleases ?? new Map(),
-                noteData.yeastGeneratedVoices ?? new Map(),
                 instrumentTrackId,
                 noteData.channel
             );
@@ -141,13 +169,19 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     start();
                     (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
                 } else {
-                    noteData.yeastGeneratedVoices?.get(generatedId)?.release(sampleFrame, 0);
                     start();
-                    (noteData.yeastGeneratedVoices ??= new Map()).set(generatedId, {
+                    // The voice registers in the shared route-keyed registry
+                    // at start, not in this note's map (#4870): the drain
+                    // that supersedes this session's pump must be able to
+                    // release a voice this session started.
+                    pendingYeastRelease.registerVoice(
+                        `${instrumentTrackId}:${yeastDevice.id}`,
+                        instrumentTrackId,
+                        generatedId,
                         pitch,
-                        channel: voiceChannel,
-                        release,
-                    });
+                        voiceChannel,
+                        release
+                    );
                 }
             };
             // A generated note first emitted at the release block reaches its
@@ -272,14 +306,11 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                             continue;
                         }
                         if (event.noteInstanceId !== undefined) {
-                            // A voice the drain itself created is absent from
-                            // the pending snapshot taken before it existed; it
-                            // releases through the live generated-voice map.
-                            const voice = noteData.yeastGeneratedVoices?.get(event.noteInstanceId);
-                            if (voice?.pitch === eventNote && voice.channel === event.kind.channel) {
-                                voice.release(eventSampleFrame);
-                                noteData.yeastGeneratedVoices?.delete(event.noteInstanceId);
-                            }
+                            // Instance-keyed voices release through the
+                            // shared registry's releaseEvent above, from any
+                            // session's drain (#4870). A note-off that did
+                            // not resolve there is a repeat and must not fall
+                            // through to the source-pitch release below.
                             continue;
                         }
                         if (
@@ -431,7 +462,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             // the compensated coordinate: resolving on the raw onset would
             // file the note into the clip past the seam and clamp it to that
             // clip's origin — a heard 3.92 whose raw read is 4.02 (#4668).
-            const clipId = findActiveRecordingClip(targetTrackId, latencyAdjustedOnsetBeat);
+            const clipId = findActiveRecordingClip(targetTrackId, latencyAdjustedOnsetBeat, noteData.startBeat);
             if (!clipId) {
                 return;
             }

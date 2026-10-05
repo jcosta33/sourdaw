@@ -15,7 +15,9 @@ import {
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
-const ensure_track_strip = vi.hoisted(() => vi.fn(() => ({ gainNode: {}, deviceNodes: [] })));
+const ensure_track_strip = vi.hoisted(() =>
+    vi.fn(() => ({ gainNode: {}, deviceNodes: [] as Array<Record<string, unknown>> }))
+);
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 type TestMidiEvent = {
@@ -366,6 +368,94 @@ describe('handleWebMidiNoteOff', () => {
             },
         ]);
         expect(fermenter_note_off).toHaveBeenCalledWith(67, 129_840, 0);
+    });
+
+    // #4870 — one pump per rack route means a second input supersedes the
+    // first session's pump, but the in-flight window still delivers through
+    // the retired session's closure. A generated note voiced there must be
+    // releasable by the SUPERSEDING session's drain: the shared registry is
+    // keyed per route, so the note-off resolves the voice the other session
+    // started instead of being consumed and dropped to ring indefinitely.
+    it("releases a superseded session's generated voice through the superseding session's drain (#4870)", async () => {
+        const closures: Array<(events: readonly RealtimeMidiEvent[]) => boolean | void> = [];
+        const fermenter_note_on =
+            vi.fn<(note: number, velocity: number, sampleFrame?: number, channel?: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const yeast_deps = make_dependencies({
+            getTrackStoreState: () => ({
+                tracks: [
+                    {
+                        id: 'track-1',
+                        devices: [
+                            { id: 'yeast-1', type: 'yeast' },
+                            { id: 'ferm-1', type: 'fermenter' },
+                        ],
+                    },
+                ],
+                selectedTrackId: 'track-1',
+            }),
+            getTransportStoreValue: () => ({ isRecording: false }),
+            stepRecordNoteOn: () => {},
+            processRealtimeMidiInput: async (input: RealtimeMidiInput) => {
+                closures.push(input.onDrainedEvents!);
+                return [];
+            },
+        });
+        const release = handleWebMidiNoteOff._factory(yeast_deps);
+        const strike = handleWebMidiNoteOn._factory({ ...yeast_deps, handleWebMidiNoteOff: release });
+        // The note-on handler voices through `ensureTrackStrip`, the note-off
+        // through `getTrackStrip`; the fermenter answers on both.
+        const liveStrip = {
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'ferm-1',
+                    fermenterControls: { noteOn: fermenter_note_on, noteOff: fermenter_note_off },
+                },
+            ],
+        };
+        const defaultEnsureStrip =
+            ensure_track_strip.getMockImplementation() ?? (() => ({ gainNode: {}, deviceNodes: [] }));
+        ensure_track_strip.mockReturnValue(liveStrip);
+        get_track_strip.mockReturnValue(liveStrip);
+        try {
+            // Session 1 strikes the source note; session 2's strike supersedes
+            // its pump while the in-flight window is still out.
+            await strike(0, 60, 100);
+            await strike(0, 62, 100);
+            expect(closures.length).toBe(2);
+
+            // The retired session's closure voices its generated note on the
+            // fermenter.
+            closures[0]!([
+                {
+                    timeSamples: 96_240,
+                    noteInstanceId: 'arp-1:generated:1',
+                    durationSamples: 33_600,
+                    kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                },
+            ]);
+            expect(fermenter_note_on).toHaveBeenCalledWith(67, 100, 96_240, 0);
+
+            // The superseding session's drain carries that voice's note-off: it
+            // must release the voice the retired session started.
+            closures[1]!([
+                {
+                    timeSamples: 129_840,
+                    noteInstanceId: 'arp-1:generated:1',
+                    kind: { type: 'noteOff', channel: 0, note: 67 },
+                },
+            ]);
+            expect(fermenter_note_off).toHaveBeenCalledWith(67, 129_840, 0);
+
+            // The source note's own release then finds the voice already
+            // released — exactly once, no double fire.
+            await release(0, 60, 0);
+            expect(fermenter_note_off).toHaveBeenCalledTimes(1);
+        } finally {
+            ensure_track_strip.mockImplementation(defaultEnsureStrip);
+        }
     });
 
     it('stops voicing drained events after the input was reset (#4870)', async () => {

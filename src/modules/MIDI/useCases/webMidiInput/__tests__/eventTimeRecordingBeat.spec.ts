@@ -160,6 +160,51 @@ describe('event-time recording beat (#4875)', () => {
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.8, 9);
     });
 
+    // #4875 — a roll that began strictly inside the loop has, after the first
+    // wrap, a cursor BEHIND its epoch: the direct beat delta to the epoch
+    // start goes negative, and the old epoch pre-check clamped every
+    // same-pass event — young, genuinely-in-roll ones included — to the
+    // epoch start.
+    it('records a young same-pass event after a mid-loop roll start wraps', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The roll crossed the seam 0.05 s ago and sits 0.1 beats into the
+        // pass; the event is 30 ms old — 0.06 beats back from the cursor.
+        cursorAt(0.1);
+
+        await dispatch([0x91, 60, 100], 1070);
+
+        // The old direct-delta pre-check answered 7, the epoch start.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.04, 9);
+    });
+
+    it('records a young same-pass event on a later pass of a mid-loop roll', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // A later pass: the cursor is 6.9 beats into the region while the
+        // epoch start (7) sits behind it; the event is 100 ms old.
+        cursorAt(6.9);
+
+        await dispatch([0x91, 60, 100], 1000);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.7, 9);
+    });
+
+    // #4875, #4668 — the seam branch is bounded by the roll's whole traversal
+    // too, looping transports included: the integrated span from a mid-region
+    // epoch to the seam plus the current pass's distance. A stamp older than
+    // that predates playback and answers the epoch start, not a dying-pass
+    // beat the transport never traversed.
+    it('answers a seam-branch stamp older than the whole roll with the mid-loop epoch start', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The roll has traveled 0.55 s — the 0.5 s to the seam plus 0.05 s
+        // into the pass; the stamp is 0.9 s old.
+        cursorAt(0.1);
+
+        await dispatch([0x91, 60, 100], 200);
+
+        // The unbounded seam inversion answered 7.575.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7, 9);
+    });
+
     // #4668 — backwards travel is bounded at the rolling epoch's start: a
     // stamp older than the whole roll predates playback, so it answers the
     // start position the store holds instead of beats the transport never

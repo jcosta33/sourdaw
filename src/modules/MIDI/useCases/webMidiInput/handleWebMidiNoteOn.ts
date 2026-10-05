@@ -217,13 +217,19 @@ export const handleWebMidiNoteOn = inject({
                         start();
                         (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
                     } else {
-                        noteData.yeastGeneratedVoices?.get(generatedId)?.release(sampleFrame, 0);
                         start();
-                        (noteData.yeastGeneratedVoices ??= new Map()).set(generatedId, {
+                        // The voice registers in the shared route-keyed
+                        // registry at start, not in this note's map (#4870):
+                        // the drain that supersedes this session's pump must
+                        // be able to release a voice this session started.
+                        pendingYeastRelease.registerVoice(
+                            `${instrumentTrackId}:${yeastDevice.id}`,
+                            instrumentTrackId,
+                            generatedId,
                             pitch,
-                            channel: voiceChannel,
-                            release,
-                        });
+                            voiceChannel,
+                            release
+                        );
                     }
                 };
                 // One voicing path for the ingress batch and for every drained
@@ -358,11 +364,12 @@ export const handleWebMidiNoteOn = inject({
                                 continue;
                             }
                             if (event.noteInstanceId !== undefined) {
-                                const voice = noteData.yeastGeneratedVoices?.get(event.noteInstanceId);
-                                if (voice?.pitch === eventNote && voice.channel === event.kind.channel) {
-                                    voice.release(eventSampleFrame);
-                                    noteData.yeastGeneratedVoices?.delete(event.noteInstanceId);
-                                }
+                                // Instance-keyed voices release through the
+                                // shared registry's releaseEvent above, from
+                                // any session's drain (#4870). A note-off
+                                // that did not resolve there is a repeat and
+                                // must not fall through to the source-pitch
+                                // release below.
                                 continue;
                             }
                             if (event.kind.channel !== channel) {

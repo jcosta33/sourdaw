@@ -87,10 +87,14 @@ function invertTravelToSeam(elapsedSeconds: number, loopStart: number, loopEnd: 
  *
  * A parked transport answers from the store, the same defined fallback
  * `captureGestureBeat` has; an event stamped at or after the capture instant
- * keeps the now-beat. Backwards travel is bounded at the rolling epoch's start
- * — the store position the playing transition wrote — so a stamp older than
- * the roll itself answers that start position instead of beats the transport
- * never traversed (#4668).
+ * keeps the now-beat. Backwards travel is bounded by the roll's integrated
+ * traversal — the seconds from the rolling epoch's start (the store position
+ * the playing transition wrote) to the cursor, taken around the loop when
+ * looping: the span from a mid-region epoch to the seam plus the current
+ * pass's distance. A stamp older than that traversal predates playback and
+ * answers the epoch start instead of beats the transport never traversed
+ * (#4668); the same bound holds on the dying pass past a wrap, so a looping
+ * transport cannot answer a beat the roll never reached (#4875).
  */
 export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number {
     const transport = transportStore.value;
@@ -118,29 +122,43 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
     // boundary and nothing writes it while playing, so it is the beat this roll
     // began from — the same position the parked branch above answers from.
     const epochStartBeat = transport.playheadPosition;
-    // Travel the event's age back from the cursor, bounded at the epoch start
-    // (#4668): a stamp older than the whole roll predates playback and answers
-    // the start position, exactly as the stop case answers the store. The
-    // pre-check also hands `invertTravelBackward` a floor that already spans
-    // the event's age, so its doubling phase can never dig past the epoch.
-    const travelBackBounded = (elapsed: number): number => {
-        if (travelSeconds(epochStartBeat, beatNow) < elapsed) {
-            return epochStartBeat;
+    // Travel the event's age back from the cursor, bounded at `floor` (#4668):
+    // a stamp older than the span from the floor to the cursor predates that
+    // span and answers the floor, exactly as the stop case answers the store.
+    // The pre-check also hands `invertTravelBackward` a floor that already
+    // spans the event's age, so its doubling phase can never dig past it.
+    const travelBackBounded = (elapsed: number, floor: number): number => {
+        if (travelSeconds(floor, beatNow) < elapsed) {
+            return floor;
         }
-        return invertTravelBackward(beatNow, elapsed, epochStartBeat);
+        return invertTravelBackward(beatNow, elapsed, floor);
     };
 
     if (insideLoopRegion) {
         const secondsFromSeam = travelSeconds(transport.loopStart, beatNow);
         if (elapsedSeconds <= secondsFromSeam) {
-            // Same pass as the cursor: travel back within the region, but
-            // never past where this roll began.
-            return travelBackBounded(elapsedSeconds);
+            // Same pass as the cursor: travel back within the region. The
+            // epoch bounds this pass only when it sits inside it — after a
+            // wrap the cursor stands behind a mid-region epoch, the direct
+            // delta goes negative, and the traversal bound on the dying pass
+            // below — never this delta — decides staleness (#4875).
+            const epochInThisPass = epochStartBeat >= transport.loopStart && epochStartBeat <= beatNow;
+            return travelBackBounded(elapsedSeconds, epochInThisPass ? epochStartBeat : transport.loopStart);
         }
         // The event predates the wrap: it sits on the dying pass, above the
         // seam, and the recorded beat must re-enter the region from loopEnd.
+        // The stamp is bounded by the roll's whole traversal — the integrated
+        // span from the epoch to the seam plus this pass's distance (#4875,
+        // #4668) — so one older than the roll itself answers the epoch start
+        // instead of a beat the transport never traversed.
+        if (epochStartBeat < transport.loopEnd) {
+            const traversalSeconds = travelSeconds(epochStartBeat, transport.loopEnd) + secondsFromSeam;
+            if (elapsedSeconds > traversalSeconds) {
+                return epochStartBeat;
+            }
+        }
         return invertTravelToSeam(elapsedSeconds - secondsFromSeam, transport.loopStart, transport.loopEnd);
     }
 
-    return travelBackBounded(elapsedSeconds);
+    return travelBackBounded(elapsedSeconds, epochStartBeat);
 }
