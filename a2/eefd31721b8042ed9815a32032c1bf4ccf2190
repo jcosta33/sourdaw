@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_1c08b47ac3792f::t_659aeac39ad55c 343-412
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_1c08b47ac3792f::t_80763b3c242192 13,34,46-54,63,66,303,323-325,329,331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2eefd31721b8042ed9815a32032c1bf4ccf2190",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
