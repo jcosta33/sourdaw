@@ -66,6 +66,17 @@ describe('buildPresetMixRecipes', () => {
         expect(recipe?.origin?.presetVersion).toBe(getPresetContractVersion(preset));
     });
 
+    it('publishes a stored value of more than twelve significant digits as an exact window', () => {
+        const stored = 20 * Math.log10(0.5);
+        const preset = chainPreset({
+            devices: [{ type: 'builtin-compressor', name: 'Comp', parameterValues: { 'comp-threshold': stored } }],
+        });
+
+        const [recipe] = buildPresetMixRecipes([preset]);
+
+        expect(recipe?.steps[0]?.parameters).toEqual([{ paramId: 'comp-threshold', minimum: stored, maximum: stored }]);
+    });
+
     it('keeps the authored-character caveat in the recipe text', () => {
         const [recipe] = buildPresetMixRecipes([chainPreset({ tags: ['vocal', 'warm', 'tube'] })]);
 

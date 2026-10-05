@@ -307,6 +307,27 @@ describe('preset recipes', () => {
             );
         });
 
+        // Red when an exact window is rounded to the midpoint's precision, so a published value is refused.
+        it('offers a preset storing more than twelve significant digits and expands it to exactly that value', async () => {
+            const stored = 20 * Math.log10(0.5);
+            const chain: ChainDevice[] = [{ deviceType: 'builtin-compressor', values: [['comp-threshold', stored]] }];
+            offerRecipes(presetRecipeOf('preset:long-precision:glued', chain));
+            setLeadVocal();
+
+            const offered = await discover('loop-long-precision-discover', { descriptors: ['glue'], role: 'vocal' });
+            const data = readExpansion(
+                await expand('loop-long-precision-expand', {
+                    recipeId: 'preset:long-precision:glued',
+                    targetId: 'lead-vocal-1',
+                })
+            );
+
+            expect(stored.toPrecision(17)).not.toBe(Number(stored.toPrecision(12)).toPrecision(17));
+            expect(offered.candidates.map((entry) => entry.id)).toContain('preset:long-precision:glued');
+            expect(data.commands).toEqual(expectedCommands(chain, null));
+            expect(data.values[0]?.value).toBe(stored);
+        });
+
         it('lowers a factory preset to the values it stores', async () => {
             const chain = chainOf(factoryPreset('fx-comp-vocal-glue'));
             setLeadVocal();
