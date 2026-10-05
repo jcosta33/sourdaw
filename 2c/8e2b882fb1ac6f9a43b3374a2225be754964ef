@@ -1,0 +1,24 @@
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_fe8aa1a2c67e60 557-561
+  s_2bfd55a4393d7c::t_7c5eee95019a85 520-524
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_2bfd55a4393d7c::t_5da089f9e8d119 463-478
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_601254dcc38c41 187-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c8e2b882fb1ac6f9a43b3374a2225be754964ef",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
