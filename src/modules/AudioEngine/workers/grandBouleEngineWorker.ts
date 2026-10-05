@@ -359,6 +359,18 @@ function blockEndContextFrame(writeHead: number): number {
     return consumerClock.contextFrame + framesAhead + BLOCK_SIZE;
 }
 
+/**
+ * The earliest context frame any block this engine produces from now on can
+ * start at: the last audible frame the consumer published, or the construction
+ * anchor before it has published. The consumer clock only moves forward.
+ */
+function audibleFloorContextFrame(): number {
+    if (syncInts && readGrandBouleConsumerClock(syncInts, consumerClock)) {
+        hasConsumerClock = true;
+    }
+    return hasConsumerClock ? consumerClock.contextFrame : anchorContextFrame;
+}
+
 function renderLoop(generation: number): void {
     if (
         generation !== renderGeneration ||
@@ -478,6 +490,14 @@ function receive(msg: GrandBouleDispatchMsg): void {
         const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
         Atomics.store(controlInts, GRAND_BOULE_FLUSH_HEAD_IDX, writeHead);
         Atomics.add(controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX, 1);
+        // The consumer republishes its clock when it applies the flush, so the
+        // block clock steps back by the ring's lead (up to the pre-roll). What the
+        // queue kept through the flush keeps its pre-flush stamps; a move arriving
+        // afterwards is stamped from the lower clock and would sort ahead of it.
+        // The new start is only known once the consumer has applied the flush, but
+        // it never precedes the last audible frame the consumer published, so
+        // capping the kept messages there keeps them ahead of everything later.
+        frameQueue.capPendingFrames(audibleFloorContextFrame());
     }
 
     const lifecycleState = instance.lifecycle_state();

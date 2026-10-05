@@ -464,8 +464,11 @@ class LevainProcessor extends AudioWorkletProcessor {
         if (
             (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'cc') &&
             msg.sampleFrame !== undefined &&
-            msg.sampleFrame > currentFrame
+            msg.sampleFrame >= currentFrame
         ) {
+            // `>=`, not `>`: a message at exactly this frame still queues, so it
+            // cannot dispatch at once and overtake one already queued for it. The
+            // next `process()` drains it before rendering, so it sounds no later.
             this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
             return;
         }

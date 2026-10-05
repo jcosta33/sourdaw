@@ -27,6 +27,7 @@ const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
+let engineProcessCalls = 0;
 let processShouldThrow = false;
 let addSampleShouldThrow = false;
 let abortSampleBankShouldThrow = false;
@@ -117,6 +118,7 @@ class LevainInstanceMock {
         return 16;
     }
     process(frames: number): number {
+        engineProcessCalls++;
         if (processShouldThrow) {
             throw new Error('wasm trap');
         }
@@ -164,6 +166,7 @@ describe('LevainProcessor message handling', () => {
         vi.stubGlobal('currentFrame', 0);
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
+        engineProcessCalls = 0;
         processShouldThrow = false;
         addSampleShouldThrow = false;
         abortSampleBankShouldThrow = false;
@@ -266,7 +269,12 @@ describe('LevainProcessor message handling', () => {
 
         // The mock engine renders 0.1 / 0.2 into the output when `process` runs, so
         // a bypassed block that still reaches the engine leaves audible samples.
-        expect(output.map((channel) => channel.every((sample) => sample === 0))).toEqual([true, true]);
+        // The output stays silent anyway if the return moves after the engine
+        // call, which is why the engine's own call count is asserted too.
+        expect({
+            silent: output.map((channel) => channel.every((sample) => sample === 0)),
+            engineProcessCalls,
+        }).toEqual({ silent: [true, true], engineProcessCalls: 0 });
     });
 
     it('loads a sample and forwards addSample args to the instance', async () => {
@@ -859,6 +867,29 @@ describe('LevainProcessor message handling', () => {
         vi.stubGlobal('currentFrame', 128);
         proc.process([], [makeChannels(2, FRAMES)]);
         expect(calls.filter((c) => c.method === 'handle_cc')).toEqual([{ method: 'handle_cc', args: [64, 127] }]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('keeps a message arriving at exactly the current frame behind a controller already queued for it', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        vi.stubGlobal('currentFrame', 0);
+        send(proc, { type: 'cc', cc: 64, value: 127, sampleFrame: 128 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        // The sustain is queued for frame 128; this block starts there, so the
+        // note-off stamped 128 must not dispatch on arrival and land ahead of it.
+        vi.stubGlobal('currentFrame', 128);
+        send(proc, { type: 'noteOff', note: 60, sampleFrame: 128 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.filter((c) => c.method !== 'process')).toEqual([
+            { method: 'handle_cc', args: [64, 127] },
+            { method: 'note_off', args: [60] },
+        ]);
 
         vi.stubGlobal('currentFrame', 0);
     });

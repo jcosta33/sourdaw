@@ -143,6 +143,28 @@ describe('the Grand Boule frame queue', () => {
         ]);
     });
 
+    it('keeps what a panic retained ahead of a move stamped from a clock that stepped back', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        queue.enqueue({ type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 1_900 });
+        queue.enqueue({ type: 'sustain', position: 1, sampleFrame: 2_000 });
+        queue.enqueue({ type: 'param', name: 'toneColor', value: 0.3, sampleFrame: 2_100 });
+        queue.discardNotes();
+
+        // The flush restarts the block clock lower than the stamps the kept
+        // messages carry; a later move is stamped from that lower clock.
+        queue.capPendingFrames(1_000);
+        queue.enqueue({ type: 'sustain', position: 0, sampleFrame: 1_000 });
+        queue.drain(instance, 896, 2_304);
+
+        expect(calls).toEqual([
+            { method: 'push_sustain', args: [1, 104] },
+            { method: 'set_param', args: ['tone_color', 0.3] },
+            { method: 'push_sustain', args: [0, 104] },
+        ]);
+    });
+
     it('holds a framed parameter until the block containing its frame', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();

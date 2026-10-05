@@ -43,6 +43,8 @@ type Voiced = { note: number; block: number; offset: number };
 const voiced: Voiced[] = [];
 type FramedParam = { name: string; value: number; block: number };
 const framedParams: FramedParam[] = [];
+type PedalPush = { method: string; value: number | boolean };
+const pedalPushes: PedalPush[] = [];
 
 class GrandBouleInstanceMock {
     push_note_on(note: number, _velocity: number, _channel: number, offset: number): boolean {
@@ -61,13 +63,16 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         framedParams.push({ name, value, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
     }
-    push_sustain(): boolean {
+    push_sustain(position: number): boolean {
+        pedalPushes.push({ method: 'push_sustain', value: position });
         return true;
     }
-    push_una_corda(): boolean {
+    push_una_corda(engaged: boolean): boolean {
+        pedalPushes.push({ method: 'push_una_corda', value: engaged });
         return true;
     }
-    push_sostenuto(): boolean {
+    push_sostenuto(engaged: boolean): boolean {
+        pedalPushes.push({ method: 'push_sostenuto', value: engaged });
         return true;
     }
     note_on_midi2(): void {}
@@ -157,6 +162,7 @@ describe('Grand Boule engine worker note placement', () => {
     beforeEach(async () => {
         voiced.length = 0;
         framedParams.length = 0;
+        pedalPushes.length = 0;
         new Int32Array(syncSab).fill(0);
         await import('../grandBouleEngineWorker');
         await import('../../worklets/grandBouleProcessor');
@@ -358,6 +364,56 @@ describe('Grand Boule engine worker note placement', () => {
         renderTick();
 
         expect(voiced).toEqual([{ note: 66, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 50 }]);
+    });
+
+    it.each([
+        {
+            method: 'push_sustain',
+            press: { type: 'sustain', position: 1 },
+            lift: { type: 'sustain', position: 0 },
+            engaged: 1,
+            disengaged: 0,
+        },
+        {
+            method: 'push_sostenuto',
+            press: { type: 'sostenuto', engaged: true },
+            lift: { type: 'sostenuto', engaged: false },
+            engaged: true,
+            disengaged: false,
+        },
+        {
+            method: 'push_una_corda',
+            press: { type: 'unaCorda', engaged: true },
+            lift: { type: 'unaCorda', engaged: false },
+            engaged: true,
+            disengaged: false,
+        },
+    ])('leaves the $method pedal up when its lift follows a press kept through a panic', (pedal) => {
+        renderTick();
+        const contextStart = 5000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+        renderTick();
+
+        // The press is queued ahead of the block about to render, so it keeps a
+        // stamp from the ring's lead. The panic flush then restarts the block
+        // clock at the frame the consumer applies it: lower than that stamp.
+        send({ ...pedal.press, sampleFrame: contextStart + 256 });
+        send({ type: 'allNotesOff' });
+        const flushFrame = contextStart + 2 * BLOCK_FRAMES;
+        consumeBlock(flushFrame);
+
+        // The lift arrives after the flush, stamped from the lower clock. It
+        // must still land after the press the player made before it.
+        send({ ...pedal.lift, sampleFrame: flushFrame + 3 * BLOCK_FRAMES });
+        for (let block = 1; block <= 18; block++) {
+            renderTick();
+            consumeBlock(flushFrame + block * BLOCK_FRAMES);
+        }
+
+        expect(pedalPushes).toEqual([
+            { method: pedal.method, value: pedal.engaged },
+            { method: pedal.method, value: pedal.disengaged },
+        ]);
     });
 
     it('drops notes still waiting in the queue when the device panics', () => {
