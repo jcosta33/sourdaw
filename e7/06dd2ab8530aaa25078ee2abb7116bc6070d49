@@ -1,0 +1,16 @@
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  h_beb54bf43b47b7 386-408,436-469
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  h_beb54bf43b47b7 48-57,69-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e706dd2ab8530aaa25078ee2abb7116bc6070d49",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
