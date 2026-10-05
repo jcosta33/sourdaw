@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_1c08b47ac3792f::t_c1aa0f9fd3d361 147-149
+  s_1c08b47ac3792f::t_67bc703f39d274 142-144
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_1c08b47ac3792f::t_ca24e8b349b54e 310-330
+src/modules/Arrangement/services/__tests__/buildPresetMixRecipes.spec.ts
+  s_1c08b47ac3792f::t_28ffd88fcb3d11 69-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "996ef793eaaef859ba11ed402e5ffe3272bdb5e4",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
