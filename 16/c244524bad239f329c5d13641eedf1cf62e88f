@@ -1,0 +1,109 @@
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_2bfd55a4393d7c::t_02f9c051286340 93-163
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_1c08b47ac3792f::t_36f8d7ed4c6cb6 156-167,296-297,359-360,386-395,444-458,480-488
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowser.spec.tsx
+  s_1c08b47ac3792f::t_7d83f92899dd88 1,4-5,58-60,63-66,135-160
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_2bfd55a4393d7c::t_057512e61cdfe7 696-731
+src/modules/Arrangement/handlers/clipGainEnvelope/__tests__/gainEnvelopeHandlers.spec.ts
+  s_1c08b47ac3792f::t_71aba9bf7c6a44 1-219
+src/modules/Arrangement/handlers/clipGainEnvelope/handleAddGainEnvelopePoint.ts
+  s_1c08b47ac3792f::t_ea42a5eb97813d 1-54
+src/modules/Arrangement/handlers/clipGainEnvelope/handleRemoveGainEnvelopePoint.ts
+  s_1c08b47ac3792f::t_c818693af24d5f 1-26
+src/modules/Arrangement/handlers/clipGainEnvelope/handleResetClipGainEnvelope.ts
+  s_1c08b47ac3792f::t_75119e3c7e6d0c 1-25
+src/modules/Arrangement/handlers/clipGainEnvelope/handleSetClipGainEnvelope.ts
+  s_1c08b47ac3792f::t_0d734261931df1 1-50
+src/modules/Arrangement/handlers/clipGainEnvelope/handleToggleClipGainEnvelope.ts
+  s_1c08b47ac3792f::t_a032bd4d8380db 1-41
+src/modules/Arrangement/handlers/marker/handleMoveMarker.ts
+  s_1c08b47ac3792f::t_fcf6485bb5ed3b 1-21
+src/modules/Arrangement/presentations/views/ArrangementBar.tsx
+  s_1c08b47ac3792f::t_67de9e079071a7 9,182-185,190-193,253,261,279-282,418-421,432-435,444-447
+src/modules/Arrangement/presentations/views/MarkerLane.tsx
+  s_1c08b47ac3792f::t_0e6c8acc5e87ca 10,133,174,182,200,305-308
+src/modules/Arrangement/presentations/views/TrackHeader/InlineTrackName.tsx
+  s_1c08b47ac3792f::t_2472c24a9012ea 4,26
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/InlineTrackName.spec.tsx
+  s_1c08b47ac3792f::t_26183ed47447ad 4-5,10-13,54,64,75,85,99-102,119
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_2bfd55a4393d7c::t_18a526f790c523 144-147,299-304,440-445
+src/modules/Arrangement/presentations/views/__tests__/ArrangementBar.spec.tsx
+  s_1c08b47ac3792f::t_c3bb704bdaaf79 5,18-22,126-129,164-167,179,192-195,203-204,222,238-241,249-252,266-269,290-293,315,338-341,367-370,392
+src/modules/Arrangement/presentations/views/__tests__/MarkerLane.spec.tsx
+  s_2bfd55a4393d7c::t_45dd8d2e44c6a0 5,25-29,114-117,267-270,290,301,313-316,327-330,341,351,392
+src/modules/Arrangement/useCases/__tests__/directCreationRoutesUndo.integration.spec.ts
+  s_1c08b47ac3792f::t_7a759217bd3057 1-216
+src/modules/Arrangement/useCases/__tests__/directTimelineEditsUndo.integration.spec.ts
+  s_1c08b47ac3792f::t_fd9cb9952c96f4 1-200
+src/modules/Arrangement/useCases/clipGainEnvelope/addGainEnvelopePoint.ts
+  s_1c08b47ac3792f::t_9d2f7d8c5b202b 7-14,17
+src/modules/Arrangement/useCases/comping/retireLaneInsertion.ts
+  s_2bfd55a4393d7c::t_b0a162db4d1e8a 12-13,15-24,40,43-54
+src/modules/Arrangement/useCases/index.ts
+  s_1c08b47ac3792f::t_5b7de478b9f041 61
+src/modules/Automation/handlers/automation/__tests__/automationHandlers.spec.ts
+  s_2bfd55a4393d7c::t_8c8f9a219ef17c 64,71
+src/modules/Automation/handlers/automation/__tests__/transformHandlersUndo.spec.ts
+  s_2bfd55a4393d7c::t_7d87d0328665db 415-417
+src/modules/Automation/handlers/automation/handleAddAutomationLane.ts
+  s_2bfd55a4393d7c::t_1180e4f9f60c9c 27-39,45
+src/modules/Automation/handlers/modulation/handleAddMapping.ts
+  s_1c08b47ac3792f::t_3837953263c4ff 1-53
+src/modules/Automation/handlers/modulation/handleRemoveMapping.ts
+  s_1c08b47ac3792f::t_e6471f60e22d60 1-36
+src/modules/Automation/handlers/modulation/handleRemoveModulator.ts
+  s_1c08b47ac3792f::t_61f1ddcd944404 1-37
+src/modules/Automation/handlers/modulation/handleUpdateModulator.ts
+  s_1c08b47ac3792f::t_009ff0a55dc010 1-38
+src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx
+  s_1c08b47ac3792f::t_06c7f65754cefb 4-5,128-131,234-297
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  s_1c08b47ac3792f::t_244f42e56b0b1e 22-26,47-52,82-86
+src/modules/Automation/useCases/modulation/__tests__/modulationMatrixUndo.integration.spec.ts
+  s_1c08b47ac3792f::t_a37112d6c52be6 1-135
+src/modules/Automation/useCases/modulation/addModulator.ts
+  s_1c08b47ac3792f::t_48fbe9433c8909 4-6,24
+src/modules/Collaboration/useCases/__tests__/midiUndoPeerSync.integration.spec.ts
+  s_2bfd55a4393d7c::t_c6ef21582d6473 1-298
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_2bfd55a4393d7c::t_20184b35d78348 30-35,166-168,172,449,492,536,540,599,665,745,803-1155
+src/modules/Command/useCases/macro/playback.ts
+  s_2bfd55a4393d7c::t_2b38c504549a25 6,186-202,212,221,231,240,249,270,280,290,300,310-314
+src/modules/CommandInterface/useCases/commands/EditCommands.ts
+  s_1c08b47ac3792f::t_e59420b76864c7 1,60-63
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_1c08b47ac3792f::t_4e2a6dde51861a 20,211
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_1c08b47ac3792f::t_6dfd77f3f9e366 4,903-917,921-924,927-928,933-936,939,944-947
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_2bfd55a4393d7c::t_8d5386c1c5097a 11-12,119-126
+src/utils/handlerContract.ts
+  s_2bfd55a4393d7c::t_6cc17a3421d612 1636-1663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16c244524bad239f329c5d13641eedf1cf62e88f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
