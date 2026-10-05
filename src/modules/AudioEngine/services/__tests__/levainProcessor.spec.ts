@@ -264,8 +264,9 @@ describe('LevainProcessor message handling', () => {
         const output = makeChannels(2, FRAMES);
         proc.process([], [output]);
 
-        // No instance.process call while bypassed.
-        expect(calls.find((c) => c.method === 'process')).toBeUndefined();
+        // The mock engine renders 0.1 / 0.2 into the output when `process` runs, so
+        // a bypassed block that still reaches the engine leaves audible samples.
+        expect(output.map((channel) => channel.every((sample) => sample === 0))).toEqual([true, true]);
     });
 
     it('loads a sample and forwards addSample args to the instance', async () => {

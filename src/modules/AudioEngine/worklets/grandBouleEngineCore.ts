@@ -100,6 +100,8 @@ export type GrandBouleUnaCordaMsg = { type: 'unaCorda'; engaged: boolean; sample
 
 export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; sampleFrame?: number };
 
+export type GrandBoulePedalMsg = GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
+
 /** Messages that address a moment in time rather than only the device. */
 export type GrandBouleFramedMsg =
     | GrandBouleNoteOnMsg
@@ -348,6 +350,8 @@ export type GrandBouleFrameQueue = {
     clear: () => void;
     /** Drop pending notes/expression while preserving scheduled parameter and pedal state. */
     discardNotes: () => void;
+    /** Drop every pending move of one pedal, leaving notes, parameters and the other pedals queued. */
+    discardPedal: (kind: GrandBoulePedalMsg['type']) => void;
     /** Pending messages, for tests and for host-side assertions. */
     size: () => number;
 };
@@ -365,6 +369,20 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
     /** `head` is the read index, so draining never shifts the array. */
     const queue: GrandBouleQueuedMsg[] = [];
     let head = 0;
+
+    /** Compact the pending messages in place down to those `keep` accepts, preserving order. */
+    function retain(keep: (queued: GrandBouleQueuedMsg) => boolean): void {
+        let retained = 0;
+        for (let index = head; index < queue.length; index++) {
+            const queued = queue[index];
+            if (queued && keep(queued)) {
+                queue[retained] = queued;
+                retained++;
+            }
+        }
+        queue.length = retained;
+        head = 0;
+    }
 
     return {
         enqueue(msg) {
@@ -420,16 +438,11 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
         },
 
         discardNotes() {
-            let retained = 0;
-            for (let index = head; index < queue.length; index++) {
-                const queued = queue[index];
-                if (queued && !isNoteMsg(queued)) {
-                    queue[retained] = queued;
-                    retained++;
-                }
-            }
-            queue.length = retained;
-            head = 0;
+            retain((queued) => !isNoteMsg(queued));
+        },
+
+        discardPedal(kind) {
+            retain((queued) => queued.type !== kind);
         },
 
         size() {
@@ -446,6 +459,10 @@ export function isPlaceableGrandBouleMsg(msg: GrandBouleFramedMsg): msg is Grand
 /** True for the messages that strike, release or bend a note. */
 function isNoteMsg(msg: GrandBouleDispatchMsg): boolean {
     return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression';
+}
+
+function isPedalMsg(msg: GrandBouleDispatchMsg): msg is GrandBoulePedalMsg {
+    return msg.type === 'sustain' || msg.type === 'unaCorda' || msg.type === 'sostenuto';
 }
 
 export function isFramedGrandBouleMsg(msg: GrandBouleDispatchMsg): msg is GrandBouleFramedMsg {
@@ -490,10 +507,16 @@ export type ReceiveGrandBouleMessageInput = {
  * at all are delivered at offset 0. A late note sounds late — never dropped,
  * and never held back a further block.
  *
- * A note the engine's block list refuses is queued instead, so the next block
- * carries it. That is the same "late, never dropped" answer the drain gives,
- * and the only one available: the list empties on every `process`. A pedal the
- * list refuses is held the same way even when it has no frame of its own.
+ * A message the engine's block list refuses — note or pedal, framed or not — is
+ * queued instead, so the next block carries it. That is the same "late, never
+ * dropped" answer the drain gives, and the only one available: the list empties
+ * on every `process`. One placement rule serves every refusal: the last frame of
+ * this block, which the queue's stable insert drains first thing next block, in
+ * the order the refusals arrived and ahead of whatever is queued for a later frame.
+ *
+ * A pedal move with no usable frame is the newest gesture, so it first removes
+ * the queued moves of the same pedal; a queued one would otherwise drain after
+ * it and put the pedal back. Notes, parameters and the other pedals stay queued.
  */
 export function receiveGrandBouleMessage({ instance, queue, msg, block }: ReceiveGrandBouleMessageInput): void {
     if (msg.type === 'allNotesOff') {
@@ -505,24 +528,23 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
     }
 
     if (!isFramedGrandBouleMsg(msg) || !isPlaceableGrandBouleMsg(msg) || block === null) {
-        if (dispatch(instance, msg) || block === null) {
+        if (isPedalMsg(msg)) {
+            queue.discardPedal(msg.type);
+        }
+        if (dispatch(instance, msg) || block === null || !isFramedGrandBouleMsg(msg)) {
             return;
         }
-        // A refused pedal has no frame of its own to wait for. Queued on the
-        // last frame of this block it drains first thing next block, behind
-        // everything already queued for this block and ahead of what is later.
-        if (msg.type === 'sustain' || msg.type === 'unaCorda' || msg.type === 'sostenuto') {
-            queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
-        }
+        queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
         return;
     }
 
-    if (msg.sampleFrame < block.endFrame) {
-        const offset = Math.max(0, msg.sampleFrame - block.startFrame);
-        if (dispatch(instance, msg, offset)) {
-            return;
-        }
+    if (msg.sampleFrame >= block.endFrame) {
+        queue.enqueue(msg);
+        return;
     }
 
-    queue.enqueue(msg);
+    const offset = Math.max(0, msg.sampleFrame - block.startFrame);
+    if (!dispatch(instance, msg, offset)) {
+        queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
+    }
 }

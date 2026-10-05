@@ -537,4 +537,85 @@ describe('a Grand Boule pedal message', () => {
             { method: 'push_sustain', args: [0, 116] },
         ]);
     });
+
+    it('lets a frameless lift outrank a queued press of the same pedal through a panic', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 1_152, endFrame: 1_280 };
+
+        // The panic path of a device: all notes off, then the frameless pedal reset.
+        // A live press queued at the block end must not drain after the lift.
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 1_280 }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        receive(instance, queue, { type: 'sustain', position: 0 }, block);
+        queue.drain(instance, 1_280, 1_408);
+
+        expect(calls.filter((call) => call.method === 'push_sustain')).toEqual([
+            { method: 'push_sustain', args: [0, 0] },
+        ]);
+    });
+
+    it('leaves a queued move of a different pedal when a frameless pedal move arrives', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 1_152, endFrame: 1_280 };
+
+        receive(instance, queue, { type: 'sostenuto', engaged: true, sampleFrame: 1_280 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0 }, block);
+        queue.drain(instance, 1_280, 1_408);
+
+        expect(calls).toEqual([
+            { method: 'push_sustain', args: [0, 0] },
+            { method: 'push_sostenuto', args: [true, 0] },
+        ]);
+    });
+
+    it('drains refused messages in arrival order whether or not they carry a frame', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        refuseNextPushes(2);
+        receive(instance, queue, { type: 'sustain', position: 1 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 60 }, block);
+        queue.drain(instance, 128, 256);
+
+        expect(calls).toEqual([
+            { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_sustain', args: [0, 0] },
+        ]);
+    });
+
+    it('drains a refused frameless pedal ahead of a note queued for the next block', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 }, block);
+        refuseNextPushes(1);
+        receive(instance, queue, { type: 'sostenuto', engaged: true }, block);
+        queue.drain(instance, 128, 256);
+
+        expect(calls).toEqual([
+            { method: 'push_sostenuto', args: [true, 0] },
+            { method: 'push_note_on', args: [60, 1, 0, 0] },
+        ]);
+    });
+
+    it('holds a refused frameless note for the next block instead of dropping it', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        refuseNextPushes(1);
+        receive(instance, queue, { type: 'noteOff', midiNote: 60 }, { startFrame: 0, endFrame: 128 });
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 1 },
+            calls: [{ method: 'push_note_off', args: [60, 0] }],
+            queued: 0,
+        });
+    });
 });
