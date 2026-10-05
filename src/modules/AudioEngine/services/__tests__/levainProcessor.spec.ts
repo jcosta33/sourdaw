@@ -878,6 +878,32 @@ describe('LevainProcessor message handling', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
+    it('keeps controller order through bypass: a framed controller due while bypassed lands before a later one', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+        vi.stubGlobal('currentFrame', 1_000);
+
+        send(proc, { type: 'bypass', bypassed: true });
+        send(proc, { type: 'cc', cc: 1, value: 127, sampleFrame: 1_128 });
+
+        vi.stubGlobal('currentFrame', 1_128);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        vi.stubGlobal('currentFrame', 5_000);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        send(proc, { type: 'cc', cc: 1, value: 20 });
+        send(proc, { type: 'bypass', bypassed: false });
+        vi.stubGlobal('currentFrame', 5_128);
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.filter((c) => c.method === 'handle_cc')).toEqual([
+            { method: 'handle_cc', args: [1, 127] },
+            { method: 'handle_cc', args: [1, 20] },
+        ]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('keeps a queued controller when a panic discards the queued notes', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });

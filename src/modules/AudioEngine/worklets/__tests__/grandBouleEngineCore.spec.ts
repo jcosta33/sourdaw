@@ -461,6 +461,64 @@ describe('a Grand Boule pedal message', () => {
         });
     });
 
+    it('is held for the next block when it carries no frame and the engine refuses it', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        refuseNextPushes(1);
+        receive(instance, queue, { type: 'sustain', position: 0 }, { startFrame: 0, endFrame: 128 });
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 1 },
+            calls: [{ method: 'push_sustain', args: [0, 0] }],
+            queued: 0,
+        });
+    });
+
+    it('is held for the next block when its frame is unusable and the engine refuses it', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        refuseNextPushes(1);
+        receive(
+            instance,
+            queue,
+            { type: 'sustain', position: 1, sampleFrame: Number.NaN },
+            { startFrame: 0, endFrame: 128 }
+        );
+        queue.drain(instance, 128, 256);
+
+        expect({ calls, queued: queue.size() }).toEqual({
+            calls: [{ method: 'push_sustain', args: [1, 0] }],
+            queued: 0,
+        });
+    });
+
+    it('delivers refused frameless sostenuto and una corda on the next block in arrival order', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        refuseNextPushes(2);
+        receive(instance, queue, { type: 'sostenuto', engaged: true }, block);
+        receive(instance, queue, { type: 'unaCorda', engaged: true }, block);
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 2 },
+            calls: [
+                { method: 'push_sostenuto', args: [true, 0] },
+                { method: 'push_una_corda', args: [true, 0] },
+            ],
+            queued: 0,
+        });
+    });
+
     it('survives a panic that discards the pending notes', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();

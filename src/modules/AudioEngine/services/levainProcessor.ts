@@ -634,7 +634,7 @@ class LevainProcessor extends AudioWorkletProcessor {
         if (this._disposed) {
             return false;
         }
-        if (!this._ready || !this._instance || this._faulted || this._bypassed) {
+        if (!this._ready || !this._instance || this._faulted) {
             return true;
         }
 
@@ -650,8 +650,15 @@ class LevainProcessor extends AudioWorkletProcessor {
         const frames = out0.length;
         const processFrames = Math.min(frames, 4096);
 
+        // Due events dispatch while bypassed too: a controller that has no frame
+        // applies at once, so a framed one held until un-bypass would land after
+        // it and overwrite the newer value.
         const blockEndFrame = currentFrame + frames;
         this._drainQueue(blockEndFrame);
+
+        if (this._bypassed) {
+            return true;
+        }
 
         try {
             const inst = this._instance;

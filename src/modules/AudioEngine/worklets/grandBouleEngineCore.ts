@@ -492,7 +492,8 @@ export type ReceiveGrandBouleMessageInput = {
  *
  * A note the engine's block list refuses is queued instead, so the next block
  * carries it. That is the same "late, never dropped" answer the drain gives,
- * and the only one available: the list empties on every `process`.
+ * and the only one available: the list empties on every `process`. A pedal the
+ * list refuses is held the same way even when it has no frame of its own.
  */
 export function receiveGrandBouleMessage({ instance, queue, msg, block }: ReceiveGrandBouleMessageInput): void {
     if (msg.type === 'allNotesOff') {
@@ -504,7 +505,15 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
     }
 
     if (!isFramedGrandBouleMsg(msg) || !isPlaceableGrandBouleMsg(msg) || block === null) {
-        dispatch(instance, msg);
+        if (dispatch(instance, msg) || block === null) {
+            return;
+        }
+        // A refused pedal has no frame of its own to wait for. Queued on the
+        // last frame of this block it drains first thing next block, behind
+        // everything already queued for this block and ahead of what is later.
+        if (msg.type === 'sustain' || msg.type === 'unaCorda' || msg.type === 'sostenuto') {
+            queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
+        }
         return;
     }
 
