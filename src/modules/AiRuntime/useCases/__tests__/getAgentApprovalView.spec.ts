@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     buildSemanticProjectDiff,
     compileVersionedCommandBatchEnvelope,
@@ -20,6 +21,8 @@ import {
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
+
+import { createTrack } from './trackFixture';
 
 const REVISION = 'revision-approval-view';
 const GAIN_COMMAND_ID = '33333333-3333-4333-8333-333333333331';
@@ -219,6 +222,7 @@ function buildDiff(): PendingActionSemanticDiff {
 }
 
 type ProposeOverrides = {
+    adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'];
     semanticDiff?: PendingActionSemanticDiff;
     supersedes?: string | null;
 };
@@ -237,6 +241,7 @@ function propose(id: string, overrides: ProposeOverrides = {}) {
         affectedIds: ['track-kick', 'track-snare'],
         risk: { level: 'destructive-reversible', reason: 'Deletes an existing track.' },
         projectRevision: REVISION,
+        adoptedRecipes: overrides.adoptedRecipes,
         supersedes: overrides.supersedes ?? null,
     });
     if (!confirmation) {
@@ -483,6 +488,51 @@ describe('getAgentApprovalView', () => {
         recordAgentProviderUsage('run-approval-view', providerResult(63), 'provider-attempt-approval-view');
 
         expect(getAgentApprovalView({ confirmationId: 'confirmation-incomplete-route' })?.cost).toEqual([ROUTE_COST]);
+    });
+
+    describe('adopted recipes', () => {
+        const ADOPTED = { recipeId: 'vocal-warm', title: 'Chest-register lift with a softened upper shelf' };
+
+        afterEach(() => {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
+
+        // Red when the view stops carrying the adopted recipe's title, or names the target by its id.
+        it('names each adopted recipe by title beside the name of the track it was expanded onto', () => {
+            trackStore.set({
+                tracks: [
+                    createTrack({ id: 'track-kick', name: 'Kick' }),
+                    createTrack({ id: 'track-lead', name: 'Lead Vocal' }),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            propose('confirmation-recipes', {
+                adoptedRecipes: [
+                    { ...ADOPTED, targetId: 'track-lead' },
+                    { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-kick' },
+                ],
+            });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-recipes' })?.recipes).toEqual([
+                { ...ADOPTED, targetId: 'track-lead', targetName: 'Lead Vocal' },
+                { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-kick', targetName: 'Kick' },
+            ]);
+        });
+
+        it('reports no target name once the adopted track has left the project', () => {
+            propose('confirmation-recipe-track-gone', { adoptedRecipes: [{ ...ADOPTED, targetId: 'track-removed' }] });
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-recipe-track-gone' })?.recipes).toEqual([
+                { ...ADOPTED, targetId: 'track-removed', targetName: null },
+            ]);
+        });
+
+        it('reports no recipes for a proposal that adopted none', () => {
+            propose('confirmation-no-recipes');
+
+            expect(getAgentApprovalView({ confirmationId: 'confirmation-no-recipes' })?.recipes).toEqual([]);
+        });
     });
 
     // Red when the view leaks the serialized batch the caller could execute the proposal from.

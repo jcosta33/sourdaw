@@ -1,9 +1,11 @@
+import { type RetainedCommandSet } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
-import { type RetainedTransformCompilation } from './applicationOwnedToolLoop';
-
-/** Only the application may turn retained compiler emissions into proposal calls. */
-export function materializeTransformToolCalls(compilations: readonly RetainedTransformCompilation[]): ToolCallResult[] {
+/**
+ * Only the application may turn retained compiler emissions into proposal calls. A binding a command
+ * mints rides as its own argument, the form the provider writes it in.
+ */
+export function materializeTransformToolCalls(compilations: readonly RetainedCommandSet[]): ToolCallResult[] {
     return compilations.flatMap((compiled) =>
         compiled.commands.map((command) => {
             if (command.binding === null) {

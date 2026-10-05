@@ -162,7 +162,11 @@ function stemImportAction(): AppAction {
     };
 }
 
-function propose(id: string, actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId))) {
+function propose(
+    id: string,
+    actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId)),
+    adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes']
+) {
     const confirmation = proposePendingActionConfirmation({
         id,
         runId: 'run-repropose',
@@ -172,6 +176,7 @@ function propose(id: string, actions: readonly AppAction[] = TRACK_IDS.map((trac
         actionLabels: [...ACTION_LABELS],
         commandBatch: originalBatch,
         agentApproval: AGENT_APPROVAL,
+        adoptedRecipes,
         affectedIds: [...TRACK_IDS],
         groupId: 'group-repropose',
         groupLabel: 'Rebalance the drums',
@@ -393,6 +398,40 @@ describe('reproposePendingChatActions', () => {
             })
         );
         expect(mocks.release).toHaveBeenCalledOnce();
+    });
+
+    // Red when a whole re-proposal forgets which recipes built the batch it replaces.
+    it('carries the adopted recipes onto a whole re-proposal', async () => {
+        const adoptedRecipes = [{ recipeId: 'vocal-warm', title: 'Chest-register lift', targetId: TRACK_IDS[0] }];
+        propose('confirmation-recipes-whole', undefined, adoptedRecipes);
+
+        const result = await reproposePendingChatActions({ confirmationId: 'confirmation-recipes-whole' });
+
+        expect(result).toMatchObject({ status: 'reproposed' });
+        expect(mocks.persistConfirmation).toHaveBeenCalledWith(expect.objectContaining({ adoptedRecipes }));
+    });
+
+    // Red when a subset re-proposal claims recipe provenance for a batch it has already cut down.
+    it('drops the adopted recipes from a subset re-proposal rather than guess which survive', async () => {
+        propose('confirmation-recipes-subset', undefined, [
+            { recipeId: 'vocal-warm', title: 'Chest-register lift', targetId: TRACK_IDS[0] },
+        ]);
+        mocks.preview.mockReturnValue(previewedSelection());
+        mocks.compilePartial.mockReturnValue({
+            status: 'compiled',
+            authority: subsetBatch.authority,
+            serialized: subsetBatch.serialized,
+            includedOriginalCommandIds: [COMMAND_IDS[0], COMMAND_IDS[2]],
+        });
+        mocks.refresh.mockReturnValue(readyRefresh(subsetBatch));
+
+        await reproposePendingChatActions({
+            confirmationId: 'confirmation-recipes-subset',
+            selectedIntentGroupIds: [COMMAND_IDS[2]],
+        });
+
+        expect(mocks.persistConfirmation).toHaveBeenCalledOnce();
+        expect(mocks.persistConfirmation.mock.calls[0]?.[0]?.adoptedRecipes).toBeUndefined();
     });
 
     // Red when selecting every group still opens a preview workspace to partition a batch it keeps whole.

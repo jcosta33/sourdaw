@@ -17,7 +17,7 @@ import { type SemanticUsageReport } from '../report.ts';
 import { semanticRule, type SemanticBudgetProfile, type SemanticRuleId, type ScanOutcome } from '../rules.ts';
 import { runScan, type SemanticClock } from '../run.ts';
 
-import type { UnitChangedLineFacts } from '../changeFacts.ts';
+import type { PathChangedLines, UnitChangedLineFacts } from '../changeFacts.ts';
 import type { SemanticExecutionState, SemanticRevisionBase } from '../contracts.ts';
 import type { SemanticSourcePort } from '../evidence.ts';
 import type { EvaluationCorpus, EvaluationExpectation, EvaluationFixture } from './corpus.ts';
@@ -46,6 +46,17 @@ export type EvaluationRuleOutcome = {
     readonly reasoning: string;
 };
 
+/**
+ * What one recorded value is to what a run reported: `match`, they are the same; `differ`, the run
+ * reported something that is not the corpus's; `unread`, the run reported nothing to compare — a source
+ * whose read failed, or a block that says the lines were never read.
+ *
+ * Three states rather than a boolean because an input nobody read is not an input that disagreed.
+ * Collapsing `unread` into `differ` reports a drift no observation supports, which is the confusion
+ * between an infrastructure outcome and a semantic one that the exit codes keep apart.
+ */
+export type CorpusVerdict = 'match' | 'differ' | 'unread';
+
 export type EvaluationFixtureOutcome = {
     readonly fixtureId: string;
     readonly kind: EvaluationFixture['fixture'];
@@ -69,8 +80,14 @@ export type EvaluationFixtureOutcome = {
     readonly thresholds: Readonly<Record<string, number>>;
     /** The facts the request actually carried, read back from the state the provider was handed. */
     readonly factsCarried?: UnitChangedLineFacts;
-    /** Whether the carried facts are the block the corpus records; absent when nothing was carried. */
+    /**
+     * What the carried facts are to the block the corpus records, or undefined when there is no verdict:
+     * no request carried a block at all, or the block it carried reports that the source could not read
+     * the diff's lines. `false` is thus reserved for a block that was derived and is not the corpus's.
+     */
     readonly factsMatchCorpus?: boolean;
+    /** What the lines the plan's source reported are to the lines the corpus records for the path. */
+    readonly linesVerdict: CorpusVerdict;
     readonly outcomes: readonly EvaluationRuleOutcome[];
     readonly expected: EvaluationExpectation;
     /** Whether the labelled expectation held: asked, and answered on the side the label claims. */
@@ -204,6 +221,7 @@ async function evaluateFixture(input: {
     }
     const outcomes = ruleOutcomes(result.report.signals);
     const carried = requests.find((request) => request.changedLineFacts !== undefined)?.changedLineFacts;
+    const reported = reportedChangedLines(input.plan, input.fixture.path);
     const fixtureOutcome: EvaluationFixtureOutcome = {
         fixtureId: input.fixture.id,
         kind: input.fixture.fixture,
@@ -221,6 +239,7 @@ async function evaluateFixture(input: {
         thresholds,
         factsCarried: carried,
         factsMatchCorpus: recordedFactsMatch(carried, input.fixture.changedLineFacts),
+        linesVerdict: corpusLinesVerdict(reported, input.fixture.changedLines),
         outcomes,
         expected: input.fixture.expected,
         expectedConcernHeld: expectationHeld(
@@ -274,17 +293,54 @@ export async function runEvaluation(input: {
 }
 
 /**
- * Whether the facts a request carried are the block the corpus records, or undefined when no request
- * carried any: a unit whose evidence never left reports nothing, and `false` would read as disagreement.
+ * What the facts a request carried are to the block the corpus records, or undefined when there is no
+ * verdict to give. Two states carry no verdict: a unit whose evidence never left carried no block at all,
+ * and a block whose own `basis` is `unavailable` states that the source could not read the diff's lines —
+ * comparing that against the corpus block would report a disagreement nobody observed. `false` is thus
+ * reserved for a block that was derived and is not the corpus's.
  */
 function recordedFactsMatch(
     carried: UnitChangedLineFacts | undefined,
     recorded: UnitChangedLineFacts
 ): boolean | undefined {
-    if (carried === undefined) {
+    if (carried === undefined || carried.basis === 'unavailable') {
         return undefined;
     }
     return JSON.stringify(carried) === JSON.stringify(recorded);
+}
+
+/**
+ * The changed lines the plan's own source reports for one fixture's path, or undefined when it reports
+ * none — including a source whose read of them fails, which ties the fixture to no revision at all. The
+ * collector tolerates that failure the same way; a source that cannot answer here must not fail a run
+ * that otherwise delivered its assessment.
+ */
+function reportedChangedLines(plan: EvaluationFixturePlan, path: string): PathChangedLines | undefined {
+    try {
+        return plan.source.changedLines(plan.revision.mergeBaseSha, plan.revision.headSha).get(path);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * What the source's changed lines are to the corpus's for this fixture's path: `match`, `differ`, or
+ * `unread` when the source reported no lines to compare — its read failed, or its map carries no entry for
+ * the fixture. `unread` is not `differ`: a run that never looked must not report a drift, and `gitSource`
+ * throws on any git failure, so a fixture whose revision could not be read arrives here as exactly that.
+ *
+ * Why the fact block above is not enough. An adjudicated negative records its lines from a real revision
+ * and re-derives them from Git at run time, so a recorded line that no longer matches that revision can
+ * leave the derived block identical — a dropped comment and a retargeted comment both derive the all-zero
+ * block — and the block comparison then reports agreement for a fixture that no longer describes the
+ * change it grades. Comparing the lines ties the fixture to the revisions it records, which is the only
+ * check available for a negative: its sides have no text the corpus could derive them from.
+ */
+function corpusLinesVerdict(reported: PathChangedLines | undefined, recorded: PathChangedLines): CorpusVerdict {
+    if (reported === undefined) {
+        return 'unread';
+    }
+    return JSON.stringify(reported) === JSON.stringify(recorded) ? 'match' : 'differ';
 }
 
 function renderRuleList(ruleIds: readonly SemanticRuleId[]): string {
@@ -313,6 +369,22 @@ function renderOutcome(outcome: EvaluationRuleOutcome): string {
     return `${outcome.ruleId}: probability ${outcome.probability.toFixed(3)}, ${outcome.outcome}, ${outcome.disposition}`;
 }
 
+/**
+ * One fixture's drift notice: the block the provider was handed and the lines the source reported, each
+ * with its own verdict. Neither clause reports a disagreement an input nobody read cannot have — an
+ * `unavailable` block and unread lines both say so rather than reading as a mismatch.
+ */
+function renderFacts(fixture: EvaluationFixtureOutcome): string {
+    const linesVerdict = `lines: ${fixture.linesVerdict}`;
+    if (fixture.factsCarried === undefined) {
+        return `no request carried a fact block (${linesVerdict})`;
+    }
+    if (fixture.factsMatchCorpus === undefined) {
+        return `${JSON.stringify(fixture.factsCarried)} (block: unread; ${linesVerdict})`;
+    }
+    return `${JSON.stringify(fixture.factsCarried)} (matches corpus: ${String(fixture.factsMatchCorpus)}; ${linesVerdict})`;
+}
+
 function renderFixture(fixture: EvaluationFixtureOutcome): string[] {
     const lines: string[] = [];
     const expectation =
@@ -330,13 +402,7 @@ function renderFixture(fixture: EvaluationFixtureOutcome): string[] {
     lines.push(`  unasked   ${renderNotAsked(fixture.rulesNotAsked)}`);
     lines.push(`  evidence  ${fixture.evidenceSupplied.length === 0 ? 'none' : fixture.evidenceSupplied.join(', ')}`);
     lines.push(`  thresholds ${renderThresholds(fixture.thresholds)}`);
-    lines.push(
-        `  facts     ${
-            fixture.factsCarried === undefined
-                ? 'no request carried a fact block'
-                : `${JSON.stringify(fixture.factsCarried)} (matches corpus: ${String(fixture.factsMatchCorpus)})`
-        }`
-    );
+    lines.push(`  facts     ${renderFacts(fixture)}`);
     for (const outcome of fixture.outcomes) {
         lines.push(`  outcome   ${renderOutcome(outcome)}`);
     }

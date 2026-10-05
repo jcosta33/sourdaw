@@ -374,6 +374,7 @@ describe('application-owned tool loop', () => {
             'project.query',
             'project.resolve',
             'recipe.discover',
+            'recipe.expand',
             'render.request',
             'transform.compile',
         ]);

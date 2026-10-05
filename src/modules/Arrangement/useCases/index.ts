@@ -269,6 +269,7 @@ export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
+export { isReverbDeviceType } from './isReverbDeviceType';
 export { clampDeviceParameterValue } from './clampDeviceParameterValue';
 export { quantiseDeviceParameterValue } from './quantiseDeviceParameterValue';
 export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';

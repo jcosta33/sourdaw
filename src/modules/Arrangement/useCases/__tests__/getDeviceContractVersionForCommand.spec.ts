@@ -213,6 +213,23 @@ describe('getDeviceContractVersionForCommand', () => {
         }
     });
 
+    it('keeps command replay stable when only the descriptor effect family changes', () => {
+        const descriptor = getPluginById('builtin-distortion');
+        if (!descriptor) {
+            throw new Error('Expected the distortion descriptor');
+        }
+        const originalEffectFamily = descriptor.effectFamily;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.effectFamily = 'reverb';
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(before);
+        } finally {
+            descriptor.effectFamily = originalEffectFamily;
+        }
+    });
+
     it('includes Arrangement-owned guidance in the descriptor fingerprint', () => {
         const descriptor = getPluginById('builtin-compressor');
         if (!descriptor?.guidance) {

@@ -14,6 +14,7 @@ import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
 } from '../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -195,6 +196,38 @@ describe('agent tool catalog', () => {
         });
     });
 
+    it('publishes a recipe-expansion contract with a closed key set and bounded values', () => {
+        const roles = getMixRecipeCatalog().roles;
+        const expansionSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === RECIPE_EXPANSION_TOOL_NAME
+        );
+
+        expect(expansionSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                recipeId: { type: 'string', minLength: 1, maxLength: 64 },
+                targetId: { type: 'string', minLength: 1, maxLength: 256 },
+                role: { type: 'string', enum: [...roles] },
+                values: {
+                    type: 'array',
+                    maxItems: 16,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            step: { type: 'integer', minimum: 0, maximum: 15, description: expect.any(String) },
+                            paramId: { type: 'string', minLength: 1, maxLength: 64 },
+                            value: { type: 'number', description: expect.any(String) },
+                        },
+                        required: ['step', 'paramId', 'value'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            required: ['recipeId', 'targetId'],
+            additionalProperties: false,
+        });
+    });
+
     it('publishes the device-manifest read contract with the shared parameter page limit and cursor grammar', () => {
         const manifestSchema = getAgentToolCatalogSchemas().find(
             (schema) => schema.function.name === AGENT_DEVICE_MANIFEST_TOOL_NAME
@@ -275,6 +308,7 @@ describe('agent tool catalog', () => {
             'analysis.request',
             'analysis.measure',
             'recipe.discover',
+            'recipe.expand',
         ]);
 
         vi.mocked(generateToolPlanningOutcome)

@@ -235,6 +235,7 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
         reasons: ['Adds one track'],
         requiredTrustMode: 'guarded',
     },
+    recipes: [],
     intentGroups: [],
     destructiveChanges: [],
     partialAcceptance: { available: true, reason: null },
@@ -718,6 +719,46 @@ describe('AgentWorkspace', () => {
         expect(screen.getByText('Valid while project revision revision-7')).toBeInTheDocument();
         expect(screen.getByText('stale')).toHaveAttribute('data-freshness', 'stale');
         expect(screen.getByText('The project moved on.')).toBeInTheDocument();
+    });
+
+    // Red when the section stops rendering each adopted recipe's title beside the name of its target track.
+    it('renders each adopted recipe by title beside the name of its target track', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                recipes: [
+                    {
+                        recipeId: 'vocal-warm',
+                        title: 'Chest-register lift with a softened upper shelf',
+                        targetId: 'track-lead',
+                        targetName: 'Lead Vocal',
+                    },
+                    { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-gone', targetName: null },
+                ],
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const recipes = within(screen.getByRole('list', { name: 'Adopted recipes' })).getAllByRole('listitem');
+        expect(recipes).toHaveLength(2);
+        expect(recipes[0]).toHaveTextContent('Recipe: Chest-register lift with a softened upper shelf on Lead Vocal');
+        expect(recipes[1]).toHaveTextContent('Recipe: Transient lift on a track no longer in the project');
+    });
+
+    it('renders no recipe list for a proposal that adopted none', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView());
+
+        render(<AgentWorkspace />);
+
+        expect(screen.queryByRole('list', { name: 'Adopted recipes' })).not.toBeInTheDocument();
     });
 
     it('carries dependents out of a deselected group and re-previews the remaining subset', () => {
