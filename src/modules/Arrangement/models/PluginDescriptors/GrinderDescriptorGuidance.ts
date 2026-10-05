@@ -76,14 +76,14 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
     ),
     gateRelease: parameterGuidance(
         'Noise gate hold-open time',
-        'Sets how long the gate stays open after a note drops below the threshold before it begins to close, so short values close early and long values let the tail ring out.',
+        'Sets how long the gate stays open after a note stops before it begins to close, so short values close early and long values let the tail ring out.',
         60,
         250,
         [
-            'Sets the detector release at 0.6 times this value, which delays the start of closing after the fixed 20 ms hold (about 110 ms at 60 and about 410 ms at 250); the closing fade itself runs at the gateAttack time, and it only matters once the gate is on and gateThreshold has been crossed downward.',
+            'Sets the detector release at 0.6 times this value, so the hold-open time is the fixed 20 ms plus 0.6 x release x ln(envelope / close threshold) and grows with how far the note sat above gateThreshold; for an abrupt stop at -60 dB the onset is about 110 ms at 60 and 398 ms at 250 for a note 20 dB above the threshold (-40 dBFS), 168 and 640 ms at -26 dBFS, and 232 and 908 ms at -10.5 dBFS; the closing fade itself runs at the gateAttack time, and it only matters once the gate is on.',
         ],
         [
-            'Values under about 40 ms start closing almost as soon as the note falls below the threshold and clip the decay, and values over about 300 ms keep the gate open so audible noise stays in the gaps between phrases; it does not change how fast the closing fade is.',
+            'On a decaying note, values of 60 or less can start closing 60 to 92 ms before the tail reaches the threshold and clip the decay (0.1 amplitude, 300 ms decay), whereas at 250 the gate starts closing about 21 ms after; very long values keep the gate open so audible noise stays in the gaps between phrases, and it does not change how fast the closing fade is.',
         ],
         noExternalModulation
     ),
@@ -263,14 +263,14 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
     ),
     transformerDrive: parameterGuidance(
         'Output transformer saturation drive',
-        'Adds iron-style saturation and a louder, thicker output after the power amp.',
+        'Adds iron-style saturation whose loudness effect depends on how hard the power amp is driving it.',
         0.15,
         0.5,
         [
-            'Below 0.01 the transformer is bypassed entirely and transformerHysteresis and transformerLfSaturation do nothing; above it drive scales both the input boost (1 + 3 x drive) and the flux ceiling (0.5 + 1.5 x drive) faster than the 1/(1 + drive) divisor, so raising it makes the output louder and outputGain is the trim.',
+            'Below 0.01 the transformer is bypassed entirely and transformerHysteresis and transformerLfSaturation do nothing; above it drive scales the input boost (1 + 3 x drive) and the flux ceiling (0.5 + 1.5 x drive), subtracts drive times the low band and cuts the high band by 30 percent of drive, and the sum is divided by 1 + drive; outputGain is the level trim.',
         ],
         [
-            'Output level rises by several dB across 0.15 to 0.5 (about 2.6 dB per step from 0.15 to 0.3 and 3.7 dB from 0.3 to 0.5 on a 220 Hz tone at 0.05 input) and reaches the limiter near 1.0, so raising it without trimming outputGain or lowering master overloads the stage after it.',
+            'The level change depends on input level: on a 220 Hz tone below about 0.2 input amplitude, raising drive from 0.15 to 0.5 makes the output louder by about 6 dB, while from about 0.3 input (about -10 dBFS) upward it is flat or slightly quieter, so the same setting can add or take away level, and at 0.05 input the soft limiter engages between drive 0.5 and 0.75.',
         ],
         noExternalModulation
     ),
