@@ -383,6 +383,29 @@ describe('prepareStripSilence', () => {
             ]);
         });
 
+        it('merges a silence gap by its timeline-beat length, not its buffer-beat length', () => {
+            // Gap of 8 buffer beats-samples = 0.4 timeline beats at ratio 2
+            // (0.1 buffer beats per sample / 2), below the default 0.5
+            // minDuration, so both regions must merge into one and the plan is
+            // null. A beats-per-sample that multiplied by the ratio instead
+            // would read the same gap as 1.6 timeline beats and split it.
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+            const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 1 * SAMPLES_PER_BEAT, 2 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 2.8 * SAMPLES_PER_BEAT, 3.8 * SAMPLES_PER_BEAT);
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+            expect(prepareStripSilence({ clipId: 'clip-1' })).toBeNull();
+        });
+
         it('ignores the stored ratio while stretch is off', () => {
             const clip = ClipDummy.create({
                 id: 'clip-1',
@@ -408,6 +431,40 @@ describe('prepareStripSilence', () => {
                 expect.objectContaining({ startBeat: 1, endBeat: 2, audioOffsetBeats: 1 }),
                 expect.objectContaining({ startBeat: 3, endBeat: 4.5, audioOffsetBeats: 3 }),
             ]);
+        });
+    });
+
+    describe('a pre-rolled clip (audioOffsetBeats < 0)', () => {
+        // The scheduler and `computeAudioWaveformDrawSpan` agree: a negative
+        // offset is a silent pre-roll costing `max(0, -audioOffsetBeats) /
+        // ratio` timeline beats, so a 10-beat off clip offset -4 plays buffer
+        // beats [0, 6) — material past buffer beat 6 is never heard.
+        function preRolledClipChannelData(): Float32Array<ArrayBuffer> {
+            const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 1 * SAMPLES_PER_BEAT, 2 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 8 * SAMPLES_PER_BEAT, 9.5 * SAMPLES_PER_BEAT);
+            return channelData;
+        }
+
+        it('scans only the audible span a negative offset leaves, never past the clip end', () => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                stretchMode: 'off',
+                audioOffsetBeats: -4,
+            });
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(preRolledClipChannelData()));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            // Buffer beats [0, 6) hold one audible region ([1, 2)); the sound
+            // at [8, 9.5) sits past the audible span and must produce no
+            // segment — an unbounded window splits it into a phantom clip at
+            // timeline [12, 13.5), past the clip's endBeat 10.
+            expect(plan).toBeNull();
         });
     });
 });

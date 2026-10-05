@@ -45,13 +45,16 @@ function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
  * The portion of the buffer this clip actually plays, using the canonical
  * clip-to-buffer mapping the waveform span draws with
  * (`presentations/renderers/audioWaveformSpan.ts`): `audioOffsetBeats` is a
- * position in the SOURCE buffer's own beat frame, and playback consumes
- * `clipBeats * stretchRatio` buffer beats of it — `consumedStretchFactor`
- * source beats per timeline beat, 1x unless stretch is on, the same law the
- * split paths route through. Scanning the whole buffer instead — which is
- * what mapping `clipDurationBeats` onto `channelData.length` amounts to —
- * detects silence in audio a trimmed or stretched clip never plays, and
- * mis-scales every derived beat position.
+ * position in the SOURCE buffer's own beat frame; a negative offset is a
+ * silent pre-roll that costs `max(0, -audioOffsetBeats) / stretchRatio`
+ * timeline beats of the clip, so playback consumes only
+ * `(clipBeats - preRollBeats) * stretchRatio` buffer beats of it —
+ * `consumedStretchFactor` source beats per timeline beat, 1x unless stretch
+ * is on, the same law the split paths route through. Scanning the whole
+ * buffer instead — which is what mapping `clipDurationBeats` onto
+ * `channelData.length` amounts to — detects silence in audio a trimmed,
+ * stretched, or pre-rolled clip never plays, and mis-scales every derived
+ * beat position.
  */
 function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow | null {
     const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
@@ -63,7 +66,9 @@ function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: numb
     const stretchRatio = consumedStretchFactor(clip);
     const clipBeats = clip.endBeat - clip.startBeat;
     const startSample = Math.max(0, Math.floor(audioOffsetBeats * samplesPerBufferBeat));
-    const consumedSamples = clipBeats * stretchRatio * samplesPerBufferBeat;
+    const preRollBeats = Math.max(0, -audioOffsetBeats) / stretchRatio;
+    const audibleTimelineBeats = clipBeats - preRollBeats;
+    const consumedSamples = audibleTimelineBeats * stretchRatio * samplesPerBufferBeat;
     // The buffer end caps the window: past it the clip plays nothing, so there
     // is no silence there to strip.
     const endSample = Math.min(bufferLength, Math.floor(startSample + consumedSamples));
