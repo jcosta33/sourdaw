@@ -517,8 +517,11 @@ export type ReceiveGrandBouleMessageInput = {
  * hands it to the engine.
  *
  * This is the one entry point both hosts route control messages through, so the
- * placement rule cannot differ between them. Every framed message is only
- * enqueued — at its own frame, or at the block's first frame when it is behind
+ * placement rule cannot differ between them. Parameter timing is not part of
+ * that rule: a parameter with no usable frame, or one whose frame lies inside
+ * the block about to render, applies on arrival, and only a parameter framed
+ * beyond that block waits in the queue for the block that contains it. Every
+ * other framed message is only enqueued — at its own frame, or at the block's first frame when it is behind
  * the block, has no frame, or has none a host can place — and never drained
  * here. Draining on arrival would push a queued note-off ahead of a later
  * arriving pedal that sorts before it. The drain runs once per render, so the
@@ -547,6 +550,11 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
     }
 
     if (block === null || !isFramedGrandBouleMsg(msg)) {
+        dispatch(instance, msg);
+        return;
+    }
+
+    if (msg.type === 'param' && (!isPlaceableGrandBouleMsg(msg) || msg.sampleFrame < block.endFrame)) {
         dispatch(instance, msg);
         return;
     }

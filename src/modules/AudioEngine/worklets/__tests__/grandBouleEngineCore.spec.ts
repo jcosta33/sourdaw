@@ -184,6 +184,37 @@ describe('the Grand Boule frame queue', () => {
         expect(calls).toEqual([{ method: 'set_param', args: ['master_gain', 0.7] }]);
     });
 
+    it('applies a frameless parameter on arrival, leaving nothing queued', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'param', name: 'masterGain', value: 0.6 }, { startFrame: 256, endFrame: 384 });
+
+        expect({ calls, queued: queue.size() }).toEqual({
+            calls: [{ method: 'set_param', args: ['master_gain', 0.6] }],
+            queued: 0,
+        });
+    });
+
+    it('applies a parameter framed inside the arriving block on arrival, and a non-finite frame likewise', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 256, endFrame: 384 };
+
+        receive(instance, queue, { type: 'param', name: 'masterGain', value: 0.6, sampleFrame: 300 }, block);
+        receive(instance, queue, { type: 'param', name: 'toneColor', value: 0.2, sampleFrame: 10 }, block);
+        receive(instance, queue, { type: 'param', name: 'lidPosition', value: 0.9, sampleFrame: Number.NaN }, block);
+
+        expect({ calls, queued: queue.size() }).toEqual({
+            calls: [
+                { method: 'set_param', args: ['master_gain', 0.6] },
+                { method: 'set_param', args: ['tone_color', 0.2] },
+                { method: 'set_param', args: ['lid_position', 0.9] },
+            ],
+            queued: 0,
+        });
+    });
+
     it('applies a parameter at the head of its block rather than at its frame', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
