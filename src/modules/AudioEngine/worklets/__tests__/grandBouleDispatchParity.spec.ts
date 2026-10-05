@@ -191,7 +191,7 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     // neither may record a call for them.
     { type: 'noteOn', midiNote: 67, velocity: 0.9, sampleFrame: 5_000 },
     { type: 'noteOff', midiNote: 67, sampleFrame: 6_000 },
-    // Control messages with no frame to place.
+    // Parameters with no frame to place: both hosts apply them on arrival.
     { type: 'param', name: 'masterGain', value: 0.7 },
     { type: 'param', name: 'lidPosition', value: 0.5 },
     { type: 'param', name: 'micPosition', value: 2 },
@@ -328,7 +328,11 @@ describe('the worker and the offline processor dispatch identically', () => {
         // were queued rather than collapsed onto frame 0.
         expect(workerCalls).toEqual([
             { method: 'construct', args: [HOST_SAMPLE_RATE, 64] },
-            // Block-rate messages take effect on arrival, ahead of the render.
+            // Parameters and block-rate messages take effect on arrival, ahead of the render.
+            { method: 'set_param', args: ['master_gain', 0.7] },
+            { method: 'set_param', args: ['lid_position', 0.5] },
+            { method: 'set_param', args: ['mic_position', 2] },
+            { method: 'set_param', args: ['already_snake_case', 0.25] },
             { method: 'note_on_midi2', args: [72, 32_000, 1_024] },
             { method: 'set_temperament', args: [4] },
             // The render's drain: frame order, arrival order at equal frames.
@@ -336,10 +340,6 @@ describe('the worker and the offline processor dispatch identically', () => {
             { method: 'push_una_corda', args: [true, 0] },
             { method: 'push_sostenuto', args: [false, 0] },
             { method: 'push_note_on', args: [64, 0.4, 0, 0] },
-            { method: 'set_param', args: ['master_gain', 0.7] },
-            { method: 'set_param', args: ['lid_position', 0.5] },
-            { method: 'set_param', args: ['mic_position', 2] },
-            { method: 'set_param', args: ['already_snake_case', 0.25] },
             { method: 'push_note_on', args: [60, 0.8, 3, 10] },
             { method: 'push_note_expression', args: [60, 3, 1.5, 0.2, 0.4, 11] },
             { method: 'push_note_off_on_channel', args: [60, 3, 12] },

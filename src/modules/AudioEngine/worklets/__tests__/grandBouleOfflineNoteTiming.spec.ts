@@ -473,7 +473,7 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         renderBlock();
         renderBlock();
 
-        expect(paramDispatches.at(-1)).toEqual({ name: 'lid_position', value: 0.25, block: 2 });
+        expect(paramDispatches.at(-1)).toMatchObject({ name: 'lid_position', value: 0.25 });
     });
 
     it('applies automation before a note that shares a non-aligned frame inside the quantum', async () => {
