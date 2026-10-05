@@ -1,0 +1,26 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_1c08b47ac3792f::t_6fa06215c9cc2c 37-38,43
+  s_1c08b47ac3792f::t_40534a41d88643 450,454-456
+  s_1c08b47ac3792f::t_3ce12165aad97d 371-376,378-386
+  s_1c08b47ac3792f::t_037351f36546d6 131-149
+  s_1c08b47ac3792f::t_095ddc3fcd25a3 377
+  s_1c08b47ac3792f::t_e9072597b4bd7a 130
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_a30ca6982c5213 10,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e159606692ac54ee50121a554e8092419d45a6fa",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
