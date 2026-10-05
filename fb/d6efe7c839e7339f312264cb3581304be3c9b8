@@ -1,0 +1,39 @@
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  s_1c08b47ac3792f::t_17c8c9816d9809 253-257,259-262,271,274
+src/modules/Automation/AGENTS.md
+  s_1c08b47ac3792f::t_efb7fae7abfe1b 26
+src/modules/Arrangement/models/MusicalRange.ts
+  s_1c08b47ac3792f::t_94df0a6fddc73b 172-179,185,187-188,190,194
+  s_1c08b47ac3792f::t_5bce62845be306 209,213,218-219,221-224,226,230
+  s_1c08b47ac3792f::t_daad4fe364fbca 238-244,250-252,254-256,258
+  s_1c08b47ac3792f::t_d5dae002248d2c 383,386-397
+  s_1c08b47ac3792f::t_e817b83141477d 382
+  s_1c08b47ac3792f::t_eb0ab0920e491d 384-385
+  s_1c08b47ac3792f::t_b2e11b50adf489 403
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_1c08b47ac3792f::t_8191c5257a4058 459-537
+  s_1c08b47ac3792f::t_ed8582c0d43532 789-796,801,803,805
+  s_1c08b47ac3792f::t_5375add5103b81 829
+  s_1c08b47ac3792f::t_56ff675a2af4a3 26
+  s_1c08b47ac3792f::t_d8415192ae669d 797-800,804
+  s_1c08b47ac3792f::t_4c48c5d9005b20 713-788,802,806-828,830-832,834-848
+src/modules/AiRuntime/useCases/__tests__/musicalRangeResolution.spec.ts
+  s_1c08b47ac3792f::t_d06402022c4691 188-230
+  s_1c08b47ac3792f::t_fcc046f96cdae7 231-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fbd6efe7c839e7339f312264cb3581304be3c9b8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
