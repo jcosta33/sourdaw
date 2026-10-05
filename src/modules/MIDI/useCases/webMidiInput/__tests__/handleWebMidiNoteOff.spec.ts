@@ -238,6 +238,60 @@ describe('handleWebMidiNoteOff', () => {
         expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_000);
     });
 
+    // The instance-keyed guard in the drained stream: a note-off whose
+    // instance id resolves nowhere in the shared registry — a repeat, or an
+    // unknown identity — must stop there, not fall through to the source-pitch
+    // step release the pending snapshot holds at that pitch.
+    it('keeps the pending step voice when a drained instance-keyed note-off resolves nowhere', async () => {
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput: async (): Promise<RealtimeMidiEvent[]> => [
+                    {
+                        timeSamples: 96_360,
+                        // A stale or unknown generated identity: the registry
+                        // holds no such voice on this route.
+                        noteInstanceId: 'arp-1:ghost:1',
+                        kind: { type: 'noteOff', channel: 0, note: 67 },
+                    },
+                ],
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: { noteOff: fermenter_note_off } },
+            ],
+        });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
+        });
+
+        await fn(0, 60);
+
+        // The unresolved instance note-off is consumed by the guard; the step
+        // voice the pending snapshot holds survives it.
+        expect(fermenter_note_off).not.toHaveBeenCalled();
+    });
+
     it('voices a generated note the idle pump drains for a release-triggered rack (#4870)', async () => {
         let drainEvents: ((events: readonly RealtimeMidiEvent[]) => boolean | void) | undefined;
         const schedule_note = vi.fn(() => null);

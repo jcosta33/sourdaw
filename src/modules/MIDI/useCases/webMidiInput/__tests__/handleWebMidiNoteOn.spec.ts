@@ -338,6 +338,62 @@ describe('handleWebMidiNoteOn', () => {
         );
     });
 
+    // The instance-keyed guard in the drained stream: a note-off whose
+    // instance id resolves nowhere in the shared registry — a repeat, or an
+    // unknown identity — must stop there, not fall through to the source-pitch
+    // step release the batch's own captured voice holds at that pitch.
+    it('keeps the captured step voice when a drained instance-keyed note-off resolves nowhere', async () => {
+        const fermenter_note_on =
+            vi.fn<(note: number, velocity: number, sampleFrame?: number, channel?: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    // The source pitch's step voice: a generated note-on
+                    // without an instance id captures into the note's own
+                    // release map.
+                    { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                    // A stale or unknown generated identity: the registry
+                    // holds no such voice on this route.
+                    {
+                        timeSamples: 96_480,
+                        noteInstanceId: 'arp-1:ghost:1',
+                        kind: { type: 'noteOff', channel: 0, note: 67 },
+                    },
+                ],
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'ferm-1',
+                    fermenterControls: { noteOn: fermenter_note_on, noteOff: fermenter_note_off },
+                },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        expect(fermenter_note_on).toHaveBeenCalledWith(67, 100, 96_240, 0);
+        // The unresolved instance note-off is consumed by the guard; the step
+        // voice captured above survives it.
+        expect(fermenter_note_off).not.toHaveBeenCalled();
+    });
+
     it('dispatches a missed Yeast deadline at the current AudioContext frame', async () => {
         const grand_boule_note_on = vi.fn<(note: number, velocity: number, sampleFrame?: number) => void>();
         const fn = handleWebMidiNoteOn._factory(

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     defaultTransportState,
+    playheadWrapCountRef,
     setGestureClockSource,
     tempoMapStore,
     transportStore,
@@ -98,6 +99,11 @@ function cursorAt(beat: number): void {
     });
 }
 
+/** How many wraps the roll has crossed since the epoch was written (#4668). */
+function wrapsSinceEpochStart(count: number): void {
+    playheadWrapCountRef.current = count;
+}
+
 describe('event-time recording beat (#4875)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -108,6 +114,7 @@ describe('event-time recording beat (#4875)', () => {
         setTargetTrackId('track-1');
         setMpeEnabledInternal(false);
         tempoMapStore.set({ changes: [] });
+        playheadWrapCountRef.current = 0;
         ensure_track_strip.mockReset();
         ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
         performance_now = vi.spyOn(performance, 'now').mockReturnValue(NOW_MS);
@@ -116,6 +123,7 @@ describe('event-time recording beat (#4875)', () => {
     afterEach(() => {
         restoreTransport?.();
         restoreTransport = null;
+        playheadWrapCountRef.current = 0;
         performance_now.mockRestore();
     });
 
@@ -154,6 +162,7 @@ describe('event-time recording beat (#4875)', () => {
         // The cursor already wrapped to beat 0.2; the note was played 0.2 s
         // earlier, when the dying pass was 0.1 s from the seam.
         cursorAt(0.2);
+        wrapsSinceEpochStart(1);
 
         await dispatch([0x91, 60, 100], 900);
 
@@ -170,6 +179,7 @@ describe('event-time recording beat (#4875)', () => {
         // The roll crossed the seam 0.05 s ago and sits 0.1 beats into the
         // pass; the event is 30 ms old — 0.06 beats back from the cursor.
         cursorAt(0.1);
+        wrapsSinceEpochStart(1);
 
         await dispatch([0x91, 60, 100], 1070);
 
@@ -182,6 +192,7 @@ describe('event-time recording beat (#4875)', () => {
         // A later pass: the cursor is 6.9 beats into the region while the
         // epoch start (7) sits behind it; the event is 100 ms old.
         cursorAt(6.9);
+        wrapsSinceEpochStart(1);
 
         await dispatch([0x91, 60, 100], 1000);
 
@@ -198,11 +209,64 @@ describe('event-time recording beat (#4875)', () => {
         // The roll has traveled 0.55 s — the 0.5 s to the seam plus 0.05 s
         // into the pass; the stamp is 0.9 s old.
         cursorAt(0.1);
+        wrapsSinceEpochStart(1);
 
         await dispatch([0x91, 60, 100], 200);
 
         // The unbounded seam inversion answered 7.575.
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7, 9);
+    });
+
+    // #4668 review — the seam bound divided out exactly one wrap: on a
+    // multi-wrap roll it under-charged the traversal, so dying-pass stamps the
+    // roll DID traverse clamped to the epoch start instead of inverting on
+    // their own pass.
+    it('inverts a dying-pass stamp across every wrap a multi-wrap roll traversed', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // Three wraps since the epoch: the roll is 8.55 s old (0.5 s to the
+        // seam, two full passes, 0.05 s into the current one); the stamp is
+        // 0.95 s old and belongs 0.9 s before the seam on the previous pass.
+        cursorAt(0.1);
+        wrapsSinceEpochStart(3);
+
+        await dispatch([0x91, 60, 100], 150);
+
+        // The one-wrap bound answered 7, the epoch start.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.2, 9);
+    });
+
+    // #4668 review — the same-pass floor compared the epoch beat against the
+    // cursor beat, which on a later pass reads the epoch (7) as "in this
+    // pass": young events clamped to it instead of inverting within the pass.
+    it('never clamps a young same-pass event on a later pass to the epoch', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The cursor is 7.5 beats into a later pass — AHEAD of the epoch
+        // start's beat, which is why the cursor comparison misfires; the
+        // event is 0.5 s old, well within this pass.
+        cursorAt(7.5);
+        wrapsSinceEpochStart(1);
+
+        await dispatch([0x91, 60, 100], 600);
+
+        // The beat-comparison floor answered 7, the epoch start.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.5, 9);
+    });
+
+    // #4668 review — a roll that has not wrapped yet was charged the seam
+    // re-entry anyway: the seam branch's bound added the current pass's whole
+    // distance to the epoch-to-seam span, admitting dying-pass answers for
+    // stamps that predate the roll itself.
+    it('charges no seam re-entry to a roll that has not wrapped', async () => {
+        playTransport({ isLooping: true, loopStart: 4, loopEnd: 5.9, playheadPosition: 5.5 });
+        // The roll began 0.15 s ago at 5.5 and the cursor (5.8) has not
+        // reached the seam; the stamp is 0.95 s old — older than the roll.
+        cursorAt(5.8);
+
+        await dispatch([0x91, 60, 100], 150);
+
+        // The phantom re-entry answered 5.8, a dying-pass beat the roll never
+        // traversed.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(5.5, 9);
     });
 
     // #4668 — backwards travel is bounded at the rolling epoch's start: a
