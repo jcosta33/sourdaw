@@ -5,6 +5,7 @@ import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
+import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
@@ -37,6 +38,14 @@ export type IntentResult = {
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     /** The immutable record of what this run's delegated request was admitted to mean. */
     creativeAuthority?: CreativeRequestAuthority;
+    /**
+     * The recipe expansions this batch adopted, in adoption order. Every command in the batch is an
+     * ordinary catalog command, so without this record nothing downstream could tell a musician that
+     * a chain came from a named recipe rather than from the provider's hand. Compiler evidence cannot
+     * carry it: that record exists only for a structured list, and an expansion is adopted by
+     * reference beside any form of proposal.
+     */
+    adoptedRecipes?: AdoptedRecipe[];
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

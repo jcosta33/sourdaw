@@ -61,6 +61,7 @@ import {
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
@@ -69,6 +70,7 @@ import { buildAgentContext } from './buildAgentContext';
 import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
+import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeTransformCompile } from './executeTransformCompile';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
@@ -527,6 +529,24 @@ const planPromptIntent = inject({ logger })(
                                           snapshot: transformSnapshot,
                                       }),
                               },
+                    // An expansion reads the same captured project and revision the transform
+                    // compiler does, so what it expands is what the proposal is grounded against.
+                    recipe:
+                        transformSnapshot === null
+                            ? undefined
+                            : {
+                                  toolName: RECIPE_EXPANSION_TOOL_NAME,
+                                  revision: transformSnapshot.revision,
+                                  execute: (call, { callId, turn, ordinal }) =>
+                                      executeRecipeExpansion({
+                                          call,
+                                          callId,
+                                          turn,
+                                          ordinal,
+                                          context,
+                                          revision: transformSnapshot.revision,
+                                      }),
+                              },
                     interpretation: {
                         toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
                         admit: (call) => {
@@ -665,11 +685,14 @@ const planPromptIntent = inject({ logger })(
                     (call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                 );
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
-                const selectedTransforms = Array.isArray(selectedIds)
+                const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
-                          planningOutcome.compiledTransforms.filter((compiled) => compiled.callId === callId)
+                          planningOutcome.retainedCompilations.filter((compiled) => compiled.callId === callId)
                       )
                     : [];
+                const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
+                    compiled.kind === 'recipe' ? [compiled.recipe] : []
+                );
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
                     if (call !== proposedBatch || !Array.isArray(selectedIds)) {
                         return call;
@@ -710,7 +733,7 @@ const planPromptIntent = inject({ logger })(
                         },
                     };
                 }
-                const transformCommands = materializeTransformToolCalls(selectedTransforms);
+                const transformCommands = materializeTransformToolCalls(selectedCompilations);
                 const transformTargetIds = getCompiledTransformTargetIds(transformCommands, context);
                 const combinedProposalCalls = compiledList.calls.map((call) => {
                     if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || transformCommands.length === 0) {
@@ -863,13 +886,13 @@ const planPromptIntent = inject({ logger })(
                     sectionSignatures,
                     prompt,
                     compilerEvidence: compiledList.compilerEvidence,
-                    ...(selectedTransforms.length === 0
+                    ...(selectedCompilations.length === 0
                         ? {}
                         : {
                               transformProof: {
                                   revision: projectRevision ?? '',
                                   creativeAuthorityId: creativeAuthority?.authorityId ?? null,
-                                  compilations: selectedTransforms,
+                                  compilations: selectedCompilations,
                               },
                           }),
                     projectRevision,
@@ -1032,6 +1055,7 @@ const planPromptIntent = inject({ logger })(
                                   ],
                               }),
                         ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
+                        ...(adoptedRecipes.length === 0 ? {} : { adoptedRecipes }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

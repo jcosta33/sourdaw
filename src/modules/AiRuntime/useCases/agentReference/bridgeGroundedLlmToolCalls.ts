@@ -12,6 +12,7 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type RetainedCommandSet } from '../../models/RetainedCompilation';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
     SEMANTIC_CLIP_MAX_END_BEAT,
@@ -35,7 +36,6 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
-import { type RetainedTransformCompilation } from '../applicationOwnedToolLoop';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import { getCompiledTransformTargetIds } from '../getCompiledTransformTargetIds';
 import { materializeTransformToolCalls } from '../materializeTransformToolCalls';
@@ -151,7 +151,7 @@ type BridgeGroundedLlmToolCallsInput = {
     transformProof?: {
         revision: string;
         creativeAuthorityId: string | null;
-        compilations: readonly RetainedTransformCompilation[];
+        compilations: readonly RetainedCommandSet[];
     };
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;

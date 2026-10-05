@@ -30,6 +30,7 @@ type PersistPromptActionConfirmationInput = {
     affectedIds: NonNullable<ConfirmationProposal['affectedIds']>;
     protectedUnchanged: NonNullable<ConfirmationProposal['protectedUnchanged']>;
     matchSelectorPredicates?: ConfirmationProposal['matchSelectorPredicates'];
+    adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -41,6 +42,38 @@ type PersistPromptActionConfirmationInput = {
     supersedes?: string | null;
     onResourceOwnershipAcquired?: () => void;
 };
+
+/** A proposal the store refused to retain settles its run and chat message as failed; nothing stays pending. */
+function failUnretainedProposal(input: PersistPromptActionConfirmationInput): void {
+    const reason = 'Prepared action resources exceed the live confirmation limit.';
+    agentRunLifecycle.updateBatchStatus({
+        runId: input.runId,
+        batchId: input.parsedCommandBatch.envelope.batchId,
+        status: 'failed',
+    });
+    agentRunLifecycle.recordError({
+        runId: input.runId,
+        error: normalizeAgentFailure({
+            category: 'budget',
+            source: 'command-execution',
+            related: {
+                targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
+                commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                workIds: [input.parsedCommandBatch.envelope.batchId],
+            },
+            retry: 'never',
+            knownDomain: true,
+        }),
+        terminal: true,
+    });
+    updateChatMessage(input.assistantMessageId, {
+        isStreaming: false,
+        pendingActionConfirmationStatus: 'failed',
+        error: reason,
+        content:
+            'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
+    });
+}
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
@@ -77,6 +110,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             affectedIds: input.affectedIds,
             protectedUnchanged: input.protectedUnchanged,
             matchSelectorPredicates: input.matchSelectorPredicates,
+            adoptedRecipes: input.adoptedRecipes,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,
@@ -89,34 +123,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             resourceLease,
         });
         if (!confirmation) {
-            const reason = 'Prepared action resources exceed the live confirmation limit.';
-            agentRunLifecycle.updateBatchStatus({
-                runId: input.runId,
-                batchId: input.parsedCommandBatch.envelope.batchId,
-                status: 'failed',
-            });
-            agentRunLifecycle.recordError({
-                runId: input.runId,
-                error: normalizeAgentFailure({
-                    category: 'budget',
-                    source: 'command-execution',
-                    related: {
-                        targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
-                        commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                        workIds: [input.parsedCommandBatch.envelope.batchId],
-                    },
-                    retry: 'never',
-                    knownDomain: true,
-                }),
-                terminal: true,
-            });
-            updateChatMessage(input.assistantMessageId, {
-                isStreaming: false,
-                pendingActionConfirmationStatus: 'failed',
-                error: reason,
-                content:
-                    'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
-            });
+            failUnretainedProposal(input);
             return null;
         }
 
