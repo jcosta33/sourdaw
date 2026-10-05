@@ -87,6 +87,7 @@ export { moveMidiCC } from './midiEvent/moveMidiCC';
 export { movePitchBend } from './midiEvent/movePitchBend';
 export { removeMidiCC } from './midiEvent/removeMidiCC';
 export { removePitchBend } from './midiEvent/removePitchBend';
+export { restoreMidiCCPoints } from './midiEvent/restoreMidiCCPoints';
 export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 export { setNotePitchBend } from './midiEvent/setNotePitchBend';
