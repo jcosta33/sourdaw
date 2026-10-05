@@ -40,6 +40,7 @@ const { mocks } = vi.hoisted(() => {
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
+    readMusicalRange: vi.fn(),
     trackStore: mocks.trackStore,
     resolveEligibleDeviceWriteTarget: (deviceId: string) => {
         const track = mocks.trackStore.value?.tracks.find((candidate) =>

@@ -44,6 +44,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return null;
         },
     },
+    readMusicalRange: () => null,
     resolveEligibleDeviceWriteTarget: () => null,
 }));
 

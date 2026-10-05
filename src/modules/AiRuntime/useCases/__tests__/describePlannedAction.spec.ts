@@ -23,6 +23,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // every reachable import as required, even one only read inside a function body
     // this spec's tests never call.
     persistDeviceParam: vi.fn(),
+    readMusicalRange: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
     trackStore: { value: null, subscribe: vi.fn(() => () => undefined) },
     getTrackEligibility: vi.fn(),

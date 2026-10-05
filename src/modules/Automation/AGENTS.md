@@ -23,6 +23,7 @@ Owns parameter automation lanes, breakpoint envelope curves, live automation rec
 - **Gesture Decimation:** High-frequency live capture points must be thinned with `simplifyGesturePoints` to protect CRDT document size and UI performance.
 - **Curve Parity:** Runtime evaluation in `getAutomationValueAtBeat` and UI rendering must share identical curve mathematics.
 - **Modulator Cleanup:** Track/device deletions must clean up target modulation mappings via `restoreTrackModulationReferences`.
+- **Range Writes Preserve the Outside:** `automateParameterRange` holds one parameter at a target across `[startBeat, endBeat)` and must leave every beat outside it sounding as before. Linear and step segments split exactly at a boundary; a boundary cutting any other curve, or moving a neighbour a `smooth` segment reads, is refused rather than approximated (`services/buildParameterRangePoints.ts`). The range is materialized to beats at admission so lock and scope checks read what the write covers; undo restores the exact prior points, or removes a lane the write created together with exactly its points, and refuses when anything else has touched them. A batch member earlier in the same batch that writes the same lane, track, or device is refused, because every member is described before any runs.
 
 ## Verification
 

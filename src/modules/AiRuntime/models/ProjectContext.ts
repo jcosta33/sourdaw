@@ -37,6 +37,7 @@ export type ProjectContext = {
     automationLanes?: ProjectContextAutomationLane[];
     sidechainRoutes?: ProjectContextSidechainRoute[];
     sections?: ProjectContextSection[];
+    markers?: ProjectContextMarker[];
     vcaGroups?: ProjectContextVcaGroup[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
@@ -168,6 +169,13 @@ export type ProjectContextSection = {
     name: string;
     startBeat: number;
     endBeat: number;
+};
+
+/** A named timeline position, the way a locator marks one: it has a beat and no length of its own. */
+export type ProjectContextMarker = {
+    id: string;
+    name: string;
+    beat: number;
 };
 
 export type ProjectContextAvailableDeviceType = {

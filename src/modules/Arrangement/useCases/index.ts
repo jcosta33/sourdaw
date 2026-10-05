@@ -180,6 +180,7 @@ export { setMarkerColor } from './marker/markerOperations/setMarkerColor';
 export { addSection } from './marker/sectionOperations/addSection';
 export { removeSection } from './marker/sectionOperations/removeSection';
 export { renameSection } from './marker/sectionOperations/renameSection';
+export { resolveMusicalRange } from './marker/sectionOperations/resolveMusicalRange';
 
 export { saveMixerSnapshot } from './mixerSnapshot/operations/saveMixerSnapshot';
 export { recallMixerSnapshot } from './mixerSnapshot/operations/recallMixerSnapshot';

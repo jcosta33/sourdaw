@@ -68,6 +68,7 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
+    readMusicalRange: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
     setWarpState: vi.fn(),
     getStoredWarpState: vi.fn(),

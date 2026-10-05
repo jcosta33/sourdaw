@@ -103,6 +103,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     adjustmentLayerStore: mocks.adjustmentLayerStore,
     persistDeviceParam: mocks.persistDeviceParam,
+    readMusicalRange: vi.fn(),
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
     warpStateStore: { value: null },
 }));
