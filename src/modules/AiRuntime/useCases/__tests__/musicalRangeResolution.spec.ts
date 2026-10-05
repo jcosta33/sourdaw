@@ -185,6 +185,52 @@ describe('musical range resolution', () => {
         expect(resolveIn(numbered, { section: '2nd chorus' })).toMatchObject({ startBeat: 16, endBeat: 24 });
     });
 
+    describe('ambiguity', () => {
+        const numbered = [
+            { id: 'section-chorus-1', name: 'Chorus 1', startBeat: 0, endBeat: 8 },
+            { id: 'section-chorus-2', name: 'Chorus 2', startBeat: 16, endBeat: 24 },
+        ];
+
+        it('asks which numbered section a bare family name means', () => {
+            expect(resolveIn(numbered, { section: 'chorus' })).toMatchObject({
+                kind: 'ambiguous-section',
+                candidates: [{ id: 'section-chorus-1' }, { id: 'section-chorus-2' }],
+            });
+        });
+
+        it('asks which of two sections starting on the same beat an ordinal means', () => {
+            const stacked = [
+                { id: 'section-chorus-upper', name: 'Chorus', startBeat: 16, endBeat: 32 },
+                { id: 'section-chorus-lower', name: 'Chorus', startBeat: 16, endBeat: 24 },
+                { id: 'section-chorus-late', name: 'Chorus', startBeat: 48, endBeat: 64 },
+            ];
+
+            expect(resolveIn(stacked, { section: 'first chorus' })).toMatchObject({
+                kind: 'ambiguous-section',
+                candidates: [{ id: 'section-chorus-upper' }, { id: 'section-chorus-lower' }],
+            });
+        });
+
+        it('reads "final" as the last of its family', () => {
+            expect(resolveIn(numbered, { section: 'final chorus' })).toMatchObject({
+                kind: 'resolved',
+                section: { id: 'section-chorus-2' },
+            });
+        });
+
+        it('asks which of two sections bearing the same numbered name is meant', () => {
+            const duplicated = [
+                ...numbered,
+                { id: 'section-chorus-2-again', name: 'Chorus 2', startBeat: 48, endBeat: 56 },
+            ];
+
+            expect(resolveIn(duplicated, { section: 'Chorus 2' })).toMatchObject({
+                kind: 'ambiguous-section',
+                candidates: [{ id: 'section-chorus-2' }, { id: 'section-chorus-2-again' }],
+            });
+        });
+    });
+
     it('(d) reports two equal matches as an ambiguous section with both candidates, and the planner asks which', async () => {
         expect(resolveIn(SECTIONS, { section: 'Chorus' })).toEqual({
             kind: 'ambiguous-section',

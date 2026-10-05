@@ -169,23 +169,29 @@ function resolvedSection(section: MusicalRangeSection, kind: PlaceKind): Musical
     };
 }
 
+/** The places a reference picks out, every one of them answering it equally, or why it picks none. */
+type PlaceSelection =
+    { kind: 'selected'; places: readonly MusicalRangeSection[] } | { kind: 'unknown'; reason: string };
+
+function selected(places: readonly MusicalRangeSection[]): PlaceSelection {
+    return { kind: 'selected', places };
+}
+
 function selectByOrdinal(
     reference: string,
     family: readonly MusicalRangeSection[],
     ordinal: SectionOrdinal,
     kind: PlaceKind
-): MusicalRangeResolution {
+): PlaceSelection {
     const position = ordinal.kind === 'last' ? family.length - 1 : ordinal.index - 1;
-    const selected = family[position];
-    if (selected === undefined) {
+    const atPosition = family[position];
+    if (atPosition === undefined) {
         return {
-            kind: 'unknown-section',
-            reference,
+            kind: 'unknown',
             reason: `"${reference}" names ${kind} ${String(position + 1)} of its name, but the project has ${String(family.length)}.`,
         };
     }
-    const tied = family.filter((section) => section.startBeat === selected.startBeat);
-    return tied.length > 1 ? ambiguous(reference, tied, kind) : resolvedSection(selected, kind);
+    return selected(family.filter((section) => section.startBeat === atPosition.startBeat));
 }
 
 /** Sections whose whole name is the reference, read with and then without a leading "the". */
@@ -200,34 +206,28 @@ function findExactNameMatches(
     return literal.length > 0 || withoutArticle === normalizedReference ? literal : matching(withoutArticle);
 }
 
-function resolveFamilyReference(
+function selectFamilyMembers(
     reference: string,
     places: readonly MusicalRangeSection[],
     kind: PlaceKind
-): MusicalRangeResolution {
+): PlaceSelection {
     const { base, ordinal } = parseFamilyReference(reference);
     const family = places
         .filter((place) => familyBaseOf(place.name) === base)
         .sort((first, second) => first.startBeat - second.startBeat);
-    const [only] = family;
-    if (only === undefined) {
-        return {
-            kind: 'unknown-section',
-            reference,
-            reason: `No section or marker in the project is named "${reference}".`,
-        };
+    if (family.length === 0) {
+        return { kind: 'unknown', reason: `No section or marker in the project is named "${reference}".` };
     }
-    if (ordinal?.kind === 'index' && ordinal.written === 'count' && family.some(carriesCount)) {
+    if (ordinal === null) {
+        return selected(family);
+    }
+    if (ordinal.kind === 'index' && ordinal.written === 'count' && family.some(carriesCount)) {
         return {
-            kind: 'unknown-section',
-            reference,
+            kind: 'unknown',
             reason: `No ${kind} is named "${reference}"; the ${kind}s of that name are ${describeCandidates(family)}.`,
         };
     }
-    if (ordinal !== null) {
-        return selectByOrdinal(reference, family, ordinal, kind);
-    }
-    return family.length > 1 ? ambiguous(reference, family, kind) : resolvedSection(only, kind);
+    return selectByOrdinal(reference, family, ordinal, kind);
 }
 
 /** Whether a place's own name ends in a number, so a number a reference states names rather than counts. */
@@ -235,21 +235,27 @@ function carriesCount(place: MusicalRangeSection): boolean {
     return TRAILING_COUNT.test(normalizeName(place.name));
 }
 
-/** The reference read against one kind of place: an exact name first, then a name family. */
+/** The places of one kind a reference picks: an exact name first, then a name family. */
+function selectNamedPlaces(reference: string, places: readonly MusicalRangeSection[], kind: PlaceKind): PlaceSelection {
+    const exact = findExactNameMatches(reference, places);
+    return exact.length > 0 ? selected(exact) : selectFamilyMembers(reference, places, kind);
+}
+
+/** The reference read against one kind of place: one pick resolves, several are ambiguous. */
 function resolveNamedPlace(
     reference: string,
     places: readonly MusicalRangeSection[],
     kind: PlaceKind
 ): MusicalRangeResolution {
-    const exact = findExactNameMatches(reference, places);
-    const [onlyExact] = exact;
-    if (onlyExact !== undefined && exact.length === 1) {
-        return resolvedSection(onlyExact, kind);
+    const selection = selectNamedPlaces(reference, places, kind);
+    if (selection.kind === 'unknown') {
+        return { kind: 'unknown-section', reference, reason: selection.reason };
     }
-    if (exact.length > 1) {
-        return ambiguous(reference, exact, kind);
+    const [only, ...others] = selection.places;
+    if (only !== undefined && others.length === 0) {
+        return resolvedSection(only, kind);
     }
-    return resolveFamilyReference(reference, places, kind);
+    return ambiguous(reference, selection.places, kind);
 }
 
 /** The nearest marker or section start after a beat, or `Infinity` when nothing follows it. */
@@ -373,17 +379,28 @@ export function resolveMusicalRangeReference(
  */
 export type MusicalRangeInput = 'places' | 'arrangement-end' | 'meter';
 
+/**
+ * A name reads the sections and markers it is matched among, and the arrangement end only when a
+ * marker it picks has nothing after it: another marker running to the end bounds no range this
+ * name resolves to.
+ */
+function namedPlaceInputs(reference: string, sources: MusicalRangeSources): readonly MusicalRangeInput[] {
+    if (selectNamedPlaces(reference, sources.sections, 'section').kind === 'selected') {
+        return ['places'];
+    }
+    const byMarker = selectNamedPlaces(reference, toMarkerRanges(sources), 'marker');
+    const picksOpenMarker =
+        byMarker.kind === 'selected' &&
+        byMarker.places.some((marker) => !Number.isFinite(nextBoundaryAfter(marker.startBeat, sources)));
+    return picksOpenMarker ? ['places', 'arrangement-end'] : ['places'];
+}
+
 export function getMusicalRangeInputs(
     reference: MusicalRangeReference,
     sources: MusicalRangeSources
 ): readonly MusicalRangeInput[] {
     if (reference.section !== undefined) {
-        const answeredBySection =
-            resolveNamedPlace(reference.section, sources.sections, 'section').kind !== 'unknown-section';
-        const markerRunsToEnd = sources.markers.some(
-            (marker) => !Number.isFinite(nextBoundaryAfter(marker.beat, sources))
-        );
-        return answeredBySection || !markerRunsToEnd ? ['places'] : ['places', 'arrangement-end'];
+        return namedPlaceInputs(reference.section, sources);
     }
     if (isStated(reference.startBar) || isStated(reference.endBar)) {
         return ['meter'];

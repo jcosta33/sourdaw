@@ -23,6 +23,7 @@ import {
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { timeSignatureMapStore } from '#/modules/Transport/stores';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, dbToGain } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -456,6 +457,85 @@ describe('automateParameterRange', () => {
                 refusal: 'no-parameter-value',
             },
             {
+                // 1e-5 is -100 dB, below the lane's -60 dB floor: the lane would clamp the points
+                // carrying it, and every beat outside the range would rise by 40 dB.
+                name: 'a near-silent track whose decibel gain lane holds no points',
+                setup: () => seed({ vocal: { gain: 1e-5 }, lanes: [gainLane([], { minValue: -60, maxValue: 6 })] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, value: -12 },
+                refusal: 'no-parameter-value',
+            },
+            {
+                name: 'a range end inside an exponential segment',
+                setup: () =>
+                    seed({
+                        lanes: [
+                            gainLane([
+                                { id: 'curve-a', beat: 0, value: 0.5, curve: 'linear', tension: 0 },
+                                { id: 'curve-b', beat: 8, value: 0.4, curve: 'exponential', tension: 0.5 },
+                                { id: 'curve-c', beat: 24, value: 1, curve: 'linear', tension: 0 },
+                            ]),
+                        ],
+                    }),
+                payload: { parameterId: 'gain', range: { startBeat: 2, endBeat: 12 }, valueDb: -6 },
+                refusal: 'nonlinear-boundary',
+            },
+            {
+                // The smooth segment from beat 0 bends toward the value at beat 16, which the range
+                // start at beat 8 would replace with the line's own value there.
+                name: 'a boundary beside a smooth segment that reads the value it replaces',
+                setup: () =>
+                    seed({
+                        lanes: [
+                            gainLane([
+                                { id: 'smooth-a', beat: 0, value: 0.2, curve: 'smooth', tension: 0 },
+                                { id: 'smooth-b', beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+                                { id: 'smooth-c', beat: 16, value: 1, curve: 'linear', tension: 0 },
+                            ]),
+                        ],
+                    }),
+                payload: { parameterId: 'gain', range: { startBeat: 8, endBeat: 12 }, value: 0.5 },
+                refusal: 'nonlinear-boundary',
+            },
+            {
+                name: 'a negative ramp',
+                setup: () => seed({ lanes: [gainLane()] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, valueDb: -6, rampIn: -1 },
+                refusal: 'invalid-range',
+            },
+            {
+                name: 'a ramp that is not a number',
+                setup: () => seed({ lanes: [gainLane()] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, valueDb: -6, rampOut: Number.NaN },
+                refusal: 'invalid-range',
+            },
+            {
+                // A decibel lane is stated in its own units, as addAutomationPoint requires.
+                name: 'decibels on a gain lane that already holds decibels',
+                setup: () =>
+                    seed({
+                        lanes: [
+                            gainLane([{ id: 'db-a', beat: 0, value: -6, curve: 'linear', tension: 0 }], {
+                                minValue: -60,
+                                maxValue: 6,
+                            }),
+                        ],
+                    }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, valueDb: -12 },
+                refusal: 'invalid-target',
+            },
+            {
+                name: 'no target',
+                setup: () => seed({ lanes: [gainLane()] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' } },
+                refusal: 'invalid-target',
+            },
+            {
+                name: 'two targets',
+                setup: () => seed({ lanes: [gainLane()] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, value: 0.5, valueDb: -6 },
+                refusal: 'invalid-target',
+            },
+            {
                 name: 'an empty beat range',
                 setup: () => seed({ lanes: [gainLane()] }),
                 payload: { parameterId: 'gain', range: { startBeat: 8, endBeat: 8 }, valueDb: -6 },
@@ -630,4 +710,139 @@ describe('automateParameterRange', () => {
             expect(trackStore.value?.tracks.find((track) => track.id === KEYS_ID)?.clips).toEqual([]);
         }
     );
+
+    it('(o) admits an earlier clip before a marker range a later marker closes, and writes up to that marker', async () => {
+        registerHandlerMap(getArrangementHandlers());
+        addKeysTrack();
+        addClip({ id: 'clip-vocal', trackId: VOCAL_ID, startBeat: 0, endBeat: 60, name: 'Vocal', type: 'audio' });
+        // "Last" runs to the arrangement end, but "Tail" ends where "Last" starts.
+        markerStore.set({
+            markers: [
+                { id: 'marker-tail', name: 'Tail', beat: 20, color: '#000000' },
+                { id: 'marker-last', name: 'Last', beat: 30, color: '#000000' },
+            ],
+            sections: [],
+        });
+        flushAutomergeStorageWrites();
+
+        await expect(
+            executeAppActionBatch([
+                keysClipAction(),
+                rangeAction({ parameterId: 'pan', range: { section: 'Tail' }, value: 0.5 }),
+            ])
+        ).resolves.toMatchObject({ status: 'committed' });
+        expect(pointShapes(laneFor('pan'))).toEqual([
+            { beat: 20, value: 0.2, curve: 'linear' },
+            { beat: 20, value: 0.5, curve: 'linear' },
+            { beat: 30, value: 0.5, curve: 'linear' },
+            { beat: 30, value: 0.2, curve: 'linear' },
+        ]);
+    });
+
+    it('(n) ramps from the value the first point holds when the range opens before it', async () => {
+        seed({
+            lanes: [
+                gainLane([
+                    { id: 'late-a', beat: 16, value: 0.5, curve: 'linear', tension: 0 },
+                    { id: 'late-b', beat: 32, value: 1, curve: 'linear', tension: 0 },
+                ]),
+            ],
+        });
+
+        // The track fader is at 1; the lane holds 0.5 before its first point, and that is what plays.
+        await executeAppAction(rangeAction({ parameterId: 'gain', range: { startBeat: 4, endBeat: 8 }, deltaDb: -6 }));
+
+        expect(getAutomationValueAtBeat(GAIN_LANE_ID, 6)).toBeCloseTo(0.5 * dbToGain(-6), 12);
+    });
+
+    it('(p) drops beats a caller states and resolves the named range itself, refusing a name the project lacks', async () => {
+        seed({ lanes: [gainLane()] });
+        const before = lanesSnapshot();
+
+        await expect(
+            executeAppAction(
+                rangeAction({ parameterId: 'gain', range: { section: 'Drop' }, startBeat: 0, endBeat: 8, valueDb: -6 })
+            )
+        ).rejects.toThrow('Action conflicts with current project state: automateParameterRange');
+        expect(lanesSnapshot()).toBe(before);
+    });
+
+    describe('(q) earlier members of the batch that can move what the range is read against', () => {
+        const panOverVerse = rangeAction({ parameterId: 'pan', range: { section: 'Verse' }, value: 0.5 });
+
+        function expectRefused(reason: string) {
+            return expect.objectContaining({ status: 'conflicted', reason: expect.stringContaining(reason) });
+        }
+
+        it('refuses a bar range after a meter change', async () => {
+            registerHandlerMap(getTransportHandlers());
+
+            await expect(
+                executeAppActionBatch([
+                    { type: 'setTimeSignature', payload: { numerator: 3, denominator: 4 } },
+                    rangeAction({ parameterId: 'pan', range: { startBar: 1, endBar: 2 }, value: 0.5 }),
+                ])
+            ).resolves.toEqual(expectRefused('can move the beats the pan range is resolved to'));
+            expect(laneFor('pan')).toBeUndefined();
+        });
+
+        it('refuses a section range after a member that adds a section', () => {
+            // Every action that moves a section or marker executes as a singleton batch, so no
+            // batch can carry one ahead of a range today; the handler's own refusal is read
+            // directly, against the batch context it would be validated in.
+            const addSection: AppAction = {
+                type: 'addSection',
+                payload: { startBeat: 80, endBeat: 96, name: 'Coda' },
+            };
+            const range: Extract<AppAction, { type: 'automateParameterRange' }> = {
+                type: 'automateParameterRange',
+                payload: { trackId: VOCAL_ID, parameterId: 'pan', range: { section: 'Verse' }, value: 0.5 },
+            };
+            const handler = getAutomationHandlers().automateParameterRange;
+
+            expect(
+                handler.validationRefusalReason?.(range, { actions: [addSection, range], actionIndex: 1 })
+            ).toContain('An earlier addSection in this batch can move the beats the pan range is resolved to');
+        });
+
+        it('refuses a section range after a member whose effect Command does not declare', async () => {
+            const busLane: AutomationLane = {
+                ...createAutomationLane(BUS_ID, 'gain', 'Gain', 0, FADER_MAX_GAIN),
+                id: 'lane-bus-gain',
+            };
+            seed({ lanes: [busLane] });
+
+            await expect(
+                executeAppActionBatch([
+                    { type: 'removeAutomationLane', payload: { laneId: 'lane-bus-gain' } },
+                    panOverVerse,
+                ])
+            ).resolves.toEqual(expectRefused('can move the beats the pan range is resolved to'));
+            expect(laneFor('pan')).toBeUndefined();
+        });
+
+        it('admits a section range after a new track, which moves no section, marker or clip', async () => {
+            registerHandlerMap(getArrangementHandlers());
+
+            await expect(
+                executeAppActionBatch([{ type: 'addTrack', payload: { name: 'Pad', kind: 'audio' } }, panOverVerse])
+            ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+            expect(laneFor('pan')).toBeDefined();
+        });
+    });
 });
+
+function addKeysTrack(): void {
+    const seededTracks = trackStore.value?.tracks ?? [];
+    trackStore.set({
+        tracks: [
+            ...seededTracks,
+            createTrack({ id: KEYS_ID, name: 'Keys', kind: 'audio', withoutDefaultDevice: true }),
+        ],
+        selectedTrackId: null,
+    });
+}
+
+function keysClipAction(): AppAction {
+    return { type: 'addClip', payload: { trackId: KEYS_ID, startBeat: 60, endBeat: 100, name: 'Keys', type: 'audio' } };
+}

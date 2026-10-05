@@ -250,10 +250,16 @@ function resolveTargetValue(
 
 type RangeLevels = { baseValue: number; targetValue: number };
 
+function isWithinLane(value: number, units: LaneUnits): boolean {
+    const { minValue, maxValue } = laneBounds(units);
+    return value >= minValue && value <= maxValue;
+}
+
 /**
- * The value the lane draws while it holds no points, and the value the range holds. A silent fader
- * is minus infinity decibels, which no point can hold, so an empty decibel lane on one has no level
- * to ramp from and back to.
+ * The value the lane draws while it holds no points, and the value the range holds. The points
+ * that carry the parameter's own value out to either side of the range must hold it, so a value
+ * the lane cannot hold — a silent or near-silent fader below a decibel lane's floor — leaves no
+ * level to ramp from and back to: the lane would clamp it and every beat outside would move.
  */
 function resolveRangeLevels(
     payload: AutomateParameterRangePayload,
@@ -262,10 +268,10 @@ function resolveRangeLevels(
 ): RangeLevels | Refused {
     const points = units.lane?.points ?? [];
     const baseValue = laneBaseValue(units);
-    if (points.length === 0 && !Number.isFinite(baseValue)) {
+    if (points.length === 0 && !isWithinLane(baseValue, units)) {
         return refuse(
             'no-parameter-value',
-            `Lane "${units.lane?.parameterName ?? units.target.parameterName}" holds no points and the track's fader is silent, so there is no level for the range to ramp from and back to.`
+            `Lane "${units.lane?.parameterName ?? units.target.parameterName}" holds no points and the parameter plays at ${String(baseValue)}, outside the lane's range, so there is no level for the range to ramp from and back to.`
         );
     }
     const targetValue = resolveTargetValue(payload, units, sampleStoredLaneCurve(points, baseValue, startBeat));
