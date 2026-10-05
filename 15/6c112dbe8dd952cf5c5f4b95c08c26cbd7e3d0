@@ -1,0 +1,29 @@
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_2bfd55a4393d7c::t_e66eb9e9f2e666 267-269
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_ef6e8305be9057 103-104
+  s_2bfd55a4393d7c::t_83abb174147f1d 373-386
+  s_2bfd55a4393d7c::t_6757b69905d981 441-445
+  s_2bfd55a4393d7c::t_c442aca109bd0e 353-354
+  s_2bfd55a4393d7c::t_5b85f37e4e6594 464-467
+  s_2bfd55a4393d7c::t_b85191027113b7 510-519
+  s_2bfd55a4393d7c::t_128547ca20f33b 531-532,534-535,537,541-543,546-549
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_cb9157700a22a5 540-620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "156c112dbe8dd952cf5c5f4b95c08c26cbd7e3d0",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
