@@ -1,13 +1,16 @@
 import { render, screen, fireEvent, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { TrackDummy } from '../../../../__tests__/TrackDummy';
-import { renameTrack } from '../../../../useCases/renameTrack';
 import { InlineTrackName } from '../InlineTrackName';
 
 // Mock external dependencies
-vi.mock('../../../../useCases/renameTrack', () => ({
-    renameTrack: vi.fn(),
+// The header rename dispatches through the command path (#4617); the
+// assertions below pin the dispatched action, not the bare use case.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
 }));
 
 const mockTrack = TrackDummy.create({ id: 'track1', name: 'Test Track' });
@@ -48,7 +51,7 @@ describe('InlineTrackName', () => {
         const input = screen.getByLabelText('Rename track Test Track');
         fireEvent.change(input, { target: { value: 'New Name' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(renameTrack).toHaveBeenCalled();
+        expect(executeUserAppAction).toHaveBeenCalled();
     });
 
     it('should cancel rename on Escape key', () => {
@@ -58,7 +61,7 @@ describe('InlineTrackName', () => {
         const input = screen.getByLabelText('Rename track Test Track');
         fireEvent.change(input, { target: { value: 'New Name' } });
         fireEvent.keyDown(input, { key: 'Escape' });
-        expect(renameTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(screen.getByText('Test Track')).toBeInTheDocument();
     });
 
@@ -69,7 +72,7 @@ describe('InlineTrackName', () => {
         const input = screen.getByLabelText('Rename track Test Track');
         fireEvent.change(input, { target: { value: 'New Name' } });
         fireEvent.blur(input);
-        expect(renameTrack).toHaveBeenCalled();
+        expect(executeUserAppAction).toHaveBeenCalled();
     });
 
     it('should not rename if value is empty', () => {
@@ -79,7 +82,7 @@ describe('InlineTrackName', () => {
         const input = screen.getByLabelText('Rename track Test Track');
         fireEvent.change(input, { target: { value: '' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(renameTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('commits rename with preventDefault and stopPropagation on Enter', () => {
@@ -93,7 +96,10 @@ describe('InlineTrackName', () => {
         const stopPropagationSpy = vi.spyOn(enterEvent, 'stopPropagation');
         fireEvent(input, enterEvent);
 
-        expect(renameTrack).toHaveBeenCalledWith('track1', 'New Name');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track1', name: 'New Name' },
+        });
         expect(preventDefaultSpy).toHaveBeenCalledTimes(1);
         expect(stopPropagationSpy).toHaveBeenCalledTimes(1);
         expect(enterEvent.defaultPrevented).toBe(true);
@@ -110,7 +116,7 @@ describe('InlineTrackName', () => {
         const stopPropagationSpy = vi.spyOn(escapeEvent, 'stopPropagation');
         fireEvent(input, escapeEvent);
 
-        expect(renameTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(preventDefaultSpy).toHaveBeenCalledTimes(1);
         expect(stopPropagationSpy).toHaveBeenCalledTimes(1);
         expect(escapeEvent.defaultPrevented).toBe(true);

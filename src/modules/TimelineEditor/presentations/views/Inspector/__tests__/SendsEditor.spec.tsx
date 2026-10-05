@@ -8,14 +8,17 @@ import type { Track } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetSend = vi.fn();
 
-const mockAddTrack = vi.fn();
+const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         toggleSendPreFader: vi.fn(),
         setSend: (...args: unknown[]) => mockSetSend(...args),
-        addTrack: (...args: unknown[]) => mockAddTrack(...args),
     };
 });
 
@@ -184,11 +187,16 @@ describe('SendsEditor', () => {
         expect(screen.getByText('POST')).toBeInTheDocument();
     });
 
-    it('should call addTrack when create bus button is clicked', () => {
+    it('dispatches the createBus app action when create bus button is clicked', () => {
         mockUseTracks.mockReturnValue({ tracks: [] });
         render(<SendsEditor track={mockTrack} />);
         const createButton = screen.getByText(/Create Bus/i);
         fireEvent.click(createButton);
-        expect(mockAddTrack).toHaveBeenCalled();
+        // The registered bus-creation action, not the bare addTrack use case,
+        // so the bus enters undo history (#4618).
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+            type: 'createBus',
+            payload: { name: 'Bus 1' },
+        });
     });
 });

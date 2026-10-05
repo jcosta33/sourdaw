@@ -90,6 +90,77 @@ describe('reconcileCrdtSlot', () => {
         expect(slotOf(doc).rows.find((row) => row.id === 'quarantined')?.name).toBe('unreadable');
     });
 
+    it('does not resurrect a row the document dropped while the writer carries it unchanged', () => {
+        const doc: Doc = { slot: { rows: [{ id: 'a', name: 'a0' }] } };
+
+        // The writer saw `peer` in its base and still carries it, unchanged.
+        // Its absence from the document is a peer's concurrent deletion, and
+        // the write owns no delta on that row.
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'peer', name: 'p0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'a', name: 'a1' },
+                    { id: 'peer', name: 'p0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['a']);
+        expect(slotOf(doc).rows[0]?.name).toBe('a1');
+    });
+
+    it('still inserts a genuinely new row the base never carried', () => {
+        const doc: Doc = { slot: { rows: [{ id: 'a', name: 'a0' }] } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { rows: [{ id: 'a', name: 'a0' }] },
+            value: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'new', name: 'n0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['a', 'new']);
+    });
+
+    it('re-inserts a document-lacking row the writer changed relative to its base', () => {
+        const doc: Doc = { slot: { rows: [{ id: 'a', name: 'a0' }] } };
+
+        // The writer edited `peer` after seeing it, so the re-insertion
+        // carries the writer's own delta and is its to write.
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'peer', name: 'p0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'peer', name: 'p1' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['a', 'peer']);
+        expect(slotOf(doc).rows[1]?.name).toBe('p1');
+    });
+
     it('replaces a primitive collection as one value rather than merging by position', () => {
         const doc: Doc = { slot: { frequencies: [440, 880, 1760] } };
 

@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
+import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
 
 type ReplayIdMappings = {
     automationLaneIds: Map<string, string>;
@@ -182,6 +183,23 @@ function getGeneratedSidechainRouteId(action: AppAction): string | undefined {
     return action.type === 'addSidechainRoute' ? action.payload.routeId : undefined;
 }
 
+/**
+ * Dispatch a replayed create and return the generated id the executed command
+ * carried. executeAppAction materializes its own copy of the action and never
+ * writes generated ids back onto the caller's object (#4817), so the id is
+ * minted here through the same materialization executeAppAction will repeat
+ * idempotently, and read back from the action that was actually dispatched.
+ */
+async function executeGeneratedCreate(
+    replayAction: AppAction,
+    options: { groupId: string; groupLabel: string },
+    readGeneratedId: (action: AppAction) => string | undefined
+): Promise<string | undefined> {
+    const materialized = materializeCommandApplicationIds(replayAction);
+    await executeAppAction(materialized.action, options);
+    return readGeneratedId(materialized.action);
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: ReplayIdMappings,
@@ -191,8 +209,7 @@ async function executeMacroAction(
     if (replayAction.type === 'addSidechainRoute') {
         const recordedRouteId = replayAction.payload.routeId;
         delete replayAction.payload.routeId;
-        await executeAppAction(replayAction, options);
-        const generatedRouteId = getGeneratedSidechainRouteId(replayAction);
+        const generatedRouteId = await executeGeneratedCreate(replayAction, options, getGeneratedSidechainRouteId);
         if (recordedRouteId && generatedRouteId) {
             mappings.sidechainRouteIds.set(recordedRouteId, generatedRouteId);
         }
@@ -201,8 +218,7 @@ async function executeMacroAction(
     if (replayAction.type === 'addAutomationLane') {
         const recordedLaneId = replayAction.payload.laneId;
         delete replayAction.payload.laneId;
-        await executeAppAction(replayAction, options);
-        const generatedLaneId = getGeneratedAutomationLaneId(replayAction);
+        const generatedLaneId = await executeGeneratedCreate(replayAction, options, getGeneratedAutomationLaneId);
         if (recordedLaneId && generatedLaneId) {
             mappings.automationLaneIds.set(recordedLaneId, generatedLaneId);
         }
@@ -212,8 +228,7 @@ async function executeMacroAction(
         replayAction.payload.laneId = remapAutomationLaneId(replayAction.payload.laneId, mappings);
         const recordedPointId = replayAction.payload.pointId;
         delete replayAction.payload.pointId;
-        await executeAppAction(replayAction, options);
-        const generatedPointId = getGeneratedAutomationPointId(replayAction);
+        const generatedPointId = await executeGeneratedCreate(replayAction, options, getGeneratedAutomationPointId);
         if (recordedPointId && generatedPointId) {
             mappings.automationPointIds.set(recordedPointId, generatedPointId);
         }
@@ -222,8 +237,7 @@ async function executeMacroAction(
     if (replayAction.type === 'addChordEvent') {
         const recordedEventId = replayAction.payload.eventId;
         delete replayAction.payload.eventId;
-        await executeAppAction(replayAction, options);
-        const generatedEventId = getGeneratedChordEventId(replayAction);
+        const generatedEventId = await executeGeneratedCreate(replayAction, options, getGeneratedChordEventId);
         if (recordedEventId && generatedEventId) {
             mappings.chordEventIds.set(recordedEventId, generatedEventId);
         }
@@ -232,8 +246,7 @@ async function executeMacroAction(
     if (replayAction.type === 'createAdjustmentLayer') {
         const recordedLayerId = replayAction.payload.layerId;
         delete replayAction.payload.layerId;
-        await executeAppAction(replayAction, options);
-        const generatedLayerId = getGeneratedLayerId(replayAction);
+        const generatedLayerId = await executeGeneratedCreate(replayAction, options, getGeneratedLayerId);
         if (recordedLayerId && generatedLayerId) {
             mappings.layerIds.set(recordedLayerId, generatedLayerId);
         }
@@ -254,8 +267,7 @@ async function executeMacroAction(
         replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
         const recordedRegionId = replayAction.payload.regionId;
         delete replayAction.payload.regionId;
-        await executeAppAction(replayAction, options);
-        const generatedRegionId = getGeneratedRegionId(replayAction);
+        const generatedRegionId = await executeGeneratedCreate(replayAction, options, getGeneratedRegionId);
         if (recordedRegionId && generatedRegionId) {
             mappings.regionIds.set(recordedRegionId, generatedRegionId);
         }
@@ -265,8 +277,7 @@ async function executeMacroAction(
     if (replayAction.type === 'createVcaGroup') {
         const recordedVcaGroupId = replayAction.payload.vcaGroupId;
         delete replayAction.payload.vcaGroupId;
-        await executeAppAction(replayAction, options);
-        const generatedVcaGroupId = getGeneratedVcaGroupId(replayAction);
+        const generatedVcaGroupId = await executeGeneratedCreate(replayAction, options, getGeneratedVcaGroupId);
         if (recordedVcaGroupId && generatedVcaGroupId) {
             mappings.vcaGroupIds.set(recordedVcaGroupId, generatedVcaGroupId);
         }
@@ -276,8 +287,7 @@ async function executeMacroAction(
     if (replayAction.type === 'addMarker') {
         const recordedMarkerId = replayAction.payload.markerId;
         delete replayAction.payload.markerId;
-        await executeAppAction(replayAction, options);
-        const generatedMarkerId = getGeneratedMarkerId(replayAction);
+        const generatedMarkerId = await executeGeneratedCreate(replayAction, options, getGeneratedMarkerId);
         if (recordedMarkerId && generatedMarkerId) {
             mappings.markerIds.set(recordedMarkerId, generatedMarkerId);
         }
@@ -287,8 +297,7 @@ async function executeMacroAction(
     if (replayAction.type === 'addSection') {
         const recordedSectionId = replayAction.payload.sectionId;
         delete replayAction.payload.sectionId;
-        await executeAppAction(replayAction, options);
-        const generatedSectionId = getGeneratedSectionId(replayAction);
+        const generatedSectionId = await executeGeneratedCreate(replayAction, options, getGeneratedSectionId);
         if (recordedSectionId && generatedSectionId) {
             mappings.sectionIds.set(recordedSectionId, generatedSectionId);
         }
@@ -298,8 +307,11 @@ async function executeMacroAction(
     if (replayAction.type === 'createTrackAlternative') {
         const recordedAlternativeId = replayAction.payload.alternativeId;
         delete replayAction.payload.alternativeId;
-        await executeAppAction(replayAction, options);
-        const generatedAlternativeId = getGeneratedTrackAlternativeId(replayAction);
+        const generatedAlternativeId = await executeGeneratedCreate(
+            replayAction,
+            options,
+            getGeneratedTrackAlternativeId
+        );
         if (recordedAlternativeId && generatedAlternativeId) {
             mappings.trackAlternativeIds.set(recordedAlternativeId, generatedAlternativeId);
         }

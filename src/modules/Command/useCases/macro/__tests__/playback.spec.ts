@@ -27,7 +27,12 @@ describe('playMacro', () => {
     beforeEach(() => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
-        executeAppActionMock.mockClear();
+        // Reset implementations too: a row's dispatch simulation (resolving a
+        // generated id onto the dispatched action) must never leak into later
+        // rows. Every row starts from the production surface — resolve, record
+        // the call, mutate nothing.
+        executeAppActionMock.mockReset();
+        executeAppActionMock.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -158,11 +163,13 @@ describe('playMacro', () => {
         let generatedLaneId = 0;
         let generatedPointId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'addAutomationLane' && action.payload.laneId === undefined) {
+            // The executed add carries its resolved id; playback reads the id
+            // back from the action it dispatched.
+            if (action.type === 'addAutomationLane') {
                 generatedLaneId += 1;
                 action.payload.laneId = `replayed-lane-${String(generatedLaneId)}`;
             }
-            if (action.type === 'addAutomationPoint' && action.payload.pointId === undefined) {
+            if (action.type === 'addAutomationPoint') {
                 generatedPointId += 1;
                 action.payload.pointId = `replayed-point-${String(generatedPointId)}`;
             }
@@ -439,7 +446,7 @@ describe('playMacro', () => {
         macroStore.set({ macros: [vcaMacro], recording: false, currentRecording: [] });
         let generatedId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'createVcaGroup' && action.payload.vcaGroupId === undefined) {
+            if (action.type === 'createVcaGroup') {
                 generatedId += 1;
                 action.payload.vcaGroupId = `replayed-vca-${String(generatedId)}`;
             }
@@ -482,7 +489,7 @@ describe('playMacro', () => {
         macroStore.set({ macros: [chordMacro], recording: false, currentRecording: [] });
         let generatedId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'addChordEvent' && action.payload.eventId === undefined) {
+            if (action.type === 'addChordEvent') {
                 generatedId += 1;
                 action.payload.eventId = `replayed-chord-${String(generatedId)}`;
             }
@@ -526,11 +533,11 @@ describe('playMacro', () => {
         let generatedMarkerId = 0;
         let generatedSectionId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'addMarker' && action.payload.markerId === undefined) {
+            if (action.type === 'addMarker') {
                 generatedMarkerId += 1;
                 action.payload.markerId = `replayed-marker-${String(generatedMarkerId)}`;
             }
-            if (action.type === 'addSection' && action.payload.sectionId === undefined) {
+            if (action.type === 'addSection') {
                 generatedSectionId += 1;
                 action.payload.sectionId = `replayed-section-${String(generatedSectionId)}`;
             }
@@ -589,7 +596,7 @@ describe('playMacro', () => {
         macroStore.set({ macros: [alternativeMacro], recording: false, currentRecording: [] });
         let generatedId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'createTrackAlternative' && action.payload.alternativeId === undefined) {
+            if (action.type === 'createTrackAlternative') {
                 generatedId += 1;
                 action.payload.alternativeId = `replayed-alt-${String(generatedId)}`;
             }
@@ -655,7 +662,7 @@ describe('playMacro', () => {
         macroStore.set({ macros: [inverseMacro], recording: false, currentRecording: [] });
         let generatedId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'createTrackAlternative' && action.payload.alternativeId === undefined) {
+            if (action.type === 'createTrackAlternative') {
                 generatedId += 1;
                 action.payload.alternativeId = `replayed-alt-${String(generatedId)}`;
             }
@@ -735,7 +742,7 @@ describe('playMacro', () => {
         macroStore.set({ macros: [sidechainMacro], recording: false, currentRecording: [] });
         let generatedRouteId = 0;
         executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'addSidechainRoute' && action.payload.routeId === undefined) {
+            if (action.type === 'addSidechainRoute') {
                 generatedRouteId += 1;
                 action.payload.routeId = `replayed-route-${String(generatedRouteId)}`;
             }
@@ -792,5 +799,358 @@ describe('playMacro', () => {
             },
         ]);
         expect(macroStore.value?.macros[0]?.actions).toEqual(sidechainMacro.actions);
+    });
+
+    // Each create action's generated id must come from the action the dispatch
+    // actually executed (#4817): executeAppAction materializes its own copy of
+    // the action and never writes generated ids onto the caller's object. Every
+    // row below replays a create-then-edit macro against a passive dispatch
+    // mock and requires the edit to address the exact id the create was
+    // dispatched with.
+    describe('per-mapping generated id remapping', () => {
+        it('remaps the recorded automation lane id to the id the dispatched addAutomationLane carries', async () => {
+            const laneMacro: Macro = {
+                id: 'map-lane-1',
+                name: 'Lane create then edit',
+                actions: [
+                    {
+                        type: 'addAutomationLane',
+                        payload: {
+                            trackId: 'track-1',
+                            parameterId: 'gain',
+                            parameterName: 'Gain',
+                            laneId: 'recorded-lane',
+                        },
+                    },
+                    { type: 'setAutomationLaneEnabled', payload: { laneId: 'recorded-lane', enabled: false } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [laneMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-lane-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedLaneId =
+                createAction?.type === 'addAutomationLane' ? createAction.payload.laneId : undefined;
+            expect(generatedLaneId).toMatch(/^automation-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'setAutomationLaneEnabled',
+                payload: { laneId: generatedLaneId },
+            });
+        });
+
+        it('remaps the recorded automation point id to the id the dispatched addAutomationPoint carries', async () => {
+            const pointMacro: Macro = {
+                id: 'map-point-1',
+                name: 'Point create then edit',
+                actions: [
+                    {
+                        type: 'addAutomationPoint',
+                        payload: { laneId: 'recorded-lane', pointId: 'recorded-point', beat: 4, value: 0.5 },
+                    },
+                    {
+                        type: 'removeAutomationPoint',
+                        payload: { laneId: 'recorded-lane', pointIndex: 0, pointId: 'recorded-point' },
+                    },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [pointMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-point-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedPointId =
+                createAction?.type === 'addAutomationPoint' ? createAction.payload.pointId : undefined;
+            expect(generatedPointId).toMatch(/^automation-point-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'removeAutomationPoint',
+                payload: { laneId: 'recorded-lane', pointId: generatedPointId },
+            });
+        });
+
+        it('remaps the recorded sidechain route id to the id the dispatched addSidechainRoute carries', async () => {
+            const routeMacro: Macro = {
+                id: 'map-route-1',
+                name: 'Route create then edit',
+                actions: [
+                    {
+                        type: 'addSidechainRoute',
+                        payload: {
+                            sourceTrackId: 'kick',
+                            targetTrackId: 'bass',
+                            routeId: 'recorded-route',
+                            targetDeviceId: 'compressor-1',
+                            targetParameterId: 'threshold',
+                            gain: 0.75,
+                        },
+                    },
+                    {
+                        type: 'removeSidechainRoute',
+                        payload: {
+                            sourceTrackId: 'kick',
+                            targetTrackId: 'bass',
+                            routeId: 'recorded-route',
+                            targetDeviceId: 'compressor-1',
+                            targetParameterId: 'threshold',
+                            gain: 0.75,
+                        },
+                    },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [routeMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-route-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedRouteId =
+                createAction?.type === 'addSidechainRoute' ? createAction.payload.routeId : undefined;
+            expect(generatedRouteId).toMatch(/^sidechain-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'removeSidechainRoute',
+                payload: { routeId: generatedRouteId },
+            });
+        });
+
+        it('remaps the recorded chord event id to the id the dispatched addChordEvent carries', async () => {
+            const chordMacro: Macro = {
+                id: 'map-chord-1',
+                name: 'Chord create then edit',
+                actions: [
+                    {
+                        type: 'addChordEvent',
+                        payload: { eventId: 'recorded-chord', beat: 0, root: 0, quality: 'major', duration: 4 },
+                    },
+                    { type: 'moveChordEvent', payload: { eventId: 'recorded-chord', beat: 8 } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [chordMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-chord-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedEventId = createAction?.type === 'addChordEvent' ? createAction.payload.eventId : undefined;
+            expect(generatedEventId).toMatch(/^chord-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'moveChordEvent',
+                payload: { eventId: generatedEventId },
+            });
+        });
+
+        it('remaps the recorded adjustment layer id to the id the dispatched createAdjustmentLayer carries', async () => {
+            const layerMacro: Macro = {
+                id: 'map-layer-1',
+                name: 'Layer create then edit',
+                actions: [
+                    {
+                        type: 'createAdjustmentLayer',
+                        payload: { name: 'Layer', effectType: 'volume', layerId: 'recorded-layer' },
+                    },
+                    { type: 'setLayerMix', payload: { layerId: 'recorded-layer', mix: 0.5 } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [layerMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-layer-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedLayerId =
+                createAction?.type === 'createAdjustmentLayer' ? createAction.payload.layerId : undefined;
+            expect(generatedLayerId).toMatch(/^adjustment-layer-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'setLayerMix',
+                payload: { layerId: generatedLayerId },
+            });
+        });
+
+        it('remaps the recorded adjustment region id to the id the dispatched addAdjustmentRegion carries', async () => {
+            const regionMacro: Macro = {
+                id: 'map-region-1',
+                name: 'Region create then edit',
+                actions: [
+                    {
+                        type: 'addAdjustmentRegion',
+                        payload: {
+                            layerId: 'recorded-layer',
+                            startBeat: 0,
+                            endBeat: 4,
+                            regionId: 'recorded-region',
+                        },
+                    },
+                    {
+                        type: 'moveAdjustmentRegion',
+                        payload: { regionId: 'recorded-region', startBeat: 4, endBeat: 8 },
+                    },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [regionMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-region-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedRegionId =
+                createAction?.type === 'addAdjustmentRegion' ? createAction.payload.regionId : undefined;
+            expect(generatedRegionId).toMatch(/^adjustment-region-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'moveAdjustmentRegion',
+                payload: { regionId: generatedRegionId },
+            });
+        });
+
+        it('remaps the recorded VCA group id to the id the dispatched createVcaGroup carries', async () => {
+            const vcaMacro: Macro = {
+                id: 'map-vca-1',
+                name: 'VCA create then edit',
+                actions: [
+                    {
+                        type: 'createVcaGroup',
+                        payload: { name: 'Drums', trackIds: ['track-1'], vcaGroupId: 'recorded-vca' },
+                    },
+                    { type: 'setVcaGain', payload: { vcaGroupId: 'recorded-vca', gain: 0.75 } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [vcaMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-vca-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedVcaGroupId =
+                createAction?.type === 'createVcaGroup' ? createAction.payload.vcaGroupId : undefined;
+            expect(generatedVcaGroupId).toMatch(/^vca-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'setVcaGain',
+                payload: { vcaGroupId: generatedVcaGroupId },
+            });
+        });
+
+        it('remaps the recorded marker id to the id the dispatched addMarker carries', async () => {
+            const markerMacro: Macro = {
+                id: 'map-marker-1',
+                name: 'Marker create then edit',
+                actions: [
+                    { type: 'addMarker', payload: { beat: 4, name: 'Intro', markerId: 'recorded-marker' } },
+                    { type: 'setMarkerColor', payload: { markerId: 'recorded-marker', color: '#f00' } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [markerMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-marker-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedMarkerId = createAction?.type === 'addMarker' ? createAction.payload.markerId : undefined;
+            expect(generatedMarkerId).toMatch(/^marker-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'setMarkerColor',
+                payload: { markerId: generatedMarkerId },
+            });
+        });
+
+        it('remaps the recorded section id to the id the dispatched addSection carries', async () => {
+            const sectionMacro: Macro = {
+                id: 'map-section-1',
+                name: 'Section create then edit',
+                actions: [
+                    {
+                        type: 'addSection',
+                        payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'recorded-section' },
+                    },
+                    { type: 'renameSection', payload: { sectionId: 'recorded-section', name: 'Chorus' } },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [sectionMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-section-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedSectionId = createAction?.type === 'addSection' ? createAction.payload.sectionId : undefined;
+            expect(generatedSectionId).toMatch(/^section-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'renameSection',
+                payload: { sectionId: generatedSectionId },
+            });
+        });
+
+        it('remaps the recorded alternative id to the id the dispatched createTrackAlternative carries', async () => {
+            const alternativeMacro: Macro = {
+                id: 'map-alternative-1',
+                name: 'Alternative create then edit',
+                actions: [
+                    {
+                        type: 'createTrackAlternative',
+                        payload: {
+                            trackId: 't1',
+                            name: 'Take 2',
+                            duplicateActive: false,
+                            alternativeId: 'recorded-alt',
+                        },
+                    },
+                    {
+                        type: 'renameTrackAlternative',
+                        payload: { trackId: 't1', alternativeId: 'recorded-alt', name: 'Take 2 (final)' },
+                    },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [alternativeMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-alternative-1');
+
+            const createAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedAlternativeId =
+                createAction?.type === 'createTrackAlternative' ? createAction.payload.alternativeId : undefined;
+            expect(generatedAlternativeId).toMatch(/^alternative-command-/);
+            expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+                type: 'renameTrackAlternative',
+                payload: { alternativeId: generatedAlternativeId },
+            });
+        });
+
+        it('replays the lane-then-point macro so the point lands on the lane the replay created', async () => {
+            // The issue's repro: with the mapping lost, the point addressed the
+            // recorded lane id and replay produced a lane with no points.
+            const reproMacro: Macro = {
+                id: 'map-repro-1',
+                name: 'Lane then point',
+                actions: [
+                    {
+                        type: 'addAutomationLane',
+                        payload: {
+                            trackId: 'track-1',
+                            parameterId: 'gain',
+                            parameterName: 'Gain',
+                            laneId: 'recorded-lane',
+                        },
+                    },
+                    {
+                        type: 'addAutomationPoint',
+                        payload: { laneId: 'recorded-lane', pointId: 'recorded-point', beat: 4, value: 0.5 },
+                    },
+                ],
+                createdAt: 0,
+            };
+            macroStore.set({ macros: [reproMacro], recording: false, currentRecording: [] });
+
+            await playMacro('map-repro-1');
+
+            const laneAction = executeAppActionMock.mock.calls[0]?.[0];
+            const generatedLaneId = laneAction?.type === 'addAutomationLane' ? laneAction.payload.laneId : undefined;
+            expect(generatedLaneId).toMatch(/^automation-command-/);
+            const pointAction = executeAppActionMock.mock.calls[1]?.[0];
+            const generatedPointId =
+                pointAction?.type === 'addAutomationPoint' ? pointAction.payload.pointId : undefined;
+            expect(generatedPointId).toMatch(/^automation-point-command-/);
+            expect(pointAction).toMatchObject({
+                type: 'addAutomationPoint',
+                payload: { laneId: generatedLaneId, pointId: generatedPointId },
+            });
+        });
     });
 });

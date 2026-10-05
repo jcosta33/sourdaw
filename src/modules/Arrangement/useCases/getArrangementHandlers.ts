@@ -5,6 +5,11 @@ import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSample
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
+import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';
+import { handleRemoveGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleRemoveGainEnvelopePoint';
+import { handleResetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleResetClipGainEnvelope';
+import { handleSetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleSetClipGainEnvelope';
+import { handleToggleClipGainEnvelope } from '../handlers/clipGainEnvelope/handleToggleClipGainEnvelope';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
@@ -27,10 +32,16 @@ import { handleSetExternalPluginState } from '../handlers/device/handleSetExtern
 import { handleSetSend } from '../handlers/device/handleSetSend';
 import { handleAddMarker } from '../handlers/marker/handleAddMarker';
 import { handleAddSection } from '../handlers/marker/handleAddSection';
+import { handleMoveMarker } from '../handlers/marker/handleMoveMarker';
+import { handleMoveSection } from '../handlers/marker/handleMoveSection';
 import { handleRemoveMarker } from '../handlers/marker/handleRemoveMarker';
 import { handleRemoveSection } from '../handlers/marker/handleRemoveSection';
+import { handleRenameMarker } from '../handlers/marker/handleRenameMarker';
 import { handleRenameSection } from '../handlers/marker/handleRenameSection';
+import { handleReorderSection } from '../handlers/marker/handleReorderSection';
+import { handleResizeSection } from '../handlers/marker/handleResizeSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
+import { handleSetSectionColor } from '../handlers/marker/handleSetSectionColor';
 import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleCommitRecording } from '../handlers/recording/handleCommitRecording';
@@ -170,9 +181,20 @@ export function getArrangementHandlers() {
         addMarker: handleAddMarker,
         removeMarker: handleRemoveMarker,
         setMarkerColor: handleSetMarkerColor,
+        renameMarker: handleRenameMarker,
+        moveMarker: handleMoveMarker,
         addSection: handleAddSection,
         removeSection: handleRemoveSection,
         renameSection: handleRenameSection,
+        moveSection: handleMoveSection,
+        resizeSection: handleResizeSection,
+        setSectionColor: handleSetSectionColor,
+        reorderSection: handleReorderSection,
+        setClipGainEnvelope: handleSetClipGainEnvelope,
+        toggleClipGainEnvelope: handleToggleClipGainEnvelope,
+        addGainEnvelopePoint: handleAddGainEnvelopePoint,
+        removeGainEnvelopePoint: handleRemoveGainEnvelopePoint,
+        resetClipGainEnvelope: handleResetClipGainEnvelope,
         clearScratchPad: handleClearScratchPad,
         commitScratchPad: handleCommitScratchPad,
         consolidateAllTracks: handleConsolidateAllTracks,

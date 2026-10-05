@@ -19,6 +19,11 @@ import { handleScaleAutomation } from '../handlers/automation/handleScaleAutomat
 import { handleSetAutomationLaneEnabled } from '../handlers/automation/handleSetAutomationLaneEnabled';
 import { handleStretchAutomation } from '../handlers/automation/handleStretchAutomation';
 import { handleThinAutomation } from '../handlers/automation/handleThinAutomation';
+import { handleAddMapping } from '../handlers/modulation/handleAddMapping';
+import { handleAddModulator } from '../handlers/modulation/handleAddModulator';
+import { handleRemoveMapping } from '../handlers/modulation/handleRemoveMapping';
+import { handleRemoveModulator } from '../handlers/modulation/handleRemoveModulator';
+import { handleUpdateModulator } from '../handlers/modulation/handleUpdateModulator';
 
 type AutomationAction =
     | Extract<AppAction, { type: 'addAutomationLane' }>
@@ -39,7 +44,12 @@ type AutomationAction =
     | Extract<AppAction, { type: 'thinAutomation' }>
     | Extract<AppAction, { type: 'quantizeAutomation' }>
     | Extract<AppAction, { type: 'restoreAutomationLanePoints' }>
-    | Extract<AppAction, { type: 'restoreAutomationPointPresence' }>;
+    | Extract<AppAction, { type: 'restoreAutomationPointPresence' }>
+    | Extract<AppAction, { type: 'addModulator' }>
+    | Extract<AppAction, { type: 'removeModulator' }>
+    | Extract<AppAction, { type: 'updateModulator' }>
+    | Extract<AppAction, { type: 'addMapping' }>
+    | Extract<AppAction, { type: 'removeMapping' }>;
 
 export type AutomationHandlersMap = {
     [Action in AutomationAction as Action['type']]: ActionHandler<Action>;
@@ -69,5 +79,10 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         quantizeAutomation: handleQuantizeAutomation,
         restoreAutomationLanePoints: handleRestoreAutomationLanePoints,
         restoreAutomationPointPresence: handleRestoreAutomationPointPresence,
+        addModulator: handleAddModulator,
+        removeModulator: handleRemoveModulator,
+        updateModulator: handleUpdateModulator,
+        addMapping: handleAddMapping,
+        removeMapping: handleRemoveMapping,
     };
 }

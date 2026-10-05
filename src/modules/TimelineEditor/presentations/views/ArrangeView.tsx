@@ -27,13 +27,9 @@ import {
     getAdjustmentLayerStripHeight,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
-import {
-    addTrack,
-    addClip,
-    importMidiFile,
-    setTimelineHorizontalScrollbarScrollX,
-} from '#/modules/Arrangement/useCases';
+import { createTrack, importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
@@ -494,25 +490,52 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 continue;
             }
 
-            const newTrack = addTrack({ name: result.file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-            if (!newTrack) {
-                discardDecodedAudioFile(result.bufferId);
-                pendingDecodedAudioIds.delete(result.bufferId);
-                continue;
-            }
+            // The drop lands as the registered creation actions so it enters
+            // undo history (#4618): the batch keeps the new track and its clip
+            // in one single undo step, and a refused write reports back so the
+            // decoded buffer is released below.
+            const name = result.file.name.replace(/\.[^.]+$/, '');
+            const newTrack = createTrack({ name, kind: 'audio' });
 
             const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
             const durationBeats = Math.max(4, Math.ceil((result.buffer.duration / 60) * tempo));
 
-            const clip = addClip({
-                trackId: newTrack.id,
-                startBeat: currentBeat,
-                endBeat: currentBeat + durationBeats,
-                name: result.file.name.replace(/\.[^.]+$/, ''),
-                type: 'audio',
-                audioBufferId: result.bufferId,
-            });
-            if (!clip) {
+            const batchResult = await executeAppActionBatch(
+                [
+                    {
+                        type: 'addTrack' as const,
+                        payload: {
+                            id: newTrack.id,
+                            name: newTrack.name,
+                            kind: newTrack.kind,
+                            color: newTrack.color,
+                            initialAlternativeId: newTrack.activeAlternativeId,
+                        },
+                    },
+                    {
+                        type: 'addClip' as const,
+                        payload: {
+                            trackId: newTrack.id,
+                            startBeat: currentBeat,
+                            endBeat: currentBeat + durationBeats,
+                            name,
+                            type: 'audio' as const,
+                            audioBufferId: result.bufferId,
+                        },
+                    },
+                ],
+                {
+                    groupId: `import-audio-${crypto.randomUUID()}`,
+                    groupLabel: `Import audio: ${name}`,
+                    source: 'manual',
+                    requireCompensation: true,
+                }
+            );
+            const retainedImport =
+                batchResult.status === 'committed' ||
+                batchResult.status === 'committed-with-warning' ||
+                batchResult.status === 'ambiguous';
+            if (!retainedImport) {
                 discardDecodedAudioFile(result.bufferId);
                 pendingDecodedAudioIds.delete(result.bufferId);
                 continue;
@@ -554,7 +577,12 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         size="bare"
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-cyan)]/10 hover:border-[var(--color-accent-cyan)]/30 transition-all cursor-pointer"
-                        onClick={() => addTrack({ name: 'Audio 1', kind: 'audio' })}
+                        onClick={() => {
+                            void executeUserAppAction({
+                                type: 'addTrack',
+                                payload: { name: 'Audio 1', kind: 'audio' },
+                            });
+                        }}
                     >
                         <Row
                             justify="center"
@@ -573,7 +601,9 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         size="bare"
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-lavender)]/10 hover:border-[var(--color-accent-lavender)]/30 transition-all cursor-pointer"
-                        onClick={() => addTrack({ name: 'MIDI 1', kind: 'midi' })}
+                        onClick={() => {
+                            void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI 1', kind: 'midi' } });
+                        }}
                     >
                         <Row
                             justify="center"

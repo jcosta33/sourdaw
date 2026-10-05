@@ -11,8 +11,8 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack, selectClipWithFocus } from '#/modules/Arrangement/useCases';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+import { getNextAppActionClipId, selectClipWithFocus } from '#/modules/Arrangement/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
@@ -260,57 +260,85 @@ export const PatternBrowser = (): ReactElement => {
     const handleInsertTemplate = (template: PatternTemplate, notes: PatternNote[]): void => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
-        let targetTrackId: string | undefined = tState?.tracks.find(
+        const existingMidiTrackId: string | undefined = tState?.tracks.find(
             (time) => time.id === selectedTrackId && time.kind === 'midi'
         )?.id;
-        if (!targetTrackId) {
-            targetTrackId = tState?.tracks.find((time) => time.kind === 'midi')?.id;
-        }
-        // §14.3 / G4 — the AI generation handler auto-creates a MIDI track
-        // when none exists. The pattern browser used to silently return,
-        // which made the whole panel feel broken on audio-only sessions.
-        if (!targetTrackId) {
-            const created = addTrack({ name: `Pattern: ${template.name}`, kind: 'midi' });
-            if (!created) {
-                notifyUser('Could not insert pattern — no MIDI track available', 'error');
-                return;
-            }
-            targetTrackId = created.id;
-        }
+        // §14.3 / G4 — the insert auto-targets a MIDI track, creating one in
+        // the same batch when none exists (it used to silently return, which
+        // made the whole panel feel broken on audio-only sessions).
+        const targetTrackId: string = existingMidiTrackId ?? `track-${crypto.randomUUID()}`;
+        const newTrackId: string | undefined = existingMidiTrackId === undefined ? targetTrackId : undefined;
+        const clipId = getNextAppActionClipId();
 
         const transport = getTransportState();
         const startBeat = transport ? transport.playheadPosition : 0;
         const endBeat = startBeat + template.lengthBeats;
 
-        const clip = addClip({
-            trackId: targetTrackId,
-            startBeat,
-            endBeat,
-            name: `🎵 ${template.name} (${key})`,
-            type: 'midi',
-        });
-
-        if (!clip) {
-            notifyUser('Could not insert pattern — clip creation failed', 'error');
-            return;
-        }
-
-        // §14.4 — single-shot store write so inserting a 48-beat pattern
-        // doesn't flood subscribers with one `midiStore.set` per note.
-        batchAddMidiNotes(
-            clip.id,
-            notes.map((note) => ({
-                pitch: note.pitch,
-                startBeat: note.startBeat,
-                duration: note.durationBeats,
-                velocity: note.velocity,
-            }))
-        );
-        // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
-        // (TakesSection, multi-select, shortcut targets) see the new clip as
-        // well, not just the single `selectedClipId` scalar.
-        selectClipWithFocus(clip.id);
-        notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success');
+        // The insert lands as the registered creation actions — addTrack when
+        // a fresh MIDI track is needed, addClip, addNotes — in one batch, so
+        // the whole pattern is one undo step (#4618). Notes ride the
+        // `addNotes` action's single-shot store write (§14.4), never one
+        // `midiStore.set` per note.
+        void (async () => {
+            type PatternInsertAction = Parameters<typeof executeAppActionBatch>[0][number];
+            const actions: PatternInsertAction[] = [];
+            if (newTrackId !== undefined) {
+                actions.push({
+                    type: 'addTrack',
+                    payload: { id: newTrackId, name: `Pattern: ${template.name}`, kind: 'midi' },
+                });
+            }
+            actions.push(
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: clipId,
+                        trackId: targetTrackId,
+                        startBeat,
+                        endBeat,
+                        name: `🎵 ${template.name} (${key})`,
+                        type: 'midi',
+                    },
+                },
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId,
+                        notes: notes.map((note) => ({
+                            pitch: note.pitch,
+                            startBeat: note.startBeat,
+                            duration: note.durationBeats,
+                            velocity: note.velocity,
+                        })),
+                    },
+                }
+            );
+            let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
+            try {
+                batchResult = await executeAppActionBatch(actions, {
+                    groupId: `pattern-insert-${crypto.randomUUID()}`,
+                    groupLabel: `Insert pattern: ${template.name}`,
+                    source: 'manual',
+                    requireCompensation: true,
+                });
+            } catch {
+                notifyUser('Could not insert pattern — clip creation failed', 'error');
+                return;
+            }
+            const retainedInsert =
+                batchResult.status === 'committed' ||
+                batchResult.status === 'committed-with-warning' ||
+                batchResult.status === 'ambiguous';
+            if (!retainedInsert) {
+                notifyUser('Could not insert pattern — clip creation failed', 'error');
+                return;
+            }
+            // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
+            // (TakesSection, multi-select, shortcut targets) see the new clip as
+            // well, not just the single `selectedClipId` scalar.
+            selectClipWithFocus(clipId);
+            notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success');
+        })();
     };
 
     const keyOptions = ALL_KEYS.map((kIndex) => ({ id: kIndex, label: kIndex }));

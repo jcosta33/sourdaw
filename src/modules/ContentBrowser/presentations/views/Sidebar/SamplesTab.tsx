@@ -6,10 +6,11 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { addTrack, addClip } from '#/modules/Arrangement/useCases';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -38,11 +39,9 @@ export const SamplesTab = ({
 
     const handleAdd = async (sample: SampleItem): Promise<void> => {
         let trackId = selectedTrackId;
+        let newTrack: ReturnType<typeof createTrack> | undefined;
         if (!trackId) {
-            const newTrack = addTrack({ name: sample.name, kind: 'audio' });
-            if (!newTrack) {
-                return;
-            }
+            newTrack = createTrack({ name: sample.name, kind: 'audio' });
             trackId = newTrack.id;
         }
         const tempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
@@ -67,16 +66,57 @@ export const SamplesTab = ({
                 return;
             }
         }
-        const clip = addClip({
-            trackId,
-            startBeat: 0,
-            endBeat: durationBeats,
-            name: sample.name,
-            type: 'audio',
-            audioBufferId: sample.audioBufferId,
-            assetHash: stagedAsset?.hash,
-        });
-        if (!clip) {
+        // The sample lands as the registered creation actions so it enters
+        // undo history (#4618); the batch reports the commit so the staged
+        // lease is promoted only when a clip actually kept the audio.
+        type SampleBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+        const actions: SampleBatchAction[] = [];
+        if (newTrack) {
+            actions.push({
+                type: 'addTrack',
+                payload: {
+                    id: newTrack.id,
+                    name: newTrack.name,
+                    kind: newTrack.kind,
+                    color: newTrack.color,
+                    initialAlternativeId: newTrack.activeAlternativeId,
+                },
+            });
+        }
+        const clipAction: Extract<(typeof actions)[number], { type: 'addClip' }> = {
+            type: 'addClip',
+            payload: {
+                trackId,
+                startBeat: 0,
+                endBeat: durationBeats,
+                name: sample.name,
+                type: 'audio',
+                audioBufferId: sample.audioBufferId,
+            },
+        };
+        if (stagedAsset) {
+            clipAction.payload.assetHash = stagedAsset.hash;
+        }
+        actions.push(clipAction);
+        let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
+        try {
+            batchResult = await executeAppActionBatch(actions, {
+                groupId: `add-sample-${crypto.randomUUID()}`,
+                groupLabel: `Add sample: ${sample.name}`,
+                source: 'manual',
+                requireCompensation: true,
+            });
+        } catch {
+            if (stagedAsset) {
+                getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+            }
+            return;
+        }
+        const retainedSample =
+            batchResult.status === 'committed' ||
+            batchResult.status === 'committed-with-warning' ||
+            batchResult.status === 'ambiguous';
+        if (!retainedSample) {
             if (stagedAsset) {
                 getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
             }

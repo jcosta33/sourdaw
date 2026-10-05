@@ -24,21 +24,29 @@ function ensureLaneId(action: AddAutomationLaneAction): string {
     return laneId;
 }
 
+/**
+ * Whether the creation is already reflected in project truth: the payload names
+ * an existing lane, or the track already carries a track-level lane for the
+ * parameter.
+ *
+ * A pure predicate on purpose. Undo and redo replay the stored history entry's
+ * action object, so rewriting `payload.laneId` here would retarget the stored
+ * forward action away from the id its captured inverse names — the next redo
+ * would then create a lane under an id that belonged to a different lane, and
+ * the next undo would run the stale inverse as a silent no-op, leaving that lane
+ * unremovable (#4823). The fold is recorded by `describe` omitting the inverse,
+ * never by rewriting the action.
+ */
 function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
     const state = getAutomationStoreState();
     if (!state) {
         return false;
     }
-    const existingLane = state.lanes.find(
+    return state.lanes.some(
         (lane) =>
             lane.id === action.payload.laneId ||
             (!lane.clipId && lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId)
     );
-    if (!existingLane) {
-        return false;
-    }
-    action.payload.laneId = existingLane.id;
-    return true;
 }
 
 /**

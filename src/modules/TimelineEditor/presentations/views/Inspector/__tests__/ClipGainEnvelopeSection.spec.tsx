@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { getClipGainEnvelope } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { ClipGainEnvelopeSection } from '../ClipGainEnvelopeSection';
 
@@ -87,12 +89,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     return {
         ...actual,
         getClipGainEnvelope: vi.fn(() => ({ enabled: false, points: [] })),
-        toggleClipGainEnvelope: vi.fn(),
-        addGainEnvelopePoint: vi.fn(),
-        removeGainEnvelopePoint: vi.fn(),
-        resetClipGainEnvelope: vi.fn(),
     };
 });
+
+// Toggle, add, remove and reset dispatch through the command path (#4617); the
+// assertions below pin the dispatched actions, not the bare use cases.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
+}));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -137,5 +141,46 @@ describe('ClipGainEnvelopeSection', () => {
         renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
         expect(screen.getByText(/Disabled/)).toBeInTheDocument();
         expect(screen.getByText(/0 points/)).toBeInTheDocument();
+    });
+
+    it('dispatches a guarded toggle with the pre-toggle enabled value', () => {
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Enable gain envelope'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'toggleClipGainEnvelope',
+            payload: { clipId: 'clip-1', expectedEnabled: false },
+        });
+    });
+
+    it('dispatches an add breakpoint at the midpoint', () => {
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Add breakpoint'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addGainEnvelopePoint',
+            payload: { clipId: 'clip-1', beatOffset: 4, gainDb: 0 },
+        });
+    });
+
+    it('dispatches a reset', () => {
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Reset gain envelope'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'resetClipGainEnvelope',
+            payload: { clipId: 'clip-1' },
+        });
+    });
+
+    it('dispatches a point removal from its row button', () => {
+        vi.mocked(getClipGainEnvelope).mockReturnValue({
+            clipId: 'clip-1',
+            enabled: true,
+            points: [{ id: 'gep-1', beatOffset: 2, gainDb: -6 }],
+        });
+        renderWithTooltip(<ClipGainEnvelopeSection {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Remove breakpoint at beat 2'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeGainEnvelopePoint',
+            payload: { clipId: 'clip-1', pointId: 'gep-1' },
+        });
     });
 });

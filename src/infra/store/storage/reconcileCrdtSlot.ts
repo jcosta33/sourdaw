@@ -153,6 +153,18 @@ function reconcileChild(input: ReconcileChildInput): void {
     const { container, field, fieldName, base, desired, identityByField } = input;
     const current = readChild(container, field);
 
+    // A desired value identical to this write's base is not this writer's
+    // edit. A deferred write flushed late (an undo's whole-state snapshot, a
+    // burst's last frame) can be stale against a document that moved since —
+    // a peer's concurrent change this writer never saw — and writing the
+    // writer's unchanged copy back would clobber that change. Only a field
+    // the writer actually changed relative to its base is its to write; the
+    // document's current value is newer truth wherever the writer owns no
+    // delta.
+    if (isSameValue(base, desired)) {
+        return;
+    }
+
     if (isUnknownRecord(desired) && isUnknownRecord(current)) {
         reconcileRecord({ target: current, base, desired, identityByField });
         return;
@@ -281,6 +293,8 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         desiredIdentities,
         currentIndexByIdentity,
         desiredIdentitySet,
+        baseIdentitySet,
+        baseRowByIdentity,
     });
 }
 
@@ -342,6 +356,8 @@ type PlaceRowsInput = {
     desiredIdentities: readonly string[];
     currentIndexByIdentity: ReadonlyMap<string, number>;
     desiredIdentitySet: ReadonlySet<string>;
+    baseIdentitySet: ReadonlySet<string>;
+    baseRowByIdentity: ReadonlyMap<string, unknown>;
 };
 
 /**
@@ -367,7 +383,16 @@ type PlaceRowsInput = {
  * reorder is then exactly the rows the user actually moved.
  */
 function placeRows(input: PlaceRowsInput): void {
-    const { current, identify, desired, desiredIdentities, currentIndexByIdentity, desiredIdentitySet } = input;
+    const {
+        current,
+        identify,
+        desired,
+        desiredIdentities,
+        currentIndexByIdentity,
+        desiredIdentitySet,
+        baseIdentitySet,
+        baseRowByIdentity,
+    } = input;
 
     const presentDesiredIndices: number[] = [];
     for (const [desiredIndex, identity] of desiredIdentities.entries()) {
@@ -416,6 +441,21 @@ function placeRows(input: PlaceRowsInput): void {
             previousIndex = indexOfIdentity(current, identify, identity);
             continue;
         }
+        // A desired row the document lacks is this write's to place only when
+        // the writer owns a delta on it. A row its base also carried, with
+        // identical content, is not: the document's absence is a peer's
+        // concurrent deletion this write never saw, and re-inserting the
+        // unchanged copy would resurrect it — the row-membership form of the
+        // law that skips a field whose desired value equals its base. A row
+        // the base lacks is this writer's own add; a row whose content
+        // differs from its base carries this writer's change; both insert.
+        if (
+            !currentIndexByIdentity.has(identity) &&
+            baseIdentitySet.has(identity) &&
+            isSameValue(baseRowByIdentity.get(identity), desired[desiredIndex])
+        ) {
+            continue;
+        }
         const insertAt = Math.min(previousIndex + 1, current.length);
         current.splice(insertAt, 0, desired[desiredIndex]);
         previousIndex = insertAt;
@@ -437,7 +477,15 @@ function placeRows(input: PlaceRowsInput): void {
  * seen — inserted concurrently by a peer, or rejected by this build's own
  * projection and therefore missing from the value it wrote back. Deletion is
  * inferred from `baseValue`, the value this write was derived from, so only a
- * row the writer actually had in hand can be removed by it.
+ * row the writer actually had in hand can be removed by it. The same base also
+ * bounds what a write may overwrite: a value identical to its base carries no
+ * delta of this writer's own, so wherever the document has moved past that
+ * base — a peer's concurrent edit a deferred write never saw — the document
+ * stands and the stale copy is not written (#4858). The law reaches row
+ * membership too: a desired row carried unchanged from a base that also had it
+ * is not re-inserted when the document lacks it, since that absence is a
+ * peer's newer deletion; only a row the base lacked or one the writer changed
+ * is this write's to insert.
  *
  * Collections whose rows carry no stable identity are replaced whole. That is
  * deliberate: a tuning table, a pitch curve and a step pattern are one logical

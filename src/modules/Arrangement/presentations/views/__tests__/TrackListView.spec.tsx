@@ -85,14 +85,6 @@ vi.mock('../../../useCases/addTrack', () => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/folder/createFolder', () => ({
-    createFolder: vi.fn(),
-}));
-
-vi.mock('../../../useCases/toggleTrackState/reorderTrack', () => ({
-    reorderTrack: vi.fn(),
-}));
-
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
     selectTrack: vi.fn(),
 }));
@@ -149,10 +141,6 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
 
 vi.mock('../../../useCases/getTrackTemplates', () => ({
     getTrackTemplates: vi.fn(() => []),
-}));
-
-vi.mock('../../../useCases/loadTrackTemplate', () => ({
-    loadTrackTemplate: vi.fn(),
 }));
 
 vi.mock('../TakeLanesView', () => ({
@@ -630,7 +618,7 @@ describe('TrackListView', () => {
     });
 
     it('reorders a track via drag and drop', async () => {
-        const { reorderTrack } = await import('../../../useCases/toggleTrackState/reorderTrack');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { container } = renderWithTooltip(<TrackListView />);
         const rows = container.querySelectorAll('[role="row"]');
         const dataTransfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
@@ -639,7 +627,11 @@ describe('TrackListView', () => {
         fireEvent.dragOver(rows[0]!, { dataTransfer });
         fireEvent.drop(rows[0]!, { dataTransfer });
 
-        expect(reorderTrack).toHaveBeenCalledWith('t2', 0);
+        // The undoable `reorderTrack` action, not the bare use case (#4617).
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'reorderTrack',
+            payload: { trackId: 't2', newIndex: 0 },
+        });
     });
 
     it('cycles track height on the height button click', async () => {
@@ -651,10 +643,14 @@ describe('TrackListView', () => {
     });
 
     it('creates a folder on the add-folder button click', async () => {
-        const { createFolder } = await import('../../../useCases/folder/createFolder');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         renderWithTooltip(<TrackListView />);
         fireEvent.click(screen.getByLabelText('Add folder'));
-        expect(createFolder).toHaveBeenCalledWith('Folder 1');
+        // The undoable `createFolder` action, not the bare use case (#4617).
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'createFolder',
+            payload: { name: 'Folder 1' },
+        });
     });
 
     it('adds an audio track through the registered addTrack action on the add-track menu click', async () => {
