@@ -1,0 +1,39 @@
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_94d1c09ad9ac5a 146-167
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_2bfd55a4393d7c::t_330d56cc430b49 362-373
+  s_2bfd55a4393d7c::t_895b5b3fe62af0 493-500
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_2bfd55a4393d7c::t_8486f565807989 66-67,70-71,74-75
+  s_2bfd55a4393d7c::t_773e48a7859bda 46-47
+  s_2bfd55a4393d7c::t_1b60cd07ec4880 165
+  s_2bfd55a4393d7c::t_a121f268b0bf65 369-418
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_2bfd55a4393d7c::t_2f2bb633e862de 276
+  s_2bfd55a4393d7c::t_ee58b17f4bfcaa 30
+  s_2bfd55a4393d7c::t_dc24e2472deb47 169
+  s_2bfd55a4393d7c::t_19917579a870f2 121
+  s_2bfd55a4393d7c::t_7b96cbb9309825 272-275,277
+  s_2bfd55a4393d7c::t_768200a171c9d3 874-896
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_221a07773bb4ee 355-361
+  s_2bfd55a4393d7c::t_bcae4e47808d95 455-463
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_2bfd55a4393d7c::t_2ad29b3f776b58 467,469-471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "180348bbf321313d2da18787a918ce69eda09fe8",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
