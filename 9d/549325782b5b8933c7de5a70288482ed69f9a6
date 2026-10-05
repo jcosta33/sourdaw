@@ -1,0 +1,213 @@
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_b6652df74d8413 468-475
+  h_beb54bf43b47b7 476-487
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/joinNotes.spec.ts
+  s_ed5aa36a3ba357::t_5af41c3a5d143a 290-323
+src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts
+  s_ed5aa36a3ba357::t_1c4e554a18755f 165-167,170
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_ed5aa36a3ba357::t_5446977fbaf618 65,75-83,90
+  s_1c08b47ac3792f::t_93e63c0d930edb 66-68,84-91,151-152,156
+  s_1c08b47ac3792f::t_a04675b2568acf 69-77
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_ed5aa36a3ba357::t_70a145167de7ac 59-73,196,230-269
+  s_1c08b47ac3792f::t_c5d4e9b6e2a112 79-88,296-300,357-359,380-381,387-415,809-810
+  s_1c08b47ac3792f::t_07c6ba48f32c27 315-355
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_ed5aa36a3ba357::t_3ef10b9ff427d4 113-124,126-127,131
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ed5aa36a3ba357::t_a77d5a4fcf53f1 1,422-425,482,484,678-686
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_1c08b47ac3792f::t_99d9332d9eb99e 33-35,88-89
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 90-97
+measurements/semantic-review/retained-sidecars.json
+  h_beb54bf43b47b7 4,6,14,30-31,41-42,49,52,55,64-65,67-69,71,75-76,85,124,127,136,493,526,537-540,542,835-839,843
+package.json
+  h_beb54bf43b47b7 57
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1740
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  h_beb54bf43b47b7 25,28-33,130-132,138-172,203-210,213,215-219,651-672,1110-1113,1405-1419,1452-1473,1522-1541,1571-1609
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 76-93
+scripts/semanticReview/__tests__/admissionScheduling.spec.ts
+  h_beb54bf43b47b7 15,84,603-610,768-788,954-1041,1151-1157
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  h_beb54bf43b47b7 1-10,12,15-146,152-167,300-302,329,335-336,342,349,350-353,357,361,368-369,408-411,491-493,522-524,566-575,582-586,692-806,818-928,1073-1197
+scripts/semanticReview/__tests__/multiPassTransport.spec.ts
+  h_beb54bf43b47b7 3,50
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 27-28,198-199,206,412,3005,4025,4147
+scripts/semanticReview/changeFacts.ts
+  h_beb54bf43b47b7 1-97,102,104-108,125-138,195-334
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  h_beb54bf43b47b7 1-9,11-13,15-17,19,21-24,26,28-96,100,102-121,136-138,140,142-148,151-153,163-226,248-264,270-279,281-564,667-792,838-867,1069-1096
+scripts/semanticReview/evaluation/corpus.ts
+  h_beb54bf43b47b7 1-520
+scripts/semanticReview/evaluation/runEvaluation.ts
+  h_beb54bf43b47b7 1-19,21-48,60-82,88,91-223,225-241,243-295,301-305,307-311,346-371,388-404,406-448
+scripts/semanticReview/evaluation/semanticEvaluationCorpus.json
+  h_beb54bf43b47b7 1-297
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 88-89,144-149,169-170,713-725,742-745,842
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 20,106-175,180-181,183-184,186-188,199,209,223-226,231-287,345-347
+scripts/semanticReview/passes.ts
+  h_beb54bf43b47b7 17-18,390,398
+scripts/semanticReview/planPublication.ts
+  h_beb54bf43b47b7 13,191-200,203-205,216,243,245-250,255-259,264-297,300-313,315-320,322-337
+scripts/semanticReview/requestPayload.ts
+  h_beb54bf43b47b7 8-14,17,40-41,63-65,76-81,104-106,108-112,119
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 116,185-191,199,205-207,331
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 14,112-118,218-237,292-293,311,341,412,509
+scripts/semanticReview/scopeAccounting.ts
+  h_beb54bf43b47b7 281-287
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 391-394
+scripts/semanticReviewEvaluation.ts
+  h_beb54bf43b47b7 1-15,17-65,72-139,178-180,185,188-191,195-253,260,262-263,281-282,290-295,297-299,313-314,319-321,323-326,330-357,363-397
+scripts/semanticReviewMeasurement.ts
+  h_beb54bf43b47b7 480-491,540
+scripts/semanticReviewMeasurement/artifacts.ts
+  h_beb54bf43b47b7 382-383,494-496,538-541,546,555
+scripts/semanticReviewMeasurement/contracts.ts
+  h_beb54bf43b47b7 186-190,340-349,361-366
+scripts/semanticReviewMeasurement/gaps.ts
+  h_beb54bf43b47b7 83-90,170-178
+scripts/semanticReviewMeasurement/record.ts
+  h_beb54bf43b47b7 355,357-362,369,377-403,454,476,488-489,513,515
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 4868-4878,4882,4888,4894-4897,4899
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  h_beb54bf43b47b7 22
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  h_beb54bf43b47b7 11,445-478
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  h_beb54bf43b47b7 6-8,51-52,65,333-374
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  h_beb54bf43b47b7 5-6,140-171
+src/modules/AiRuntime/repositories/cloudLlm/usesStrictCloudToolSchemas.ts
+  h_beb54bf43b47b7 1-6
+src/modules/AiRuntime/transformers/parseUniqueKeyJson.ts
+  h_beb54bf43b47b7 1-43
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  h_beb54bf43b47b7 3,172-200
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  h_beb54bf43b47b7 15,115-130,132,139-142,155-160
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  h_beb54bf43b47b7 6,42,55,79
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  h_beb54bf43b47b7 302
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_beb54bf43b47b7 379
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  h_beb54bf43b47b7 22-24,31,51,53-54,120,207-218,437-502,820-904,991-1038
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 12,841
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  h_beb54bf43b47b7 1-312
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  h_beb54bf43b47b7 1-2354
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  h_beb54bf43b47b7 149-263,292-296,315-316,326,369-469
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  h_beb54bf43b47b7 2923-3805
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  h_beb54bf43b47b7 1076-1158
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  h_beb54bf43b47b7 214-320
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_beb54bf43b47b7 9,16-20,30-33,35,40-41,53,71,83,138,151-153,155,182-184,272-273,482,1069-1135,1262-1333,1340-1341,1348-1349,1458-1474,1477-1481,1485-1494,1529,3619-3620,3655-3659,3661-3673,3676,3706-3709,3769,3898-3912,3927,3935,3954-3960,4087-4089,4102-4117,4128-4129,4155-4157,4263-4288,4495,4587-5353,5519,5524-5554,5560,5568-5585,5590,6110-6117,6134-6149,6157-6249,6268-6282,6284-6301,6303-6313,6324-6330,6345-6349
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  h_beb54bf43b47b7 31,48,52-58,60
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  h_beb54bf43b47b7 5,22-27,31,37,39,57,87,90,92-95,99-103,110,115-117,121,142-149,173-183,189-192,195-218,223
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  h_beb54bf43b47b7 3,24,60,311-316,344,357-362
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 54,59,103,105,187-191,1101,1107,1111,1116-1132,1151,1154-1168,1171-1174,1227,1233,1235-1243,1245,1247-1248,1250-1254,1264-1268,1345,1365-1367,1372,1377,1382-1395,1878,1901-1903,1906,1928,1947,1953,1957-1960,1981-1991,1993-1995,2002
+src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts
+  h_beb54bf43b47b7 18-19,46
+src/modules/AiRuntime/useCases/executeTransformCompile.ts
+  h_beb54bf43b47b7 1-79
+src/modules/AiRuntime/useCases/getCompiledTransformTargetIds.ts
+  h_beb54bf43b47b7 1-34
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 46,69-72,190,239-538,1543-1547,1619,1641,1669-1676
+src/modules/AiRuntime/useCases/llmOrchestration/decodeHostedProposalWireCall.ts
+  h_beb54bf43b47b7 1-54
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  h_beb54bf43b47b7 1-46
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 40,57,64-65,158-159,163,433-436,450-452,464-465,705-723
+src/modules/AiRuntime/useCases/materializeTransformToolCalls.ts
+  h_beb54bf43b47b7 2-3,9-17
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  h_beb54bf43b47b7 23
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 66,74-75,84,86,99-102,506-509,518-531,684-687,689,691-692,696-704,706,737-748,890-894,896-897,1001,1035,1047,1049-1056
+src/modules/AiRuntime/useCases/projectDeclarativeTransformSnapshot.ts
+  h_beb54bf43b47b7 1-25
+src/modules/AiRuntime/validators/matchesJsonSchema.ts
+  h_beb54bf43b47b7 1-199
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_beb54bf43b47b7 541-543,569-571,598-600
+src/modules/Command/AGENTS.md
+  h_beb54bf43b47b7 11,31
+src/modules/Command/useCases/getDeclarativeTransformDocumentSchema.ts
+  h_beb54bf43b47b7 1-86
+src/modules/Command/useCases/index.ts
+  h_beb54bf43b47b7 48-50
+src/modules/Command/useCases/parseDeclarativeTransformDocument.ts
+  h_beb54bf43b47b7 1-466
+src/modules/MIDI/useCases/index.ts
+  s_1c08b47ac3792f::t_593352f042ef7b 90
+src/modules/MIDI/useCases/midiEvent/__tests__/restoreMidiCCPoints.spec.ts
+  s_1c08b47ac3792f::t_b30e3af8922e1a 1-10,12-13,20-23,25-28,49-50,52-53,75-82,87-97
+  s_1c08b47ac3792f::t_67b41dfa3b8cd2 11,14-19,24,29-48,51,54-74,83-86
+src/modules/MIDI/useCases/midiEvent/restoreMidiCCPoints.ts
+  s_1c08b47ac3792f::t_5c1f1f4a6c2bdd 1-9,20-23,25-27
+  s_2bfd55a4393d7c::t_b113785e9545e5 10-19,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9d549325782b5b8933c7de5a70288482ed69f9a6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
