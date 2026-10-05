@@ -228,7 +228,7 @@ describe('the Grand Boule frame queue', () => {
         expect(calls).toEqual([{ method: 'push_note_on', args: [60, 0.5, 0, 116] }]);
     });
 
-    it('voices a note whose frame the engine has already passed instead of holding it', () => {
+    it('voices a note whose frame the engine has already passed at the head of the next drain instead of holding it', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
@@ -243,8 +243,11 @@ describe('the Grand Boule frame queue', () => {
                 endFrame: 1_280,
             }
         );
+        const onArrival = { calls: [...calls], queued: queue.size() };
+        queue.drain(instance, 1_152, 1_280);
 
-        expect({ calls, queued: queue.size() }).toEqual({
+        expect({ onArrival, calls, queued: queue.size() }).toEqual({
+            onArrival: { calls: [], queued: 1 },
             calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
@@ -338,20 +341,21 @@ describe('the Grand Boule frame queue', () => {
 
         // `NaN >= blockEnd` is false and `NaN < blockEnd` is false, so a frame
         // check that forgot to test finiteness would queue this forever.
+        queue.drain(instance, 0, 128);
+
         expect({ calls, queued: queue.size() }).toEqual({
             calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
     });
 
-    it('queues a note the engine refuses on arrival instead of dropping it', () => {
+    it('holds a note the engine refuses at its drain instead of dropping it', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        // Inside the block about to render, so `receive` pushes rather than
-        // queues — and the list is full. The message has to survive as a queued
-        // one, or the note is lost with no error anywhere.
-        refuseNextPushes(1);
+        // Inside the block about to render, and the list is full. The message
+        // has to survive as a queued one, or the note is lost with no error
+        // anywhere.
         receive(
             instance,
             queue,
@@ -361,6 +365,8 @@ describe('the Grand Boule frame queue', () => {
                 endFrame: 128,
             }
         );
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
 
         queue.drain(instance, 128, 256);
@@ -374,7 +380,7 @@ describe('the Grand Boule frame queue', () => {
 });
 
 describe('a Grand Boule pedal message', () => {
-    it('is pushed at its own offset when its frame lies inside the block about to render', () => {
+    it('is queued on arrival and pushed at its own offset when its frame lies inside the block about to render', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
@@ -384,8 +390,11 @@ describe('a Grand Boule pedal message', () => {
             { type: 'sustain', position: 1, sampleFrame: 1_200 },
             { startFrame: 1_152, endFrame: 1_280 }
         );
+        const onArrival = { calls: [...calls], queued: queue.size() };
+        queue.drain(instance, 1_152, 1_280);
 
-        expect({ calls, queued: queue.size() }).toEqual({
+        expect({ onArrival, calls, queued: queue.size() }).toEqual({
+            onArrival: { calls: [], queued: 1 },
             calls: [{ method: 'push_sustain', args: [1, 48] }],
             queued: 0,
         });
@@ -413,15 +422,28 @@ describe('a Grand Boule pedal message', () => {
         const block = { startFrame: 1_152, endFrame: 1_280 };
 
         receive(instance, queue, { type: 'sustain', position: 0.5, sampleFrame: 10 }, block);
-        receive(instance, queue, { type: 'sustain', position: 0.25 }, block);
+        receive(instance, queue, { type: 'sostenuto', engaged: true }, block);
+        queue.drain(instance, 1_152, 1_280);
 
         expect({ calls, queued: queue.size() }).toEqual({
             calls: [
                 { method: 'push_sustain', args: [0.5, 0] },
-                { method: 'push_sustain', args: [0.25, 0] },
+                { method: 'push_sostenuto', args: [true, 0] },
             ],
             queued: 0,
         });
+    });
+
+    it('lets a frameless move of the same pedal replace a late framed one still waiting', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 1_152, endFrame: 1_280 };
+
+        receive(instance, queue, { type: 'sustain', position: 0.5, sampleFrame: 10 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0.25 }, block);
+        queue.drain(instance, 1_152, 1_280);
+
+        expect(calls).toEqual([{ method: 'push_sustain', args: [0.25, 0] }]);
     });
 
     it('places sostenuto and una corda like a note, in order with the notes around them', () => {
@@ -448,8 +470,9 @@ describe('a Grand Boule pedal message', () => {
         const queue = createGrandBouleFrameQueue();
         const block = { startFrame: 0, endFrame: 128 };
 
-        refuseNextPushes(1);
         receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 100 }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
 
         queue.drain(instance, 128, 256);
@@ -465,8 +488,9 @@ describe('a Grand Boule pedal message', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        refuseNextPushes(1);
         receive(instance, queue, { type: 'sustain', position: 0 }, { startFrame: 0, endFrame: 128 });
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
 
         queue.drain(instance, 128, 256);
@@ -482,16 +506,19 @@ describe('a Grand Boule pedal message', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        refuseNextPushes(1);
         receive(
             instance,
             queue,
             { type: 'sustain', position: 1, sampleFrame: Number.NaN },
             { startFrame: 0, endFrame: 128 }
         );
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
         queue.drain(instance, 128, 256);
 
-        expect({ calls, queued: queue.size() }).toEqual({
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 1 },
             calls: [{ method: 'push_sustain', args: [1, 0] }],
             queued: 0,
         });
@@ -502,9 +529,10 @@ describe('a Grand Boule pedal message', () => {
         const queue = createGrandBouleFrameQueue();
         const block = { startFrame: 0, endFrame: 128 };
 
-        refuseNextPushes(2);
         receive(instance, queue, { type: 'sostenuto', engaged: true }, block);
         receive(instance, queue, { type: 'unaCorda', engaged: true }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
 
         queue.drain(instance, 128, 256);
@@ -575,9 +603,10 @@ describe('a Grand Boule pedal message', () => {
         const queue = createGrandBouleFrameQueue();
         const block = { startFrame: 0, endFrame: 128 };
 
-        refuseNextPushes(2);
         receive(instance, queue, { type: 'sustain', position: 1 }, block);
         receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 60 }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         queue.drain(instance, 128, 256);
 
         expect(calls).toEqual([
@@ -592,8 +621,9 @@ describe('a Grand Boule pedal message', () => {
         const block = { startFrame: 0, endFrame: 128 };
 
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 }, block);
-        refuseNextPushes(1);
         receive(instance, queue, { type: 'sostenuto', engaged: true }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         queue.drain(instance, 128, 256);
 
         expect(calls).toEqual([
@@ -606,8 +636,9 @@ describe('a Grand Boule pedal message', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        refuseNextPushes(1);
         receive(instance, queue, { type: 'noteOff', midiNote: 60 }, { startFrame: 0, endFrame: 128 });
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
 
         queue.drain(instance, 128, 256);
@@ -669,8 +700,8 @@ describe('the order Grand Boule control messages reach the engine', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        refuseNextPushes(2);
         receive(instance, queue, pedal.framedPress(100), { startFrame: 0, endFrame: 128 });
+        refuseNextPushes(1);
         queue.drain(instance, 0, 128);
         receive(instance, queue, pedal.framedLift(140), { startFrame: 128, endFrame: 256 });
         queue.drain(instance, 128, 256);
@@ -691,13 +722,14 @@ describe('the order Grand Boule control messages reach the engine', () => {
             { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 },
             { startFrame: 0, endFrame: 128 }
         );
-        refuseNextPushes(1);
         receive(
             instance,
             queue,
             { type: 'sostenuto', engaged: true, sampleFrame: 100 },
             { startFrame: 0, endFrame: 128 }
         );
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         queue.drain(instance, 128, 256);
 
         expect(calls).toEqual([
@@ -725,9 +757,11 @@ describe('the order Grand Boule control messages reach the engine', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        refuseNextPushes(1);
         receive(instance, queue, { type: 'noteOff', midiNote: 60, sampleFrame: 50 }, { startFrame: 0, endFrame: 128 });
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         receive(instance, queue, { type: 'sustain', position: 1 }, { startFrame: 128, endFrame: 256 });
+        queue.drain(instance, 128, 256);
 
         expect(calls).toEqual([
             { method: 'push_note_off', args: [60, 0] },
@@ -735,22 +769,83 @@ describe('the order Grand Boule control messages reach the engine', () => {
         ]);
     });
 
-    it('keeps a frameless pedal move behind the note that arrived before it and ahead of the one after it', () => {
+    it('pushes a frameless pedal move at the block head, ahead of notes queued at later frames', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
         const block = { startFrame: 0, endFrame: 128 };
 
-        // Each message is due on arrival and the queue is empty when the pedal
-        // arrives, so the pedal is pushed at the block head without waiting
-        // behind a note it never overtook; arrival order is the push order.
+        // A frameless move sits at the block's first frame, so frame order puts
+        // it ahead of a note that arrived before it but sounds 20 samples in.
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 20 }, block);
         receive(instance, queue, { type: 'sustain', position: 1 }, block);
         receive(instance, queue, { type: 'noteOff', midiNote: 60, sampleFrame: 90 }, block);
+        queue.drain(instance, 0, 128);
 
         expect(calls).toEqual([
-            { method: 'push_note_on', args: [60, 1, 0, 20] },
             { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_note_on', args: [60, 1, 0, 20] },
             { method: 'push_note_off', args: [60, 90] },
+        ]);
+    });
+
+    it('does not push a queued note-off ahead of a late pedal that arrives after an unrelated message', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // The note-off sits at offset 100 of the block that renders next. An
+        // arrival-time drain would push it on the param's arrival, and the
+        // engine's forward-only cursor would then apply the late pedal after
+        // it: the note released with the pedal up.
+        receive(
+            instance,
+            queue,
+            { type: 'noteOff', midiNote: 60, sampleFrame: 1_252 },
+            { startFrame: 1_024, endFrame: 1_152 }
+        );
+        const block = { startFrame: 1_152, endFrame: 1_280 };
+        receive(instance, queue, { type: 'param', name: 'masterGain', value: 0.5 }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 900 }, block);
+        queue.drain(instance, 1_152, 1_280);
+
+        expect(calls.filter((call) => call.method.startsWith('push_'))).toEqual([
+            { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_note_off', args: [60, 100] },
+        ]);
+    });
+
+    it('queues a late framed move at the block start, behind an older refused frameless one', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 1_000, endFrame: 1_128 };
+
+        // The late release at frame 360 queued at its own frame would sort ahead
+        // of the frameless press the engine refused first, and the pedal would
+        // end down although the release arrived last.
+        receive(instance, queue, { type: 'sustain', position: 1 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 360 }, block);
+        refuseNextPushes(1);
+        queue.drain(instance, 1_000, 1_128);
+        queue.drain(instance, 1_128, 1_256);
+
+        expect(calls.filter((call) => call.method === 'push_sustain')).toEqual([
+            { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_sustain', args: [0, 0] },
+        ]);
+    });
+
+    it.each(pedals)('keeps a queued $name release through a panic', (pedal) => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        // The engine keeps every pedal's state through a panic, so a pedal move
+        // the player already performed must survive it whichever pedal it is.
+        receive(instance, queue, pedal.framedLift(200), block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.drain(instance, 128, 256);
+
+        expect(calls.filter((call) => call.method === pedal.method)).toEqual([
+            { method: pedal.method, args: [pedal.disengaged, 72] },
         ]);
     });
 
@@ -758,9 +853,7 @@ describe('the order Grand Boule control messages reach the engine', () => {
         const { calls, instance, refuseNextPushes } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        // The block list stays full for both arrivals: the first refusal is A's own
-        // push, the second is A's retry when B arrives.
-        refuseNextPushes(2);
+        // The block list stays full for the first drain, so both stay queued.
         receive(
             instance,
             queue,

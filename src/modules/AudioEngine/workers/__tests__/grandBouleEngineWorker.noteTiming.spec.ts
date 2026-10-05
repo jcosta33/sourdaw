@@ -331,13 +331,18 @@ describe('Grand Boule engine worker note placement', () => {
         const passed = writeHead() - BLOCK_FRAMES;
 
         send({ type: 'noteOn', midiNote: 64, velocity: 90, sampleFrame: passed, channel: 0 });
+        expect(voiced).toEqual([]);
 
-        // Dispatched on arrival — at the head the engine is already at, not the
-        // block that frame belonged to and not a block later.
+        // Open headroom for one block: the next render hands the late note to the
+        // engine at the head of that block, not the block that frame belonged to
+        // and not a block later.
+        consumeBlock(0);
+        renderTick();
+
         expect(voiced).toEqual([{ note: 64, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 0 }]);
     });
 
-    it('pushes a note arriving for the block about to render at its own offset', () => {
+    it('pushes a note arriving for the block about to render at its own offset in that render', () => {
         renderTick();
         const contextStart = 5000 * BLOCK_FRAMES;
         consumeBlock(contextStart);
@@ -345,10 +350,12 @@ describe('Grand Boule engine worker note placement', () => {
         // The consumer is at `contextStart`, the engine PRE_ROLL_FRAMES ahead, so
         // the block the worker renders next covers context frames
         // `contextStart + 768 .. +895`. A note stamped 50 samples into it arrives
-        // between renders and is delivered straight to the engine — the "voice
-        // now" path — but it is still due 50 samples in, not at the head.
+        // between renders and queues; that render pushes it 50 samples in, not at
+        // the head.
         const blockStart = contextStart + PRE_ROLL_FRAMES;
         send({ type: 'noteOn', midiNote: 66, velocity: 90, sampleFrame: blockStart + 50, channel: 0 });
+        expect(voiced).toEqual([]);
+        renderTick();
 
         expect(voiced).toEqual([{ note: 66, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 50 }]);
     });

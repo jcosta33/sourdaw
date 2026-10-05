@@ -127,6 +127,13 @@ function method(name: string): { method: string; args: unknown[] } | undefined {
     return [...calls].reverse().find((c) => c.method === name);
 }
 
+/** Run the render tick the worker scheduled: the drain that hands queued messages to the engine. */
+function runScheduledRender(): void {
+    for (const tick of queuedYields.splice(0)) {
+        tick();
+    }
+}
+
 describe('Grand Boule engine worker control plane', () => {
     beforeEach(() => {
         calls.length = 0;
@@ -265,12 +272,18 @@ describe('Grand Boule engine worker control plane', () => {
 
         send({ type: 'noteOn', midiNote: 60, velocity: 90 });
         send({ type: 'noteOff', midiNote: 60, releaseVelocity: 0.5 });
-        send({ type: 'allNotesOff' });
+
+        // Messages only queue on arrival; the engine receives them in the
+        // render the worker scheduled, so nothing has been pushed yet.
+        expect(calls).toEqual([]);
+        expect(queuedYields).toHaveLength(1);
+        runScheduledRender();
 
         // No frame on either message, so both are the "voice now" case: offset 0.
         expect(method('push_note_on')!.args).toEqual([60, 90, 0]);
-        expect(queuedYields).toHaveLength(1);
         expect(method('push_note_off')!.args).toEqual([60, 0]);
+
+        send({ type: 'allNotesOff' });
         expect(calls.some((c) => c.method === 'all_notes_off')).toBe(true);
         const controls = new Int32Array(SAB, 0, 7);
         expect(Atomics.load(controls, 4)).toBe(3);
@@ -286,6 +299,7 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'param', name: 'masterGain', value: 0.7 });
         send({ type: 'param', name: 'toneColor', value: 0.3 });
         send({ type: 'param', name: 'unknownParam', value: 1 });
+        runScheduledRender();
 
         const params = calls.filter((c) => c.method === 'set_param');
         expect(params).toContainEqual({ method: 'set_param', args: ['master_gain', 0.7] });
@@ -301,6 +315,7 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'sustain', position: 0.9 });
         send({ type: 'unaCorda', engaged: true });
         send({ type: 'sostenuto', engaged: false });
+        runScheduledRender();
 
         expect(method('push_sustain')!.args).toEqual([0.9, 0]);
         expect(method('push_una_corda')!.args).toEqual([true, 0]);

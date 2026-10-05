@@ -412,3 +412,102 @@ fn a_panic_keeps_the_queued_pedal_and_drops_the_queued_note() {
         rms(&control_tail)
     );
 }
+
+/// A panic keeps every queued pedal kind, not only the sustain: the engine keeps
+/// all three pedals' state through a panic, so a dropped sostenuto move leaves
+/// the instrument without the pedal the player pressed.
+///
+/// The note is struck after the panic, so only the pedal events that survived it
+/// can capture it. Between its note-off and the queued release the note rings
+/// as it does with the sostenuto held for good, and after the release it decays;
+/// an instance that kept only the sustain would damp it at the note-off like a
+/// plain release.
+#[test]
+fn a_panic_keeps_the_queued_sostenuto_engage_and_release() {
+    const ENGAGE_AT: u32 = 100;
+    const NOTE_OFF_AT: u32 = 300;
+    const RELEASE_AT: u32 = 2048;
+
+    let render_after_panic = |engaged: bool, release_at: Option<u32>| {
+        let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 8);
+        if engaged {
+            assert!(instance.push_sostenuto(true, ENGAGE_AT));
+        }
+        if let Some(at) = release_at {
+            assert!(instance.push_sostenuto(false, at));
+        }
+        instance.all_notes_off();
+        instance.note_on(NOTE, VELOCITY);
+        assert!(instance.push_note_off(NOTE, NOTE_OFF_AT));
+        render_with_tail(&mut instance, BLOCK)
+    };
+
+    let (control_first, control_tail) = render_after_panic(false, None);
+    let (held_first, held_tail) = render_after_panic(true, None);
+    let (released_first, released_tail) = render_after_panic(true, Some(RELEASE_AT));
+
+    let window = NOTE_OFF_AT as usize..RELEASE_AT as usize;
+    assert!(
+        rms(&control_first[window.clone()]) > 0.0,
+        "the control note is silent, so the comparisons below prove nothing"
+    );
+    assert!(
+        rms(&held_first[window.clone()]) > rms(&control_first[window.clone()]) * 1.2
+            && rms(&held_tail) > rms(&control_tail) * 5.0,
+        "the sostenuto queued before the panic did not hold the note struck after it, \
+         so the panic dropped the pedal event ({} against {} without a pedal)",
+        rms(&held_tail),
+        rms(&control_tail)
+    );
+    assert!(
+        max_abs_difference(&held_first[window.clone()], &released_first[window]) < 1.0e-6,
+        "the queued sostenuto release was applied before its frame"
+    );
+    assert!(
+        rms(&released_tail) < rms(&held_tail) / 3.0,
+        "the note kept ringing after the queued sostenuto release ({} against a held \
+         pedal's {}), so the panic dropped the release",
+        rms(&released_tail),
+        rms(&held_tail)
+    );
+}
+
+/// A panic keeps a queued una corda move: the note sounding at the panic's end
+/// is unchanged until the pedal's frame and changed from it, exactly as without
+/// a panic.
+#[test]
+fn a_panic_keeps_the_queued_una_corda_move() {
+    const ENGAGE_AT: u32 = 300;
+    const FRAMES: usize = 512;
+    /// Far below the observed difference and far above the zero a render without
+    /// the pedal's effect produces.
+    const AUDIBLE: f32 = 1.0e-5;
+
+    let render_after_panic = |engaged: bool| {
+        let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 8);
+        if engaged {
+            assert!(instance.push_una_corda(true, ENGAGE_AT));
+        }
+        instance.all_notes_off();
+        instance.note_on(NOTE, VELOCITY);
+        render(&mut instance, FRAMES)
+    };
+
+    let plain = render_after_panic(false);
+    let pedalled = render_after_panic(true);
+
+    let at = ENGAGE_AT as usize;
+    assert!(
+        rms(&plain[..at]) > 0.0,
+        "the control note is silent before the pedal's frame, so the comparison proves nothing"
+    );
+    assert!(
+        max_abs_difference(&pedalled[..at], &plain[..at]) == 0.0,
+        "the queued una corda changed frames ahead of its own"
+    );
+    assert!(
+        max_abs_difference(&pedalled[at..], &plain[at..]) > AUDIBLE,
+        "the una corda queued before the panic changed nothing from its frame onward, \
+         so the panic dropped it"
+    );
+}

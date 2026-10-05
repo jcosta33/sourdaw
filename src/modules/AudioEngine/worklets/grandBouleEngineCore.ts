@@ -497,19 +497,20 @@ export type ReceiveGrandBouleMessageInput = {
 };
 
 /**
- * Place a control message so the engine's block list receives everything due in
- * arrival order, and never ahead of an earlier message still waiting in the
- * frame queue.
+ * Place a control message in the frame queue; the host's once-per-render drain
+ * hands it to the engine.
  *
  * This is the one entry point both hosts route control messages through, so the
- * placement rule cannot differ between them. Every framed message is queued —
- * at its own frame, or at the block's first frame when it has none or none a
- * host can place — and the queue is then drained for the block about to render.
- * The queue's stable insert keeps arrival order at equal frames, and a drain
- * stops at the first message the engine refuses, leaving it and everything
- * behind it for the next block: late, never dropped, never reordered. A message
- * behind the block sounds at offset 0; with no clock to queue against
- * (`block === null`) a message voices immediately.
+ * placement rule cannot differ between them. Every framed message is only
+ * enqueued — at its own frame, or at the block's first frame when it is behind
+ * the block, has no frame, or has none a host can place — and never drained
+ * here. Draining on arrival would push a queued note-off ahead of a later
+ * arriving pedal that sorts before it. The drain runs once per render, so the
+ * engine's list receives pushes in non-decreasing frame order, in arrival order
+ * at equal frames. A drain stops at the first message the engine refuses,
+ * leaving it and everything behind it for the next block: late, never dropped,
+ * never reordered. With no clock to queue against (`block === null`) a message
+ * voices immediately.
  *
  * A pedal move with no usable frame is the newest gesture, so it first removes
  * the queued moves of the same pedal; a queued one would otherwise drain after
@@ -534,6 +535,6 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
         return;
     }
 
-    queue.enqueue(isPlaceableGrandBouleMsg(msg) ? msg : { ...msg, sampleFrame: block.startFrame });
-    queue.drain(instance, block.startFrame, block.endFrame);
+    const sampleFrame = isPlaceableGrandBouleMsg(msg) ? Math.max(msg.sampleFrame, block.startFrame) : block.startFrame;
+    queue.enqueue({ ...msg, sampleFrame });
 }

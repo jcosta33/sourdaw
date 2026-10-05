@@ -451,9 +451,10 @@ type GrandBouleWorkerMsg =
  * The ring's write head plus the consumer offset is this transport's answer to
  * "which context frames does the block I am about to produce cover"; the offline
  * worklet answers the same question with `currentFrame` and `currentFrame + 128`.
- * Everything after that — enqueue or deliver, the sample offset, and the engine
- * call itself — is one implementation shared by both, so the two hosts cannot
- * disagree about a message.
+ * Everything after that — the placement in the frame queue, then the drain's
+ * sample offset and engine call — is one implementation shared by both, so the
+ * two hosts cannot disagree about a message. The drain runs once per render,
+ * right before `process()`.
  *
  * `null` before the ring is mapped: nothing can be placed yet, so voice now.
  */
