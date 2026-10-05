@@ -139,6 +139,8 @@ let syncInts: Int32Array | null = null;
 let anchorContextFrame = 0;
 const consumerClock: GrandBouleConsumerClock = { contextFrame: 0, readHead: 0 };
 let hasConsumerClock = false;
+/** Producer head at an `allNotesOff` flush the consumer has not yet applied. */
+let flushHeadAwaitingClock: number | null = null;
 
 /**
  * Control messages waiting for the block that contains their frame.
@@ -251,6 +253,7 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     syncInts = nextSyncInts;
     anchorContextFrame = nextAnchorContextFrame;
     hasConsumerClock = false;
+    flushHeadAwaitingClock = null;
     frameQueue.clear();
 
     // Parse SAB layout.
@@ -335,6 +338,7 @@ function stopEngine(): void {
     syncInts = null;
     anchorContextFrame = 0;
     hasConsumerClock = false;
+    flushHeadAwaitingClock = null;
     frameQueue.clear();
 }
 
@@ -369,6 +373,29 @@ function audibleFloorContextFrame(): number {
         hasConsumerClock = true;
     }
     return hasConsumerClock ? consumerClock.contextFrame : anchorContextFrame;
+}
+
+/**
+ * The block start to stamp controls from while a flush is waiting for the
+ * consumer to republish its clock, or `null` once it has.
+ *
+ * Until then the clock still maps the producer head through the pre-flush read
+ * head, which puts block starts a ring's lead too high. A control stamped from
+ * it would sort behind a later one stamped from the republished clock. The
+ * floor is at or below every later start, so arrivals in this window keep
+ * their arrival order. The republish is seen when the consumer's read head has
+ * reached the flush head, which it only ever does by applying the flush.
+ */
+function flushFloorContextFrame(): number | null {
+    if (flushHeadAwaitingClock === null) {
+        return null;
+    }
+    const floor = audibleFloorContextFrame();
+    if (hasConsumerClock && ((consumerClock.readHead - flushHeadAwaitingClock) | 0) >= 0) {
+        flushHeadAwaitingClock = null;
+        return null;
+    }
+    return floor;
 }
 
 function renderLoop(generation: number): void {
@@ -477,8 +504,13 @@ function receive(msg: GrandBouleDispatchMsg): void {
 
     let block: GrandBouleBlockFrames | null = null;
     if (controlInts) {
-        const endFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
-        block = { startFrame: endFrame - BLOCK_SIZE, endFrame };
+        const flushFloor = flushFloorContextFrame();
+        if (flushFloor !== null) {
+            block = { startFrame: flushFloor, endFrame: flushFloor + BLOCK_SIZE };
+        } else {
+            const endFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
+            block = { startFrame: endFrame - BLOCK_SIZE, endFrame };
+        }
     }
 
     receiveGrandBouleMessage({ instance, queue: frameQueue, msg, block });
@@ -498,6 +530,7 @@ function receive(msg: GrandBouleDispatchMsg): void {
         // it never precedes the last audible frame the consumer published, so
         // capping the kept messages there keeps them ahead of everything later.
         frameQueue.capPendingFrames(audibleFloorContextFrame());
+        flushHeadAwaitingClock = writeHead;
     }
 
     const lifecycleState = instance.lifecycle_state();

@@ -366,7 +366,7 @@ describe('Grand Boule engine worker note placement', () => {
         expect(voiced).toEqual([{ note: 66, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 50 }]);
     });
 
-    it.each([
+    const pedals = [
         {
             method: 'push_sustain',
             press: { type: 'sustain', position: 1 },
@@ -388,7 +388,9 @@ describe('Grand Boule engine worker note placement', () => {
             engaged: true,
             disengaged: false,
         },
-    ])('leaves the $method pedal up when its lift follows a press kept through a panic', (pedal) => {
+    ];
+
+    it.each(pedals)('leaves the $method pedal up when its lift follows a press kept through a panic', (pedal) => {
         renderTick();
         const contextStart = 5000 * BLOCK_FRAMES;
         consumeBlock(contextStart);
@@ -415,6 +417,38 @@ describe('Grand Boule engine worker note placement', () => {
             { method: pedal.method, value: pedal.disengaged },
         ]);
     });
+
+    it.each(pedals)(
+        'leaves the $method pedal up when a press arrives before the clock republishes after a panic',
+        (pedal) => {
+            renderTick();
+            const contextStart = 5000 * BLOCK_FRAMES;
+            consumeBlock(contextStart);
+            renderTick();
+
+            // The flush is not yet applied: the consumer's clock still maps the
+            // producer head through the pre-flush read head, so a block start
+            // taken from it is a ring's lead too high. A press behind that start
+            // arrives in this window.
+            send({ type: 'allNotesOff' });
+            send({ ...pedal.press, sampleFrame: contextStart + 256 });
+
+            // The consumer applies the flush and republishes; the lift arrives
+            // after it and must still land behind the press.
+            const flushFrame = contextStart + 2 * BLOCK_FRAMES;
+            consumeBlock(flushFrame);
+            send({ ...pedal.lift, sampleFrame: flushFrame + 3 * BLOCK_FRAMES });
+            for (let block = 1; block <= 18; block++) {
+                renderTick();
+                consumeBlock(flushFrame + block * BLOCK_FRAMES);
+            }
+
+            expect(pedalPushes).toEqual([
+                { method: pedal.method, value: pedal.engaged },
+                { method: pedal.method, value: pedal.disengaged },
+            ]);
+        }
+    );
 
     it('drops notes still waiting in the queue when the device panics', () => {
         renderTick();
