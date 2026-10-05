@@ -1,0 +1,121 @@
+src/modules/Arrangement/AGENTS.md
+  s_1c08b47ac3792f::t_3eee9a73c8fe3b 8
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_bc42fefadf5ec8 374,527,748
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_c5378a4e890aeb 1210
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_296d02a56988c4 36,40
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1c08b47ac3792f::t_59c7617fe1e71f 21
+src/modules/AiRuntime/models/BackingVocalPlateCapability.ts
+  s_1c08b47ac3792f::t_836c6f79be57e5 27
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_d30a44263ff1a4 8,41-48
+src/modules/AiRuntime/models/RecipeExpansionLimits.ts
+  s_1c08b47ac3792f::t_59c7486a7762af 1-21
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_1c08b47ac3792f::t_d8a76250f0b99f 1-39
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_b6fef6ffb4704d 9,117-118,316,359
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1c08b47ac3792f::t_77b3ffd00448ce 17,199-230,311
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_3580b3eeb719bc 377
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_1c08b47ac3792f::t_b2f5f993e2bab9 466-468
+src/modules/AiRuntime/useCases/__tests__/deviceCharacterResolution.spec.ts
+  s_1c08b47ac3792f::t_4977627b2aaec0 3-4,6-11,21-156,193-340
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_1c08b47ac3792f::t_333da4b23997d2 3,25-26,225,244,493-537
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_1c08b47ac3792f::t_237ec32b140af1 189-203,321-335
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_1c08b47ac3792f::t_6045182a1a8247 4,8-10,12-20,27-43,579-1434
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_1c08b47ac3792f::t_97d2d21e4b0364 165-169,179,403-436
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_1c08b47ac3792f::t_aeee7721b199c8 1066-1085
+src/modules/AiRuntime/useCases/__tests__/trackFixture.ts
+  s_1c08b47ac3792f::t_7074c9c0a51003 1-43
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_d8c8a338ea4421 15,154
+src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts
+  s_1c08b47ac3792f::t_4e84f61f289451 1,7-8,12,81,106-107,156-165,209,211-214,236,276
+src/modules/AiRuntime/useCases/agentReference/resolveAvailableCharacterDevice.ts
+  s_1c08b47ac3792f::t_8a4e78ee788d33 1-40
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_1c08b47ac3792f::t_d8a091f99cb880 768-809
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_fd86178608b207 342
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_dcf6be4224f60c 33,46-77,113,126
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_c1f6bd58b797da 22,35-40,58,218-250,461
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_7c05632238f8b1 27,53,58,104,119-120,192-201,206-208,1095-1100,1108-1109,1133-1149,1228,1244,1246,1249,1346-1347,1361,1368-1371,1373-1376,1661,1663-1667,1834,1879,1904-1905,1935,1954-1955,1992,1996-2001
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_1c08b47ac3792f::t_3a2cc65e514ca6 3,5-10,175-182,184,186-196,199,215
+src/modules/AiRuntime/useCases/executeRecipeExpansion.ts
+  s_1c08b47ac3792f::t_811227c274ec59 1-93
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_1c08b47ac3792f::t_52707e80ac9595 1-342
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_892b478c220e60 1,38-42,70-71,204-211,235,249
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_1c08b47ac3792f::t_7dd52352d354cb 159-163
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_a90f889810571b 30,1620,1639,1644,1667
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_c6ab82e97e53cd 56,463
+src/modules/AiRuntime/useCases/materializeTransformToolCalls.ts
+  s_1c08b47ac3792f::t_9d9e1e234481ee 1,4-8
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_0dc34cbd4e0cd5 64,73,532-549,688,690,693-695,736,889,895,1074
+src/modules/AiRuntime/useCases/parseRecipeExpansionInput.ts
+  s_1c08b47ac3792f::t_5b959d6bad8137 1-127
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_21eb8f826ff3c0 393-395
+src/modules/AiRuntime/useCases/resolveRecipeTarget.ts
+  s_1c08b47ac3792f::t_ccad827ce6a599 1-92
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_80868a273f5ffd 362
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_1c08b47ac3792f::t_aeae80dd3e6d71 174-180,206-207
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_1c08b47ac3792f::t_9f40b951b089d4 231,1025
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_1c08b47ac3792f::t_8b33ebcdc1c7a8 47,149
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_1c08b47ac3792f::t_bb56d9c1e5326d 24
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_930555e43c2917 216-232
+src/modules/Arrangement/useCases/__tests__/isReverbDeviceType.spec.ts
+  s_1c08b47ac3792f::t_de2b76d456ecbc 1-48
+src/modules/Arrangement/useCases/getDeviceContractVersionForCommand.ts
+  s_1c08b47ac3792f::t_1a563c977483bb 6,8
+src/modules/Arrangement/useCases/index.ts
+  s_1c08b47ac3792f::t_fca7289a3cca2b 273
+src/modules/Arrangement/useCases/isReverbDeviceType.ts
+  s_1c08b47ac3792f::t_655dee597ee3e4 1-12
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1c08b47ac3792f::t_6589e877758dfc 35,162-176,295
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_6bc853bb701664 238,724-763
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e1dcaa4d6ca45637c2578d02361bb123079f64d6",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
