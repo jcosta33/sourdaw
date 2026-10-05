@@ -53,7 +53,7 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
         -45,
         [
             'Only acts once the gate is switched on in the Grinder panel, which this descriptor cannot do; the gate reads the signal after inputGain, so raising inputGain raises the level the threshold is compared against.',
-            'Pairs with gateAttack and gateRelease, which set how quickly it opens and closes around this level.',
+            'Pairs with gateAttack, which sets the opening and closing fade time, and gateRelease, which sets how long the gate stays open before closing.',
         ],
         [
             'A threshold above the quiet end of a sustained note closes the gate on the decay: the gate holds open for a fixed 20 ms, uses roughly 1 dB of hysteresis either side of the threshold and then fades to about -72 dB, so notes cut off audibly rather than fade.',
@@ -61,30 +61,29 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
         noExternalModulation
     ),
     gateAttack: parameterGuidance(
-        'Noise gate opening time',
-        'Sets how fast the gate fades open on a pick, so short values keep the attack and long values soften it.',
+        'Noise gate fade time',
+        'Sets how fast the gate fades open on a pick and fades shut again, so short values keep the attack and give a quick cut-off and long values soften both.',
         0.5,
         10,
         [
-            'Sets the gain-opening time while the detector follows at half of it; it only matters once the gate is on, and gateThreshold decides when opening is triggered.',
-            'gateRelease is the closing counterpart.',
+            'Sets the gain fade time for both opening and closing, while the detector attack follows at half of it; it only matters once the gate is on, and gateThreshold decides when opening and closing are triggered.',
+            'gateRelease does not set the closing fade: it sets how long the gate stays open before the fade starts.',
         ],
         [
-            'Attack values above about 10 ms fade the first part of every pick in, so fast palm-muted playing loses its transient.',
+            'Values above about 10 ms fade the first part of every pick in, so fast palm-muted playing loses its transient, and they also stretch the closing fade so a note tail is cut off slowly rather than abruptly; very short values (about 1 ms or less) shut sustaining notes off abruptly.',
         ],
         noExternalModulation
     ),
     gateRelease: parameterGuidance(
-        'Noise gate closing time',
-        'Sets how long the gate takes to fade shut after a note, so short values chop sustain and long values let the tail ring out.',
+        'Noise gate hold-open time',
+        'Sets how long the gate stays open after a note drops below the threshold before it begins to close, so short values close early and long values let the tail ring out.',
         60,
         250,
         [
-            'Sets the closing fade after a fixed 20 ms hold, with the detector releasing at 0.6 times this value; it only matters once the gate is on and gateThreshold has been crossed downward.',
-            'gateAttack is the opening counterpart.',
+            'Sets the detector release at 0.6 times this value, which delays the start of closing after the fixed 20 ms hold (about 110 ms at 60 and about 410 ms at 250); the closing fade itself runs at the gateAttack time, and it only matters once the gate is on and gateThreshold has been crossed downward.',
         ],
         [
-            'Values under about 40 ms cut sustaining notes off abruptly, and values over about 300 ms leave audible noise in the gaps between phrases.',
+            'Values under about 40 ms start closing almost as soon as the note falls below the threshold and clip the decay, and values over about 300 ms keep the gate open so audible noise stays in the gaps between phrases; it does not change how fast the closing fade is.',
         ],
         noExternalModulation
     ),
@@ -264,14 +263,14 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
     ),
     transformerDrive: parameterGuidance(
         'Output transformer saturation drive',
-        'Adds low-frequency compression and iron-style thickness after the power amp.',
+        'Adds iron-style saturation and a louder, thicker output after the power amp.',
         0.15,
         0.5,
         [
-            'Below 0.01 the transformer is bypassed entirely and transformerHysteresis and transformerLfSaturation do nothing; above it the output is normalized by 1/(1 + drive), so the level drops as drive rises.',
+            'Below 0.01 the transformer is bypassed entirely and transformerHysteresis and transformerLfSaturation do nothing; above it drive scales both the input boost (1 + 3 x drive) and the flux ceiling (0.5 + 1.5 x drive) faster than the 1/(1 + drive) divisor, so raising it makes the output louder and outputGain is the trim.',
         ],
         [
-            'It also subtracts drive times the low band from the saturated path and attenuates the high band by 30 percent of drive, so high values trade low-end weight for saturation instead of adding it.',
+            'Output level rises by several dB across 0.15 to 0.5 (about 2.6 dB per step from 0.15 to 0.3 and 3.7 dB from 0.3 to 0.5 on a 220 Hz tone at 0.05 input) and reaches the limiter near 1.0, so raising it without trimming outputGain or lowering master overloads the stage after it.',
         ],
         noExternalModulation
     ),
