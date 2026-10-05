@@ -1,0 +1,25 @@
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_1c08b47ac3792f::t_179e799f33ebcb 39-41
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_1c08b47ac3792f::t_976523a0e89c50 18-20,373-460
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  s_1c08b47ac3792f::t_36552fb818eb11 182-288
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_1c08b47ac3792f::t_934ca49b62b1c5 221-228,230-232,367-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "009f1f581e5ed2bcf3a0db0e72dd93a83f932745",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
