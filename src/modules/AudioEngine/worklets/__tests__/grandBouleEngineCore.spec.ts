@@ -866,6 +866,8 @@ describe('the order Grand Boule control messages reach the engine', () => {
             { type: 'noteOn', midiNote: 64, velocity: 1, sampleFrame: 20 },
             { startFrame: 0, endFrame: 128 }
         );
+        refuseNextPushes(1);
+        queue.drain(instance, 0, 128);
         const afterRefusal = { calls: [...calls], queued: queue.size() };
         queue.drain(instance, 128, 256);
 
