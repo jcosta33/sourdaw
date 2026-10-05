@@ -390,6 +390,9 @@ export async function reproposePendingChatActions(
         // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
         // guards a first-proposed one.
         matchSelectorPredicates: carriedMatchSelectorPredicates,
+        // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
+        // carried only for the whole proposal, never guessed for a part of it.
+        adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

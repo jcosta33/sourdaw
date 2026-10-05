@@ -32,6 +32,7 @@ type AgentApprovalView = {
         protectedRanges: readonly unknown[];
     };
     risk: { level: string; decision: string; reasons: readonly string[]; requiredTrustMode: string } | null;
+    recipes: readonly { recipeId: string; title: string; targetId: string; targetName: string | null }[];
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: readonly ApprovalDestructiveChange[];
     partialAcceptance: { available: boolean; reason: string | null };
@@ -158,6 +159,21 @@ function renderScope(scope: AgentApprovalView['scope']): ReactElement {
     );
 }
 
+function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | null {
+    if (recipes.length === 0) {
+        return null;
+    }
+    return (
+        <ul aria-label="Adopted recipes" className="flex flex-col gap-0.5 text-foreground">
+            {recipes.map((recipe, index) => (
+                <li key={`${recipe.recipeId}-${recipe.targetId}-${index}`}>
+                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}`}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
 function renderRisk(risk: AgentApprovalView['risk']): ReactElement {
     if (risk === null) {
         return <p className="text-muted-foreground">Risk: unclassified</p>;
@@ -276,6 +292,7 @@ const ApprovalCard = ({
                     <li key={label}>{label}</li>
                 ))}
             </ul>
+            {renderRecipes(view.recipes)}
             {renderScope(view.scope)}
             {renderRisk(view.risk)}
             {renderIntentGroups(view, excludedGroupIds, onToggleGroup)}
