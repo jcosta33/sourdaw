@@ -56,6 +56,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     trackStore: { value: { selectedTrackId: null, tracks: [] } },
     clipSelectionStore: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
     readMusicalRange: vi.fn(),

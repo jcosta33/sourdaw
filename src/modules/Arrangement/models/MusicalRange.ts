@@ -82,7 +82,12 @@ const NUMERIC_ORDINAL = /^(?<count>\d+)(?:st|nd|rd|th)$/u;
 /** A trailing count on a name or a reference: "Chorus 2", "chorus #2". */
 const TRAILING_COUNT = /^(?<base>.+?)\s+#?(?<count>\d+)$/u;
 
-type SectionOrdinal = { kind: 'index'; index: number } | { kind: 'last' };
+/**
+ * A position in a name family. `count` is a number written after the name ("chorus 2"), which in a
+ * family whose names carry numbers is a name rather than a position; `ordinal` is a word or a
+ * suffixed number before it ("second chorus", "2nd chorus"), which always counts by position.
+ */
+type SectionOrdinal = { kind: 'index'; index: number; written: 'count' | 'ordinal' } | { kind: 'last' };
 
 type FamilyReference = { base: string; ordinal: SectionOrdinal | null };
 
@@ -102,17 +107,17 @@ function parseLeadingOrdinal(word: string): SectionOrdinal | null {
     }
     const fromWord = ORDINAL_WORDS[word];
     if (fromWord !== undefined) {
-        return { kind: 'index', index: fromWord };
+        return { kind: 'index', index: fromWord, written: 'ordinal' };
     }
     const count = NUMERIC_ORDINAL.exec(word)?.groups?.count;
-    return count === undefined ? null : { kind: 'index', index: Number(count) };
+    return count === undefined ? null : { kind: 'index', index: Number(count), written: 'ordinal' };
 }
 
 function parseFamilyReference(reference: string): FamilyReference {
     const normalized = normalizeName(reference).replace(/^the\s+/u, '');
     const trailing = TRAILING_COUNT.exec(normalized)?.groups;
     if (trailing?.base !== undefined && trailing.count !== undefined) {
-        return { base: trailing.base, ordinal: { kind: 'index', index: Number(trailing.count) } };
+        return { base: trailing.base, ordinal: { kind: 'index', index: Number(trailing.count), written: 'count' } };
     }
     const [firstWord = '', ...rest] = normalized.split(' ');
     const leading = rest.length > 0 ? parseLeadingOrdinal(firstWord) : null;
@@ -212,10 +217,22 @@ function resolveFamilyReference(
             reason: `No section or marker in the project is named "${reference}".`,
         };
     }
+    if (ordinal?.kind === 'index' && ordinal.written === 'count' && family.some(carriesCount)) {
+        return {
+            kind: 'unknown-section',
+            reference,
+            reason: `No ${kind} is named "${reference}"; the ${kind}s of that name are ${describeCandidates(family)}.`,
+        };
+    }
     if (ordinal !== null) {
         return selectByOrdinal(reference, family, ordinal, kind);
     }
     return family.length > 1 ? ambiguous(reference, family, kind) : resolvedSection(only, kind);
+}
+
+/** Whether a place's own name ends in a number, so a number a reference states names rather than counts. */
+function carriesCount(place: MusicalRangeSection): boolean {
+    return TRAILING_COUNT.test(normalizeName(place.name));
 }
 
 /** The reference read against one kind of place: an exact name first, then a name family. */
@@ -235,6 +252,15 @@ function resolveNamedPlace(
     return resolveFamilyReference(reference, places, kind);
 }
 
+/** The nearest marker or section start after a beat, or `Infinity` when nothing follows it. */
+function nextBoundaryAfter(beat: number, sources: MusicalRangeSources): number {
+    const boundaries = [
+        ...sources.markers.map((marker) => marker.beat),
+        ...sources.sections.map((section) => section.startBeat),
+    ];
+    return Math.min(...boundaries.filter((boundary) => boundary > beat));
+}
+
 /**
  * Each marker as the range it opens: from its beat to the nearest later marker or section start,
  * or else to the end of the arrangement. A marker nothing closes spans no beats, and is refused as
@@ -242,12 +268,8 @@ function resolveNamedPlace(
  */
 function toMarkerRanges(sources: MusicalRangeSources): MusicalRangeSection[] {
     const arrangementEndBeat = getArrangementEndBeat(sources.tracks);
-    const boundaries = [
-        ...sources.markers.map((marker) => marker.beat),
-        ...sources.sections.map((section) => section.startBeat),
-    ];
     return sources.markers.map((marker) => {
-        const nextBoundary = Math.min(...boundaries.filter((beat) => beat > marker.beat));
+        const nextBoundary = nextBoundaryAfter(marker.beat, sources);
         let endBeat = marker.beat;
         if (Number.isFinite(nextBoundary)) {
             endBeat = nextBoundary;
@@ -342,4 +364,29 @@ export function resolveMusicalRangeReference(
         return { kind: 'invalid-range', reason: 'A beat range needs both its start and its end.' };
     }
     return resolveBeatRange(reference.startBeat, reference.endBeat);
+}
+
+/**
+ * What a stated range is read against: the sections and markers a name is matched among, the
+ * arrangement end that bounds a marker nothing follows, and the meter that places bars. A beat
+ * range reads nothing. An edit to any of these can move the beats the range resolves to.
+ */
+export type MusicalRangeInput = 'places' | 'arrangement-end' | 'meter';
+
+export function getMusicalRangeInputs(
+    reference: MusicalRangeReference,
+    sources: MusicalRangeSources
+): readonly MusicalRangeInput[] {
+    if (reference.section !== undefined) {
+        const answeredBySection =
+            resolveNamedPlace(reference.section, sources.sections, 'section').kind !== 'unknown-section';
+        const markerRunsToEnd = sources.markers.some(
+            (marker) => !Number.isFinite(nextBoundaryAfter(marker.beat, sources))
+        );
+        return answeredBySection || !markerRunsToEnd ? ['places'] : ['places', 'arrangement-end'];
+    }
+    if (isStated(reference.startBar) || isStated(reference.endBar)) {
+        return ['meter'];
+    }
+    return [];
 }

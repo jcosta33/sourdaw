@@ -33,6 +33,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     readMusicalRange: vi.fn(),
     getTrackEligibility: (kind: string | undefined) => ({
         acceptsRoutingEndpoint: kind !== undefined && ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),

@@ -34,6 +34,7 @@ vi.mock('#/infra/di/Container', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
     readMusicalRange: vi.fn(),

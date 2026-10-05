@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     getGainEnvelopeSeries: vi.fn(),
     clipHasActiveGainEnvelope: vi.fn(),
     markerStore: {

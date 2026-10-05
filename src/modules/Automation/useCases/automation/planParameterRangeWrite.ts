@@ -248,6 +248,30 @@ function resolveTargetValue(
     return level.ok ? level.linear : refuse('outside-law', level.reason);
 }
 
+type RangeLevels = { baseValue: number; targetValue: number };
+
+/**
+ * The value the lane draws while it holds no points, and the value the range holds. A silent fader
+ * is minus infinity decibels, which no point can hold, so an empty decibel lane on one has no level
+ * to ramp from and back to.
+ */
+function resolveRangeLevels(
+    payload: AutomateParameterRangePayload,
+    units: LaneUnits,
+    startBeat: number
+): RangeLevels | Refused {
+    const points = units.lane?.points ?? [];
+    const baseValue = laneBaseValue(units);
+    if (points.length === 0 && !Number.isFinite(baseValue)) {
+        return refuse(
+            'no-parameter-value',
+            `Lane "${units.lane?.parameterName ?? units.target.parameterName}" holds no points and the track's fader is silent, so there is no level for the range to ramp from and back to.`
+        );
+    }
+    const targetValue = resolveTargetValue(payload, units, sampleStoredLaneCurve(points, baseValue, startBeat));
+    return typeof targetValue === 'number' ? { baseValue, targetValue } : targetValue;
+}
+
 function resolveRamps(payload: AutomateParameterRangePayload): { rampIn: number; rampOut: number } | Refused {
     const rampIn = payload.rampIn ?? 0;
     const rampOut = payload.rampOut ?? 0;
@@ -289,15 +313,11 @@ export function planParameterRangeWrite({ payload, writeId }: PlanParameterRange
     }
     const units = { lane, target };
     const pointsBefore = lane?.points ?? [];
-    const baseValue = laneBaseValue(units);
-    const targetValue = resolveTargetValue(
-        payload,
-        units,
-        sampleStoredLaneCurve(pointsBefore, baseValue, interval.startBeat)
-    );
-    if (typeof targetValue !== 'number') {
-        return targetValue;
+    const levels = resolveRangeLevels(payload, units, interval.startBeat);
+    if ('status' in levels) {
+        return levels;
     }
+    const { baseValue, targetValue } = levels;
     const ramps = resolveRamps(payload);
     if ('status' in ramps) {
         return ramps;

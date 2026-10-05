@@ -182,13 +182,18 @@ function shapeRange({
     rampIn,
     rampOut,
 }: RangeShapeInput): PointShape[] {
+    // The hold's beats are clamped into order: ramps that fill the range meet at a beat the two
+    // sums can round to opposite sides of, and the lane would re-sort the points it stores, so the
+    // inverse would no longer match what the write left.
+    const holdStart = Math.min(startBeat + rampIn, endBeat);
+    const holdEnd = Math.max(endBeat - rampOut, holdStart);
     const written: PointShape[] = [];
     appendPoint(written, opening);
     if (rampIn > 0) {
         appendPoint(written, { beat: startBeat, value: startValue, curve: 'linear' });
     }
-    appendPoint(written, { beat: startBeat + rampIn, value: targetValue, curve: 'linear' });
-    appendPoint(written, { beat: endBeat - rampOut, value: targetValue, curve: 'linear' });
+    appendPoint(written, { beat: holdStart, value: targetValue, curve: 'linear' });
+    appendPoint(written, { beat: holdEnd, value: targetValue, curve: 'linear' });
     appendPoint(written, closing);
     return written;
 }

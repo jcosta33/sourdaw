@@ -100,6 +100,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     trackStore: mocks.trackStore,
     adjustmentLayerStore: mocks.adjustmentLayerStore,
     persistDeviceParam: mocks.persistDeviceParam,

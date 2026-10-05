@@ -170,6 +170,21 @@ describe('musical range resolution', () => {
         expect(resolveIn(sections, { section: 'Bridge' })).toMatchObject({ startBeat: 32, endBeat: 48 });
     });
 
+    it('reads a number written after the name as a name when the sections carry numbers, and a word ordinal as a position', () => {
+        const numbered = [
+            { id: 'section-chorus-1', name: 'Chorus 1', startBeat: 0, endBeat: 8 },
+            { id: 'section-chorus-3', name: 'Chorus 3', startBeat: 16, endBeat: 24 },
+        ];
+
+        expect(resolveIn(numbered, { section: 'Chorus 2' })).toEqual({
+            kind: 'unknown-section',
+            reference: 'Chorus 2',
+            reason: 'No section is named "Chorus 2"; the sections of that name are "Chorus 1" (beats 0–8), "Chorus 3" (beats 16–24).',
+        });
+        expect(resolveIn(numbered, { section: 'second chorus' })).toMatchObject({ startBeat: 16, endBeat: 24 });
+        expect(resolveIn(numbered, { section: '2nd chorus' })).toMatchObject({ startBeat: 16, endBeat: 24 });
+    });
+
     it('(d) reports two equal matches as an ambiguous section with both candidates, and the planner asks which', async () => {
         expect(resolveIn(SECTIONS, { section: 'Chorus' })).toEqual({
             kind: 'ambiguous-section',

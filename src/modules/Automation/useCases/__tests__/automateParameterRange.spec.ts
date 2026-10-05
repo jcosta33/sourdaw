@@ -5,7 +5,12 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Device, markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { createTrack, getAutomationParameterRange } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    createTrack,
+    getArrangementHandlers,
+    getAutomationParameterRange,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -37,6 +42,7 @@ type RangePayload = Extract<AppAction, { type: 'automateParameterRange' }>['payl
 
 const VOCAL_ID = 'track-lead-vocal';
 const BUS_ID = 'track-reverb-bus';
+const KEYS_ID = 'track-keys';
 const DRIVE_TARGET = 'device-drive:dist-drive';
 const GAIN_LANE_ID = 'lane-vocal-gain';
 
@@ -227,6 +233,69 @@ describe('automateParameterRange', () => {
         ]);
     });
 
+    it('(l) opens on the value a linear segment draws at the range start, so the beats before it are unchanged', async () => {
+        seed({
+            lanes: [
+                gainLane([
+                    { id: 'line-a', beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                    { id: 'line-b', beat: 16, value: 1, curve: 'linear', tension: 0 },
+                ]),
+            ],
+        });
+        const beforeStart = quarterBeats(0, 7.75);
+        const samplesBefore = sampleLane(GAIN_LANE_ID, beforeStart);
+
+        await executeAppAction(rangeAction({ parameterId: 'gain', range: { startBeat: 8, endBeat: 12 }, value: 0.5 }));
+
+        expectSameSamples(sampleLane(GAIN_LANE_ID, beforeStart), samplesBefore);
+    });
+
+    it.each([
+        { name: 'a lane it rewrote', lanes: () => [gainLane()] },
+        { name: 'a lane it created', lanes: () => [] },
+    ])('(j) undoes a write whose ramps meet inside a bar, on $name', async ({ lanes }) => {
+        seed({ lanes: lanes() });
+        const before = lanesSnapshot();
+
+        // 0 + 0.3 is 0.3, but 4 - 3.7 is 0.2999999999999998: the two ramps meet at one beat.
+        await executeAppAction(
+            rangeAction({
+                parameterId: 'gain',
+                range: { startBar: 1, endBar: 1 },
+                value: 0.5,
+                rampIn: 0.3,
+                rampOut: 3.7,
+            })
+        );
+        expect(lanesSnapshot()).not.toBe(before);
+
+        await undo();
+        expect(lanesSnapshot()).toBe(before);
+    });
+
+    it('(k) undoes every write whose ramps fill an integer-beat range, wherever the two ramps meet', async () => {
+        let exercised = 0;
+        for (const length of [1, 2, 3, 4]) {
+            for (const startBeat of [0, 1, 2]) {
+                for (let tenths = 0; tenths <= length * 10; tenths += 1) {
+                    const rampIn = tenths / 10;
+                    const rampOut = length - rampIn;
+                    if (rampIn + rampOut > length) {
+                        continue;
+                    }
+                    const range = { startBeat, endBeat: startBeat + length };
+                    await executeAppAction(rangeAction({ parameterId: 'pan', range, value: 0, rampIn, rampOut }));
+                    expect(laneFor('pan')).toBeDefined();
+
+                    await undo();
+                    expect(automationStore.value?.lanes).toEqual([]);
+                    exercised += 1;
+                }
+            }
+        }
+        expect(exercised).toBeGreaterThan(100);
+    });
+
     it('(c) writes a device parameter in its own units', async () => {
         await executeAppAction(
             rangeAction({ parameterId: DRIVE_TARGET, range: { startBeat: 4, endBeat: 8 }, value: 60, rampIn: 1 })
@@ -380,6 +449,13 @@ describe('automateParameterRange', () => {
                 refusal: 'invalid-range',
             },
             {
+                // A silent fader is minus infinity decibels, which no lane point can hold.
+                name: 'a silent track whose decibel gain lane holds no points',
+                setup: () => seed({ vocal: { gain: 0 }, lanes: [gainLane([], { minValue: -60, maxValue: 6 })] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, value: -12 },
+                refusal: 'no-parameter-value',
+            },
+            {
                 name: 'an empty beat range',
                 setup: () => seed({ lanes: [gainLane()] }),
                 payload: { parameterId: 'gain', range: { startBeat: 8, endBeat: 8 }, valueDb: -6 },
@@ -504,4 +580,54 @@ describe('automateParameterRange', () => {
         });
         expect(lanesSnapshot()).toBe(before);
     });
+
+    it.each([
+        { name: 'the arrangement already ends at beat 40', vocalClipEnd: 40 },
+        { name: 'the arrangement holds no clip yet', vocalClipEnd: null },
+    ])(
+        '(m) refuses a marker range that runs to the arrangement end after an earlier clip in its batch, when $name',
+        async ({ vocalClipEnd }) => {
+            registerHandlerMap(getArrangementHandlers());
+            const seededTracks = trackStore.value?.tracks ?? [];
+            trackStore.set({
+                tracks: [
+                    ...seededTracks,
+                    createTrack({ id: KEYS_ID, name: 'Keys', kind: 'audio', withoutDefaultDevice: true }),
+                ],
+                selectedTrackId: null,
+            });
+            if (vocalClipEnd !== null) {
+                addClip({
+                    id: 'clip-vocal',
+                    trackId: VOCAL_ID,
+                    startBeat: 0,
+                    endBeat: vocalClipEnd,
+                    name: 'Vocal',
+                    type: 'audio',
+                });
+            }
+            // "Tail" has no marker or section after it, so its range ends where the last clip does.
+            markerStore.set({
+                markers: [{ id: 'marker-tail', name: 'Tail', beat: 20, color: '#000000' }],
+                sections: [],
+            });
+            flushAutomergeStorageWrites();
+            const before = lanesSnapshot();
+
+            await expect(
+                executeAppActionBatch([
+                    {
+                        type: 'addClip',
+                        payload: { trackId: KEYS_ID, startBeat: 60, endBeat: 100, name: 'Keys', type: 'audio' },
+                    },
+                    rangeAction({ parameterId: 'pan', range: { section: 'Tail' }, value: 0.5 }),
+                ])
+            ).resolves.toMatchObject({
+                status: 'conflicted',
+                reason: expect.stringContaining('can move the beats the pan range is resolved to'),
+            });
+            expect(lanesSnapshot()).toBe(before);
+            expect(trackStore.value?.tracks.find((track) => track.id === KEYS_ID)?.clips).toEqual([]);
+        }
+    );
 });

@@ -104,6 +104,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: vi.fn(),

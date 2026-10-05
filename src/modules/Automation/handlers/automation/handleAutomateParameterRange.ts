@@ -1,4 +1,5 @@
-import { readMusicalRange } from '#/modules/Arrangement/stores';
+import { readMusicalRange, readMusicalRangeInputs } from '#/modules/Arrangement/stores';
+import { getExecutableAppActionEffect } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerDescribeResult, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -64,6 +65,60 @@ function targetDeviceId(parameterId: string): string | null {
  * undo what it actually wrote. Another range write or lane on a different parameter of the same
  * track reads nothing this one does and is admitted.
  */
+type ActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
+type RangeInput = ReturnType<typeof readMusicalRangeInputs>[number];
+type EffectObject = NonNullable<ActionEffect['creates']>[number];
+
+/** The arrangement objects whose creation or removal moves each input a named range is read against. */
+const OBJECTS_MOVING_INPUT: Record<Exclude<RangeInput, 'meter'>, readonly EffectObject[]> = {
+    places: ['marker', 'section'],
+    'arrangement-end': ['clip'],
+};
+
+/**
+ * Whether an earlier member can move an input the range is read against. An arrangement edit that
+ * creates or removes nothing — a move, a trim, a rename — is read as able to move any of them, and
+ * a member Command declares no effect for is read as able to move everything.
+ */
+function movesRangeInput(candidate: AppAction, input: RangeInput): boolean {
+    const effect = getExecutableAppActionEffect(candidate.type);
+    if (effect === null) {
+        return true;
+    }
+    if (input === 'meter') {
+        return effect.dimensions.includes('project-timing');
+    }
+    if (!effect.dimensions.includes('arrangement')) {
+        return false;
+    }
+    const created: readonly EffectObject[] = effect.creates ?? [];
+    const removed: readonly EffectObject[] = effect.removes ?? [];
+    const touched = [...created, ...removed];
+    return touched.length === 0 || touched.some((object) => OBJECTS_MOVING_INPUT[input].includes(object));
+}
+
+/**
+ * Whether an earlier member of this batch can move the beats this range resolves to. The range is
+ * resolved when the batch is admitted, before any member runs, and the production-brief lock guard
+ * admits the batch against exactly those beats; resolving again at execution would write beats that
+ * guard never saw, so such a batch is refused instead.
+ */
+function findEarlierRangeConflict(
+    action: AutomateParameterRangeAction,
+    context: HandlerValidationContext | undefined
+): string | null {
+    const earlier = context?.actions.slice(0, context.actionIndex) ?? [];
+    if (earlier.length === 0) {
+        return null;
+    }
+    const inputs = readMusicalRangeInputs({ range: action.payload.range });
+    const moving = earlier.find((candidate) => inputs.some((input) => movesRangeInput(candidate, input)));
+    if (moving === undefined) {
+        return null;
+    }
+    return `An earlier ${moving.type} in this batch can move the beats the ${action.payload.parameterId} range is resolved to; send them as separate requests.`;
+}
+
 function findEarlierBatchConflict(
     action: AutomateParameterRangeAction,
     context: HandlerValidationContext | undefined
@@ -81,7 +136,7 @@ function findEarlierBatchConflict(
         .slice(0, context.actionIndex)
         .find((candidate) => changesWhatRangeReads(candidate, target));
     if (conflicting === undefined) {
-        return null;
+        return findEarlierRangeConflict(action, context);
     }
     return `An earlier ${conflicting.type} in this batch changes what the ${parameterId} range on track ${trackId} is measured against; send them as separate requests.`;
 }

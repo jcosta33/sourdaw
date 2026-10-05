@@ -167,6 +167,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
