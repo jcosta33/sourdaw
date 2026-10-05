@@ -28,6 +28,20 @@ function readMintedIds(envelope: CommandBatchEnvelope): ReadonlySet<string> {
     return minted;
 }
 
+/** The commands whose display color the application draws from a session palette when the batch compiles. */
+const PALETTE_COLORED_OPERATIONS: ReadonlySet<string> = new Set(['addTrack', 'createBus']);
+
+/**
+ * A command's arguments without the display color a new track or bus draws from the session
+ * palette: every compilation draws the next one, and a color changes nothing anyone hears.
+ */
+function withoutApplicationColor(command: CommandBatchEnvelope['commands'][number]): unknown {
+    if (!PALETTE_COLORED_OPERATIONS.has(command.operation)) {
+        return command.arguments;
+    }
+    return Object.fromEntries(Object.entries(command.arguments).filter(([key]) => key !== 'color'));
+}
+
 /** `value` with each minted id replaced by its order of first appearance, keys visited in sorted order. */
 function normalizeMintedIds(value: unknown, minted: ReadonlySet<string>, ordinals: Map<string, string>): unknown {
     if (typeof value === 'string') {
@@ -61,10 +75,22 @@ function normalizeMintedIds(value: unknown, minted: ReadonlySet<string>, ordinal
 export function digestCommandBatchContent(envelope: CommandBatchEnvelope): string {
     const minted = readMintedIds(envelope);
     const ordinals = new Map<string, string>();
-    return digest(
-        envelope.commands.map((command) => ({
-            operation: command.operation,
-            arguments: normalizeMintedIds(command.arguments, minted, ordinals),
-        }))
-    );
+    const commands = envelope.commands.map((command) => ({
+        operation: command.operation,
+        arguments: normalizeMintedIds(withoutApplicationColor(command), minted, ordinals),
+    }));
+    return digest({ commands, bindings: readBindingWiring(envelope) });
+}
+
+/**
+ * Which command and argument produce each batch-local binding. The producer stands as its position
+ * in the batch, since command ids are drawn afresh by every compilation; two batches whose commands
+ * agree but whose bindings resolve to different producers do different things.
+ */
+function readBindingWiring(envelope: CommandBatchEnvelope) {
+    return envelope.batchLocalBindings.map((binding) => ({
+        bindingId: binding.bindingId,
+        producer: envelope.commands.findIndex((command) => command.commandId === binding.producerCommandId),
+        producerArgument: binding.producerArgument,
+    }));
 }

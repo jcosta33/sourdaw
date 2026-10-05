@@ -785,6 +785,20 @@ describe('AgentWorkspace', () => {
                                     incomparableReason: null,
                                 },
                                 {
+                                    metricId: 'rms',
+                                    baseline: { value: -18, unit: 'dBFS' },
+                                    preview: { value: -19.5, unit: 'dBFS' },
+                                    delta: { value: -1.5, unit: 'dB' },
+                                    incomparableReason: null,
+                                },
+                                {
+                                    metricId: 'truePeak',
+                                    baseline: { value: -1, unit: 'dBTP' },
+                                    preview: { value: -1, unit: 'dBTP' },
+                                    delta: { value: 0, unit: 'dB' },
+                                    incomparableReason: null,
+                                },
+                                {
                                     metricId: 'crestFactor',
                                     baseline: { value: 9.5, unit: 'dB' },
                                     preview: null,
@@ -803,9 +817,12 @@ describe('AgentWorkspace', () => {
         const metrics = within(screen.getByRole('list', { name: 'Measured preview of Drums' })).getAllByRole(
             'listitem'
         );
-        expect(metrics).toHaveLength(2);
-        expect(metrics[0]).toHaveTextContent('integratedLoudness: -14.20 LUFS → -12.10 LUFS (+2.10 LU)');
-        expect(metrics[1]).toHaveTextContent('crestFactor: not comparable (preview not measured)');
+        expect(metrics.map((metric) => metric.textContent)).toEqual([
+            'integratedLoudness: -14.20 LUFS → -12.10 LUFS (+2.10 LU)',
+            'rms: -18.00 dBFS → -19.50 dBFS (-1.50 dB)',
+            'truePeak: -1.00 dBTP → -1.00 dBTP (0.00 dB)',
+            'crestFactor: not comparable (preview not measured)',
+        ]);
     });
 
     it('carries dependents out of a deselected group and re-previews the remaining subset', () => {

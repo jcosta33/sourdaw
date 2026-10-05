@@ -2215,5 +2215,44 @@ describe('renderTrackSubgraphOffline', () => {
                 { instruments?: ReadonlyMap<string, unknown> } | undefined;
             expect(chainContext?.instruments?.has(FERMENTER.id)).toBe(true);
         });
+
+        // Red when the subgraph captures the supplied document's runtime facts from the live
+        // per-device stores, which may belong to another device under the same id.
+        it('starts a Grand Boule the supplied document holds on the calibration its record projects, not the live one', async () => {
+            const grandBoule: Device = {
+                id: 'grand-boule-new',
+                name: 'Grand Boule',
+                type: 'grand-boule',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const freshCalibration = { cc_smoothing_ms: 5 };
+            const liveCalibration = { cc_smoothing_ms: 12 };
+            const projectNativeDeviceState = vi.fn(({ projectOnly }: { projectOnly?: boolean }) =>
+                projectOnly === true ? freshCalibration : liveCalibration
+            );
+            const captureOfflineInstrument = vi.fn(() => () => Promise.resolve());
+            setAudioDeviceRuntimeSink({ captureOfflineInstrument, projectNativeDeviceState });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('grand-boule-new', 'grand-boule')]);
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                clips: [midiClip()],
+                devices: [grandBoule],
+            });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                source: { project: suppliedDocument([track]) },
+            });
+
+            expect(captureOfflineInstrument).toHaveBeenCalledWith(grandBoule, {
+                projectOnly: true,
+                calibration: freshCalibration,
+            });
+        });
     });
 });

@@ -10,6 +10,7 @@ import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCase
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandTrackDefaultsPort,
     parseVersionedCommandBatchEnvelope,
     resetActionReplayAuthority,
 } from '#/modules/Command/useCases';
@@ -185,9 +186,13 @@ function interpretationCall(revision: string): ToolCallResult {
             catalogId: catalog.catalogId,
             modeId: 'edit',
             targetCandidateIds: [drums.candidateId],
-            editDimensionCandidateIds: [processing.candidateId],
+            editDimensionCandidateIds: catalog.dimensions
+                .filter(({ dimension }) => dimension === 'processing' || dimension === 'arrangement')
+                .map(({ candidateId }) => candidateId),
             constraintCandidateIds: [],
-            creationSlotIds: [deviceSlot.candidateId],
+            creationSlotIds: catalog.creationSlots
+                .filter((slot) => slot.objectType === 'device' || slot.objectType === 'track')
+                .map((slot) => slot.candidateId),
             uncertainty: 'none',
         },
     };
@@ -306,7 +311,10 @@ const TRIM_EDIT = { deviceId: DRUMS_TRIM_ID, paramId: 'gain-level', value: -12 }
 /** Plan, persist for approval, and read the measured preview the approval shows. */
 async function approvalMeasuredPreview(revision: string) {
     const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, revision);
-    expect(planned.rejectionReason).toBeUndefined();
+    const failedReads = (planned.applicationToolReceipts ?? []).flatMap((receipt) =>
+        receipt.error === null ? [] : [receipt.error.safeMessage]
+    );
+    expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({ rejection: null, failedReads: [] });
     const confirmationId = persistForApproval(planned, revision);
     return { planned, confirmationId, measuredPreview: getAgentApprovalView({ confirmationId })?.measuredPreview };
 }
@@ -384,6 +392,9 @@ beforeEach(() => {
     clearHandlerRegistry();
     registerHandlerMap(getArrangementHandlers());
     setArrangementEventBus({ emit: () => Promise.resolve() });
+    // A palette that advances on every draw, as the session's does.
+    let drawnColors = 0;
+    commandTrackDefaultsPort.setTrackColorProvider(() => `#00000${String((drawnColors += 1) % 10)}`);
     clearUndoHistory();
     resetActionReplayAuthority();
     trackStore.set({
@@ -423,6 +434,7 @@ afterEach(() => {
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
     resetAiWorkflowCommandPreflightFixture();
+    commandTrackDefaultsPort.setTrackColorProvider(null);
     clearHandlerRegistry();
     clearUndoHistory();
     resetActionReplayAuthority();
@@ -562,6 +574,18 @@ describe('a measured preview through proposal and approval', () => {
             { type: 'addDevice', payload: { trackId: 'drums' } },
             { type: 'setDeviceParameter', payload: { paramId: 'gain-level', value: -6 } },
         ]);
+        expect(measuredPreview?.targets.map(({ targetId }) => targetId)).toEqual(['drums']);
+    });
+
+    // Red when the batch hash counts the ids the application assigns an object nothing binds.
+    it('shows the figures for a preview that creates an unbound track, whose ids each compilation assigns', async () => {
+        const revision = captureProjectRevision();
+        const addRoom = { id: 'add-room', name: 'addTrack', arguments: { name: 'Drum Room', kind: 'audio' } };
+        scriptMeasureThenAdoptTurns(revision, { schemaVersion: 1, items: [addRoom] });
+
+        const { planned, measuredPreview } = await approvalMeasuredPreview(revision);
+
+        expect(planned.actions).toMatchObject([{ type: 'addTrack', payload: { name: 'Drum Room' } }]);
         expect(measuredPreview?.targets.map(({ targetId }) => targetId)).toEqual(['drums']);
     });
 

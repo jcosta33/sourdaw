@@ -3,8 +3,9 @@ import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { readYeastRack, type YeastProcessorInfo } from '#/modules/Yeast/stores';
+import { type YeastProcessorInfo } from '#/modules/Yeast/stores';
 
+import { offlineRenderCapturePorts } from './offlineRenderCapturePorts';
 import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 
 /** Runs `read` with the CRDT-backed stores answering for one document, and returns what it read. */
@@ -33,13 +34,18 @@ function readDocumentModels(): DocumentReadModels {
     });
 }
 
-/** Every Yeast device the tracks hold, with its rack; a device with no rack of its own reads as empty. */
+/**
+ * Every Yeast device the tracks hold, with its rack; a device with no rack of its own reads as
+ * empty. The rack is read through the owner's capture port, so loading this module loads no
+ * Yeast store and none of its load-time subscriptions.
+ */
 function readYeastRacks(tracks: DocumentReadModels['tracks']): Record<string, YeastProcessorInfo[]> {
     const racks: Record<string, YeastProcessorInfo[]> = {};
     for (const track of tracks?.tracks ?? []) {
         for (const device of track.devices) {
             if (device.type === 'yeast') {
-                racks[device.id] = structuredClone(readYeastRack(device.id).processors);
+                const rack = offlineRenderCapturePorts.yeastRacks?.readRack(device.id) ?? [];
+                racks[device.id] = rack.map((processor) => structuredClone(processor));
             }
         }
     }

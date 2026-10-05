@@ -3,6 +3,7 @@ import { resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
 import {
     captureOfflineRenderProjectSource,
     findUnloadedHostedPluginDevices,
+    getOfflineYeastRackReader,
     isExportActive,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -11,11 +12,6 @@ import {
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
 } from '#/modules/CrdtDocument/useCases';
 import { readSecondsAtBeat } from '#/modules/Transport/stores';
-import {
-    LEGACY_SHARED_RACK_DEVICE_ID,
-    readStoredYeastRack,
-    yeastDeviceIdsInProjectOrder,
-} from '#/modules/Yeast/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { renderAgentMeasurementTargets } from './renderAgentMeasurementTargets';
@@ -144,22 +140,30 @@ function readLiveDeviceIds(): Set<string> {
     return new Set(tracks.flatMap((track) => track.devices.map((device) => device.id)));
 }
 
+type YeastRackReader = NonNullable<ReturnType<typeof getOfflineYeastRackReader>>;
+
 /**
  * The preview's Yeast racks are read live (see `captureOfflineRenderProjectSource`),
  * which is faithful only for a rack the preview stores exactly as the live
  * project does. Both documents' racks are compared undecoded, so the check runs
- * no Yeast adapter state for either.
+ * no Yeast adapter state for either. Without the owner's rack reads the capture
+ * holds no rack at all, so every Yeast device counts as divergent.
  */
 function findDivergentYeastRacks(
     project: ProjectSource,
     previewDocument: RootDocument,
-    legacyRackOwners: LegacyRackOwners
+    legacyRackOwners: LegacyRackOwners | null
 ): Set<string> {
+    const deviceIds = Object.keys(project.yeastProcessorsByDevice);
+    const racks = getOfflineYeastRackReader();
+    if (racks === null || legacyRackOwners === null) {
+        return new Set(deviceIds);
+    }
     const liveDocument: RootDocument = getCrdtDoc(DOC_PREFIX_ROOT) ?? {};
-    const divergent = new Set<string>(findMovedLegacyRackOwners(liveDocument, legacyRackOwners));
-    for (const deviceId of Object.keys(project.yeastProcessorsByDevice)) {
-        const previewRack = canonicalJson(readStoredYeastRack(previewDocument, deviceId));
-        if (previewRack !== canonicalJson(readStoredYeastRack(liveDocument, deviceId))) {
+    const divergent = new Set<string>(findMovedLegacyRackOwners(racks, liveDocument, legacyRackOwners));
+    for (const deviceId of deviceIds) {
+        const previewRack = canonicalJson(racks.readStoredRack(previewDocument, deviceId));
+        if (previewRack !== canonicalJson(racks.readStoredRack(liveDocument, deviceId))) {
             divergent.add(deviceId);
         }
     }
@@ -169,25 +173,32 @@ function findDivergentYeastRacks(
 /** The first Yeast device in each document's project order: the owner a legacy rack is adopted by. */
 type LegacyRackOwners = { live: string | null; preview: string | null };
 
-function readLegacyRackOwners(previewScope: PreviewWorkspace['scope']): LegacyRackOwners {
-    const firstYeastDevice = () => yeastDeviceIdsInProjectOrder()[0] ?? null;
-    return { live: firstYeastDevice(), preview: previewScope(firstYeastDevice) };
+function readLegacyRackOwners(previewScope: PreviewWorkspace['scope']): LegacyRackOwners | null {
+    const racks = getOfflineYeastRackReader();
+    if (racks === null) {
+        return null;
+    }
+    return { live: racks.firstDeviceInProjectOrder(), preview: previewScope(racks.firstDeviceInProjectOrder) };
 }
 
 /**
  * A legacy single-rack slot is keyed by no device: whichever Yeast device comes first in project
- * order adopts it. The racks are read live, so they follow the live first device; once the preview
- * puts another device first, both devices would render a rack the applied edit would not give
- * them, and both count as divergent.
+ * order adopts it, unless that device stores a rack keyed by its own id, which it reads first. The
+ * racks are read live, so they follow the live first device; once the preview puts another device
+ * first, each of the two that would adopt or lose the legacy rack — any with no keyed rack of its
+ * own — renders a rack the applied edit would not give it, and counts as divergent.
  */
-function findMovedLegacyRackOwners(liveDocument: RootDocument, owners: LegacyRackOwners): string[] {
-    if (
-        owners.live === owners.preview ||
-        readStoredYeastRack(liveDocument, LEGACY_SHARED_RACK_DEVICE_ID) === undefined
-    ) {
+function findMovedLegacyRackOwners(
+    racks: YeastRackReader,
+    liveDocument: RootDocument,
+    owners: LegacyRackOwners
+): string[] {
+    if (owners.live === owners.preview || !racks.holdsLegacyRack(liveDocument)) {
         return [];
     }
-    return [owners.live, owners.preview].filter((deviceId) => deviceId !== null);
+    return [owners.live, owners.preview].filter(
+        (deviceId): deviceId is string => deviceId !== null && !racks.holdsKeyedRack(liveDocument, deviceId)
+    );
 }
 
 /**

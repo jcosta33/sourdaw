@@ -11,6 +11,7 @@ import { createTrack } from '#/modules/Arrangement/useCases';
 import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import {
     configureAudioDeviceRuntimeSink,
+    configureOfflineYeastMidiProcessing,
     type captureOfflineRenderInput,
     type renderTrackSubgraphOffline,
 } from '#/modules/AudioEngine/useCases';
@@ -30,7 +31,16 @@ import {
     resetGrandBouleStores,
 } from '#/modules/GrandBoule/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { yeastStore, type YeastProcessorInfo } from '#/modules/Yeast/stores';
+import {
+    holdsKeyedYeastRack,
+    holdsLegacyYeastRack,
+    LEGACY_SHARED_RACK_DEVICE_ID,
+    readStoredYeastRack,
+    readYeastRack,
+    yeastDeviceIdsInProjectOrder,
+    yeastStore,
+    type YeastProcessorInfo,
+} from '#/modules/Yeast/stores';
 
 import { clearAgentMeasurementArtifacts } from '../clearAgentMeasurementArtifacts';
 import { getAgentMeasurementArtifacts } from '../getAgentMeasurementArtifacts';
@@ -61,6 +71,7 @@ const LIVE_GAIN = 0.8;
 const LIVE_TEMPO = 120;
 const VOCAL = { kind: 'tracks', ids: ['vocal'] } as const;
 const MASTER = { kind: 'master' } as const;
+const KEYS_A = { kind: 'tracks', ids: ['keys-a'] } as const;
 const CEILINGS = { measuredSeconds: 300, renderedSeconds: 600 };
 const GLUTEN: Track['devices'][number] = {
     id: 'gluten-1',
@@ -114,15 +125,26 @@ function keysTrack(): Track {
 
 /** A project-wide v1 Yeast slot: one rack keyed by no device, adopted by the first Yeast device. */
 function seedLegacyRackSlot(): void {
+    seedYeastSlot({ schemaVersion: 1, processors: storedRack('arp-legacy').processors });
+}
+
+/** One rack as the Yeast slot stores it, holding a single arpeggiator. */
+function storedRack(processorId: string) {
+    return {
+        schemaVersion: 1,
+        processors: { [processorId]: { deleted: false, value: { ...ARPEGGIATOR, id: processorId } } },
+    };
+}
+
+/** Writes the Yeast slot into the live document and decodes it, as opening a saved project does. */
+function seedYeastSlot(slot: Record<string, unknown>): void {
     mutateCrdtDoc<Record<string, unknown>>({
         id: DOC_PREFIX_ROOT,
         changeFn: (draft) => {
-            draft.yeast = {
-                schemaVersion: 1,
-                processors: { 'arp-legacy': { deleted: false, value: { ...ARPEGGIATOR, id: 'arp-legacy' } } },
-            };
+            draft.yeast = slot;
         },
     });
+    yeastStore.hydrate();
 }
 
 /** The offline device wiring `src/app/bootstrap.ts` installs, so device setup runs as it does in the app. */
@@ -203,7 +225,7 @@ function openPreview(edit: () => void): Preview {
     return { sourceRevision, workspace };
 }
 
-function measure(scope: typeof VOCAL | typeof MASTER, preview: Preview, signal?: AbortSignal) {
+function measure(scope: typeof VOCAL | typeof MASTER | typeof KEYS_A, preview: Preview, signal?: AbortSignal) {
     return renderAgentPreviewMeasurementScope({
         scope,
         startBeat: 4,
@@ -231,7 +253,22 @@ function expectReleased(preview: Preview): void {
     expect(() => preview.workspace.getProjectDocument()).toThrow('Command preview has been released');
 }
 
+/** The Yeast rack reads `src/app/bootstrap.ts` hands the offline capture. */
+function installAppYeastRacks(): void {
+    configureOfflineYeastMidiProcessing({
+        createProcessor: () => () => [],
+        racks: {
+            readRack: (deviceId) => readYeastRack(deviceId).processors,
+            readStoredRack: readStoredYeastRack,
+            holdsKeyedRack: holdsKeyedYeastRack,
+            holdsLegacyRack: holdsLegacyYeastRack,
+            firstDeviceInProjectOrder: () => yeastDeviceIdsInProjectOrder()[0] ?? null,
+        },
+    });
+}
+
 beforeEach(() => {
+    installAppYeastRacks();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('preview measurement render test');
     removeCrdtDoc('root');
@@ -596,13 +633,21 @@ describe('renderAgentPreviewMeasurementScope — per-device state', () => {
         });
 
         describe('a legacy single-rack slot', () => {
-            beforeEach(() => {
+            function seedTwoYeastTracks(): void {
                 setTracks([...currentTracks(), yeastTrack('keys-a', 'yeast-a'), yeastTrack('keys-b', 'yeast-b')]);
                 flushAutomergeStorageWrites();
-                seedLegacyRackSlot();
-            });
+            }
+
+            /** The live tracks with keys-b moved ahead of keys-a, so yeast-b comes first in project order. */
+            function withKeysBFirst(): Track[] {
+                const tracks = currentTracks();
+                const keysB = trackIn(tracks, 'keys-b');
+                return [keysB, ...tracks.filter((track) => track.id !== 'keys-b')];
+            }
 
             it('renders while the preview keeps the device that owns the legacy rack first', async () => {
+                seedTwoYeastTracks();
+                seedLegacyRackSlot();
                 const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
 
                 const result = await measure(MASTER, preview);
@@ -612,6 +657,9 @@ describe('renderAgentPreviewMeasurementScope — per-device state', () => {
 
             // Red when the legacy rack's owner is read only from the live track order.
             it('refuses when the preview puts another Yeast device first, which would adopt the legacy rack', async () => {
+                seedTwoYeastTracks();
+                seedLegacyRackSlot();
+                expect(readYeastRack('yeast-a').processors.map(({ id }) => id)).toEqual(['arp-legacy']);
                 const preview = openPreview(() => setTracks(currentTracks().filter((track) => track.id !== 'keys-a')));
 
                 const result = await measure(MASTER, preview);
@@ -625,6 +673,47 @@ describe('renderAgentPreviewMeasurementScope — per-device state', () => {
                     deviceId: 'yeast-b',
                 });
                 expect(engine.renderOffline).not.toHaveBeenCalled();
+            });
+
+            // Red when the live owner, which would lose the legacy rack, is not counted divergent.
+            it('refuses a measurement of the live owner when the preview puts another Yeast device first', async () => {
+                seedTwoYeastTracks();
+                seedLegacyRackSlot();
+                const preview = openPreview(() => setTracks(withKeysBFirst()));
+
+                const result = await measure(KEYS_A, preview);
+
+                expect(result).toMatchObject({
+                    status: 'refused',
+                    code: 'unprojectable-device-state',
+                    subject: 'preview',
+                    deviceId: 'yeast-a',
+                });
+            });
+
+            // Red when a moved owner is refused although its own keyed rack, which it reads before
+            // the parked legacy rack, makes its render faithful.
+            it('renders when the device the preview puts first reads a keyed rack of its own', async () => {
+                seedTwoYeastTracks();
+                seedYeastSlot({
+                    schemaVersion: 2,
+                    racks: { [LEGACY_SHARED_RACK_DEVICE_ID]: storedRack('arp-legacy'), 'yeast-b': storedRack('arp-b') },
+                });
+                const preview = openPreview(() => setTracks(currentTracks().filter((track) => track.id !== 'keys-a')));
+
+                const result = await measure(MASTER, preview);
+
+                expect(result.status).toBe('rendered');
+            });
+
+            // Red when any reorder of Yeast devices is refused, whether or not a legacy rack exists.
+            it('renders a reorder of Yeast devices in a project with no legacy rack', async () => {
+                seedTwoYeastTracks();
+                const preview = openPreview(() => setTracks(withKeysBFirst()));
+
+                const result = await measure(KEYS_A, preview);
+
+                expect(result.status).toBe('rendered');
             });
         });
     });

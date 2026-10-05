@@ -181,6 +181,27 @@ export function readStoredYeastRack(rootDocument: Readonly<Record<string, unknow
 }
 
 /**
+ * Whether a root document stores a rack keyed by this device. Only a v2 slot keys racks by
+ * device; on a legacy slot no device has one, and every device may adopt the legacy rack.
+ */
+export function holdsKeyedYeastRack(rootDocument: Readonly<Record<string, unknown>>, deviceId: string): boolean {
+    const slot = rootDocument[YEAST_SLOT_KEY];
+    return isSlotCrdtState(slot) && deviceId !== LEGACY_SHARED_RACK_DEVICE_ID && slot.racks[deviceId] !== undefined;
+}
+
+/**
+ * Whether a root document holds a rack keyed by no device: a legacy single-rack slot, or the
+ * legacy rack a v2 slot still parks. The first Yeast device in project order adopts it.
+ */
+export function holdsLegacyYeastRack(rootDocument: Readonly<Record<string, unknown>>): boolean {
+    const slot = rootDocument[YEAST_SLOT_KEY];
+    if (slot === undefined || slot === null) {
+        return false;
+    }
+    return !isSlotCrdtState(slot) || slot.racks[LEGACY_SHARED_RACK_DEVICE_ID] !== undefined;
+}
+
+/**
  * Slot versions this build reads: v2 (current) and v1 (the project-wide
  * single-rack slot main ships — the migration source, parked by
  * {@link parseSlot}). A versionless record is pre-v1 and also parks. Anything
@@ -661,7 +682,9 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
         }
     }
 
-    const storage = createAutomergeStorage<YeastState>('root', YEAST_SLOT_KEY, {
+    // The slot stays a literal: the projection-completeness guard finds CRDT root slots by scanning
+    // for literal keys, and it must equal `YEAST_SLOT_KEY`.
+    const storage = createAutomergeStorage<YeastState>('root', 'yeast', {
         fromCrdt: (value) => {
             decodedRacks = parseSlot(value);
             reconciledSlotState = null;
