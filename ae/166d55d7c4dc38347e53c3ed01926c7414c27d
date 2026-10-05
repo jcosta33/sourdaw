@@ -1,0 +1,55 @@
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  s_1c08b47ac3792f::t_a57d17a1422b64 316-318,320
+  s_1c08b47ac3792f::t_677e7de797793b 251-274
+src/modules/Arrangement/models/MusicalRange.ts
+  s_1c08b47ac3792f::t_bf1841383f6396 110,113,120
+  s_1c08b47ac3792f::t_319fe208c05f3c 220-226,233-235
+  s_1c08b47ac3792f::t_5f124a781ed82a 255-263
+  s_1c08b47ac3792f::t_19b96c0689f80c 236,368-392
+  s_1c08b47ac3792f::t_41701427c93fa2 85-90
+  s_1c08b47ac3792f::t_3f3bdddd981b24 272
+  s_1c08b47ac3792f::t_afed35b5c10e27 237
+src/modules/Arrangement/stores/index.ts
+  s_1c08b47ac3792f::t_27b98f40a0093e 9
+src/modules/Arrangement/stores/readMusicalRangeInputs.ts
+  s_1c08b47ac3792f::t_f63be189b3f5c5 1-23
+src/modules/Arrangement/AGENTS.md
+  s_1c08b47ac3792f::t_7249a23c943ebc 7
+  s_1c08b47ac3792f::t_2b8fdc0cbd3d14 27
+src/modules/AiRuntime/useCases/__tests__/musicalRangeResolution.spec.ts
+  s_1c08b47ac3792f::t_50d36f5e3ab222 173-187
+src/modules/Automation/AGENTS.md
+  s_1c08b47ac3792f::t_0c90ad535aff7c 26
+src/modules/Automation/handlers/automation/handleAutomateParameterRange.ts
+  s_1c08b47ac3792f::t_4cdeb8c07152ae 1-2
+  s_1c08b47ac3792f::t_c9a2f30847d674 139
+  s_1c08b47ac3792f::t_de9db74ddf3573 94-96
+  s_1c08b47ac3792f::t_b05d5e8c5b4fee 68-93,97-121
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_1c08b47ac3792f::t_34c0c686edd275 595-602,604-605,607-617,619-623,625-632,634-644
+  s_1c08b47ac3792f::t_fa091e7f439410 464-469
+  s_1c08b47ac3792f::t_ea8f4ab9588a4c 236-266,268-310
+  s_1c08b47ac3792f::t_474621681d2404 8-11,13
+  s_1c08b47ac3792f::t_4f72c8b169bcfe 45
+  s_1c08b47ac3792f::t_670af5eed74c36 603,606
+  s_1c08b47ac3792f::t_fd4e44e96617e2 12,267,463,618,624,633
+src/modules/Automation/services/buildParameterRangePoints.ts
+  s_1c08b47ac3792f::t_605d0f29477bde 185-187
+  s_1c08b47ac3792f::t_8219563b1255bb 188-189,195-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae166d55d7c4dc38347e53c3ed01926c7414c27d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
