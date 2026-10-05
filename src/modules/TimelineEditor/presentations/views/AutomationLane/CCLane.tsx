@@ -63,14 +63,10 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
         const channel = 0;
-        // addMidiCC dedupes EVERY point sitting at this (beat, channel, controller)
-        // key under a fresh id, and a key can hold more than one point because
-        // moveMidiCC maps without a key dedupe — so undo must restore the captured
-        // pre-click array, not re-add points through the deduping add path (#4840).
-        const keyWasOccupied = allCc.some(
-            (context: MidiCC) =>
-                context.beat === beat && context.channel === channel && context.controller === controller
-        );
+        // addMidiCC dedupes EVERY point sitting at the clicked (beat, channel,
+        // controller) key — including rows the gesture did not mean to replace —
+        // so undo removes the gesture's written point, then re-inserts the
+        // captured pre-click rows by id (#4840).
         const preClickPoints = [...allCc];
         const cc = addMidiCC(clipId, controller, value, beat, channel);
         // Redo must re-create the clicked point under the SAME id: a fresh id would
@@ -78,11 +74,14 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const redo = (): void => {
             addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
         };
-        if (!keyWasOccupied) {
-            pushUndoEntry('Add CC point', () => removeMidiCC(clipId, cc.id), redo);
-            return;
-        }
-        pushUndoEntry('Add CC point', () => restoreMidiCCPoints(clipId, preClickPoints), redo);
+        pushUndoEntry(
+            'Add CC point',
+            () => {
+                removeMidiCC(clipId, cc.id);
+                restoreMidiCCPoints(clipId, preClickPoints);
+            },
+            redo
+        );
     };
 
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
@@ -142,14 +141,12 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         }
         const point = points.find((param) => param.id === ccId);
         if (point) {
-            // Undo restores the pre-double-click array: re-adding through addMidiCC
-            // would run its key dedupe and delete a sibling sharing the removed
-            // point's key (reachable when moveMidiCC stacked two points on a beat).
-            const beforeRemoval = [...points];
+            // Undo re-inserts just the removed point by id: a sibling sharing its
+            // key survives, and rows other controllers hold are never overwritten.
             removeMidiCC(clipId, ccId);
             pushUndoEntry(
                 'Remove CC point',
-                () => restoreMidiCCPoints(clipId, beforeRemoval),
+                () => restoreMidiCCPoints(clipId, [point]),
                 () => removeMidiCC(clipId, ccId)
             );
         } else {

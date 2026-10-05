@@ -7,13 +7,21 @@ export function restoreMidiCCPoints(clipId: string, points: readonly MidiCC[]): 
         return;
     }
 
+    // Undo restores the gesture's own rows without the add path's key dedupe;
+    // rows the gesture did not touch are never overwritten.
+    const existing = state.ccByClipId[clipId] ?? [];
+    const restored = [...existing];
+    for (const point of points) {
+        if (!restored.some((row) => row.id === point.id)) {
+            restored.push(point);
+        }
+    }
+
     midiStore.set({
         ...state,
         ccByClipId: {
             ...state.ccByClipId,
-            // No key dedupe: undo must return the clip to its exact pre-click
-            // contents, and a key may legitimately hold several points.
-            [clipId]: [...points],
+            [clipId]: restored,
         },
     });
 }
