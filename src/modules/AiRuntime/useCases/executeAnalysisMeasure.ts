@@ -10,11 +10,14 @@ import {
     ANALYSIS_MEASURE_MAX_WARNING_LENGTH,
     ANALYSIS_MEASURE_MAX_WARNINGS,
 } from '../models/AnalysisMeasureLimits';
+import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ProjectContextSection } from '../models/ProjectContext';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
+import { executePreviewMeasurement } from './executePreviewMeasurement';
 import { parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
+import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
 
 type ExecuteAnalysisMeasureInput = {
     call: ToolCallResult;
@@ -25,6 +28,8 @@ type ExecuteAnalysisMeasureInput = {
     /** The sections the loop's project reads report, which a `sectionId` range names. */
     sections: readonly ProjectContextSection[];
     signal?: AbortSignal;
+    /** What a `preview` subject compiles and grounds its proposal against; absent, previews are unavailable. */
+    preview?: Parameters<typeof executePreviewMeasurement>[0]['preview'];
 };
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
@@ -62,32 +67,11 @@ function resolveRange(
     range: ParsedArguments['range'],
     sections: readonly ProjectContextSection[]
 ): { status: 'range'; range: MeasuredRange } | { status: 'failure'; failure: Failure } {
-    let startBeat: number;
-    let endBeat: number;
-    let sectionId: string | null = null;
-    if ('sectionId' in range) {
-        const section = sections.find((candidate) => candidate.id === range.sectionId);
-        if (section === undefined) {
-            return {
-                status: 'failure',
-                failure: {
-                    code: 'unknown-section',
-                    safeMessage: `Section ${range.sectionId} is not in the project.`,
-                    retryable: true,
-                },
-            };
-        }
-        ({ startBeat, endBeat } = section);
-        sectionId = section.id;
-    } else {
-        ({ startBeat, endBeat } = range);
+    const resolved = resolveAnalysisMeasureBeats(range, sections);
+    if (resolved.status === 'failure') {
+        return resolved;
     }
-    if (startBeat >= endBeat) {
-        return {
-            status: 'failure',
-            failure: { code: 'invalid-range', safeMessage: 'The range must start before it ends.', retryable: true },
-        };
-    }
+    const { startBeat, endBeat, sectionId } = resolved.beats;
     const endSeconds = readSecondsAtBeat({ beat: endBeat });
     const measuredSeconds = endSeconds - readSecondsAtBeat({ beat: startBeat });
     const renderedSeconds = endSeconds - readSecondsAtBeat({ beat: 0 });
@@ -178,23 +162,55 @@ function successReceipt(
     };
 }
 
+function read(receipt: ApplicationToolReceipt): AnalysisMeasureRead {
+    return { receipt, commands: null, measuredPreview: null };
+}
+
 /**
  * Execute one `analysis.measure` call: render the named scope offline at the
  * loop's project revision and reduce each render to objective figures.
  *
  * The receipt carries figures and each render's content address, never
  * samples; the render itself stays in AudioRendering's measurement retention.
+ * A `preview` subject renders a proposed list in isolation beside the project
+ * and returns, besides the receipt, the commands it measured for a proposal
+ * to adopt; a `project` subject returns its receipt alone, as it always has.
  */
-export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput): Promise<ApplicationToolReceipt> {
+export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput): Promise<AnalysisMeasureRead> {
     const parsed = parseAnalysisMeasureArguments(input.call.arguments);
     if (parsed.status === 'invalid') {
-        return failureReceipt(input, { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: true });
+        return read(failureReceipt(input, { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: true }));
     }
-    const resolved = resolveRange(parsed.value.range, input.sections);
+    const { subject } = parsed.value;
+    if (subject.kind === 'preview') {
+        if (input.preview === undefined) {
+            return read(
+                failureReceipt(input, {
+                    code: 'preview-unavailable',
+                    safeMessage: 'Measuring a proposal preview is unavailable to this run.',
+                    retryable: false,
+                })
+            );
+        }
+        return executePreviewMeasurement({
+            ...input,
+            preview: input.preview,
+            parsed: parsed.value,
+            proposal: subject.proposal,
+        });
+    }
+    return read(await measureProject(input, parsed.value));
+}
+
+async function measureProject(
+    input: ExecuteAnalysisMeasureInput,
+    parsed: ParsedArguments
+): Promise<ApplicationToolReceipt> {
+    const resolved = resolveRange(parsed.range, input.sections);
     if (resolved.status === 'failure') {
         return failureReceipt(input, resolved.failure);
     }
-    const { scope } = parsed.value;
+    const { scope } = parsed;
     const rendered = await renderAgentMeasurementScope({
         scope: scope.kind === 'tracks' || scope.kind === 'buses' ? scope : { kind: 'master' },
         startBeat: resolved.range.startBeat,
@@ -212,5 +228,5 @@ export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput)
     if (rendered.status === 'refused') {
         return failureReceipt(input, refusalFailure(rendered, scope));
     }
-    return successReceipt(input, parsed.value, resolved.range, rendered);
+    return successReceipt(input, parsed, resolved.range, rendered);
 }

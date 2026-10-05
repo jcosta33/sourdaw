@@ -3,6 +3,7 @@ import { type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
+import { type MeasuredPreview } from './MeasuredPreview';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type AdoptedRecipe } from './RetainedCompilation';
@@ -46,6 +47,12 @@ export type IntentResult = {
      * reference beside any form of proposal.
      */
     adoptedRecipes?: AdoptedRecipe[];
+    /**
+     * The measured preview this batch is, when the batch consists of exactly the commands one
+     * `analysis.measure` preview rendered. A batch carrying anything else claims no measurement,
+     * because the figures would describe a document other than the one it proposes.
+     */
+    measuredPreview?: MeasuredPreview;
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

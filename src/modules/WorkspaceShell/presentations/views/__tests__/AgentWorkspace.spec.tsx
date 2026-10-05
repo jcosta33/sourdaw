@@ -236,6 +236,7 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
         requiredTrustMode: 'guarded',
     },
     recipes: [],
+    measuredPreview: null,
     intentGroups: [],
     destructiveChanges: [],
     partialAcceptance: { available: true, reason: null },
@@ -759,6 +760,52 @@ describe('AgentWorkspace', () => {
         render(<AgentWorkspace />);
 
         expect(screen.queryByRole('list', { name: 'Adopted recipes' })).not.toBeInTheDocument();
+    });
+
+    // Red when the approval section stops rendering a measured preview's figures beside the change.
+    it('renders each measured metric as baseline to preview with its signed delta and unit', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                measuredPreview: {
+                    targets: [
+                        {
+                            targetId: 'track-drums',
+                            targetKind: 'track',
+                            targetName: 'Drums',
+                            metrics: [
+                                {
+                                    metricId: 'integratedLoudness',
+                                    baseline: { value: -14.2, unit: 'LUFS' },
+                                    preview: { value: -12.1, unit: 'LUFS' },
+                                    delta: { value: 2.1, unit: 'LU' },
+                                    incomparableReason: null,
+                                },
+                                {
+                                    metricId: 'crestFactor',
+                                    baseline: { value: 9.5, unit: 'dB' },
+                                    preview: null,
+                                    delta: null,
+                                    incomparableReason: 'preview not measured',
+                                },
+                            ],
+                        },
+                    ],
+                },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const metrics = within(screen.getByRole('list', { name: 'Measured preview of Drums' })).getAllByRole(
+            'listitem'
+        );
+        expect(metrics).toHaveLength(2);
+        expect(metrics[0]).toHaveTextContent('integratedLoudness: -14.20 LUFS → -12.10 LUFS (+2.10 LU)');
+        expect(metrics[1]).toHaveTextContent('crestFactor: not comparable (preview not measured)');
     });
 
     it('carries dependents out of a deselected group and re-previews the remaining subset', () => {

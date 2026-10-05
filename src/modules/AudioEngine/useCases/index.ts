@@ -205,6 +205,8 @@ export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnap
 export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTopology';
 
 export { captureOfflineRenderInput } from './offlineRender/captureOfflineRenderInput';
+export { captureOfflineRenderProjectSource } from './offlineRender/captureOfflineRenderProjectSource';
+export { findUnloadedHostedPluginDevices } from './offlineRender/findUnloadedHostedPluginDevices';
 export { renderOfflineInput } from './offlineRender/renderOfflineInput';
 
 export { captureOfflineRenderRuntimeInput } from './offlineRender/captureOfflineRenderRuntimeInput';

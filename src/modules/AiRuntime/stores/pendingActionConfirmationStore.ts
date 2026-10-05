@@ -6,6 +6,7 @@ import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRet
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { type MeasuredPreviewEvidence } from '../models/MeasuredPreview';
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
@@ -116,6 +117,11 @@ type PendingActionApprovalSnapshot = {
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     /** The recipe expansions the batch adopted, so an approval can say which recipe built a chain. */
     adoptedRecipes?: AdoptedRecipe[];
+    /**
+     * The preview measurement this batch was rendered as, bound to `commandBatch` by content hash.
+     * It rides the approval snapshot rather than the Command envelope, whose contract stays closed.
+     */
+    measuredPreview?: MeasuredPreviewEvidence;
 };
 
 type PendingActionConfirmationBase = {
@@ -314,6 +320,7 @@ type ProposePendingActionConfirmationInput = {
     protectedUnchanged?: PendingActionProtectedObject[];
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     adoptedRecipes?: AdoptedRecipe[];
+    measuredPreview?: MeasuredPreviewEvidence;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -357,6 +364,7 @@ export function proposePendingActionConfirmation(
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
         matchSelectorPredicates,
         adoptedRecipes: input.adoptedRecipes && structuredClone(input.adoptedRecipes),
+        measuredPreview: input.measuredPreview && structuredClone(input.measuredPreview),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

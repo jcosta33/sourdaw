@@ -30,6 +30,8 @@ import { type YeastProcessorInfo, type YeastState } from '../models/YeastState';
 const YEAST_SLOT_SCHEMA_VERSION = 2;
 /** Per-rack shape — unchanged from the slot this module shipped as v1. */
 const YEAST_RACK_SCHEMA_VERSION = 1;
+/** The root-document key every Yeast rack is stored under. */
+const YEAST_SLOT_KEY = 'yeast';
 
 /**
  * Home for the rack of a legacy single-rack slot until a Yeast device claims
@@ -161,6 +163,21 @@ function isRackCrdtState(value: unknown): value is RackCrdtState {
  */
 function isSlotCrdtState(value: unknown): value is YeastSlotCrdtState {
     return isRecord(value) && value.schemaVersion === YEAST_SLOT_SCHEMA_VERSION && isRecord(value.racks);
+}
+
+/**
+ * One device's rack exactly as a root document stores it — undecoded, so the
+ * read touches no adapter state — or `undefined` when the slot holds none for
+ * that device. A slot not keyed by device (a legacy single rack, or a format
+ * this build cannot read) stands whole for every device's rack, since any
+ * device may adopt it.
+ */
+export function readStoredYeastRack(rootDocument: Readonly<Record<string, unknown>>, deviceId: string): unknown {
+    const slot = rootDocument[YEAST_SLOT_KEY];
+    if (isSlotCrdtState(slot)) {
+        return slot.racks[deviceId];
+    }
+    return slot;
 }
 
 /**
@@ -644,7 +661,7 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
         }
     }
 
-    const storage = createAutomergeStorage<YeastState>('root', 'yeast', {
+    const storage = createAutomergeStorage<YeastState>('root', YEAST_SLOT_KEY, {
         fromCrdt: (value) => {
             decodedRacks = parseSlot(value);
             reconciledSlotState = null;

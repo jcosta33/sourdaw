@@ -703,17 +703,18 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         arguments: call.arguments,
                     }));
                     if (strictHostedProposalWire) {
-                        const canonicalProposalSchema = toolSchemas.find(
-                            (tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
-                        );
                         for (const [index, call] of normalizedToolCalls.entries()) {
-                            if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
+                            if (
+                                call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                call.name !== ANALYSIS_MEASURE_TOOL_NAME
+                            ) {
                                 continue;
                             }
+                            const canonicalSchema = toolSchemas.find((tool) => tool.function.name === call.name);
                             const decoded =
-                                canonicalProposalSchema === undefined
+                                canonicalSchema === undefined
                                     ? null
-                                    : decodeHostedProposalWireCall(call, canonicalProposalSchema);
+                                    : decodeHostedProposalWireCall(call, canonicalSchema);
                             if (decoded === null) {
                                 llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                                 return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };

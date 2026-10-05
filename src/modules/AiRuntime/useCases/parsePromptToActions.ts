@@ -1,6 +1,5 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { markerStore } from '#/modules/Arrangement/stores';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
@@ -15,9 +14,11 @@ import {
 } from '../models/CreativeInterpretation';
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
+import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -84,6 +85,7 @@ import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
+import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -206,6 +208,26 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
  * catalog, so it only stands when this run actually searched the command index; without that
  * receipt the provider is guessing from vocabulary rather than from evidence.
  */
+/**
+ * The measured preview a proposal adopted, when the batch is exactly what that preview rendered:
+ * one preview reference and no command of its own. Anything added beside it would reach approval
+ * under figures that never measured it, so such a batch carries no evidence.
+ */
+function readAdoptedMeasuredPreview(
+    selectedCompilations: readonly RetainedCompilation[],
+    proposedBatch: ToolCallResult | undefined
+): MeasuredPreview | null {
+    const [only, ...others] = selectedCompilations;
+    if (only?.kind !== 'preview' || others.length > 0 || proposedBatch === undefined) {
+        return null;
+    }
+    const { commands, list } = proposedBatch.arguments;
+    if (isUnknownArray(commands)) {
+        return commands.length === 0 ? only.measuredPreview : null;
+    }
+    return isRecord(list) && isUnknownArray(list.items) && list.items.length === 0 ? only.measuredPreview : null;
+}
+
 function classifyProviderDecline(
     decline: CommandBatchDecline,
     receipts: readonly ApplicationToolReceipt[],
@@ -582,6 +604,7 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                                  revision: projectRevision,
                                   execute: (call, { callId, turn, signal: loopSignal }) =>
                                       executeAnalysisMeasure({
                                           call,
@@ -590,6 +613,14 @@ const planPromptIntent = inject({ logger })(
                                           projectRevision,
                                           sections: context.sections ?? [],
                                           signal: loopSignal,
+                                          // A preview is compiled and grounded against what an adopting
+                                          // proposal is: this run's read model, request and authority.
+                                          preview: {
+                                              context,
+                                              prompt,
+                                              runId: streamIdentity?.runId ?? 'preview-measurement',
+                                              readCreativeAuthority: () => creativeAuthority,
+                                          },
                                       }),
                               },
                     requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
@@ -693,6 +724,7 @@ const planPromptIntent = inject({ logger })(
                 const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
+                const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations, proposedBatch);
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
                     if (call !== proposedBatch || !Array.isArray(selectedIds)) {
                         return call;
@@ -867,18 +899,7 @@ const planPromptIntent = inject({ logger })(
                         ...(providerProposal === null ? {} : { providerProposal }),
                     };
                 }
-                const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
-                    beat: marker.beat,
-                    color: marker.color,
-                    markerId: marker.id,
-                    name: marker.name,
-                }));
-                const sectionSignatures = (markerStore.value?.sections ?? []).map((section) => ({
-                    endBeat: section.endBeat,
-                    name: section.name,
-                    sectionId: section.id,
-                    startBeat: section.startBeat,
-                }));
+                const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
                 const bridged = bridgeGroundedLlmToolCalls({
                     calls: toolCalls,
                     context,
@@ -1056,6 +1077,7 @@ const planPromptIntent = inject({ logger })(
                               }),
                         ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(adoptedRecipes.length === 0 ? {} : { adoptedRecipes }),
+                        ...(measuredPreview === null ? {} : { measuredPreview }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

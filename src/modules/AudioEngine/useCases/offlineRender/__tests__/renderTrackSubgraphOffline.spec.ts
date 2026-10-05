@@ -5,10 +5,13 @@ import { trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Ar
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
+import { defaultTransportState } from '#/modules/Transport/stores';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
 import { UnsupportedDeviceTypeError } from '../../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { type OfflineRenderProjectSource } from '../OfflineRenderSource';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
 
 const SAMPLE_RATE = 44_100;
@@ -2112,6 +2115,105 @@ describe('renderTrackSubgraphOffline', () => {
                 expect(buffer).not.toBeNull();
                 expect(pluginWarningFor(onWarning, 'Comp Target')).toBe(true);
             });
+        });
+    });
+
+    describe('a supplied document (#4369)', () => {
+        const SUPPLIED_PITCH = 72;
+        const FERMENTER: Device = {
+            id: 'fermenter-1',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: { cutoff: 0.4 },
+        };
+
+        function suppliedDocument(
+            tracks: Track[],
+            overrides: Partial<OfflineRenderProjectSource> = {}
+        ): OfflineRenderProjectSource {
+            return {
+                tracks: { tracks, selectedTrackId: null },
+                midi: {
+                    probabilitySeed: 1,
+                    notesByClipId: {
+                        'clip-1': [{ id: 'note-1', pitch: SUPPLIED_PITCH, startBeat: 0, duration: 1, velocity: 100 }],
+                    },
+                    ccByClipId: {},
+                    pitchBendByClipId: {},
+                },
+                transport: { ...defaultTransportState, tempo: TEMPO },
+                tempoMap: null,
+                timeSignatureMap: null,
+                automationLanes: [],
+                takeLanes: null,
+                gainEnvelopes: {},
+                sidechainRoutes: [],
+                vcaGroups: [],
+                grooveTemplates: null,
+                chordTrack: null,
+                yeastProcessorsByDevice: {},
+                ...overrides,
+            };
+        }
+
+        afterEach(() => {
+            setAudioDeviceRuntimeSink({});
+        });
+
+        it('plays the supplied document’s notes at its VCA levels, never the live project’s', async () => {
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                gain: 0.5,
+                vcaGroupId: 'vca-1',
+                clips: [midiClip()],
+                devices: [FERMENTER],
+            });
+            // The live project holds the same identities at other values: a note
+            // at A4 (beforeEach) and the group at unity.
+            vcaGroupStore.set({
+                groups: [{ id: 'vca-1', name: 'Live', gain: 1, muted: false, trackIds: ['track-1'] }],
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            mocks.builtFaderGains.clear();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                includeTargetVca: true,
+                source: {
+                    project: suppliedDocument([track], {
+                        vcaGroups: [{ id: 'vca-1', name: 'Supplied', gain: 0.25, muted: false, trackIds: ['track-1'] }],
+                    }),
+                },
+            });
+
+            expect(mocks.instrumentNoteOn).toHaveBeenCalledWith(SUPPLIED_PITCH, 100, undefined, 0);
+            expect(mocks.instrumentNoteOn).not.toHaveBeenCalledWith(69, expect.anything(), undefined, 0);
+            expect(mocks.builtFaderGains.get(stripKeyForGain(0.5))).toBeCloseTo(0.5 * 0.25, 10);
+        });
+
+        it('sets each device up from the supplied document’s own record, with no live instance behind it', async () => {
+            const captureOfflineInstrument = vi.fn(() => () => Promise.resolve());
+            setAudioDeviceRuntimeSink({ captureOfflineInstrument });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            const track = TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [midiClip()], devices: [FERMENTER] });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                source: { project: suppliedDocument([track]) },
+            });
+
+            expect(captureOfflineInstrument).toHaveBeenCalledWith(FERMENTER, { projectOnly: true, calibration: null });
+            const chainContext = mocks.buildDeviceChain.mock.calls[0]?.[4] as
+                { instruments?: ReadonlyMap<string, unknown> } | undefined;
+            expect(chainContext?.instruments?.has(FERMENTER.id)).toBe(true);
         });
     });
 });

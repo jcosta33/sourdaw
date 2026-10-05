@@ -9,6 +9,12 @@ type RenderAgentMeasurementTargetInput = {
     endBeat: number;
     abortSignal?: AbortSignal;
     onWarning: (message: string) => void;
+    /**
+     * The document `subgraph` was selected from, when that is not the live
+     * project — an isolated command preview. The render then reads that
+     * document alone.
+     */
+    source?: Parameters<typeof renderTrackSubgraphOffline>[0]['source'];
 };
 
 /**
@@ -23,6 +29,7 @@ export async function renderAgentMeasurementTarget({
     endBeat,
     abortSignal,
     onWarning,
+    source,
 }: RenderAgentMeasurementTargetInput): Promise<AudioBuffer | null> {
     return renderTrackSubgraphOffline({
         targetTrackId: targetId,
@@ -41,5 +48,6 @@ export async function renderAgentMeasurementTarget({
         includeTargetVca: true,
         onWarning,
         abortSignal,
+        source,
     });
 }

@@ -360,6 +360,7 @@ export async function submitAdmittedPromptRequest(
                 protectedUnchanged: authority.scope.protectedTargetIds.map((id) => ({ id, name: id })),
                 matchSelectorPredicates: planned.result.matchSelectorPredicates,
                 adoptedRecipes: planned.result.adoptedRecipes,
+                measuredPreview: planned.result.measuredPreview,
                 executionMode: planned.result.executionMode,
                 group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
                 projectRevision: planned.projectRevision,

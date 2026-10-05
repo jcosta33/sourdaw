@@ -40,6 +40,36 @@ type AdoptedRecipe = NonNullable<ApprovalSnapshot['adoptedRecipes']>[number];
 /** A recipe the batch adopted, with the name of the track it was expanded onto, or `null` once that track is gone. */
 type ApprovalRecipe = AdoptedRecipe & { targetName: string | null };
 
+type MeasuredPreviewEvidence = NonNullable<ApprovalSnapshot['measuredPreview']>;
+type MeasuredTarget = MeasuredPreviewEvidence['targets'][number];
+type MeasuredEntry = NonNullable<MeasuredTarget['baseline'][string]>;
+
+/** A scalar figure with its unit, or `null` when the side could not measure it or it is not one number. */
+type ApprovalMeasuredFigure = { value: number; unit: string } | null;
+
+/** One metric of a measured preview: its figure before and after, and the signed change or why there is none. */
+type ApprovalMeasuredMetric = {
+    metricId: string;
+    baseline: ApprovalMeasuredFigure;
+    preview: ApprovalMeasuredFigure;
+    delta: { value: number; unit: string } | null;
+    incomparableReason: string | null;
+};
+
+type ApprovalMeasuredTarget = {
+    targetId: string;
+    targetKind: MeasuredTarget['targetKind'];
+    /** The track or bus name, or `null` for the master mix and for a target no longer in the project. */
+    targetName: string | null;
+    metrics: readonly ApprovalMeasuredMetric[];
+};
+
+type ApprovalMeasuredPreview = {
+    scope: MeasuredPreviewEvidence['scope'];
+    range: MeasuredPreviewEvidence['range'];
+    targets: readonly ApprovalMeasuredTarget[];
+};
+
 type ApprovalFreshness =
     | { status: 'current'; currentRevision: string | null }
     | { status: 'stale'; reason: string; currentRevision: string | null }
@@ -69,6 +99,8 @@ export type AgentApprovalView = {
     } | null;
     /** The recipes the proposal adopted, in adoption order; empty when no recipe built any of it. */
     recipes: readonly ApprovalRecipe[];
+    /** The isolated preview this exact batch was rendered and measured as, or `null` when it was not. */
+    measuredPreview: ApprovalMeasuredPreview | null;
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: ReadonlyArray<ApprovalDestructiveChange & { groupId: string }>;
     audioImpact: SemanticDiff['estimatedAudioImpact'];
@@ -209,6 +241,51 @@ function projectRecipes(adoptedRecipes: ApprovalSnapshot['adoptedRecipes']): Age
     }));
 }
 
+function measuredFigure(entry: MeasuredEntry | undefined): ApprovalMeasuredFigure {
+    if (entry?.status !== 'measured' || typeof entry.value !== 'number') {
+        return null;
+    }
+    return { value: entry.value, unit: entry.unit };
+}
+
+function projectMeasuredTarget(
+    target: MeasuredTarget,
+    tracks: readonly { id: string; name: string }[]
+): ApprovalMeasuredTarget {
+    const metrics = Object.entries(target.deltas).flatMap(([metricId, delta]) => {
+        if (delta === undefined) {
+            return [];
+        }
+        return [
+            {
+                metricId,
+                baseline: measuredFigure(target.baseline[metricId]),
+                preview: measuredFigure(target.preview[metricId]),
+                delta: delta.status === 'compared' ? { value: delta.delta, unit: delta.unit } : null,
+                incomparableReason: delta.status === 'incomparable' ? delta.reason : null,
+            },
+        ];
+    });
+    return {
+        targetId: target.targetId,
+        targetKind: target.targetKind,
+        targetName: tracks.find((track) => track.id === target.targetId)?.name ?? null,
+        metrics,
+    };
+}
+
+function projectMeasuredPreview(measuredPreview: ApprovalSnapshot['measuredPreview']): ApprovalMeasuredPreview | null {
+    if (measuredPreview === undefined) {
+        return null;
+    }
+    const tracks = trackStore.value?.tracks ?? [];
+    return {
+        scope: measuredPreview.scope,
+        range: measuredPreview.range,
+        targets: measuredPreview.targets.map((target) => projectMeasuredTarget(target, tracks)),
+    };
+}
+
 function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApprovalView['risk'] {
     if (!agentApproval) {
         return null;
@@ -232,7 +309,8 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
     if (!confirmation) {
         return null;
     }
-    const { adoptedRecipes, agentApproval, commandBatch, semanticDiff } = confirmation.approvalSnapshot;
+    const { adoptedRecipes, agentApproval, commandBatch, measuredPreview, semanticDiff } =
+        confirmation.approvalSnapshot;
     const freshness = getFreshness(confirmation);
     const routeView = getProviderRouteView({ runId: confirmation.runId });
     return {
@@ -247,6 +325,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
         recipes: projectRecipes(adoptedRecipes),
+        measuredPreview: projectMeasuredPreview(measuredPreview),
         ...projectSemanticDiff(semanticDiff),
         baseRevision: confirmation.projectRevision,
         freshness,
