@@ -12,8 +12,8 @@ import {
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
-import { digestCommandBatchContent } from '../digestCommandBatchContent';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
@@ -33,7 +33,7 @@ type PersistPromptActionConfirmationInput = {
     protectedUnchanged: NonNullable<ConfirmationProposal['protectedUnchanged']>;
     matchSelectorPredicates?: ConfirmationProposal['matchSelectorPredicates'];
     adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
-    /** The preview measurement the batch was rendered as; bound here to the batch being persisted. */
+    /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
     measuredPreview?: MeasuredPreview;
     executionMode: ConfirmationProposal['executionMode'];
     group: {
@@ -115,10 +115,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             protectedUnchanged: input.protectedUnchanged,
             matchSelectorPredicates: input.matchSelectorPredicates,
             adoptedRecipes: input.adoptedRecipes,
-            measuredPreview: input.measuredPreview && {
-                ...input.measuredPreview,
-                batchContentHash: digestCommandBatchContent(input.parsedCommandBatch.envelope),
-            },
+            measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

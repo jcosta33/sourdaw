@@ -204,30 +204,21 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
 }
 
 /**
+ * The measured preview a proposal adopted. Whether its figures describe the batch that runs is
+ * decided where that batch is persisted for approval, by content hash, because only there does
+ * the final batch exist: anything the turn added beside the preview, or any grounding that came
+ * out differently, changes the hash and drops the figures.
+ */
+function readAdoptedMeasuredPreview(selectedCompilations: readonly RetainedCompilation[]): MeasuredPreview | null {
+    const adopted = selectedCompilations.find((compiled) => compiled.kind === 'preview');
+    return adopted?.kind === 'preview' ? adopted.measuredPreview : null;
+}
+
+/**
  * Turns a provider decline into an outcome, or refuses it. `unsupported` is a claim about the whole
  * catalog, so it only stands when this run actually searched the command index; without that
  * receipt the provider is guessing from vocabulary rather than from evidence.
  */
-/**
- * The measured preview a proposal adopted, when the batch is exactly what that preview rendered:
- * one preview reference and no command of its own. Anything added beside it would reach approval
- * under figures that never measured it, so such a batch carries no evidence.
- */
-function readAdoptedMeasuredPreview(
-    selectedCompilations: readonly RetainedCompilation[],
-    proposedBatch: ToolCallResult | undefined
-): MeasuredPreview | null {
-    const [only, ...others] = selectedCompilations;
-    if (only?.kind !== 'preview' || others.length > 0 || proposedBatch === undefined) {
-        return null;
-    }
-    const { commands, list } = proposedBatch.arguments;
-    if (isUnknownArray(commands)) {
-        return commands.length === 0 ? only.measuredPreview : null;
-    }
-    return isRecord(list) && isUnknownArray(list.items) && list.items.length === 0 ? only.measuredPreview : null;
-}
-
 function classifyProviderDecline(
     decline: CommandBatchDecline,
     receipts: readonly ApplicationToolReceipt[],
@@ -724,7 +715,7 @@ const planPromptIntent = inject({ logger })(
                 const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
-                const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations, proposedBatch);
+                const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
                     if (call !== proposedBatch || !Array.isArray(selectedIds)) {
                         return call;

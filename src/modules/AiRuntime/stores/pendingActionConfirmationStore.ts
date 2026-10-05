@@ -6,7 +6,7 @@ import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRet
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
-import { type MeasuredPreviewEvidence } from '../models/MeasuredPreview';
+import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
@@ -121,7 +121,7 @@ type PendingActionApprovalSnapshot = {
      * The preview measurement this batch was rendered as, bound to `commandBatch` by content hash.
      * It rides the approval snapshot rather than the Command envelope, whose contract stays closed.
      */
-    measuredPreview?: MeasuredPreviewEvidence;
+    measuredPreview?: MeasuredPreview;
 };
 
 type PendingActionConfirmationBase = {
@@ -320,7 +320,7 @@ type ProposePendingActionConfirmationInput = {
     protectedUnchanged?: PendingActionProtectedObject[];
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     adoptedRecipes?: AdoptedRecipe[];
-    measuredPreview?: MeasuredPreviewEvidence;
+    measuredPreview?: MeasuredPreview;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;

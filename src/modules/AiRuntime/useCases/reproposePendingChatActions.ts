@@ -20,7 +20,6 @@ import { persistPromptActionConfirmation } from './agentRequestOrchestration/per
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
-import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
 type ReproposePendingChatActionsInput = {
@@ -280,22 +279,6 @@ async function retireSupersededConfirmation(
     });
 }
 
-/**
- * A measured preview describes one batch's content. A replacement that does exactly what the
- * measured batch did keeps the evidence; a subset or a changed batch is a document nobody rendered,
- * so it carries none.
- */
-function carryMeasuredPreview(
-    confirmation: PendingAppActionConfirmation,
-    envelope: Parameters<typeof digestCommandBatchContent>[0]
-): PendingAppActionConfirmation['approvalSnapshot']['measuredPreview'] {
-    const measuredPreview = confirmation.approvalSnapshot.measuredPreview;
-    if (measuredPreview === undefined || measuredPreview.batchContentHash !== digestCommandBatchContent(envelope)) {
-        return undefined;
-    }
-    return measuredPreview;
-}
-
 /** The fresh batch awaits approval; the batch it replaced is cancelled unless it is the same batch. */
 function recordReplacementBatch(
     runId: string,
@@ -410,7 +393,8 @@ export async function reproposePendingChatActions(
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        measuredPreview: carryMeasuredPreview(confirmation, parsedRefreshed.envelope),
+        // Persisting binds the figures to the rebuilt batch, so a subset or changed batch drops them.
+        measuredPreview: confirmation.approvalSnapshot.measuredPreview,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

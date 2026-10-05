@@ -27,6 +27,10 @@ export type MeasuredPreviewTarget = {
  * What one `analysis.measure` call with `subject: 'preview'` measured: the scope and beat range it
  * rendered, and for each target the live project's figures, the isolated preview's, and their
  * deltas. Figures only; the renders stay in the application's measurement retention.
+ *
+ * `batchContentHash` is the content hash of the exact command batch the preview rendered. The
+ * figures describe that batch and no other: an approval carries them only while the batch it holds
+ * hashes the same.
  */
 export type MeasuredPreview = {
     readonly scope:
@@ -34,10 +38,5 @@ export type MeasuredPreview = {
         | { readonly kind: 'tracks' | 'buses'; readonly ids: readonly string[] };
     readonly range: { readonly startBeat: number; readonly endBeat: number; readonly sectionId: string | null };
     readonly targets: readonly MeasuredPreviewTarget[];
+    readonly batchContentHash: string;
 };
-
-/**
- * A measured preview as an approval carries it: bound by content hash to the exact command batch
- * it describes, so a batch that changes after measurement no longer claims it.
- */
-export type MeasuredPreviewEvidence = MeasuredPreview & { readonly batchContentHash: string };

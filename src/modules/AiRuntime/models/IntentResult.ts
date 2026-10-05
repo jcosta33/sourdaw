@@ -48,9 +48,9 @@ export type IntentResult = {
      */
     adoptedRecipes?: AdoptedRecipe[];
     /**
-     * The measured preview this batch is, when the batch consists of exactly the commands one
-     * `analysis.measure` preview rendered. A batch carrying anything else claims no measurement,
-     * because the figures would describe a document other than the one it proposes.
+     * The `analysis.measure` preview the proposal adopted. Its figures reach approval only when the
+     * persisted batch hashes the same as the batch the preview rendered; a batch carrying anything
+     * else would be described by figures of a document other than the one it proposes.
      */
     measuredPreview?: MeasuredPreview;
 };

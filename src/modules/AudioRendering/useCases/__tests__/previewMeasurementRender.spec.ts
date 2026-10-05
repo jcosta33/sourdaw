@@ -18,6 +18,8 @@ import {
     captureProjectRevision,
     createCommandPreviewWorkspace,
     createCrdtDoc,
+    DOC_PREFIX_ROOT,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -99,11 +101,28 @@ function pianoTrack(device: Track['devices'][number]): Track {
     return { ...createTrack({ id: 'piano', name: 'Piano', kind: 'midi' }), devices: [device] };
 }
 
-function keysTrack(): Track {
+function yeastTrack(trackId: string, deviceId: string): Track {
     return {
-        ...createTrack({ id: 'keys', name: 'Keys', kind: 'midi' }),
-        devices: [{ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+        ...createTrack({ id: trackId, name: trackId, kind: 'midi' }),
+        devices: [{ id: deviceId, name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
     };
+}
+
+function keysTrack(): Track {
+    return yeastTrack('keys', 'yeast-1');
+}
+
+/** A project-wide v1 Yeast slot: one rack keyed by no device, adopted by the first Yeast device. */
+function seedLegacyRackSlot(): void {
+    mutateCrdtDoc<Record<string, unknown>>({
+        id: DOC_PREFIX_ROOT,
+        changeFn: (draft) => {
+            draft.yeast = {
+                schemaVersion: 1,
+                processors: { 'arp-legacy': { deleted: false, value: { ...ARPEGGIATOR, id: 'arp-legacy' } } },
+            };
+        },
+    });
 }
 
 /** The offline device wiring `src/app/bootstrap.ts` installs, so device setup runs as it does in the app. */
@@ -574,6 +593,39 @@ describe('renderAgentPreviewMeasurementScope — per-device state', () => {
                 deviceId: 'yeast-1',
             });
             expect(engine.renderOffline).not.toHaveBeenCalled();
+        });
+
+        describe('a legacy single-rack slot', () => {
+            beforeEach(() => {
+                setTracks([...currentTracks(), yeastTrack('keys-a', 'yeast-a'), yeastTrack('keys-b', 'yeast-b')]);
+                flushAutomergeStorageWrites();
+                seedLegacyRackSlot();
+            });
+
+            it('renders while the preview keeps the device that owns the legacy rack first', async () => {
+                const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
+
+                const result = await measure(MASTER, preview);
+
+                expect(result.status).toBe('rendered');
+            });
+
+            // Red when the legacy rack's owner is read only from the live track order.
+            it('refuses when the preview puts another Yeast device first, which would adopt the legacy rack', async () => {
+                const preview = openPreview(() => setTracks(currentTracks().filter((track) => track.id !== 'keys-a')));
+
+                const result = await measure(MASTER, preview);
+
+                expect(result).toEqual({
+                    status: 'refused',
+                    code: 'unprojectable-device-state',
+                    subject: 'preview',
+                    targetId: null,
+                    contributorId: null,
+                    deviceId: 'yeast-b',
+                });
+                expect(engine.renderOffline).not.toHaveBeenCalled();
+            });
         });
     });
 });

@@ -19,6 +19,7 @@ import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
+import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { type parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
 import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
@@ -163,16 +164,17 @@ function successRead(
     input: ExecutePreviewMeasurementInput,
     rendered: RenderedPreview,
     pairs: ReadonlyArray<[RenderedTarget, RenderedTarget]>,
-    measured: { beats: MeasuredPreview['range']; commands: readonly RetainedCommand[] }
+    measured: { beats: MeasuredPreview['range']; commands: readonly RetainedCommand[]; batchContentHash: string }
 ): AnalysisMeasureRead {
     const { parsed } = input;
-    const { commands } = measured;
+    const { commands, batchContentHash } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
     const targets = pairs.map(([baseline, preview]) => measureTarget(baseline, preview, parsed.metrics));
     const measuredPreview: MeasuredPreview = {
         scope: parsed.scope,
         range: { startBeat, endBeat, sectionId },
         targets,
+        batchContentHash,
     };
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
@@ -288,5 +290,9 @@ export async function executePreviewMeasurement(input: ExecutePreviewMeasurement
             retryable: false,
         });
     }
-    return successRead(input, rendered, pairs, { beats: resolved.beats, commands: compiled.commands });
+    return successRead(input, rendered, pairs, {
+        beats: resolved.beats,
+        commands: compiled.commands,
+        batchContentHash: digestCommandBatchContent(compiled.envelope),
+    });
 }

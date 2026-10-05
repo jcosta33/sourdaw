@@ -123,7 +123,10 @@ function lowerGain(deviceId: string, value: number) {
     };
 }
 
-function proposalOf(...items: ReturnType<typeof lowerGain>[]) {
+/** A semantic command list as `analysis.measure` takes it for a preview. */
+type Proposal = { schemaVersion: number; items: readonly Readonly<Record<string, unknown>>[] };
+
+function proposalOf(...items: ReturnType<typeof lowerGain>[]): Proposal {
     return { schemaVersion: 1, items };
 }
 
@@ -171,8 +174,9 @@ function interpretationCall(revision: string): ToolCallResult {
     });
     const drums = catalog.targets.find((target) => target.objectIds.includes('drums'));
     const processing = catalog.dimensions.find((dimension) => dimension.dimension === 'processing');
-    if (drums === undefined || processing === undefined) {
-        throw new Error('Expected the creative catalog to offer the drums track and its processing.');
+    const deviceSlot = catalog.creationSlots.find((slot) => slot.objectType === 'device');
+    if (drums === undefined || processing === undefined || deviceSlot === undefined) {
+        throw new Error('Expected the creative catalog to offer the drums track, its processing and a device.');
     }
     return {
         id: 'interpretation-1',
@@ -183,7 +187,7 @@ function interpretationCall(revision: string): ToolCallResult {
             targetCandidateIds: [drums.candidateId],
             editDimensionCandidateIds: [processing.candidateId],
             constraintCandidateIds: [],
-            creationSlotIds: [],
+            creationSlotIds: [deviceSlot.candidateId],
             uncertainty: 'none',
         },
     };
@@ -227,12 +231,12 @@ function measure(args: Record<string, unknown>, revision = captureProjectRevisio
     });
 }
 
-function previewArgs(proposal: ReturnType<typeof proposalOf>) {
+function previewArgs(proposal: Proposal) {
     return { scope: DRUMS_SCOPE, range: RANGE, metrics: ['integratedLoudness'], subject: 'preview', proposal };
 }
 
 /** One planning loop: a preview measurement, then a proposal adopting it by call id. */
-function measureThenAdopt(proposal: ReturnType<typeof proposalOf>, loopRevision: string) {
+function measureThenAdopt(proposal: Proposal, loopRevision: string) {
     const revision = captureProjectRevision();
     const context = getProjectContext();
     const requestTurn = vi
@@ -272,23 +276,39 @@ function measureThenAdopt(proposal: ReturnType<typeof proposalOf>, loopRevision:
 }
 
 /** A hosted run's provider turns: interpret the request, measure the preview, propose exactly it. */
-function scriptMeasureThenAdoptTurns(revision: string, proposal: ReturnType<typeof proposalOf>): void {
-    vi.mocked(generateToolPlanningOutcome)
-        .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall(revision)] })
-        .mockResolvedValueOnce({
-            status: 'complete',
-            toolCalls: [{ id: 'measure-1', name: 'analysis.measure', arguments: previewArgs(proposal) }],
-        })
-        .mockResolvedValueOnce({
-            status: 'complete',
-            toolCalls: [
-                {
-                    id: 'propose-1',
-                    name: 'command.batch.propose',
-                    arguments: { commands: [], compiledCallIds: ['measure-1'] },
-                },
-            ],
-        });
+function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void {
+    scriptTurns(revision, [
+        [measureCallFor('measure-1', proposal)],
+        [proposeCall({ commands: [], compiledCallIds: ['measure-1'] })],
+    ]);
+}
+
+/** The interpretation turn, then each scripted turn in order. */
+function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
+    const planning = vi.mocked(generateToolPlanningOutcome);
+    planning.mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall(revision)] });
+    for (const toolCalls of turns) {
+        planning.mockResolvedValueOnce({ status: 'complete', toolCalls });
+    }
+}
+
+function measureCallFor(id: string, proposal: Proposal): ToolCallResult {
+    return { id, name: 'analysis.measure', arguments: previewArgs(proposal) };
+}
+
+function proposeCall(args: Record<string, unknown>): ToolCallResult {
+    return { id: 'propose-1', name: 'command.batch.propose', arguments: args };
+}
+
+/** The drums-trim edit a turn adds beside the measured preview. */
+const TRIM_EDIT = { deviceId: DRUMS_TRIM_ID, paramId: 'gain-level', value: -12 };
+
+/** Plan, persist for approval, and read the measured preview the approval shows. */
+async function approvalMeasuredPreview(revision: string) {
+    const planned = await parsePromptToActions(PROMPT, getProjectContext(), undefined, revision);
+    expect(planned.rejectionReason).toBeUndefined();
+    const confirmationId = persistForApproval(planned, revision);
+    return { planned, confirmationId, measuredPreview: getAgentApprovalView({ confirmationId })?.measuredPreview };
 }
 
 /** Persist a planned result for approval as the prompt route does, under a run that is planning. */
@@ -512,6 +532,115 @@ describe('a measured preview through proposal and approval', () => {
         expect(loudness?.preview).toMatchObject({ unit: 'LUFS' });
         expect(loudness?.delta?.value).toBeCloseTo(-6, 1);
         expect(drumsLevel()).toBe(0);
+    });
+
+    // Red when the batch hash counts the ids each compilation mints for the objects it creates.
+    it('shows the figures for a preview that creates a device, though the adopting batch mints new ids', async () => {
+        const revision = captureProjectRevision();
+        const addGain = {
+            id: 'add-gain',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-gain', binding: 'gain' },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: 'Drums' },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        };
+        const setGain = {
+            id: 'set-gain',
+            name: 'setDeviceParameter',
+            arguments: { deviceId: '$gain', paramId: 'gain-level', value: -6 },
+            dependsOn: ['add-gain'],
+        };
+        scriptMeasureThenAdoptTurns(revision, { schemaVersion: 1, items: [addGain, setGain] });
+
+        const { planned, measuredPreview } = await approvalMeasuredPreview(revision);
+
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'gain-level', value: -6 } },
+        ]);
+        expect(measuredPreview?.targets.map(({ targetId }) => targetId)).toEqual(['drums']);
+    });
+
+    // Each row below is red when the figures are attached without comparing the persisted batch's
+    // content hash with the hash of the batch the preview rendered.
+    it('shows no figures when the turn adds a workflow call beside the adopted preview', async () => {
+        const revision = captureProjectRevision();
+        scriptTurns(revision, [
+            [measureCallFor('measure-1', proposalOf(lowerGain(DRUMS_GAIN_ID, -6)))],
+            [
+                proposeCall({ commands: [], compiledCallIds: ['measure-1'] }),
+                { id: 'trim-1', name: 'setDeviceParameter', arguments: TRIM_EDIT },
+            ],
+        ]);
+
+        const { planned, measuredPreview } = await approvalMeasuredPreview(revision);
+
+        expect(planned.actions).toHaveLength(2);
+        expect(measuredPreview).toBeNull();
+    });
+
+    it('shows no figures when the proposal adopts a second compilation beside the preview', async () => {
+        const revision = captureProjectRevision();
+        scriptTurns(revision, [
+            [measureCallFor('measure-1', proposalOf(lowerGain(DRUMS_GAIN_ID, -6)))],
+            [measureCallFor('measure-2', proposalOf(lowerGain(DRUMS_TRIM_ID, -12)))],
+            [proposeCall({ commands: [], compiledCallIds: ['measure-1', 'measure-2'] })],
+        ]);
+
+        const { planned, measuredPreview } = await approvalMeasuredPreview(revision);
+
+        expect(planned.actions).toHaveLength(2);
+        expect(measuredPreview).toBeNull();
+    });
+
+    it('shows no figures when the proposal carries a command of its own beside the preview', async () => {
+        const revision = captureProjectRevision();
+        scriptTurns(revision, [
+            [
+                measureCallFor('measure-1', proposalOf(lowerGain(DRUMS_GAIN_ID, -6))),
+                {
+                    id: 'discover-1',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['setDeviceParameter'] },
+                },
+            ],
+            [
+                proposeCall({
+                    commands: [{ name: 'setDeviceParameter', arguments: TRIM_EDIT }],
+                    compiledCallIds: ['measure-1'],
+                }),
+            ],
+        ]);
+
+        const { planned, measuredPreview } = await approvalMeasuredPreview(revision);
+
+        expect(planned.actions).toHaveLength(2);
+        expect(measuredPreview).toBeNull();
+    });
+
+    // Red when the persisted figures stop matching the batch they were measured on, so a
+    // re-proposal that rebuilds the very same batch loses them.
+    it('keeps the measured preview on a re-proposal of the identical batch', async () => {
+        const revision = captureProjectRevision();
+        scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6), lowerGain(DRUMS_TRIM_ID, -3)));
+        const { confirmationId, measuredPreview } = await approvalMeasuredPreview(revision);
+        expect(measuredPreview).not.toBeNull();
+
+        const reproposed = await reproposePendingChatActions({ confirmationId });
+
+        expect(reproposed.status).toBe('reproposed');
+        if (reproposed.status === 'reproposed') {
+            expect(reproposed.confirmationId).not.toBe(confirmationId);
+            expect(commandIdsOf(reproposed.confirmationId)).toHaveLength(2);
+            const [target] =
+                getAgentApprovalView({ confirmationId: reproposed.confirmationId })?.measuredPreview?.targets ?? [];
+            const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
+            expect(loudness?.delta?.value).toBeCloseTo(-9, 1);
+        }
     });
 
     // Red when a re-proposal keeps figures for a batch it has cut down.
