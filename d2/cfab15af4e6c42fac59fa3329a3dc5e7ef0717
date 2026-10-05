@@ -1,0 +1,27 @@
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_2bfd55a4393d7c::t_e681629362626c 369,391-393
+  s_2bfd55a4393d7c::t_3084a05154e67d 421-452
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_2bfd55a4393d7c::t_12edc9702181fa 507-513
+  s_2bfd55a4393d7c::t_063d0fa502e6a9 256
+  s_2bfd55a4393d7c::t_cd045eb4f5de44 341
+  s_2bfd55a4393d7c::t_9750501b08f479 378-400
+  s_2bfd55a4393d7c::t_bbca68c9260fe8 142-143
+  s_2bfd55a4393d7c::t_aaf01a3b393dcf 533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2cfab15af4e6c42fac59fa3329a3dc5e7ef0717",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
