@@ -312,6 +312,47 @@ describe('CCLane', () => {
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual(preClick);
         });
 
+        it('leaves a row deleted between the gesture and the undo deleted when undoing an add', () => {
+            // The seeded row sits on another key AND another controller, so the
+            // gesture never displaced it. A collaborator's merged delete removes
+            // it after the click; the undo captured only the clicked key's rows
+            // and must not resurrect what that delete removed.
+            laneMocks.midiState.ccByClipId['clip-1'] = [
+                { id: 'cc-peer', controller: 11, value: 50, beat: 2, channel: 0 },
+            ];
+            render(<CCLane {...defaultProps} />);
+
+            // The click lands on an empty key (beat 1, controller 1).
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+
+            // A merged peer delete removes the unrelated row from the store.
+            removeMidiCC('clip-1', 'cc-peer');
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // The peer's delete stands, and the clicked key held nothing pre-click.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([]);
+
+            const addedCC = vi.mocked(addMidiCC).mock.results[0]?.value;
+            expect(addedCC).toBeDefined();
+
+            redoFn!();
+            // Redo restores the gesture's own point; the unrelated row stays gone.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                {
+                    id: addedCC?.id,
+                    controller: 1,
+                    value: valueFromY(76, 80),
+                    beat: beatFromX(48, defaultProps.beatWidth),
+                    channel: 0,
+                },
+            ]);
+        });
+
         it('restores the sibling when undoing a double-click removal on a doubly-occupied key', () => {
             // The double-click undo re-inserts just the removed row by id; it must
             // not re-add through the deduping add path, which would delete the
