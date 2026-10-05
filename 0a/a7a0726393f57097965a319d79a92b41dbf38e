@@ -1,0 +1,89 @@
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceBands.ts
+  s_1c08b47ac3792f::t_6dbbf0549db0ec 1-193,195-285,287-288
+  s_1c08b47ac3792f::t_df3fc29fad5e13 286
+  s_1c08b47ac3792f::t_c33c58205780c1 194
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_1c08b47ac3792f::t_79f43d7ecb2ebf 88-93,95-103
+  s_1c08b47ac3792f::t_275ffd38e8f487 113-114
+  s_1c08b47ac3792f::t_713416dfa4028d 233-235
+  s_1c08b47ac3792f::t_d9e4b1f933f495 232
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts
+  s_1c08b47ac3792f::t_fff6f9b2eaf48c 11
+  s_1c08b47ac3792f::t_833ba9ce2a35ae 12
+  s_1c08b47ac3792f::t_829c9d53fe86d8 137-139
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts
+  s_1c08b47ac3792f::t_2f74b1aa1c96db 142-144
+  s_1c08b47ac3792f::t_c661ec23b3a06c 12-14
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_1c08b47ac3792f::t_243ab39b345b20 42
+  s_1c08b47ac3792f::t_ef5ceb0948db3c 133
+  s_1c08b47ac3792f::t_190385b1345cbe 1-31,33-41,43-119,121-132,134-171,173-194,196-210,212-246,248-292
+  s_1c08b47ac3792f::t_51aced8f9e63be 120
+  s_1c08b47ac3792f::t_6a44fea34b22b6 172
+  s_1c08b47ac3792f::t_317464722377bf 211
+  s_1c08b47ac3792f::t_c8d1ed9a4ff2f1 247
+  s_1c08b47ac3792f::t_066c69e1311baa 32
+  s_1c08b47ac3792f::t_2c723f05d16755 195
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptor.ts
+  s_1c08b47ac3792f::t_8f22781025c5bb 11-13,15
+  s_1c08b47ac3792f::t_14ce0b5c43fa92 170-176
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_2930ee2ba6e555 32
+  s_1c08b47ac3792f::t_023b4b3d5da8ab 284
+  s_1c08b47ac3792f::t_1981b7cbc073bf 340
+  s_1c08b47ac3792f::t_fccaef2b21a0cc 195
+  s_1c08b47ac3792f::t_85fe9d3536091d 287
+  s_1c08b47ac3792f::t_51faa6791a58f2 55
+  s_1c08b47ac3792f::t_4e95ea39bdf95e 366
+  s_1c08b47ac3792f::t_bf69f0d8fba1ce 128
+  s_1c08b47ac3792f::t_fe141d8340a8ce 151
+  s_1c08b47ac3792f::t_2a95cf68ffbfc1 178
+  s_1c08b47ac3792f::t_5cde2013a21a1c 97
+  s_1c08b47ac3792f::t_3865203365d44e 353
+  s_1c08b47ac3792f::t_82b7e287199e83 1-31,33-54,56-96,98-127,129-150,152-177,179-194,196-247,249-283,285-286,288-339,341-352,354-365,367-545,547-563
+  s_1c08b47ac3792f::t_456e2a31350e8b 546
+  s_1c08b47ac3792f::t_817253ef5828e4 248
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_1c0a64d110b947 74-78
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptorGuidanceCharacter.ts
+  s_1c08b47ac3792f::t_358eb6ae27b485 248
+  s_1c08b47ac3792f::t_d6046be138e81d 222
+  s_1c08b47ac3792f::t_626acb3446dea4 81
+  s_1c08b47ac3792f::t_c1d50c3906971d 157
+  s_1c08b47ac3792f::t_2b3575b8f3e7a0 150
+  s_1c08b47ac3792f::t_d8ee8460cd1466 235
+  s_1c08b47ac3792f::t_f9e70839750ec1 1-78,80,82-131,133-149,151-156,158-221,223-234,236-247,249-260,262-273,275-291
+  s_1c08b47ac3792f::t_3759ec4f8ed4b0 261
+  s_1c08b47ac3792f::t_c81c404cac7986 274
+  s_1c08b47ac3792f::t_df5238a0887c0d 79
+  s_1c08b47ac3792f::t_fc35e3663f26ed 132
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptorGuidanceCompression.ts
+  s_1c08b47ac3792f::t_2ed45c43e7fc69 1-73,75-113,115-149,151-152,154-175,177-204,206-224,226-266,268-309
+  s_1c08b47ac3792f::t_35b6d62ac05210 74
+  s_1c08b47ac3792f::t_3dd34acdd6bc3a 225
+  s_1c08b47ac3792f::t_f79abe042d032b 267
+  s_1c08b47ac3792f::t_2683f595ef9bca 176
+  s_1c08b47ac3792f::t_1350f940962c90 205
+  s_1c08b47ac3792f::t_7cb7f85cd74a9b 114
+  s_1c08b47ac3792f::t_e255e19dc75b85 150,153
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceModulation.ts
+  s_1c08b47ac3792f::t_926a89f67fbefa 1-126
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_1fea2fd4d1eaac 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0aa7a0726393f57097965a319d79a92b41dbf38e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
