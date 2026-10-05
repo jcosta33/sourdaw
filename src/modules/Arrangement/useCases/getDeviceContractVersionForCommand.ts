@@ -3,8 +3,9 @@ import { getStableContractFingerprint } from '../models/GetStableContractFingerp
 
 function getCommandReplayDescriptorProjection({
     characterTags: _characterTags,
+    effectFamily: _effectFamily,
     ...commandReplayDescriptor
-}: PluginDescriptor): Omit<PluginDescriptor, 'characterTags'> {
+}: PluginDescriptor): Omit<PluginDescriptor, 'characterTags' | 'effectFamily'> {
     return commandReplayDescriptor;
 }
 
