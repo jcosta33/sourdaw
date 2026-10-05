@@ -1,0 +1,61 @@
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_2bfd55a4393d7c::t_e548caff189361 281-294
+  s_2bfd55a4393d7c::t_c283b32e7859ee 217
+  s_2bfd55a4393d7c::t_a89ad894f7d218 163-164,178-183,188,190-191,199,204-211
+  s_2bfd55a4393d7c::t_c308bdca38450b 269
+  s_2bfd55a4393d7c::t_bfb448c5bc9321 156-157
+  s_2bfd55a4393d7c::t_7e1803ed0bdef6 232,235
+  s_2bfd55a4393d7c::t_d84bdf6ec55c00 331-342
+  s_2bfd55a4393d7c::t_b28c582ce9efac 212
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_2bfd55a4393d7c::t_87c795a75a60c8 454-457
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_2bfd55a4393d7c::t_516a1bb10f330c 275-280,285-286
+  s_2bfd55a4393d7c::t_f1458ea28b95b0 318
+  s_2bfd55a4393d7c::t_2a614de39b2b27 302
+  s_2bfd55a4393d7c::t_eacb2058a70a0e 130-136
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_2bfd55a4393d7c::t_613f89fe1a32fa 261-263,268
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_1035703432df2c 474-475
+  s_2bfd55a4393d7c::t_90951676e7a8ef 425-426,431,437-446
+  s_2bfd55a4393d7c::t_b6c0e4525e632b 534-535
+  s_2bfd55a4393d7c::t_93020a69dcd6a4 821-823
+  s_2bfd55a4393d7c::t_b493237125eb7c 761-762,764
+  s_2bfd55a4393d7c::t_dc8d7ba0ffa8c7 731-732
+  s_2bfd55a4393d7c::t_2c2cc3375a6062 492-493
+  s_2bfd55a4393d7c::t_abe2be6f5edf9e 704
+  s_2bfd55a4393d7c::t_c525077b727cf9 515-517,520-521
+  s_2bfd55a4393d7c::t_5d0b819dd76072 383,393-394,396-397
+  s_2bfd55a4393d7c::t_2b3d3ea420fe3e 625-626
+  s_2bfd55a4393d7c::t_1fb48c54fbc935 640-641
+  s_2bfd55a4393d7c::t_bf0691279de1e3 352,356-358,368-369
+  s_2bfd55a4393d7c::t_ef044bc8fe1a65 231,246-247,249-250
+  s_2bfd55a4393d7c::t_42b8be86419483 344-345
+  s_2bfd55a4393d7c::t_248d3402aaa89e 608-609
+  s_2bfd55a4393d7c::t_4c8e38aee9d62a 447,772,777-778,782,786,791-820,824-851,856
+  s_2bfd55a4393d7c::t_27f44ee983b651 448
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_2bfd55a4393d7c::t_7c8c06308e9bc4 334-340,345,353-354,357-358
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_1e27750347f3d9 538-539
+  s_2bfd55a4393d7c::t_46f661d8a4237b 500-501,504-513
+crates/daw-dsp/tests/grand_boule_pedal_offsets.rs
+  s_2bfd55a4393d7c::t_e90a95aeb856b1 415-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5b6102994900a2553f7edc95058103eccb8b9cf",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
