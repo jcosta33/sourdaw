@@ -161,6 +161,7 @@ describe('LevainProcessor message handling', () => {
     beforeEach(() => {
         vi.resetModules();
         vi.clearAllMocks();
+        vi.stubGlobal('currentFrame', 0);
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         processShouldThrow = false;
