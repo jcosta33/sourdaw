@@ -1,0 +1,33 @@
+src/modules/MIDI/useCases/midiEvent/__tests__/restoreMidiCCPoints.spec.ts
+  s_1c08b47ac3792f::t_67b41dfa3b8cd2 11,14-19,24,29-48,51,54-74,83-86
+src/modules/MIDI/useCases/midiEvent/restoreMidiCCPoints.ts
+  s_2bfd55a4393d7c::t_b113785e9545e5 10-19,24
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_1c08b47ac3792f::t_93e63c0d930edb 66-69,77-84,144-145,149
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_1c08b47ac3792f::t_c5d4e9b6e2a112 79-88,296-300,316-318,339-340,346-374,768-769
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a44e28d377a1ea4d3c95f0868576248933ec007b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
