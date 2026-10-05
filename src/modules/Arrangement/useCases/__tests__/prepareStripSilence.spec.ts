@@ -340,4 +340,74 @@ describe('prepareStripSilence', () => {
             expect(prepareStripSilence({ clipId: 'clip-1' })).toBeNull();
         });
     });
+
+    describe('a time-stretched clip (regression #4787)', () => {
+        // Playback consumes source at the stretch factor per timeline beat
+        // (`consumedStretchFactor`, the law `audioWaveformSpan` draws with):
+        // a 10-beat clip at ratio 2 plays 20 buffer beats — 200 samples at 10
+        // samples per buffer beat. Sound detected at buffer beat B sounded at
+        // timeline beat B / ratio, so each segment must sit exactly there and
+        // read from exactly the buffer beats it was detected in.
+        function stretchedClipChannelData(): Float32Array<ArrayBuffer> {
+            const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 1 * SAMPLES_PER_BEAT, 2 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 4 * SAMPLES_PER_BEAT, 6 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 12 * SAMPLES_PER_BEAT, 14 * SAMPLES_PER_BEAT);
+            return channelData;
+        }
+
+        it('scans the full consumed span and lands each segment where its audio played (stretch on, ratio 2)', () => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(stretchedClipChannelData()));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            // Sound at buffer beats [1,2), [4,6) and [12,14) played at
+            // timeline [0.5,1), [2,3) and [6,7). A window that divides by the
+            // ratio instead scans only buffer beats [0,5) and never finds the
+            // third region; a mapping that multiplies by the ratio lands a
+            // segment four times its distance from the clip start.
+            expect(plan!.next.clips).toEqual([
+                expect.objectContaining({ startBeat: 0.5, endBeat: 1, audioOffsetBeats: 1 }),
+                expect.objectContaining({ startBeat: 2, endBeat: 3, audioOffsetBeats: 4 }),
+                expect.objectContaining({ startBeat: 6, endBeat: 7, audioOffsetBeats: 12 }),
+            ]);
+        });
+
+        it('ignores the stored ratio while stretch is off', () => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                stretchMode: 'off',
+                stretchRatio: 2,
+            });
+            const channelData = new Float32Array(10 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 1 * SAMPLES_PER_BEAT, 2 * SAMPLES_PER_BEAT);
+            channelData.fill(0.5, 3 * SAMPLES_PER_BEAT, 4.5 * SAMPLES_PER_BEAT);
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            // Every runtime plays an off clip at 1x regardless of the stored
+            // ratio, so the segments sit where a ratio-1 clip played the
+            // sound: timeline [1,2) and [3,4.5).
+            expect(plan!.next.clips).toEqual([
+                expect.objectContaining({ startBeat: 1, endBeat: 2, audioOffsetBeats: 1 }),
+                expect.objectContaining({ startBeat: 3, endBeat: 4.5, audioOffsetBeats: 3 }),
+            ]);
+        });
+    });
 });

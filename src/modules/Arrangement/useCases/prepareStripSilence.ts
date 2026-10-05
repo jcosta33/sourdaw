@@ -10,6 +10,7 @@ import { type ClipGainEnvelope, type GainEnvelopePoint } from '../stores/gainEnv
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
+import { consumedStretchFactor } from './clipEditing/consumedStretchFactor';
 
 type PrepareStripSilenceInput = {
     clipId: string;
@@ -30,7 +31,7 @@ type PlayedWindow = {
     endSample: number;
     /** Buffer beats per buffer sample — the frame `audioOffsetBeats` lives in. */
     bufferBeatsPerSample: number;
-    /** Timeline beats per buffer beat. */
+    /** The consumed stretch factor: source buffer beats per timeline beat. */
     stretchRatio: number;
     /** The clip's own `audioOffsetBeats`, in buffer beats. */
     audioOffsetBeats: number;
@@ -42,13 +43,15 @@ function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
 
 /**
  * The portion of the buffer this clip actually plays, using the canonical
- * clip-to-buffer mapping the waveform renderer draws with
- * (`presentations/renderers/clipDrawing.ts`): `audioOffsetBeats` is a position
- * in the SOURCE buffer's own beat frame, and the clip consumes
- * `clipBeats / stretchRatio` buffer beats of it. Scanning the whole buffer
- * instead — which is what mapping `clipDurationBeats` onto `channelData.length`
- * amounts to — detects silence in audio a trimmed or stretched clip never
- * plays, and mis-scales every derived beat position.
+ * clip-to-buffer mapping the waveform span draws with
+ * (`presentations/renderers/audioWaveformSpan.ts`): `audioOffsetBeats` is a
+ * position in the SOURCE buffer's own beat frame, and playback consumes
+ * `clipBeats * stretchRatio` buffer beats of it — `consumedStretchFactor`
+ * source beats per timeline beat, 1x unless stretch is on, the same law the
+ * split paths route through. Scanning the whole buffer instead — which is
+ * what mapping `clipDurationBeats` onto `channelData.length` amounts to —
+ * detects silence in audio a trimmed or stretched clip never plays, and
+ * mis-scales every derived beat position.
  */
 function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow | null {
     const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
@@ -57,10 +60,10 @@ function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: numb
         return null;
     }
     const audioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    const stretchRatio = Math.max(clip.stretchRatio ?? 1, 0.0001);
+    const stretchRatio = consumedStretchFactor(clip);
     const clipBeats = clip.endBeat - clip.startBeat;
     const startSample = Math.max(0, Math.floor(audioOffsetBeats * samplesPerBufferBeat));
-    const consumedSamples = (clipBeats / stretchRatio) * samplesPerBufferBeat;
+    const consumedSamples = clipBeats * stretchRatio * samplesPerBufferBeat;
     // The buffer end caps the window: past it the clip plays nothing, so there
     // is no silence there to strip.
     const endSample = Math.min(bufferLength, Math.floor(startSample + consumedSamples));
@@ -297,7 +300,7 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
     if (!playedWindow) {
         return null;
     }
-    const timelineBeatsPerSample = playedWindow.bufferBeatsPerSample * playedWindow.stretchRatio;
+    const timelineBeatsPerSample = playedWindow.bufferBeatsPerSample / playedWindow.stretchRatio;
 
     const regions = detectSoundRegions(channelData, thresholdLinear, buffer.sampleRate, playedWindow);
     if (regions.length <= 1) {
@@ -317,14 +320,15 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
     for (const region of mergedRegions) {
         const newClipId = `clip-strip-${crypto.randomUUID()}`;
         // The region is measured in the buffer's own beat frame; the segment's
-        // timeline position is where that audio already played, so the clip's
-        // own offset comes back out and the remaining span scales by stretch.
+        // timeline position is where that audio already played — source beats
+        // over the stretch factor — so the clip's own offset comes back out
+        // and the segment reads from the detected buffer beats verbatim.
         const regionStartBeats = region.startSample * playedWindow.bufferBeatsPerSample;
         const regionEndBeats = region.endSample * playedWindow.bufferBeatsPerSample;
         const startBeat =
-            targetClip.startBeat + (regionStartBeats - playedWindow.audioOffsetBeats) * playedWindow.stretchRatio;
+            targetClip.startBeat + (regionStartBeats - playedWindow.audioOffsetBeats) / playedWindow.stretchRatio;
         const endBeat =
-            targetClip.startBeat + (regionEndBeats - playedWindow.audioOffsetBeats) * playedWindow.stretchRatio;
+            targetClip.startBeat + (regionEndBeats - playedWindow.audioOffsetBeats) / playedWindow.stretchRatio;
         const shift = startBeat - targetClip.startBeat;
         newClips.push({
             ...targetClip,
