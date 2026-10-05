@@ -1,0 +1,159 @@
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_04f320254cd141 251-254
+  s_1c08b47ac3792f::t_ae50f687fe3076 312-313
+  s_1c08b47ac3792f::t_019c50e893a3fc 328
+  s_1c08b47ac3792f::t_b74fc6de604383 43-72
+  s_1c08b47ac3792f::t_db7fea9c945ccc 102-103
+  s_1c08b47ac3792f::t_9fc29ff2d9490c 244-250,255-288
+src/modules/AiRuntime/useCases/parseAnalysisMeasureArguments.ts
+  s_1c08b47ac3792f::t_621f709386333a 103-111
+  s_1c08b47ac3792f::t_3268ec2a774986 121-133
+  s_1c08b47ac3792f::t_f740e6613a2d68 11-17
+  s_1c08b47ac3792f::t_81a195ed393196 23,102,120,134,157
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_e89afa8bdf94fd 707-710
+  s_1c08b47ac3792f::t_c5a016569a2af1 713,715,717
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_5e248961c33cff 343
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_e03f57d9b0a197 363
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_3b974ce487a5cf 256,258-259
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_1c08b47ac3792f::t_3f052c959d9cc0 253-260
+src/modules/AiRuntime/useCases/readPlanningMarkerSignatures.ts
+  s_1c08b47ac3792f::t_17a2124c591c0a 1-19
+src/modules/AiRuntime/useCases/digestCommandBatchContent.ts
+  s_1c08b47ac3792f::t_6a6ebb860fe0e9 1-13
+  s_1c08b47ac3792f::t_90799d5ce8cc91 14-16
+src/modules/AiRuntime/useCases/resolveAnalysisMeasureBeats.ts
+  s_1c08b47ac3792f::t_3609ae41fd02f0 1-38
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_156c97a32ad8aa 37
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_1c08b47ac3792f::t_921191dc5b78cc 1-12,14-161,163-164,167-284,286
+  s_1c08b47ac3792f::t_4ee9069772219c 13
+  s_1c08b47ac3792f::t_083b65d742a223 285
+  s_1c08b47ac3792f::t_7832e22790552c 162,165-166
+  s_1c08b47ac3792f::t_bd2011bde6b052 287-292
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  s_1c08b47ac3792f::t_3cf149cb711db1 2-5,29-35,43,48-70
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_1c08b47ac3792f::t_bc40588498dc07 1-182
+  s_1c08b47ac3792f::t_1d1d385c78127f 183-187
+src/modules/AiRuntime/useCases/llmOrchestration/decodeHostedProposalWireCall.ts
+  s_1c08b47ac3792f::t_518ee2e45e28b8 59-60,62
+  s_1c08b47ac3792f::t_debd9d701a0520 42-45
+  s_1c08b47ac3792f::t_7a4104c6c74cb6 5,23-28,31,35-41,46-58,63,65
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_f6053dac00a66c 367
+  s_1c08b47ac3792f::t_b42891a7e8e2e7 323
+  s_1c08b47ac3792f::t_3ccee668416ed0 9
+  s_1c08b47ac3792f::t_f88eb2f81aaf7d 120-124
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_1c08b47ac3792f::t_8afc0513cad169 70-72,74,205
+  s_1c08b47ac3792f::t_427da73ec78bb2 165-168,175-177,179,182-200,202-204,207
+  s_1c08b47ac3792f::t_d26ea736f41ab1 208
+  s_1c08b47ac3792f::t_8d6a800d125219 13,18,20,31-32
+  s_1c08b47ac3792f::t_19bb32c914b677 206,209,213,231
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_a061e9ec07f86e 88
+  s_1c08b47ac3792f::t_343a1b3839feca 211-224,229-230
+  s_1c08b47ac3792f::t_94473e1e252271 1080
+  s_1c08b47ac3792f::t_4d342ff3b18d20 727
+  s_1c08b47ac3792f::t_f0fd8df3800b55 17,21
+  s_1c08b47ac3792f::t_ec716b37ef77e4 225-228
+  s_1c08b47ac3792f::t_a0c7b10bd70cab 607,616-623
+  s_1c08b47ac3792f::t_045b7dac4751f8 902
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_35f78e45379d9b 765-810
+  s_1c08b47ac3792f::t_8937a84a7d34ba 239
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_1c08b47ac3792f::t_6fe8047f01216d 161
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_513837d9a2261a 474-531
+src/modules/Command/AGENTS.md
+  s_1c08b47ac3792f::t_f6cd912838426b 11
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1c08b47ac3792f::t_a365700e5f1e4b 353
+  s_1c08b47ac3792f::t_c5d5be4730bfef 193-233
+  s_1c08b47ac3792f::t_ffc4d11e3f04e0 51
+  s_1c08b47ac3792f::t_5e803c39436216 22-36
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_224f704b72b03f 6
+  s_1c08b47ac3792f::t_36107ecfac1935 50-55
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_d92bfde69f6fb7 118-121
+  s_1c08b47ac3792f::t_1d89d5cb61548c 16
+  s_1c08b47ac3792f::t_f166ff0e0c5f9b 36-37
+  s_1c08b47ac3792f::t_c7535c85a0d4a7 4
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_3be743d5455c17 2017
+  s_1c08b47ac3792f::t_2ced4334694d82 17
+  s_1c08b47ac3792f::t_4a83c59ebc1145 188-189,193-194
+  s_1c08b47ac3792f::t_c5c95231ef1a55 1391
+  s_1c08b47ac3792f::t_04008b6b3430bd 1085,1089-1099
+  s_1c08b47ac3792f::t_a9978cd6a8460d 28-34
+  s_1c08b47ac3792f::t_fd48575fad23c1 1190
+  s_1c08b47ac3792f::t_02d31131c17e25 1116-1125
+  s_1c08b47ac3792f::t_45c9307e56076b 1112-1113
+  s_1c08b47ac3792f::t_d442fafdfa2b5b 1262
+  s_1c08b47ac3792f::t_73ff45ba15c9e3 1921-1925
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_72b8cae9bb3fe9 23
+  s_1c08b47ac3792f::t_da77cd2b9a7992 283-298
+  s_1c08b47ac3792f::t_d9538b75f0d447 413
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  s_1c08b47ac3792f::t_b96f6bd4ba5888 1-41
+  s_1c08b47ac3792f::t_ece64412559a2c 42-43
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_1c08b47ac3792f::t_97f4286eb123f5 11-15
+  s_1c08b47ac3792f::t_1a44de260d7196 1-10,16-25,34,40,42,47-69,83,85-87,90-93,101-103,105-110,112-115,123-146,149-151,157-164,211-215,217-220,222-262,264-268,352-366,371-382,395-397,400-416,418-445,448-453,458-478
+  s_1c08b47ac3792f::t_db79e7ec15c3c9 515
+  s_1c08b47ac3792f::t_ff6a8ab4c9cdbc 446-447
+  s_1c08b47ac3792f::t_4674f2bf477001 70-82
+  s_1c08b47ac3792f::t_7e04413cdae0ad 367-370
+  s_1c08b47ac3792f::t_ac6426e9d707ea 165-210,216,221
+  s_1c08b47ac3792f::t_2a5c9097c7bf7b 94-99
+  s_1c08b47ac3792f::t_56a3396b124657 492-493
+  s_1c08b47ac3792f::t_3f48bf5bf1f82b 26,35,45
+  s_1c08b47ac3792f::t_6cb3ea56db426e 454-457
+  s_1c08b47ac3792f::t_841e5956ba19e8 38
+  s_1c08b47ac3792f::t_6ff21ab0e07acc 147-148,152-156
+  s_1c08b47ac3792f::t_0b141474230c37 269-351
+  s_1c08b47ac3792f::t_87f44f69726a46 27-33,36-37,39,41,43-44,46
+  s_1c08b47ac3792f::t_3bbfa3311d09dd 84
+  s_1c08b47ac3792f::t_bc513aaa3d70a3 383-394,398-399
+  s_1c08b47ac3792f::t_d8ef843ebaf160 417
+  s_1c08b47ac3792f::t_01b8018a727df8 479-491,494-514,516-534
+  s_1c08b47ac3792f::t_3e9b5619f72dbc 263
+  s_1c08b47ac3792f::t_8423a62baca8e6 100,104,111,116-122
+  s_1c08b47ac3792f::t_6cf0ae2880b545 88-89
+  s_1c08b47ac3792f::t_54a964be8a03ed 535-541
+src/modules/AiRuntime/models/AnalysisMeasureRead.ts
+  s_1c08b47ac3792f::t_40d142b2e37495 1-14
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_1c08b47ac3792f::t_7cc68258b29739 1-2
+  s_1c08b47ac3792f::t_6e6c038cf04547 36-40
+  s_1c08b47ac3792f::t_4db801932abf2d 43-47
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_3631458531d710 748
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_7e3c7946bcb79b 1210-1211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aebe47194558a06db5635137f481565eb27572af",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
