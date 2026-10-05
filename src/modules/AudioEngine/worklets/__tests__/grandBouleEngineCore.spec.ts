@@ -619,3 +619,169 @@ describe('a Grand Boule pedal message', () => {
         });
     });
 });
+
+describe('the order Grand Boule control messages reach the engine', () => {
+    type PedalCase = {
+        name: string;
+        press: GrandBouleDispatchMsg;
+        lift: GrandBouleDispatchMsg;
+        framedPress: (sampleFrame: number) => GrandBouleDispatchMsg;
+        framedLift: (sampleFrame: number) => GrandBouleDispatchMsg;
+        method: string;
+        engaged: unknown;
+        disengaged: unknown;
+    };
+
+    const pedals: PedalCase[] = [
+        {
+            name: 'sustain',
+            press: { type: 'sustain', position: 1 },
+            lift: { type: 'sustain', position: 0 },
+            framedPress: (sampleFrame) => ({ type: 'sustain', position: 1, sampleFrame }),
+            framedLift: (sampleFrame) => ({ type: 'sustain', position: 0, sampleFrame }),
+            method: 'push_sustain',
+            engaged: 1,
+            disengaged: 0,
+        },
+        {
+            name: 'sostenuto',
+            press: { type: 'sostenuto', engaged: true },
+            lift: { type: 'sostenuto', engaged: false },
+            framedPress: (sampleFrame) => ({ type: 'sostenuto', engaged: true, sampleFrame }),
+            framedLift: (sampleFrame) => ({ type: 'sostenuto', engaged: false, sampleFrame }),
+            method: 'push_sostenuto',
+            engaged: true,
+            disengaged: false,
+        },
+        {
+            name: 'una corda',
+            press: { type: 'unaCorda', engaged: true },
+            lift: { type: 'unaCorda', engaged: false },
+            framedPress: (sampleFrame) => ({ type: 'unaCorda', engaged: true, sampleFrame }),
+            framedLift: (sampleFrame) => ({ type: 'unaCorda', engaged: false, sampleFrame }),
+            method: 'push_una_corda',
+            engaged: true,
+            disengaged: false,
+        },
+    ];
+
+    it.each(pedals)('delivers a refused $name press before the lift that follows it', (pedal) => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        refuseNextPushes(2);
+        receive(instance, queue, pedal.framedPress(100), { startFrame: 0, endFrame: 128 });
+        queue.drain(instance, 0, 128);
+        receive(instance, queue, pedal.framedLift(140), { startFrame: 128, endFrame: 256 });
+        queue.drain(instance, 128, 256);
+
+        expect(calls).toEqual([
+            { method: pedal.method, args: [pedal.engaged, 0] },
+            { method: pedal.method, args: [pedal.disengaged, 12] },
+        ]);
+    });
+
+    it('delivers a message the engine refused before a note queued for a later frame', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 },
+            { startFrame: 0, endFrame: 128 }
+        );
+        refuseNextPushes(1);
+        receive(
+            instance,
+            queue,
+            { type: 'sostenuto', engaged: true, sampleFrame: 100 },
+            { startFrame: 0, endFrame: 128 }
+        );
+        queue.drain(instance, 128, 256);
+
+        expect(calls).toEqual([
+            { method: 'push_sostenuto', args: [true, 0] },
+            { method: 'push_note_on', args: [60, 1, 0, 0] },
+        ]);
+    });
+
+    it.each(pedals)('keeps a queued $name press from outliving a panic and a frameless lift', (pedal) => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, pedal.framedPress(128), block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        receive(instance, queue, pedal.lift, block);
+        queue.drain(instance, 128, 256);
+
+        expect(calls.filter((call) => call.method === pedal.method)).toEqual([
+            { method: pedal.method, args: [pedal.disengaged, 0] },
+        ]);
+    });
+
+    it('delivers a refused note-off before a frameless pedal move that arrives in the next block', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        refuseNextPushes(1);
+        receive(instance, queue, { type: 'noteOff', midiNote: 60, sampleFrame: 50 }, { startFrame: 0, endFrame: 128 });
+        receive(instance, queue, { type: 'sustain', position: 1 }, { startFrame: 128, endFrame: 256 });
+
+        expect(calls).toEqual([
+            { method: 'push_note_off', args: [60, 0] },
+            { method: 'push_sustain', args: [1, 0] },
+        ]);
+    });
+
+    it('keeps a frameless pedal move behind the note that arrived before it and ahead of the one after it', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        // Each message is due on arrival and the queue is empty when the pedal
+        // arrives, so the pedal is pushed at the block head without waiting
+        // behind a note it never overtook; arrival order is the push order.
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 20 }, block);
+        receive(instance, queue, { type: 'sustain', position: 1 }, block);
+        receive(instance, queue, { type: 'noteOff', midiNote: 60, sampleFrame: 90 }, block);
+
+        expect(calls).toEqual([
+            { method: 'push_note_on', args: [60, 1, 0, 20] },
+            { method: 'push_sustain', args: [1, 0] },
+            { method: 'push_note_off', args: [60, 90] },
+        ]);
+    });
+
+    it('delivers two framed messages in order when the engine refuses the first', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // The block list stays full for both arrivals: the first refusal is A's own
+        // push, the second is A's retry when B arrives.
+        refuseNextPushes(2);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 10 },
+            { startFrame: 0, endFrame: 128 }
+        );
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 64, velocity: 1, sampleFrame: 20 },
+            { startFrame: 0, endFrame: 128 }
+        );
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls }).toEqual({
+            afterRefusal: { calls: [], queued: 2 },
+            calls: [
+                { method: 'push_note_on', args: [60, 1, 0, 0] },
+                { method: 'push_note_on', args: [64, 1, 0, 0] },
+            ],
+        });
+    });
+});

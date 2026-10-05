@@ -497,22 +497,19 @@ export type ReceiveGrandBouleMessageInput = {
 };
 
 /**
- * Place a message at its frame, or hand it to the engine for the block about to
- * render.
+ * Place a control message so the engine's block list receives everything due in
+ * arrival order, and never ahead of an earlier message still waiting in the
+ * frame queue.
  *
  * This is the one entry point both hosts route control messages through, so the
- * enqueue-or-deliver decision cannot differ between them. A message whose frame
- * lies inside that block is delivered at its own sample offset; one behind the
- * block, one with no frame, and one arriving before the host can place frames
- * at all are delivered at offset 0. A late note sounds late — never dropped,
- * and never held back a further block.
- *
- * A message the engine's block list refuses — note or pedal, framed or not — is
- * queued instead, so the next block carries it. That is the same "late, never
- * dropped" answer the drain gives, and the only one available: the list empties
- * on every `process`. One placement rule serves every refusal: the last frame of
- * this block, which the queue's stable insert drains first thing next block, in
- * the order the refusals arrived and ahead of whatever is queued for a later frame.
+ * placement rule cannot differ between them. Every framed message is queued —
+ * at its own frame, or at the block's first frame when it has none or none a
+ * host can place — and the queue is then drained for the block about to render.
+ * The queue's stable insert keeps arrival order at equal frames, and a drain
+ * stops at the first message the engine refuses, leaving it and everything
+ * behind it for the next block: late, never dropped, never reordered. A message
+ * behind the block sounds at offset 0; with no clock to queue against
+ * (`block === null`) a message voices immediately.
  *
  * A pedal move with no usable frame is the newest gesture, so it first removes
  * the queued moves of the same pedal; a queued one would otherwise drain after
@@ -527,24 +524,16 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
         return;
     }
 
-    if (!isFramedGrandBouleMsg(msg) || !isPlaceableGrandBouleMsg(msg) || block === null) {
-        if (isPedalMsg(msg)) {
-            queue.discardPedal(msg.type);
-        }
-        if (dispatch(instance, msg) || block === null || !isFramedGrandBouleMsg(msg)) {
-            return;
-        }
-        queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
+    const placeable = isFramedGrandBouleMsg(msg) && isPlaceableGrandBouleMsg(msg);
+    if (isPedalMsg(msg) && !placeable) {
+        queue.discardPedal(msg.type);
+    }
+
+    if (block === null || !isFramedGrandBouleMsg(msg)) {
+        dispatch(instance, msg);
         return;
     }
 
-    if (msg.sampleFrame >= block.endFrame) {
-        queue.enqueue(msg);
-        return;
-    }
-
-    const offset = Math.max(0, msg.sampleFrame - block.startFrame);
-    if (!dispatch(instance, msg, offset)) {
-        queue.enqueue({ ...msg, sampleFrame: block.endFrame - 1 });
-    }
+    queue.enqueue(isPlaceableGrandBouleMsg(msg) ? msg : { ...msg, sampleFrame: block.startFrame });
+    queue.drain(instance, block.startFrame, block.endFrame);
 }
