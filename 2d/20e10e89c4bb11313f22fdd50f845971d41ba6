@@ -1,0 +1,131 @@
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_696f7426de22db 374,527,748
+scripts/semanticReview/__tests__/changeFacts.spec.ts
+  s_2bfd55a4393d7c::t_d5db3a9b7c544e 11,13-14,147-151,168-299,303-328,330-334,337-341,343-348,354-356,358-360,362-367,370-407,412-490,494-521,525-565,576-581,587-691,807-817,929-1072
+scripts/semanticReview/changeFacts.ts
+  s_2bfd55a4393d7c::t_be8b412a804bbf 98-101,103,109-124,139-194
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  s_2bfd55a4393d7c::t_a378999904e2a5 10,14,18,20,25,27,97-99,101,122-135,139,141,149-150,154-162,227-247,265-269,280,565-666,793-837,868-1068,1097-1181
+scripts/semanticReview/evaluation/runEvaluation.ts
+  s_2bfd55a4393d7c::t_1b03b944cc13ff 20,49-59,83-87,89-90,224,242,296-300,306,312-345,372-387,405
+scripts/semanticReviewEvaluation.ts
+  s_2bfd55a4393d7c::t_b4ceaf8a0a5fb7 16,66-71,140-177,181-184,186-187,192-194,254-259,261,264-280,283-289,296,300-312,315-318,322,327-329,358-362
+src/modules/AiRuntime/AGENTS.md
+  s_2bfd55a4393d7c::t_73f7a4c2eec854 36,40
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_2bfd55a4393d7c::t_568144245e0c49 21
+src/modules/AiRuntime/models/BackingVocalPlateCapability.ts
+  s_2bfd55a4393d7c::t_8107229cf4ed00 27
+src/modules/AiRuntime/models/IntentResult.ts
+  s_2bfd55a4393d7c::t_fa83d29a786c4c 8,41-48
+src/modules/AiRuntime/models/RecipeExpansionLimits.ts
+  s_2bfd55a4393d7c::t_b03da7da29c5f1 1-21
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_2bfd55a4393d7c::t_97bbe16279832e 1-39
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_2bfd55a4393d7c::t_e5df264d674d3f 9,117-118,316,359
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_2bfd55a4393d7c::t_a47eaccfc7a244 17,199-230,311
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_2bfd55a4393d7c::t_10482794a63dc7 377
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_b9aaa874704ac5 466-468
+src/modules/AiRuntime/useCases/__tests__/deviceCharacterResolution.spec.ts
+  s_2bfd55a4393d7c::t_a4657b18d69788 3-4,6-11,21-156,193-340
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_2bfd55a4393d7c::t_abf207b512e7a3 3,25-26,225,244,493-537
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_2bfd55a4393d7c::t_73f0fb20584ff7 184-198,318-332
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_2bfd55a4393d7c::t_64c824c16ac860 4,8-10,12-20,27-43,579-1434
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_2bfd55a4393d7c::t_dc2023dc16d166 165-169,179,403-436
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_2bfd55a4393d7c::t_6ce80cb92d2c13 1066-1085
+src/modules/AiRuntime/useCases/__tests__/trackFixture.ts
+  s_2bfd55a4393d7c::t_24303061bd03bd 1-43
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_2bfd55a4393d7c::t_7d1fdb51dd13fb 15,154
+src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts
+  s_2bfd55a4393d7c::t_bd0c1032bd6eb7 1,7-8,12,81,106-107,156-165,209,211-214,236,276
+src/modules/AiRuntime/useCases/agentReference/resolveAvailableCharacterDevice.ts
+  s_2bfd55a4393d7c::t_e00f230e390a1e 1-40
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_2bfd55a4393d7c::t_77f1ed4a210eb8 768-809
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_2bfd55a4393d7c::t_8fce3a26caea91 342
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_2bfd55a4393d7c::t_c4db79d7c866a8 33,46-77,113,126
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_2bfd55a4393d7c::t_8174d296f1d85c 22,35-40,58,218-250,461
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_2bfd55a4393d7c::t_c145352eb1b55b 27,53,58,104,119-120,192-201,206-208,1095-1100,1108-1109,1133-1149,1228,1244,1246,1249,1346-1347,1361,1368-1371,1373-1376,1661,1663-1667,1834,1879,1904-1905,1935,1954-1955,1992,1996-2001
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_2bfd55a4393d7c::t_468b85e32d23a0 3,5-10,175-182,184,186-196,199,215
+src/modules/AiRuntime/useCases/executeRecipeExpansion.ts
+  s_2bfd55a4393d7c::t_256e6a966031d0 1-93
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_2bfd55a4393d7c::t_8616088ad9201c 1-342
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_2bfd55a4393d7c::t_3dc7af247d1476 1,38-42,70-71,204-211,235,249
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_2bfd55a4393d7c::t_759ce8182f54fa 159-163
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_2bfd55a4393d7c::t_6fd6919e56d37d 30,1620,1639,1644,1667
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_2bfd55a4393d7c::t_1b9811ba2f7898 56,463
+src/modules/AiRuntime/useCases/materializeTransformToolCalls.ts
+  s_2bfd55a4393d7c::t_a087c57ae1a6f9 1,4-8
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_2bfd55a4393d7c::t_f6c94beef7738c 64,73,532-549,688,690,693-695,736,889,895,1058
+src/modules/AiRuntime/useCases/parseRecipeExpansionInput.ts
+  s_2bfd55a4393d7c::t_e4ae208569c703 1-127
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_2bfd55a4393d7c::t_88f769cedf632e 393-395
+src/modules/AiRuntime/useCases/resolveRecipeTarget.ts
+  s_2bfd55a4393d7c::t_c86cbd944421f4 1-92
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_2bfd55a4393d7c::t_1136aac0c61f06 362
+src/modules/Arrangement/AGENTS.md
+  s_2bfd55a4393d7c::t_603c4ed51db7fb 8,27
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_2bfd55a4393d7c::t_f25c3e2d45f27d 174-180,206-207
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_2bfd55a4393d7c::t_a2b67959d10ac6 231,1025
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_2bfd55a4393d7c::t_9d3f292695f799 47,149
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_2bfd55a4393d7c::t_168c76075dc7e4 24
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_1ca12414e45de0 216-232
+src/modules/Arrangement/useCases/__tests__/isReverbDeviceType.spec.ts
+  s_2bfd55a4393d7c::t_fa205da71b30a2 1-48
+src/modules/Arrangement/useCases/getDeviceContractVersionForCommand.ts
+  s_2bfd55a4393d7c::t_2100cdcfc0bd86 6,8
+src/modules/Arrangement/useCases/index.ts
+  s_2bfd55a4393d7c::t_1a8a7e4af41c42 272
+src/modules/Arrangement/useCases/isReverbDeviceType.ts
+  s_2bfd55a4393d7c::t_a93bb90495b285 1-12
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_2bfd55a4393d7c::t_8055bcb2fd9d0a 35,162-176,295
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_2bfd55a4393d7c::t_da2e7764f9f17c 238,724-763
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_252a964349292b 1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d20e10e89c4bb11313f22fdd50f845971d41ba6",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
