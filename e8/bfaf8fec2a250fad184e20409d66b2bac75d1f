@@ -1,0 +1,46 @@
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidiSparseNotes.integration.spec.ts
+  h_beb54bf43b47b7 1-383
+src/modules/MIDI/repositories/webMidi/realtimeMidiProcessorState.ts
+  h_beb54bf43b47b7 14-19,27-28
+src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts
+  h_beb54bf43b47b7 39-68
+src/modules/MIDI/transformers/isMidiNoteSnapshot.ts
+  h_beb54bf43b47b7 56-68,71-74
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  h_beb54bf43b47b7 1-4,7-65,74-77,79-82,86-103,109-118,120-127,129-166,168-173,572-597,610-627
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  h_beb54bf43b47b7 11-14,295-426,515-563
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  h_beb54bf43b47b7 1-152,289
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  h_beb54bf43b47b7 1-122,196
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  h_beb54bf43b47b7 7,20-21,926-1071
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  h_beb54bf43b47b7 1,11-58,63-82,97-112,133-151,179,244-245,288
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  h_beb54bf43b47b7 8,154-156
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  h_beb54bf43b47b7 4-10,15,17,27-32,149-171,172,181,185-308,314-325,339-347,349-353,438-447,458,469,475,495,497,501-502,515
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  h_beb54bf43b47b7 14,17,34-38,63-65,167-175,235-266,268-307,309-329,331-337,339-366,373-379,382-383
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/processRealtimeMidiInput.spec.ts
+  h_beb54bf43b47b7 3-4,8-9,17-39,90-239
+src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/startYeastIdleDrain.spec.ts
+  h_beb54bf43b47b7 1-5,7-71,86-203,248-279,339-341,343-345,359,362,368-369,373-377
+src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts
+  h_beb54bf43b47b7 6,23-30,43-53,80,97-98,102,106,108-131
+src/modules/Yeast/useCases/yeastSchedulingBridge/startYeastIdleDrain.ts
+  h_beb54bf43b47b7 1-36,43,57-80,82-105,119-123,125-139,152-160,161-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e8bfaf8fec2a250fad184e20409d66b2bac75d1f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
