@@ -6,7 +6,7 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+import { TOASTER_GUIDANCE, TOASTER_PARAMETER_GUIDANCE } from './ToasterDescriptorGuidance';
 
 const TOASTER_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'toaster',
@@ -109,19 +109,6 @@ const TOASTER_DESCRIPTOR_DATA: PluginDescriptor = {
 
 export const TOASTER_DESCRIPTOR = applySingleDescriptorGuidance(
     TOASTER_DESCRIPTOR_DATA,
-    descriptorGuidance(
-        'toaster',
-        instrumentGuidance(
-            'Program a drum pattern, then balance kit, send, and master controls against the track.',
-            ['Check master and send levels before printing or exporting a pattern.'],
-            ['Kit voices, sequencing, and opaque-kit send effects combine at the instrument output.'],
-            ['Dense patterns and high master level can overload downstream buses.']
-        ),
-        declaredControl(
-            'Drum-machine control',
-            'Changes pattern, kit, voice, or output behavior.',
-            ['Balance kit voices before master output.'],
-            ['Dense patterns can build output level quickly.']
-        )
-    )
+    // No fallback: every parameter is authored in ToasterDescriptorGuidance.ts.
+    descriptorGuidance('toaster', TOASTER_GUIDANCE, undefined, TOASTER_PARAMETER_GUIDANCE)
 );

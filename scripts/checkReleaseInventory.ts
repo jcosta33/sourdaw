@@ -1612,11 +1612,13 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
         {
             paths: [
                 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts',
                 'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
                 'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
             ],
             gitPathspecs: [
                 'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts',
+                'src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts',
                 'src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts',
                 'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',
             ],
