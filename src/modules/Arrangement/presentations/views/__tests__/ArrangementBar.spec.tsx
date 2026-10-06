@@ -2,15 +2,9 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type ArrangementSection } from '../../../models/Marker';
-import { addSection } from '../../../useCases/marker/sectionOperations/addSection';
-import { moveSection } from '../../../useCases/marker/sectionOperations/moveSection';
-import { removeSection } from '../../../useCases/marker/sectionOperations/removeSection';
-import { renameSection } from '../../../useCases/marker/sectionOperations/renameSection';
-import { reorderSection } from '../../../useCases/marker/sectionOperations/reorderSection';
-import { resizeSection } from '../../../useCases/marker/sectionOperations/resizeSection';
-import { setSectionColor } from '../../../useCases/marker/sectionOperations/setSectionColor';
 import { ArrangementBar } from '../ArrangementBar';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -21,26 +15,11 @@ vi.mock('../../../stores/markerStore', () => ({
     markerStore: {},
 }));
 
-vi.mock('../../../useCases/marker/sectionOperations/reorderSection', () => ({
-    reorderSection: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/resizeSection', () => ({
-    resizeSection: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/moveSection', () => ({
-    moveSection: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/setSectionColor', () => ({
-    setSectionColor: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/renameSection', () => ({
-    renameSection: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/removeSection', () => ({
-    removeSection: vi.fn(),
-}));
-vi.mock('../../../useCases/marker/sectionOperations/addSection', () => ({
-    addSection: vi.fn(),
+// Add, delete, rename, move, resize, recolour and reorder dispatch through the
+// command path (#4617); the assertions below pin the dispatched actions, not
+// the bare use cases.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
@@ -144,9 +123,10 @@ describe('ArrangementBar', () => {
         fireEvent.click(screen.getByText('Add Section'));
         // beat = (localX + scrollX) / pixelsPerBeat; localX derived from rect left 0.
         // addSection(startBeat=floor(beat), endBeat=startBeat+16, name).
-        expect(addSection).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 'New Section');
-        const [startBeat, endBeat] = vi.mocked(addSection).mock.calls[0]!;
-        expect(endBeat - startBeat).toBe(16);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addSection',
+            payload: { startBeat: 4, endBeat: 20, name: 'New Section' },
+        });
     });
 
     it('opens a section context menu when right-clicking over a section', () => {
@@ -181,7 +161,10 @@ describe('ArrangementBar', () => {
         const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
         fireEvent.change(input, { target: { value: '  Chorus  ' } });
         fireEvent.blur(input);
-        expect(renameSection).toHaveBeenCalledWith('s1', 'Chorus');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameSection',
+            payload: { sectionId: 's1', name: 'Chorus' },
+        });
     });
 
     it('does not rename when the committed value is empty/whitespace', () => {
@@ -193,7 +176,7 @@ describe('ArrangementBar', () => {
         const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
         fireEvent.change(input, { target: { value: '   ' } });
         fireEvent.blur(input);
-        expect(renameSection).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('commits the rename on Enter and cancels on Escape', () => {
@@ -206,7 +189,10 @@ describe('ArrangementBar', () => {
         const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
         fireEvent.change(input, { target: { value: 'Verse' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(renameSection).toHaveBeenCalledWith('s1', 'Verse');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameSection',
+            payload: { sectionId: 's1', name: 'Verse' },
+        });
 
         // Re-open rename then Escape must not commit a change.
         fireEvent.contextMenu(bar, { clientX: 50, clientY: 10 });
@@ -214,8 +200,8 @@ describe('ArrangementBar', () => {
         const input2 = screen.getByDisplayValue('Intro') as HTMLInputElement;
         fireEvent.change(input2, { target: { value: 'Ignore' } });
         fireEvent.keyDown(input2, { key: 'Escape' });
-        // Still only the single Enter-driven rename call.
-        expect(renameSection).toHaveBeenCalledTimes(1);
+        // Still only the single Enter-driven rename dispatch.
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('enters editing on section double-click', () => {
@@ -233,7 +219,7 @@ describe('ArrangementBar', () => {
         const bar = container.querySelector('[role="region"]')!;
         fireEvent.contextMenu(bar, { clientX: 50, clientY: 10 });
         fireEvent.click(screen.getByText('Delete'));
-        expect(removeSection).toHaveBeenCalledWith('s1');
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeSection', payload: { sectionId: 's1' } });
     });
 
     it('reorders left/right and disables Move Left for the first section', () => {
@@ -249,7 +235,10 @@ describe('ArrangementBar', () => {
         const moveLeft = screen.getByText('Move Left').closest('button')!;
         expect(moveLeft).toBeDisabled();
         fireEvent.click(screen.getByText('Move Right'));
-        expect(reorderSection).toHaveBeenCalledWith('s1', 'right');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'reorderSection',
+            payload: { sectionId: 's1', direction: 'right' },
+        });
 
         // Context-menu the second section: Move Right disabled, Move Left enabled.
         vi.clearAllMocks();
@@ -257,7 +246,10 @@ describe('ArrangementBar', () => {
         const moveRight = screen.getByText('Move Right').closest('button')!;
         expect(moveRight).toBeDisabled();
         fireEvent.click(screen.getByText('Move Left'));
-        expect(reorderSection).toHaveBeenCalledWith('s2', 'left');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'reorderSection',
+            payload: { sectionId: 's2', direction: 'left' },
+        });
     });
 
     it('sets the section colour from a swatch and closes the menu', () => {
@@ -271,7 +263,10 @@ describe('ArrangementBar', () => {
         expect(swatches.length).toBeGreaterThan(0);
         const firstColor = swatches[0]!.getAttribute('aria-label')!.replace('Set color ', '');
         fireEvent.click(swatches[0]!);
-        expect(setSectionColor).toHaveBeenCalledWith('s1', firstColor);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setSectionColor',
+            payload: { sectionId: 's1', color: firstColor },
+        });
     });
 
     describe('ArrangementBar — section drag', () => {
@@ -292,7 +287,10 @@ describe('ArrangementBar', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(moveSection).toHaveBeenCalledWith('s1', 4);
+                expect(executeUserAppAction).toHaveBeenCalledWith({
+                    type: 'moveSection',
+                    payload: { sectionId: 's1', startBeat: 4 },
+                });
             } finally {
                 listeners.restore();
             }
@@ -314,8 +312,7 @@ describe('ArrangementBar', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(moveSection).not.toHaveBeenCalled();
-                expect(resizeSection).not.toHaveBeenCalled();
+                expect(executeUserAppAction).not.toHaveBeenCalled();
             } finally {
                 listeners.restore();
             }
@@ -338,7 +335,10 @@ describe('ArrangementBar', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(resizeSection).toHaveBeenCalledWith('s1', 0, 21);
+                expect(executeUserAppAction).toHaveBeenCalledWith({
+                    type: 'resizeSection',
+                    payload: { sectionId: 's1', startBeat: 0, endBeat: 21 },
+                });
             } finally {
                 listeners.restore();
             }
@@ -364,7 +364,10 @@ describe('ArrangementBar', () => {
                     listeners.up();
                 });
                 // lastStart = end-4 = 12, lastEnd = 16.
-                expect(resizeSection).toHaveBeenCalledWith('s1', 12, 16);
+                expect(executeUserAppAction).toHaveBeenCalledWith({
+                    type: 'resizeSection',
+                    payload: { sectionId: 's1', startBeat: 12, endBeat: 16 },
+                });
             } finally {
                 listeners.restore();
             }
@@ -386,7 +389,7 @@ describe('ArrangementBar', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(moveSection).not.toHaveBeenCalled();
+                expect(executeUserAppAction).not.toHaveBeenCalled();
             } finally {
                 listeners.restore();
             }

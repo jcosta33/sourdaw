@@ -59,6 +59,7 @@ export const ACTION_LABELS: Record<string, string> = {
     discardDrawnClip: 'Discard drawn clip',
     restoreDrawnClip: 'Restore drawn clip',
     restoreClipMoves: 'Restore clip moves',
+    restoreSectionBeats: 'Restore section beats',
     quantizeNotes: 'Quantize',
     removeShortMidiOverlaps: 'Remove short MIDI overlaps',
     copyMidiArticulations: 'Copy MIDI articulations',

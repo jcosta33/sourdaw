@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 
 import { useChannelStripActions } from '../useChannelStripActions';
 
@@ -35,9 +35,6 @@ const mocks = vi.hoisted(() => ({
     executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
-    toggleVcaMembership: vi.fn(),
-    createAndAssignVcaGroup: vi.fn(),
-    removeFromVca: vi.fn(),
     releaseTouchAutomation: vi.fn(),
     confirmUser: vi.fn(),
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -64,9 +61,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setTrackColor: mocks.setTrackColor,
     removeTrack: mocks.removeTrack,
     renameTrack: mocks.renameTrack,
-    toggleVcaMembership: mocks.toggleVcaMembership,
-    createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
-    removeFromVca: mocks.removeFromVca,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -906,28 +900,51 @@ describe('useChannelStripActions', () => {
         expect(mocks.renameTrack).not.toHaveBeenCalled();
     });
 
-    it('toggleVca forwards the group id to toggleVcaMembership', () => {
-        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
+    it('toggleVca dispatches assignToVca for a track outside the group', () => {
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', vcaGroupId: null })));
 
         result.current.toggleVca('vca-group-1');
 
-        expect(mocks.toggleVcaMembership).toHaveBeenCalledWith('track-1', 'vca-group-1');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'assignToVca',
+            payload: { trackId: 'track-1', vcaGroupId: 'vca-group-1' },
+        });
     });
 
-    it('createVcaAndAssign dispatches createAndAssignVcaGroup for the track', () => {
+    it("toggleVca dispatches removeFromVca for the track's own group", () => {
+        const { result } = renderHook(() =>
+            useChannelStripActions(makeTrack({ id: 'track-1', vcaGroupId: 'vca-group-1' }))
+        );
+
+        result.current.toggleVca('vca-group-1');
+
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeFromVca',
+            payload: { trackId: 'track-1' },
+        });
+    });
+
+    it('createVcaAndAssign dispatches createVcaGroup containing the track', () => {
+        vcaGroupStore.set({ groups: [] });
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.createVcaAndAssign();
 
-        expect(mocks.createAndAssignVcaGroup).toHaveBeenCalledWith('track-1');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'createVcaGroup',
+            payload: { name: 'VCA 1', trackIds: ['track-1'] },
+        });
     });
 
-    it('removeFromVca dispatches the removeFromVca use case for the track', () => {
+    it('removeFromVca dispatches the removeFromVca action for the track', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.removeFromVca();
 
-        expect(mocks.removeFromVca).toHaveBeenCalledWith('track-1');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeFromVca',
+            payload: { trackId: 'track-1' },
+        });
     });
 
     it('releaseGainAutomation releases touch automation when the track is in touch mode', () => {

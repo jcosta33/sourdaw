@@ -29,10 +29,9 @@ const mocks = vi.hoisted(() => {
         getCachedAudioBuffer: vi.fn(),
         resolveDroppedSampleFile: vi.fn(),
         stageClipAudioAsset: vi.fn(),
-        addClip: vi.fn(),
         executeAddDeviceAction: vi.fn(),
         executeAppAction: vi.fn(),
-        addTrack: vi.fn(),
+        executeAppActionBatch: vi.fn(),
         importMidiFile: vi.fn(),
     };
 });
@@ -102,10 +101,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
-vi.mock('../../../useCases/clip/addClip', () => ({
-    addClip: mocks.addClip,
-}));
-
 vi.mock('../../../useCases/clip/stageClipAudioAsset', () => ({
     stageClipAudioAsset: mocks.stageClipAudioAsset,
 }));
@@ -118,15 +113,27 @@ vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: mocks.executeAppActionBatch,
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
-vi.mock('../../../useCases/addTrack', () => ({
-    addTrack: mocks.addTrack,
-}));
+// #4618 — every drop write lands as a registered action inside a batch; the
+// mocks read the dispatched actions back instead of asserting on use cases.
+type BatchAction = { type: string; payload: Record<string, unknown> };
+
+const batchActions = (): BatchAction[] =>
+    mocks.executeAppActionBatch.mock.calls.flatMap((call) => call[0] as BatchAction[]);
+
+const batchPayload = (type: string): Record<string, unknown> => {
+    const action = batchActions().find((candidate) => candidate.type === type);
+    if (!action) {
+        throw new Error(`no ${type} action was dispatched in a drop batch`);
+    }
+    return action.payload;
+};
 
 vi.mock('../../../useCases/importMidiFile', async (importOriginal) => ({
     ...(await importOriginal<any>()),
@@ -155,7 +162,7 @@ describe('useTimelineFileDrop', () => {
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
         mocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-1' });
         mocks.executeAppAction.mockResolvedValue(undefined);
-        mocks.addClip.mockReturnValue({ id: 'clip-imported' });
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
         mocks.importMidiFile.mockResolvedValue('completed');
     });
 
@@ -240,7 +247,6 @@ describe('useTimelineFileDrop', () => {
         };
 
         mocks.hitTestTrack.mockReturnValue(null);
-        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf1', buffer: { duration: 2 } });
@@ -250,10 +256,11 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Kick', kind: 'audio' });
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            const addTrackAction = batchActions().find((candidate) => candidate.type === 'addTrack');
+            expect(addTrackAction?.payload).toEqual(expect.objectContaining({ name: 'Kick', kind: 'audio' }));
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({
-                    trackId: 'new-track-id',
+                    trackId: addTrackAction?.payload.id,
                     name: 'Kick',
                     type: 'audio',
                 })
@@ -290,14 +297,13 @@ describe('useTimelineFileDrop', () => {
         };
 
         mocks.hitTestTrack.mockReturnValue(null);
-        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({ name: 'Kick', type: 'audio', audioBufferId: 'factory-kick' })
             );
         });
@@ -333,7 +339,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({
                     name: 'Kick',
                     type: 'audio',
@@ -351,7 +357,11 @@ describe('useTimelineFileDrop', () => {
 
         mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 });
         mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
-        mocks.addClip.mockReturnValue(null);
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'the clip write was refused',
+            actions: [],
+        });
 
         const mockEvent = {
             preventDefault: vi.fn(),
@@ -397,7 +407,7 @@ describe('useTimelineFileDrop', () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         await waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalledWith(
                 expect.stringContaining('asset registration failed'),
@@ -429,16 +439,15 @@ describe('useTimelineFileDrop', () => {
         };
 
         mocks.hitTestTrack.mockReturnValue(null);
-        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({
-                    trackId: 'new-track-id',
+                    trackId: expect.any(String),
                     name: 'Four seconds',
                     type: 'audio',
                     audioBufferId: 'audio-1',
@@ -475,7 +484,6 @@ describe('useTimelineFileDrop', () => {
         };
 
         mocks.hitTestTrack.mockReturnValue(null);
-        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
@@ -487,8 +495,7 @@ describe('useTimelineFileDrop', () => {
                 'error'
             );
         });
-        expect(mocks.addClip).not.toHaveBeenCalled();
-        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
@@ -499,7 +506,6 @@ describe('useTimelineFileDrop', () => {
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-native', buffer: { duration: 2 } });
         mocks.hitTestTrack.mockReturnValue(null);
-        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
 
         const mockEvent = {
             preventDefault: vi.fn(),
@@ -529,9 +535,9 @@ describe('useTimelineFileDrop', () => {
             });
         });
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
-        expect(mocks.addClip).toHaveBeenCalledWith(
+        expect(batchPayload('addClip')).toEqual(
             expect.objectContaining({
-                trackId: 'new-track-id',
+                trackId: expect.any(String),
                 name: 'Kick',
                 type: 'audio',
                 audioBufferId: 'buf-native',
@@ -579,7 +585,7 @@ describe('useTimelineFileDrop', () => {
             });
         });
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
-        expect(mocks.addClip).toHaveBeenCalledWith(
+        expect(batchPayload('addClip')).toEqual(
             expect.objectContaining({
                 trackId: 't1',
                 name: 'Clap',
@@ -631,8 +637,10 @@ describe('useTimelineFileDrop', () => {
             } as any);
         });
 
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
-        expect(mocks.addClip).not.toHaveBeenCalledWith(expect.objectContaining({ trackId: 't2' }));
+        expect(batchPayload('addClip')).toEqual(expect.objectContaining({ trackId: 't1' }));
+        expect(batchActions().map((candidate) => candidate.payload)).not.toContainEqual(
+            expect.objectContaining({ trackId: 't2' })
+        );
     });
 
     it('cancels a library import when its captured target disappears', async () => {
@@ -676,8 +684,7 @@ describe('useTimelineFileDrop', () => {
             } as any);
         });
 
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(transfer.releaseStagedAsset).toHaveBeenCalledWith('gone-lease');
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('gone-buffer');
         expect(mocks.trackStoreValue.value.tracks[0]?.clips).toEqual([{ id: 'successor-clip' }]);
@@ -714,8 +721,7 @@ describe('useTimelineFileDrop', () => {
             } as any);
         });
 
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('unstaged-buffer');
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Failed to import "Unstaged" — asset registration failed',
@@ -762,7 +768,7 @@ describe('useTimelineFileDrop', () => {
 
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('stale-stage-buffer');
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(mocks.trackStoreValue.value.tracks[0]?.clips).toEqual([{ id: 'successor-clip' }]);
@@ -793,7 +799,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
-        expect(mocks.addClip).toHaveBeenCalledWith(
+        expect(batchPayload('addClip')).toEqual(
             expect.objectContaining({
                 trackId: 'same-track',
                 audioBufferId: 'successor-buffer',
@@ -840,8 +846,7 @@ describe('useTimelineFileDrop', () => {
             );
         });
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('aborts a library drop when the resolver cannot resolve the sample root', async () => {
@@ -878,8 +883,7 @@ describe('useTimelineFileDrop', () => {
             );
         });
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('aborts a native-root library drop when the sample cannot be decoded', async () => {
@@ -918,8 +922,7 @@ describe('useTimelineFileDrop', () => {
                 'error'
             );
         });
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('aborts a browser-root library drop onto an existing track when the sample cannot be decoded', async () => {
@@ -956,8 +959,7 @@ describe('useTimelineFileDrop', () => {
                 'error'
             );
         });
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('keeps a forwarded MIDI continuation bound to its drop epoch', async () => {
@@ -997,8 +999,7 @@ describe('useTimelineFileDrop', () => {
 
         const successorOptions = mocks.importMidiFile.mock.calls[1]?.[1];
         expect(successorOptions?.shouldContinue()).toBe(true);
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     // Regression (#35-new): a malformed AI-render payload with a non-finite
@@ -1032,7 +1033,7 @@ describe('useTimelineFileDrop', () => {
         await waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.any(String), 'error');
         });
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     // Regression (#35-new): a structurally broken sample payload must surface an
@@ -1061,7 +1062,7 @@ describe('useTimelineFileDrop', () => {
         await waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.any(String), 'error');
         });
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('places a valid AI-render drop as a clip', async () => {
@@ -1088,7 +1089,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({ trackId: 't1', name: 'Pad', type: 'audio', audioBufferId: 'buf-ai' })
             );
         });
@@ -1125,7 +1126,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({
                     trackId: 't1',
                     name: 'Pad',
@@ -1164,7 +1165,7 @@ describe('useTimelineFileDrop', () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('registered for sharing'), 'error');
     });
 
@@ -1189,7 +1190,7 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(
+            expect(batchPayload('addClip')).toEqual(
                 expect.objectContaining({
                     trackId: 't1',
                     name: 'snare',
@@ -1232,8 +1233,10 @@ describe('useTimelineFileDrop', () => {
             } as any);
         });
 
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
-        expect(mocks.addClip).not.toHaveBeenCalledWith(expect.objectContaining({ trackId: 't2' }));
+        expect(batchPayload('addClip')).toEqual(expect.objectContaining({ trackId: 't1' }));
+        expect(batchActions().map((candidate) => candidate.payload)).not.toContainEqual(
+            expect.objectContaining({ trackId: 't2' })
+        );
     });
 
     it('cancels an ordinary audio import when its captured target disappears', async () => {
@@ -1265,14 +1268,13 @@ describe('useTimelineFileDrop', () => {
             } as any);
         });
 
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(transfer.releaseStagedAsset).toHaveBeenCalledWith('gone-lease');
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('gone-buffer');
         expect(mocks.trackStoreValue.value.tracks[0]?.clips).toEqual([{ id: 'successor-clip' }]);
     });
 
-    it('aborts an AI-render drop onto a non-audio track when no new audio track can be created', async () => {
+    it('aborts an AI-render drop onto a non-audio track when the batch refuses the new audio track', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         const mockEvent = {
@@ -1286,17 +1288,24 @@ describe('useTimelineFileDrop', () => {
             },
         };
 
-        // No track hit, no selected track, and addTrack returns null (e.g. max
-        // track limit reached) -> the drop must abort without creating a clip.
+        // No track hit and no selected track: the drop compiles a batch with a
+        // new audio track; a refusal from the batch (e.g. max track limit
+        // reached) aborts the drop without promoting anything.
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
-        mocks.addTrack.mockReturnValue(null);
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'the track could not be created',
+            actions: [],
+        });
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(batchActions().map((candidate) => candidate.type)).toContain('addTrack');
+        expect(mocks.getAssetTransfer().promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('recognizes an audio file by extension when the MIME type is empty', async () => {
@@ -1323,7 +1332,7 @@ describe('useTimelineFileDrop', () => {
 
         await waitFor(() => {
             expect(mocks.decodeAudioFile).toHaveBeenCalledWith(mockFile);
-            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'buf-flac' }));
+            expect(batchPayload('addClip')).toEqual(expect.objectContaining({ audioBufferId: 'buf-flac' }));
         });
     });
 
@@ -1339,16 +1348,22 @@ describe('useTimelineFileDrop', () => {
             },
         };
 
-        // No eligible track and addTrack returns null -> abort, no clip.
+        // No eligible track and a refusing batch -> abort, nothing retained.
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
-        mocks.addTrack.mockReturnValue(null);
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'the track could not be created',
+            actions: [],
+        });
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
         });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(batchActions().map((candidate) => candidate.type)).toContain('addTrack');
+        expect(mocks.getAssetTransfer().promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('does not create a sample target track while file resolution belongs to a superseded project', async () => {
@@ -1389,8 +1404,7 @@ describe('useTimelineFileDrop', () => {
         await dropPromise;
 
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
@@ -1419,8 +1433,7 @@ describe('useTimelineFileDrop', () => {
         expect(transfer.releaseStagedAsset).toHaveBeenCalledWith('lease-stale');
         expect(transfer.promoteStagedAsset).not.toHaveBeenCalled();
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale');
-        expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
     });

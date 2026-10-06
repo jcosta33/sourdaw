@@ -27,11 +27,18 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
         if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);
             const delta = startBeat - context.startBeat;
-            return {
+            const updated = {
                 ...context,
                 startBeat,
                 audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
             };
+            if (context.type === 'midi') {
+                return {
+                    ...updated,
+                    midiOffsetBeats: (context.midiOffsetBeats ?? 0) + delta,
+                };
+            }
+            return updated;
         }
         return context;
     });

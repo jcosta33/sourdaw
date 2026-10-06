@@ -122,7 +122,11 @@ type PendingActionApprovalSnapshot = {
      * It rides the approval snapshot rather than the Command envelope, whose contract stays closed.
      */
     measuredPreview?: MeasuredPreview;
+    /** Which of a run's successive batches this proposal is, present only when the request has more than one. */
+    batchPosition?: PendingActionBatchPosition;
 };
+
+type PendingActionBatchPosition = { index: number; total: number };
 
 type PendingActionConfirmationBase = {
     id: string;
@@ -321,6 +325,7 @@ type ProposePendingActionConfirmationInput = {
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     adoptedRecipes?: AdoptedRecipe[];
     measuredPreview?: MeasuredPreview;
+    batchPosition?: PendingActionBatchPosition;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -365,6 +370,7 @@ export function proposePendingActionConfirmation(
         matchSelectorPredicates,
         adoptedRecipes: input.adoptedRecipes && structuredClone(input.adoptedRecipes),
         measuredPreview: input.measuredPreview && structuredClone(input.measuredPreview),
+        ...(input.batchPosition === undefined ? {} : { batchPosition: { ...input.batchPosition } }),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

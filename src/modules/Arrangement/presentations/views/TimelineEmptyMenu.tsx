@@ -6,7 +6,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { AUDIO_ACCEPT_ATTRIBUTE } from '#/utils/audioFileExtensions';
@@ -14,15 +14,10 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { MARKER_COLOR_PRESETS } from '../../models/ColorPalette';
+import { createTrack } from '../../models/Track';
 import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
-import { addTrack } from '../../useCases/addTrack';
-import { addClip } from '../../useCases/clip/addClip';
-import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
-import { removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations/removeMarker';
-import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
 
 // ── Nearby marker color sub-menu ────────────────────────────────────
 
@@ -58,12 +53,23 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
                                 color={context}
                                 active={context === marker.color}
                                 className="size-4"
-                                onClick={act(() => setMarkerColor(marker.id, context))}
+                                onClick={act(() => {
+                                    void executeUserAppAction({
+                                        type: 'setMarkerColor',
+                                        payload: { markerId: marker.id, color: context },
+                                    });
+                                })}
                                 aria-label="Set marker color"
                             />
                         ))}
                     </Row>
-                    <DawMenuButton tone="danger" role="menuitem" onClick={act(() => removeMarkerUseCase(marker.id))}>
+                    <DawMenuButton
+                        tone="danger"
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({ type: 'removeMarker', payload: { markerId: marker.id } });
+                        })}
+                    >
                         Remove Marker
                     </DawMenuButton>
                 </div>
@@ -109,23 +115,53 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     discardDecodedAudioFile(result.id);
                     return;
                 }
-                const targetTrackId =
-                    trackId ??
-                    (() => {
-                        addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                        return trackStore.value?.tracks[trackStore.value.tracks.length - 1]?.id ?? '';
-                    })();
+                const name = file.name.replace(/\.[^.]+$/, '');
                 const durationBeats = Math.ceil(
                     (result.buffer.duration / 60) * (transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM)
                 );
-                const clip = addClip({
-                    trackId: targetTrackId,
-                    startBeat: beat,
-                    endBeat: beat + durationBeats,
-                    name: file.name.replace(/\.[^.]+$/, ''),
-                    audioBufferId: result.id,
+                // The import lands as the registered creation actions so it
+                // enters undo history (#4618): the batch keeps a track created
+                // solely for the clip in the same single undo step, and a
+                // refused or thrown write falls through to the release below
+                // instead of leaking the decoded buffer.
+                const newTrack = trackId ? undefined : createTrack({ name, kind: 'audio' });
+                const targetTrackId = trackId ?? newTrack?.id ?? '';
+                type ImportBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+                const actions: ImportBatchAction[] = [];
+                if (newTrack) {
+                    actions.push({
+                        type: 'addTrack',
+                        payload: {
+                            id: newTrack.id,
+                            name: newTrack.name,
+                            kind: newTrack.kind,
+                            color: newTrack.color,
+                            initialAlternativeId: newTrack.activeAlternativeId,
+                        },
+                    });
+                }
+                actions.push({
+                    type: 'addClip',
+                    payload: {
+                        trackId: targetTrackId,
+                        startBeat: beat,
+                        endBeat: beat + durationBeats,
+                        name,
+                        audioBufferId: result.id,
+                    },
                 });
-                if (!clip) {
+                const batchResult = await executeAppActionBatch(actions, {
+                    groupId: `import-audio-${crypto.randomUUID()}`,
+                    groupLabel: `Import audio: ${name}`,
+                    source: 'manual',
+                    requireCompensation: true,
+                    shouldExecute: () => authority.isCurrent(),
+                });
+                const retainedImport =
+                    batchResult.status === 'committed' ||
+                    batchResult.status === 'committed-with-warning' ||
+                    batchResult.status === 'ambiguous';
+                if (!retainedImport) {
                     discardDecodedAudioFile(result.id);
                 }
             } catch {
@@ -167,10 +203,20 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             className="min-w-[180px]"
             role="menu"
         >
-            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Audio', kind: 'audio' }))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } });
+                })}
+            >
                 Add Audio Track
             </DawMenuButton>
-            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'MIDI', kind: 'midi' }))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } });
+                })}
+            >
                 Add MIDI Track
             </DawMenuButton>
             <DawMenuButton
@@ -188,23 +234,37 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     onClick={act(() => {
                         const track = trackStore.value?.tracks.find((time) => time.id === trackId);
                         const clipType = track?.kind === 'midi' ? 'midi' : 'audio';
-                        addClip({
-                            trackId,
-                            startBeat: beat,
-                            endBeat: beat + 4,
-                            name: `New ${clipType} clip`,
-                            type: clipType,
+                        void executeUserAppAction({
+                            type: 'addClip',
+                            payload: {
+                                trackId,
+                                startBeat: beat,
+                                endBeat: beat + 4,
+                                name: `New ${clipType} clip`,
+                                type: clipType,
+                            },
                         });
                     })}
                 >
                     Add Clip Here
                 </DawMenuButton>
             ) : null}
-            <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteClip())}>
+            <DawMenuButton
+                role="menuitem"
+                shortcut="⌘V"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'pasteClip' });
+                })}
+            >
                 Paste
             </DawMenuButton>
             <DawMenuSeparator className="border-border/50" />
-            <DawMenuButton role="menuitem" onClick={act(() => addMarker(beat, `Marker at ${beat}`))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'addMarker', payload: { beat, name: `Marker at ${beat}` } });
+                })}
+            >
                 Add Marker Here
             </DawMenuButton>
             <NearbyMarkerColorMenu beat={beat} onClose={onClose} />

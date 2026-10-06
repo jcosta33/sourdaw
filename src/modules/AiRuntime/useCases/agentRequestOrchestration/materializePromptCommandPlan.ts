@@ -1,7 +1,7 @@
 import { generateGroupId, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
-import { type AgentRunDecisionResume, type AgentRunScope } from '../../models/AgentRun';
+import { type AgentRunBatchSchedule, type AgentRunDecisionResume, type AgentRunScope } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { updateChatMessage } from '../../stores/chatStore';
 import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
@@ -110,6 +110,33 @@ function cloneGrants(grants: CompiledCommandBatchAuthority['grants']): AgentRunD
         ...grants,
         allowedOperationPrefixes: [...grants.allowedOperationPrefixes],
     };
+}
+
+/**
+ * Binds a planned schedule to the mode and ceiling this run was admitted under, so every later batch
+ * is proposed the way the first one was. Only apply and macro runs commit batches; the dispatcher
+ * refuses a schedule in any other mode before it reaches here.
+ */
+function bindBatchSchedule(input: MaterializePromptCommandPlanInput): AgentRunBatchSchedule | undefined {
+    const planned = input.result.batchSchedule;
+    if (planned === undefined) {
+        return undefined;
+    }
+    if (input.interactionMode !== 'apply' && input.interactionMode !== 'macro') {
+        throw new Error('Successive batches run only in apply or macro mode.');
+    }
+    return {
+        ...structuredClone(planned),
+        interactionMode: input.interactionMode,
+        trustCeiling: input.trustCeiling ?? null,
+    };
+}
+
+/** The commands the batch being planned and every later batch of its schedule still owe. */
+function getScheduledCommandCount(schedule: AgentRunBatchSchedule): number {
+    return schedule.slices
+        .filter((slice) => slice.position >= schedule.position)
+        .reduce((total, slice) => total + slice.commandCount, 0);
 }
 
 export function materializePromptCommandPlan(input: MaterializePromptCommandPlanInput) {
@@ -232,6 +259,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         return { status: 'terminal' as const, completion };
     }
 
+    const batchSchedule = bindBatchSchedule(input);
     const compiledActionExecution = compile(input.interactionMode);
     const { commandBatch } = compiledActionExecution;
     const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
@@ -262,6 +290,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         requireProviderProposal: input.result.executionMode === 'atomic',
         applicationAssignedTargetIds: getApplicationAssignedTargetIds(parsedCommandBatch.envelope),
         readyAssetIds,
+        ...(batchSchedule === undefined ? {} : { scheduledCommandCount: getScheduledCommandCount(batchSchedule) }),
     });
     if (plannedRun.status === 'needs-user-decision') {
         input.onResumedPlanAccepted?.();
@@ -318,6 +347,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             ...plannedRun.plan,
             commandIds,
             serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
+            ...(batchSchedule === undefined ? {} : { batchSchedule }),
         },
     });
     agentRunLifecycle.recordBatch({

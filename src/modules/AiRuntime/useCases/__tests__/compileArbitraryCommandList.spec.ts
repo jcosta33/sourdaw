@@ -236,8 +236,8 @@ describe('compileArbitraryCommandList', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
-    it('rejects an expanded semantic list above the runtime execution budget', () => {
-        const trackIds = Array.from({ length: 25 }, (_, index) => `track-budget-${String(index)}`);
+    const compileBudgetMute = (count: number) => {
+        const trackIds = Array.from({ length: count }, (_, index) => `track-budget-${String(index)}`);
         const budgetContext = {
             ...context,
             tracks: trackIds.map((id, index) => ({
@@ -246,40 +246,48 @@ describe('compileArbitraryCommandList', () => {
                 name: `Budget Track ${String(index)}`,
             })),
         };
-
-        expect(
-            compileArbitraryCommandList({
-                context: budgetContext,
-                revision: 'revision-command-budget',
-                calls: [
-                    {
-                        name: 'command.batch.propose',
-                        arguments: {
-                            plan: plan(trackIds),
-                            list: {
-                                schemaVersion: 1,
-                                items: [
-                                    {
-                                        id: 'mute-all-budget-tracks',
-                                        name: 'muteTrack',
-                                        arguments: { muted: true },
-                                        selector: {
-                                            targetArgument: 'trackId',
-                                            entity: 'track',
-                                            where: { kind: 'audio' },
-                                            quantity: { unit: 'targets', exactly: 25 },
-                                        },
+        return compileArbitraryCommandList({
+            context: budgetContext,
+            revision: 'revision-command-budget',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(trackIds.slice(0, 128)),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-all-budget-tracks',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: count },
                                     },
-                                ],
-                            },
+                                },
+                            ],
                         },
                     },
-                ],
-            })
-        ).toEqual({
+                },
+            ],
+        });
+    };
+
+    it('rejects a selector quantity above the set target bound', () => {
+        expect(compileBudgetMute(129)).toEqual({
             status: 'rejected',
             reason: 'Structured command list does not match the versioned application contract.',
         });
+    });
+
+    it('compiles a set larger than one batch for the run to propose as successive batches', () => {
+        const compiled = compileBudgetMute(25);
+
+        expect(compiled.status).toBe('accepted');
+        expect(compiled.status === 'accepted' ? compiled.compilerEvidence?.commands : []).toHaveLength(25);
     });
 
     it.each([

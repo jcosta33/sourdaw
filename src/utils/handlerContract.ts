@@ -1644,6 +1644,42 @@ export type AppAction =
       }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
+    | { type: 'renameMarker'; payload: { markerId: string; name: string } }
+    | { type: 'moveMarker'; payload: { markerId: string; beat: number } }
+    | { type: 'moveSection'; payload: { sectionId: string; startBeat: number } }
+    | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
+    | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
+    | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | {
+          /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
+           *  sections' exact pre-reorder beat spans and list positions, the gap
+           *  between them included. Emitted only by the reorder handler's
+           *  `describe()` — never invoked directly. */
+          type: 'restoreSectionBeats';
+          payload: { sections: Array<{ sectionId: string; startBeat: number; endBeat: number; index: number }> };
+      }
+    | { type: 'setClipGainEnvelope'; payload: { clipId: string; envelope: ClipSatelliteGainEnvelopeSnapshot | null } }
+    | { type: 'toggleClipGainEnvelope'; payload: { clipId: string; expectedEnabled?: boolean } }
+    | {
+          type: 'addGainEnvelopePoint';
+          payload: { clipId: string; beatOffset: number; gainDb: number; pointId?: string };
+      }
+    | { type: 'removeGainEnvelopePoint'; payload: { clipId: string; pointId: string } }
+    | { type: 'resetClipGainEnvelope'; payload: { clipId: string } }
+    | { type: 'addModulator'; payload: { modulator: Omit<ModulatorSnapshot, 'id'>; modulatorId?: string } }
+    | { type: 'removeModulator'; payload: { modulatorId: string } }
+    | {
+          type: 'updateModulator';
+          payload: { modulatorId: string; patch: { name?: string; enabled?: boolean; trackId?: string } };
+      }
+    | { type: 'addMapping'; payload: { modulatorId: string; mapping: ModulatorMappingSnapshot } }
+    | {
+          type: 'removeMapping';
+          payload: {
+              modulatorId: string;
+              target: Pick<ModulatorMappingSnapshot, 'targetTrackId' | 'targetDeviceId' | 'targetParamId'>;
+          };
+      }
     | {
           type: 'addAutomationLane';
           payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };

@@ -23,8 +23,6 @@ const mocks = vi.hoisted(() => ({
     executeUserAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
-    toggleVcaMembership: vi.fn(),
-    createAndAssignVcaGroup: vi.fn(),
     getVcaGroups: vi.fn<() => TestVcaGroup[]>(() => []),
     confirmUser: vi.fn<() => Promise<boolean>>(),
     releaseTouchAutomation: vi.fn(),
@@ -39,8 +37,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     selectTrack: mocks.selectTrack,
     removeTrack: mocks.removeTrack,
     renameTrack: mocks.renameTrack,
-    toggleVcaMembership: mocks.toggleVcaMembership,
-    createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
     getVcaGroups: mocks.getVcaGroups,
 }));
 
@@ -329,16 +325,25 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
+    // The strip writes through the canonical action path, so these pin the
+    // dispatched actions rather than the bare VCA use cases (which the strip
+    // no longer calls).
     it('assigns the track to a VCA group and creates a new one from the context menu', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Drums VCA' }));
-        expect(mocks.toggleVcaMembership).toHaveBeenCalledWith('track-1', 'vca-1');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'assignToVca',
+            payload: { trackId: 'track-1', vcaGroupId: 'vca-1' },
+        });
 
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: '+ New VCA Group' }));
-        expect(mocks.createAndAssignVcaGroup).toHaveBeenCalledWith('track-1');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'createVcaGroup',
+            payload: { name: 'VCA 1', trackIds: ['track-1'] },
+        });
     });
 
     it('removes the channel only after the user confirms', async () => {

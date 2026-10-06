@@ -1,5 +1,5 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
-import { type AgentRunProviderProposal } from './AgentRun';
+import { type AgentRunBatchSchedule, type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
@@ -53,6 +53,12 @@ export type IntentResult = {
      * else would be described by figures of a document other than the one it proposes.
      */
     measuredPreview?: MeasuredPreview;
+    /**
+     * Present when the compiled list expanded past one batch: these actions are batch `position` of
+     * the schedule, and the run proposes each later batch only after this one commits. The run's
+     * interaction mode and trust ceiling are bound to it when the plan is recorded.
+     */
+    batchSchedule?: Omit<AgentRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */
