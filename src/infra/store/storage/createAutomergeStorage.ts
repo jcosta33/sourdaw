@@ -1974,7 +1974,22 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         });
     };
 
-    const settleMetadataPredecessor = (): void => {
+    /**
+     * Flush this adapter's outstanding unscoped write, if any, before a scoped
+     * transaction's first write on the same slot commits on top of it.
+     *
+     * The scoped write's base was captured from the cache, which already
+     * includes the predecessor's value. If the predecessor were left pending,
+     * the document would lack content the scoped write's base and desired both
+     * carry — the reconciler's ownership law (#4858) would then read that
+     * content as "no delta of this writer's own" and skip it, stranding the
+     * predecessor's edit outside the document (a concurrent clip edit vanished
+     * on the next undo; a recording's punch-out extension reverted to its
+     * provisional geometry). Landing the predecessor first makes the scoped
+     * write reconcile against a document that already holds what its base
+     * holds, so its skip decisions describe reality.
+     */
+    const settleUnscopedPredecessor = (): void => {
         const commitOwner = unscopedCommitOwner;
         if (!commitOwner) {
             return;
@@ -2002,7 +2017,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         intentBase: TData | null,
         metadata: TWriteMetadata | null
     ): TData | null => {
-        if (!context.scoped || !writeMetadata || !rebasePending) {
+        if (!context.scoped) {
             return intendedValue;
         }
         if (pendingWritesByOwner.has(context.commitOwner)) {
@@ -2012,7 +2027,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!predecessorOwner || !pendingWritesByOwner.has(predecessorOwner)) {
             return intendedValue;
         }
-        settleMetadataPredecessor();
+        settleUnscopedPredecessor();
+        if (!writeMetadata || !rebasePending) {
+            return intendedValue;
+        }
         if (cachedValue === null) {
             return intendedValue;
         }

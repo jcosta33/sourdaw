@@ -9,8 +9,17 @@ import type { Track } from '../../../../models/TrackViewTypes';
 const mockSetSend = vi.fn();
 
 const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
+// The action-routed graph pulls more of the barrel in than the view itself
+// calls, so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppActionBatch: vi.fn().mockResolvedValue([]),
+    pushUndoEntry: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {

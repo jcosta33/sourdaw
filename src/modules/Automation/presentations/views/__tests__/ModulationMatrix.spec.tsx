@@ -109,6 +109,9 @@ vi.mock('../../../stores/modulationStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { __id: 'track' },
     defaultTrackState: { tracks: [], selectedTrackId: null },
+    // The action-routed graph reaches revertMappingsToBase, which imports this
+    // from the barrel; the mock has to supply every name the graph imports.
+    resolveEligibleDeviceWriteTarget: vi.fn(() => ({ status: 'missing' })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({

@@ -161,7 +161,20 @@ function reconcileChild(input: ReconcileChildInput): void {
     // the writer actually changed relative to its base is its to write; the
     // document's current value is newer truth wherever the writer owns no
     // delta.
+    //
+    // The one exception is a node the document lacks entirely. There the base
+    // itself never landed: the writer's copy — a seed write still pending, an
+    // unflushed frame — is the only copy in existence, and skipping would
+    // strand it outside the document for the next projection to erase. An
+    // absent node holds no newer truth to clobber, so the value lands; a node
+    // the document *has*, with any content, stands (#4858). This is the line
+    // between "the writer did not change this" and "the document is behind
+    // the base this write was derived from": both show base == desired, but
+    // only the first means the write owns no delta.
     if (isSameValue(base, desired)) {
+        if (current === undefined && desired !== undefined) {
+            writeChild(container, field, desired);
+        }
         return;
     }
 

@@ -93,9 +93,18 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 // Toggle, add, remove and reset dispatch through the command path (#4617); the
-// assertions below pin the dispatched actions, not the bare use cases.
+// assertions below pin the dispatched actions, not the bare use cases. The
+// action-routed graph pulls more of the barrel in than the view itself calls,
+// so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
+    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppActionBatch: vi.fn().mockResolvedValue([]),
+    pushUndoEntry: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {

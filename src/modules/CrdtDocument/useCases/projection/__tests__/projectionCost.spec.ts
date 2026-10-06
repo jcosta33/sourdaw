@@ -168,11 +168,14 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
             });
         });
 
-        // Measured on this harness: 2 serializations for the local write (its
-        // authored `toDocSafe` round-trip and fresh terminal decode) against 49 for the full re-projection —
+        // Measured on this harness: 4 serializations for the local write —
+        // its authored `toDocSafe` round-trip, the #4858 ownership guard's
+        // base-versus-desired compare (a composite slot write pays one
+        // stringify per side to learn whether the writer owns a delta), and
+        // the fresh terminal decode — against 49 for the full re-projection,
         // which is what every local write used to pay, and grows with the
         // project because each slot serializes its whole payload.
-        expect(localWriteCost).toBe(2);
+        expect(localWriteCost).toBe(4);
         expect(localWriteCost).toBeLessThan(fullProjectionCost);
         expect(fullProjectionCost).toBeGreaterThanOrEqual(projectSlotProjections.length);
     });
