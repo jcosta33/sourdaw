@@ -1145,6 +1145,8 @@ export function startNativeLiveGraphSession(
                 if (started.outcome !== 'applied') {
                     releaseCarriedStrips();
                     backend.dispose();
+                    // Refused whole, so the projected chains name a graph nothing built — clearing restores the record the stop left, as the unreconciled branch below.
+                    clearNativeChains();
                     notifyNativeDecline(started.reason);
                     return { outcome: 'declined', reason: started.reason };
                 }

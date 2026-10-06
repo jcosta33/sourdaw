@@ -702,6 +702,13 @@ export async function scheduleMidiNotes(
         return;
     }
 
+    // The frozen path's window floor (#4784) binds on the same emissions the
+    // audio-clip twin's does — a wrap handover or a landing, where the window
+    // opens at a boundary the playhead stands at or behind — never on a
+    // steady-state window, whose first beat sits a look-ahead ahead of the
+    // playhead and would hold a late join silent.
+    const floorsToWindowStart =
+        fromBeat <= accumulatedPosition || (transport.isLooping === true && fromBeat === transport.loopStart);
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
     // #4924 — the earliest start an admitted Yeast segment may still schedule
@@ -751,7 +758,13 @@ export async function scheduleMidiNotes(
             // rest of the session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    currentTempo,
+                    floorsToWindowStart ? fromBeat : null
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }

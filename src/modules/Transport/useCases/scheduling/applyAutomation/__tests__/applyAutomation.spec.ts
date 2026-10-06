@@ -668,6 +668,47 @@ describe('applyAutomation', () => {
             expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', expect.closeTo(4.3, 9));
         });
 
+        // #4784 review — the wrap-back must follow the dying tail through the
+        // tempo map, not add the region's beat span: with a tempo change inside
+        // the region, the beat-space addition names a beat half a compensation
+        // window away from the material the track is actually fed.
+        it('maps the wrap-back through the tempo map in seconds when a tempo change sits inside the region', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            // The two mappings disagree: the beat-space region-span addition
+            // lands on 7.2, the seconds-mapped read on 7.6 — the boundary below
+            // separates them.
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7.4 ? 0 : 1));
+
+            // 120 BPM to beat 6, 60 after — the change sits inside [4, 8].
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-change-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-change-1', beat: 6, tempo: 60, curve: 'instant' },
+                ],
+            });
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 600;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 601;
+            applyAutomation(4.2);
+
+            // Wrapped-domain read: 4.2 beats = 2.1 s − 0.5 s = 1.6 s → 3.2,
+            // before loopStart — inside the compensation window. The chain entry
+            // sits 0.5 s behind the clock: 0.4 s before the seam at 60 BPM is
+            // 0.4 beats, so the dying tail the track is fed is beat 7.6 — not
+            // 7.2, the beat-space span addition.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.6, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
         it('gates a clip-owned device lane on the compensated beat, not the playhead beat, so it does not fire before the clip audio has reached the device', () => {
             seedDeviceLane({
                 devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],

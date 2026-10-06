@@ -42,6 +42,7 @@ import { updateDeviceParam } from '../../deviceControls/updateDeviceParam';
 import { masterGainState } from '../../engineAccess/masterGainState';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { isDeviceCarriedByNativeSession } from '../isDeviceCarriedByNativeSession';
+import { isDeviceHeldByNativeSession } from '../isDeviceHeldByNativeSession';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -2760,6 +2761,47 @@ describe('the chain record a rolling mirror addresses', () => {
         await stopNativeLiveGraphSession({ positionSeconds: 3 });
 
         expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([['audio-1', ['device-a']]]);
+    });
+
+    /**
+     * The claim projects the chains of a batch the engine then refuses whole,
+     * so an uncorrected record would name bodies nothing ever built — and the
+     * held question would answer true for a device the engine has never held.
+     * The empty record the stop left is the truthful one to restore.
+     */
+    it('is cleared when the engine refuses the first batch the claim projected', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+        });
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        await stopNativeLiveGraphSession({ positionSeconds: 3 });
+
+        const addedDevice: Device = {
+            id: 'dev-1',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: {},
+        };
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [addedDevice] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.topologyOverride = [
+            { ...CARRIED_STRIP, devices: [addedDevice] },
+            { kind: 'set-transport', playing: false, positionSeconds: 0 },
+        ];
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'transport busy',
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(isDeviceHeldByNativeSession('audio-1', 'dev-1')).toBe(false);
     });
 });
 

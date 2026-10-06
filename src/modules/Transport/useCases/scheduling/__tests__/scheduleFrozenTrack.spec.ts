@@ -56,7 +56,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 8 }, { startBeat: 12 }],
         };
 
-        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120, null);
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(scheduled).toBe(true);
@@ -73,7 +73,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 0 }],
         };
 
-        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120, null);
 
         expect(scheduled).toBe(false);
         expect(getCachedAudioBuffer).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 0 }],
         };
 
-        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120, null);
 
         expect(scheduled).toBe(false);
         expect(createBufferSource).not.toHaveBeenCalled();
@@ -112,7 +112,7 @@ describe('scheduleFrozenTrack', () => {
         // trackStartBeat 0, accumulatedPosition 2 beats, tempo 120bpm (2 beats/sec)
         // => beatOffset -2 beats => -1 second: playback is already 1s in when this
         // tick fires, so it must start the source at an offset instead of at time 0.
-        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120);
+        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120, null);
 
         expect(scheduled).toBe(true);
         expect(start).toHaveBeenCalledWith(0, 1);
@@ -134,7 +134,7 @@ describe('scheduleFrozenTrack', () => {
         };
         const activeAudioSources: AudioBufferSourceNode[] = [];
 
-        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120);
+        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120, null);
 
         expect(scheduled).toBe(true);
         expect(start).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('scheduleFrozenTrack', () => {
         const otherSource = { start: vi.fn() } as never;
         const activeAudioSources: AudioBufferSourceNode[] = [otherSource];
 
-        scheduleFrozenTrack(track, 0, activeAudioSources, 120);
+        scheduleFrozenTrack(track, 0, activeAudioSources, 120, null);
         expect(activeAudioSources).toContain(source as never);
 
         source.onended?.();
@@ -192,7 +192,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 8 }],
         };
 
-        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120, null);
 
         expect(scheduled).toBe(true);
         expect(getCompensationDelay).toHaveBeenCalledWith('track-frozen');
@@ -218,7 +218,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 0 }],
         };
 
-        expect(scheduleFrozenTrack(track, 0, [], 120)).toBe(true);
+        expect(scheduleFrozenTrack(track, 0, [], 120, null)).toBe(true);
         expect((source as { compensationSeconds?: number }).compensationSeconds).toBe(0.02);
     });
 
@@ -242,7 +242,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 8 }],
         };
 
-        scheduleFrozenTrack(track, 0, [], 120);
+        scheduleFrozenTrack(track, 0, [], 120, null);
 
         // 8 beats at 120bpm = 4s, plus the 20ms the chain carried at freeze time.
         expect(start).toHaveBeenCalledWith(4.02);
@@ -266,10 +266,44 @@ describe('scheduleFrozenTrack', () => {
 
         // beatOffset −2 beats = −1s, so the compensated start is −0.98s: the
         // buffer must resume 0.98s in, not the uncompensated 1s.
-        const scheduled = scheduleFrozenTrack(track, 2, [], 120);
+        const scheduled = scheduleFrozenTrack(track, 2, [], 120, null);
 
         expect(scheduled).toBe(true);
         expect(start).toHaveBeenCalledWith(0, 0.98);
+    });
+
+    // #4784 review — on the seam's incoming-pass emission the frozen track is
+    // re-scheduled against the negative-phase anchor, so a whole-arrangement
+    // buffer whose track starts before the loop region maps its head into the
+    // past: the mid-buffer join layered pre-loop content under the dying
+    // pass's spared tail for the whole compensation window. Like the live clip
+    // path (#4784), the join floors to the window's first beat and holds until
+    // the spared tail hands over.
+    it('floors the join to the wrap window’s first beat so the strip holds until the spared tail hands over', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+
+        // Incoming-pass emission: the anchor 3.8 is the negative-phase beat a
+        // tenth of a second before loopStart 4, and the window opens at 4.
+        // Unfloored, the buffer starts mid-way at content 1.65 s in — beat 3.3,
+        // before the loop, layered under the dying tail.
+        const scheduled = scheduleFrozenTrack(track, 3.8, [], 120, 4);
+
+        expect(scheduled).toBe(true);
+        // The window's first beat is due at 10 + 0.1 + 0.25 = 10.35 with beat
+        // 4's content 2 s into the buffer.
+        expect(start).toHaveBeenCalledWith(expect.closeTo(10.35, 9), expect.closeTo(2, 9));
     });
 
     it('integrates the tempo map between the playhead and the track start', () => {
@@ -298,7 +332,7 @@ describe('scheduleFrozenTrack', () => {
             clips: [{ startBeat: 8 }],
         };
 
-        expect(scheduleFrozenTrack(track, 0, [], 120)).toBe(true);
+        expect(scheduleFrozenTrack(track, 0, [], 120, null)).toBe(true);
         expect(start).toHaveBeenCalledWith(6);
     });
 });

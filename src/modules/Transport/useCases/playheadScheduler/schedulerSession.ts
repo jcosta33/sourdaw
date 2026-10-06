@@ -25,25 +25,49 @@ export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode; 
  * every source at the seam itself silences the last `compensation` seconds of
  * the loop. A source without a recorded compensation — MIDI, metronome, or
  * anything scheduled on the plain clock — fences at the seam unchanged.
+ *
+ * A fence whose instant is still ahead is kept referenced on the session's
+ * pending-fence list, because the pool is emptied either way and nothing else
+ * holds the source: a teardown firing inside the fence window must still be
+ * able to cut the spared tail, which it does with the same immediate semantic.
+ * Entries whose instant has passed name sources that already stopped
+ * themselves and are dropped.
  */
 export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioContext, stopAtTime?: number): void {
     const now = ctx.currentTime;
     for (const src of sources as SourceWithFade[]) {
         const stopAt =
             stopAtTime === undefined ? now + 0.005 : Math.max(stopAtTime + (src.compensationSeconds ?? 0), now);
-        const fadeStart = Math.max(stopAt - 0.005, now);
-        try {
-            if (src.fadeGainNode) {
-                src.fadeGainNode.gain.cancelScheduledValues(now);
-                src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, fadeStart);
-                src.fadeGainNode.gain.linearRampToValueAtTime(0, stopAt);
-            }
-            src.stop(stopAt);
-        } catch {
-            /* already stopped */
+        cutSourceAt(src, now, stopAt);
+        if (stopAtTime !== undefined && stopAt > now) {
+            schedulerSession.pendingFences.push({ source: src, stopAt });
         }
     }
     sources.length = 0;
+    if (stopAtTime === undefined) {
+        for (const fence of schedulerSession.pendingFences) {
+            if (fence.stopAt > now) {
+                cutSourceAt(fence.source, now, now + 0.005);
+            }
+        }
+        schedulerSession.pendingFences.length = 0;
+        return;
+    }
+    schedulerSession.pendingFences = schedulerSession.pendingFences.filter((fence) => fence.stopAt > now);
+}
+
+function cutSourceAt(src: SourceWithFade, now: number, stopAt: number): void {
+    try {
+        if (src.fadeGainNode) {
+            const fadeStart = Math.max(stopAt - 0.005, now);
+            src.fadeGainNode.gain.cancelScheduledValues(now);
+            src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, fadeStart);
+            src.fadeGainNode.gain.linearRampToValueAtTime(0, stopAt);
+        }
+        src.stop(stopAt);
+    } catch {
+        /* already stopped */
+    }
 }
 
 // §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
@@ -58,6 +82,12 @@ export const schedulerSession = {
     scheduledAudioClips: new Set<string>(),
     scheduledFrozenTracks: new Set<string>(),
     activeAudioSources: [] as AudioBufferSourceNode[],
+    // Loop-seam fences whose stop instant is still ahead of the clock (#4784).
+    // The fence empties the source pool, so this list is the only reference to
+    // the spared tails; a teardown firing inside the window cuts them from here
+    // (`stopActiveSources` without a stop time). Entries are dropped once their
+    // instant passes and the sources have stopped themselves.
+    pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
     // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip

@@ -92,6 +92,17 @@ export function scheduleAudioClips(
         tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
     );
 
+    // The window floor below (#4784) names a boundary the playhead stands at or
+    // behind: a wrap handover — the window opening at loopStart while the
+    // playhead is wrapped onto it or still negative-phase before it — or a
+    // landing, where the window opens at the landing beat itself. A
+    // steady-state window instead opens one look-ahead ahead of the playhead,
+    // and flooring a fresh mid-pass join to it held the source silent for
+    // look-ahead + compensation while skipping the material in between; there
+    // the unfloored mid-buffer continuation is the correct join.
+    const floorsToWindowStart =
+        fromBeat <= accumulatedPosition || (transport.isLooping === true && fromBeat === transport.loopStart);
+
     for (const track of tracks) {
         if (track.kind !== 'audio') {
             continue;
@@ -107,7 +118,13 @@ export function scheduleAudioClips(
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, transport.tempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    transport.tempo,
+                    floorsToWindowStart ? fromBeat : null
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -313,7 +330,8 @@ export function scheduleAudioClips(
                 // earliest content this emission may sound; when its due
                 // instant is still ahead of the source's own start, the source
                 // begins there instead, holding the window's content.
-                const floorStartTime = fromBeat > iterStartBeat ? beatToAudioTime(fromBeat) : iterStartTime;
+                const floorStartTime =
+                    floorsToWindowStart && fromBeat > iterStartBeat ? beatToAudioTime(fromBeat) : iterStartTime;
                 const audibleStartTime = Math.max(soundStartTime, floorStartTime);
 
                 // Nothing audible remains: the pre-roll swallowed the iteration,

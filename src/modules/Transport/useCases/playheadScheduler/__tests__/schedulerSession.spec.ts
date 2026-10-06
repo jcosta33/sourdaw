@@ -118,4 +118,34 @@ describe('stopActiveSources', () => {
 
         expect(compensated.stop).toHaveBeenCalledWith(10.005);
     });
+
+    // #4784 review — a seam fence schedules the stop one compensation into the
+    // future and empties the pool, so a teardown firing inside that window
+    // found nothing to cut: the spared tail outlived the stop that was supposed
+    // to end it. The session keeps fences whose instant is still ahead
+    // referenced, and the teardown semantic cuts them immediately.
+    it('cuts a source whose fence is still ahead when a teardown fires before the fence instant', () => {
+        const compensated = { stop: vi.fn(), compensationSeconds: 0.25 } as unknown as SourceWithFade;
+
+        stopActiveSources([compensated], ctx, 10.5);
+        expect(compensated.stop).toHaveBeenCalledWith(10.75);
+
+        stopActiveSources([], ctx);
+
+        expect(compensated.stop).toHaveBeenLastCalledWith(10.005);
+    });
+
+    it('drops a fence once its instant has passed instead of holding the source for ever', () => {
+        const compensated = { stop: vi.fn(), compensationSeconds: 0.25 } as unknown as SourceWithFade;
+
+        stopActiveSources([compensated], ctx, 10.5);
+
+        const laterCtx = { currentTime: 11 } as BaseAudioContext;
+        stopActiveSources([], laterCtx);
+
+        // The fence instant (10.75) is behind the later clock: the source has
+        // already stopped itself, so the teardown neither re-stops it nor holds
+        // the reference.
+        expect(compensated.stop).toHaveBeenCalledTimes(1);
+    });
 });

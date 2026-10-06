@@ -34,6 +34,7 @@ import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/util
 import { secondsBetweenBeats, samplesToBeat } from '../../../models/TempoMap';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStore';
+import { beatAtSecondsFromAnchor } from '../../playheadScheduler/beatAtSecondsFromAnchor';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
@@ -288,12 +289,25 @@ export function applyAutomation(currentBeat: number): Set<string> {
             const secondsSinceSeam = seamAudioTime === null ? Infinity : now - seamAudioTime;
             if (
                 region?.isLooping === true &&
+                seamAudioTime !== null &&
                 secondsSinceSeam >= 0 &&
                 secondsSinceSeam < compensation &&
                 currentBeat >= region.loopStart &&
                 beat < region.loopStart
             ) {
-                beat += region.loopEnd - region.loopStart;
+                // The dying pass died on the seam at loopEnd, and the chain
+                // entry sits `compensation` behind the clock, so the material
+                // the track is fed is the tail that many seconds before
+                // loopEnd — mapped through the same integration the seam model
+                // uses (`beatAtSecondsFromAnchor` over the map), never a
+                // beat-space region-span addition, which reads the wrong beat
+                // once a tempo change sits inside the region.
+                beat = beatAtSecondsFromAnchor(
+                    changes,
+                    region.loopEnd,
+                    now - seamAudioTime - compensation,
+                    defaultTempo
+                );
             }
         }
         compensatedBeatByTrack.set(trackId, beat);
