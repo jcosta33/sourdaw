@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_0883b042edc4ef::t_caedab5f77ee71 1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "530a6d6d139b43b5f6cdabb62881b00fac7357ef",
+  "prompts": {},
+  "sessions": {
+    "s_0883b042edc4ef": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "60ff1089-76f1-4311-baa8-ba499aec27fb",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
