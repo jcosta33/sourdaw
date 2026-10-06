@@ -669,6 +669,23 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         vi.unstubAllGlobals();
     });
 
+    it('finds the hi-hat target through the canonical role when its name is "Hi Hats"', async () => {
+        landProjectEdit(() => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-hats' ? { ...track, name: 'Hi Hats' } : track
+                ),
+            });
+        });
+
+        const scope = getDrumPreviewBranchesPromptScope(getProjectContext(), 'revision-test');
+
+        expect(scope).toMatchObject({ status: 'request', hiHat: { trackId: 'track-hats', trackName: 'Hi Hats' } });
+        await sendChatMessage(PROMPT);
+        expect(getConfirmationId()).not.toBe('');
+    });
+
     it('routes a semantic paraphrase to the drum-preview capability', async () => {
         await sendChatMessage(PARAPHRASE);
         expect(getConfirmationId()).not.toBe('');

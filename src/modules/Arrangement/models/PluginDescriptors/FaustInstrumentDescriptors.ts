@@ -1,7 +1,13 @@
 import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameterTypes';
 
 import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+import {
+    ELECTRIC_PIANO_GUIDANCE,
+    ELECTRIC_PIANO_PARAMETER_GUIDANCE,
+    SUPERSAW_GUIDANCE,
+    SUPERSAW_PARAMETER_GUIDANCE,
+} from './FaustInstrumentDescriptorsGuidance';
+import { FM_SYNTH_GUIDANCE, FM_SYNTH_PARAMETER_GUIDANCE } from './FaustInstrumentDescriptorsGuidanceFm';
 
 /**
  * Plugin descriptors for Faust DSP instruments.
@@ -140,24 +146,11 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
 ];
 
-const faustInstrumentGuidance = instrumentGuidance(
-    'Play the declared Faust instrument controls conservatively and level-match against bypass.',
-    ['Set output gain before increasing brightness, detune, or envelope extremes.'],
-    ['Timbre, envelope, and filter controls interact through the selected Faust algorithm.'],
-    ['Extreme settings can build level, mask note detail, or create harsh artifacts.']
-);
-
-const faustInstrumentControl = declaredControl(
-    'Faust instrument control',
-    'Changes the selected Faust instrument voice or its output balance.',
-    ['Evaluate the control with the algorithm’s other timbre or envelope settings.'],
-    ['Extreme settings can build level or obscure note detail.']
-);
-
+// No fallback: every parameter is authored in the two guidance files above.
 const FAUST_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
-    descriptorGuidance('faust-rhodes', faustInstrumentGuidance, faustInstrumentControl),
-    descriptorGuidance('faust-fm-synth', faustInstrumentGuidance, faustInstrumentControl),
-    descriptorGuidance('faust-supersaw-unison', faustInstrumentGuidance, faustInstrumentControl),
+    descriptorGuidance('faust-rhodes', ELECTRIC_PIANO_GUIDANCE, undefined, ELECTRIC_PIANO_PARAMETER_GUIDANCE),
+    descriptorGuidance('faust-fm-synth', FM_SYNTH_GUIDANCE, undefined, FM_SYNTH_PARAMETER_GUIDANCE),
+    descriptorGuidance('faust-supersaw-unison', SUPERSAW_GUIDANCE, undefined, SUPERSAW_PARAMETER_GUIDANCE),
 ];
 
 export const FAUST_INSTRUMENT_DESCRIPTORS = applyDescriptorGuidance(

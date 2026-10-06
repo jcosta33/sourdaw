@@ -555,6 +555,57 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(resetMetronomeBeat)).toHaveBeenCalledWith(expect.closeTo(0.1, 5));
     });
 
+    // #4784 — the late wrap's fence ran at now + 5 ms, cutting the loop-end
+    // tail a compensated source is still owed (it was scheduled its compensation
+    // late, so that tail is due past the seam instant). The wrap must fence at
+    // the seam it just crossed, per source.
+    it('fences each dying-pass source at the late wrap’s seam plus its own compensation (#4784)', async () => {
+        const compensated = { stop: vi.fn(), compensationSeconds: 0.25 };
+        const plain = { stop: vi.fn() };
+        vi.mocked(scheduleAudioClips).mockImplementation(
+            (
+                _fromBeat: number,
+                _toBeat: number,
+                _accumulatedPosition: number,
+                _scheduled: Set<string>,
+                _frozen: Set<string>,
+                activeSources: AudioBufferSourceNode[]
+            ) => {
+                activeSources.push(compensated as unknown as AudioBufferSourceNode);
+                activeSources.push(plain as unknown as AudioBufferSourceNode);
+            }
+        );
+        // A region at or below the look-ahead (0.2 beats at 120 BPM) never arms
+        // the scheduled seam, so every wrap here is the late one.
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 0.2,
+        });
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+
+        // Tick 1 wraps (0 → 0.2 beats) and its post-wrap emission plants the
+        // sources; tick 2 wraps again, and its fence is the one under test.
+        ctxTime.now = 0.2;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        ctxTime.now = 0.4;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // The clamped advance lands the playhead exactly on loopEnd 0.2, so the
+        // seam instant is the tick's own clock (0.4). Unfixed, both sources are
+        // stopped at 0.405 and the compensated tail never plays.
+        expect(plain.stop).toHaveBeenCalledWith(0.4);
+        expect(compensated.stop).toHaveBeenCalledWith(expect.closeTo(0.65, 9));
+    });
+
     it('plays straight through without wrapping when starting playback at or past loopEnd (#4117)', async () => {
         transportStoreState.value = playingState({
             playheadPosition: 4.5,

@@ -109,3 +109,53 @@ describe('automation curve conformance — offline compiler matches the shared k
         });
     }
 });
+
+// #4654: two points on one beat are a hard automation jump, and the compiled
+// event list must evaluate to the live lookup's value at EVERY time, ties
+// included — the ramp into the jump plays, and the array-later tied point
+// takes over at and after it. A per-event equality assertion cannot express
+// this (the ramp's arrival sample and the jump share one beat), so the stream
+// itself is evaluated at every event time and midpoint.
+describe('automation curve conformance — tied points (hard jump)', () => {
+    it('the compiled stream evaluates to the live lookup at every time, ties included', () => {
+        const points: AutomationPoint[] = [
+            { beat: 0, value: 0, curve: 'linear', tension: 0 },
+            { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            { beat: 4, value: 0.2, curve: 'linear', tension: 0 },
+            { beat: 8, value: 0.2, curve: 'linear', tension: 0 },
+        ];
+        const events = compileAutomationEvents(points, 8, DEFAULT_TEMPO, NO_CHANGES, 0, identityProjector);
+        expect(events.length).toBeGreaterThan(0);
+
+        // Value of the compiled Web Audio event list at `time`: a `set` holds,
+        // a `linear` ramps from the previous event.
+        const streamValueAt = (time: number): number => {
+            let previous = events[0]!;
+            for (const event of events) {
+                if (event.timeSeconds > time) {
+                    if (event.type !== 'linear') {
+                        return previous.value;
+                    }
+                    const span = event.timeSeconds - previous.timeSeconds;
+                    return previous.value + ((event.value - previous.value) * (time - previous.timeSeconds)) / span;
+                }
+                previous = event;
+            }
+            return previous.value;
+        };
+
+        const sampleTimes = new Set<number>();
+        for (let index = 0; index < events.length; index++) {
+            sampleTimes.add(events[index]!.timeSeconds);
+            if (index > 0) {
+                sampleTimes.add((events[index - 1]!.timeSeconds + events[index]!.timeSeconds) / 2);
+            }
+        }
+        for (const time of sampleTimes) {
+            expect(streamValueAt(time), `compiled stream at beat ${time}`).toBeCloseTo(
+                liveValueAtBeat(points, time),
+                6
+            );
+        }
+    });
+});

@@ -44,7 +44,6 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
-import { checkCancel } from './checkCancel';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
@@ -145,7 +144,11 @@ export type ScheduleTrackClipsInput = {
     tally?: OfflineScheduleTally;
     /** Render-time boundary after which scheduled sources belong to the returned buffer. */
     tallyStartSeconds?: number;
-    /** Caller-owned cancellation for freeze/bounce scheduling. */
+    /**
+     * The only cancellation this scheduler observes. The process-wide export
+     * flag belongs to the callers that began an export scope: a freeze or
+     * bounce scheduling beside a cancelled export must not read it (#4782).
+     */
     abortSignal?: AbortSignal;
     /**
      * The render's frame scheduler for its `offlineCtx`, handed down so every
@@ -185,11 +188,6 @@ export async function scheduleTrackClips({
     abortSignal,
     scheduleFrame,
 }: ScheduleTrackClipsInput): Promise<void> {
-    function checkScheduleCancel(): void {
-        checkCancel();
-        checkCallerAbort();
-    }
-
     function checkCallerAbort(): void {
         if (abortSignal?.aborted) {
             throw new Error('Render aborted');
@@ -529,7 +527,7 @@ export async function scheduleTrackClips({
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         for (const note of notes) {
-            checkScheduleCancel();
+            checkCallerAbort();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                 continue;
             }

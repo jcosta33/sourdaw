@@ -34,20 +34,36 @@ describe('exportCancellation', () => {
     it('should throw from checkCancel after cancelExport', async () => {
         const { checkCancel } = await import('../checkCancel');
         const { cancelExport } = await import('../exportCancellation');
-        const { resetCancelFlag } = await import('../resetCancelFlag');
-        resetCancelFlag();
+        const { endExportCancellationScope } = await import('../endExportCancellationScope');
+        endExportCancellationScope();
         cancelExport();
         expect(() => checkCancel()).toThrow(/cancelled/);
     });
 
-    it('should reset cancel flag', async () => {
+    it('should lower the cancel flag when the export scope closes', async () => {
         const { cancelExport } = await import('../exportCancellation');
         const { isCancelRequested } = await import('../isCancelRequested');
-        const { resetCancelFlag } = await import('../resetCancelFlag');
+        const { endExportCancellationScope } = await import('../endExportCancellationScope');
         cancelExport();
         expect(isCancelRequested()).toBe(true);
-        resetCancelFlag();
+        endExportCancellationScope();
         expect(isCancelRequested()).toBe(false);
+    });
+
+    it('installs a fresh controller when the export scope closes', async () => {
+        const { cancelExport } = await import('../exportCancellation');
+        const { endExportCancellationScope } = await import('../endExportCancellationScope');
+        const { beginExportCancellationScope } = await import('../beginExportCancellationScope');
+        const { exportCancellationState } = await import('../exportCancellationState');
+        const staleScopeSignal = beginExportCancellationScope();
+        cancelExport();
+        expect(staleScopeSignal.aborted).toBe(true);
+
+        endExportCancellationScope();
+
+        // The signal state installs always belongs to the scope window that is
+        // currently open, never the cancelled one.
+        expect(exportCancellationState.controller.signal.aborted).toBe(false);
     });
 
     it('should create fresh cancellation state after module reset', async () => {

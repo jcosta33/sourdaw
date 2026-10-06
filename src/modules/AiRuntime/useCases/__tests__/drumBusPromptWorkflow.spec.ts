@@ -57,8 +57,10 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
+import { getDrumRenderComparisonPromptScope } from '../agentReference/getDrumRenderComparisonPromptScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
@@ -1225,6 +1227,70 @@ describe('drum bus prompt workflow', () => {
         );
         expect(confirmation).not.toBeNull();
         expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
+    });
+
+    it('accepts a drum room named "Drums (Room)" as the EX-11 room routed to master', async () => {
+        setEx11Project();
+        const tracks = (trackStore.value?.tracks ?? []).map((track) =>
+            track.id === 'track-room' ? { ...track, name: 'Drums (Room)' } : track
+        );
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+        ensureRealTrackStrips(tracks.map((track) => track.id));
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.actions[0]).toMatchObject({
+            type: 'createBus',
+            payload: { expectedTrackOutputs: [{ trackId: 'track-room', outputId: 'master' }] },
+        });
+    });
+
+    it('refuses the EX-11 scope for a routable track whose role no classifier could name', () => {
+        setEx11Project();
+        const tracks = [...(trackStore.value?.tracks ?? []), createTrack('track-audio-7', 'Audio 7')];
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+
+        expect(getDrumRenderComparisonPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-11 track role is ambiguous: track-audio-7',
+        });
+    });
+
+    it('protects Ref Mix and Guide tracks in EX-11 instead of refusing the scope as ambiguous', async () => {
+        setEx11Project();
+        const tracks = [
+            ...(trackStore.value?.tracks ?? []),
+            createTrack('track-ref-mix', 'Ref Mix'),
+            createTrack('track-guide', 'Guide'),
+        ];
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+        ensureRealTrackStrips(tracks.map((track) => track.id));
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'track-ref-mix' }),
+                expect.objectContaining({ id: 'track-guide' }),
+            ])
+        );
+        expect(confirmation?.affectedIds).not.toContain('track-ref-mix');
+        expect(confirmation?.affectedIds).not.toContain('track-guide');
     });
 
     it('inspects only the supplied project document and preserves a real master-track fingerprint', () => {
@@ -3228,14 +3294,13 @@ describe('drum bus prompt workflow', () => {
         expect([getTrack('track-parallel'), getTrack('track-bass')]).toEqual(unchangedBefore);
     });
 
-    it('projects standard Bass Drum, BD, and OH roles without routing bass instruments or arbitrary name matches', async () => {
+    it('projects standard Bass Drum, BD, and OH roles without routing bass instruments', async () => {
         trackStore.set({
             tracks: [
                 createTrack('track-bass-drum', 'Bass Drum'),
                 createTrack('track-bd', 'BD'),
                 createTrack('track-oh', 'OH'),
                 createTrack('track-bass', 'Bass DI'),
-                createTrack('track-hat-trick', 'Hat Trick'),
                 createTrack('track-parallel', 'Parallel Compression Return'),
                 createTrack('bus-drums', 'Drum Bus', 'bus'),
             ],
@@ -3256,7 +3321,123 @@ describe('drum bus prompt workflow', () => {
             )
         ).toEqual(['track-bass-drum', 'track-bd', 'track-oh']);
         expect(confirmation?.affectedIds).not.toContain('track-bass');
-        expect(confirmation?.affectedIds).not.toContain('track-hat-trick');
+    });
+
+    it('routes a kit with a "Drums (Room)" track instead of refusing it as ambiguous', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-drums-room', 'Drums (Room)'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-drums-room']);
+    });
+
+    it('routes the kit and protects a Bass Pad track, a keys-family part, instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-snare', 'Snare'),
+                createTrack('track-bass-pad', 'Bass Pad'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-snare']);
+        expect(confirmation?.affectedIds).not.toContain('track-bass-pad');
+    });
+
+    it('routes Rim Click with the kit and protects Guide Vocal and String Bass instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-rim-click', 'Rim Click'),
+                createTrack('track-guide-vocal', 'Guide Vocal'),
+                createTrack('track-string-bass', 'String Bass'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-rim-click']);
+        expect(confirmation?.affectedIds).not.toContain('track-guide-vocal');
+        expect(confirmation?.affectedIds).not.toContain('track-string-bass');
+    });
+
+    it('routes the kit and protects click, reference, strings and Hat Trick tracks instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-snare', 'Snare'),
+                createTrack('track-click', 'Click'),
+                createTrack('track-reference', 'Reference'),
+                createTrack('track-strings', 'Strings'),
+                createTrack('track-hat-trick', 'Hat Trick'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-snare']);
+        for (const protectedId of ['track-click', 'track-reference', 'track-strings', 'track-hat-trick']) {
+            expect(confirmation?.affectedIds).not.toContain(protectedId);
+        }
     });
 
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
@@ -3324,7 +3505,7 @@ describe('drum bus prompt workflow', () => {
                     name: 'Kick',
                     kind: 'audio',
                     role: 'kick',
-                    roleEvidence: 'canonical-name:kick',
+                    roleEvidence: 'canonical-role:kick:name-tags',
                     currentOutputId: 'master',
                     frozen: false,
                     locked: false,
@@ -3332,7 +3513,7 @@ describe('drum bus prompt workflow', () => {
             );
             expect(capability.protectedReturn).toMatchObject({ id: 'track-parallel' });
             expect(capability.protectedNonDrums).toContainEqual(
-                expect.objectContaining({ id: 'track-bass', name: 'Bass DI', kind: 'audio', role: 'bass-instrument' })
+                expect.objectContaining({ id: 'track-bass', name: 'Bass DI', kind: 'audio', role: 'bass' })
             );
             expect(capability.actionType).toBe('setTrackOutput');
             expect(capability.allowedAction).toMatchObject({

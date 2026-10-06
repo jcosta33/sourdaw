@@ -7,9 +7,11 @@
  * cancellation begins a scope, threads the scope's signal down to the work
  * only it is doing, and `cancelExport` both raises the flag and aborts the
  * scope — so an awaited fetch inside instrument setup can stop at the moment
- * of cancellation rather than at the next `checkCancel()` between tracks.
- * Renders that do not begin a scope (the freeze path) share the flag's
- * between-step semantics and are untouched by the controller.
+ * of cancellation rather than at the next `checkCancel()` between tracks. The
+ * scope closes when the export settles (`endExportCancellationScope`), so a
+ * cancelled export's flag never outlives its render (#4782). Freeze and
+ * bounce begin no scope and read none of this state: they stop only on a
+ * caller's own `abortSignal`.
  */
 type RenderCoordination = {
     cancelFlag: boolean;

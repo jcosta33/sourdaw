@@ -1,12 +1,12 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { midiStore } from '../../stores/midiStore';
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { isAddNotesSessionEntry } from './isAddNotesSessionEntry';
 
@@ -25,80 +25,6 @@ type MidiNotesBucketSnapshot = {
 };
 
 const notesByAction = new WeakMap<object, MaterializedNote[]>();
-
-function isUnlockedMidiClipProducer(
-    action: AppAction,
-    clipId: string
-): action is Extract<AppAction, { type: 'addClip' }> {
-    return (
-        action.type === 'addClip' &&
-        action.payload.id === clipId &&
-        action.payload.type === 'midi' &&
-        action.payload.locked !== true
-    );
-}
-
-function getEarlierUnlockedMidiClipProducer(
-    clipId: string,
-    context: HandlerValidationContext
-): Extract<AppAction, { type: 'addClip' }> | null {
-    for (let index = context.actionIndex - 1; index >= 0; index -= 1) {
-        const action = context.actions[index];
-        if (action && isUnlockedMidiClipProducer(action, clipId)) {
-            return action;
-        }
-    }
-    return null;
-}
-
-function getWritableMidiClipReplayGuard(clipId: string) {
-    const track = trackStore.value?.tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
-    const clip = track?.clips.find((candidate) => candidate.id === clipId);
-    if (!track || !clip || clip.type !== 'midi' || track.frozen === true || clip.locked === true) {
-        return null;
-    }
-    return {
-        trackId: track.id,
-        expectedTrackFrozen: false,
-        expectedClipLocked: false,
-    };
-}
-
-function getBatchLocalWritableMidiClipReplayGuard(clipId: string, context: HandlerValidationContext | undefined) {
-    if (!context) {
-        return null;
-    }
-    const clipProducer = getEarlierUnlockedMidiClipProducer(clipId, context);
-    if (!clipProducer) {
-        return null;
-    }
-    const trackId = clipProducer.payload.trackId;
-    const existingTrack = trackStore.value?.tracks.find((track) => track.id === trackId);
-    if (existingTrack && existingTrack.frozen !== true) {
-        return {
-            trackId,
-            expectedTrackFrozen: false,
-            expectedClipLocked: false,
-        };
-    }
-    const trackProducer = context.actions
-        .slice(0, context.actionIndex)
-        .find(
-            (action) => action.type === 'addTrack' && action.payload.id === trackId && action.payload.kind === 'midi'
-        );
-    if (!trackProducer) {
-        return null;
-    }
-    return {
-        trackId,
-        expectedTrackFrozen: false,
-        expectedClipLocked: false,
-    };
-}
-
-function getWritableMidiClipReplayGuardForBatch(clipId: string, context: HandlerValidationContext | undefined) {
-    return getWritableMidiClipReplayGuard(clipId) ?? getBatchLocalWritableMidiClipReplayGuard(clipId, context);
-}
 
 function getMidiNotesBucketSnapshot(clipId: string): MidiNotesBucketSnapshot {
     const state = midiStore.value;
@@ -168,7 +94,7 @@ export const handleAddNotes = createHandler<'addNotes'>({
     execute: (action) => {
         if (
             !isMaterializedAddNotesArguments(action.payload) ||
-            getWritableMidiClipReplayGuard(action.payload.clipId) === null ||
+            getWritableMidiClipReplayGuardForBatch(action.payload.clipId) === null ||
             !hasDistinctMaterializedNoteIds(action)
         ) {
             return { status: 'conflict' };

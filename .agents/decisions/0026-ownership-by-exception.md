@@ -95,6 +95,12 @@ The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the mode
    before merge.
 6. Small batches, few live lanes, prompt merges.
 
+Amended 2026-10-06 by the owner: at most four live lanes, opened while other heads wait on CI or
+review rather than after they drain. Agent lanes spend most of their life waiting on hour-long
+pipeline runs, so the DORA evidence for three or fewer active branches, measured on human teams,
+does not bound them; lanes that do not stack on one another stay write-disjoint, including
+generated artifacts and pinned digests their changes feed.
+
 ## Consequences
 
 The owner stops hearing about anything reversible. Encountered rot stops accumulating in docs,

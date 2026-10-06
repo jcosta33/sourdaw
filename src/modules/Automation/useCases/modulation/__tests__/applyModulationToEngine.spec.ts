@@ -297,6 +297,36 @@ describe('applyModulationToEngine', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    // #4786: a disabled lane writes nothing (applyAutomation's `enabled` gate),
+    // so the base a modulator combines onto is the persisted device value —
+    // never the disabled curve's.
+    it('does not let a disabled automation lane set the base a modulator combines onto', () => {
+        // amount 0 isolates the base: the written value IS whichever base the
+        // lane index resolved.
+        automationStore.set({
+            lanes: [{ ...createCutoffLane(['lane-cutoff', 'd1:cutoff', 800]), enabled: false }],
+        });
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo1',
+                    name: 'LFO',
+                    trackId: 't1',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                    enabled: true,
+                },
+            ],
+        });
+
+        applyModulationToEngine(1);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        // The disabled lane sits at 800; only the persisted 500 may answer.
+        expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
+    });
+
     it('does not ride a device-param modulation on a track-level gain lane that shares the bare id', () => {
         // A track-level gain lane carries the bare id 'gain' (normalized 0..1,
         // converted dB→linear / pan-remapped before a *track* engine setter),

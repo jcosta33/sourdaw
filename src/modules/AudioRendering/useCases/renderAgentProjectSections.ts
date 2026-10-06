@@ -1,4 +1,4 @@
-import { cancelExport, renderOffline } from '#/modules/AudioEngine/useCases';
+import { renderOffline } from '#/modules/AudioEngine/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import {
     cloneAgentWorkOwnerIdentity,
@@ -224,22 +224,19 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
             throw new Error(preRenderRefusal);
         }
         try {
-            const cancelActiveRender = () => cancelExport();
-            input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
-            let buffer: AudioBuffer;
-            try {
-                input.onRenderAttempt?.(job);
-                receipts.emitStarted();
-                buffer = await renderOffline({
-                    durationBeats: job.endBeat - job.startBeat,
-                    startBeat: job.startBeat,
-                    sampleRate: job.sampleRate,
-                    tailSeconds: job.tailSeconds,
-                    onWarning: (warning) => warnings.push(warning),
-                });
-            } finally {
-                input.signal?.removeEventListener('abort', cancelActiveRender);
-            }
+            input.onRenderAttempt?.(job);
+            receipts.emitStarted();
+            // The section's own stop ends this render alone, as its `abortSignal`
+            // (#4969): raising the process-wide export flag here left every later
+            // freeze failing with "Export cancelled" until some export ran.
+            const buffer = await renderOffline({
+                durationBeats: job.endBeat - job.startBeat,
+                startBeat: job.startBeat,
+                sampleRate: job.sampleRate,
+                tailSeconds: job.tailSeconds,
+                onWarning: (warning) => warnings.push(warning),
+                abortSignal: input.signal,
+            });
             // Addressed before the attachment guards below so no await separates the last guard
             // from the store write it protects.
             const contentAddress = await getAudioBufferContentAddress(buffer);

@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../../getWritableMidiClipReplayGuard', () => ({
+    getWritableMidiClipReplayGuardForBatch: vi.fn(() => ({
+        trackId: 'track-1',
+        expectedTrackFrozen: false,
+        expectedClipLocked: false,
+    })),
+}));
 
 import { midiStore } from '../../../stores/midiStore';
 import { handleHumanizeNotes } from '../handleHumanizeNotes';
