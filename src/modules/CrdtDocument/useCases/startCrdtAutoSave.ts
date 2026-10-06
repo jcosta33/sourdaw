@@ -119,15 +119,13 @@ export function startCrdtAutoSave(): () => void {
         if (isStopped() || incrementalRetryTimer !== null || incrementalTimer !== null) {
             return;
         }
-        const delay = incrementalRetryMs;
-        incrementalRetryMs = Math.min(incrementalRetryMs * 2, MAX_INCREMENTAL_RETRY_MS);
         incrementalRetryTimer = setTimeout(() => {
             incrementalRetryTimer = null;
-            runIncrementalPersist();
-        }, delay);
+            runIncrementalPersist('retry');
+        }, incrementalRetryMs);
     }
 
-    function runIncrementalPersist(): void {
+    function runIncrementalPersist(attempt: 'edit' | 'retry' = 'edit'): void {
         if (isStopped()) {
             return;
         }
@@ -155,6 +153,9 @@ export function startCrdtAutoSave(): () => void {
                                 `Recent edits may not survive a browser restart. Check storage quota. Last error: ${errorMessage}`
                         )
                     );
+                }
+                if (attempt === 'retry') {
+                    incrementalRetryMs = Math.min(incrementalRetryMs * 2, MAX_INCREMENTAL_RETRY_MS);
                 }
                 if (!incrementalPersistQueued) {
                     scheduleIncrementalRetry();
@@ -205,7 +206,7 @@ export function startCrdtAutoSave(): () => void {
     }
 
     /**
-     * Best-effort flush of a pending debounced persist on tab hide/close.
+     * Best-effort flush of a pending debounced persist or idle retry on tab hide/close.
      * `pagehide` is the reliable unload signal (beforeunload is not);
      * `visibilitychange → hidden` additionally covers backgrounding, where
      * timers are throttled. Caveat (audit F1): the incremental save is
@@ -214,12 +215,14 @@ export function startCrdtAutoSave(): () => void {
      * loss on hard crash. Nothing stronger is available synchronously.
      */
     function flushPendingPersist(): void {
-        if (isStopped() || incrementalTimer === null) {
+        if (isStopped() || (incrementalTimer === null && incrementalRetryTimer === null)) {
             return;
         }
-        clearTimeout(incrementalTimer);
-        incrementalTimer = null;
-        burstStartMs = null;
+        if (incrementalTimer !== null) {
+            clearTimeout(incrementalTimer);
+            incrementalTimer = null;
+            burstStartMs = null;
+        }
         cancelIncrementalRetry();
         runIncrementalPersist();
     }

@@ -331,4 +331,184 @@ describe('startCrdtAutoSave', () => {
         stop();
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it('retries at the initial delay after edits cancel armed retries', async () => {
+        persistCrdtProject.mockRejectedValue(new Error('persist failed'));
+
+        const stop = startCrdtAutoSave();
+        try {
+            await vi.advanceTimersByTimeAsync(0);
+            expect(compactProject).toHaveBeenCalledOnce();
+
+            const listener = onChange.mock.calls[0]?.[0];
+            if (!listener) {
+                throw new Error('Expected a repository change listener');
+            }
+
+            for (let cycle = 0; cycle < 8; cycle++) {
+                listener();
+                await vi.advanceTimersByTimeAsync(2_000);
+                const failedPersist = persistCrdtProject.mock.results.at(-1)?.value;
+                if (!failedPersist) {
+                    throw new Error('Expected the incremental persist');
+                }
+                await failedPersist.catch(() => undefined);
+                expect(persistCrdtProject).toHaveBeenCalledTimes(cycle + 1);
+                if (cycle < 7) {
+                    listener();
+                }
+            }
+
+            await vi.advanceTimersByTimeAsync(249);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(8);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(9);
+        } finally {
+            stop();
+        }
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('flushes a pending incremental retry on pagehide and when the page is hidden', async () => {
+        persistCrdtProject.mockRejectedValue(new Error('persist failed'));
+
+        const stop = startCrdtAutoSave();
+        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+        try {
+            await vi.advanceTimersByTimeAsync(0);
+            expect(compactProject).toHaveBeenCalledOnce();
+
+            const listener = onChange.mock.calls[0]?.[0];
+            if (!listener) {
+                throw new Error('Expected a repository change listener');
+            }
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            const failedPersist = persistCrdtProject.mock.results[0]?.value;
+            if (!failedPersist) {
+                throw new Error('Expected the incremental persist');
+            }
+            await failedPersist.catch(() => undefined);
+            expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+            window.dispatchEvent(new Event('pagehide'));
+            expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+            const pageHidePersist = persistCrdtProject.mock.results[1]?.value;
+            if (!pageHidePersist) {
+                throw new Error('Expected the pagehide flush persist');
+            }
+            await pageHidePersist.catch(() => undefined);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+
+            visibility.mockReturnValue('hidden');
+            document.dispatchEvent(new Event('visibilitychange'));
+            expect(persistCrdtProject).toHaveBeenCalledTimes(3);
+        } finally {
+            visibility.mockRestore();
+            stop();
+        }
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reruns one overlapping incremental persist after the in-flight save settles', async () => {
+        let resolveInFlight: (() => void) | undefined;
+        persistCrdtProject.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveInFlight = resolve;
+                })
+        );
+
+        const stop = startCrdtAutoSave();
+        try {
+            await vi.advanceTimersByTimeAsync(0);
+            expect(compactProject).toHaveBeenCalledOnce();
+
+            const listener = onChange.mock.calls[0]?.[0];
+            if (!listener) {
+                throw new Error('Expected a repository change listener');
+            }
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            expect(persistCrdtProject).toHaveBeenCalledOnce();
+            const finishInFlight = resolveInFlight;
+            if (!finishInFlight) {
+                throw new Error('Expected the incremental persist to be pending');
+            }
+
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+            finishInFlight();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        } finally {
+            stop();
+        }
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('resets incremental retry backoff after a successful retry', async () => {
+        persistCrdtProject.mockRejectedValue(new Error('persist failed'));
+
+        const stop = startCrdtAutoSave();
+        try {
+            await vi.advanceTimersByTimeAsync(0);
+            expect(compactProject).toHaveBeenCalledOnce();
+
+            const listener = onChange.mock.calls[0]?.[0];
+            if (!listener) {
+                throw new Error('Expected a repository change listener');
+            }
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            const firstFailure = persistCrdtProject.mock.results[0]?.value;
+            if (!firstFailure) {
+                throw new Error('Expected the incremental persist');
+            }
+            await firstFailure.catch(() => undefined);
+            expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+            await vi.advanceTimersByTimeAsync(249);
+            expect(persistCrdtProject).toHaveBeenCalledOnce();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+            const firstRetry = persistCrdtProject.mock.results[1]?.value;
+            if (!firstRetry) {
+                throw new Error('Expected the first idle retry');
+            }
+            await firstRetry.catch(() => undefined);
+
+            persistCrdtProject.mockResolvedValueOnce(undefined);
+            await vi.advanceTimersByTimeAsync(499);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(3);
+            const successfulRetry = persistCrdtProject.mock.results[2]?.value;
+            if (!successfulRetry) {
+                throw new Error('Expected the successful idle retry');
+            }
+            await successfulRetry;
+
+            persistCrdtProject.mockRejectedValueOnce(new Error('persist failed again'));
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            const laterFailure = persistCrdtProject.mock.results[3]?.value;
+            if (!laterFailure) {
+                throw new Error('Expected the later incremental persist');
+            }
+            await laterFailure.catch(() => undefined);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(4);
+
+            await vi.advanceTimersByTimeAsync(249);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(4);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(persistCrdtProject).toHaveBeenCalledTimes(5);
+        } finally {
+            stop();
+        }
+        expect(vi.getTimerCount()).toBe(0);
+    });
 });
