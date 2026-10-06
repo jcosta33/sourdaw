@@ -59,7 +59,9 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['bass', /\bbass\b/],
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
     ['backing vocal', /\b(?:backing vocals?|background vocals?|bgv)\b/],
-    ['guitar', /\bguitars?\b/],
+    // A guitar named by its string count or material ("12 String", "Nylon String") is a guitar, not
+    // an orchestral strings section. Counts that name other instruments (a 5 string banjo) are not.
+    ['guitar', /\b(?:guitars?|gtrs?|(?:6|7|8|12|nylon|steel)\s+strings?)\b/],
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
     ['synth', /\bsynths?\b/],
     ['pad', /\bpads?\b/],
@@ -72,7 +74,8 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
  * another role already names into a conflict.
  */
 const MODIFIER_NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
-    ['strings', /\bstrings?\b/],
+    // A string count or material before the word names an instrument's strings, not a section.
+    ['strings', /(?<!\b(?:\d+|nylon|steel)\s+)\bstrings?\b/],
     ['brass', /\bbrass\b/],
     // Session furniture that carries no part of the song.
     ['utility', /\b(?:click|metronome|reference|ref|guide|cue|hat trick)\b/],
@@ -91,6 +94,16 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
 
 // The kit-mic roles a generic drum word may qualify when it comes first ("Drum Overheads").
 const KIT_MIC_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['overhead', 'room']);
+
+const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_DRUM_ROLES, 'drums']);
+
+/**
+ * Names that carry only drum-family evidence ("Kick & Snare", "Drums (Room)") still say the track
+ * is drums, even when no adjacency rule picks one role. A mixed-family conflict stays a conflict.
+ */
+function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[]): CanonicalTrackRole | null {
+    return roles.every((role) => DRUM_FAMILY_ROLES.has(role)) ? 'drums' : null;
+}
 
 // An unqualified "vocal"/"vocals"/"vox" carries no dedicated pattern above: the canonical set has
 // no generic vocal role, so it must be resolved to lead or backing rather than matched directly.
@@ -334,7 +347,7 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length > 1) {
-        const resolved = resolveNamedRoleConflict(roles, input.track.name);
+        const resolved = resolveNamedRoleConflict(roles, input.track.name) ?? resolveDrumFamilyConflict(roles);
         if (resolved) {
             return { role: resolved, source: 'name-tags', evidence: 'resolved-name-tags' };
         }

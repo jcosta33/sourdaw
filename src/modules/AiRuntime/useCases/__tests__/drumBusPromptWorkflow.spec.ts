@@ -3286,6 +3286,32 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.affectedIds).not.toContain('track-bass');
     });
 
+    it('routes a kit with a "Drums (Room)" track instead of refusing it as ambiguous', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-drums-room', 'Drums (Room)'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-drums-room']);
+    });
+
     it('routes Rim Click with the kit and protects Guide Vocal and String Bass instead of refusing', async () => {
         trackStore.set({
             tracks: [
