@@ -380,10 +380,11 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             await runTicksUntil(() => schedulerSession.pendingSeam !== null);
             const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
 
-            const onSeamFrame = pedalCalls.filter(
-                (call) => call.position === 1 && Math.abs(call.frame! - seamFrame) <= 1
-            );
-            expect(onSeamFrame).toHaveLength(1);
+            // Anything else at the seam frame (the carried up the row replaces,
+            // sent as well) would reach the engine in the same frame as the row and
+            // could win over it.
+            const onSeamFrame = pedalCalls.filter((call) => Math.abs(call.frame! - seamFrame) <= 1);
+            expect(onSeamFrame.map((call) => call.position)).toEqual([1]);
         });
     });
 
@@ -481,9 +482,8 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             evaluateFollowActionsMock.mockImplementationOnce(() => ({ jumpToPosition: 2, shouldStop: false }));
             await runTick();
 
-            expect(framedCalls().filter((call) => call.position === 1)).toEqual([
-                { position: 1, frame: frameOf(ctxTime.now) },
-            ]);
+            // Only the row: a carried up sent beside it, in the same frame, could win over it.
+            expect(framedCalls()).toEqual([{ position: 1, frame: frameOf(ctxTime.now) }]);
         });
     });
 
