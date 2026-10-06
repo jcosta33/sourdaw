@@ -1,4 +1,8 @@
-import { ANALYSIS_MEASURE_TOOL_NAME, TRANSFORM_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
+import {
+    ANALYSIS_MEASURE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
+} from '../models/AgentToolCatalogNames';
 
 type CompactableTool = {
     type: 'function';
@@ -11,11 +15,12 @@ type SchemaRecord = Record<string, unknown>;
 const MAX_DESCRIPTION_LENGTH = 200;
 
 /**
- * Levels of nested `properties` and `items` the local prompt spells out. A deeper node keeps its
- * type and enum only: its fields are validated by the application, and a command's own arguments
- * are disclosed by catalog discovery rather than by the proposal schema.
+ * Levels of nested `properties` and `items` the local prompt spells out. It must reach the deepest
+ * required property, `required` list, enum, const or combinator branch of every mandatory tool's
+ * schema: a node past it keeps only its type and enum, and a selector written without its
+ * `quantity.unit` is refused. The compaction spec walks each full schema to hold that.
  */
-const MAX_SCHEMA_DEPTH = 4;
+const MAX_SCHEMA_DEPTH = 8;
 
 /** Keywords that bound or annotate a value without changing which shape the model must write. */
 const PROMPT_ONLY_DROPPED_KEYWORDS: ReadonlySet<string> = new Set([
@@ -30,9 +35,14 @@ const PROMPT_ONLY_DROPPED_KEYWORDS: ReadonlySet<string> = new Set([
     'format',
 ]);
 
-/** A property whose schema duplicates another tool's, which the tool's own description already names. */
-const REFERENCED_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
-    [ANALYSIS_MEASURE_TOOL_NAME]: ['proposal'],
+/**
+ * A property whose schema is another tool's argument, replaced in the prompt by a pointer to it. The
+ * pointer is the property's description, because the prompt keeps no other text for a property.
+ */
+const REFERENCED_PROPERTIES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+    [ANALYSIS_MEASURE_TOOL_NAME]: {
+        proposal: `The same object ${COMMAND_BATCH_PROPOSAL_TOOL_NAME} takes as its list argument.`,
+    },
 };
 
 /** A property that is one JSON string whose description is its whole grammar, so the description stays. */
@@ -62,6 +72,27 @@ function collapseSchema(schema: SchemaRecord): SchemaRecord {
     return collapsed;
 }
 
+/**
+ * A nested node that lists `properties` is an object, one that lists `items` is an array, and one
+ * that lists string `enum` values is a string; the root keeps its type for the model to read first.
+ */
+function isImpliedType(schema: SchemaRecord, keyword: string, depth: number): boolean {
+    if (depth === 0 || keyword !== 'type') {
+        return false;
+    }
+    if (schema.type === 'object') {
+        return isRecord(schema.properties);
+    }
+    if (schema.type === 'array') {
+        return isRecord(schema.items);
+    }
+    return (
+        schema.type === 'string' &&
+        Array.isArray(schema.enum) &&
+        schema.enum.every((value) => typeof value === 'string')
+    );
+}
+
 function compactSchema(schema: unknown, depth: number): unknown {
     if (!isRecord(schema)) {
         return schema;
@@ -71,7 +102,7 @@ function compactSchema(schema: unknown, depth: number): unknown {
     }
     const compacted: SchemaRecord = {};
     for (const [keyword, value] of Object.entries(schema)) {
-        if (PROMPT_ONLY_DROPPED_KEYWORDS.has(keyword)) {
+        if (PROMPT_ONLY_DROPPED_KEYWORDS.has(keyword) || isImpliedType(schema, keyword, depth)) {
             continue;
         }
         if (keyword === 'properties' && isRecord(value)) {
@@ -89,11 +120,15 @@ function compactSchema(schema: unknown, depth: number): unknown {
     return compacted;
 }
 
-/** A worked example closes the description, after the grammar it illustrates. */
-function withoutWorkedExample(description: string): string {
+/**
+ * The grammar a description states, without the numeric limits sentence (the application enforces
+ * them and refuses with a receipt) and without the worked example that closes it.
+ */
+function grammarOnly(description: string): string {
     return description
         .split(/(?<=[.!?])\s+/)
         .slice(0, -1)
+        .filter((sentence) => !sentence.startsWith('Limits:'))
         .join(' ');
 }
 
@@ -102,17 +137,18 @@ function keepGrammarDescription(original: unknown, compacted: unknown): unknown 
     if (typeof description !== 'string' || !isRecord(compacted)) {
         return compacted;
     }
-    return { ...compacted, description: withoutWorkedExample(description) };
+    return { ...compacted, description: grammarOnly(description) };
 }
 
 function compactProperties(toolName: string, parameters: SchemaRecord, properties: SchemaRecord): SchemaRecord {
-    const referenced = REFERENCED_PROPERTIES[toolName] ?? [];
+    const referenced = REFERENCED_PROPERTIES[toolName] ?? {};
     const grammar = GRAMMAR_PROPERTIES[toolName] ?? [];
     const originalProperties = isRecord(parameters.properties) ? parameters.properties : {};
     return Object.fromEntries(
         Object.entries(properties).map(([name, property]) => {
-            if (referenced.includes(name)) {
-                return [name, { type: 'object' }];
+            const pointer = referenced[name];
+            if (pointer !== undefined) {
+                return [name, { type: 'object', description: pointer }];
             }
             return [
                 name,

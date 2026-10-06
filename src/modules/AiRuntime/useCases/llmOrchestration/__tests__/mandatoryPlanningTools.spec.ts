@@ -310,7 +310,7 @@ describe('mandatory planning tools', () => {
             expect(advertised.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         });
 
-        it('keeps at least one prompt-selected slot beside the mandatory set', async () => {
+        it('sizes the budget at the mandatory set plus exactly one prompt-selected slot', async () => {
             const advertised = await advertisedToWebLlm('add an eq device to the vocals');
             const mandatory = new Set<string>([
                 WORKFLOW_CAPABILITY_TOOL_NAME,
@@ -321,8 +321,8 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET - mandatory.size).toBeGreaterThanOrEqual(1);
-            expect(advertised.filter((name) => !mandatory.has(name)).length).toBeGreaterThanOrEqual(1);
+            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
+            expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
         });
 
@@ -362,9 +362,11 @@ describe('mandatory planning tools', () => {
             expectAllMandatory(advertised);
         });
 
-        describe('prompt window', () => {
-            // initWebLlmEngine.ts opens the engine with this window; the prompt, the request and the
-            // reply all spend it.
+        describe('system prompt share of the window', () => {
+            // initWebLlmEngine.ts opens the engine with this window. The system prompt and its tool
+            // section are one share of it: the user message and the reply spend the rest, and the
+            // whole local request already overflows it for reasons outside this contract (#4979), so
+            // this holds the share the mandatory tools take, not the request as a whole.
             const CONTEXT_WINDOW_TOKENS = 8192;
             const USER_REQUEST_HEADROOM_TOKENS = 1024;
             // Conservative for JSON and schema text, which tokenizes denser than prose.
@@ -389,7 +391,7 @@ describe('mandatory planning tools', () => {
             }
 
             it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
-                'serializes the mandatory tool set and the system prompt within the window for "%s"',
+                'keeps the system prompt and the mandatory tool section within its share of the window for "%s"',
                 async (prompt) => {
                     const { advertised, text } = await serializeWebLlmPrompt(prompt);
 
