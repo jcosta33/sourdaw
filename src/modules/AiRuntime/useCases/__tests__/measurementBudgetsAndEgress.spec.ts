@@ -34,6 +34,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 import { AGENT_DATA_CATEGORIES, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
@@ -107,6 +108,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
     return { ...original, measureAgentScopeRender: vi.fn(original.measureAgentScopeRender) };
+});
+
+// The real hash runs; the wrapper only lets a row name a render of hundreds of megabytes without allocating it.
+vi.mock('#/utils/agentRenderReceipt', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/utils/agentRenderReceipt')>();
+    return { ...original, getAudioBufferContentAddress: vi.fn(original.getAudioBufferContentAddress) };
 });
 
 // The real preview runs; the wrapper only lets a row read back the workspace it handed out.
@@ -425,6 +432,7 @@ beforeEach(() => {
     engine.updateDeviceParam.mockReset();
     vi.mocked(measureAgentScopeRender).mockReset();
     vi.mocked(previewVersionedCommandBatchEnvelope).mockReset();
+    vi.mocked(getAudioBufferContentAddress).mockReset();
     vi.mocked(projectRevisionMatchesLiveIgnoringCommandCheckpoint).mockReset();
     vi.mocked(generateToolPlanningOutcome).mockReset();
     vi.mocked(tryPresetMatch).mockReturnValue([]);
@@ -957,6 +965,102 @@ describe('a measurement that does not report leaves the shared state as it found
         expect(receiptCode(read)).toBe('measurement-timed-out');
         expect(freezeFailures).toEqual([]);
         expect(() => checkCancel()).not.toThrow();
+    });
+});
+
+/** Frames of a mono render that alone exceed the retention byte limit (280 MB against 256 MB). */
+const OVERSIZED_FRAMES = 70_000_000;
+/** Frames of a mono render that fit alone (160 MB) but not as a pair. */
+const PAIR_FRAMES = 40_000_000;
+
+type TaggedBuffer = AudioBuffer & { address: string };
+
+/** A render that claims `frames` frames while holding none, so a row can size retention without allocating. */
+function claimedBuffer(address: string, frames: number): TaggedBuffer {
+    return {
+        sampleRate: SAMPLE_RATE,
+        length: frames,
+        numberOfChannels: 1,
+        duration: frames / SAMPLE_RATE,
+        getChannelData: () => new Float32Array(4),
+        address,
+    } as unknown as TaggedBuffer;
+}
+
+/** Each isolated render hands back the next buffer, and reports `warningsPerRender` renderer warnings. */
+function renderClaimedBuffers(buffers: readonly TaggedBuffer[], warningsPerRender: number): void {
+    const remaining = [...buffers];
+    vi.mocked(getAudioBufferContentAddress).mockImplementation((buffer) =>
+        Promise.resolve((buffer as TaggedBuffer).address)
+    );
+    vi.mocked(measureAgentScopeRender).mockImplementation(() => ({
+        integratedLoudness: { status: 'measured', metricVersion: 1, unit: 'LUFS', value: -20, confidence: 'exact' },
+    }));
+    engine.renderTrackSubgraphOffline.mockImplementation((request: { onWarning?: (message: string) => void }) => {
+        for (let count = 0; count < warningsPerRender; count += 1) {
+            request.onWarning?.(`renderer warning ${String(count)}`);
+        }
+        const next = remaining.shift();
+        if (next === undefined) {
+            throw new Error('The row scripted fewer renders than the measurement ran.');
+        }
+        return Promise.resolve(next);
+    });
+}
+
+/** The addresses a successful receipt cites, whichever render of it cites them. */
+function citedAddresses(read: AnalysisMeasureRead): string[] {
+    return Array.from(
+        JSON.stringify(read.receipt.data).matchAll(/"contentAddress":"([^"]+)"/gu),
+        (match) => match[1] ?? ''
+    );
+}
+
+describe('every render a successful receipt cites is kept or named', () => {
+    // Red when a retention line is the one the warning cap cuts, or retention stops naming an oversized render.
+    it('names an oversized render beside the warnings the renderers already filled the cap with', async () => {
+        renderClaimedBuffers(
+            [
+                claimedBuffer('oversized-baseline', OVERSIZED_FRAMES),
+                claimedBuffer('baseline-bass', 1_000),
+                claimedBuffer('preview-drums', 1_000),
+                claimedBuffer('preview-bass', 1_000),
+            ],
+            2
+        );
+
+        const read = await measure('preview', DRUMS_AND_BASS, SHORT_RANGE);
+
+        expect(read.receipt.error).toBeNull();
+        expect(read.receipt.warnings).toHaveLength(8);
+        expect(read.receipt.warnings.some((warning) => warning.includes('oversized-baseline'))).toBe(true);
+        expect(retainedAddresses()).not.toContain('oversized-baseline');
+    });
+
+    // Red when retention stops naming a render too large to keep, which no row observed before.
+    it('names a plain oversized render and does not retain it', async () => {
+        renderClaimedBuffers([claimedBuffer('oversized-render', OVERSIZED_FRAMES)], 0);
+
+        const read = await measure('project', DRUMS, SHORT_RANGE);
+
+        expect(read.receipt.error).toBeNull();
+        expect(read.receipt.warnings).toEqual([expect.stringContaining('oversized-render')]);
+        expect(retainedAddresses()).toEqual([]);
+    });
+
+    // Red when a batch over the byte limit evicts its own earlier render without naming it.
+    it('names the earlier render of a pair that together exceeds the byte limit', async () => {
+        renderClaimedBuffers(
+            [claimedBuffer('pair-baseline', PAIR_FRAMES), claimedBuffer('pair-preview', PAIR_FRAMES)],
+            0
+        );
+
+        const read = await measure('preview', DRUMS, SHORT_RANGE);
+
+        expect(read.receipt.error).toBeNull();
+        expect(citedAddresses(read).toSorted()).toEqual(['pair-baseline', 'pair-preview']);
+        expect(retainedAddresses()).toEqual(['pair-preview']);
+        expect(read.receipt.warnings).toEqual([expect.stringContaining('pair-baseline')]);
     });
 });
 

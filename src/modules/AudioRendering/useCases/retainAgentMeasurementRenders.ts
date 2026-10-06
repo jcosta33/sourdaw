@@ -7,16 +7,17 @@ type MeasuredRender = {
 
 /**
  * Retains the renders a measurement has finished reporting on, and returns one warning line for each
- * distinct render too large to keep. A measurement that stops before it reports never calls this, so
- * its renders are never in the store and the store is as it was before the measurement began.
+ * distinct render the store does not hold afterwards, whether it was too large to keep or a later
+ * render of the same batch evicted it, so a receipt never cites a render that is neither kept nor
+ * named. A measurement that stops before it reports never calls this, so its renders are never in
+ * the store and the store is as it was before the measurement began.
  */
 export function retainAgentMeasurementRenders(input: {
     renders: readonly MeasuredRender[];
     sourceRevision: string;
 }): string[] {
-    const oversized = new Set(retainAgentMeasurementArtifacts(input));
-    return Array.from(
-        oversized,
-        (contentAddress) => `Render ${contentAddress} exceeds the measurement retention limit and was not retained.`
+    return retainAgentMeasurementArtifacts(input).map(
+        (contentAddress) =>
+            `Render ${contentAddress} was not retained: it does not fit the measurement retention limit.`
     );
 }

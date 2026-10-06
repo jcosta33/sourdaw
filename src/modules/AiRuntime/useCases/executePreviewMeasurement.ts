@@ -159,7 +159,8 @@ function pairTargets(rendered: RenderedPreview): Array<[RenderedTarget, Rendered
 }
 
 function boundedWarnings(rendered: RenderedPreview, retentionWarnings: readonly string[]): string[] {
-    return [...rendered.baseline.warnings, ...rendered.preview.warnings, ...retentionWarnings]
+    // Retention lines lead: the cap cuts from the end, and a cited render left unnamed is the worse loss.
+    return [...retentionWarnings, ...rendered.baseline.warnings, ...rendered.preview.warnings]
         .slice(0, ANALYSIS_MEASURE_MAX_WARNINGS)
         .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
 }

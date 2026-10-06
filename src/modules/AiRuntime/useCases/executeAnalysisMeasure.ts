@@ -159,7 +159,8 @@ function successReceipt(
             targets,
         },
         summary: `Measured ${String(targets.length)} target(s) over beats ${String(range.startBeat)} to ${String(range.endBeat)}.`,
-        warnings: boundedWarnings([...rendered.warnings, ...retentionWarnings]),
+        // Retention lines lead: the cap cuts from the end, and a cited render left unnamed is the worse loss.
+        warnings: boundedWarnings([...retentionWarnings, ...rendered.warnings]),
         error: null,
     };
 }
