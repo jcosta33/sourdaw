@@ -227,6 +227,27 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
+    it('keeps time order for events a tick apart and orders by kind only within one beat', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [note('first', 0, 1, 60), note('second', 2, 1, 62)],
+            [
+                { id: 'before-release', controller: 64, value: 127, beat: 0.9995, channel: 0 },
+                { id: 'after-strike', controller: 66, value: 127, beat: 2.0004, channel: 0 },
+            ]
+        );
+
+        // Both controllers round onto a note's tick; each stays on its own side of it in time.
+        expect(events.map((event) => [event.kind, event.data1, event.tick])).toEqual([
+            ['on', 60, 0],
+            ['cc', 64, 480],
+            ['off', 60, 480],
+            ['on', 62, 960],
+            ['cc', 66, 960],
+            ['off', 62, 1440],
+        ]);
+    });
+
     it('puts a pedal carried into the clip start ahead of the chord struck there', () => {
         const events = exportClip(
             { startBeat: 0, endBeat: 4, midiOffsetBeats: 2 },

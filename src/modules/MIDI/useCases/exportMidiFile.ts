@@ -50,13 +50,34 @@ function write16(value: number): number[] {
     return [(value >> 8) & 0xff, value & 0xff];
 }
 
+// Beats closer than this are one instant: projected beats differ by float noise.
+const SAME_BEAT_TOLERANCE = 1e-9;
+
 type MidiEvent = {
     tick: number;
+    /** Where the event sits in time before the tick grid rounded it. */
+    beat: number;
     kind: SameFrameEventKind;
     data: number[];
 };
 
+function compareEvents(left: MidiEvent, right: MidiEvent): number {
+    if (left.tick !== right.tick) {
+        return left.tick - right.tick;
+    }
+    // Playback keeps time order across sample frames and applies its release,
+    // controller, note-on order only within one frame; two events a tick apart
+    // keep their time order, whatever their kinds.
+    const beatGap = left.beat - right.beat;
+    if (Math.abs(beatGap) > SAME_BEAT_TOLERANCE) {
+        return beatGap;
+    }
+    return SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind];
+}
+
 type TickedNote = {
+    startBeat: number;
+    endBeat: number;
     startTick: number;
     endTick: number;
     pitch: number;
@@ -87,11 +108,17 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
         if (!(note.duration > 0)) {
             continue;
         }
-        const startTick = Math.round((clipStartBeat + note.startBeat) * TICKS_PER_BEAT);
-        const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
+        const startBeat = clipStartBeat + note.startBeat;
+        const endBeat = clipStartBeat + note.startBeat + note.duration;
+        const startTick = Math.round(startBeat * TICKS_PER_BEAT);
+        const endTick = Math.round(endBeat * TICKS_PER_BEAT);
+        const writtenEndTick = Math.max(endTick, startTick + 1);
         const ticked = {
+            startBeat,
+            // A release pushed out to a tick of minimum length sits on that tick.
+            endBeat: Math.max(endBeat, writtenEndTick / TICKS_PER_BEAT),
             startTick,
-            endTick: Math.max(endTick, startTick + 1),
+            endTick: writtenEndTick,
             pitch: clampMidiData7(note.pitch),
             velocity: clampVelocity(Math.round(note.velocity)),
             channel: (note.channel ?? 0) & 0x0f,
@@ -121,32 +148,31 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     for (const note of toTickedNotes(notes, clipStartBeat)) {
         events.push({
             tick: note.startTick,
+            beat: note.startBeat,
             kind: 'on',
             data: [SMF_NOTE_ON_STATUS | note.channel, note.pitch, note.velocity],
         });
         events.push({
             tick: note.endTick,
+            beat: note.endBeat,
             kind: 'off',
             data: [SMF_NOTE_OFF_STATUS | note.channel, note.pitch, 0],
         });
     }
 
     for (const cc of ccs) {
-        const tick = Math.round((clipStartBeat + cc.beat) * TICKS_PER_BEAT);
+        const beat = clipStartBeat + cc.beat;
         const controller = clampMidiData7(cc.controller);
         const value = clampMidiData7(Math.round(cc.value));
         events.push({
-            tick,
+            tick: Math.round(beat * TICKS_PER_BEAT),
+            beat,
             kind: 'control',
             data: [SMF_CONTROL_CHANGE_STATUS | ((cc.channel ?? 0) & 0x0f), controller, value],
         });
     }
 
-    // The order playback posts a frame's events in: release, controller, note-on.
-    events.sort(
-        (left, right) =>
-            left.tick - right.tick || SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind]
-    );
+    events.sort(compareEvents);
 
     const nameBytes = writeString(trackName);
     const trackNameEvent = {
