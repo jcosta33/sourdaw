@@ -5,7 +5,12 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getArrangementHandlers,
+    reserveNextTrackColorForCommand,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -498,6 +503,21 @@ describe('analysis.measure of a proposal preview', () => {
     });
 
     // Red when the default subject stops returning the project receipt it always has.
+    // Red when compiling or previewing a track the batch creates draws from the session palette.
+    it('leaves the session palette where it was after measuring a preview that creates a track', async () => {
+        commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
+        // Learn the palette's order from the real palette: each color's successor.
+        const draws = Array.from({ length: 30 }, () => reserveNextTrackColorForCommand());
+        const successor = new Map(draws.slice(1).map((color, index) => [draws[index], color]));
+        const before = reserveNextTrackColorForCommand();
+        const addRoom = { id: 'add-room', name: 'addTrack', arguments: { name: 'Drum Room', kind: 'audio' } };
+
+        const read = await measure(previewArgs({ schemaVersion: 1, items: [addRoom] }));
+
+        expect(read.receipt.error).toBeNull();
+        expect(reserveNextTrackColorForCommand()).toBe(successor.get(before));
+    });
+
     it('measures the project unchanged when no subject is named', async () => {
         const revision = captureProjectRevision();
 
@@ -664,6 +684,31 @@ describe('a measured preview through proposal and approval', () => {
                 getAgentApprovalView({ confirmationId: reproposed.confirmationId })?.measuredPreview?.targets ?? [];
             const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
             expect(loudness?.delta?.value).toBeCloseTo(-9, 1);
+        }
+    });
+
+    // Red when a re-proposal anchored to a later revision keeps figures rendered from the older mix.
+    it('drops the measured preview when a re-proposal rebinds the identical batch to a project that moved', async () => {
+        const revision = captureProjectRevision();
+        scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)));
+        const { confirmationId, measuredPreview } = await approvalMeasuredPreview(revision);
+        expect(measuredPreview).not.toBeNull();
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === 'bass' ? { ...track, gain: 0.5 } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        expect(captureProjectRevision()).not.toBe(revision);
+
+        const reproposed = await reproposePendingChatActions({ confirmationId });
+
+        expect(reproposed.status).toBe('reproposed');
+        if (reproposed.status === 'reproposed') {
+            expect(commandIdsOf(reproposed.confirmationId)).toHaveLength(1);
+            expect(getAgentApprovalView({ confirmationId: reproposed.confirmationId })?.measuredPreview).toBeNull();
         }
     });
 

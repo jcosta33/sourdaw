@@ -175,6 +175,7 @@ function successRead(
         range: { startBeat, endBeat, sectionId },
         targets,
         batchContentHash,
+        revision: input.projectRevision,
     };
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',

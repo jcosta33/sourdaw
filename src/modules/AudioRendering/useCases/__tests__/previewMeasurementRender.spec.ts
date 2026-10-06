@@ -72,6 +72,7 @@ const LIVE_TEMPO = 120;
 const VOCAL = { kind: 'tracks', ids: ['vocal'] } as const;
 const MASTER = { kind: 'master' } as const;
 const KEYS_A = { kind: 'tracks', ids: ['keys-a'] } as const;
+const KEYS = { kind: 'tracks', ids: ['keys'] } as const;
 const CEILINGS = { measuredSeconds: 300, renderedSeconds: 600 };
 const GLUTEN: Track['devices'][number] = {
     id: 'gluten-1',
@@ -225,7 +226,11 @@ function openPreview(edit: () => void): Preview {
     return { sourceRevision, workspace };
 }
 
-function measure(scope: typeof VOCAL | typeof MASTER | typeof KEYS_A, preview: Preview, signal?: AbortSignal) {
+function measure(
+    scope: typeof VOCAL | typeof MASTER | typeof KEYS_A | typeof KEYS,
+    preview: Preview,
+    signal?: AbortSignal
+) {
     return renderAgentPreviewMeasurementScope({
         scope,
         startBeat: 4,
@@ -613,6 +618,22 @@ describe('renderAgentPreviewMeasurementScope — per-device state', () => {
             });
             expect(engine.renderOffline).not.toHaveBeenCalled();
             expectReleased(preview);
+        });
+
+        // Red when a capture with no rack reader, which reads every rack empty, renders anyway.
+        it('refuses a Yeast device when no rack reader is configured, since its rack would capture empty', async () => {
+            seedLiveRack([ARPEGGIATOR]);
+            configureOfflineYeastMidiProcessing({ createProcessor: () => () => [] });
+            const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
+
+            const result = await measure(KEYS, preview);
+
+            expect(result).toMatchObject({
+                status: 'refused',
+                code: 'unprojectable-device-state',
+                subject: 'preview',
+                deviceId: 'yeast-1',
+            });
         });
 
         it('refuses a device only the preview holds when the preview stores a rack for it', async () => {

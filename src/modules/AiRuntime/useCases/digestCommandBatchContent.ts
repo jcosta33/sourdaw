@@ -11,21 +11,27 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 /**
- * Every id the batch mints for an object it creates: the ids the application assigned each command
- * and the value each batch-local binding's producer carries. Each compilation draws them afresh.
+ * An id the application drew for a new object. Command's application ids and the grounding
+ * bridge's batch-local ids are both a fixed lowercase prefix followed by `crypto.randomUUID()`;
+ * a caller-supplied literal such as a device type is not, though the assigned-id record lists it.
+ */
+const DRAWN_ID_PATTERN = /^[a-z]+(?:-[a-z]+)*-[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/u;
+
+/**
+ * Every id the batch drew for an object it creates, among the ids the application assigned each
+ * command and the value each batch-local binding's producer carries. Each compilation draws them
+ * afresh; a supplied literal those records also name stays as it is.
  */
 function readMintedIds(envelope: CommandBatchEnvelope): ReadonlySet<string> {
-    const minted = new Set(
-        envelope.commands.flatMap((command) => command.applicationAssignedIds.map(({ value }) => value))
-    );
+    const candidates = envelope.commands.flatMap((command) => command.applicationAssignedIds.map(({ value }) => value));
     for (const binding of envelope.batchLocalBindings) {
         const producer = envelope.commands.find((command) => command.commandId === binding.producerCommandId);
         const value = producer?.arguments[binding.producerArgument];
         if (typeof value === 'string') {
-            minted.add(value);
+            candidates.push(value);
         }
     }
-    return minted;
+    return new Set(candidates.filter((value) => DRAWN_ID_PATTERN.test(value)));
 }
 
 /** The commands whose display color the application draws from a session palette when the batch compiles. */

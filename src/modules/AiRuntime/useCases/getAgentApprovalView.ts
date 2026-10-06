@@ -274,8 +274,12 @@ function projectMeasuredTarget(
     };
 }
 
-function projectMeasuredPreview(measuredPreview: ApprovalSnapshot['measuredPreview']): ApprovalMeasuredPreview | null {
-    if (measuredPreview === undefined) {
+/** The figures of a preview measured at the revision this confirmation's batch is anchored to; none otherwise. */
+function projectMeasuredPreview(
+    measuredPreview: ApprovalSnapshot['measuredPreview'],
+    projectRevision: string
+): ApprovalMeasuredPreview | null {
+    if (measuredPreview === undefined || measuredPreview.revision !== projectRevision) {
         return null;
     }
     const tracks = trackStore.value?.tracks ?? [];
@@ -325,7 +329,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
         recipes: projectRecipes(adoptedRecipes),
-        measuredPreview: projectMeasuredPreview(measuredPreview),
+        measuredPreview: projectMeasuredPreview(measuredPreview, confirmation.projectRevision),
         ...projectSemanticDiff(semanticDiff),
         baseRevision: confirmation.projectRevision,
         freshness,

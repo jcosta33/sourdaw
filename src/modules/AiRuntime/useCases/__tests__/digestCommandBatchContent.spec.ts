@@ -89,6 +89,15 @@ describe('digestCommandBatchContent', () => {
         expect(digestTwoBuses(bindings)).toBe(digestTwoBuses(bindings));
     });
 
+    // Red when every id the assigned-id record names becomes an ordinal, supplied literals included.
+    it('tells apart batches whose supplied ids differ, though the assigned-id record lists them', () => {
+        const addDevice = (deviceType: string): AppAction[] => [
+            { type: 'addDevice', payload: { trackId: 'track-1', deviceType, deviceId: deviceType } },
+        ];
+
+        expect(digestBatch(addDevice('builtin-gain'), [])).not.toBe(digestBatch(addDevice('builtin-eq'), []));
+    });
+
     it('tells apart batches whose bindings resolve to different producer commands', () => {
         const wired = digestTwoBuses([
             { bindingId: '$x', producerActionIndex: 0, producerArgument: 'busId' },

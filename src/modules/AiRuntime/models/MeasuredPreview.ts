@@ -39,4 +39,6 @@ export type MeasuredPreview = {
     readonly range: { readonly startBeat: number; readonly endBeat: number; readonly sectionId: string | null };
     readonly targets: readonly MeasuredPreviewTarget[];
     readonly batchContentHash: string;
+    /** The live project revision the baseline was rendered at: the figures describe that mix and no later one. */
+    readonly revision: string;
 };

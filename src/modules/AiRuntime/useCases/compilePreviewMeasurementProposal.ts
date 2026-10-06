@@ -136,6 +136,27 @@ function admitRetainedCommands(input: CompilePreviewMeasurementProposalInput, re
     return { status: 'admitted' as const, actions: guarded.actions, actionCommandGraph: bridged.actionCommandGraph };
 }
 
+type AdmittedAction = Extract<ReturnType<typeof admitRetainedCommands>, { status: 'admitted' }>['actions'][number];
+
+/** The display color every track or bus a preview creates carries: the palette's first entry. */
+const PREVIEW_OBJECT_COLOR = 'oklch(0.40 0.08 250)';
+
+/**
+ * A new track or bus with no color of its own would draw the next one from the session palette,
+ * both when the batch compiles and when the preview executes it, moving the color the musician's
+ * next real track gets for a batch that may never run. The preview carries a fixed color instead;
+ * a color changes nothing anyone hears, and the batch hash leaves it out.
+ */
+function withPreviewColor(action: AdmittedAction): AdmittedAction {
+    if (action.type === 'addTrack' && action.payload.color === undefined) {
+        return { ...action, payload: { ...action.payload, color: PREVIEW_OBJECT_COLOR } };
+    }
+    if (action.type === 'createBus' && action.payload.color === undefined) {
+        return { ...action, payload: { ...action.payload, color: PREVIEW_OBJECT_COLOR } };
+    }
+    return action;
+}
+
 /**
  * Compile one preview measurement's semantic list into the batch a proposal adopting it would
  * become: the list compiler a proposal uses, then grounding with the list as an adopted
@@ -168,7 +189,7 @@ export function compilePreviewMeasurementProposal(
         return admitted;
     }
     const { commandBatch } = compilePlannedActionCommandBatch({
-        actions: admitted.actions,
+        actions: admitted.actions.map(withPreviewColor),
         actionCommandGraph: admitted.actionCommandGraph,
         actionLabels: admitted.actions.map((action) => action.type),
         autoCommit: false,
