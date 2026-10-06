@@ -211,6 +211,38 @@ describe('musical range resolution', () => {
             });
         });
 
+        describe('counts sections stacked on one start beat as one place when reading an ordinal', () => {
+            const stackedFirst = [
+                { id: 'section-chorus', name: 'Chorus', startBeat: 0, endBeat: 16 },
+                { id: 'section-chorus-2', name: 'Chorus 2', startBeat: 0, endBeat: 8 },
+                { id: 'section-chorus-3', name: 'Chorus 3', startBeat: 16, endBeat: 32 },
+            ];
+            const chorusThree = { kind: 'resolved', startBeat: 16, endBeat: 32, section: { id: 'section-chorus-3' } };
+
+            it('asks which of the stacked pair "first chorus" means', () => {
+                expect(resolveIn(stackedFirst, { section: 'first chorus' })).toMatchObject({
+                    kind: 'ambiguous-section',
+                    candidates: [{ id: 'section-chorus' }, { id: 'section-chorus-2' }],
+                });
+            });
+
+            it('reads "second chorus" as the place after the stack', () => {
+                expect(resolveIn(stackedFirst, { section: 'second chorus' })).toMatchObject(chorusThree);
+            });
+
+            it('reports "third chorus" as unknown, naming the two places of that name', () => {
+                expect(resolveIn(stackedFirst, { section: 'third chorus' })).toEqual({
+                    kind: 'unknown-section',
+                    reference: 'third chorus',
+                    reason: '"third chorus" names section 3 of its name, but the project has 2 places of that name.',
+                });
+            });
+
+            it('reads "last chorus" as the last place', () => {
+                expect(resolveIn(stackedFirst, { section: 'last chorus' })).toMatchObject(chorusThree);
+            });
+        });
+
         it('reads "final" as the last of its family', () => {
             expect(resolveIn(numbered, { section: 'final chorus' })).toMatchObject({
                 kind: 'resolved',

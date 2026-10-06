@@ -177,21 +177,28 @@ function selected(places: readonly MusicalRangeSection[]): PlaceSelection {
     return { kind: 'selected', places };
 }
 
+/** The beats a family's members start on, once each and in order: members stacked on one beat are one place. */
+function distinctStartBeats(family: readonly MusicalRangeSection[]): readonly number[] {
+    return [...new Set(family.map((place) => place.startBeat))];
+}
+
+/** The family members at the ordinal's place, counting places by distinct start beat over a family ordered by start. */
 function selectByOrdinal(
     reference: string,
     family: readonly MusicalRangeSection[],
     ordinal: SectionOrdinal,
     kind: PlaceKind
 ): PlaceSelection {
-    const position = ordinal.kind === 'last' ? family.length - 1 : ordinal.index - 1;
-    const atPosition = family[position];
-    if (atPosition === undefined) {
+    const startBeats = distinctStartBeats(family);
+    const position = ordinal.kind === 'last' ? startBeats.length - 1 : ordinal.index - 1;
+    const startBeat = startBeats[position];
+    if (startBeat === undefined) {
         return {
             kind: 'unknown',
-            reason: `"${reference}" names ${kind} ${String(position + 1)} of its name, but the project has ${String(family.length)}.`,
+            reason: `"${reference}" names ${kind} ${String(position + 1)} of its name, but the project has ${String(startBeats.length)} places of that name.`,
         };
     }
-    return selected(family.filter((section) => section.startBeat === atPosition.startBeat));
+    return selected(family.filter((place) => place.startBeat === startBeat));
 }
 
 /** Sections whose whole name is the reference, read with and then without a leading "the". */
