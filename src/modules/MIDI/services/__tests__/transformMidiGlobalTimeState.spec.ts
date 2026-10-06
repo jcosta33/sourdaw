@@ -213,7 +213,7 @@ describe('transformMidiGlobalTimeState', () => {
         }
     });
 
-    it('duplicates notes after the insert shift without copying CC or pitch bend', () => {
+    it('duplicates notes with their CC and pitch bend lanes, appending after what the target holds', () => {
         const sourceNote = {
             id: 'source-note',
             pitch: 200.4,
@@ -253,8 +253,14 @@ describe('transformMidiGlobalTimeState', () => {
                 channel: 12,
             },
         ]);
-        expect(result.state.ccByClipId).toBe(prepared.ccByClipId);
-        expect(result.state.pitchBendByClipId).toBe(prepared.pitchBendByClipId);
+        expect(result.state.ccByClipId).toEqual({
+            source: [sourceCc],
+            target: [{ ...sourceCc, id: 'cc-dup:target:0' }],
+        });
+        expect(result.state.pitchBendByClipId).toEqual({
+            source: [sourcePitchBend],
+            target: [{ ...sourcePitchBend, id: 'pb-dup:target:0' }],
+        });
     });
 
     it('keeps a note’s recorded expression on its duplicate', () => {
@@ -1059,5 +1065,77 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
             pitchBend('pb-split:right:0', 0, 0.6, 0),
             pitchBend('pb-split:right:2', 0, -0.4, 1),
         ]);
+    });
+});
+
+describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => {
+    function cc(id: string, beat: number, value: number, controller: number, channel: number) {
+        return { id, controller, value, beat, channel };
+    }
+
+    function pitchBend(id: string, beat: number, value: number, channel: number) {
+        return { id, value, beat, channel };
+    }
+
+    const copy: MidiGlobalTimeCommand[] = [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }];
+
+    function createSource() {
+        return state({
+            notesByClipId: { source: [{ id: 'n', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: {
+                source: [cc('a', 1, 127, 64, 0), cc('b', 1, 0, 64, 0), cc('c', 2, 90, 64, 3), cc('d', 2, 10, 1, 0)],
+            },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.5, 0), pitchBend('p1', 3, -0.25, 2)] },
+        });
+    }
+
+    it('copies the controller and pitch bend lanes with deterministic ids and leaves the source alone', () => {
+        const prepared = createSource();
+        const sourceCc = structuredClone(prepared.ccByClipId.source);
+        const sourcePitchBend = structuredClone(prepared.pitchBendByClipId.source);
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy, targetNoteIds: ['clone'] });
+        const replay = transformMidiGlobalTimeState({ state: prepared, commands: copy, targetNoteIds: ['clone'] });
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.ccByClipId.target).toEqual([
+            cc('cc-dup:target:0', 1, 127, 64, 0),
+            cc('cc-dup:target:1', 1, 0, 64, 0),
+            cc('cc-dup:target:2', 2, 90, 64, 3),
+            cc('cc-dup:target:3', 2, 10, 1, 0),
+        ]);
+        expect(result.state.pitchBendByClipId.target).toEqual([
+            pitchBend('pb-dup:target:0', 1, 0.5, 0),
+            pitchBend('pb-dup:target:1', 3, -0.25, 2),
+        ]);
+        expect(replay.state.ccByClipId.target).toEqual(result.state.ccByClipId.target);
+        expect(replay.state.pitchBendByClipId.target).toEqual(result.state.pitchBendByClipId.target);
+        expect(result.state.ccByClipId.source).toEqual(sourceCc);
+        expect(result.state.pitchBendByClipId.source).toEqual(sourcePitchBend);
+        expect(prepared.ccByClipId.source).toEqual(sourceCc);
+    });
+
+    it('copies the controllers of a clip that holds no notes without requesting note identities', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 127, 64, 0)] } });
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy });
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.identityRequests).toEqual([]);
+        expect(result.state.notesByClipId).toBe(prepared.notesByClipId);
+        expect(result.state.ccByClipId.target).toEqual([cc('cc-dup:target:0', 1, 127, 64, 0)]);
+    });
+
+    it('appends the copied lanes after rows the target already holds', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 127, 64, 0)], target: [cc('keep', 0, 5, 1, 0)] },
+        });
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy });
+
+        expect(result.state.ccByClipId.target).toEqual([cc('keep', 0, 5, 1, 0), cc('cc-dup:target:0', 1, 127, 64, 0)]);
+        expect(result.state.pitchBendByClipId).toBe(prepared.pitchBendByClipId);
     });
 });

@@ -222,7 +222,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(mocks.state.value).toBe(preparedState);
     });
 
-    it('performs the insert shift before note-only duplicate copy', () => {
+    it('performs the insert shift before the duplicate copy', () => {
         const preparedState = state({
             notesByClipId: {
                 source: [
@@ -263,8 +263,45 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                 channel: 12,
             },
         ]);
-        expect(appliedState.ccByClipId).not.toHaveProperty('target');
-        expect(appliedState.pitchBendByClipId).not.toHaveProperty('target');
+        // The copy takes the controller lanes as shifted, with ids derived from the target clip.
+        expect(appliedState.ccByClipId.target).toEqual([
+            { id: 'cc-dup:target:0', controller: 1, value: 2, beat: 8, channel: 1 },
+        ]);
+        expect(appliedState.pitchBendByClipId.target).toEqual([
+            { id: 'pb-dup:target:0', value: 0.5, beat: 8, channel: 1 },
+        ]);
+    });
+
+    it('undoes a duplicate that copied controller lanes and redoes it with identical ids', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }],
+            },
+            ccByClipId: {
+                source: [
+                    { id: 'cc-1', controller: 64, value: 0, beat: 1, channel: 0 },
+                    { id: 'cc-2', controller: 64, value: 127, beat: 1, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: { source: [{ id: 'pb-1', value: 0.5, beat: 2, channel: 0 }] },
+        });
+        mocks.state.value = preparedState;
+
+        const first = prepareMidiGlobalTimeTransaction(duplicateInput());
+        expect(first.apply()).toBe(true);
+        const copiedCc = requireState().ccByClipId.target;
+        const copiedPitchBend = requireState().pitchBendByClipId.target;
+        expect(copiedCc?.map((row) => row.value)).toEqual([0, 127]);
+
+        expect(first.revert()).toBe(true);
+        expect(requireState()).toBe(preparedState);
+        expect(requireState().ccByClipId).not.toHaveProperty('target');
+        expect(requireState().pitchBendByClipId).not.toHaveProperty('target');
+
+        const redo = prepareMidiGlobalTimeTransaction(duplicateInput(first.replayPlan));
+        expect(redo.apply()).toBe(true);
+        expect(requireState().ccByClipId.target).toEqual(copiedCc);
+        expect(requireState().pitchBendByClipId.target).toEqual(copiedPitchBend);
     });
 
     it('validates and reuses a supplied replay plan byte-for-byte', () => {
