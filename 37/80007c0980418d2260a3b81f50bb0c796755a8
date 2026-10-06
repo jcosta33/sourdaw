@@ -1,0 +1,173 @@
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_6e6c03a81c99af::t_b4be388621a8f6 29-39,70,78,83-95,100-103,110-113,120-124
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_6e6c03a81c99af::t_a6a667669a53c6 37,706-718,768-774
+src/utils/__tests__/audioLevelLaw.spec.ts
+  s_6e6c03a81c99af::t_a57bed80e62c25 11,16,94-119
+src/utils/audioLevelLaw.ts
+  s_6e6c03a81c99af::t_b2329fb53a7821 280-295,309
+evidence/agent-campaign/manifest.json
+  s_6e6c03a81c99af::t_347d8027a83435 10,527
+release/open-source-inventory.json
+  s_6e6c03a81c99af::t_40859624a6921f 1150,1208,1210-1211,1213
+scripts/__tests__/resourceGuard.spec.ts
+  s_6e6c03a81c99af::t_9f0b800b413977 868
+scripts/checkReleaseInventory.ts
+  s_6e6c03a81c99af::t_57325e1ae862dc 1615,1621
+scripts/resourceGuard.ts
+  s_6e6c03a81c99af::t_c82d5e6733fd39 120-121
+src/modules/AiRuntime/AGENTS.md
+  s_6e6c03a81c99af::t_33e4cfbf2866d1 48
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_6e6c03a81c99af::t_b62ce8cc3340ae 25-41
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_6e6c03a81c99af::t_433b99ac9c918d 7,29,32-34
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_6e6c03a81c99af::t_721440d2838f6e 1-418
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_6e6c03a81c99af::t_379441b2ac02f3 1-8
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_6e6c03a81c99af::t_7d08983f9e19d2 1-172
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_6e6c03a81c99af::t_d2f53f60122a95 254-255
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_6e6c03a81c99af::t_0915b8db086154 632
+src/modules/AiRuntime/useCases/__tests__/measurementBudgetsAndEgress.spec.ts
+  s_6e6c03a81c99af::t_04372cbfefce08 15,460
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_6e6c03a81c99af::t_c3dab090a1697e 57,327,343
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_6e6c03a81c99af::t_01040569bc7281 1-5,738-758,760-762
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_6e6c03a81c99af::t_8343abbd3aa029 1538-1541,1618-1620,1630-1634,1694-1698,1700-1701,1703-1720
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_6e6c03a81c99af::t_f392aea29e92f6 1-567
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_6e6c03a81c99af::t_c88ebd6cad9e8b 11,64-76,448-449,451,455-456
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_6e6c03a81c99af::t_972660ecf3a0a7 31,529
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_6e6c03a81c99af::t_e61e53393f8c31 3-6,8,368-375,377-378
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptorsGuidance.ts
+  s_6e6c03a81c99af::t_b76562f5aaacc6 214-250
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_6e6c03a81c99af::t_5084756791f022 8,275-276
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptorGuidance.ts
+  s_6e6c03a81c99af::t_1df145d08b64d9 1-176
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts
+  s_6e6c03a81c99af::t_44285d11b20034 4-10,149,151-153
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidance.ts
+  s_6e6c03a81c99af::t_b13db0ba16b49d 1-264
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidanceFm.ts
+  s_6e6c03a81c99af::t_116bff13224527 1-356
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_6e6c03a81c99af::t_cb0e49c7bdd760 9,89-90
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts
+  s_6e6c03a81c99af::t_c817f04e773a40 1-93
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptor.ts
+  s_6e6c03a81c99af::t_879cdc17cd33ac 9,102-103
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_6e6c03a81c99af::t_3bdc7c57daa942 1-109
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptor.ts
+  s_6e6c03a81c99af::t_6dde53fca3d54e 9,112-113
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptorGuidance.ts
+  s_6e6c03a81c99af::t_6e074dde034512 1-85
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_6e6c03a81c99af::t_892e4008ce9a13 106-112,114,116-119,129-141,262-265,270
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_6e6c03a81c99af::t_352b350383f43d 45-48,63-65,70-73,75-76,90-91
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationCurveConformance.spec.ts
+  s_6e6c03a81c99af::t_e5c3e81627a7ff 112-161
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_6e6c03a81c99af::t_8ffca90f175f64 242-245,259-260
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  s_6e6c03a81c99af::t_523914ad969692 174-179,181,185-193
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsHardJump.spec.ts
+  s_6e6c03a81c99af::t_f522bc1ad58ccf 1-52
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_6e6c03a81c99af::t_1de46543d0b1f1 158-170,172,353-367
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_6e6c03a81c99af::t_52266b6e39e0df 934-936,950-953
+src/modules/AudioEngine/useCases/__tests__/renderOfflineCancellation.spec.ts
+  s_6e6c03a81c99af::t_e989950319fe6b 10,240-254
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_6e6c03a81c99af::t_89d9a8539bcb0e 25,527-529
+src/modules/AudioEngine/useCases/index.ts
+  s_6e6c03a81c99af::t_343797439d3055 158
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_6e6c03a81c99af::t_20fdd9c78f7b29 41,44-45,260-265,2765-2925
+src/modules/AudioEngine/useCases/livePlayback/restoreNativeChains.ts
+  s_6e6c03a81c99af::t_126d27c55558dd 1-16
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_6e6c03a81c99af::t_a757459eb503cc 132,442-479,666-683,1150-1156,1158-1160,1169
+src/modules/AudioEngine/useCases/offlineRender/__tests__/exportCancellation.spec.ts
+  s_6e6c03a81c99af::t_7de0b11cd14f30 37-38,43,46,49,53-68
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_6e6c03a81c99af::t_204d22801ba3c2 17-19,353,374,469,1667-1721
+src/modules/AudioEngine/useCases/offlineRender/beginExportCancellationScope.ts
+  s_6e6c03a81c99af::t_4f38829cb9c0f3 7-13
+src/modules/AudioEngine/useCases/offlineRender/endExportCancellationScope.ts
+  s_6e6c03a81c99af::t_a5d7ac133cfe4d 3-13
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_6e6c03a81c99af::t_4243c354a0dce9 10,66-68
+src/modules/AudioEngine/useCases/offlineRender/exportCancellationState.ts
+  s_6e6c03a81c99af::t_651ec83c20478a 10-14
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_6e6c03a81c99af::t_b56dcbfe9b648b 141-145,519
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  s_6e6c03a81c99af::t_6e9242c9186901 5,61-64,111
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_6e6c03a81c99af::t_e369e5c457462b 3,18-22,77-79,184,207-209,217-241
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_6e6c03a81c99af::t_cda2017f7a744d 1,227-239
+src/modules/Automation/handlers/automation/__tests__/automationHandlers.spec.ts
+  s_6e6c03a81c99af::t_aef3bdde99d57c 3-4,90-124
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_6e6c03a81c99af::t_38a6778cd5700b 209-223,425-430
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_6e6c03a81c99af::t_36a2b045b45300 300-329
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_6e6c03a81c99af::t_55e707c5736f47 137-148
+src/modules/CrdtDocument/useCases/__tests__/startCrdtAutoSave.spec.ts
+  s_6e6c03a81c99af::t_d8a83ba4c34c75 214-513
+src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts
+  s_6e6c03a81c99af::t_bb58f5aa08eb30 16-17,32-35,111-136,140-141,157-162,164-178,186,209,218,221-226,257,271
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  s_6e6c03a81c99af::t_459ebb208acd07 3,69-161
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_6e6c03a81c99af::t_2cb8b3fcfeff96 557-607
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_6e6c03a81c99af::t_f0a71b96b83410 37
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_6e6c03a81c99af::t_3a561623cd2d28 1-6,13-34,39-43,47-70,85-90,126-132
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_6e6c03a81c99af::t_850c41485b4b21 259,365-368,515-518,535-539,593-597,629-632,957-960
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_6e6c03a81c99af::t_3bf716985ce0aa 23,172-175,281-309,1400-1570
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_6e6c03a81c99af::t_2a24c2e4feef9d 59,76,91,115,137,168,195,203-224,245,269,275-308,335
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_6e6c03a81c99af::t_56c9434d2d6bcf 28,244-307
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_6e6c03a81c99af::t_f69f6cccae2f81 20,22,218-222,615-746
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_6e6c03a81c99af::t_fa785ad5ebb4de 37,274-317
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_6e6c03a81c99af::t_5c093260e55aa6 30,95-122,138-144,275-278,339-353,365-376,403-408,507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3780007c0980418d2260a3b81f50bb0c796755a8",
+  "prompts": {},
+  "sessions": {
+    "s_6e6c03a81c99af": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "08053f3e-990b-427b-b7f8-ee99558449d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
