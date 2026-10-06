@@ -1,0 +1,37 @@
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_7803caea0c141d 19-20,22
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_acd5c88649629f 61-62,64-65
+  s_2bfd55a4393d7c::t_561c1a12fd540b 178-181
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_2b1a2918927552 3260-3275,3279-3290
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  s_2bfd55a4393d7c::t_f138fbfc235373 42-43
+  s_2bfd55a4393d7c::t_f7b44722bcf01f 47
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_2bfd55a4393d7c::t_42c2c1359c32de 251,255-277,281
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_be52afdfa5f51e 280,286-303
+  s_2bfd55a4393d7c::t_5520016f58567a 143
+  s_2bfd55a4393d7c::t_425e65fce0653c 165-171
+  s_2bfd55a4393d7c::t_fbeac63d0e7478 144-149
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_2bfd55a4393d7c::t_1a3746da451513 71-72
+  s_2bfd55a4393d7c::t_ba8abde2d07991 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e93d5876659b38fbb6081d490df71d756fd5af53",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
