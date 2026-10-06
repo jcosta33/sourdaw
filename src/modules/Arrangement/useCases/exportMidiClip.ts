@@ -21,7 +21,8 @@ export function exportMidiClip(clipId: string): void {
             controlChanges: midi.ccByClipId[clipId] ?? [],
             clip: {
                 id: clipId,
-                durationBeats: clip.endBeat - clip.startBeat,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
                 midiOffsetBeats: clip.midiOffsetBeats,
                 loopEnabled: clip.loopEnabled,
                 loopLength: clip.loopLength,
@@ -29,7 +30,8 @@ export function exportMidiClip(clipId: string): void {
         });
         downloadMidiFile({
             clipName: clip.name || track.name,
-            clipStartBeat: clip.startBeat,
+            // The projection already places events on the timeline.
+            clipStartBeat: 0,
             notes,
             ccs: controlChanges,
         });

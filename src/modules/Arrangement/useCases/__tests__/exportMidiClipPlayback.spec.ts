@@ -297,6 +297,83 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
+    it('keeps a sub-tick note that starts on the tick a same-pitch note ends', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4.0004 },
+            [note('before', 3.5, 0.5, 40), note('sliver', 4, 0.5, 40)],
+            []
+        );
+
+        expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['on', 1680],
+            ['off', 1920],
+            ['on', 1920],
+            ['off', 1921],
+        ]);
+    });
+
+    it('drops a sub-tick note whose release tick a same-pitch note is struck on', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [note('sliver', 2, 0.0004, 62), note('struck-on-release-tick', 961 / TICKS_PER_BEAT, 0.5, 62)],
+            []
+        );
+
+        expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['on', 961],
+            ['off', 1201],
+        ]);
+    });
+
+    describe('in the coordinates the scheduler projects in', () => {
+        type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
+
+        /** The segments of positive length the note scheduler's projection returns, pass by pass. */
+        function schedulerSegments(clip: SchedulerClip, stored: NoteFixture[]) {
+            const passes = Math.ceil((clip.endBeat - clip.startBeat) / clip.loopLength);
+            return Array.from({ length: passes }, (_, pass) =>
+                projectClipMidiEvents({
+                    events: stored,
+                    clipId: 'clip',
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    iterationStartBeat: clip.startBeat + pass * clip.loopLength,
+                    loopLengthBeats: clip.loopLength,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                })
+            )
+                .flat()
+                .filter((segment) => segment.duration > 0);
+        }
+
+        it('writes a loop pass of a clip not at beat 0 once, without a rounding sliver of its wrap', () => {
+            const clip = { startBeat: 4, endBeat: 12, loopLength: 4 };
+            const stored = [note('third', 1 / 3, 1 / 3, 36)];
+
+            const events = exportClip({ ...clip, loopEnabled: true }, stored, []);
+
+            // The note starts a third of a beat into each pass: 4 + 1/3 and 8 + 1/3 beats.
+            expect(schedulerSegments(clip, stored)).toHaveLength(2);
+            expect(ticks(events, 'on')).toEqual([2080, 4000]);
+            expect(ticks(events, 'off')).toEqual([2240, 4160]);
+        });
+
+        it('writes as many hits as the scheduler projection has segments on thirds, fifths and twelfths', () => {
+            const clip = { startBeat: 4 / 16, endBeat: 4 / 16 + 12, loopLength: 4 };
+            // One pitch per note, and none struck on a pass head, so no same-pitch note
+            // covers another's wrap residue there: every segment the projection returns is written.
+            const grid = [3, 5, 12].flatMap((division) =>
+                Array.from({ length: 4 * division - 1 }, (_, step) => ({ division, start: (step + 1) / division }))
+            );
+            const notes = grid.map(({ division, start }, index) => note(`n${index}`, start, 1 / division, 20 + index));
+
+            const events = exportClip({ ...clip, loopEnabled: true }, notes, []);
+
+            expect(ticks(events, 'on')).toHaveLength(schedulerSegments(clip, notes).length);
+        });
+    });
+
     describe('with a groove committed to the project', () => {
         afterEach(() => {
             grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));

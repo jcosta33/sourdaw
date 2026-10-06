@@ -7,8 +7,8 @@ import { projectClipControllerEvents } from './projectClipControllerEvents';
 
 type PlaybackProjectionClip = {
     id: string;
-    /** The clip's length on the timeline, `endBeat - startBeat`. */
-    durationBeats: number;
+    startBeat: number;
+    endBeat: number;
     midiOffsetBeats?: number;
     loopEnabled?: boolean;
     loopLength?: number;
@@ -25,9 +25,12 @@ type ProjectMidiClipPlaybackInput = {
 const straightProjection = getGrooveProjection({ templates: [], assignments: [] });
 
 /**
- * What a MIDI clip plays across its full length, at beats counted from the clip
- * start: every loop pass of its notes and controllers, built by the projections the
- * note scheduler and the stored-controller scheduler read.
+ * What a MIDI clip plays across its full length, at timeline beats: every loop pass
+ * of its notes and controllers, built by the projections the note scheduler and the
+ * stored-controller scheduler read, from the same coordinates they are given (the
+ * clip's timeline position, not beat 0). A float wrap remainder that playback sees
+ * as no length must not reappear here as a sliver, so nothing is rebased before
+ * projecting.
  *
  * Notes come from `projectClipMidiEvents` per pass, so a pass clips a note at its
  * end and a note a slip leaves before the content offset wraps into the pass, as
@@ -42,7 +45,7 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
     const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
     const loopEnabled = clip.loopEnabled ?? false;
     const expansion = projectClipLoopExpansion({
-        clipDurationBeats: clip.durationBeats,
+        clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled,
     });
@@ -53,9 +56,9 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
             ...straightProjection.projectClipMidiEvents({
                 events: notes,
                 clipId: clip.id,
-                clipStartBeat: 0,
-                clipEndBeat: clip.durationBeats,
-                iterationStartBeat: iteration * expansion.loopLengthBeats,
+                clipStartBeat: clip.startBeat,
+                clipEndBeat: clip.endBeat,
+                iterationStartBeat: clip.startBeat + iteration * expansion.loopLengthBeats,
                 loopLengthBeats: expansion.loopLengthBeats,
                 midiOffsetBeats,
                 loopEnabled,
@@ -68,14 +71,14 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
         controlChanges: projectClipControllerEvents({
             controlChanges,
             clip: {
-                startBeat: 0,
-                endBeat: clip.durationBeats,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
                 midiOffsetBeats,
                 loopEnabled,
                 loopLength: clip.loopLength,
             },
-            fromBeat: 0,
-            toBeat: clip.durationBeats,
+            fromBeat: clip.startBeat,
+            toBeat: clip.endBeat,
         }),
     };
 }
