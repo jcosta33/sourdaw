@@ -1,0 +1,21 @@
+.agents/decisions/0026-ownership-by-exception.md
+  s_1c08b47ac3792f::t_0a4cd919bfeeff 101-102
+AGENTS.md
+  s_1c08b47ac3792f::t_fb211388b602aa 670-678
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "155213c0df22de27574e5e2fff203bb99920eb03",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
