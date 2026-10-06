@@ -1196,12 +1196,16 @@ describe('createAutomergeStorage', () => {
         const second = createAutomergeStorage<{ count: number }>('root', 'second');
         expect(first.hydrate?.()).toBe(true);
         expect(second.hydrate?.()).toBe(true);
-        authorityReadCount = 0;
-        failAuthorityRefresh = true;
         const transaction = runWithAutomergeStorageTransaction(undefined, () => {
             first.set({ count: 1 });
             second.set({ count: 1 });
         });
+        // The counter watches authority refreshes during refused-commit
+        // handling, one per adapter. Set-time work (hydrating the pending's
+        // base-capture snapshot) also reads the document and is none of this
+        // pin's business, so the window opens after the writes are buffered.
+        authorityReadCount = 0;
+        failAuthorityRefresh = true;
 
         try {
             let observed: unknown;

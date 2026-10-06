@@ -4,10 +4,17 @@ import { ensureClipGainEnvelope } from './ensureClipGainEnvelope';
 
 export type { GainEnvelopePoint };
 
-export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
+/** `pointId` pins the new point's identity so a dispatched action replays to
+ *  the same point everywhere (the action's inverse removes exactly that id). */
+export function addGainEnvelopePoint(
+    clipId: string,
+    beatOffset: number,
+    gainDb: number,
+    pointId?: string
+): GainEnvelopePoint {
     const env = ensureClipGainEnvelope(clipId);
     const point: GainEnvelopePoint = {
-        id: `gep-${crypto.randomUUID().slice(0, 6)}`,
+        id: pointId ?? `gep-${crypto.randomUUID().slice(0, 6)}`,
         beatOffset: Math.max(0, beatOffset),
         gainDb: Math.max(-60, Math.min(12, gainDb)),
     };

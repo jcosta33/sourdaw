@@ -2,12 +2,8 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
-import { addMarker } from '../../../useCases/marker/markerOperations/addMarker';
-import { moveMarker } from '../../../useCases/marker/markerOperations/moveMarker';
-import { removeMarker } from '../../../useCases/marker/markerOperations/removeMarker';
-import { renameMarker } from '../../../useCases/marker/markerOperations/renameMarker';
-import { setMarkerColor } from '../../../useCases/marker/markerOperations/setMarkerColor';
 import { MarkerLane } from '../MarkerLane';
 
 // Mock external dependencies
@@ -26,24 +22,11 @@ vi.mock('../../../stores/markerStore', () => ({
     },
 }));
 
-vi.mock('../../../useCases/marker/markerOperations/moveMarker', () => ({
-    moveMarker: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/setMarkerColor', () => ({
-    setMarkerColor: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/renameMarker', () => ({
-    renameMarker: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/removeMarker', () => ({
-    removeMarker: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/addMarker', () => ({
-    addMarker: vi.fn(),
+// Add, delete, recolour, move and rename dispatch through the command path
+// (#4617); the assertions below pin the dispatched actions, not the bare use
+// cases.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
@@ -128,7 +111,10 @@ describe('MarkerLane', () => {
         fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
         const addButton = screen.getByText(/Add Marker at Beat/);
         fireEvent.click(addButton);
-        expect(addMarker).toHaveBeenCalled();
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addMarker',
+            payload: { beat: 8, name: 'New Marker' },
+        });
     });
 
     // The global shortcut layer gates Delete / Backspace on
@@ -278,7 +264,10 @@ describe('MarkerLane', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(moveMarker).toHaveBeenCalledWith('m1', 15);
+                expect(executeUserAppAction).toHaveBeenCalledWith({
+                    type: 'moveMarker',
+                    payload: { markerId: 'm1', beat: 15 },
+                });
             } finally {
                 listeners.restore();
             }
@@ -298,7 +287,7 @@ describe('MarkerLane', () => {
                 act(() => {
                     listeners.up();
                 });
-                expect(moveMarker).not.toHaveBeenCalled();
+                expect(executeUserAppAction).not.toHaveBeenCalled();
             } finally {
                 listeners.restore();
             }
@@ -309,7 +298,7 @@ describe('MarkerLane', () => {
             const lane = screen.getByTestId('lane-surface');
             openMarkerMenu(lane, 100);
             fireEvent.click(screen.getByText('Delete Marker'));
-            expect(removeMarker).toHaveBeenCalledWith('m1');
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeMarker', payload: { markerId: 'm1' } });
         });
 
         it('sets the marker color from a swatch', () => {
@@ -321,7 +310,10 @@ describe('MarkerLane', () => {
                 .find((b) => b.getAttribute('aria-label')?.startsWith('Set color'));
             const firstColor = firstSwatch!.getAttribute('aria-label')!.replace('Set color ', '');
             fireEvent.click(firstSwatch!);
-            expect(setMarkerColor).toHaveBeenCalledWith('m1', firstColor);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'setMarkerColor',
+                payload: { markerId: 'm1', color: firstColor },
+            });
         });
 
         it('renames the marker via the menu and commits on Enter', () => {
@@ -332,7 +324,10 @@ describe('MarkerLane', () => {
             const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
             fireEvent.change(input, { target: { value: '  Verse  ' } });
             fireEvent.keyDown(input, { key: 'Enter' });
-            expect(renameMarker).toHaveBeenCalledWith('m1', 'Verse');
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'renameMarker',
+                payload: { markerId: 'm1', name: 'Verse' },
+            });
         });
 
         it('cancels rename on Escape without committing', () => {
@@ -343,7 +338,7 @@ describe('MarkerLane', () => {
             const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
             fireEvent.change(input, { target: { value: 'Ignore' } });
             fireEvent.keyDown(input, { key: 'Escape' });
-            expect(renameMarker).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('enters rename on double-click and does not rename on empty commit', () => {
@@ -353,7 +348,7 @@ describe('MarkerLane', () => {
             const input = screen.getByDisplayValue('Intro') as HTMLInputElement;
             fireEvent.change(input, { target: { value: '   ' } });
             fireEvent.blur(input);
-            expect(renameMarker).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('dismisses the context menu on an outside mousedown', () => {
@@ -394,7 +389,7 @@ describe('MarkerLane', () => {
                 });
                 listeners.move(200);
                 listeners.up();
-                expect(moveMarker).not.toHaveBeenCalled();
+                expect(executeUserAppAction).not.toHaveBeenCalled();
             } finally {
                 listeners.restore();
             }
