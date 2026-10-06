@@ -1,9 +1,10 @@
 import { type ReactNode } from 'react';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 
 import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
 import { ExportDialog } from '../ExportDialog';
@@ -440,6 +441,7 @@ describe('ExportDialog', () => {
         mocks.workspaceStore.value = { soloMode: 'sip' };
         mocks.midiStore.value = { notesByClipId: {} };
         mocks.listToasterPatternsOutsideArrangement.mockReturnValue([]);
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
         setProjectClips([
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
@@ -804,5 +806,97 @@ describe('ExportDialog', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith('Permission denied', 'error');
         expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
         expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+    });
+
+    it('falls through to the download link when the browser save picker fails', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const pickerError = new Error('Save picker failed');
+        const showSaveFilePicker = vi.fn().mockRejectedValue(pickerError);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:sourdaw-export');
+        const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        const clickDownload = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+            await waitFor(() => {
+                expect(document.querySelector('a[download$=".wav"]')).toBeInstanceOf(HTMLAnchorElement);
+            });
+
+            expect(document.querySelector('a[download$=".wav"]')).toHaveAttribute(
+                'download',
+                expect.stringMatching(/^Sourdaw_Bake_\d+\.wav$/)
+            );
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            expect(clickDownload).toHaveBeenCalledTimes(1);
+            expect(screen.queryByText('Save picker failed')).not.toBeInTheDocument();
+            expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith('Save picker failed', 'error');
+            expect(createObjectURL).toHaveBeenCalledTimes(1);
+            expect(revokeObjectURL).not.toHaveBeenCalled();
+        } finally {
+            clickDownload.mockRestore();
+            createObjectURL.mockRestore();
+            revokeObjectURL.mockRestore();
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('stops before rendering when destination selection is aborted', async () => {
+        const abortError = new Error('The user aborted a request.');
+        abortError.name = 'AbortError';
+        let rejectSelection: (error: Error) => void = () => {
+            throw new Error('Destination selection was not started');
+        };
+        const selection = new Promise<string | null>((_resolve, reject) => {
+            rejectSelection = reject;
+        });
+        mocks.selectNativeAudioExportFile.mockReturnValue(selection);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+        });
+
+        await act(async () => {
+            rejectSelection(abortError);
+        });
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByText('The user aborted a request.')).not.toBeInTheDocument();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('stops before rendering when native destination selection is cancelled', async () => {
+        let resolveSelection: (path: string | null) => void = () => {
+            throw new Error('Destination selection was not started');
+        };
+        const selection = new Promise<string | null>((resolve) => {
+            resolveSelection = resolve;
+        });
+        mocks.selectNativeAudioExportFile.mockReturnValue(selection);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+        });
+
+        await act(async () => {
+            resolveSelection(null);
+        });
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
     });
 });
