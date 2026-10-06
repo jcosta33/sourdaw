@@ -1037,6 +1037,45 @@ describe('every render a successful receipt cites is kept or named', () => {
         expect(retainedAddresses()).not.toContain('oversized-baseline');
     });
 
+    // Red when the project path puts its retention lines after the renderer warnings the cap cuts from.
+    it('names an oversized render of a four-target project measurement whose renderers filled the cap', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack({ id: 'master', name: 'Master', kind: 'master' }),
+                ...['drums', 'bass', 'keys', 'pad'].map((id) => createTrack({ id, name: id, kind: 'audio' })),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        renderClaimedBuffers(
+            [
+                claimedBuffer('oversized-drums', OVERSIZED_FRAMES),
+                claimedBuffer('bass', 1_000),
+                claimedBuffer('keys', 1_000),
+                claimedBuffer('pad', 1_000),
+            ],
+            2
+        );
+
+        const read = await measure('project', { kind: 'tracks', ids: ['drums', 'bass', 'keys', 'pad'] }, SHORT_RANGE);
+
+        expect(read.receipt.error).toBeNull();
+        expect(read.receipt.warnings).toHaveLength(8);
+        expect(read.receipt.warnings.some((warning) => warning.includes('oversized-drums'))).toBe(true);
+    });
+
+    // Red when one render cited twice is named twice, spending a warning slot on a repeat.
+    it('names a render cited by both documents of a preview once', async () => {
+        const shared = claimedBuffer('shared-oversized', OVERSIZED_FRAMES);
+        renderClaimedBuffers([shared, shared], 0);
+
+        const read = await measure('preview', DRUMS, SHORT_RANGE);
+
+        expect(read.receipt.error).toBeNull();
+        expect(citedAddresses(read)).toEqual(['shared-oversized', 'shared-oversized']);
+        expect(read.receipt.warnings).toEqual([expect.stringContaining('shared-oversized')]);
+    });
+
     // Red when retention stops naming a render too large to keep, which no row observed before.
     it('names a plain oversized render and does not retain it', async () => {
         renderClaimedBuffers([claimedBuffer('oversized-render', OVERSIZED_FRAMES)], 0);
