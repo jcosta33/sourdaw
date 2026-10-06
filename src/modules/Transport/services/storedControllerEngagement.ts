@@ -71,6 +71,51 @@ export function listStoredControllerEngagements(): StoredControllerEngagement[] 
     }));
 }
 
+export type StoredControllerDevice = { trackId: string; deviceId: string; deviceType: string };
+
+export type StoredControllerPostedDevice = StoredControllerDevice & {
+    /** The pedal controllers stored playback has posted a move for, whatever the move was (a copy the caller owns). */
+    pedals: Set<number>;
+};
+
+/**
+ * Every device stored playback has posted any move to, engaged or not, and which
+ * pedals it moved there.
+ *
+ * Engagement alone cannot say what a relocation or a stop must clean up. A lift
+ * still waiting for its frame has already cleared the pedal's engagement in the
+ * record, yet the engine has not applied it: if the queued lift is dropped the
+ * pedal stays down, so the pedal must be lifted whatever the last posted move
+ * was. And a Levain CC1 or CC11 move never sets an engagement, yet may be queued:
+ * the device must be reached to drop it.
+ */
+const postedDeviceByKey = new Map<
+    string,
+    { trackId: string; deviceId: string; deviceType: string; pedals: Set<number> }
+>();
+
+/** Record that stored playback posted a move to one device, and the pedal it moved if it was one. */
+export function noteStoredControllerPost(device: StoredControllerDevice & { pedal?: number }): void {
+    const key = storedControllerDeviceKey(device.trackId, device.deviceId);
+    const existing = postedDeviceByKey.get(key) ?? {
+        trackId: device.trackId,
+        deviceId: device.deviceId,
+        deviceType: device.deviceType,
+        pedals: new Set<number>(),
+    };
+    if (device.pedal !== undefined) {
+        existing.pedals.add(device.pedal);
+    }
+    postedDeviceByKey.set(key, existing);
+}
+
+/** Every device stored playback has posted to, forgetting them: the caller is about to drop each one's queued stored moves. */
+export function takeStoredControllerPostedDevices(): StoredControllerPostedDevice[] {
+    const taken = Array.from(postedDeviceByKey.values(), (device) => ({ ...device, pedals: new Set(device.pedals) }));
+    postedDeviceByKey.clear();
+    return taken;
+}
+
 /** Every engagement recorded so far, forgetting it: the caller is about to release each one. */
 export function takeStoredControllerEngagements(): StoredControllerEngagement[] {
     const taken = Array.from(engagementByDevice.values(), (engagement) => ({
@@ -84,4 +129,5 @@ export function takeStoredControllerEngagements(): StoredControllerEngagement[] 
 /** Drop every engagement without releasing it, for a teardown whose audio graph is already gone. */
 export function forgetStoredControllerEngagements(): void {
     engagementByDevice.clear();
+    postedDeviceByKey.clear();
 }

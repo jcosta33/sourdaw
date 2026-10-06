@@ -1,7 +1,11 @@
 import { projectClipControllerRestore } from '#/modules/MIDI/useCases';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
-import { noteStoredControllerMove, readStoredControllerEngagement } from '../../services/storedControllerEngagement';
+import {
+    noteStoredControllerMove,
+    noteStoredControllerPost,
+    readStoredControllerEngagement,
+} from '../../services/storedControllerEngagement';
 
 import { postStoredControllerMove } from './postStoredControllerMove';
 import { releaseStoredEngagement } from './releaseStoredEngagement';
@@ -74,6 +78,7 @@ export function restoreStoredControllers({
     }
     queue.add('control', sampleFrame, () => {
         releaseStoredEngagement({ deviceType: device.type, node, controllers: stale, sampleFrame });
+        noteStoredControllerPost({ trackId, deviceId: device.id, deviceType: device.type });
         for (const controller of stale) {
             noteStoredControllerMove({
                 trackId,

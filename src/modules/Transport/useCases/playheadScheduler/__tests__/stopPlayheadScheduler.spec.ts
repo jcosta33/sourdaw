@@ -57,9 +57,9 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
 
         stopPlayheadScheduler();
 
-        // Frameless: a move with no frame applies at once and supersedes any
-        // framed move of stored playback still queued in the engine.
-        expect(playedBack.setSustain).toHaveBeenCalledExactlyOnceWith(0);
+        // Frameless, and marked as a stored move: it applies at once, and the
+        // framed stored moves still queued are dropped by the discard sent first.
+        expect(playedBack.setSustain).toHaveBeenCalledExactlyOnceWith(0, undefined, true);
         expect(playedBack.setSostenuto).not.toHaveBeenCalled();
         expect(playedBack.setUnaCorda).not.toHaveBeenCalled();
         expect(heldLive.setSustain).not.toHaveBeenCalled();
@@ -92,9 +92,9 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
 
         stopPlayheadScheduler();
 
-        expect(controls.setSustain).toHaveBeenCalledExactlyOnceWith(0);
+        expect(controls.setSustain).toHaveBeenCalledExactlyOnceWith(0, undefined, true);
         expect(controls.setSostenuto).not.toHaveBeenCalled();
-        expect(controls.setUnaCorda).toHaveBeenCalledExactlyOnceWith(false);
+        expect(controls.setUnaCorda).toHaveBeenCalledExactlyOnceWith(false, undefined, true);
     });
 
     it('lifts a Levain sustain stored playback left down, as a frameless controller 64 at zero', () => {
@@ -110,7 +110,7 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
 
         stopPlayheadScheduler();
 
-        expect(handleCc).toHaveBeenCalledExactlyOnceWith(64, 0);
+        expect(handleCc).toHaveBeenCalledExactlyOnceWith(64, 0, undefined, true);
     });
 
     it('releases a pedal once: a second stop sends nothing', () => {

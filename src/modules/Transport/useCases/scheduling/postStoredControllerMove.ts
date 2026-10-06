@@ -1,7 +1,7 @@
 import { CC_SUSTAIN_PEDAL, isPianoPedalMoveEngaged, resolvePianoPedalMove } from '#/utils/pianoPedalController';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
-import { noteStoredControllerMove } from '../../services/storedControllerEngagement';
+import { noteStoredControllerMove, noteStoredControllerPost } from '../../services/storedControllerEngagement';
 
 type PostStoredControllerMoveInput = {
     trackId: string;
@@ -37,12 +37,13 @@ export function postStoredControllerMove({
             return;
         }
         if (pedal.pedal === 'sustain') {
-            grandBoule.setSustain(pedal.position, sampleFrame);
+            grandBoule.setSustain(pedal.position, sampleFrame, true);
         } else if (pedal.pedal === 'sostenuto') {
-            grandBoule.setSostenuto(pedal.engaged, sampleFrame);
+            grandBoule.setSostenuto(pedal.engaged, sampleFrame, true);
         } else {
-            grandBoule.setUnaCorda(pedal.engaged, sampleFrame);
+            grandBoule.setUnaCorda(pedal.engaged, sampleFrame, true);
         }
+        noteStoredControllerPost({ trackId, deviceId: device.id, deviceType: device.type, pedal: controller });
         noteStoredControllerMove({
             trackId,
             deviceId: device.id,
@@ -56,7 +57,13 @@ export function postStoredControllerMove({
     if (!levain) {
         return;
     }
-    levain.handleCc(controller, value, sampleFrame);
+    levain.handleCc(controller, value, sampleFrame, true);
+    noteStoredControllerPost({
+        trackId,
+        deviceId: device.id,
+        deviceType: device.type,
+        pedal: controller === CC_SUSTAIN_PEDAL ? controller : undefined,
+    });
     if (controller === CC_SUSTAIN_PEDAL) {
         noteStoredControllerMove({
             trackId,

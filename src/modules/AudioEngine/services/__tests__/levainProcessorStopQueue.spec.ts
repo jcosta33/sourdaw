@@ -186,3 +186,103 @@ describe('LevainProcessor queued notes across allNotesOff', () => {
         expect(calls.map((call) => call.method).filter((name) => name !== 'process')).toEqual(['all_notes_off']);
     });
 });
+
+// A controller is state, so allNotesOff keeps every queued controller move. Stored clip
+// playback therefore marks its moves, and `discardStoredCc` drops the marked ones that
+// are still waiting for their frame (the look-ahead past a relocation or a stop).
+describe('LevainProcessor queued controller moves from stored playback', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        resetGrowableMemory(memory, HEAP_BYTES);
+        calls.length = 0;
+        processShouldThrow = false;
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    function controllerCalls(): unknown[][] {
+        return calls.filter((call) => call.method === 'handle_cc').map((call) => call.args);
+    }
+
+    async function startedProcessor(): Promise<LevainProcessorLike> {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+        return proc;
+    }
+
+    function drainPast(proc: LevainProcessorLike, frame: number): void {
+        vi.stubGlobal('currentFrame', frame);
+        proc.process([], [makeChannels(2, FRAMES)]);
+    }
+
+    it('drops a stored CC11 move still queued, so it never applies after the relocation', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 11, value: 20, sampleFrame: 5_000, stored: true });
+        send(proc, { type: 'discardStoredCc' });
+        send(proc, { type: 'cc', cc: 11, value: 100, sampleFrame: 200, stored: true });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([[11, 100]]);
+    });
+
+    it('would apply that stored move after the destination value without the discard', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 11, value: 20, sampleFrame: 5_000, stored: true });
+        send(proc, { type: 'allNotesOff' });
+        send(proc, { type: 'cc', cc: 11, value: 100, sampleFrame: 200, stored: true });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([
+            [11, 100],
+            [11, 20],
+        ]);
+    });
+
+    it('keeps a controller move a performer played, framed or not, queued', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 1, value: 64, sampleFrame: 5_000 });
+        send(proc, { type: 'cc', cc: 11, value: 90, sampleFrame: 5_100, stored: true });
+        send(proc, { type: 'discardStoredCc' });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([[1, 64]]);
+    });
+
+    it('leaves a controller value already applied where it stands', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 11, value: 100, stored: true });
+        calls.length = 0;
+        send(proc, { type: 'discardStoredCc' });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([]);
+    });
+
+    it('does not supersede a performer move queued for the same controller when it is frameless', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 11, value: 90, sampleFrame: 5_000 });
+        send(proc, { type: 'cc', cc: 11, value: 50, stored: true });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([
+            [11, 50],
+            [11, 90],
+        ]);
+    });
+
+    it('still lets a frameless performer move supersede a queued stored one of the same controller', async () => {
+        const proc = await startedProcessor();
+
+        send(proc, { type: 'cc', cc: 11, value: 20, sampleFrame: 5_000, stored: true });
+        send(proc, { type: 'cc', cc: 11, value: 70 });
+        drainPast(proc, 6_000);
+
+        expect(controllerCalls()).toEqual([[11, 70]]);
+    });
+});

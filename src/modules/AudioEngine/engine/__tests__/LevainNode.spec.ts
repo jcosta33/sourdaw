@@ -233,6 +233,24 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'cc', cc: 1, value: 40, sampleFrame: undefined });
     });
 
+    it('handleCc marks a move stored playback posts, and only that one, and discardStoredCc posts the discard', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.handleCc(11, 20, 4_096, true);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'cc', cc: 11, value: 20, sampleFrame: 4_096, stored: true });
+
+        postMessage.mockClear();
+        result.handleCc(11, 90, 4_096);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'cc', cc: 11, value: 90, sampleFrame: 4_096 });
+        expect(postMessage.mock.calls[0]?.[0].stored).toBeUndefined();
+
+        postMessage.mockClear();
+        result.discardStoredCc();
+        expect(postMessage).toHaveBeenCalledWith({ type: 'discardStoredCc' });
+    });
+
     it('setParam forwards finite values and drops non-finite ones', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);

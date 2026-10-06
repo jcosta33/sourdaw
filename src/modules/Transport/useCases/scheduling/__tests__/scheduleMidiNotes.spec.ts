@@ -137,6 +137,13 @@ vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => true),
 }));
 
+/**
+ * The real MIDI projections, behind this file's barrel double. Loaded here, at
+ * collection, so the cost of evaluating the real barrel never lands inside a case's
+ * own time limit.
+ */
+const realMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+
 function midiTrack(overrides: Record<string, unknown> = {}) {
     return {
         id: 'track-1',
@@ -2303,11 +2310,10 @@ describe('scheduleMidiNotes', () => {
             );
         }
 
-        /** The projections the composition root injects, loaded past this spec's barrel double. */
-        async function useRealProjections() {
-            const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
-            vi.mocked(projectClipMidiEvents).mockImplementation(actual.projectClipMidiEvents);
-            vi.mocked(projectClipControllerEvents).mockImplementation(actual.projectClipControllerEvents);
+        /** Route the projections to the real ones the composition root injects (loaded once, at the top of the file). */
+        function useRealProjections() {
+            vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+            vi.mocked(projectClipControllerEvents).mockImplementation(realMidiUseCases.projectClipControllerEvents);
         }
 
         function loadTrack(deviceType: string, deviceId: string, midi: Record<string, unknown>) {
@@ -2343,8 +2349,8 @@ describe('scheduleMidiNotes', () => {
 
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
-            expect(setSustain).toHaveBeenCalledWith(1, BEAT_FRAMES);
-            expect(setSustain).toHaveBeenCalledWith(0, 2 * BEAT_FRAMES);
+            expect(setSustain).toHaveBeenCalledWith(1, BEAT_FRAMES, true);
+            expect(setSustain).toHaveBeenCalledWith(0, 2 * BEAT_FRAMES, true);
             expect(posted.indexOf(`sustain 1 @${BEAT_FRAMES}`)).toBeGreaterThanOrEqual(0);
             expect(posted.indexOf(`sustain 1 @${BEAT_FRAMES}`)).toBeLessThan(posted.indexOf(`noteOn @${BEAT_FRAMES}`));
         });
@@ -2370,16 +2376,18 @@ describe('scheduleMidiNotes', () => {
                     'clip-1': [
                         storedController('s-on', 66, 64, 1),
                         storedController('s-off', 66, 63, 2),
-                        storedController('u-on', 67, 127, 1),
+                        storedController('u-on', 67, 64, 1),
+                        storedController('u-off', 67, 63, 2),
                     ],
                 },
             });
 
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
-            expect(setSostenuto).toHaveBeenNthCalledWith(1, true, BEAT_FRAMES);
-            expect(setSostenuto).toHaveBeenNthCalledWith(2, false, 2 * BEAT_FRAMES);
-            expect(setUnaCorda).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES);
+            expect(setSostenuto).toHaveBeenNthCalledWith(1, true, BEAT_FRAMES, true);
+            expect(setSostenuto).toHaveBeenNthCalledWith(2, false, 2 * BEAT_FRAMES, true);
+            expect(setUnaCorda).toHaveBeenNthCalledWith(1, true, BEAT_FRAMES, true);
+            expect(setUnaCorda).toHaveBeenNthCalledWith(2, false, 2 * BEAT_FRAMES, true);
         });
 
         it('posts every Levain controller as the raw wire byte at its frame', async () => {
@@ -2396,7 +2404,7 @@ describe('scheduleMidiNotes', () => {
 
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
-            expect(handleCc).toHaveBeenCalledExactlyOnceWith(1, 64, BEAT_FRAMES);
+            expect(handleCc).toHaveBeenCalledExactlyOnceWith(1, 64, BEAT_FRAMES, true);
         });
 
         it('emits a move once across two consecutive scheduler windows', async () => {
@@ -2423,7 +2431,7 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(1, 2, 1, new Set<string>(), [], defaultTransportState, 120);
             await scheduleMidiNotes(2, 3, 2, new Set<string>(), [], defaultTransportState, 120);
 
-            expect(setSustain).toHaveBeenCalledExactlyOnceWith(1, expect.any(Number));
+            expect(setSustain).toHaveBeenCalledExactlyOnceWith(1, expect.any(Number), true);
         });
 
         it('records a pedal left down for the stop to release, and none once it is lifted', async () => {
@@ -2591,10 +2599,7 @@ describe('scheduleMidiNotes', () => {
                 ]);
             });
 
-            it('keeps a note whose on and off share a frame on before off, so no voice sticks', async () => {
-                // A zero-length note is admitted by the projection and the
-                // scheduler posts both ends at one frame; the release must not be
-                // sorted ahead of the note-on it belongs to.
+            it('does not play a note of no length, as the export does not', async () => {
                 const posted: string[] = [];
                 stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
                 loadTrack('grand-boule', 'gb-1', {
@@ -2604,11 +2609,53 @@ describe('scheduleMidiNotes', () => {
 
                 await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
-                expect(postedAt(posted, BEAT_FRAMES)).toEqual([
-                    `sustain 1 @${BEAT_FRAMES}`,
-                    `on 60 @${BEAT_FRAMES}`,
-                    `off 60 @${BEAT_FRAMES}`,
-                ]);
+                expect(posted).toEqual([`sustain 1 @${BEAT_FRAMES}`]);
+            });
+
+            it.each([
+                ['zero-length note first', [note('empty', 1, 0), note('held', 1, 1)]],
+                ['zero-length note last', [note('held', 1, 1), note('empty', 1, 0)]],
+            ])('holds a same-pitch note struck on the frame a zero-length one sits on (%s)', async (_order, notes) => {
+                const posted: string[] = [];
+                stripWith({
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: recordingGrandBoule(posted),
+                });
+                loadTrack('grand-boule', 'gb-1', { notesByClipId: { 'clip-1': notes }, ccByClipId: {} });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                // The held note is struck and released once, a beat apart: no release
+                // at the strike frame cuts it.
+                expect(posted).toEqual([`on 60 @${BEAT_FRAMES}`, `off 60 @${2 * BEAT_FRAMES}`]);
+            });
+
+            it('sounds every pass-head note of a looped clip for its full length, whatever sliver the pass wrap leaves', async () => {
+                // Loop length 1 with a note that ends exactly at the pass end and one that
+                // starts exactly at the head: the head note must not be cut by a release
+                // the pass wrap re-anchors onto its own start frame.
+                const posted: string[] = [];
+                useRealProjections();
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                const track = midiTrack({
+                    clips: [midiClip({ endBeat: 4, loopEnabled: true, loopLength: 1 })],
+                    devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [note('tail', 2 / 3, 1 / 3), note('head', 0, 1 / 3)] },
+                    ccByClipId: {},
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                const third = BEAT_FRAMES / 3;
+                for (const head of [0, 1, 2, 3].map((beat) => beat * BEAT_FRAMES)) {
+                    expect(postedAt(posted, head + third)).toContain(`off 60 @${head + third}`);
+                    expect(postedAt(posted, head)).toContain(`on 60 @${head}`);
+                    expect(postedAt(posted, head).indexOf(`on 60 @${head}`)).toBe(postedAt(posted, head).length - 1);
+                }
             });
 
             it('releases the last note of a looped pass before the pedal its next pass opens with', async () => {
@@ -2616,7 +2663,7 @@ describe('scheduleMidiNotes', () => {
                 // pass head; the note started in the first pass is clipped to end
                 // exactly where the second pass, and its pedal, begin.
                 const posted: string[] = [];
-                await useRealProjections();
+                useRealProjections();
                 stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
                 const track = midiTrack({
                     clips: [midiClip({ endBeat: 4, loopEnabled: true, loopLength: 2 })],
@@ -2737,22 +2784,22 @@ describe('scheduleMidiNotes', () => {
                 };
 
                 await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
-                expect(levain.handleCc).toHaveBeenCalledExactlyOnceWith(64, 127, BEAT_FRAMES);
-                expect(grandBoule.setSostenuto).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES);
-                expect(grandBoule.setUnaCorda).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES);
+                expect(levain.handleCc).toHaveBeenCalledExactlyOnceWith(64, 127, BEAT_FRAMES, true);
+                expect(grandBoule.setSostenuto).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES, true);
+                expect(grandBoule.setUnaCorda).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES, true);
 
                 releaseStoredControllers();
 
-                expect(levain.handleCc).toHaveBeenLastCalledWith(64, 0);
-                expect(grandBoule.setSostenuto).toHaveBeenLastCalledWith(false);
-                expect(grandBoule.setUnaCorda).toHaveBeenLastCalledWith(false);
+                expect(levain.handleCc).toHaveBeenLastCalledWith(64, 0, undefined, true);
+                expect(grandBoule.setSostenuto).toHaveBeenLastCalledWith(false, undefined, true);
+                expect(grandBoule.setUnaCorda).toHaveBeenLastCalledWith(false, undefined, true);
                 expect(grandBoule.setSustain).not.toHaveBeenCalled();
             });
 
             it('opens each loop pass with the value carried into it, through the real projection', async () => {
                 // 4 beats of a clip looping every 2 over content that starts 1 beat
                 // in: the row before the offset is the value in force at each head.
-                await useRealProjections();
+                useRealProjections();
                 const setSustain = vi.fn();
                 stripWith({
                     type: 'grand-boule',
@@ -2779,8 +2826,8 @@ describe('scheduleMidiNotes', () => {
                 await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
                 expect(setSustain.mock.calls).toEqual([
-                    [1, 0],
-                    [1, 2 * BEAT_FRAMES],
+                    [1, 0, true],
+                    [1, 2 * BEAT_FRAMES, true],
                 ]);
             });
 

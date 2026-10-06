@@ -3,6 +3,7 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import {
     listStoredControllerEngagements,
     noteStoredControllerMove,
+    noteStoredControllerPost,
     storedControllerDeviceKey,
 } from '../../services/storedControllerEngagement';
 
@@ -43,6 +44,11 @@ export function releaseUnrestoredStoredControllers({
             node,
             controllers: engagement.controllers,
             sampleFrame: sampleFrameOnTrack(engagement.trackId),
+        });
+        noteStoredControllerPost({
+            trackId: engagement.trackId,
+            deviceId: engagement.deviceId,
+            deviceType: engagement.deviceType,
         });
         for (const controller of engagement.controllers) {
             noteStoredControllerMove({

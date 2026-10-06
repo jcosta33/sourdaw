@@ -7,7 +7,7 @@ type ReleaseStoredEngagementInput = {
     node: StoredControllerNode;
     /** The controllers stored playback left engaged on this device. */
     controllers: ReadonlySet<number>;
-    /** The frame the release applies at; absent, it applies at once and supersedes any framed move queued behind it. */
+    /** The frame the release applies at; absent, it applies at once. */
     sampleFrame?: number;
 };
 
@@ -15,6 +15,10 @@ type ReleaseStoredEngagementInput = {
  * Lift each pedal and controller stored playback left engaged on one device, each
  * through its own control. Only the controllers named are touched, so a pedal the
  * user holds live on the same device is left alone.
+ *
+ * The lift is itself a stored move: it speaks for stored playback only, so it does
+ * not supersede a performer's queued moves of the pedal. Whatever stored moves are
+ * still queued behind it are dropped by the caller's `discardStoredMoves` first.
  */
 export function releaseStoredEngagement({
     deviceType,
@@ -22,23 +26,19 @@ export function releaseStoredEngagement({
     controllers,
     sampleFrame,
 }: ReleaseStoredEngagementInput): void {
-    // The frame is passed only when there is one: an absent frame is a different
-    // message to the engine (apply now, supersede what is queued), not an
-    // undefined frame.
-    const frame: [] | [number] = sampleFrame === undefined ? [] : [sampleFrame];
     if (deviceType === 'grand-boule' && node.grandBouleControls) {
         if (controllers.has(CC_SUSTAIN_PEDAL)) {
-            node.grandBouleControls.setSustain(0, ...frame);
+            node.grandBouleControls.setSustain(0, sampleFrame, true);
         }
         if (controllers.has(CC_SOSTENUTO_PEDAL)) {
-            node.grandBouleControls.setSostenuto(false, ...frame);
+            node.grandBouleControls.setSostenuto(false, sampleFrame, true);
         }
         if (controllers.has(CC_UNA_CORDA_PEDAL)) {
-            node.grandBouleControls.setUnaCorda(false, ...frame);
+            node.grandBouleControls.setUnaCorda(false, sampleFrame, true);
         }
     } else if (deviceType === 'levain' && node.levainControls) {
         if (controllers.has(CC_SUSTAIN_PEDAL)) {
-            node.levainControls.handleCc(CC_SUSTAIN_PEDAL, 0, ...frame);
+            node.levainControls.handleCc(CC_SUSTAIN_PEDAL, 0, sampleFrame, true);
         }
     }
 }
