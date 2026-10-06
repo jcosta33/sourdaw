@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -196,13 +197,36 @@ describe('compactWebLlmToolSchema', () => {
         expect(compacted.function.description?.endsWith('…')).toBe(true);
     });
 
-    it('describes every advertised planning tool within the cap, but for the manifest sentence that says how to call it', () => {
-        for (const tool of getPlanningProviderToolSchemas()) {
+    // Red when the cap reaches a mandatory planning tool: its description holds rules the schema cannot
+    // state, such as "return this call alone" and "pass the returned callId in compiledCallIds".
+    it('keeps the full description of every mandatory planning tool', () => {
+        for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
+            const tool = planningTool(name);
+            expect(compactWebLlmToolSchema(tool).function.description, `${name} keeps its whole description`).toBe(
+                tool.function.description
+            );
+        }
+        expect(compactWebLlmToolSchema(planningTool('command.batch.decline')).function.description).toContain(
+            'Return this call alone in its turn.'
+        );
+        expect(compactWebLlmToolSchema(planningTool('recipe.expand')).function.description).toContain(
+            'compiledCallIds'
+        );
+        expect(compactWebLlmToolSchema(planningTool('transform.compile')).function.description).toContain(
+            'compiledCallIds'
+        );
+    });
+
+    it('caps the description of every other advertised planning tool at 120 characters', () => {
+        const others = getPlanningProviderToolSchemas().filter(
+            (tool) => !(MANDATORY_PLANNING_TOOL_NAMES as readonly string[]).includes(tool.function.name)
+        );
+
+        expect(others.some((tool) => (tool.function.description?.length ?? 0) > 120)).toBe(true);
+        for (const tool of others) {
             const description = compactWebLlmToolSchema(tool).function.description;
             expect(description, `${tool.function.name} keeps a description`).toBeDefined();
-            if (tool.function.name !== 'device.factory-manifest.read') {
-                expect(description?.length, `${tool.function.name} stays within the cap`).toBeLessThanOrEqual(120);
-            }
+            expect(description?.length, `${tool.function.name} stays within the cap`).toBeLessThanOrEqual(120);
         }
     });
 

@@ -400,6 +400,34 @@ describe('mandatory planning tools', () => {
                 }
             );
 
+            // Red when the description cap reaches a mandatory tool: `command.batch.decline` says it
+            // must be returned alone, and the loop rejects a decline beside another terminal call.
+            it('spells each mandatory planning tool with its whole description', async () => {
+                const { advertised, text } = await serializeWebLlmPrompt('add an eq device to the vocals');
+
+                for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
+                    const description = advertised.find((tool) => tool.function.name === name)?.function.description;
+                    if (description === undefined) {
+                        throw new TypeError(`${name} has no description to spell.`);
+                    }
+                    expect(text, `${name} keeps its whole description`).toContain(`- ${name}: ${description} {`);
+                }
+                expect(text).toContain('Return this call alone in its turn.');
+            });
+
+            it('still caps the description of a tool that is not a mandatory planning tool', async () => {
+                const { advertised, text } = await serializeWebLlmPrompt('add an eq device to the vocals');
+                const mandatory: readonly string[] = MANDATORY_PLANNING_TOOL_NAMES;
+                const capped = advertised.filter(
+                    (tool) => !mandatory.includes(tool.function.name) && (tool.function.description?.length ?? 0) > 120
+                );
+
+                expect(capped.length).toBeGreaterThan(0);
+                for (const tool of capped) {
+                    expect(text, `${tool.function.name} is capped`).not.toContain(tool.function.description);
+                }
+            });
+
             it('sends the full schemas to the provider request that validates the reply', async () => {
                 const { advertised } = await serializeWebLlmPrompt('add an eq device to the vocals');
 

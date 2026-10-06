@@ -1,7 +1,7 @@
 import {
-    AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    MANDATORY_PLANNING_TOOL_NAMES,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 
@@ -12,7 +12,7 @@ type CompactableTool = {
 
 type SchemaRecord = Record<string, unknown>;
 
-/** The longest tool description the local model's prompt carries; the first sentence is the contract. */
+/** The longest description the local model's prompt carries for a tool that is not a mandatory planning tool. */
 const MAX_DESCRIPTION_LENGTH = 120;
 
 /**
@@ -43,11 +43,6 @@ const REFERENCED_PROPERTIES: Readonly<Record<string, Readonly<Record<string, str
 /** A property that is one JSON string whose description is its whole grammar, so the description stays. */
 const GRAMMAR_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
     [TRANSFORM_COMPILE_TOOL_NAME]: ['document'],
-};
-
-/** Sentences of a tool description, beyond its first, that state how the tool is called. */
-const KEPT_DESCRIPTION_SENTENCE_PREFIXES: Readonly<Record<string, string>> = {
-    [AGENT_DEVICE_MANIFEST_TOOL_NAME]: 'Call with no arguments',
 };
 
 const SELECTOR_PATH = ['properties', 'list', 'properties', 'items', 'items', 'properties', 'selector'] as const;
@@ -90,11 +85,17 @@ function truncate(sentence: string): string {
     return sentence.length > MAX_DESCRIPTION_LENGTH ? `${sentence.slice(0, MAX_DESCRIPTION_LENGTH - 1)}…` : sentence;
 }
 
+/**
+ * A mandatory planning tool's description is its contract: how to call it alone, which returned id to
+ * pass on, what refuses it. Which sentence carries a rule differs by tool and has been wrong every time
+ * it was picked by position, so those eight keep their description whole. Any other tool is a name and
+ * the first sentence of what it does.
+ */
 function describeTool(toolName: string, description: string): string {
-    const [first = description, ...rest] = splitSentences(description);
-    const prefix = KEPT_DESCRIPTION_SENTENCE_PREFIXES[toolName];
-    const kept = prefix === undefined ? [] : rest.filter((sentence) => sentence.startsWith(prefix));
-    return [truncate(first), ...kept].join(' ');
+    if ((MANDATORY_PLANNING_TOOL_NAMES as readonly string[]).includes(toolName)) {
+        return description;
+    }
+    return truncate(splitSentences(description)[0] ?? description);
 }
 
 function collapseSchema(schema: SchemaRecord): SchemaRecord {
