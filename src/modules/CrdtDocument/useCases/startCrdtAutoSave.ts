@@ -13,6 +13,8 @@ import { persistCrdtProject } from './persistCrdtProject';
 const DEBOUNCE_MS = 2_000;
 const INITIAL_DURABILITY_RETRY_MS = 250;
 const MAX_DURABILITY_RETRY_MS = 30_000;
+const INITIAL_INCREMENTAL_RETRY_MS = 250;
+const MAX_INCREMENTAL_RETRY_MS = 30_000;
 /**
  * Upper bound on persistence lag while edits keep arriving. The plain
  * debounce re-arms on every change, so a continuous edit gesture (long
@@ -27,6 +29,10 @@ const autoSaveHealth = { consecutiveFailures: 0 };
 
 export function startCrdtAutoSave(): () => void {
     let incrementalTimer: ReturnType<typeof setTimeout> | null = null;
+    let incrementalRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let incrementalPersistRunning = false;
+    let incrementalPersistQueued = false;
+    let incrementalRetryMs = INITIAL_INCREMENTAL_RETRY_MS;
     let durabilityTimer: ReturnType<typeof setTimeout> | null = null;
     let durabilityAttemptRunning = false;
     let durabilityRetryMs = INITIAL_DURABILITY_RETRY_MS;
@@ -102,10 +108,37 @@ export function startCrdtAutoSave(): () => void {
         }
     }
 
-    function runIncrementalPersist(): void {
+    function cancelIncrementalRetry(): void {
+        if (incrementalRetryTimer !== null) {
+            clearTimeout(incrementalRetryTimer);
+            incrementalRetryTimer = null;
+        }
+    }
+
+    function scheduleIncrementalRetry(): void {
+        if (isStopped() || incrementalRetryTimer !== null || incrementalTimer !== null) {
+            return;
+        }
+        incrementalRetryTimer = setTimeout(() => {
+            incrementalRetryTimer = null;
+            runIncrementalPersist('retry');
+        }, incrementalRetryMs);
+    }
+
+    function runIncrementalPersist(attempt: 'edit' | 'retry' = 'edit'): void {
+        if (isStopped()) {
+            return;
+        }
+        if (incrementalPersistRunning) {
+            incrementalPersistQueued = true;
+            return;
+        }
+        incrementalPersistRunning = true;
         persistCrdtProject()
             .then(() => {
                 autoSaveHealth.consecutiveFailures = 0;
+                incrementalRetryMs = INITIAL_INCREMENTAL_RETRY_MS;
+                cancelIncrementalRetry();
                 return null;
             })
             .catch((error) => {
@@ -121,7 +154,28 @@ export function startCrdtAutoSave(): () => void {
                         )
                     );
                 }
+                if (attempt === 'retry') {
+                    incrementalRetryMs = Math.min(incrementalRetryMs * 2, MAX_INCREMENTAL_RETRY_MS);
+                }
+                if (!incrementalPersistQueued) {
+                    scheduleIncrementalRetry();
+                }
                 return null;
+            })
+            .finally(() => {
+                incrementalPersistRunning = false;
+                if (isStopped()) {
+                    incrementalPersistQueued = false;
+                    return;
+                }
+                if (!incrementalPersistQueued) {
+                    return;
+                }
+                incrementalPersistQueued = false;
+                if (incrementalTimer !== null || incrementalRetryTimer !== null) {
+                    return;
+                }
+                runIncrementalPersist();
             });
     }
 
@@ -129,6 +183,7 @@ export function startCrdtAutoSave(): () => void {
         if (isStopped()) {
             return;
         }
+        cancelIncrementalRetry();
         const now = Date.now();
         if (burstStartMs === null) {
             burstStartMs = now;
@@ -151,7 +206,7 @@ export function startCrdtAutoSave(): () => void {
     }
 
     /**
-     * Best-effort flush of a pending debounced persist on tab hide/close.
+     * Best-effort flush of a pending debounced persist or idle retry on tab hide/close.
      * `pagehide` is the reliable unload signal (beforeunload is not);
      * `visibilitychange → hidden` additionally covers backgrounding, where
      * timers are throttled. Caveat (audit F1): the incremental save is
@@ -160,12 +215,15 @@ export function startCrdtAutoSave(): () => void {
      * loss on hard crash. Nothing stronger is available synchronously.
      */
     function flushPendingPersist(): void {
-        if (isStopped() || incrementalTimer === null) {
+        if (isStopped() || (incrementalTimer === null && incrementalRetryTimer === null)) {
             return;
         }
-        clearTimeout(incrementalTimer);
-        incrementalTimer = null;
-        burstStartMs = null;
+        if (incrementalTimer !== null) {
+            clearTimeout(incrementalTimer);
+            incrementalTimer = null;
+            burstStartMs = null;
+        }
+        cancelIncrementalRetry();
         runIncrementalPersist();
     }
 
@@ -196,6 +254,7 @@ export function startCrdtAutoSave(): () => void {
 
     return () => {
         stopped = true;
+        incrementalPersistQueued = false;
         try {
             unsubscribe();
         } finally {
@@ -209,6 +268,7 @@ export function startCrdtAutoSave(): () => void {
                 clearTimeout(incrementalTimer);
                 incrementalTimer = null;
             }
+            cancelIncrementalRetry();
             if (durabilityTimer !== null) {
                 clearTimeout(durabilityTimer);
                 durabilityTimer = null;
