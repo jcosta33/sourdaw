@@ -1,0 +1,35 @@
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_1c08b47ac3792f::t_1fa4d8d6cc0c7b 396-536
+src/modules/Arrangement/handlers/marker/__tests__/markerSectionEditHandlers.spec.ts
+  s_1c08b47ac3792f::t_94ce5f79ea41d2 169,175-183,186,198-257
+src/modules/Arrangement/handlers/marker/handleReorderSection.ts
+  s_1c08b47ac3792f::t_54a2c43fe3ee46 20-23,26-44
+src/modules/Arrangement/handlers/marker/handleRestoreSectionBeats.ts
+  s_1c08b47ac3792f::t_2122c7e1931374 1-17
+src/modules/Arrangement/useCases/__tests__/directTimelineEditsUndo.integration.spec.ts
+  s_1c08b47ac3792f::t_17ca4dcdd0e229 155-194
+src/modules/Arrangement/useCases/marker/sectionOperations/restoreSectionBeats.ts
+  s_1c08b47ac3792f::t_94c99bec5cbc10 1-47
+src/modules/Command/useCases/actionLabels.ts
+  s_1c08b47ac3792f::t_2d3388e995ab30 62
+src/modules/Command/useCases/macro/playback.ts
+  s_1c08b47ac3792f::t_4d38fba04f34c8 1,183-202,244-248
+src/utils/handlerContract.ts
+  s_1c08b47ac3792f::t_9040549c53d2ff 1642-1649
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcbeb179f19210307e02e73f029313379645c62d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
