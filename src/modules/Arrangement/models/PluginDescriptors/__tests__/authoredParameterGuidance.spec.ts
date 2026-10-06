@@ -121,6 +121,7 @@ const INSTRUMENT_IDS_UNDER_CENSUS = [
     'faust-fm-synth',
     'faust-supersaw-unison',
     'builtin-crumbs',
+    'fermenter',
     'grand-boule',
     'levain',
     'toaster',
@@ -137,7 +138,7 @@ const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
  * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
  * joined this census; it still uses shared fallback guidance.
  */
-const DESCRIPTOR_IDS_EXCLUDED = ['fermenter'] as const;
+const DESCRIPTOR_IDS_EXCLUDED = [] as const;
 
 /** Devices with too few parameters to name a sibling in their interactions. */
 const DEVICES_WITHOUT_A_SIBLING_PARAMETER = new Set(['builtin-gain']);
@@ -238,6 +239,10 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
     [
         'bacteria/convolutionMix',
         'The 0.3 default blends in a peak-normalised body impulse response that gains 20 to 23 dB on broadband material, so the blend a mix can actually use sits far below it.',
+    ],
+    [
+        'fermenter/portamentoMode',
+        'Mode 0 glides every note, including the first after a rest; legato (1), which glides only while a key is still held and snaps otherwise, is the fingered-portamento setting used once portamentoTime is raised.',
     ],
     [
         'crust/release',

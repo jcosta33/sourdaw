@@ -71,7 +71,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-drum-machine-analog': 'descriptor-v1:b6106b4c',
     'builtin-drum-machine-electronic': 'descriptor-v1:406d7f6a',
     'builtin-drum-machine-acoustic': 'descriptor-v1:a4e0ce0f',
-    fermenter: 'descriptor-v1:42afff88',
+    // Fermenter carries owner-authored parameter guidance (#4370 AC-001),
+    // which is part of the descriptor fingerprint.
+    fermenter: 'descriptor-v1:cfa561f3',
     toaster: 'descriptor-v1:4badfeb2',
     levain: 'descriptor-v1:c5a90e63',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance

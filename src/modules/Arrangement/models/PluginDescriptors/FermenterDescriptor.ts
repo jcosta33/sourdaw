@@ -9,7 +9,7 @@
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+import { FERMENTER_GUIDANCE, FERMENTER_PARAMETER_GUIDANCE } from './FermenterDescriptorGuidance';
 
 const FERMENTER_PARAMS: readonly PluginParamDef[] = [
     // Oscillator
@@ -207,21 +207,6 @@ const FERMENTER_DESCRIPTOR_DATA: PluginDescriptor = {
 
 export const FERMENTER_DESCRIPTOR = applySingleDescriptorGuidance(
     FERMENTER_DESCRIPTOR_DATA,
-    descriptorGuidance(
-        'fermenter',
-        instrumentGuidance(
-            'Design a voice from an engine, oscillator, filter, envelope, and internal effects in that order.',
-            ['Keep output staging conservative when using unison, resonance, drive, or FM depth.'],
-            [
-                'Engine choice determines which voice controls are most audible; envelopes and modulation shape their motion.',
-            ],
-            ['Dense unison, high resonance, and internal effects can build level across chords.']
-        ),
-        declaredControl(
-            'Fermenter voice control',
-            'Changes an oscillator, engine, envelope, filter, internal effect, or voice-modulation behavior.',
-            ['Evaluate controls in the context of the selected synthesis engine.'],
-            ['Complex voice settings can build level or reduce note definition.']
-        )
-    )
+    // No fallback: every parameter is authored in FermenterDescriptorGuidance.ts.
+    descriptorGuidance('fermenter', FERMENTER_GUIDANCE, undefined, FERMENTER_PARAMETER_GUIDANCE)
 );
