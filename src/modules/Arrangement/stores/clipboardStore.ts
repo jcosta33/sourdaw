@@ -3,13 +3,39 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { type AutomationLane } from '#/modules/Automation/stores';
 
 import { type MidiNote } from '../models/MidiNoteViewTypes';
 import { type Clip } from '../models/Track';
 
+import { type ClipSatelliteEntry } from './clipSatelliteState';
+
+/**
+ * A clip-scoped automation lane captured at copy time: Automation's lane with
+ * its owning clip id proven present. Restated here rather than imported from
+ * the Arrangement use case that reads lanes, so this store does not depend on
+ * a use-case module.
+ */
+export type ClipClipboardAutomationLane = AutomationLane & { clipId: string };
+
 export type ClipboardEntry = {
     clip: Clip;
     midiNotes?: MidiNote[];
+    /**
+     * The clip-id-keyed satellite records (gain envelope, warp state) read at
+     * copy time, so a paste can rebuild them onto the pasted clip even when the
+     * source clip no longer exists. Absent on entries written before the
+     * snapshot carried satellites.
+     */
+    satellites?: ClipSatelliteEntry;
+    /**
+     * The clip-scoped automation lanes (Automation's store, keyed by clip id)
+     * read at copy time — the same self-containment rule as `satellites`: the
+     * source clip may be deleted before the paste, and the lanes must ride the
+     * snapshot. Paste re-keys clones onto the minted clip id, mirroring
+     * `duplicateClipAutomation`.
+     */
+    automationLanes: readonly ClipClipboardAutomationLane[];
     sourceTrackId: string;
 };
 

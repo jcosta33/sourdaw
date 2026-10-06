@@ -2,8 +2,10 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
+import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { removeClip } from '../clip/removeClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -53,6 +55,12 @@ export function cutSelectedClip(): boolean {
         entries.push({
             clip: { ...found.clip },
             midiNotes: midiNotes ? midiNotes.map((node) => ({ ...node })) : undefined,
+            // Same self-contained payload `copySelectedClip` builds: cut is a
+            // copy whose paste must carry the satellites and clip-scoped
+            // automation lanes too, and the removal below retires the live
+            // copies right after this read.
+            satellites: readClipSatelliteEntry(found.clip.id),
+            automationLanes: readClipScopedAutomationLanes([found.clip.id]),
             sourceTrackId: found.trackId,
         });
     }

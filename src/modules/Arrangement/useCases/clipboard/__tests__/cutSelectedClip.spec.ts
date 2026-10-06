@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     getAutomationLanes: vi.fn(() => []),
     removeAutomationLane: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
+    readClipScopedAutomationLanes: vi.fn((_clipIds: readonly string[]) => [] as unknown[]),
     clipDragPreviewRef: { current: null },
     activeRecordingRef: { current: [] as string[] },
 }));
@@ -54,10 +55,15 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
 }));
 
 vi.mock('../../../stores/gainEnvelopeStore', () => ({
+    getEnvelope: vi.fn(() => undefined),
+    setEnvelope: vi.fn(),
     removeEnvelope: mocks.removeEnvelope,
 }));
 
 vi.mock('../../../stores/warpStates', () => ({
+    getStoredWarpState: vi.fn(() => undefined),
+    isDefaultWarpState: vi.fn(() => true),
+    setWarpState: vi.fn(),
     removeWarpState: mocks.removeWarpState,
 }));
 
@@ -71,6 +77,10 @@ vi.mock('../../../stores/activeRecordingRef', () => ({
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
+vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
+    readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 
 function createClip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'trackId' | 'type'>): Clip {
@@ -109,7 +119,7 @@ describe('cutSelectedClip', () => {
         expect(clipboardStore.value?.clipClipboard).toEqual([]);
     });
 
-    it('preserves cloned MIDI and audio entries after removeClip clears matching clipboard data', () => {
+    it('captures cloned MIDI, audio entries and the satellites held at cut time', () => {
         const midiClip = createClip({ id: 'clip-midi', trackId: 'track-midi', type: 'midi' });
         const audioClip = createClip({ id: 'clip-audio', trackId: 'track-audio', type: 'audio' });
         const midiNote: MidiNote = {
@@ -134,8 +144,8 @@ describe('cutSelectedClip', () => {
         });
         clipboardStore.set({
             clipClipboard: [
-                { clip: midiClip, midiNotes, sourceTrackId: 'track-midi' },
-                { clip: audioClip, sourceTrackId: 'track-audio' },
+                { clip: midiClip, midiNotes, automationLanes: [], sourceTrackId: 'track-midi' },
+                { clip: audioClip, automationLanes: [], sourceTrackId: 'track-audio' },
             ],
             noteClipboard: { notes: [midiNote] },
         });
@@ -143,10 +153,23 @@ describe('cutSelectedClip', () => {
         expect(cutSelectedClip()).toBe(true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(2);
+        expect(mocks.readClipScopedAutomationLanes.mock.calls).toStrictEqual([[['clip-midi']], [['clip-audio']]]);
         expect(clipboardStore.value).toEqual({
             clipClipboard: [
-                { clip: midiClip, midiNotes, sourceTrackId: 'track-midi' },
-                { clip: audioClip, midiNotes: undefined, sourceTrackId: 'track-audio' },
+                {
+                    clip: midiClip,
+                    midiNotes,
+                    satellites: { clipId: 'clip-midi', gainEnvelope: null, warpState: null },
+                    automationLanes: [],
+                    sourceTrackId: 'track-midi',
+                },
+                {
+                    clip: audioClip,
+                    midiNotes: undefined,
+                    satellites: { clipId: 'clip-audio', gainEnvelope: null, warpState: null },
+                    automationLanes: [],
+                    sourceTrackId: 'track-audio',
+                },
             ],
             noteClipboard: { notes: [midiNote] },
         });
@@ -156,6 +179,39 @@ describe('cutSelectedClip', () => {
         expect(audioEntry?.clip).not.toBe(audioClip);
         expect(midiEntry?.midiNotes).not.toBe(midiNotes);
         expect(midiEntry?.midiNotes?.[0]).not.toBe(midiNote);
+    });
+
+    it('captures the clip-scoped automation lanes held at cut time', () => {
+        // The removal below retires the live lanes with the clips, so the
+        // cut payload must carry what the automation store holds right now —
+        // the same self-containment rule as the satellites.
+        const capturedLane = {
+            id: 'lane-1',
+            trackId: 'track-midi',
+            clipId: 'clip-midi',
+            parameterId: 'volume',
+            parameterName: 'Volume',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: 0,
+            maxValue: 1,
+        };
+        const clip = createClip({ id: 'clip-midi', trackId: 'track-midi', type: 'midi' });
+        mocks.readClipScopedAutomationLanes.mockImplementation((clipIds: readonly string[]) =>
+            clipIds.includes('clip-midi') ? [capturedLane] : []
+        );
+        mocks.clipSelectionStore.value = { selectedClipId: 'clip-midi', selectedClipIds: ['clip-midi'] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'track-midi', kind: 'midi', clips: [clip] })],
+        });
+
+        expect(cutSelectedClip()).toBe(true);
+
+        const entry = clipboardStore.value?.clipClipboard[0];
+        expect(entry?.automationLanes).toEqual([capturedLane]);
     });
 
     it('rejects a mixed valid and ineligible selection before cleanup or clipboard writes', () => {

@@ -957,6 +957,70 @@ describe('handleRestoreTrackClipStates', () => {
             );
         });
 
+        it('clears the satellite records of clips the restore drops and keeps the records it restores', () => {
+            // The paste-undo shape: the forward minted clips that carry satellites, so
+            // the post-capture (`expected`) holds their satellite records and the
+            // pre-capture (`replacement`) does not. Undo must remove exactly what the
+            // paste added — the same rule `removeClip` applies on a removal's forward
+            // path — while every satellite the replacement itself restores stays.
+            const sourceSatellite: ClipSatelliteEntrySnapshot = {
+                clipId: 'source-c1',
+                gainEnvelope: {
+                    clipId: 'source-c1',
+                    points: [{ id: 'gain-1', beatOffset: 0, gainDb: -6 }],
+                    enabled: true,
+                },
+                warpState: null,
+            };
+            const pastedSatellite: ClipSatelliteEntrySnapshot = {
+                clipId: 'pasted-c1',
+                gainEnvelope: {
+                    clipId: 'pasted-c1',
+                    points: [{ id: 'gain-2', beatOffset: 0, gainDb: 2 }],
+                    enabled: true,
+                },
+                warpState: null,
+            };
+            mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => {
+                if (clipId === 'source-c1') {
+                    return sourceSatellite;
+                }
+                if (clipId === 'pasted-c1') {
+                    return pastedSatellite;
+                }
+                return { clipId, gainEnvelope: null, warpState: null };
+            });
+            const track = liveTrack('t1', ['source-c1', 'pasted-c1']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['source-c1', 'pasted-c1'], {
+                            clipSatellites: [sourceSatellite, pastedSatellite],
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', ['source-c1'], { clipSatellites: [sourceSatellite] })],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            // The replacement's own satellite write (the restored source record)...
+            expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledWith(sourceSatellite);
+            // ...plus the clear of the dropped clip's record, and no clear of the
+            // retained id's record.
+            expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledWith({
+                clipId: 'pasted-c1',
+                gainEnvelope: null,
+                warpState: null,
+            });
+            const clears = mocks.writeClipSatelliteEntry.mock.calls
+                .map((call) => call[0])
+                .filter((entry) => entry.gainEnvelope === null && entry.warpState === null);
+            expect(clears).toStrictEqual([{ clipId: 'pasted-c1', gainEnvelope: null, warpState: null }]);
+        });
+
         it('refuses without touching any track when the automation lane transition refuses', () => {
             // Ordering proof: the lane transition runs before the first track write, so
             // a refusal there leaves the project exactly as it was rather than clips
