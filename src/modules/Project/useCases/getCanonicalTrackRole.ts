@@ -20,13 +20,36 @@ type RoleInput = {
     notesByClipId?: Readonly<Record<string, readonly Note[]>>;
 };
 
+/**
+ * A name that is only an abbreviation or an ambiguous word ("oh", "bd", "sd", "china"), optionally
+ * followed by its mic or position qualifiers. Anywhere else in a longer name those letters are
+ * ordinary words ("Oh Yeah Vox"), so they match only as the whole name.
+ */
+function wholeNameWithQualifiers(words: string, qualifiers: string): string {
+    return String.raw`^\s*(?:${words})(?:\s+(?:${qualifiers}|\d+))*\s*$`;
+}
+
 const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
-    ['kick', /\b(?:kick|kicks)\b/],
-    ['snare', /\bsnares?\b/],
-    ['hi-hat', /\b(?:hi hat|hi hats|hihat|hihats|hh)\b/],
+    [
+        'kick',
+        new RegExp(
+            String.raw`\b(?:kick|kicks)\b|${wholeNameWithQualifiers('bd', 'in|out|inside|outside|sub|close|far|mic')}`
+        ),
+    ],
+    ['snare', new RegExp(String.raw`\bsnares?\b|${wholeNameWithQualifiers('sd', 'top|bottom|side|close|far|mic')}`)],
+    // "Hat Trick" is a football term, not a hi-hat.
+    ['hi-hat', /\b(?:hi hat|hi hats|hihat|hihats|hh|hats?(?!\s+trick\b))\b/],
     ['tom', /\btoms?\b/],
-    ['cymbal', /\b(?:cymbals?|ride|crash)\b/],
+    [
+        'cymbal',
+        new RegExp(
+            String.raw`\b(?:cymbals?|ride|crash)\b|${wholeNameWithQualifiers('china|splash', 'left|right|l|r|mic')}`
+        ),
+    ],
     ['percussion', /\b(?:percussion|perc|clap|claps|rim|rimshot|shaker|tambourine|cowbell|conga|bongo)\b/],
+    ['overhead', new RegExp(String.raw`\boverheads?\b|${wholeNameWithQualifiers('oh', 'left|right|l|r|mono|stereo')}`)],
+    // A room needs a drum word beside it: room tone and "Room" alone name non-drum tracks.
+    ['room', /\brooms?(?=\s+drums?\b)|(?<=\bdrums?\s+)rooms?\b/],
     ['drums', /\bdrums?\b/],
     ['bass', /\bbass\b/],
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
@@ -35,7 +58,11 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
     ['synth', /\bsynths?\b/],
     ['pad', /\bpads?\b/],
+    ['strings', /\bstrings?\b/],
+    ['brass', /\bbrass\b/],
     ['fx', /\b(?:fx|sfx|effects)\b/],
+    // Session furniture that carries no part of the song; "hat trick" is named here so it stays out of hi-hat.
+    ['utility', /\b(?:click|metronome|reference|ref|guide|cue|hat trick)\b/],
 ];
 
 const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
@@ -45,7 +72,12 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
     'tom',
     'cymbal',
     'percussion',
+    'overhead',
+    'room',
 ]);
+
+// The kit-mic roles a generic drum word may qualify when it comes first ("Drum Overheads").
+const KIT_MIC_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['overhead', 'room']);
 
 // An unqualified "vocal"/"vocals"/"vox" carries no dedicated pattern above: the canonical set has
 // no generic vocal role, so it must be resolved to lead or backing rather than matched directly.
@@ -136,9 +168,16 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     if (secondRole === 'drums' && SPECIFIC_DRUM_ROLES.has(firstRole)) {
         return firstRole;
     }
+    if (firstRole === 'drums' && KIT_MIC_ROLES.has(secondRole)) {
+        return secondRole;
+    }
     // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
     if (firstRole === 'bass' && secondRole === 'drums') {
         return 'kick';
+    }
+    // "Bass guitar" names the bass, by studio convention.
+    if (firstRole === 'bass' && secondRole === 'guitar') {
+        return 'bass';
     }
     // "Synth" directly adjacent to exactly one other role yields that other role, in either order.
     if (firstRole === 'synth') {

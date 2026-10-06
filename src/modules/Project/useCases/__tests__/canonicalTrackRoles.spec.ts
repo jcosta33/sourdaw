@@ -140,16 +140,13 @@ describe('canonical track roles', () => {
     ])('recognizes whole-name tokens in %s', (name, role) => {
         expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
     });
-    it.each(['Kick Snare', 'Bass Guitar', 'Lead Vocal Backing Vocal'])(
-        'refuses conflicting name evidence: %s',
-        (name) => {
-            expect(getCanonicalTrackRole(input(name))).toEqual({
-                role: 'unknown',
-                source: 'name-tags',
-                evidence: 'conflicting-name-tags',
-            });
-        }
-    );
+    it.each(['Kick Snare', 'Lead Vocal Backing Vocal'])('refuses conflicting name evidence: %s', (name) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({
+            role: 'unknown',
+            source: 'name-tags',
+            evidence: 'conflicting-name-tags',
+        });
+    });
     it.each([
         { name: 'Kick Drum', role: 'kick', evidence: 'resolved-name-tags' },
         { name: 'Snare Drum', role: 'snare', evidence: 'resolved-name-tags' },
@@ -165,7 +162,13 @@ describe('canonical track roles', () => {
         { name: 'Backing Vox', role: 'backing vocal', evidence: 'resolved-name-tags' },
         { name: 'BGV', role: 'backing vocal', evidence: 'name-tokens' },
         { name: 'Backing Vocals', role: 'backing vocal', evidence: 'name-tokens' },
-        { name: 'Bass Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        // "Bass guitar" is the bass by studio convention, so it is not a bass-versus-guitar conflict.
+        { name: 'Bass Guitar', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Bass-Guitar', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Bass and Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass / Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Guitar Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Drums', role: 'drums', evidence: 'name-tokens' },
         { name: 'Synth', role: 'synth', evidence: 'name-tokens' },
         { name: 'Kick', role: 'kick', evidence: 'name-tokens' },
@@ -249,6 +252,64 @@ describe('canonical track roles', () => {
             expect(getCanonicalTrackRole(input(name)).role).toBe('unknown');
         }
     );
+    it.each([
+        { name: 'OH', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'OH L', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'Overheads', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'Drum Overheads', role: 'overhead', evidence: 'resolved-name-tags' },
+        { name: 'Overhead Drums', role: 'overhead', evidence: 'resolved-name-tags' },
+        { name: 'BD', role: 'kick', evidence: 'name-tokens' },
+        { name: 'BD In', role: 'kick', evidence: 'name-tokens' },
+        { name: 'Bass Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Kick Out', role: 'kick', evidence: 'name-tokens' },
+        { name: 'SD', role: 'snare', evidence: 'name-tokens' },
+        { name: 'SD Top', role: 'snare', evidence: 'name-tokens' },
+        { name: 'Hat', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hats', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'HH Open', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hi-Hat', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Drum Room', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Drums Room', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Room Drums', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Drum Rooms', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'China', role: 'cymbal', evidence: 'name-tokens' },
+        { name: 'Splash 2', role: 'cymbal', evidence: 'name-tokens' },
+    ] as const)('names a kit track by its drum abbreviation or kit-mic word: $name', ({ name, role, evidence }) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+    });
+    it.each(['Room', 'Rooms', 'Amb', 'Ambience', 'Oh Yeah', 'China Girl'])(
+        'keeps a drum-sounding word that is not a kit track unknown: %s',
+        (name) => {
+            expect(getCanonicalTrackRole(input(name)).role).toBe('unknown');
+        }
+    );
+    it.each([
+        { name: 'Click', role: 'utility' },
+        { name: 'Metronome', role: 'utility' },
+        { name: 'Reference', role: 'utility' },
+        { name: 'Ref Mix', role: 'utility' },
+        { name: 'Guide', role: 'utility' },
+        { name: 'Cue 2', role: 'utility' },
+        // A football term, not a hi-hat: it is session furniture rather than a drum.
+        { name: 'Hat Trick', role: 'utility' },
+        { name: 'Hat trick 2', role: 'utility' },
+        { name: 'Strings', role: 'strings' },
+        { name: 'String 2', role: 'strings' },
+        { name: 'Brass', role: 'brass' },
+        // Utility and vocal words both name the track, so it stays a conflict rather than a guess.
+        { name: 'Guide Vox', role: 'unknown' },
+    ] as const)('names session furniture and orchestral parts: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
+    });
+    it.each([
+        { name: 'Oh Yeah Vox', role: 'lead vocal' },
+        { name: 'BD Synth Lead', role: 'synth' },
+        { name: 'SD Card Pad', role: 'pad' },
+        { name: 'Ohm Bass Synth', role: 'bass' },
+        { name: 'OH Drums', role: 'drums' },
+    ] as const)('matches an abbreviation only when it is the whole name, so $name stays $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
     it.each(['bus', 'master'] as const)('recognizes structural %s before content', (kind) => {
         const source = content([36]);
         source.track = { ...source.track, kind, name: 'Kick Snare' };

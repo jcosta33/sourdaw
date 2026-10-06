@@ -170,7 +170,7 @@ describe('drum routing scope', () => {
                 createTrack('folder-drums', 'Drums', { kind: 'folder', canonicalRole: nameDerived('drums') }),
                 createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
                 createTrack('track-snare', 'Snare', { canonicalRole: nameDerived('snare') }),
-                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('unknown') }),
+                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('overhead') }),
             ]),
             'rev-1'
         );
@@ -221,19 +221,64 @@ describe('drum routing scope', () => {
         );
     });
 
-    it('classifies a track whose canonical role is unknown by its name', () => {
+    it('routes an overhead and a drum room by their canonical roles, with no name fallback', () => {
         const scope = getDrumRoutingPromptScope(
             createDrumContext([
-                createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
-                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('unknown') }),
-                createTrack('track-hat-trick', 'Hat Trick', { canonicalRole: nameDerived('unknown') }),
-            ])
+                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('overhead') }),
+                createTrack('track-room', 'Drum Room', { canonicalRole: nameDerived('room') }),
+            ]),
+            'rev-1'
         );
 
         if (scope.status !== 'request') {
             throw new Error(`Expected a drum routing request, got ${scope.status}`);
         }
-        expect(scope.targetIds).toEqual(['track-kick', 'track-oh']);
+        expect(scope.targetIds).toEqual(['track-oh', 'track-room']);
+        expect(scope.capability?.candidateDrums).toEqual([
+            expect.objectContaining({
+                id: 'track-oh',
+                role: 'overhead',
+                roleEvidence: 'canonical-role:overhead:name-tags',
+            }),
+            expect.objectContaining({
+                id: 'track-room',
+                role: 'room',
+                roleEvidence: 'canonical-role:room:name-tags',
+            }),
+        ]);
+    });
+
+    it('protects utility and orchestral tracks and routes the kit around them', () => {
+        const scope = getDrumRoutingPromptScope(
+            createDrumContext([
+                createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
+                createTrack('track-click', 'Click', { canonicalRole: nameDerived('utility') }),
+                createTrack('track-hat-trick', 'Hat Trick', { canonicalRole: nameDerived('utility') }),
+                createTrack('track-strings', 'Strings', { canonicalRole: nameDerived('strings') }),
+            ]),
+            'rev-1'
+        );
+
+        if (scope.status !== 'request') {
+            throw new Error(`Expected a drum routing request, got ${scope.status}`);
+        }
+        expect(scope.targetIds).toEqual(['track-kick']);
+        expect(scope.capability?.protectedNonDrums).toEqual([
+            expect.objectContaining({ id: 'track-click', role: 'utility' }),
+            expect.objectContaining({ id: 'track-hat-trick', role: 'utility' }),
+            expect.objectContaining({ id: 'track-strings', role: 'strings' }),
+        ]);
+    });
+
+    it('refuses the scope for a track whose canonical role is unknown', () => {
+        const scope = getDrumRoutingPromptScope(
+            createDrumContext([
+                createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
+                createTrack('track-mystery', 'Audio 1', { canonicalRole: nameDerived('unknown') }),
+            ])
+        );
+
+        expect(scope).toEqual({ status: 'invalid', reason: 'MF-01 track role is ambiguous: track-mystery' });
     });
 
     it('still refuses the whole scope for a frozen drum instead of dropping it', () => {

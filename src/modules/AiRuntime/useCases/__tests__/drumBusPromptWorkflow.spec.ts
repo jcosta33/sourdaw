@@ -3228,14 +3228,13 @@ describe('drum bus prompt workflow', () => {
         expect([getTrack('track-parallel'), getTrack('track-bass')]).toEqual(unchangedBefore);
     });
 
-    it('projects standard Bass Drum, BD, and OH roles without routing bass instruments or arbitrary name matches', async () => {
+    it('projects standard Bass Drum, BD, and OH roles without routing bass instruments', async () => {
         trackStore.set({
             tracks: [
                 createTrack('track-bass-drum', 'Bass Drum'),
                 createTrack('track-bd', 'BD'),
                 createTrack('track-oh', 'OH'),
                 createTrack('track-bass', 'Bass DI'),
-                createTrack('track-hat-trick', 'Hat Trick'),
                 createTrack('track-parallel', 'Parallel Compression Return'),
                 createTrack('bus-drums', 'Drum Bus', 'bus'),
             ],
@@ -3256,7 +3255,39 @@ describe('drum bus prompt workflow', () => {
             )
         ).toEqual(['track-bass-drum', 'track-bd', 'track-oh']);
         expect(confirmation?.affectedIds).not.toContain('track-bass');
-        expect(confirmation?.affectedIds).not.toContain('track-hat-trick');
+    });
+
+    it('routes the kit and protects click, reference, strings and Hat Trick tracks instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-snare', 'Snare'),
+                createTrack('track-click', 'Click'),
+                createTrack('track-reference', 'Reference'),
+                createTrack('track-strings', 'Strings'),
+                createTrack('track-hat-trick', 'Hat Trick'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-snare']);
+        for (const protectedId of ['track-click', 'track-reference', 'track-strings', 'track-hat-trick']) {
+            expect(confirmation?.affectedIds).not.toContain(protectedId);
+        }
     });
 
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
@@ -3324,7 +3355,7 @@ describe('drum bus prompt workflow', () => {
                     name: 'Kick',
                     kind: 'audio',
                     role: 'kick',
-                    roleEvidence: 'canonical-name:kick',
+                    roleEvidence: 'canonical-role:kick:name-tags',
                     currentOutputId: 'master',
                     frozen: false,
                     locked: false,
@@ -3332,7 +3363,7 @@ describe('drum bus prompt workflow', () => {
             );
             expect(capability.protectedReturn).toMatchObject({ id: 'track-parallel' });
             expect(capability.protectedNonDrums).toContainEqual(
-                expect.objectContaining({ id: 'track-bass', name: 'Bass DI', kind: 'audio', role: 'bass-instrument' })
+                expect.objectContaining({ id: 'track-bass', name: 'Bass DI', kind: 'audio', role: 'bass' })
             );
             expect(capability.actionType).toBe('setTrackOutput');
             expect(capability.allowedAction).toMatchObject({
