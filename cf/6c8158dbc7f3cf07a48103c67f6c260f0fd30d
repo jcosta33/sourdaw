@@ -1,0 +1,59 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_2bfd55a4393d7c::t_d0b4d5f99d4a1d 179
+src/modules/Arrangement/useCases/exportMidiClip.ts
+  s_2bfd55a4393d7c::t_c9f24473fe78bc 1,14-15,21-22,27-38,40
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_2bfd55a4393d7c::t_8ec5d6352d49fb 237
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_2bfd55a4393d7c::t_477901ceded66a 104
+src/modules/Arrangement/useCases/__tests__/exportMidiClip.spec.ts
+  s_2bfd55a4393d7c::t_48a25cffda894d 11-12
+  s_2bfd55a4393d7c::t_15475cf0853f54 81-89,91-110,112-145,182-183
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_2bfd55a4393d7c::t_899b17309f1101 131
+  s_2bfd55a4393d7c::t_a97584c14f4a71 157-228,271-297
+  s_2bfd55a4393d7c::t_edefdd28f0999b 298-303
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_2bfd55a4393d7c::t_58d68251c66152 146
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_2bfd55a4393d7c::t_5d5fa4e6f5cae8 106-164
+src/modules/MIDI/useCases/index.ts
+  s_2bfd55a4393d7c::t_bfe0fc3415c0a0 50
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  s_2bfd55a4393d7c::t_baf017a83e5761 1-106
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_2bfd55a4393d7c::t_9a87699896434f 650-652,656-672,675-677,679,682-726
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_2bfd55a4393d7c::t_e8f163652cb9e5 216
+  s_2bfd55a4393d7c::t_4df8213aa68fda 256-263,1089,1134
+  s_2bfd55a4393d7c::t_d4d986615985a7 1070-1088,1090-1133,1135-1141
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_2bfd55a4393d7c::t_71257570219b68 133-136
+  s_2bfd55a4393d7c::t_f218c9f3788e7e 112-120
+  s_2bfd55a4393d7c::t_69de26fc4e9935 7
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_2bfd55a4393d7c::t_ed41bd57e3911a 225
+  s_2bfd55a4393d7c::t_1e901f4be6818e 266-304
+src/app/__tests__/main.spec.tsx
+  s_2bfd55a4393d7c::t_aae7da3fc7fc82 120
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_2bfd55a4393d7c::t_6bf81a8fcf803a 107
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_2bfd55a4393d7c::t_d786c1940b4510 116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf6c8158dbc7f3cf07a48103c67f6c260f0fd30d",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
