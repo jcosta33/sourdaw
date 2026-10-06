@@ -1,4 +1,4 @@
-import { from, type Doc } from '@automerge/automerge';
+import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -9,12 +9,18 @@ import {
 } from '../createAutomergeStorage';
 
 type RootDocument = Record<string, unknown>;
-type Slot = { readonly label: string };
+type Slot = { readonly label: string; readonly mirror?: string };
 
-/** A stateful adapter: its decoder remembers the label it last decoded, like a decode mirror. */
+/**
+ * A stateful adapter: its decoder remembers the label it last decoded, like a
+ * decode mirror, and its writes read that mirror back into the document.
+ */
 function createStatefulAdapter(slotKey: string) {
     const decoder = { remembered: 'live-initial' };
     const storage = createAutomergeStorage<Slot>('root', slotKey, {
+        mutateCrdt: ({ doc, key, value }) => {
+            doc[key] = { label: value.label, mirror: decoder.remembered };
+        },
         decoderState: {
             capture: () => decoder.remembered,
             restore: (state: string) => {
@@ -93,36 +99,43 @@ describe('createAutomergeStorage preview scope decoder state', () => {
         second.release();
     });
 
-    it('swaps once for a nested scope of the same preview', () => {
+    it('lets a nested scope of the same preview see the outer scope progress', () => {
         const { decoder, storage } = createStatefulAdapter('decoder-state-nested');
         const preview = createAutomergeStoragePreview(new Map([['root', documentWith('decoder-state-nested', 'p')]]));
 
-        preview.scope(() => {
-            storage.get();
-            preview.scope(() => storage.get());
-            expect(decoder.remembered).toBe('decoded:p');
+        // The earlier scope leaves a stored preview state; a nested entry that swapped
+        // again would install it over the outer scope's newer state.
+        preview.scope(() => storage.get());
+        const seenByNestedScope = preview.scope(() => {
+            decoder.remembered = 'outer-progress';
+            return preview.scope(() => decoder.remembered);
         });
 
+        expect(seenByNestedScope).toBe('outer-progress');
         expect(decoder.remembered).toBe('live-initial');
         preview.release();
     });
 
-    it('leaves live decoding unchanged by a preview that ran before it', () => {
-        const { decoder, storage } = createStatefulAdapter('decoder-state-live-decode');
+    it('writes live data from the live mirror after a preview decoded another document', () => {
+        const slotKey = 'decoder-state-live-write';
+        const { storage } = createStatefulAdapter(slotKey);
+        let liveDocument = documentWith(slotKey, 'live');
         configureAutomergeStoragePort({
-            getDoc: () => documentWith('decoder-state-live-decode', 'live'),
+            getDoc: () => liveDocument,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
-            mutateDoc: () => undefined,
+            mutateDoc: ({ changeFn }) => {
+                liveDocument = change(liveDocument, (draft) => changeFn(draft));
+            },
         });
-        const preview = createAutomergeStoragePreview(
-            new Map([['root', documentWith('decoder-state-live-decode', 'p')]])
-        );
+        storage.hydrate?.();
+        const preview = createAutomergeStoragePreview(new Map([['root', documentWith(slotKey, 'p')]]));
         preview.scope(() => storage.get());
         preview.release();
 
-        storage.hydrate?.();
+        storage.set({ label: 'written' });
+        flushAutomergeStorageWrites();
 
-        expect(decoder.remembered).toBe('decoded:live');
+        expect(liveDocument[slotKey]).toEqual({ label: 'written', mirror: 'decoded:live' });
     });
 });

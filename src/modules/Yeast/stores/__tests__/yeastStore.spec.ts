@@ -1,4 +1,4 @@
-import { change, clone, from, type Doc } from '@automerge/automerge';
+import { change, clone, from, getConflicts, merge, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -259,6 +259,46 @@ describe('yeastStore', () => {
             expect(persistedRackOrUndefined(SECOND_DEVICE_ID)).toBeUndefined();
             expect(yeastStore.value?.processors.map((entry) => entry.id)).toEqual(['base-on-a', 'pending-on-a']);
             expect(readYeastRack(SECOND_DEVICE_ID).processors).toEqual([]);
+        });
+
+        it('keeps the live conflict-merged slot for the next live write after a preview decodes an unconflicted one', () => {
+            function slotWithRack(deviceId: string, processorId: string): TestDocument['yeast'] {
+                return {
+                    schemaVersion: 2,
+                    racks: {
+                        [deviceId]: {
+                            schemaVersion: 1,
+                            processors: {
+                                [processorId]: { deleted: false, order: 0, value: processor(processorId) },
+                            },
+                        },
+                    },
+                };
+            }
+            seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+            setActiveYeastDevice(null);
+            flushAutomergeStorageWrites();
+            const left = change(clone(document), (draft) => {
+                draft.yeast = slotWithRack(DEVICE_ID, 'on-a');
+            });
+            const right = change(clone(document), (draft) => {
+                draft.yeast = slotWithRack(SECOND_DEVICE_ID, 'on-b');
+            });
+            const unconflicted = clone(left);
+            document = merge(left, right);
+            expect(getConflicts(document, 'yeast')).toBeDefined();
+            yeastStore.hydrate();
+            expect(yeastStore.value?.processors.map((entry) => entry.id)).toEqual(['on-a']);
+
+            const preview = createAutomergeStoragePreview(new Map([['root', unconflicted]]));
+            preview.scope(() => yeastStore.value);
+            preview.release();
+            yeastStore.set({ processors: [processor('on-a'), processor('added-on-a')], uiLevel: 1 });
+            flushAutomergeStorageWrites();
+
+            expect(Object.keys(persistedRack(DEVICE_ID)).sort()).toEqual(['added-on-a', 'on-a']);
+            expect(Object.keys(persistedRack(SECOND_DEVICE_ID))).toEqual(['on-b']);
+            expect(getConflicts(document, 'yeast')).toBeUndefined();
         });
 
         it('keeps the live decoded racks when the preview document holds none', () => {
