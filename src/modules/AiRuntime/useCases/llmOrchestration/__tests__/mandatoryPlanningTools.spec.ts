@@ -363,13 +363,13 @@ describe('mandatory planning tools', () => {
         });
 
         describe('system prompt size', () => {
-            // The WebLLM system prompt (the planning prompt plus its tool section) measured 28,577
-            // characters at the merge base, before #4371 made the planning tools mandatory: 31 tools
-            // spelled in full under the `Parameters:` line format. This is that figure rounded down
-            // to the nearest hundred. It is a no-regression ceiling, not a claim that the prompt fits
-            // the model window; the whole local request already overflows it, and #4979 replaces this
-            // constant with a budget for the whole request.
-            const WEBLLM_SYSTEM_PROMPT_CEILING_CHARACTERS = 28_500;
+            // A ratchet, not a fit: the measured size of the WebLLM system prompt (the planning prompt
+            // plus its tool section) at this head, 37,043, rounded up to the next hundred. The merge base,
+            // before #4371 made the planning tools mandatory, measured 28,577 with 31 tools. Growth has to
+            // be justified in review by raising this number. It does not claim the prompt fits the model
+            // window; the whole local request already overflows it, and #4979 replaces this constant with
+            // a budget for the whole request.
+            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 37_100;
 
             async function serializeWebLlmPrompt(prompt: string): Promise<{ advertised: ToolSchema[]; text: string }> {
                 const advertisedNames = await advertisedToWebLlm(prompt);
@@ -388,7 +388,7 @@ describe('mandatory planning tools', () => {
             }
 
             it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
-                'keeps the WebLLM system prompt no larger than it was before the planning tools became mandatory for "%s"',
+                'keeps the WebLLM system prompt within its size ratchet for "%s"',
                 async (prompt) => {
                     const { advertised, text } = await serializeWebLlmPrompt(prompt);
 
@@ -396,36 +396,24 @@ describe('mandatory planning tools', () => {
                     for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
                         expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
                     }
-                    expect(text.length).toBeLessThanOrEqual(WEBLLM_SYSTEM_PROMPT_CEILING_CHARACTERS);
+                    expect(text.length).toBeLessThanOrEqual(WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS);
                 }
             );
 
-            // Red when the description cap reaches a mandatory tool: `command.batch.decline` says it
-            // must be returned alone, and the loop rejects a decline beside another terminal call.
-            it('spells each mandatory planning tool with its whole description', async () => {
+            // Red when any tool description is shortened or dropped from the prompt: a description holds
+            // the units, ranges and "alone" or "exactly one of" rules the schema cannot state, and a
+            // handler that admits a value outside them edits the project with no receipt.
+            it('spells every advertised tool with its whole description', async () => {
                 const { advertised, text } = await serializeWebLlmPrompt('add an eq device to the vocals');
 
-                for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
-                    const description = advertised.find((tool) => tool.function.name === name)?.function.description;
-                    if (description === undefined) {
-                        throw new TypeError(`${name} has no description to spell.`);
-                    }
-                    expect(text, `${name} keeps its whole description`).toContain(`- ${name}: ${description} {`);
+                expect(advertised.length).toBeGreaterThan(MANDATORY_PLANNING_TOOL_NAMES.length);
+                for (const tool of advertised) {
+                    expect(tool.function.description, `${tool.function.name} has a description`).toBeDefined();
+                    expect(text, `${tool.function.name} keeps its whole description`).toContain(
+                        `- ${tool.function.name}: ${tool.function.description} {`
+                    );
                 }
                 expect(text).toContain('Return this call alone in its turn.');
-            });
-
-            it('still caps the description of a tool that is not a mandatory planning tool', async () => {
-                const { advertised, text } = await serializeWebLlmPrompt('add an eq device to the vocals');
-                const mandatory: readonly string[] = MANDATORY_PLANNING_TOOL_NAMES;
-                const capped = advertised.filter(
-                    (tool) => !mandatory.includes(tool.function.name) && (tool.function.description?.length ?? 0) > 120
-                );
-
-                expect(capped.length).toBeGreaterThan(0);
-                for (const tool of capped) {
-                    expect(text, `${tool.function.name} is capped`).not.toContain(tool.function.description);
-                }
             });
 
             it('sends the full schemas to the provider request that validates the reply', async () => {

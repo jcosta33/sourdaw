@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -16,8 +15,13 @@ type Fact = {
     value: unknown;
 };
 
-/** Every keyword that decides which values a schema admits, other than `type`, which `isImpliedType` may drop. */
-const VALIDITY_KEYWORDS = [
+/**
+ * Every keyword the compaction must keep: those that decide which values a schema admits (`type` is
+ * not among them, because `isImpliedType` may drop it where a sibling keyword implies it) and the
+ * `description` that tells the model a unit, a range or an "exactly one of" rule.
+ */
+const FACT_KEYWORDS = [
+    'description',
     'additionalProperties',
     'minItems',
     'maxItems',
@@ -100,18 +104,13 @@ function inlineDefinitions(node: unknown, root: unknown): unknown {
     );
 }
 
-/** The properties the prompt replaces with a pointer to the schema that owns them. */
-function isPointedAt(toolName: string, path: SchemaPath): boolean {
-    return toolName === 'analysis.measure' && path[0] === 'properties' && path[1] === 'proposal';
-}
-
-/** Every validity keyword and combinator of a full schema, with where it sits. */
-function collectFacts(node: unknown, path: SchemaPath, toolName: string): Fact[] {
-    if (!isRecord(node) || isPointedAt(toolName, path)) {
+/** Every description, validity keyword and combinator of a full schema, with where it sits. */
+function collectFacts(node: unknown, path: SchemaPath): Fact[] {
+    if (!isRecord(node)) {
         return [];
     }
     const facts: Fact[] = [];
-    for (const keyword of VALIDITY_KEYWORDS) {
+    for (const keyword of FACT_KEYWORDS) {
         if (Object.hasOwn(node, keyword)) {
             facts.push({ keyword, path, value: node[keyword] });
         }
@@ -121,16 +120,16 @@ function collectFacts(node: unknown, path: SchemaPath, toolName: string): Fact[]
         if (Array.isArray(branches)) {
             facts.push({ keyword: combinator, path, value: branches.length });
             for (const [index, branch] of branches.entries()) {
-                facts.push(...collectFacts(branch, [...path, combinator, index], toolName));
+                facts.push(...collectFacts(branch, [...path, combinator, index]));
             }
         }
     }
     if (isRecord(node.properties)) {
         for (const [name, property] of Object.entries(node.properties)) {
-            facts.push(...collectFacts(property, [...path, 'properties', name], toolName));
+            facts.push(...collectFacts(property, [...path, 'properties', name]));
         }
     }
-    facts.push(...collectFacts(node.items, [...path, 'items'], toolName));
+    facts.push(...collectFacts(node.items, [...path, 'items']));
     return facts;
 }
 
@@ -174,37 +173,24 @@ function projectQueryType(): string {
 }
 
 describe('compactWebLlmToolSchema', () => {
-    it('keeps the first sentence of a tool description and drops the rest', () => {
+    it('keeps a tool description word for word, however long', () => {
+        const description = `${'A long sentence about one thing. '.repeat(20)}And the rule that matters last.`;
         const compacted = compactWebLlmToolSchema({
             type: 'function',
-            function: {
-                name: 'demo',
-                description: 'Does one thing. Then explains at length. And again.',
-                parameters: {},
-            },
+            function: { name: 'demo', description, parameters: {} },
         });
 
-        expect(compacted.function.description).toBe('Does one thing.');
+        expect(compacted.function.description).toBe(description);
     });
 
-    it('caps a long first sentence at 120 characters', () => {
-        const compacted = compactWebLlmToolSchema({
-            type: 'function',
-            function: { name: 'demo', description: `${'word '.repeat(60)}ends here.`, parameters: {} },
-        });
-
-        expect(compacted.function.description).toHaveLength(120);
-        expect(compacted.function.description?.endsWith('…')).toBe(true);
-    });
-
-    // Red when the cap reaches a mandatory planning tool: its description holds rules the schema cannot
-    // state, such as "return this call alone" and "pass the returned callId in compiledCallIds".
-    it('keeps the full description of every mandatory planning tool', () => {
-        for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
-            const tool = planningTool(name);
-            expect(compactWebLlmToolSchema(tool).function.description, `${name} keeps its whole description`).toBe(
-                tool.function.description
-            );
+    // Red when any tool description is dropped or shortened: a description holds rules the schema
+    // cannot state, such as "return this call alone" and "pass the returned callId in compiledCallIds".
+    it('keeps the whole description of every planning tool', () => {
+        for (const tool of getPlanningProviderToolSchemas()) {
+            expect(
+                compactWebLlmToolSchema(tool).function.description,
+                `${tool.function.name} keeps its description`
+            ).toBe(tool.function.description);
         }
         expect(compactWebLlmToolSchema(planningTool('command.batch.decline')).function.description).toContain(
             'Return this call alone in its turn.'
@@ -212,25 +198,9 @@ describe('compactWebLlmToolSchema', () => {
         expect(compactWebLlmToolSchema(planningTool('recipe.expand')).function.description).toContain(
             'compiledCallIds'
         );
-        expect(compactWebLlmToolSchema(planningTool('transform.compile')).function.description).toContain(
-            'compiledCallIds'
-        );
     });
 
-    it('caps the description of every other advertised planning tool at 120 characters', () => {
-        const others = getPlanningProviderToolSchemas().filter(
-            (tool) => !(MANDATORY_PLANNING_TOOL_NAMES as readonly string[]).includes(tool.function.name)
-        );
-
-        expect(others.some((tool) => (tool.function.description?.length ?? 0) > 120)).toBe(true);
-        for (const tool of others) {
-            const description = compactWebLlmToolSchema(tool).function.description;
-            expect(description, `${tool.function.name} keeps a description`).toBeDefined();
-            expect(description?.length, `${tool.function.name} stays within the cap`).toBeLessThanOrEqual(120);
-        }
-    });
-
-    it('keeps names, enums, required and every validity keyword, and drops annotations and implied types', () => {
+    it('keeps names, enums, required, descriptions and every validity keyword, and drops annotations and implied types', () => {
         const compacted = compactWebLlmToolSchema({
             type: 'function',
             function: {
@@ -245,6 +215,7 @@ describe('compactWebLlmToolSchema', () => {
                             minItems: 1,
                             maxItems: 4,
                             uniqueItems: true,
+                            description: 'Track ids.',
                             items: { type: 'string', minLength: 1, pattern: '^[a-z]+$', title: 'An id' },
                         },
                     },
@@ -257,12 +228,13 @@ describe('compactWebLlmToolSchema', () => {
         expect(compacted.function.parameters).toEqual({
             type: 'object',
             properties: {
-                mode: { enum: ['a', 'b'], maxLength: 8 },
+                mode: { enum: ['a', 'b'], description: 'Which one.', maxLength: 8 },
                 gainDb: { type: 'number', minimum: -60, maximum: 6, multipleOf: 0.5 },
                 ids: {
                     minItems: 1,
                     maxItems: 4,
                     uniqueItems: true,
+                    description: 'Track ids.',
                     items: { type: 'string', minLength: 1, pattern: '^[a-z]+$' },
                 },
             },
@@ -271,28 +243,31 @@ describe('compactWebLlmToolSchema', () => {
         });
     });
 
-    it('collapses a node nested past the prompt depth to its type and enum', () => {
+    it('collapses a node nested past the prompt depth to its type, enum and description', () => {
         let nested: Record<string, unknown> = { type: 'object', properties: { leaf: { type: 'string' } } };
         for (let level = 0; level < 12; level += 1) {
-            nested = { type: 'object', properties: { next: nested } };
+            nested = { type: 'object', description: 'A level.', properties: { next: nested } };
         }
         const compacted = compactWebLlmToolSchema({
             type: 'function',
             function: { name: 'demo', parameters: nested },
         });
 
-        expect(JSON.stringify(compacted.function.parameters)).not.toContain('leaf');
+        const text = JSON.stringify(compacted.function.parameters);
+        expect(text).not.toContain('leaf');
+        expect(text).toContain('{"type":"object","description":"A level."}');
     });
 
-    // Red when the prompt depth falls short of the deepest required shape, or when any keyword that
-    // decides which values validate is dropped: the reply is checked against the full schema, so a
-    // call the compacted text admits fails the whole provider attempt with no receipt to the model.
-    it('keeps every validity keyword, required list, enum, const and combinator of every planning tool', () => {
+    // Red when any description or validity keyword is dropped, or the prompt depth falls short of the
+    // deepest required shape: the reply is checked against the full schema, so a call the compacted
+    // text admits fails the whole provider attempt, and a unit or range the text omits is a silently
+    // wrong edit.
+    it('keeps every description, validity keyword, required list, enum, const and combinator of every planning tool', () => {
         const dropped: string[] = [];
         let checked = 0;
         for (const tool of getPlanningProviderToolSchemas()) {
             const compacted = compactWebLlmToolSchema(tool).function.parameters;
-            for (const fact of collectFacts(tool.function.parameters, [], tool.function.name)) {
+            for (const fact of collectFacts(tool.function.parameters, [])) {
                 checked += 1;
                 if (!survives(compacted, fact)) {
                     dropped.push(`${tool.function.name}: ${fact.keyword} at ${fact.path.join('.')}`);
@@ -300,8 +275,17 @@ describe('compactWebLlmToolSchema', () => {
             }
         }
 
-        expect(checked).toBeGreaterThan(300);
+        expect(checked).toBeGreaterThan(450);
         expect(dropped).toEqual([]);
+    });
+
+    it('keeps the unit and range text a pan and a gain handler rely on', () => {
+        const pan = JSON.stringify(compactWebLlmToolSchema(planningTool('setTrackPan')));
+        const gain = JSON.stringify(compactWebLlmToolSchema(planningTool('setTrackGain')));
+
+        expect(pan).toContain('-50');
+        expect(pan).toContain('hard left');
+        expect(gain).toContain('dB');
     });
 
     it('defines a repeated sub-schema once and shows a reference at each use', () => {
@@ -320,15 +304,11 @@ describe('compactWebLlmToolSchema', () => {
         ).toMatchObject({ properties: { unit: { enum: ['targets'] } }, required: ['unit'] });
     });
 
-    it('states the exactly-one rules on the quantity and predicate nodes', () => {
-        const parameters = compactedParameters('command.batch.propose');
-        const matchPath = [...SELECTOR_PATH, 'properties', 'match', 'properties'];
+    it('keeps the exactly-one rules the list description states for a quantity and a predicate', () => {
+        const description = at(compactedParameters('command.batch.propose'), ['properties', 'list', 'description']);
 
-        expect(at(parameters, [...SELECTOR_PATH, 'properties', 'quantity', 'description'])).toBe(
-            'Name exactly one of exactly or maximum.'
-        );
-        expect(at(parameters, [...matchPath, 'all', 'items', 'description'])).toBe('Name exactly one field.');
-        expect(at(parameters, [...matchPath, 'any', 'items', 'description'])).toBe('Name exactly one field.');
+        expect(description).toContain('exactly one of an exact count or a maximum');
+        expect(description).toContain('exactly one of role');
     });
 
     describe('refuses what the full schema refuses', () => {
@@ -399,34 +379,18 @@ describe('compactWebLlmToolSchema', () => {
         expect(JSON.stringify(proposal)).toBe(before);
     });
 
-    it('points analysis.measure at the list command.batch.propose takes instead of repeating it', () => {
-        const compacted = compactWebLlmToolSchema(planningTool('analysis.measure'));
-
-        expect(compacted.function.parameters).toHaveProperty(['properties', 'proposal', 'type'], 'object');
-        expect(compacted.function.parameters).toHaveProperty(['properties', 'scope', 'required'], ['kind']);
-        const text = JSON.stringify(compacted);
-        expect(text).toContain('command.batch.propose');
-        expect(text).toContain('list argument');
-        expect(text).not.toContain('schemaVersion');
-    });
-
     it('keeps the sentence that says a manifest call without types lists every device type', () => {
         const compacted = compactWebLlmToolSchema(planningTool('device.factory-manifest.read'));
 
         expect(compacted.function.description).toContain('Call with no arguments to list every available device type');
     });
 
-    it('keeps the transform grammar its document description carries, without the worked example or limits', () => {
-        const original = planningTool('transform.compile');
-        const compacted = compactWebLlmToolSchema(original);
+    it('keeps the transform grammar its document description carries, worked example and limits included', () => {
+        const compactedText = JSON.stringify(compactedParameters('transform.compile'));
 
-        const originalText = JSON.stringify(original.function.parameters);
-        const compactedText = JSON.stringify(compacted.function.parameters);
-        expect(originalText).toContain('Valid complete document JSON text');
         expect(compactedText).toContain('Required document keys');
         expect(compactedText).toContain('Step:');
-        expect(compactedText).not.toContain('Valid complete document JSON text');
-        expect(compactedText).not.toContain('Limits:');
-        expect(compactedText.length).toBeLessThan(originalText.length);
+        expect(compactedText).toContain('Limits:');
+        expect(compactedText).toContain('Valid complete document JSON text');
     });
 });
