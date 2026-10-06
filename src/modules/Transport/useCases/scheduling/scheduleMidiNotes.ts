@@ -39,6 +39,7 @@ import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
+import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 
@@ -659,6 +660,28 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     return params;
 }
 
+type PlaceSamplesOnClockInput = {
+    startSamples: number;
+    accumulatedSamples: number;
+    sampleRate: number;
+    compensation: number;
+};
+
+/**
+ * The audio-clock time and sample frame an event `startSamples` into the
+ * timeline is posted at. Notes and stored controllers both place themselves
+ * through this, so a controller and a note on one beat get the same frame.
+ */
+function placeSamplesOnClock({
+    startSamples,
+    accumulatedSamples,
+    sampleRate,
+    compensation,
+}: PlaceSamplesOnClockInput): { time: number; sampleFrame: number } {
+    const time = getCurrentTime() + (startSamples - accumulatedSamples) / sampleRate + compensation;
+    return { time, sampleFrame: Math.round(time * sampleRate) };
+}
+
 function getSourceOccurrenceOffset({
     sourceStartBeat,
     segmentStartBeat,
@@ -1056,6 +1079,42 @@ export async function scheduleMidiNotes(
                     ? null
                     : findFaustInstrumentDevice(track.devices);
 
+            // Stored controllers go first, so a note on the same frame sounds
+            // under the pedal or controller it was recorded with. Only the
+            // instruments that honour them take any, and only through the note
+            // path's own dispatch: a Yeast-routed, drum-kit or Toaster track
+            // sends its notes elsewhere and its controllers nowhere.
+            const honoursStoredControllers =
+                workletSynthNode !== null &&
+                !yeastDevice &&
+                !drumKitDef &&
+                !drumKit &&
+                (workletSynthDevice?.type === 'grand-boule' || workletSynthDevice?.type === 'levain');
+            const storedControllers = honoursStoredControllers ? midiState.ccByClipId[clip.id] : undefined;
+            if (storedControllers && workletSynthDevice && workletSynthNode) {
+                const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
+                scheduleStoredControllers({
+                    trackId: track.id,
+                    device: workletSynthDevice,
+                    node: workletSynthNode,
+                    controlChanges: storedControllers,
+                    clip,
+                    fromBeat,
+                    toBeat,
+                    sampleFrameAtBeat: (beat) =>
+                        placeSamplesOnClock({
+                            startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                        }).sampleFrame,
+                    isCurrent,
+                });
+                if (!isCurrent()) {
+                    return;
+                }
+            }
+
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
                 if (!isCurrent()) {
                     return;
@@ -1188,8 +1247,12 @@ export async function scheduleMidiNotes(
                         const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
                         const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
-                        const time = getCurrentTime() + (noteStartSamples - accumulatedSamples) / sr + compensation;
-                        const sampleFrame = Math.round(time * sr);
+                        const { time, sampleFrame } = placeSamplesOnClock({
+                            startSamples: noteStartSamples,
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                        });
                         const durationSamples = noteEndSamples - noteStartSamples;
                         const duration = durationSamples / sr;
                         const endSampleFrame = sampleFrame + durationSamples;
