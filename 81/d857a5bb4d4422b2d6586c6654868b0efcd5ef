@@ -1,0 +1,34 @@
+src/modules/AiRuntime/models/MeasurementBudget.ts
+  s_1c08b47ac3792f::t_2afc4c880d951d 50-52,54-58
+  s_1c08b47ac3792f::t_3088fa72180306 61
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e38d1721d46fc8 39
+src/modules/AiRuntime/useCases/__tests__/measurementBudgetsAndEgress.spec.ts
+  s_1c08b47ac3792f::t_8a5ef56c16426f 774,776-783,785-787,791-793,795-797,799,801-810,820-826
+  s_1c08b47ac3792f::t_de88f0de469c45 450
+  s_1c08b47ac3792f::t_098ce9c8585131 794,798,800
+  s_1c08b47ac3792f::t_1be7653208a090 811-813,818-819
+  s_1c08b47ac3792f::t_ab88ec50dfcf81 814-816
+  s_1c08b47ac3792f::t_84f4de76e779d2 817
+  s_1c08b47ac3792f::t_a850a1aa929cbe 827
+src/modules/AiRuntime/useCases/beginMeasurementRun.ts
+  s_1c08b47ac3792f::t_6acf20bef81277 16,26-28,35-39,42,46-47,64,67
+src/modules/AiRuntime/models/AnalysisMeasureLimits.ts
+  s_1c08b47ac3792f::t_c49ad53236fef8 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81d857a5bb4d4422b2d6586c6654868b0efcd5ef",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
