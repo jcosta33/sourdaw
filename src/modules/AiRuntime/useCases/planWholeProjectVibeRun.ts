@@ -1,12 +1,17 @@
 import { type getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
+import { collectProtectedScopes, isProjectWideScope } from '#/modules/Project/useCases';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../models/ProjectContext';
+import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
 import { SEMANTIC_COMMAND_LIST_ROLE_FAMILIES, type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
 import {
     type VibeRunBaseline,
+    type VibeRunBeatWindow,
     type VibeRunBatch,
+    type VibeRunExcludedTarget,
+    type VibeRunExcludedTargetReason,
     type VibeRunExpectedDelta,
     type VibeRunMeasurement,
     type VibeRunPlan,
@@ -15,6 +20,7 @@ import {
 } from '../models/VibeRunPlan';
 
 import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
+import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -29,8 +35,14 @@ type PlanWholeProjectVibeRunInput = {
     measurements: readonly VibeRunMeasurement[];
 };
 
-/** A batch spends at least one command on each target it names, so its target count is the cap. */
-const MAX_TARGETS_PER_BATCH = MAX_LLM_ACTIONS_PER_BATCH;
+/** A track the run may touch, with the recipes `recipe.expand` would accept for it and what they expand to. */
+type PlannableTarget = {
+    id: string;
+    recipes: readonly MixRecipe[];
+    commandCount: number;
+};
+
+type SectionBaseline = { status: 'none' } | { status: 'conflict' } | { status: 'found'; baseline: VibeRunBaseline };
 
 function resolveRoleFamily(track: ProjectContextTrack): SemanticCommandListRoleFamily | null {
     const role = CANONICAL_ROLE_OPTIONS.find((candidate) => candidate === track.canonicalRole?.role) ?? 'unknown';
@@ -47,34 +59,86 @@ function orderSections(sections: readonly ProjectContextSection[]): VibeRunSecti
         .map(({ id, startBeat, endBeat }) => ({ id, startBeat, endBeat }));
 }
 
-function readLockedTrackIds(brief: ProjectContext['productionBrief']): Set<string> {
-    const locked = new Set<string>();
-    for (const lock of brief?.locks ?? []) {
-        if (lock.scope.kind === 'track') {
-            locked.add(lock.scope.trackId);
+/** An object scope may name the track itself or anything it owns, as batch admission reads it. */
+function trackOwnsObject(track: ProjectContextTrack, objectId: string): boolean {
+    return (
+        track.id === objectId ||
+        track.clips.some((clip) => clip.id === objectId) ||
+        track.devices.some((device) => device.id === objectId)
+    );
+}
+
+/**
+ * The tracks the brief protects, read through the same protected-scope source batch admission reads:
+ * locks and locked decisions alike. A project-wide protection reaches every track. A range, section
+ * or decision scope guards what a time-ranged or brief-naming action touches, which a device recipe
+ * on a track does not.
+ */
+function readProtectedTrackIds(context: PlanWholeProjectVibeRunInput['context']): Set<string> {
+    const brief = context.productionBrief;
+    if (brief === undefined) {
+        return new Set();
+    }
+    const scopes = collectProtectedScopes(brief).map((protection) => protection.scope);
+    if (scopes.some((scope) => isProjectWideScope(scope))) {
+        return new Set(context.tracks.map((track) => track.id));
+    }
+    const protectedIds = new Set<string>();
+    for (const track of context.tracks) {
+        const isProtected = scopes.some(
+            (scope) =>
+                (scope.kind === 'track' && scope.trackId === track.id) ||
+                (scope.kind === 'object' && trackOwnsObject(track, scope.objectId))
+        );
+        if (isProtected) {
+            protectedIds.add(track.id);
         }
     }
-    return locked;
+    return protectedIds;
 }
 
-function dedupeInFirstSeenOrder<Value>(values: readonly Value[]): Value[] {
-    return [...new Set(values)];
-}
-
-/** Evenly sized slices, so a set just over the cap does not leave a one-target tail batch. */
-function splitWithinCap(targetIds: readonly string[]): string[][] {
-    const sliceCount = Math.ceil(targetIds.length / MAX_TARGETS_PER_BATCH);
-    const sliceSize = Math.ceil(targetIds.length / sliceCount);
-    const slices: string[][] = [];
-    for (let start = 0; start < targetIds.length; start += sliceSize) {
-        slices.push(targetIds.slice(start, start + sliceSize));
+/** What `recipe.expand` refuses a track for before it reads any recipe: guarded, a folder, or frozen. */
+function findExclusion(
+    track: ProjectContextTrack,
+    protectedIds: ReadonlySet<string>
+): VibeRunExcludedTargetReason | null {
+    if (protectedIds.has(track.id)) {
+        return 'protected';
     }
-    return slices;
+    if (track.kind === 'folder') {
+        return 'folder';
+    }
+    if (track.frozen === true) {
+        return 'frozen';
+    }
+    if (resolveRoleFamily(track) === null) {
+        return 'unclassified-role';
+    }
+    return null;
 }
 
-function readRoleRecipes(input: PlanWholeProjectVibeRunInput, role: SemanticCommandListRoleFamily): MixRecipe[] {
+/** An edit step retunes exactly one live device of its type; `recipe.expand` refuses any other count. */
+function canApplyEditSteps(recipe: MixRecipe, track: ProjectContextTrack): boolean {
+    return recipe.steps.every(
+        (step) =>
+            step.kind !== 'edit' ||
+            track.devices.filter((device) => device.type === step.deviceType && !device.bypassed).length === 1
+    );
+}
+
+function hasMeasurableMetric(recipe: MixRecipe, measurable: ReadonlySet<string>): boolean {
+    return recipe.metrics.some((expectation) => measurable.has(expectation.metric));
+}
+
+/** The recipes the request's characters name for one role that a single expansion may add to a batch. */
+function readRolePlanRecipes(input: PlanWholeProjectVibeRunInput, role: SemanticCommandListRoleFamily): MixRecipe[] {
+    const measurable = new Set<string>(getAgentMeasurementMetricIds());
     return input.recipes.filter(
-        (recipe) => input.descriptors.includes(recipe.descriptor) && recipe.roles.includes(role)
+        (recipe) =>
+            input.descriptors.includes(recipe.descriptor) &&
+            recipe.roles.includes(role) &&
+            hasMeasurableMetric(recipe, measurable) &&
+            countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS
     );
 }
 
@@ -99,32 +163,97 @@ function readExpectedDeltas(recipes: readonly MixRecipe[]): VibeRunExpectedDelta
     return [...deltas.values()];
 }
 
-function readBaselines(
+/**
+ * Fill each batch with targets in order until the next target's expanded commands would pass the
+ * cap, so no batch expands to more commands than one batch may carry.
+ */
+function packWithinCommandCap(targets: readonly PlannableTarget[]): PlannableTarget[][] {
+    const groups: PlannableTarget[][] = [];
+    let current: PlannableTarget[] = [];
+    let currentCommands = 0;
+    for (const target of targets) {
+        if (current.length > 0 && currentCommands + target.commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
+            groups.push(current);
+            current = [];
+            currentCommands = 0;
+        }
+        current.push(target);
+        currentCommands += target.commandCount;
+    }
+    if (current.length > 0) {
+        groups.push(current);
+    }
+    return groups;
+}
+
+function windowCoversSection(window: VibeRunMeasurement['range'], section: VibeRunSectionScope): boolean {
+    return window.startBeat <= section.startBeat && window.endBeat >= section.endBeat;
+}
+
+function windowIsSection(window: VibeRunBeatWindow, section: VibeRunSectionScope): boolean {
+    return window.startBeat === section.startBeat && window.endBeat === section.endBeat;
+}
+
+/**
+ * The one figure that stands for a target in a section: a measurement of exactly the section's
+ * window, else a single measurement of a wider window that contains it. A window that stops inside
+ * the section says nothing about the rest of it, and two figures competing for the same target and
+ * section are a conflict that stands for neither.
+ */
+function readSectionBaseline(
+    measurements: readonly VibeRunMeasurement[],
+    targetId: string,
+    section: VibeRunSectionScope,
+    metrics: ReadonlySet<string>
+): SectionBaseline {
+    const candidates: VibeRunBaseline[] = [];
+    for (const measurement of measurements) {
+        if (!windowCoversSection(measurement.range, section)) {
+            continue;
+        }
+        const target = measurement.targets.find((candidate) => candidate.targetId === targetId);
+        if (target === undefined) {
+            continue;
+        }
+        const figures = Object.fromEntries(
+            Object.entries(target.measurements).filter(([metric]) => metrics.has(metric))
+        );
+        if (Object.keys(figures).length > 0) {
+            const { startBeat, endBeat } = measurement.range;
+            candidates.push({ targetId, sectionId: section.id, window: { startBeat, endBeat }, measurements: figures });
+        }
+    }
+    const exact = candidates.filter((candidate) => windowIsSection(candidate.window, section));
+    const standing = exact.length > 0 ? exact : candidates;
+    const [baseline] = standing;
+    if (baseline === undefined) {
+        return { status: 'none' };
+    }
+    if (standing.length > 1) {
+        return { status: 'conflict' };
+    }
+    return { status: 'found', baseline };
+}
+
+function readBatchBaselines(
     measurements: readonly VibeRunMeasurement[],
     targetIds: readonly string[],
-    sectionIds: ReadonlySet<string>,
+    sections: readonly VibeRunSectionScope[],
     metrics: ReadonlySet<string>
-): VibeRunBaseline[] {
+): Pick<VibeRunBatch, 'baselines' | 'baselineConflicts'> {
     const baselines: VibeRunBaseline[] = [];
+    const baselineConflicts: { targetId: string; sectionId: string }[] = [];
     for (const targetId of targetIds) {
-        for (const measurement of measurements) {
-            const { sectionId } = measurement.range;
-            if (sectionId !== null && !sectionIds.has(sectionId)) {
-                continue;
-            }
-            const target = measurement.targets.find((candidate) => candidate.targetId === targetId);
-            if (target === undefined) {
-                continue;
-            }
-            const figures = Object.fromEntries(
-                Object.entries(target.measurements).filter(([metric]) => metrics.has(metric))
-            );
-            if (Object.keys(figures).length > 0) {
-                baselines.push({ targetId, sectionId, measurements: figures });
+        for (const section of sections) {
+            const result = readSectionBaseline(measurements, targetId, section, metrics);
+            if (result.status === 'found') {
+                baselines.push(result.baseline);
+            } else if (result.status === 'conflict') {
+                baselineConflicts.push({ targetId, sectionId: section.id });
             }
         }
     }
-    return baselines;
+    return { baselines, baselineConflicts };
 }
 
 /**
@@ -134,26 +263,26 @@ function readBaselines(
  * sections, and what it is expected to move comes from the recipe catalog entries for the requested
  * characters on that role.
  *
- * Role families run in the selector vocabulary's order, which puts sources before the groups that
- * carry them and the master last. A family with more targets than one batch holds is cut into
- * even slices. A family no requested character has a measurable recipe for is reported, not planned.
- * The plan reads baselines the caller already measured; it renders nothing and writes nothing.
+ * A track the brief protects, or `recipe.expand` would refuse, is excluded and reported. Role
+ * families run in the selector vocabulary's order, which puts sources before the groups that carry
+ * them and the master last. A batch is bounded by the commands its recipes expand to over its
+ * targets, never by its target count. A family no requested character has a measurable recipe for,
+ * and a target whose recipes alone pass the cap, are reported, not planned. The plan reads baselines
+ * the caller already measured; it renders nothing and writes nothing.
  */
 export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): VibeRunPlan {
-    const lockedTrackIds = readLockedTrackIds(input.context.productionBrief);
-    const lockedTargetIds: string[] = [];
-    const unclassifiedTargetIds: string[] = [];
-    const targetIdsByRole = new Map<SemanticCommandListRoleFamily, string[]>();
+    const protectedIds = readProtectedTrackIds(input.context);
+    const excludedTargets: VibeRunExcludedTarget[] = [];
+    const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {
+        const reason = findExclusion(track, protectedIds);
         const role = resolveRoleFamily(track);
-        if (lockedTrackIds.has(track.id)) {
-            lockedTargetIds.push(track.id);
-        } else if (role === null) {
-            unclassifiedTargetIds.push(track.id);
-        } else {
-            const roleTargetIds = targetIdsByRole.get(role) ?? [];
-            roleTargetIds.push(track.id);
-            targetIdsByRole.set(role, roleTargetIds);
+        if (reason !== null) {
+            excludedTargets.push({ targetId: track.id, reason });
+        } else if (role !== null) {
+            const roleTracks = tracksByRole.get(role) ?? [];
+            roleTracks.push(track);
+            tracksByRole.set(role, roleTracks);
         }
     }
 
@@ -166,33 +295,59 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
     const batches: VibeRunBatch[] = [];
     const unplannedRoles: VibeRunUnplannedRole[] = [];
     for (const role of SEMANTIC_COMMAND_LIST_ROLE_FAMILIES) {
-        const roleTargetIds = targetIdsByRole.get(role) ?? [];
-        if (roleTargetIds.length === 0) {
+        const roleTracks = tracksByRole.get(role) ?? [];
+        if (roleTracks.length === 0) {
             continue;
         }
-        const recipes = readRoleRecipes(input, role);
-        const expectedDeltas = readExpectedDeltas(recipes);
-        if (expectedDeltas.length === 0) {
-            unplannedRoles.push({ role, reason: 'no-expected-deltas', targetIds: roleTargetIds });
+        const rolePlanRecipes = readRolePlanRecipes(input, role);
+        if (rolePlanRecipes.length === 0) {
+            unplannedRoles.push({ role, reason: 'no-expected-deltas', targetIds: roleTracks.map((track) => track.id) });
             continue;
         }
-        const metrics = new Set(expectedDeltas.map((delta) => delta.metric));
-        const descriptors = dedupeInFirstSeenOrder(expectedDeltas.map((delta) => delta.descriptor));
-        const recipeIds = recipes
-            .filter((recipe) => descriptors.includes(recipe.descriptor))
-            .map((recipe) => recipe.id);
-        for (const targetIds of splitWithinCap(roleTargetIds)) {
+        const plannable: PlannableTarget[] = [];
+        const oversizedTargetIds: string[] = [];
+        for (const track of roleTracks) {
+            const recipes = rolePlanRecipes.filter((recipe) => canApplyEditSteps(recipe, track));
+            const commandCount = recipes.reduce((total, recipe) => total + countRecipeExpansionCommands(recipe), 0);
+            if (recipes.length === 0) {
+                excludedTargets.push({ targetId: track.id, reason: 'no-applicable-recipe' });
+            } else if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
+                oversizedTargetIds.push(track.id);
+            } else {
+                plannable.push({ id: track.id, recipes, commandCount });
+            }
+        }
+        if (oversizedTargetIds.length > 0) {
+            unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: oversizedTargetIds });
+        }
+        for (const group of packWithinCommandCap(plannable)) {
+            const recipes = rolePlanRecipes.filter((recipe) => group.some((target) => target.recipes.includes(recipe)));
+            const expectedDeltas = readExpectedDeltas(recipes);
+            const targetIds = group.map((target) => target.id);
             const ordinal = batches.length + 1;
-            const baselines = readBaselines(input.measurements, targetIds, sectionIds, metrics);
+            const { baselines, baselineConflicts } = readBatchBaselines(
+                input.measurements,
+                targetIds,
+                sections,
+                new Set(expectedDeltas.map((delta) => delta.metric))
+            );
             const measuredTargetIds = new Set(baselines.map((baseline) => baseline.targetId));
             batches.push({
                 id: `vibe-batch-${String(ordinal)}`,
                 ordinal,
-                objective: { descriptors, role, sections, sectionGoals, recipeIds },
+                objective: {
+                    descriptors: [...new Set(recipes.map((recipe) => recipe.descriptor))],
+                    role,
+                    sections,
+                    sectionGoals,
+                    recipeIds: recipes.map((recipe) => recipe.id),
+                },
                 targetIds,
                 expectedDeltas,
+                commandCount: group.reduce((total, target) => total + target.commandCount, 0),
                 baselines,
                 unmeasuredTargetIds: targetIds.filter((targetId) => !measuredTargetIds.has(targetId)),
+                baselineConflicts,
             });
         }
     }
@@ -201,8 +356,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         schemaVersion: 1,
         briefRevision: input.context.productionBrief?.revision ?? null,
         batches,
-        lockedTargetIds,
-        unclassifiedTargetIds,
+        excludedTargets,
         unplannedRoles,
     };
 }
