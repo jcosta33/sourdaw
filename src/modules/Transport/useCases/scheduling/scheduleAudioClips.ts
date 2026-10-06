@@ -238,6 +238,10 @@ export function scheduleAudioClips(
                 if (stretchRatio !== 1) {
                     source.playbackRate.value = stretchRatio;
                 }
+                // The figure a loop-seam fence spares this source's tail by
+                // (#4784): the material it carries is scheduled this late, so
+                // it is still due this long past the seam.
+                (source as SourceWithFade).compensationSeconds = compensation;
 
                 const isFirstIter = iter === 0;
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
@@ -298,6 +302,20 @@ export function scheduleAudioClips(
                     (buffer.duration - sourceOffsetSeconds) / stretchRatio
                 );
 
+                // #4784 — a loop wrap opens the window at loopStart while the
+                // beat→time anchor carries the wrapped playhead past it (or, on
+                // the scheduled seam, a negative-phase beat before it), so a
+                // clip spanning the wrap maps its head deep into the past. The
+                // mid-buffer continuation below answered that with content at
+                // `accumulatedPosition − compensation` — material from before
+                // the loop when the compensation outruns the distance already
+                // travelled into the pass. The window's own first beat is the
+                // earliest content this emission may sound; when its due
+                // instant is still ahead of the source's own start, the source
+                // begins there instead, holding the window's content.
+                const floorStartTime = fromBeat > iterStartBeat ? beatToAudioTime(fromBeat) : iterStartTime;
+                const audibleStartTime = Math.max(soundStartTime, floorStartTime);
+
                 // Nothing audible remains: the pre-roll swallowed the iteration,
                 // or the offset already sits past the end of the material.
                 // Starting a zero-length source would only burn a node.
@@ -309,8 +327,18 @@ export function scheduleAudioClips(
                     continue;
                 }
 
-                if (soundStartTime >= now) {
-                    source.start(soundStartTime, sourceOffsetSeconds, playDuration * stretchRatio);
+                if (audibleStartTime >= now) {
+                    const startBufferOffset = sourceOffsetSeconds + (audibleStartTime - soundStartTime) * stretchRatio;
+                    const startDuration = (soundStartTime + playDuration - audibleStartTime) * stretchRatio;
+                    if (startBufferOffset < buffer.duration && startDuration > 0) {
+                        source.start(audibleStartTime, startBufferOffset, startDuration);
+                    } else {
+                        releaseGainNode(fadeGain, ctx);
+                        if (envGainNode) {
+                            releaseGainNode(envGainNode, ctx);
+                        }
+                        continue;
+                    }
                 } else {
                     const elapsed = now - soundStartTime;
                     const bufferOffset = elapsed * stretchRatio + sourceOffsetSeconds;
@@ -337,10 +365,12 @@ export function scheduleAudioClips(
                     // Anchored to where sound begins, not to the clip's head:
                     // with no pre-roll the two are the same instant, and with
                     // one there is nothing to ramp until the source reaches
-                    // sample 0. Offline clamps the fade remaining after that
-                    // sound start (`userEndSec - startSec`); live feeds the
-                    // same quantity so a pre-roll cannot shift the plateau.
-                    const effectiveStart = Math.max(soundStartTime, now);
+                    // sample 0. A wrap floor (#4784) holds the sound start
+                    // later still, and the ramp follows it. Offline clamps the
+                    // fade remaining after that sound start
+                    // (`userEndSec - startSec`); live feeds the same quantity
+                    // so a pre-roll cannot shift the plateau.
+                    const effectiveStart = Math.max(audibleStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
                         // A fade length is a span of the timeline, so it is measured
@@ -439,7 +469,7 @@ export function scheduleAudioClips(
                             time: beatToAudioTime(clip.startBeat + point.beatOffset),
                             gain: envelopeGainDbToLinear(point.gainDb),
                         })),
-                        Math.max(soundStartTime, now)
+                        Math.max(audibleStartTime, now)
                     );
                     applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
                 }

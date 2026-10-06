@@ -270,18 +270,31 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // edges. Bounded above by `currentBeat`: this clock only ever
             // looks backward from the playhead.
             //
-            // After any landing (play/resume, seek while playing, loop wrap,
-            // follow-action jump) `scheduleAudioClips.ts` backdates a clip
-            // spanning the landing beat P by the track's compensation D, so
-            // the audio entering the devices from that instant onward is
-            // P − D, advancing forward from there — never the landing beat
-            // itself. This read follows that backdated material rather than
-            // clamping to the landing beat, which would read ahead of what
-            // is actually sounding.
+            // On a landing (play/resume, seek while playing, follow-action
+            // jump) the window's own first beat is what `scheduleAudioClips.ts`
+            // starts, one compensation D after the landing — so the audio
+            // entering the devices from that instant onward is the window
+            // advancing on the compensated clock, which is this read. Across a
+            // loop wrap the first D feeds the dying pass's tail instead
+            // (#4784): the fence spares it past the seam, and the mapped read
+            // below follows it back across the region rather than naming the
+            // pre-loop beats nothing plays.
             beat = Math.min(
                 currentBeat,
                 Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
             );
+            const region = transportStore.value;
+            const seamAudioTime = schedulerSession.lastLoopSeamAudioTime;
+            const secondsSinceSeam = seamAudioTime === null ? Infinity : now - seamAudioTime;
+            if (
+                region?.isLooping === true &&
+                secondsSinceSeam >= 0 &&
+                secondsSinceSeam < compensation &&
+                currentBeat >= region.loopStart &&
+                beat < region.loopStart
+            ) {
+                beat += region.loopEnd - region.loopStart;
+            }
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;

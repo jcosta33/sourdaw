@@ -278,6 +278,22 @@ export function resolveLevelArgument(argument: LevelArgument, current: number, l
 }
 
 /**
+ * The decibel ceiling of a lane bounded at `maxValue`.
+ *
+ * A bound at the fader maximum states its ceiling as the fader headroom
+ * itself: `FADER_MAX_GAIN` is defined as `dbToGain(FADER_HEADROOM_DB)`, and
+ * re-deriving the figure through `gainToDb` loses a step of binary precision
+ * (`5.999999999999998`), which refused the +6 dB the fader's own travel
+ * offers (#4964). `TRACK_FADER_LAW` states this same ceiling exactly.
+ */
+function laneCeilingDb(maxValue: number): number {
+    if (maxValue === FADER_MAX_GAIN) {
+        return FADER_HEADROOM_DB;
+    }
+    return maxValue > 0 ? gainToDb(maxValue) : SEND_MIN_DB;
+}
+
+/**
  * The law a linear-amplitude gain automation lane draws under.
  *
  * A lane carries its own bounds, and a gain lane written before the fader
@@ -290,7 +306,7 @@ export function resolveLevelArgument(argument: LevelArgument, current: number, l
 export function gainLaneLevelLaw(bounds: { minValue: number; maxValue: number }): LevelLaw {
     return {
         floorDb: bounds.minValue > 0 ? gainToDb(bounds.minValue) : SEND_MIN_DB,
-        ceilingDb: bounds.maxValue > 0 ? gainToDb(bounds.maxValue) : SEND_MIN_DB,
+        ceilingDb: laneCeilingDb(bounds.maxValue),
         unity: 1,
     };
 }

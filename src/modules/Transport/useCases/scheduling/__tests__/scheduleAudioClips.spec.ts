@@ -1363,4 +1363,89 @@ describe('scheduleAudioClips', () => {
         // iterStartTime = currentTime(0) + 8/2 + compensation(0.05) = 4.05.
         expect(fakeSource.start.mock.calls[0]![0]).toBeCloseTo(4.05, 6);
     });
+
+    // ── #4784 — the mid-buffer continuation must never reach past the window ─
+    //
+    // A loop wrap re-anchors the window at loopStart while the beat→time anchor
+    // carries the wrapped playhead (loopStart + overshoot on the late wrap, a
+    // negative-phase beat before loopStart on the scheduled seam). A clip
+    // spanning loopStart therefore maps its head deep into the past, and the
+    // `soundStartTime < now` branch answered that with a mid-buffer start at
+    // content `accumulatedPosition − D` — material from before the loop when
+    // the compensation outruns the overshoot. The fix: the continuation may
+    // only start from content at or after the window's own first beat; content
+    // before it is skipped by starting at the instant the window's first beat
+    // is due instead.
+
+    // The issue's unit repro, verbatim: clip spanning beats 0–16,
+    // accumulatedPosition 4.25 (loopStart 4, overshoot 0.25), compensation
+    // 0.25 s at 120 BPM, getCurrentTime() = 10.
+    it('starts the window at the loop start instead of pre-loop content when the compensation outruns the overshoot', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        scheduleAudioClips(4, 16, 4.25, new Set(), new Set(), [], defaultTransportState);
+
+        // Unfixed, this is start(10, 1.875, …) — buffer content at beat 3.75,
+        // before a loop starting at beat 4. The window's first beat (4) is due
+        // at 10 + secondsBetweenBeats(4.25 → 4) + 0.25 = 10.125, holding beat
+        // 4's content (2 s into the buffer at 120 BPM).
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.125, 9);
+        expect(offset).toBeCloseTo(2, 9);
+        // The source still ends where the iteration ends (16.125); starting
+        // later shortens the sound, it never moves the tail.
+        expect(duration).toBeCloseTo(6, 9);
+        expect(when + duration).toBeCloseTo(16.125, 9);
+    });
+
+    it('starts the window at the loop start for the scheduled seam, whose anchor sits before it', () => {
+        // The seam tick's incoming-pass emission: accumulatedPosition is the
+        // negative-phase beat the incoming pass will have been at at `now`
+        // (3.8, a fifth of a second before loopStart 4), and the window opens
+        // at loopStart. Same clip spanning beats 0–16.
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        scheduleAudioClips(4, 12, 3.8, new Set(), new Set(), [], defaultTransportState);
+
+        // iterStartTime = 10 − 1.9 + 0.25 = 8.35, deep in the past. The window's
+        // first beat is due at 10 + 0.1 + 0.25 = 10.35 — the seam instant plus
+        // the compensation — with beat 4's content. Unfixed, this is
+        // start(10, 1.65, …): content at beat 3.3, before the loop.
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.35, 9);
+        expect(offset).toBeCloseTo(2, 9);
+        expect(duration).toBeCloseTo(6, 9);
+    });
+
+    it('carries its track compensation on the source so a wrap fence can spare its tail', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip()] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // The loop-end material a compensated source carries is still due for
+        // `compensationSeconds` past the seam; the fence reads the figure off
+        // the source (schedulerSession's stopActiveSources).
+        expect((fakeSource as { compensationSeconds?: number }).compensationSeconds).toBe(0.25);
+    });
 });

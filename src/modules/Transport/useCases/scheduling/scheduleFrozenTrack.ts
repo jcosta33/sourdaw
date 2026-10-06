@@ -82,6 +82,10 @@ export function scheduleFrozenTrack(
     const strip = ensureTrackStrip(track.id);
     const source = createBufferSource();
     source.buffer = buffer;
+    // The whole-arrangement buffer is the source a loop seam most needs to
+    // fence sample-accurately, and its own shift is the compensation above —
+    // the same figure the seam fence spares its tail by (#4784).
+    (source as SourceWithFade).compensationSeconds = compensation;
 
     const fadeGain = getAudioContext().createGain();
     (source as SourceWithFade).fadeGainNode = fadeGain;

@@ -239,7 +239,10 @@ describe('scheduleAutomationOnParam', () => {
         expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(5, 10);
     });
 
-    it('collapses equal-beat points with the last value winning', () => {
+    // #4654: two points on one beat are a hard jump, not a duplicate — the
+    // ramp reaches the array-earlier value approaching the jump, and the
+    // array-later value takes over at the tie as a set.
+    it('plays the ramp into an equal-beat jump and takes the later value at the tie', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
@@ -253,7 +256,8 @@ describe('scheduleAutomationOnParam', () => {
             []
         );
 
-        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(0.9, 1);
+        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(0.5, 1);
+        expect(param.setValueAtTime).toHaveBeenCalledWith(0.9, 1);
     });
 
     it('holds (step) a value rather than ramping when the curve is step', () => {

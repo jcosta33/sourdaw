@@ -200,6 +200,28 @@ describe('scheduleFrozenTrack', () => {
         expect(start).toHaveBeenCalledWith(4.02);
     });
 
+    // #4784 — the whole-arrangement buffer is the source a loop seam most
+    // needs to fence sample-accurately, and the fence spares each source's
+    // tail by the compensation that source was scheduled with. The stamp is
+    // the same shift the start above was moved by.
+    it('carries the compensation it was scheduled with on the source', () => {
+        const source = { start: vi.fn(), connect: vi.fn(), onended: null };
+        vi.mocked(createBufferSource).mockReturnValue(source as never);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.02);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+
+        expect(scheduleFrozenTrack(track, 0, [], 120)).toBe(true);
+        expect((source as { compensationSeconds?: number }).compensationSeconds).toBe(0.02);
+    });
+
     // FX-4 residual — the buffer bakes the chain as it stood at freeze time. A
     // plugin latency change moves the live lookup but never marks the track
     // stale (computeTrackHash sees no clip/device change), so playback must

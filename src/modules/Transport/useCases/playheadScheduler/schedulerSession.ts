@@ -1,31 +1,44 @@
-export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
+/**
+ * A buffer source the scheduler tracks, with the handle its fade rides and —
+ * for sources scheduled on the compensated clock (#4784) — the compensation it
+ * was scheduled with, so a loop-seam fence can spare the tail it is still due.
+ */
+export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode; compensationSeconds?: number };
 
 /**
  * Stop every source in the pool through its optional fade, and drop the
  * references.
  *
  * Without `stopAtTime` the sources stop one 5 ms ramp after the current clock —
- * the teardown semantic. With it, the sources are fenced at that audio instant
- * with the ramp ending there: the scheduled loop wrap (#4656) fires before the
- * playhead reaches loopEnd, so the sources that must not sound past the seam
- * (the whole-arrangement frozen-track buffers) are cut sample-accurately at
- * the seam instead of a grain after it. A time already behind the clock
- * degrades to an immediate stop. An already-stopped node is skipped silently.
+ * the teardown semantic, applied to every source whatever its compensation,
+ * because a teardown owes nothing past the clock. With it, the sources are
+ * fenced at that audio instant with the ramp ending there: the scheduled loop
+ * wrap (#4656) fires before the playhead reaches loopEnd, so the sources that
+ * must not sound past the seam (the whole-arrangement frozen-track buffers) are
+ * cut sample-accurately at the seam instead of a grain after it. A time already
+ * behind the clock degrades to an immediate stop. An already-stopped node is
+ * skipped silently.
+ *
+ * Each source's fence is the seam plus that source's own compensation
+ * (#4784): loop-end material on a compensated track is scheduled its
+ * compensation late, so it is still due for that long past the seam — cutting
+ * every source at the seam itself silences the last `compensation` seconds of
+ * the loop. A source without a recorded compensation — MIDI, metronome, or
+ * anything scheduled on the plain clock — fences at the seam unchanged.
  */
 export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioContext, stopAtTime?: number): void {
     const now = ctx.currentTime;
-    const stopAt = stopAtTime === undefined ? now + 0.005 : Math.max(stopAtTime, now);
-    const fadeStart = Math.max(stopAt - 0.005, now);
     for (const src of sources as SourceWithFade[]) {
+        const stopAt =
+            stopAtTime === undefined ? now + 0.005 : Math.max(stopAtTime + (src.compensationSeconds ?? 0), now);
+        const fadeStart = Math.max(stopAt - 0.005, now);
         try {
             if (src.fadeGainNode) {
                 src.fadeGainNode.gain.cancelScheduledValues(now);
                 src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, fadeStart);
                 src.fadeGainNode.gain.linearRampToValueAtTime(0, stopAt);
-                src.stop(stopAt);
-            } else {
-                src.stop(stopAt);
             }
+            src.stop(stopAt);
         } catch {
             /* already stopped */
         }
@@ -80,4 +93,11 @@ export const schedulerSession = {
         anchorAudioTime: number;
         anchorPosition: number;
     } | null,
+    // The audio-clock instant the most recent loop wrap pivoted on (#4784), or
+    // `null` when no wrap has happened in this session. For one compensation
+    // window after it, the audio a compensated track is fed is still the dying
+    // pass's tail — the compensated device read maps back across the region
+    // onto it (applyAutomation). Cleared by a tempo-map or loop-region edit
+    // (whose teardown cuts the tail) and by every new scheduler session.
+    lastLoopSeamAudioTime: null as number | null,
 };

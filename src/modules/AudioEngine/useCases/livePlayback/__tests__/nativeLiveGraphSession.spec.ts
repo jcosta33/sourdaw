@@ -38,8 +38,10 @@ import {
     type OfflinePpqEndpointProjector,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
+import { updateDeviceParam } from '../../deviceControls/updateDeviceParam';
 import { masterGainState } from '../../engineAccess/masterGainState';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
+import { isDeviceCarriedByNativeSession } from '../isDeviceCarriedByNativeSession';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -253,6 +255,12 @@ vi.mock('../../trackAudioControls/setNativeCarriedTracks', () => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (message: string, level: string) => mocks.notifyUser(message, level),
+}));
+// The write door's Web Audio twin is the other module's concern; what this
+// file observes is the native half it queues on the session chain. Doubled so
+// the real door can run without standing up a Web Audio graph.
+vi.mock('../../../repositories/createWebAudioEngine', () => ({
+    audioEngine: { updateDeviceParam: vi.fn(), updateDevicePatch: vi.fn() },
 }));
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../projectLiveGraphTopology')>();
@@ -2752,5 +2760,77 @@ describe('the chain record a rolling mirror addresses', () => {
         await stopNativeLiveGraphSession({ positionSeconds: 3 });
 
         expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([['audio-1', ['device-a']]]);
+    });
+});
+
+/**
+ * #4785 — the start claims its strips before the first await but recorded the
+ * engine's chains only after the apply landed, and Stop had cleared the record,
+ * so the whole start window answered "not carried" to the write doors: an edit
+ * made while the start was in flight was sent nowhere, and the engine rolled
+ * with the value the pre-edit projection had carried until the next Play.
+ */
+describe('an edit issued while the start apply is pending (#4785)', () => {
+    const FERMENTER_DEVICE: Device = {
+        id: 'dev-1',
+        name: 'Fermenter',
+        type: 'fermenter',
+        bypassed: false,
+        parameterValues: {},
+    };
+
+    let releaseFirstApply: (value: unknown) => void = () => {};
+
+    function heldFirstApply(): Promise<unknown> {
+        return new Promise((resolve) => {
+            releaseFirstApply = resolve;
+        });
+    }
+
+    it('reaches the engine with a carried built-in write made during the start window', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [FERMENTER_DEVICE] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.topologyOverride = [
+            { ...CARRIED_STRIP, devices: [FERMENTER_DEVICE] },
+            { kind: 'set-transport', playing: false, positionSeconds: 0 },
+        ];
+        mocks.applyGraphCommands.mockImplementationOnce(() => heldFirstApply());
+
+        const start = startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        // The optimistic claim has run and the first apply is still in flight —
+        // the exact window the defect named.
+        await vi.waitFor(() => expect(nativeLiveGraphSession.carriedStripIds.size).toBe(1));
+        expect(mocks.applyGraphCommands).toHaveBeenCalledTimes(1);
+
+        // The carriage both write doors read. Unfixed, the empty chain record
+        // answers false here and the edit below is sent nowhere.
+        expect(isDeviceCarriedByNativeSession('audio-1', 'dev-1')).toBe(true);
+
+        updateDeviceParam('audio-1', 'dev-1', 'oscEngine', 0.75);
+
+        releaseFirstApply({ ...APPLIED, reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['dev-1'] }] });
+        await start;
+
+        // The edit queued behind the start on the session chain: the topology
+        // batch, the roll, then one write carrying the moved value in the
+        // body's own name. Read in the wire shape — the flattened form the
+        // engine is actually handed.
+        await vi.waitFor(() => {
+            const writes = appliedBatches().filter((batch) =>
+                batch.commands.some((command) => command.kind === 'set-device-parameters')
+            );
+            expect(writes).toHaveLength(1);
+            expect(writes[0]!.commands).toContainEqual({
+                kind: 'set-device-parameters',
+                trackId: 'audio-1',
+                deviceId: 'dev-1',
+                values: { engine: 0.75 },
+            });
+        });
+        expect(mocks.wireCalls).toEqual(['apply', 'apply', 'apply']);
     });
 });
