@@ -1,0 +1,21 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_53f6e69cb8da8e 498-499
+  s_2bfd55a4393d7c::t_954812eea8db8c 457-461
+  s_2bfd55a4393d7c::t_bcd4fab21095dd 481-482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7fd84d9f40580e4a046f3513c23f9ff4b9c1ae03",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
