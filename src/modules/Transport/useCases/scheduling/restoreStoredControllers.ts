@@ -20,9 +20,11 @@ export type RestoreStoredControllersInput = {
         clip: Parameters<typeof projectClipControllerRestore>[0]['clip'];
         controlChanges: Parameters<typeof projectClipControllerRestore>[0]['controlChanges'];
     }[];
-    /** The beat playback was relocated to, and the sample frame it is posted at. */
+    /** The beat playback was relocated to, where the window `[atBeat, windowToBeat)` this track schedules opens. */
     atBeat: number;
-    sampleFrame: number;
+    windowToBeat: number;
+    /** The sample frame a note at this beat is posted at: the destination's frame, and the test of "at the same time". */
+    sampleFrameAtBeat: (beat: number) => number;
     queue: SameFramePostQueue;
 };
 
@@ -48,13 +50,21 @@ export function restoreStoredControllers({
     node,
     clips,
     atBeat,
-    sampleFrame,
+    windowToBeat,
+    sampleFrameAtBeat,
     queue,
 }: RestoreStoredControllersInput): void {
     const moved = readStoredControllerPostedPedals(trackId, device.id);
+    const sampleFrame = sampleFrameAtBeat(atBeat);
     const held = new Set<number>();
     for (const { clip, controlChanges } of clips) {
-        const restore = projectClipControllerRestore({ controlChanges, clip, atBeat });
+        const restore = projectClipControllerRestore({
+            controlChanges,
+            clip,
+            atBeat,
+            windowToBeat,
+            onDestinationFrame: (beat) => sampleFrameAtBeat(beat) === sampleFrame,
+        });
         for (const controller of restore.held) {
             held.add(controller);
         }

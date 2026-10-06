@@ -633,26 +633,11 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
         });
     });
 
+    // A Grand Boule performer's pedal survives the discard too, but that is pinned against the real
+    // queue (grandBouleEngineCore.spec): the worker's allNotesOff pulls queued pedals back to the
+    // audible frame, which this model does not, so no end state is claimed for it here.
     describe('a performer move', () => {
         const FAR_FUTURE = 10_000_000;
-
-        it('queued on the Grand Boule is never dropped by a jump', async () => {
-            loadClip('grand-boule', pedalLane());
-            transportStoreState.value = playingState({ playheadPosition: 0.8 });
-            startPlayheadScheduler();
-            await playUntilQueued('sustain 0');
-            // A half pedal played live, stamped past everything stored playback posted.
-            grandBouleControls.setSustain(0.3, FAR_FUTURE);
-
-            evaluateFollowActionsMock.mockImplementationOnce(() => ({
-                jumpToPosition: DESTINATION_BEAT,
-                shouldStop: false,
-            }));
-            await runTick();
-            engine.drainAll();
-
-            expect(engine.value('sustain')).toBe(0.3);
-        });
 
         it('queued on the Levain is never dropped by a stop', async () => {
             loadClip('levain', expressionLane());

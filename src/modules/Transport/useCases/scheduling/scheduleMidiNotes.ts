@@ -970,8 +970,10 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
-        let relocatedStoredControllers: Omit<RestoreStoredControllersInput, 'trackId' | 'atBeat' | 'queue'> | null =
-            null;
+        let relocatedStoredControllers: Omit<
+            RestoreStoredControllersInput,
+            'trackId' | 'atBeat' | 'windowToBeat' | 'queue'
+        > | null = null;
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
@@ -1140,7 +1142,7 @@ export async function scheduleMidiNotes(
                         device: workletSynthDevice,
                         node: workletSynthNode,
                         clips: [],
-                        sampleFrame: sampleFrameAtBeat(fromBeat),
+                        sampleFrameAtBeat,
                     };
                     if (storedControllers) {
                         relocatedStoredControllers.clips.push({ clip, controlChanges: storedControllers });
@@ -1462,7 +1464,8 @@ export async function scheduleMidiNotes(
                 node: relocatedStoredControllers.node,
                 clips: relocatedStoredControllers.clips,
                 atBeat: fromBeat,
-                sampleFrame: relocatedStoredControllers.sampleFrame,
+                windowToBeat: toBeat,
+                sampleFrameAtBeat: relocatedStoredControllers.sampleFrameAtBeat,
                 queue: posts,
             });
             restoredStoredControllerDevices.add(

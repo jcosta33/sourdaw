@@ -996,6 +996,26 @@ describe('a pedal move that stored clip playback posted', () => {
         expect(calls).toEqual([{ method: 'push_sustain', args: [1, 5_000] }]);
     });
 
+    it('leaves a performer pedal queued through the whole sequence a relocation sends the worker', () => {
+        // The worker's relocation: allNotesOff (which pulls every queued pedal back to the
+        // audible frame), the discard, then the destination's stored press.
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 0.3, sampleFrame: 5_000 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 3_000, stored: true }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.capPendingFrames(100);
+        receive(instance, queue, { type: 'discardStoredPedals' }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 200, stored: true }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls)).toEqual([
+            { method: 'push_sustain', args: [0.3, 100] },
+            { method: 'push_sustain', args: [1, 200] },
+        ]);
+    });
+
     it('leaves queued notes and parameters alone, as it is not a panic', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();

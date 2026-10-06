@@ -15,6 +15,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectClipControllerEvents,
+    projectClipControllerRestore,
     projectClipMidiEvents,
     projectCommittedGroove,
     shouldPlayMidiEvent,
@@ -27,6 +28,7 @@ import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import {
     forgetStoredControllerEngagements,
+    noteStoredControllerPost,
     takeStoredControllerEngagements,
 } from '../../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
@@ -2308,6 +2310,7 @@ describe('scheduleMidiNotes', () => {
         function useRealProjections() {
             vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
             vi.mocked(projectClipControllerEvents).mockImplementation(realMidiUseCases.projectClipControllerEvents);
+            vi.mocked(projectClipControllerRestore).mockImplementation(realMidiUseCases.projectClipControllerRestore);
         }
 
         function loadTrack(deviceType: string, deviceId: string, midi: Record<string, unknown>) {
@@ -2851,6 +2854,109 @@ describe('scheduleMidiNotes', () => {
                 await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
                 expect(posted).toEqual([`sustain 1 @${BEAT_FRAMES}`, `on 60 @${BEAT_FRAMES + BEAT_FRAMES / 4}`]);
+            });
+        });
+
+        // A relocation opens its window at the destination and clock, so the destination is frame 0.
+        // The restore reads the same projection the window emits through, so the sustain moves the
+        // instrument is told at that frame are exactly the value in force there, once.
+        describe('a relocation through the real projections', () => {
+            async function relocateTo(
+                destination: number,
+                lane: ReturnType<typeof storedController>[],
+                clip: Record<string, unknown>
+            ): Promise<string[]> {
+                const posted: string[] = [];
+                vi.mocked(projectClipControllerEvents).mockImplementation(realMidiUseCases.projectClipControllerEvents);
+                vi.mocked(projectClipControllerRestore).mockImplementation(
+                    realMidiUseCases.projectClipControllerRestore
+                );
+                stripWith({
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: {
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        setSustain: vi.fn((position: number, frame?: number) => {
+                            posted.push(`sustain ${position} @${frame}`);
+                        }),
+                        setSostenuto: vi.fn(),
+                        setUnaCorda: vi.fn(),
+                    },
+                });
+                // The device is one stored playback already moved, as a relocation finds it.
+                noteStoredControllerPost({
+                    trackId: 'track-1',
+                    deviceId: 'gb-1',
+                    deviceType: 'grand-boule',
+                    pedal: 64,
+                });
+                (trackStore as { value: unknown }).value = {
+                    tracks: [
+                        midiTrack({
+                            clips: [midiClip(clip)],
+                            devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                        }),
+                    ],
+                };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [] },
+                    ccByClipId: { 'clip-1': lane },
+                };
+
+                await scheduleMidiNotes(
+                    destination,
+                    destination + 1,
+                    destination,
+                    new Set<string>(),
+                    [],
+                    defaultTransportState,
+                    120,
+                    undefined,
+                    true
+                );
+                return posted;
+            }
+
+            const oneBeatLoopFromThird = { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 1 };
+
+            it('sends only the head carry at a pass head of a one-beat loop that starts at 1/3', async () => {
+                const posted = await relocateTo(
+                    13 / 3,
+                    [storedController('down', 64, 127, 0), storedController('up', 64, 0, 0.75)],
+                    oneBeatLoopFromThird
+                );
+
+                expect(posted.filter((entry) => entry.endsWith('@0'))).toEqual(['sustain 1 @0']);
+            });
+
+            it('sends nothing at the head of a pass whose lane has no row in force yet', async () => {
+                const posted = await relocateTo(13 / 3, [storedController('late', 64, 127, 0.5)], oneBeatLoopFromThird);
+
+                // Nothing is in force at the head, so the pedal stored playback moved is lifted there;
+                // the lane's own press comes half a beat in.
+                expect(posted).toEqual(['sustain 0 @0', 'sustain 1 @12000']);
+            });
+
+            it('ends on the row at the destination, not the press carried from before it, with a content offset of 1/3', async () => {
+                const posted = await relocateTo(
+                    8 / 3,
+                    [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2)],
+                    { startBeat: 1, endBeat: 9, midiOffsetBeats: 1 / 3 }
+                );
+
+                expect(posted.filter((entry) => entry.endsWith('@0'))).toEqual(['sustain 0 @0']);
+            });
+
+            it('carries the value in force when the next row is a fraction of a beat after the destination', async () => {
+                const posted = await relocateTo(
+                    2,
+                    [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2.0001)],
+                    { startBeat: 0, endBeat: 8 }
+                );
+
+                expect(posted).toEqual(['sustain 1 @0', 'sustain 0 @2']);
             });
         });
     });
