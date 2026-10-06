@@ -1,0 +1,56 @@
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_1c08b47ac3792f::t_95751aff0df08a 29
+  s_1c08b47ac3792f::t_4437e6d7ddfc59 7
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_cc321c34611f9d 1-8
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_a8ded7d021c5c4 32
+  s_1c08b47ac3792f::t_509943e31863ba 460
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_1c08b47ac3792f::t_b4fa50a349698c 139-142
+  s_1c08b47ac3792f::t_77b2ff36f6a987 38-42
+  s_1c08b47ac3792f::t_75b361839a495f 8-9,45,54-62,72,111,122-125,127
+  s_1c08b47ac3792f::t_d29c7c9f7a3839 4
+  s_1c08b47ac3792f::t_15eb22742f64a6 92-99,104,120-121,126
+  s_1c08b47ac3792f::t_da2616ce465468 2-3,5-7,10-17,19-37,43-44,46-53,63-71,73-91,130-136,138,143
+  s_1c08b47ac3792f::t_109418f4bbb99d 100-103,105-110,112-119
+  s_1c08b47ac3792f::t_4eb3ab7bdffd42 128-129
+  s_1c08b47ac3792f::t_f53006695d3179 18
+  s_1c08b47ac3792f::t_108c4145ad4d18 137
+  s_1c08b47ac3792f::t_c2473108c35e34 1
+  s_1c08b47ac3792f::t_f5db05d5679f81 144-146
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_1c08b47ac3792f::t_1f958df00185cd 59
+  s_1c08b47ac3792f::t_c4b035cc334ee9 86-90
+  s_1c08b47ac3792f::t_95633373b2b270 1-21,23-58,60-85,91-112,120-121
+  s_1c08b47ac3792f::t_2f892b4e5c06d9 113-119
+  s_1c08b47ac3792f::t_9a090f992d55c1 22,122-132
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_c68eda9e2364ba 47
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_efcec9596c8829 68-70
+  s_1c08b47ac3792f::t_51dd4f56cc265e 329,343-355,357,359,361,364-385,387-415
+  s_1c08b47ac3792f::t_fbe7f15e613a41 22
+  s_1c08b47ac3792f::t_91a0e1452ac969 32
+  s_1c08b47ac3792f::t_06e834fb589a93 386
+  s_1c08b47ac3792f::t_38859ecaa851c4 45
+  s_1c08b47ac3792f::t_f4121163ba4b5d 416
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_e4a15e99111895 527
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3e40544df227a4b2465df76b60eefb78e432e53",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
