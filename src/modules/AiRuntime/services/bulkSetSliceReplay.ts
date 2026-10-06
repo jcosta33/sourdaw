@@ -10,10 +10,54 @@ import { resolveSemanticCommandListSelector, type SemanticCommandListCandidate }
 
 type BulkSetSliceReplay = { status: 'accepted' } | { status: 'rejected'; reason: string };
 
+function countEntries(values: readonly string[]): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const value of values) {
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return counts;
+}
+
+function sameEntryCounts(left: readonly string[], right: readonly string[]): boolean {
+    const leftCounts = countEntries(left);
+    const rightCounts = countEntries(right);
+    return (
+        leftCounts.size === rightCounts.size && [...leftCounts].every(([key, count]) => rightCounts.get(key) === count)
+    );
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+/**
+ * Whether a candidate's live fact is exactly what the run's own write left: the boolean the run set,
+ * the compiled device types plus every device type the run added (each counted, so a second device of
+ * an added type is still an outside change), or the compiled tags plus the tags those devices carry.
+ */
+export function isRunWrittenValue(fact: BulkSetRunWrittenFact, live: unknown): boolean {
+    if ('written' in fact) {
+        return live === fact.written;
+    }
+    const compiled = fact.value ?? [];
+    if (fact.field === 'ownerDeviceTypes') {
+        return isStringArray(live) && sameEntryCounts(live, [...compiled, ...fact.added]);
+    }
+    const expected = new Set([...compiled, ...fact.added.map((tag) => tag.toLowerCase())]);
+    return isStringArray(live) && live.length === expected.size && live.every((tag) => expected.has(tag));
+}
+
+function readCandidateFact(candidate: SemanticCommandListCandidate, field: BulkSetRunWrittenFact['field']): unknown {
+    return candidate[field];
+}
+
 function withRunWrittenFact(
     candidate: SemanticCommandListCandidate,
     fact: BulkSetRunWrittenFact
 ): SemanticCommandListCandidate {
+    if (!isRunWrittenValue(fact, readCandidateFact(candidate, fact.field))) {
+        return candidate;
+    }
     switch (fact.field) {
         case 'muted':
             return { ...candidate, muted: fact.value ?? undefined };
@@ -34,8 +78,9 @@ function withRunWrittenFact(
 
 /**
  * The live candidate universe with every fact the run's own earlier batches wrote restored to the
- * value it held when the list was compiled. Every other fact stays live, so a selector replayed over
- * this universe sees exactly the outside changes and none of the run's own.
+ * value it held when the list was compiled — but only while the live value is exactly the run's own
+ * write. Every other fact, and a written fact anyone else changed since, stays live, so a selector
+ * replayed over this universe sees exactly the outside changes and none of the run's own.
  */
 export function restoreRunWrittenFacts(
     candidates: readonly SemanticCommandListCandidate[],

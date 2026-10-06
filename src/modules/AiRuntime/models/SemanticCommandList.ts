@@ -114,13 +114,19 @@ export type BulkSetSlice = { setStableIds: string[]; offset: number };
 
 /**
  * One fact of one candidate that an earlier batch of the same run wrote, with the value the
- * candidate held when the list was compiled. A later batch's replay reads the candidate with this
- * value restored, so a set changed only by the run's own committed batches still resolves as it did,
- * while every fact the run did not write is read live and any outside change to it still shows.
+ * candidate held when the list was compiled and exactly what the run wrote to it: the value a
+ * boolean fact was set to, or the entries an array fact gained. A later batch accepts the live fact
+ * only while it is exactly the compiled value plus the run's own write, and then reads the candidate
+ * with the compiled value restored; any other live value is an outside change and is read as it is.
  */
 export type BulkSetRunWrittenFact =
-    | { candidateId: string; field: 'muted' | 'locked' | 'bypassed' | 'ownerMuted'; value: boolean | null }
-    | { candidateId: string; field: 'ownerDeviceTypes' | 'ownerTags'; value: string[] | null };
+    | {
+          candidateId: string;
+          field: 'muted' | 'locked' | 'bypassed' | 'ownerMuted';
+          value: boolean | null;
+          written: boolean;
+      }
+    | { candidateId: string; field: 'ownerDeviceTypes' | 'ownerTags'; value: string[] | null; added: string[] };
 
 /** The selector fields a set slice re-resolves against the live project; its quantity is relaxed at replay. */
 export type BulkSetReplaySelector = Omit<SemanticCommandListSelector, 'targetArgument' | 'quantity'>;
