@@ -1,0 +1,97 @@
+scripts/resourceGuard.ts
+  s_2bfd55a4393d7c::t_bb319562d419d9 120-121
+src/modules/AiRuntime/useCases/__tests__/measurementBudgetsAndEgress.spec.ts
+  s_2bfd55a4393d7c::t_4424dd1193b0e9 15,460
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_1c08b47ac3792f::t_6f3db579109e96 242-245,259-260
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  s_1c08b47ac3792f::t_22c0c258fc18a7 174-179,181,185-193
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsHardJump.spec.ts
+  s_2bfd55a4393d7c::t_4307a766749ce8 1-52
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_2bfd55a4393d7c::t_4f008a0ce31ca3 158-170,172,353-367
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_1c08b47ac3792f::t_872404e22e37b4 934-936,950-953
+src/modules/AudioEngine/useCases/__tests__/renderOfflineCancellation.spec.ts
+  s_1c08b47ac3792f::t_9840b1d7c331c8 10,240-254
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_1c08b47ac3792f::t_9a6ad6683016d6 25,527-529
+src/modules/AudioEngine/useCases/index.ts
+  s_1c08b47ac3792f::t_d267f9e8259922 158
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_1c08b47ac3792f::t_a217182b5d2ac9 41,44,259-264,2765-2836
+src/modules/AudioEngine/useCases/offlineRender/__tests__/exportCancellation.spec.ts
+  s_1c08b47ac3792f::t_29c088c7f95842 37-38,43,46,49,53-68
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_deb0cdc0a541c2 17-19,353,374,469,1667-1721
+src/modules/AudioEngine/useCases/offlineRender/beginExportCancellationScope.ts
+  s_1c08b47ac3792f::t_edc73a66ca93f8 7-13
+src/modules/AudioEngine/useCases/offlineRender/endExportCancellationScope.ts
+  s_1c08b47ac3792f::t_d7c8aebab87483 3-13
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_1c08b47ac3792f::t_6ec00e00335454 10,66-68
+src/modules/AudioEngine/useCases/offlineRender/exportCancellationState.ts
+  s_1c08b47ac3792f::t_33ed73abc87e5e 10-14
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1c08b47ac3792f::t_ba0447bbc28fb2 141-145,519
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  s_2bfd55a4393d7c::t_f3d4239d50330e 5,61-64,111
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_2bfd55a4393d7c::t_4844c40ae6f496 3,18-22,77-79,184,207-209,217-241
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_1c08b47ac3792f::t_62e8339662ac54 1,227-239
+src/modules/Automation/handlers/automation/__tests__/automationHandlers.spec.ts
+  s_2bfd55a4393d7c::t_03a47c6d722e97 3-4,90-124
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_1c08b47ac3792f::t_b3a73192d90a27 300-329
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_1c08b47ac3792f::t_37ee864e4acb49 137-148
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  s_1c08b47ac3792f::t_4696b8443e5d02 69-120
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_919d05601e615d 557-607
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_1c08b47ac3792f::t_56bab28a6ae675 1-6,13-27,32-34,41,96-102
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1c08b47ac3792f::t_616f8dfc173b5c 259,365-368,515-518,535-539,593-597,629-632,957-960
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_1c08b47ac3792f::t_26ae83745b4dd0 1366-1450
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_1c08b47ac3792f::t_60805b6da99f67 203-224
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_1c08b47ac3792f::t_3873dfb348ab55 20,22,218-222,615-670
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_1c08b47ac3792f::t_a4bb1a735b89ad 273-281,286-297
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_2bfd55a4393d7c::t_e01e85959a8201 241-244,305-318,330-341,368-373,472
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_2bfd55a4393d7c::t_7731c23e19f04d 85-88
+src/utils/__tests__/audioLevelLaw.spec.ts
+  s_1c08b47ac3792f::t_127b580b7f820b 11,16,94-119
+src/utils/audioLevelLaw.ts
+  s_1c08b47ac3792f::t_859e8193c5e3f1 280-295,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c948ca89da036b955ea6363b2ab906ef9358980",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
