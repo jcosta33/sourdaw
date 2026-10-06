@@ -708,7 +708,9 @@ describe('a measured preview through proposal and approval', () => {
         expect(reproposed.status).toBe('reproposed');
         if (reproposed.status === 'reproposed') {
             expect(commandIdsOf(reproposed.confirmationId)).toHaveLength(1);
-            expect(getAgentApprovalView({ confirmationId: reproposed.confirmationId })?.measuredPreview).toBeNull();
+            expect(
+                getPendingActionConfirmation(reproposed.confirmationId)?.approvalSnapshot.measuredPreview
+            ).toBeUndefined();
         }
     });
 
