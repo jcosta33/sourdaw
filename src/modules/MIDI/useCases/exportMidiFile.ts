@@ -58,12 +58,19 @@ type MidiEvent = {
     /** Where the event sits in time before the tick grid rounded it. */
     beat: number;
     kind: SameFrameEventKind;
+    /** The pitch and channel of a note event; a controller has none. */
+    noteKey?: string;
     data: number[];
 };
 
 function compareEvents(left: MidiEvent, right: MidiEvent): number {
     if (left.tick !== right.tick) {
         return left.tick - right.tick;
+    }
+    // A file never strikes a key it then releases on the same tick: whatever their
+    // beats, a release goes ahead of a strike of the same pitch and channel.
+    if (left.noteKey !== undefined && left.noteKey === right.noteKey && left.kind !== right.kind) {
+        return SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind];
     }
     // Playback keeps time order across sample frames and applies its release,
     // controller, note-on order only within one frame; two events a tick apart
@@ -115,8 +122,7 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
         const writtenEndTick = Math.max(endTick, startTick + 1);
         const ticked = {
             startBeat,
-            // A release pushed out to a tick of minimum length sits on that tick.
-            endBeat: Math.max(endBeat, writtenEndTick / TICKS_PER_BEAT),
+            endBeat,
             startTick,
             endTick: writtenEndTick,
             pitch: clampMidiData7(note.pitch),
@@ -150,12 +156,14 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
             tick: note.startTick,
             beat: note.startBeat,
             kind: 'on',
+            noteKey: noteKey(note),
             data: [SMF_NOTE_ON_STATUS | note.channel, note.pitch, note.velocity],
         });
         events.push({
             tick: note.endTick,
             beat: note.endBeat,
             kind: 'off',
+            noteKey: noteKey(note),
             data: [SMF_NOTE_OFF_STATUS | note.channel, note.pitch, 0],
         });
     }

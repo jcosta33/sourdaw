@@ -248,6 +248,78 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
+    describe('releases and strikes that round onto one tick', () => {
+        const clip = { startBeat: 0, endBeat: 4 };
+
+        function summary(events: FileEvent[]) {
+            return events.map((event) => [event.kind, event.tick]);
+        }
+
+        it('releases a septuplet legato note before the next same-pitch note is struck', () => {
+            const events = exportClip(clip, [note('a', 0, 1 / 7), note('b', 1 / 7, 1 / 7)], []);
+
+            expect(summary(events)).toEqual([
+                ['on', 0],
+                ['off', 69],
+                ['on', 69],
+                ['off', 137],
+            ]);
+        });
+
+        it('releases a note split at an off-grid boundary before its successor is struck', () => {
+            const events = exportClip(clip, [note('a', 0, 1.0011), note('b', 1.0011, 0.5)], []);
+
+            expect(summary(events)).toEqual([
+                ['on', 0],
+                ['off', 481],
+                ['on', 481],
+                ['off', 721],
+            ]);
+        });
+
+        it('writes a pedal pressed just after a note ends behind that note release', () => {
+            const events = exportClip(clip, [note('a', 0, 1.0011)], [sustain('p', 1.0015, 127)]);
+
+            expect(summary(events)).toEqual([
+                ['on', 0],
+                ['off', 481],
+                ['cc', 481],
+            ]);
+        });
+
+        it('releases a sub-tick note ahead of a same-pitch strike on its release tick', () => {
+            const events = exportClip(clip, [note('sliver', 2, 0.0004, 62), note('strike', 2.0015, 0.5, 62)], []);
+
+            expect(summary(events)).toEqual([
+                ['on', 960],
+                ['off', 961],
+                ['on', 961],
+                ['off', 1201],
+            ]);
+        });
+
+        it('writes a pedal behind the release of a sub-tick note it follows', () => {
+            const events = exportClip(clip, [note('sliver', 2, 0.0004)], [sustain('p', 2.0015, 127)]);
+
+            expect(summary(events)).toEqual([
+                ['on', 960],
+                ['off', 961],
+                ['cc', 961],
+            ]);
+        });
+
+        it('releases a note before a same-pitch note it overlaps by under a tick is struck', () => {
+            const events = exportClip(clip, [note('a', 0, 1.0011), note('b', 1.00105, 0.5)], []);
+
+            expect(summary(events)).toEqual([
+                ['on', 0],
+                ['off', 481],
+                ['on', 481],
+                ['off', 721],
+            ]);
+        });
+    });
+
     it('puts a pedal carried into the clip start ahead of the chord struck there', () => {
         const events = exportClip(
             { startBeat: 0, endBeat: 4, midiOffsetBeats: 2 },
