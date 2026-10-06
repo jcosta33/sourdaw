@@ -1,0 +1,34 @@
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_1c08b47ac3792f::t_089a3330c0a024 28
+  s_1c08b47ac3792f::t_b932bcfea95642 1-27,29-77
+src/modules/AiRuntime/useCases/__tests__/planWholeProjectVibeRun.spec.ts
+  s_1c08b47ac3792f::t_bee8ccbb06ed1a 1-8,14-20,22-36,41-42,66-142,144-177,179-191,193-243,245-287,289-326
+  s_1c08b47ac3792f::t_ad9d7f2db3c749 21,37-40
+  s_1c08b47ac3792f::t_529215f67cab62 178,192
+  s_1c08b47ac3792f::t_15c210162826d7 43-65
+  s_1c08b47ac3792f::t_0a3ea82987a66d 9-13
+  s_1c08b47ac3792f::t_5174305e9687bb 288
+  s_1c08b47ac3792f::t_25501ad7c7cfe3 143
+  s_1c08b47ac3792f::t_e504bff149a84e 244
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_1c08b47ac3792f::t_4f38ea7997358e 93
+  s_1c08b47ac3792f::t_72a9fb684ebea8 1-92,94-131,136-153,157-208
+  s_1c08b47ac3792f::t_d9c192c1182e0d 154-156
+  s_1c08b47ac3792f::t_b6c06946f72e62 132-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be593970962e12acd4e93e8143055155fa05f599",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
