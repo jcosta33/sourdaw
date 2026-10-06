@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { autoSaveHealth, startCrdtAutoSave } from '../startCrdtAutoSave';
+import { startCrdtAutoSave } from '../startCrdtAutoSave';
 
 const { compactProject, logger, onChange, persistCrdtProject, unsubscribe } = vi.hoisted(() => ({
     compactProject: vi.fn<() => Promise<void>>(),
@@ -26,7 +26,6 @@ describe('startCrdtAutoSave', () => {
         unsubscribe.mockClear();
         logger.error.mockClear();
         logger.warn.mockClear();
-        autoSaveHealth.consecutiveFailures = 0;
     });
 
     afterEach(() => {
@@ -232,7 +231,6 @@ describe('startCrdtAutoSave', () => {
         }
         await failedPersist.catch(() => undefined);
         expect(persistCrdtProject).toHaveBeenCalledOnce();
-        expect(autoSaveHealth.consecutiveFailures).toBe(1);
         expect(logger.warn).toHaveBeenCalledOnce();
         expect(logger.error).not.toHaveBeenCalled();
 
@@ -245,10 +243,32 @@ describe('startCrdtAutoSave', () => {
             throw new Error('Expected the idle retry persist');
         }
         await retriedPersist;
-        expect(autoSaveHealth.consecutiveFailures).toBe(0);
         expect(vi.getTimerCount()).toBe(0);
 
+        // A cleared streak warns for three further failures and errors on the fourth.
+        persistCrdtProject.mockRejectedValue(new Error('later persist failure'));
+        for (let attempt = 0; attempt < 3; attempt++) {
+            listener();
+            await vi.advanceTimersByTimeAsync(2_000);
+            const laterFailure = persistCrdtProject.mock.results.at(-1)?.value;
+            if (!laterFailure) {
+                throw new Error('Expected the later incremental persist');
+            }
+            await laterFailure.catch(() => undefined);
+        }
+        expect(logger.error).not.toHaveBeenCalled();
+
+        listener();
+        await vi.advanceTimersByTimeAsync(2_000);
+        const escalatedFailure = persistCrdtProject.mock.results.at(-1)?.value;
+        if (!escalatedFailure) {
+            throw new Error('Expected the escalated incremental persist');
+        }
+        await escalatedFailure.catch(() => undefined);
+        expect(logger.error).toHaveBeenCalledOnce();
+
         stop();
+        expect(vi.getTimerCount()).toBe(0);
     });
 
     it('does not run a pending incremental retry after the auto-save lifecycle stops', async () => {

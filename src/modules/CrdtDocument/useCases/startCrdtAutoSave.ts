@@ -25,7 +25,7 @@ const MAX_INCREMENTAL_RETRY_MS = 30_000;
  */
 const MAX_WAIT_MS = 10_000;
 
-export const autoSaveHealth = { consecutiveFailures: 0 };
+const autoSaveHealth = { consecutiveFailures: 0 };
 
 export function startCrdtAutoSave(): () => void {
     let incrementalTimer: ReturnType<typeof setTimeout> | null = null;
