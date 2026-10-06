@@ -1227,6 +1227,35 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
     });
 
+    it('protects Ref Mix and Guide tracks in EX-11 instead of refusing the scope as ambiguous', async () => {
+        setEx11Project();
+        const tracks = [
+            ...(trackStore.value?.tracks ?? []),
+            createTrack('track-ref-mix', 'Ref Mix'),
+            createTrack('track-guide', 'Guide'),
+        ];
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+        ensureRealTrackStrips(tracks.map((track) => track.id));
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'track-ref-mix' }),
+                expect.objectContaining({ id: 'track-guide' }),
+            ])
+        );
+        expect(confirmation?.affectedIds).not.toContain('track-ref-mix');
+        expect(confirmation?.affectedIds).not.toContain('track-guide');
+    });
+
     it('inspects only the supplied project document and preserves a real master-track fingerprint', () => {
         setEx11Project();
         const rawDocument = getCrdtDoc<Record<string, unknown>>('root');
@@ -3255,6 +3284,36 @@ describe('drum bus prompt workflow', () => {
             )
         ).toEqual(['track-bass-drum', 'track-bd', 'track-oh']);
         expect(confirmation?.affectedIds).not.toContain('track-bass');
+    });
+
+    it('routes Rim Click with the kit and protects Guide Vocal and String Bass instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-rim-click', 'Rim Click'),
+                createTrack('track-guide-vocal', 'Guide Vocal'),
+                createTrack('track-string-bass', 'String Bass'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-rim-click']);
+        expect(confirmation?.affectedIds).not.toContain('track-guide-vocal');
+        expect(confirmation?.affectedIds).not.toContain('track-string-bass');
     });
 
     it('routes the kit and protects click, reference, strings and Hat Trick tracks instead of refusing', async () => {

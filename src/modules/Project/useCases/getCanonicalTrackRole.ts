@@ -37,8 +37,13 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
         ),
     ],
     ['snare', new RegExp(String.raw`\bsnares?\b|${wholeNameWithQualifiers('sd', 'top|bottom|side|close|far|mic')}`)],
-    // "Hat Trick" is a football term, not a hi-hat.
-    ['hi-hat', /\b(?:hi hat|hi hats|hihat|hihats|hh|hats?(?!\s+trick\b))\b/],
+    // A bare "hat" is also a garment and a football term ("Black Hat Synth", "Hat Trick").
+    [
+        'hi-hat',
+        new RegExp(
+            String.raw`\b(?:hi hat|hi hats|hihat|hihats|hh)\b|${wholeNameWithQualifiers('hats?', 'open|closed|pedal|mic')}`
+        ),
+    ],
     ['tom', /\btoms?\b/],
     [
         'cymbal',
@@ -58,10 +63,18 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
     ['synth', /\bsynths?\b/],
     ['pad', /\bpads?\b/],
+    ['fx', /\b(?:fx|sfx|effects)\b/],
+];
+
+/**
+ * Words that describe a track without naming its part ("Rim Click", "Brass Snare", "String Bass",
+ * "Guide Vocal"). They claim a name only when no role above does, so they never turn a name that
+ * another role already names into a conflict.
+ */
+const MODIFIER_NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['strings', /\bstrings?\b/],
     ['brass', /\bbrass\b/],
-    ['fx', /\b(?:fx|sfx|effects)\b/],
-    // Session furniture that carries no part of the song; "hat trick" is named here so it stays out of hi-hat.
+    // Session furniture that carries no part of the song.
     ['utility', /\b(?:click|metronome|reference|ref|guide|cue|hat trick)\b/],
 ];
 
@@ -97,6 +110,10 @@ function normalizedTokens(name: string): string {
 
 function namedRolesFromTokens(tokens: string): CanonicalTrackRole[] {
     return NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+}
+
+function modifierRolesFromTokens(tokens: string): CanonicalTrackRole[] {
+    return MODIFIER_NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
 }
 
 function namedRoles(name: string): CanonicalTrackRole[] {
@@ -328,6 +345,13 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     }
     if (bareVocalRole) {
         return { role: bareVocalRole, source: 'name-tags', evidence: 'resolved-name-tags' };
+    }
+    const modifiers = modifierRolesFromTokens(tokens);
+    if (modifiers.length > 1) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
+    if (modifiers.length === 1) {
+        return { role: modifiers[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
     return contentRole(input);
 }

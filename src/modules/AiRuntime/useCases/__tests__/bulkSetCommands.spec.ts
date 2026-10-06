@@ -270,15 +270,15 @@ describe('drum routing scope', () => {
         ]);
     });
 
-    it('refuses the scope for a track whose canonical role is unknown', () => {
+    it('refuses the scope for a track whose canonical role is unknown, whatever its name says', () => {
         const scope = getDrumRoutingPromptScope(
             createDrumContext([
                 createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
-                createTrack('track-mystery', 'Audio 1', { canonicalRole: nameDerived('unknown') }),
+                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('unknown') }),
             ])
         );
 
-        expect(scope).toEqual({ status: 'invalid', reason: 'MF-01 track role is ambiguous: track-mystery' });
+        expect(scope).toEqual({ status: 'invalid', reason: 'MF-01 track role is ambiguous: track-oh' });
     });
 
     it('still refuses the whole scope for a frozen drum instead of dropping it', () => {

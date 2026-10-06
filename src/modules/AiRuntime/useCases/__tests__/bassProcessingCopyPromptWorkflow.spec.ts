@@ -34,6 +34,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -612,6 +613,17 @@ function createTrack(id: string, name: string): Track {
     };
 }
 
+function renameBassTrack(name: string): void {
+    const trackState = trackStore.value;
+    if (!trackState) {
+        throw new TypeError('Expected track state');
+    }
+    trackStore.set({
+        ...trackState,
+        tracks: trackState.tracks.map((track) => (track.id === 'track-bass' ? { ...track, name } : track)),
+    });
+}
+
 function createLayer(input: {
     id: string;
     name: string;
@@ -1029,6 +1041,43 @@ describe('bass-processing section copy workflow', () => {
                 { id: 'layer-bass-drum-eq', name: 'Bass Drum Chorus EQ' },
             ])
         );
+    });
+
+    it('targets a bass named String Bass, which a strings word must not turn into an unknown role', async () => {
+        renameBassTrack('String Bass');
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+    });
+
+    it('targets a bass the user set to bass in the inspector although its name does not say bass', async () => {
+        renameBassTrack('Low End');
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            productionBrief: {
+                ...structuredClone(defaultProjectStoreState.productionBrief),
+                trackRoles: [{ id: 'role-track-bass', trackId: 'track-bass', role: 'bass', createdAt: 0 }],
+            },
+        });
+
+        try {
+            await sendChatMessage(PROMPT);
+
+            const confirmation = getPendingActionConfirmation(getConfirmationId());
+            expect(
+                confirmation?.actions.flatMap((action) =>
+                    action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+                )
+            ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        } finally {
+            projectStore.set(structuredClone(defaultProjectStoreState));
+        }
     });
 
     it('copies multiple source regions from one layer as one atomic batch', async () => {

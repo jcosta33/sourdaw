@@ -266,6 +266,10 @@ describe('canonical track roles', () => {
         { name: 'SD Top', role: 'snare', evidence: 'name-tokens' },
         { name: 'Hat', role: 'hi-hat', evidence: 'name-tokens' },
         { name: 'Hats', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hat 2', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hats Open', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hi Hats', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'HiHat', role: 'hi-hat', evidence: 'name-tokens' },
         { name: 'HH Open', role: 'hi-hat', evidence: 'name-tokens' },
         { name: 'Hi-Hat', role: 'hi-hat', evidence: 'name-tokens' },
         { name: 'Drum Room', role: 'room', evidence: 'resolved-name-tags' },
@@ -276,6 +280,13 @@ describe('canonical track roles', () => {
         { name: 'Splash 2', role: 'cymbal', evidence: 'name-tokens' },
     ] as const)('names a kit track by its drum abbreviation or kit-mic word: $name', ({ name, role, evidence }) => {
         expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+    });
+    it.each([
+        // A bare "hat" is a hi-hat only as the whole name; "Hat Tricks" matches neither it nor "hat trick".
+        { name: 'Black Hat Synth', role: 'synth' },
+        { name: 'Hat Tricks', role: 'unknown' },
+    ] as const)('does not read a hat inside a longer name as a hi-hat: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
     });
     it.each(['Room', 'Rooms', 'Amb', 'Ambience', 'Oh Yeah', 'China Girl'])(
         'keeps a drum-sounding word that is not a kit track unknown: %s',
@@ -296,10 +307,33 @@ describe('canonical track roles', () => {
         { name: 'Strings', role: 'strings' },
         { name: 'String 2', role: 'strings' },
         { name: 'Brass', role: 'brass' },
-        // Utility and vocal words both name the track, so it stays a conflict rather than a guess.
-        { name: 'Guide Vox', role: 'unknown' },
     ] as const)('names session furniture and orchestral parts: $name is $role', ({ name, role }) => {
         expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
+    });
+    // These words describe a track; they claim a name only when no other role does, so they never
+    // turn a name another role already names into a conflict.
+    it.each([
+        { name: 'Rim Click', role: 'percussion' },
+        { name: 'Brass Snare', role: 'snare' },
+        { name: 'Kick Click', role: 'kick' },
+        { name: 'Kick Ref', role: 'kick' },
+        { name: 'String Bass', role: 'bass' },
+        { name: 'String Pad', role: 'pad' },
+        { name: 'Guide Vocal', role: 'lead vocal' },
+        // The bare vocal word names the part, so the guide word yields to it.
+        { name: 'Guide Vox', role: 'lead vocal' },
+        { name: 'Guide Guitar', role: 'guitar' },
+        { name: 'Bass Guide', role: 'bass' },
+        { name: 'Bass Ref', role: 'bass' },
+    ] as const)('lets a modifier word yield to the role the name already names: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
+    });
+    it('keeps two modifier words on one name a conflict', () => {
+        expect(getCanonicalTrackRole(input('Strings Click'))).toEqual({
+            role: 'unknown',
+            source: 'name-tags',
+            evidence: 'conflicting-name-tags',
+        });
     });
     it.each([
         { name: 'Oh Yeah Vox', role: 'lead vocal' },
