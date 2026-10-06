@@ -1053,7 +1053,8 @@ describe('recipe.expand', () => {
     // Red when any authored recipe stops expanding inside its windows and the loop's per-call receipt budget.
     it('expands every authored recipe inside its windows and the per-call receipt budget', async () => {
         const failures: string[] = [];
-        for (const recipe of getMixRecipeCatalog().recipes) {
+        // Preset recipes are not authored here; presetRecipes.spec.ts owns their expansion.
+        for (const recipe of getMixRecipeCatalog().recipes.filter((candidate) => candidate.origin === undefined)) {
             const role = recipe.roles[0]!;
             const editedTypes = recipe.steps.filter((step) => step.kind === 'edit').map((step) => step.deviceType);
             setTracks([

@@ -1,5 +1,5 @@
 import { DEVICE_CHARACTER_TAGS } from '../models/DeviceParameterTypes';
-import { getStableContractFingerprint } from '../models/GetStableContractFingerprint';
+import { getPresetContractVersion } from '../models/GetPresetContractVersion';
 import { type SoundPreset } from '../models/SoundPreset';
 
 import { getUserPresets } from './preset/presetStorage/getUserPresets';
@@ -70,7 +70,7 @@ function toDiscoveryEntry(preset: SoundPreset, isFactory: boolean): AgentPresetD
         tags: boundedDiscoveryTags(preset.tags),
         deviceTypes: boundedDiscoveryTextList(preset.devices.map((device) => device.type)),
         searchTerms: [preset.name, ...preset.tags],
-        version: `preset-v1:${getStableContractFingerprint(preset)}`,
+        version: getPresetContractVersion(preset),
         metadata: {
             source: 'Arrangement SoundPreset',
             confidence: isFactory ? 'declared' : 'user-supplied',
