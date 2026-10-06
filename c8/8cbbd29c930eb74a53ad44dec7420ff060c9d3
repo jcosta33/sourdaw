@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_1c08b47ac3792f::t_5b7a489fcb5419 711-713
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_1c08b47ac3792f::t_216c6a26bfd1b2 226
+  s_1c08b47ac3792f::t_8ebae269d07323 275-313,324
+  s_1c08b47ac3792f::t_3b733bd69b75fe 246
+  s_1c08b47ac3792f::t_babd774fda4b92 314-323,325-327
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c88cbbd29c930eb74a53ad44dec7420ff060c9d3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
