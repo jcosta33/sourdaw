@@ -6,15 +6,15 @@ status: accepted
 date: 2026-08-15
 owner: The Sourdaw team
 sources:
-  - https://doi.org/10.1007/s10664-024-10456-6
-  - https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bird2011dtm.pdf
-  - https://dl.acm.org/doi/10.1109/3468.844354
-  - https://s2.q4cdn.com/299287126/files/doc_financials/annual/2015-Letter-to-Shareholders.PDF
-  - https://www.aboutamazon.com/news/company-news/2016-letter-to-shareholders
-  - https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
-  - https://link.springer.com/article/10.1007/s10664-015-9381-9
-  - https://arxiv.org/abs/2503.13657
-  - https://dora.dev/capabilities/trunk-based-development/
+    - https://doi.org/10.1007/s10664-024-10456-6
+    - https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bird2011dtm.pdf
+    - https://dl.acm.org/doi/10.1109/3468.844354
+    - https://s2.q4cdn.com/299287126/files/doc_financials/annual/2015-Letter-to-Shareholders.PDF
+    - https://www.aboutamazon.com/news/company-news/2016-letter-to-shareholders
+    - https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
+    - https://link.springer.com/article/10.1007/s10664-015-9381-9
+    - https://arxiv.org/abs/2503.13657
+    - https://dora.dev/capabilities/trunk-based-development/
 ---
 
 # 0026 — The agent owns the codebase and operates by exception
@@ -40,7 +40,7 @@ The question was how to encode that durably, on evidence rather than sentiment.
 **Rot propagates itself.** A controlled experiment (29 developers, mixed methods) found existing
 technical debt causally increases the debt developers introduce while extending a system — more
 re-implementation, worse naming, more smells, at ≥95% credible intervals (Levén, Broman, Besker &
-Torkar, *EMSE* 29:73, 2024). Leaving a defect in place is not neutral: it degrades every later
+Torkar, _EMSE_ 29:73, 2024). Leaving a defect in place is not neutral: it degrades every later
 change made near it. Code-imitating agents strengthen the effect — they reproduce the idiom around
 them, rot included. This makes fix-on-sight an empirical duty, not tidiness.
 
@@ -55,17 +55,17 @@ integrates every delegated change, and accountability never transfers downward.
 
 **Review alone is a weak gate.** Modern code review finds fewer defects than everyone — including
 reviewers — expects; its measured value is knowledge transfer and awareness, and rigorously
-reviewed components still ship defects (Bacchelli & Bird, ICSE 2013; McIntosh et al., *EMSE*
+reviewed components still ship defects (Bacchelli & Bird, ICSE 2013; McIntosh et al., _EMSE_
 2016). So a reviewer's approval is never sufficient evidence for a delegated change. The evidence
 that counts is executable: a test that fails when the fix is reverted, a measurement at the
 boundary users hear. This repo already learned that lesson locally (ADR 0015, the daw-dsp
 measurement rules); the finding generalizes it.
 
 **Management by exception is the correct supervision mode.** The canonical human-automation
-framework (Parasuraman, Sheridan & Wickens, *IEEE Trans. SMC-A* 30(3), 2000) separates
+framework (Parasuraman, Sheridan & Wickens, _IEEE Trans. SMC-A_ 30(3), 2000) separates
 approve-before-execution from act-with-veto on its automation-level scale; the aviation-automation
-literature names these management by consent and management by exception (Billings, *Aviation
-Automation*, 1997). Under exception mode the system decides and acts, and the human is informed of
+literature names these management by consent and management by exception (Billings, _Aviation
+Automation_, 1997). Under exception mode the system decides and acts, and the human is informed of
 exceptions and retains override. Consent mode makes the principal the bottleneck and was the
 failure being corrected.
 
@@ -76,7 +76,7 @@ get deliberation and the principal (Bezos, Amazon shareholder letters 2015 and 2
 
 **Small batches, few lanes, merge promptly.** Teams with three or fewer active branches that merge
 to trunk at least daily deliver faster and more stably across the DORA dataset (Forsgren, Humble &
-Kim, *Accelerate*; dora.dev). Multi-agent failure taxonomies find specification and verification
+Kim, _Accelerate_; dora.dev). Multi-agent failure taxonomies find specification and verification
 failures dominate over individual agent capability (Cemri et al., "Why Do Multi-Agent LLM Systems
 Fail?", arXiv:2503.13657), so the owner's leverage is precise task specs and structured
 verification, not more workers.
@@ -94,6 +94,8 @@ The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the mode
 5. Delegated changes get owner review against their spec plus discriminating executable evidence
    before merge.
 6. Small batches, few live lanes, prompt merges.
+
+Amended 2026-10-06 by the owner: at most four live lanes, opened while other heads wait on CI or review. Agent lanes spend most of their life waiting on hour-long pipeline runs rather than in active development, so the DORA evidence for three or fewer active branches, measured on human teams, does not bound them; collisions on shared files and recomputed digests are prevented by the stacking rule in AGENTS.md Delivery.
 
 ## Consequences
 
