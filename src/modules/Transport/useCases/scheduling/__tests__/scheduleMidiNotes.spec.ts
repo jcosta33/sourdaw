@@ -19,7 +19,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { isFaustInstrumentModule, registerFaustDSP } from '#/modules/PluginHost/useCases';
-import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
+import { resolveDrumKitDef, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -91,7 +91,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleFaustNote: vi.fn(),
 }));
 vi.mock('#/modules/Synth/useCases', () => ({
-    getDrumKitDefByIndex: vi.fn(() => null),
+    resolveDrumKitDef: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
@@ -1442,7 +1442,7 @@ describe('scheduleMidiNotes', () => {
 
     describe('per-track dispatch decision (§154.3)', () => {
         it('routes a drum-kit-def track through scheduleDrumKitNote', async () => {
-            vi.mocked(getDrumKitDefByIndex).mockReturnValue({ id: 'kit-1', voices: [] } as never);
+            vi.mocked(resolveDrumKitDef).mockReturnValue({ id: 'kit-1', voices: [] } as never);
             const track = midiTrack({
                 clips: [midiClip()],
                 devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
@@ -1461,11 +1461,11 @@ describe('scheduleMidiNotes', () => {
 
         it('routes a resolved-drum-kit track through scheduleKitNote with the note duration', async () => {
             // clearAllMocks() in beforeEach resets call counts but NOT the
-            // mockReturnValue the drum-kit-def test set on getDrumKitDefByIndex;
-            // that residual would make resolveDrumKitDef truthy and steal the
-            // dispatch into the scheduleDrumKitNote arm. Reset both resolvers so
-            // the kit-def arm is null and resolveDrumKit wins.
-            vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            // mockReturnValue the drum-kit-def test set on resolveDrumKitDef;
+            // that residual would make it truthy and steal the dispatch into
+            // the scheduleDrumKitNote arm. Reset both resolvers so the kit-def
+            // arm is null and resolveDrumKit wins.
+            vi.mocked(resolveDrumKitDef).mockReturnValue(null);
             vi.mocked(getDrumKitByIndex).mockReturnValue({
                 id: 'kit-a',
                 voices: [{ name: 'kick', pitchRange: [35, 42], params: {} as never }],
@@ -2222,7 +2222,7 @@ describe('scheduleMidiNotes', () => {
         });
 
         it('skips chord transposition when a drum kit owns the track', async () => {
-            vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            vi.mocked(resolveDrumKitDef).mockReturnValue(null);
             vi.mocked(getDrumKitByIndex).mockReturnValue({ id: 'kit-a', voices: [] } as never);
             const track = midiTrack({
                 followChordTrack: true,

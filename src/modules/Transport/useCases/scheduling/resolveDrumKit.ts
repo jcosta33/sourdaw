@@ -1,4 +1,5 @@
 import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases';
+import { getDrumKitIndex } from '#/utils/deviceTypeMatching';
 
 import { isDrumDevice } from './isDrumDevice';
 
@@ -15,6 +16,5 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
     if (!kitDevice) {
         return null;
     }
-    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
-    return getDrumKitByIndex(kitIndex);
+    return getDrumKitByIndex(getDrumKitIndex(kitDevice.parameterValues));
 }

@@ -20,6 +20,11 @@ describe('resolveDrumKit', () => {
         expect(kit).not.toBeNull();
     });
 
+    it('should treat the bare drum-kit id like a drum kit device, as live playback does', () => {
+        const kit = resolveDrumKit([{ type: 'drum-kit', parameterValues: { kitId: 1 } }]);
+        expect(kit).not.toBeNull();
+    });
+
     it('should prefer kit from the first matching device in the list', () => {
         const alpha = resolveDrumKit([
             { type: 'builtin-drum-kit', parameterValues: { kit: 0 } },

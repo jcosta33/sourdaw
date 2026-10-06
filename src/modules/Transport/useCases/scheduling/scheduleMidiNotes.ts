@@ -23,7 +23,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
+import { resolveDrumKitDef, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -37,7 +37,6 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { resolveDrumKit } from './resolveDrumKit';
-import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';

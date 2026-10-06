@@ -138,6 +138,7 @@ vi.mock('../../buildDeviceChain', () => ({
 
 vi.mock('#/modules/Synth/useCases', () => ({
     getDrumKitDefByIndex: vi.fn(() => null),
+    resolveDrumKitDef: vi.fn(() => null),
     getSynthParamsFromDevices: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),

@@ -155,6 +155,7 @@ const scheduleNoteSpy = vi.hoisted(() =>
 );
 vi.mock('#/modules/Synth/useCases', () => ({
     getDrumKitDefByIndex: () => null,
+    resolveDrumKitDef: () => null,
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: scheduleNoteSpy,

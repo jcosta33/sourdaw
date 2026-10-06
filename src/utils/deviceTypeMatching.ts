@@ -31,6 +31,15 @@ export function isDrumDevice(deviceType: string): boolean {
 }
 
 /**
+ * The kit a drum device selects: `kit`, or the legacy `kitId` that older
+ * patches store, or the first kit. Every kit resolver (definition and factory
+ * table, live and offline) reads the index here so they cannot disagree.
+ */
+export function getDrumKitIndex(parameterValues: Record<string, number>): number {
+    return parameterValues.kit ?? parameterValues.kitId ?? 0;
+}
+
+/**
  * True for the built-in synthesizer family, which is voiced directly by
  * `scheduleNoteOffline` / `scheduleNote` from `getSynthParamsFromDevices` and
  * contributes no chain node. The prefix arm covers the catalog's generated

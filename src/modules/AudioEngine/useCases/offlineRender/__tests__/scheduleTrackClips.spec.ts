@@ -94,7 +94,7 @@ const mocks = vi.hoisted(() => {
         resolveArticulationId: vi.fn(({ articulation }: { articulation: string | undefined }) =>
             articulation === 'staccato' ? 8 : null
         ),
-        getDrumKitDefByIndex: vi.fn<() => unknown>(() => null),
+        resolveDrumKitDef: vi.fn<() => unknown>(() => null),
         getSynthParamsFromDevices: vi.fn<() => unknown>(() => null),
         scheduleDrumKitNote: vi.fn(),
         scheduleKitNote: vi.fn(),
@@ -262,7 +262,7 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
-        getDrumKitDefByIndex: mocks.getDrumKitDefByIndex,
+        resolveDrumKitDef: mocks.resolveDrumKitDef,
         getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
         scheduleDrumKitNote: mocks.scheduleDrumKitNote,
         scheduleKitNote: mocks.scheduleKitNote,
@@ -474,14 +474,14 @@ async function runSchedule({
 describe('scheduleTrackClips — legacy instrument parity', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.resolveDrumKitDef.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
         mocks.checkCancel.mockImplementation(() => {});
     });
 
     afterEach(() => {
-        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.resolveDrumKitDef.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
         mocks.checkCancel.mockImplementation(() => {});
@@ -514,7 +514,7 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
 
     it('passes clip gain to the fixed drum-kit scheduler', async () => {
         const kitDefinition = { name: '808' };
-        mocks.getDrumKitDefByIndex.mockReturnValue(kitDefinition);
+        mocks.resolveDrumKitDef.mockReturnValue(kitDefinition);
 
         await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-kit', clipGain: 0.35 });
 
@@ -1380,7 +1380,7 @@ describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => 
         mocks.getCompensationDelay.mockReturnValue(0);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.resolveDrumKitDef.mockReturnValue(null);
         mocks.checkCancel.mockImplementation(() => {});
         offlineDeviceParameterLawState.isAutomatable = null;
         offlineDeviceParameterLawState.clampValue = null;
@@ -1517,7 +1517,7 @@ describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => 
 describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.resolveDrumKitDef.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
         mocks.checkCancel.mockImplementation(() => {});

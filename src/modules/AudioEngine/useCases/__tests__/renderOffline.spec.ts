@@ -19,7 +19,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     scheduleNoteOffline: vi.fn(),
     getSynthParamsFromDevices: vi.fn(() => null),
     scheduleKitNote: vi.fn(),
-    getDrumKitDefByIndex: vi.fn(() => null),
+    resolveDrumKitDef: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     resolveRenderContext: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
-        getDrumKitDefByIndex: offlineRenderMocks.getDrumKitDefByIndex,
+        resolveDrumKitDef: offlineRenderMocks.resolveDrumKitDef,
         getSynthParamsFromDevices: offlineRenderMocks.getSynthParamsFromDevices,
         scheduleDrumKitNote: offlineRenderMocks.scheduleDrumKitNote,
         scheduleKitNote: offlineRenderMocks.scheduleKitNote,

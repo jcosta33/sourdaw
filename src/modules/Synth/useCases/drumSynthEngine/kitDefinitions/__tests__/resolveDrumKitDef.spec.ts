@@ -4,7 +4,7 @@ const { getDrumKitDefByIndex } = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(),
 }));
 
-vi.mock('#/modules/Synth/useCases', () => ({ getDrumKitDefByIndex }));
+vi.mock('../getDrumKitDefByIndex', () => ({ getDrumKitDefByIndex }));
 
 import { resolveDrumKitDef } from '../resolveDrumKitDef';
 

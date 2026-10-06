@@ -62,7 +62,7 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
-        getDrumKitDefByIndex: vi.fn(() => null),
+        resolveDrumKitDef: vi.fn(() => null),
         getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
         scheduleDrumKitNote: vi.fn(),
         scheduleKitNote: vi.fn(),

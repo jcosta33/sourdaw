@@ -123,6 +123,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Synth/useCases', () => ({
     getDrumKitDefByIndex: vi.fn(() => null),
+    resolveDrumKitDef: vi.fn(() => null),
     // Web-MIDI message-handler bundle, via the real MIDI use-case barrel.
     getSynthParamsFromDevices: vi.fn(() => ({})),
     scheduleDrumKitNote: vi.fn(),

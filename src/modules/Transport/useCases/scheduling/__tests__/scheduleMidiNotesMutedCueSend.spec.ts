@@ -78,6 +78,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Synth/useCases', () => ({
     getDrumKitDefByIndex: vi.fn(() => null),
+    resolveDrumKitDef: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),

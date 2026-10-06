@@ -3,8 +3,8 @@ import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
-    getDrumKitDefByIndex,
     getSynthParamsFromDevices,
+    resolveDrumKitDef,
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNoteOffline,
@@ -459,13 +459,10 @@ export async function scheduleTrackClips({
         return mpe;
     }
 
-    const drumKit = resolveDrumKit(track.devices);
-    const drumKitDevice = track.devices.find(
-        (device) => device.type === 'builtin-drum-kit' || device.type === 'drum-kit'
-    );
-    const kitDef = drumKitDevice
-        ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
-        : null;
+    // Same two-step resolution live playback uses (`scheduleMidiNotes`): a
+    // dedicated kit definition wins, the factory kit table is the fallback.
+    const kitDef = resolveDrumKitDef(track.devices);
+    const drumKit = kitDef ? null : resolveDrumKit(track.devices);
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,

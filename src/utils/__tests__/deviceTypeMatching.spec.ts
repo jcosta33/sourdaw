@@ -1,6 +1,24 @@
 import { describe, it, expect } from 'vitest';
 
-import { isDrumDevice, isBuiltinSynthDevice } from '../deviceTypeMatching';
+import { getDrumKitIndex, isDrumDevice, isBuiltinSynthDevice } from '../deviceTypeMatching';
+
+describe('getDrumKitIndex', () => {
+    it('reads the kit parameter', () => {
+        expect(getDrumKitIndex({ kit: 2 })).toBe(2);
+    });
+
+    it('falls back to the legacy kitId parameter', () => {
+        expect(getDrumKitIndex({ kitId: 5 })).toBe(5);
+    });
+
+    it('prefers kit over kitId, including a kit of 0', () => {
+        expect(getDrumKitIndex({ kit: 0, kitId: 5 })).toBe(0);
+    });
+
+    it('defaults to the first kit', () => {
+        expect(getDrumKitIndex({})).toBe(0);
+    });
+});
 
 describe('isDrumDevice', () => {
     it('returns true for builtin-drum-kit', () => {
