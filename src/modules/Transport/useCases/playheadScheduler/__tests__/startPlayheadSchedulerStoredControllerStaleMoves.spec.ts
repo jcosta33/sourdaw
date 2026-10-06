@@ -777,16 +777,17 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
             expect(callLog.filter((entry) => entry.includes(' now'))).toEqual([]);
         });
 
-        it('lifts a CC64 left down on a track that has no clip at the loop start', async () => {
+        it('keeps a CC64 the clip before the gap left down on a track that has no clip at the loop start', async () => {
             loadClip('levain', [row('down', 64, 127, 3.5)], 4);
             transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });
             startPlayheadScheduler();
 
             await runTicksUntil(() => schedulerSession.pendingSeam !== null);
 
+            // The value the clip left is carried to the seam frame, not lifted: playback through the gap holds it.
             expect(levainFramed.map((move) => [move.cc, move.value])).toEqual([
                 [64, 127],
-                [64, 0],
+                [64, 127],
             ]);
             expect(Math.abs(levainFramed[1]!.frame - pendingSeamFrame())).toBeLessThanOrEqual(1);
         });

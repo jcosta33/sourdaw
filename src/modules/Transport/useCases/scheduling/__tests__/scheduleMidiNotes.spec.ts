@@ -3049,6 +3049,35 @@ describe('scheduleMidiNotes', () => {
                     expect(posted).toEqual(['sustain 1 @0']);
                 });
 
+                describe('where no clip of the track plays at the destination', () => {
+                    it('keeps down a pedal the clip before the gap left down', async () => {
+                        const posted = await relocateTrackTo(6, [
+                            { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                        ]);
+
+                        expect(posted).toEqual(['sustain 1 @0']);
+                    });
+
+                    it('carries up a pedal the clip before the gap lifted', async () => {
+                        const posted = await relocateTrackTo(6, [
+                            {
+                                clip: clipA,
+                                lane: [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2)],
+                            },
+                        ]);
+
+                        expect(posted).toEqual(['sustain 0 @0']);
+                    });
+
+                    it('lifts a touched pedal that no clip before the destination left a value for', async () => {
+                        const posted = await relocateTrackTo(6, [
+                            { clip: { startBeat: 8, endBeat: 12 }, lane: [storedController('down', 64, 127, 0.5)] },
+                        ]);
+
+                        expect(posted).toEqual(['sustain 0 @0']);
+                    });
+                });
+
                 it('does not play the controllers of a muted clip', async () => {
                     const posted = await relocateTrackTo(5, [
                         { clip: clipA, lane: [storedController('down', 64, 127, 1)] },

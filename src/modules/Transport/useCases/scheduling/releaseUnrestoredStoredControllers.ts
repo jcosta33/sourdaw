@@ -19,10 +19,11 @@ type ReleaseUnrestoredStoredControllersInput = {
  * Lift, at the relocation's frame, every pedal stored playback moved on a device the
  * relocation did not restore.
  *
- * A device is restored only when its track has a clip of this window to restore
- * it from. A track with no clip at the destination, or one that is muted or frozen
- * there, has no row in force for any pedal, and still holds the pedal the last pass
- * left down, which nothing else would lift before the next stop.
+ * A device is restored when its track plays at the relocation, with a clip at the
+ * destination or across a gap (`restoreStoredControllersAcrossGap`). A track that is
+ * muted or frozen there does not play, so nothing is in force for any pedal, and it
+ * still holds the pedal the last pass left down, which nothing else would lift before
+ * the next stop.
  */
 export function releaseUnrestoredStoredControllers({
     restored,

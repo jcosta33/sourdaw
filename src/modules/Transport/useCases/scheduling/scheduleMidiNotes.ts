@@ -42,6 +42,7 @@ import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers, type RestoreStoredControllersInput } from './restoreStoredControllers';
+import { restoreStoredControllersAcrossGap } from './restoreStoredControllersAcrossGap';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
@@ -768,6 +769,38 @@ export async function scheduleMidiNotes(
     // The devices a relocating window restored, so the sweep after the tracks
     // lifts only what no track restored.
     const restoredStoredControllerDevices = new Set<string>();
+    // A relocation that lands where a track has no clip playing still carries what its earlier clips
+    // left, as continuous playback does; only a pedal nothing left a value for is lifted.
+    const restoreStoredControllersAtGap = (track: (typeof tracks)[number]): void => {
+        if (!opensAtRelocation) {
+            return;
+        }
+        const { sampleRate } = getAudioContext();
+        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate);
+        const compensation = getCompensationDelay(track.id);
+        const restored = restoreStoredControllersAcrossGap({
+            trackId: track.id,
+            clips: resolveStoredControllerClips({
+                trackId: track.id,
+                clips: track.clips,
+                notesByClipId: midiState.notesByClipId,
+                ccByClipId: midiState.ccByClipId,
+            }),
+            atBeat: fromBeat,
+            windowToBeat: toBeat,
+            sampleFrameAtBeat: (beat) =>
+                placeSamplesOnClock({
+                    startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
+                    accumulatedSamples,
+                    sampleRate,
+                    compensation,
+                }).sampleFrame,
+            isCurrent,
+        });
+        for (const key of restored) {
+            restoredStoredControllerDevices.add(key);
+        }
+    };
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
@@ -800,6 +833,7 @@ export async function scheduleMidiNotes(
 
         const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
         if (windowMidiClips.length === 0) {
+            restoreStoredControllersAtGap(track);
             continue;
         }
 
@@ -808,6 +842,7 @@ export async function scheduleMidiNotes(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
+            restoreStoredControllersAtGap(track);
             continue;
         }
 

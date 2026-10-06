@@ -369,20 +369,58 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             expect(otherPedalCalls).toEqual([]);
         });
 
-        it('lifts a pedal left down on a track that has no clip at the loop start', async () => {
-            // The clip ends at 4 and the loop is [6, 8): the pedal pressed at 3.5 is
-            // still down when the pass ends, and no clip of the track plays at 6.
-            loadClip([pedal('down', 127, 3.5)]);
-            const track = (trackStoreState.value!.tracks as { clips: { endBeat: number }[] }[])[0]!;
-            track.clips[0]!.endBeat = 4;
-            transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });
-            startPlayheadScheduler();
+        describe('on a track that has no clip at the loop start', () => {
+            // The clip ends at 4 and the loop is [6, 8): no clip of the track plays at 6.
+            function endClipAt4(): void {
+                const track = (trackStoreState.value!.tracks as { clips: { endBeat: number }[] }[])[0]!;
+                track.clips[0]!.endBeat = 4;
+            }
 
-            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
-            const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
+            it('keeps down a pedal the clip before the gap left down, as continuous playback does', async () => {
+                loadClip([pedal('down', 127, 3.5)]);
+                endClipAt4();
+                transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });
+                startPlayheadScheduler();
 
-            expect(pedalCalls.map((call) => call.position)).toEqual([1, 0]);
-            expect(Math.abs(pedalCalls[1]!.frame! - seamFrame)).toBeLessThanOrEqual(1);
+                await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+                const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
+
+                // The press at 3.5, then the value the clip left carried to the seam frame: no lift.
+                expect(pedalCalls.map((call) => call.position)).toEqual([1, 1]);
+                expect(Math.abs(pedalCalls[1]!.frame! - seamFrame)).toBeLessThanOrEqual(1);
+            });
+
+            it('carries up a pedal the clip before the gap lifted', async () => {
+                loadClip([pedal('down', 127, 3), pedal('up', 0, 3.5)]);
+                endClipAt4();
+                transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });
+                startPlayheadScheduler();
+
+                await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+                const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
+
+                expect(pedalCalls.map((call) => call.position)).toEqual([1, 0, 0]);
+                expect(Math.abs(pedalCalls[2]!.frame! - seamFrame)).toBeLessThanOrEqual(1);
+            });
+
+            it('lifts a touched pedal that no clip before the gap left a value for', async () => {
+                // The only clip starts at 6, so nothing precedes the loop start at 2: the press at 6.5
+                // is the pedal stored playback moved, and nothing carries for it at 2.
+                loadClip([pedal('down', 127, 0.5)], { startBeat: 6, endBeat: 14 });
+                transportStoreState.value = playingState({
+                    playheadPosition: 6.2,
+                    isLooping: true,
+                    loopStart: 2,
+                    loopEnd: 7,
+                });
+                startPlayheadScheduler();
+
+                await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+                const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
+
+                expect(pedalCalls.map((call) => call.position)).toEqual([1, 0]);
+                expect(Math.abs(pedalCalls[1]!.frame! - seamFrame)).toBeLessThanOrEqual(1);
+            });
         });
 
         it('emits a row sitting exactly on the loop start once', async () => {
