@@ -1,3 +1,4 @@
+import { type Take } from '../models/TakeLane';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
@@ -35,6 +36,26 @@ function withFragmentOffset(clip: Clip, displacement: number): Clip {
     return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
 }
 
+/**
+ * The beat at which a take's source media begins playing, were it extended
+ * back to its own first sample.
+ *
+ * A loop-recorded pass names how deep its material starts in the one continuous
+ * recording (`sourceOffsetBeats`, run-up included) and places that material at
+ * its own `startBeat`, so the origin is measured from the take, not from the
+ * clip: the clip's start is the record point, which the offset already counts.
+ * A take with no offset, or a zero one, is the recording's first material and
+ * its origin is the clip's own start — which, for a recording that began inside
+ * the loop, lies after the take's start.
+ */
+function takeMediaOriginBeat(take: Take, sourceClip: Clip): number {
+    const passOffsetBeats = take.sourceOffsetBeats ?? 0;
+    if (passOffsetBeats === 0) {
+        return sourceClip.startBeat;
+    }
+    return take.startBeat - passOffsetBeats;
+}
+
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
     const laneState = takeLaneStore.value;
     if (!laneState) {
@@ -69,14 +90,12 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             continue;
         }
 
-        const overlapStart = Math.max(region.startBeat, sourceClip.startBeat);
+        const mediaOriginBeat = takeMediaOriginBeat(take, sourceClip);
+        const overlapStart = Math.max(region.startBeat, mediaOriginBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
         if (overlapStart >= overlapEnd) {
             continue;
         }
-
-        const passOffsetBeats = take.sourceOffsetBeats ?? 0;
-        const mediaOriginBeat = sourceClip.startBeat - passOffsetBeats;
 
         resolved.push({
             ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat),
