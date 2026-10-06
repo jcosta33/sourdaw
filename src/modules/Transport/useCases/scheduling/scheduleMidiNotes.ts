@@ -41,8 +41,7 @@ import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredCon
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
-import { restoreStoredControllers, type RestoreStoredControllersInput } from './restoreStoredControllers';
-import { restoreStoredControllersAcrossGap } from './restoreStoredControllersAcrossGap';
+import { restoreStoredControllers } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
@@ -85,6 +84,74 @@ function findWorkletSynthDevice<TDevice extends { type: string }>(devices: reado
 
 function findFaustInstrumentDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
     return devices.find((device) => isFaustInstrumentModule(device.type));
+}
+
+type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
+type SchedulerTrackStrip = ReturnType<typeof ensureTrackStrip>;
+
+/**
+ * The toaster a track's notes are dispatched to, when one has live controls: the
+ * track's own, or its parent's when the parent carries one (a child is a pad of the
+ * parent's kit, numbered among the parent's children).
+ */
+function resolveToasterTarget(
+    track: SchedulerTrack,
+    tracks: readonly SchedulerTrack[],
+    strip: SchedulerTrackStrip
+): {
+    ownerTrack: SchedulerTrack;
+    device: SchedulerTrack['devices'][number];
+    pad: number;
+    controls: ToasterControls;
+} | null {
+    let ownerTrack = track;
+    let device = findToasterDevice(track.devices);
+    let pad = -1;
+    const parentTrack = track.parentId ? tracks.find((candidate) => candidate.id === track.parentId) : undefined;
+    const parentDevice = parentTrack ? findToasterDevice(parentTrack.devices) : undefined;
+    if (parentTrack && parentDevice) {
+        ownerTrack = parentTrack;
+        device = parentDevice;
+        pad = tracks.filter((candidate) => candidate.parentId === parentTrack.id).findIndex((c) => c.id === track.id);
+    }
+    if (!device) {
+        return null;
+    }
+    const toasterDevice = device;
+    const ownerStrip = ownerTrack.id === track.id ? strip : ensureTrackStrip(ownerTrack.id);
+    const node = ownerStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id || data.type === 'toaster');
+    return node?.toasterControls ? { ownerTrack, device: toasterDevice, pad, controls: node.toasterControls } : null;
+}
+
+/**
+ * The device and node a track's stored controllers are posted to, or null when the
+ * window would post them nowhere. The one decision the window and a relocation's
+ * restore (inside a clip or across a gap) share: only the instruments that honour
+ * stored controllers take any, and only through the note path's own dispatch, so a
+ * Yeast-routed, drum-kit or Toaster track, or one whose instrument has no node,
+ * sends its notes elsewhere and its controllers nowhere.
+ */
+function resolveStoredControllerDevice(
+    track: SchedulerTrack,
+    tracks: readonly SchedulerTrack[]
+): { device: SchedulerTrack['devices'][number]; node: SchedulerTrackStrip['deviceNodes'][number] } | null {
+    if (
+        track.devices.some((candidate) => candidate.type === 'yeast') ||
+        resolveDrumKitDef(track.devices) ||
+        resolveDrumKit(track.devices)
+    ) {
+        return null;
+    }
+    const strip = ensureTrackStrip(track.id);
+    if (resolveToasterTarget(track, tracks, strip)) {
+        return null;
+    }
+    const device = findWorkletSynthDevice(track.devices);
+    if (!device || (device.type !== 'grand-boule' && device.type !== 'levain')) {
+        return null;
+    }
+    const node = strip.deviceNodes.find((candidate) => candidate.deviceId === device.id);
+    return node ? { device, node } : null;
 }
 
 /**
@@ -769,17 +836,28 @@ export async function scheduleMidiNotes(
     // The devices a relocating window restored, so the sweep after the tracks
     // lifts only what no track restored.
     const restoredStoredControllerDevices = new Set<string>();
-    // A relocation that lands where a track has no clip playing still carries what its earlier clips
-    // left, as continuous playback does; only a pedal nothing left a value for is lifted.
-    const restoreStoredControllersAtGap = (track: (typeof tracks)[number]): void => {
-        if (!opensAtRelocation) {
-            return;
-        }
+    // The sample frame a beat is posted at on one track's clock, for the window's own moves and for
+    // a relocation's restore alike.
+    const sampleFrameAtBeatOnTrack = (trackId: string) => (beat: number) => {
         const { sampleRate } = getAudioContext();
-        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate);
-        const compensation = getCompensationDelay(track.id);
-        const restored = restoreStoredControllersAcrossGap({
+        return placeSamplesOnClock({
+            startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
+            accumulatedSamples: beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate),
+            sampleRate,
+            compensation: getCompensationDelay(trackId),
+        }).sampleFrame;
+    };
+    // What a relocation's restore sends for one track's routed device, from every clip of the track:
+    // a destination inside a clip and one across a gap run the same restore.
+    const restoreStoredControllersOnTrack = (
+        track: SchedulerTrack,
+        target: NonNullable<ReturnType<typeof resolveStoredControllerDevice>>,
+        queue: ReturnType<typeof createSameFramePostQueue>
+    ): void => {
+        restoreStoredControllers({
             trackId: track.id,
+            device: target.device,
+            node: target.node,
             clips: resolveStoredControllerClips({
                 trackId: track.id,
                 clips: track.clips,
@@ -788,18 +866,22 @@ export async function scheduleMidiNotes(
             }),
             atBeat: fromBeat,
             windowToBeat: toBeat,
-            sampleFrameAtBeat: (beat) =>
-                placeSamplesOnClock({
-                    startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
-                    accumulatedSamples,
-                    sampleRate,
-                    compensation,
-                }).sampleFrame,
-            isCurrent,
+            sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+            queue,
         });
-        for (const key of restored) {
-            restoredStoredControllerDevices.add(key);
+        restoredStoredControllerDevices.add(storedControllerDeviceKey(track.id, target.device.id));
+    };
+    // A relocation that lands where a track has no clip playing still carries what its earlier clips
+    // left, as continuous playback does, on the device the window would route stored controllers to; a
+    // posted device the scheduler no longer routes to is left to the release sweep.
+    const restoreStoredControllersAtGap = (track: SchedulerTrack): void => {
+        const target = opensAtRelocation ? resolveStoredControllerDevice(track, tracks) : null;
+        if (!target) {
+            return;
         }
+        const queue = createSameFramePostQueue();
+        restoreStoredControllersOnTrack(track, target, queue);
+        queue.flush(isCurrent);
     };
     for (const track of tracks) {
         if (!isCurrent()) {
@@ -1006,10 +1088,7 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
-        let relocatedStoredControllers: Omit<
-            RestoreStoredControllersInput,
-            'trackId' | 'clips' | 'atBeat' | 'windowToBeat' | 'queue'
-        > | null = null;
+        const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
@@ -1053,61 +1132,28 @@ export async function scheduleMidiNotes(
             // note loop is a single switch instead of 4+ device array scans
             // per note (drumKitDef | drumKit | toasterChild | workletSynth |
             // faust | default synth).
-            let toasterRoute: {
-                controls: ToasterControls;
-                pad: number;
-                getSwingOffsetBeats: (noteStartBeat: number) => number;
-            } | null = null;
-            let toasterOwnerTrack = track;
-            let toasterDevice = findToasterDevice(track.devices);
-            let toasterPad = -1;
-            if (track.parentId) {
-                const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
-                const parentToasterDevice = toasterParentTrack
-                    ? findToasterDevice(toasterParentTrack.devices)
-                    : undefined;
-                if (toasterParentTrack && parentToasterDevice) {
-                    toasterOwnerTrack = toasterParentTrack;
-                    toasterDevice = parentToasterDevice;
-                    let childIndex = 0;
-                    for (const candidate of tracks) {
-                        if (candidate.parentId === toasterParentTrack.id) {
-                            if (candidate.id === track.id) {
-                                toasterPad = childIndex;
-                                break;
-                            }
-                            childIndex++;
-                        }
-                    }
-                }
-            }
-            if (toasterDevice) {
-                const toasterStrip = toasterOwnerTrack.id === track.id ? strip : ensureTrackStrip(toasterOwnerTrack.id);
-                const deviceNode = toasterStrip.deviceNodes.find(
-                    (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
-                );
-                if (deviceNode?.toasterControls) {
-                    toasterRoute = {
-                        controls: deviceNode.toasterControls,
-                        pad: toasterPad,
-                        getSwingOffsetBeats: (noteStartBeat) =>
-                            getToasterSwingOffsetBeats({
-                                parentTrackId: toasterOwnerTrack.id,
-                                toasterDeviceId: toasterDevice.id,
-                                automationMode: toasterOwnerTrack.automationMode,
-                                devices: toasterOwnerTrack.devices,
-                                lanes: automationLanes,
-                                noteStartBeat,
-                                evaluateAutomationValue: getAutomationValueAtBeat,
-                                isAutomationRecording: isRecordingAutomation,
-                                getCurrentSwingValue: (deviceId) =>
-                                    toasterStore.value?.[deviceId]?.kit.swing ??
-                                    toasterDevice.parameterValues.swing ??
-                                    0,
-                            }),
-                    };
-                }
-            }
+            const toasterTarget = resolveToasterTarget(track, tracks, strip);
+            const toasterRoute = toasterTarget
+                ? {
+                      controls: toasterTarget.controls,
+                      pad: toasterTarget.pad,
+                      getSwingOffsetBeats: (noteStartBeat: number) =>
+                          getToasterSwingOffsetBeats({
+                              parentTrackId: toasterTarget.ownerTrack.id,
+                              toasterDeviceId: toasterTarget.device.id,
+                              automationMode: toasterTarget.ownerTrack.automationMode,
+                              devices: toasterTarget.ownerTrack.devices,
+                              lanes: automationLanes,
+                              noteStartBeat,
+                              evaluateAutomationValue: getAutomationValueAtBeat,
+                              isAutomationRecording: isRecordingAutomation,
+                              getCurrentSwingValue: (deviceId) =>
+                                  toasterStore.value?.[deviceId]?.kit.swing ??
+                                  toasterTarget.device.parameterValues.swing ??
+                                  0,
+                          }),
+                  }
+                : null;
 
             const workletSynthDevice = toasterRoute ? null : findWorkletSynthDevice(track.devices);
             const workletSynthEntry = workletSynthDevice
@@ -1144,42 +1190,19 @@ export async function scheduleMidiNotes(
             // the instruments that honour them take any, and only through the
             // note path's own dispatch: a Yeast-routed, drum-kit or Toaster track
             // sends its notes elsewhere and its controllers nowhere.
-            const honoursStoredControllers =
-                workletSynthNode !== null &&
-                !yeastDevice &&
-                !drumKitDef &&
-                !drumKit &&
-                (workletSynthDevice?.type === 'grand-boule' || workletSynthDevice?.type === 'levain');
-            const storedControllers = honoursStoredControllers ? midiState.ccByClipId[clip.id] : undefined;
-            if (honoursStoredControllers && workletSynthDevice && workletSynthNode) {
-                const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
-                const sampleFrameAtBeat = (beat: number) =>
-                    placeSamplesOnClock({
-                        startSamples: beatToSamples(changes, beat, transport.tempo, sr),
-                        accumulatedSamples,
-                        sampleRate: sr,
-                        compensation,
-                    }).sampleFrame;
-                if (storedControllers) {
-                    scheduleStoredControllers({
-                        trackId: track.id,
-                        device: workletSynthDevice,
-                        node: workletSynthNode,
-                        controlChanges: storedControllers,
-                        clip,
-                        fromBeat,
-                        toBeat,
-                        sampleFrameAtBeat,
-                        queue: posts,
-                    });
-                }
-                if (opensAtRelocation) {
-                    relocatedStoredControllers ??= {
-                        device: workletSynthDevice,
-                        node: workletSynthNode,
-                        sampleFrameAtBeat,
-                    };
-                }
+            const storedControllers = storedControllerTarget ? midiState.ccByClipId[clip.id] : undefined;
+            if (storedControllerTarget && storedControllers) {
+                scheduleStoredControllers({
+                    trackId: track.id,
+                    device: storedControllerTarget.device,
+                    node: storedControllerTarget.node,
+                    controlChanges: storedControllers,
+                    clip,
+                    fromBeat,
+                    toBeat,
+                    sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+                    queue: posts,
+                });
             }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
@@ -1489,25 +1512,8 @@ export async function scheduleMidiNotes(
                 }
             }
         }
-        if (relocatedStoredControllers) {
-            restoreStoredControllers({
-                trackId: track.id,
-                device: relocatedStoredControllers.device,
-                node: relocatedStoredControllers.node,
-                clips: resolveStoredControllerClips({
-                    trackId: track.id,
-                    clips: track.clips,
-                    notesByClipId: midiState.notesByClipId,
-                    ccByClipId: midiState.ccByClipId,
-                }),
-                atBeat: fromBeat,
-                windowToBeat: toBeat,
-                sampleFrameAtBeat: relocatedStoredControllers.sampleFrameAtBeat,
-                queue: posts,
-            });
-            restoredStoredControllerDevices.add(
-                storedControllerDeviceKey(track.id, relocatedStoredControllers.device.id)
-            );
+        if (opensAtRelocation && storedControllerTarget) {
+            restoreStoredControllersOnTrack(track, storedControllerTarget, posts);
         }
         posts.flush(isCurrent);
     }

@@ -6,24 +6,42 @@ type ControllerRestoreClip = Parameters<typeof projectClipControllerEvents>[0]['
 
 type ProjectClipControllerRestoreInput = {
     /**
-     * Every clip of the track whose stored controllers play, in the order the window posts them (a later
-     * clip wins a tie of beat). A clip need not span the destination: one before it still holds the value
-     * its last row left.
+     * Every clip of the track whose stored controllers play, in the order the window posts them: at one
+     * sample frame a later clip's move lands after an earlier clip's. A clip need not span the
+     * destination: one before it still holds the value its last row left.
      */
     clips: readonly { clip: ControllerRestoreClip; controlChanges: readonly MidiCC[] }[];
     /** The timeline beat playback has just been relocated to, where the window `[atBeat, windowToBeat)` opens. */
     atBeat: number;
     windowToBeat: number;
-    /** Whether a timeline beat falls on the sample frame the destination does: the window's own notion of "at the same time". */
-    onDestinationFrame: (beat: number) => boolean;
+    /** The sample frame a controller at this beat is posted at: the window's own notion of "at the same time". */
+    sampleFrameAtBeat: (beat: number) => number;
 };
 
 type ClipControllerRestore = {
-    /** The value in force at `atBeat` for each controller the scheduler window opening there does not emit itself, placed at `atBeat`. */
+    /** The value in force at `atBeat` for each controller the scheduler window opening there does not end on itself, placed at `atBeat`. */
     moves: MidiCC[];
     /** Every controller number that has a value in force at `atBeat`, whether `moves` carries it or the window opening there does. */
     held: ReadonlySet<number>;
 };
+
+type PostedController = {
+    event: MidiCC;
+    sampleFrame: number;
+    clipIndex: number;
+    /** Where the clip's own projection put it: beat order, ties in source order. */
+    rowIndex: number;
+    /** Whether the window opening at the destination posts it, as against a move from before. */
+    fromWindow: boolean;
+};
+
+function postedAfter(candidate: PostedController, held: PostedController): boolean {
+    return (
+        (candidate.sampleFrame - held.sampleFrame ||
+            candidate.clipIndex - held.clipIndex ||
+            candidate.rowIndex - held.rowIndex) > 0
+    );
+}
 
 /**
  * What a track's stored controllers must send when playback is relocated to
@@ -33,12 +51,17 @@ type ClipControllerRestore = {
  * came from.
  *
  * The oracle is continuous playback, which is also what a DAW's chase does: the value
- * a controller holds at the destination is the one it would hold had playback run
- * through the track to get there, so it is the controller's last event, across every
- * pass of every clip, before the destination. A pass head that carries nothing (no row
+ * a controller holds at the destination is the one it would hold had playback run through
+ * the track to get there, so it is the controller's last move posted up to the destination
+ * frame, across every pass of every clip. A pass head that carries nothing (no row
  * precedes its visible span) leaves the value the previous pass ended on, and a clip
  * that starts after a clip left a controller set, without a row of its own for it,
  * leaves it set.
+ *
+ * "Last" is the order the window posts in: by sample frame, then clip sequence, then the
+ * clip's own row order, never by float beat. Two moves a rounding step apart in beat
+ * share a frame, and which one the instrument ends on is the clip order, so a restore
+ * that ordered them by beat would end on the other one.
  *
  * A controller is one value per instrument: the instruments take the controller number
  * and drop the channel, so a controller is keyed by number alone. A row on any channel
@@ -47,26 +70,24 @@ type ClipControllerRestore = {
  * Nothing here places a beat itself. Every event comes from
  * `projectClipControllerEvents`, the projection the window emits through, so a
  * rounding step that moves a row across the destination moves it identically here
- * and there, and "at the same time as the destination" is the caller's sample-frame
- * comparison, not a beat comparison.
+ * and there.
  *
- * - The carried value of a controller is its last event before the destination, a
- *   same-beat tie going to the later clip and then the later source row.
- * - A controller with a window event on the destination's frame, from any clip on
- *   any channel, is left to the window, so each value is sent once, and counts as
- *   in force.
- * - Every other controller with a carried value is in `moves`, placed at `atBeat`.
- *   An event later in the window does not touch the value in force now.
+ * - A controller whose last move is one the window opening at the destination posts
+ *   (on the destination's frame, from any clip on any channel) is left to the window, so
+ *   each value is sent once, and counts as in force.
+ * - Every other controller with a move before the destination is in `moves`, placed at
+ *   `atBeat`: the restore posts after the window does, so on the destination's frame it is
+ *   the last word. An event later in the window does not touch the value in force now.
  */
 export function projectClipControllerRestore({
     clips,
     atBeat,
     windowToBeat,
-    onDestinationFrame,
+    sampleFrameAtBeat,
 }: ProjectClipControllerRestoreInput): ClipControllerRestore {
-    const onDestination = new Set<number>();
-    const carried = new Map<number, MidiCC>();
-    for (const { clip, controlChanges } of clips) {
+    const destinationFrame = sampleFrameAtBeat(atBeat);
+    const last = new Map<number, PostedController>();
+    for (const [clipIndex, { clip, controlChanges }] of clips.entries()) {
         const events = projectClipControllerEvents({
             controlChanges,
             clip,
@@ -75,24 +96,25 @@ export function projectClipControllerRestore({
             fromBeat: Number.NEGATIVE_INFINITY,
             toBeat: windowToBeat,
         });
-        for (const event of events) {
-            if (event.beat < atBeat) {
-                const latest = carried.get(event.controller);
-                if (!latest || event.beat >= latest.beat) {
-                    carried.set(event.controller, event);
-                }
-            } else if (onDestinationFrame(event.beat)) {
-                onDestination.add(event.controller);
+        for (const [rowIndex, event] of events.entries()) {
+            const sampleFrame = sampleFrameAtBeat(event.beat);
+            if (sampleFrame > destinationFrame) {
+                continue;
+            }
+            const candidate = { event, sampleFrame, clipIndex, rowIndex, fromWindow: event.beat >= atBeat };
+            const held = last.get(event.controller);
+            if (!held || postedAfter(candidate, held)) {
+                last.set(event.controller, candidate);
             }
         }
     }
 
-    const held = new Set<number>(onDestination);
+    const held = new Set<number>();
     const moves: MidiCC[] = [];
-    for (const [controller, event] of carried) {
+    for (const [controller, posted] of last) {
         held.add(controller);
-        if (!onDestination.has(controller)) {
-            moves.push({ ...event, beat: atBeat });
+        if (!posted.fromWindow) {
+            moves.push({ ...posted.event, beat: atBeat });
         }
     }
     return { moves, held };

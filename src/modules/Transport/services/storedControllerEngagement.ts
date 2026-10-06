@@ -63,6 +63,8 @@ export type StoredControllerDevice = { trackId: string; deviceId: string; device
 export type StoredControllerPostedDevice = StoredControllerDevice & {
     /** The pedal controllers stored playback has posted a move for, whatever the move was (a copy the caller owns). */
     pedals: Set<number>;
+    /** The controllers that are not pedals (a Levain CC1, CC7 or CC11) stored playback has posted a move for (a copy the caller owns). */
+    controllers: Set<number>;
 };
 
 /**
@@ -78,20 +80,26 @@ export type StoredControllerPostedDevice = StoredControllerDevice & {
  */
 const postedDeviceByKey = new Map<
     string,
-    { trackId: string; deviceId: string; deviceType: string; pedals: Set<number> }
+    { trackId: string; deviceId: string; deviceType: string; pedals: Set<number>; controllers: Set<number> }
 >();
 
-/** Record that stored playback posted a move to one device, and the pedal it moved if it was one. */
-export function noteStoredControllerPost(device: StoredControllerDevice & { pedal?: number }): void {
+/** Record that stored playback posted a move to one device, and the pedal or other controller it moved. */
+export function noteStoredControllerPost(
+    device: StoredControllerDevice & { pedal?: number; controller?: number }
+): void {
     const key = storedControllerDeviceKey(device.trackId, device.deviceId);
     const existing = postedDeviceByKey.get(key) ?? {
         trackId: device.trackId,
         deviceId: device.deviceId,
         deviceType: device.deviceType,
         pedals: new Set<number>(),
+        controllers: new Set<number>(),
     };
     if (device.pedal !== undefined) {
         existing.pedals.add(device.pedal);
+    }
+    if (device.controller !== undefined) {
+        existing.controllers.add(device.controller);
     }
     postedDeviceByKey.set(key, existing);
 }
@@ -101,14 +109,29 @@ export function readStoredControllerPostedPedals(trackId: string, deviceId: stri
     return new Set(postedDeviceByKey.get(storedControllerDeviceKey(trackId, deviceId))?.pedals);
 }
 
-/** Every device stored playback has posted to, leaving the record as it is: a relocation restores from it. */
+/** The controllers that are not pedals stored playback has moved on one device: the ones a relocation may have to return to their default. */
+export function readStoredControllerPostedControllers(trackId: string, deviceId: string): ReadonlySet<number> {
+    return new Set(postedDeviceByKey.get(storedControllerDeviceKey(trackId, deviceId))?.controllers);
+}
+
+function copyPostedDevice(device: {
+    trackId: string;
+    deviceId: string;
+    deviceType: string;
+    pedals: Set<number>;
+    controllers: Set<number>;
+}): StoredControllerPostedDevice {
+    return { ...device, pedals: new Set(device.pedals), controllers: new Set(device.controllers) };
+}
+
+/** Every device stored playback has posted to, leaving the record as it is. */
 export function listStoredControllerPostedDevices(): StoredControllerPostedDevice[] {
-    return Array.from(postedDeviceByKey.values(), (device) => ({ ...device, pedals: new Set(device.pedals) }));
+    return Array.from(postedDeviceByKey.values(), copyPostedDevice);
 }
 
 /** Every device stored playback has posted to, forgetting them: the caller is about to drop each one's queued stored moves. */
 export function takeStoredControllerPostedDevices(): StoredControllerPostedDevice[] {
-    const taken = Array.from(postedDeviceByKey.values(), (device) => ({ ...device, pedals: new Set(device.pedals) }));
+    const taken = Array.from(postedDeviceByKey.values(), copyPostedDevice);
     postedDeviceByKey.clear();
     return taken;
 }

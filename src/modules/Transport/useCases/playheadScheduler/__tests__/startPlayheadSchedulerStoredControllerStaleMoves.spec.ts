@@ -777,6 +777,21 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
             expect(callLog.filter((entry) => entry.includes(' now'))).toEqual([]);
         });
 
+        it('returns a CC11 the dying pass moved to its instrument default when no row of the lane is in force at the loop start', async () => {
+            loadClip('levain', [row('swell', 11, 64, 3.5)]);
+            transportStoreState.value = playingState({ isLooping: true, loopStart: 2, loopEnd: 4 });
+            startPlayheadScheduler();
+
+            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+
+            // The lane's row at 3.5, then CC11 back to the engine's default of 127 at the seam frame.
+            expect(levainFramed.map((move) => [move.cc, move.value])).toEqual([
+                [11, 64],
+                [11, 127],
+            ]);
+            expect(Math.abs(levainFramed[1]!.frame - pendingSeamFrame())).toBeLessThanOrEqual(1);
+        });
+
         it('keeps a CC64 the clip before the gap left down on a track that has no clip at the loop start', async () => {
             loadClip('levain', [row('down', 64, 127, 3.5)], 4);
             transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });

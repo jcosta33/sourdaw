@@ -20,10 +20,11 @@ type ReleaseUnrestoredStoredControllersInput = {
  * relocation did not restore.
  *
  * A device is restored when its track plays at the relocation, with a clip at the
- * destination or across a gap (`restoreStoredControllersAcrossGap`). A track that is
- * muted or frozen there does not play, so nothing is in force for any pedal, and it
- * still holds the pedal the last pass left down, which nothing else would lift before
- * the next stop.
+ * destination or across a gap, and the scheduler routes its stored controllers to the
+ * device. A track that is muted or frozen there does not play, and a device the scheduler
+ * no longer routes to (a Yeast, drum-kit or Toaster track, or one with no instrument node)
+ * is posted to by nothing, so nothing is in force for any pedal, and it still holds the
+ * pedal the last pass left down, which nothing else would lift before the next stop.
  */
 export function releaseUnrestoredStoredControllers({
     restored,
