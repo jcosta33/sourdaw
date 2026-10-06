@@ -99,7 +99,8 @@ Amended 2026-10-06 by the owner: at most four live lanes, opened while other hea
 review. Agent lanes spend most of their life waiting on hour-long pipeline runs rather than in
 active development, so the DORA evidence for three or fewer active branches, measured on human
 teams, does not bound them. Lanes sharing a source file still wait or stack on a real dependency;
-lanes sharing only recomputed pins run in parallel, and the later merge re-records them.
+lanes sharing only pins a script regenerates run in parallel and the later merge regenerates them,
+while measured pins count as shared source.
 
 ## Consequences
 
