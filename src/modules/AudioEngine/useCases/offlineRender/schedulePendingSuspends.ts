@@ -23,8 +23,8 @@ type MutableNoteOffRequest = { -readonly [K in keyof DeviceNoteOffRequest]: Devi
  * This uses the sample-accurate `sampleFrame` parameter instead of main-thread
  * OfflineAudioContext.suspend() polling, preventing timing drift. Per-note MPE
  * expression is frame-addressed the same way, so it lands with its note rather
- * than at scheduling time, and so is a stored controller move, which sorts ahead
- * of the notes on its frame.
+ * than at scheduling time, and so is a stored controller move, which sorts behind
+ * the releases and ahead of the note-ons on its frame.
  *
  * The note surface is addressed by name (`DeviceNoteOnRequest`). It used to be
  * positional, and the two branches below disagreed about what slot three meant:

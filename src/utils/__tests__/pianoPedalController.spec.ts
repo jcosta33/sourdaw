@@ -21,6 +21,16 @@ describe('resolvePianoPedalMove', () => {
         expect(resolvePianoPedalMove(67, 0)).toEqual({ pedal: 'unaCorda', engaged: false });
     });
 
+    it('latches una corda at 64 exactly and not at 63, as sostenuto does', () => {
+        const atThreshold = resolvePianoPedalMove(67, 64);
+        const belowThreshold = resolvePianoPedalMove(67, 63);
+
+        expect(atThreshold).toEqual({ pedal: 'unaCorda', engaged: true });
+        expect(belowThreshold).toEqual({ pedal: 'unaCorda', engaged: false });
+        expect(atThreshold && isPianoPedalMoveEngaged(atThreshold)).toBe(true);
+        expect(belowThreshold && isPianoPedalMoveEngaged(belowThreshold)).toBe(false);
+    });
+
     it('returns null for a controller that is not a pedal', () => {
         expect(resolvePianoPedalMove(1, 127)).toBeNull();
     });

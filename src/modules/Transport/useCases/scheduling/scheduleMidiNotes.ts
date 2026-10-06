@@ -38,6 +38,7 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
@@ -952,6 +953,9 @@ export async function scheduleMidiNotes(
             }
         }
 
+        // Every clip of this track posts through one queue, so the order a
+        // frame's events reach the instrument does not depend on the clip order.
+        const posts = createSameFramePostQueue();
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
@@ -1079,10 +1083,12 @@ export async function scheduleMidiNotes(
                     ? null
                     : findFaustInstrumentDevice(track.devices);
 
-            // Stored controllers go first, so a note on the same frame sounds
-            // under the pedal or controller it was recorded with. Only the
-            // instruments that honour them take any, and only through the note
-            // path's own dispatch: a Yeast-routed, drum-kit or Toaster track
+            // Stored controllers join the window's queue, which posts them ahead
+            // of the note-ons of their frame (so a note struck there sounds under
+            // the pedal or controller it was recorded with) and behind the
+            // note-offs (so a pedal does not catch a note released there). Only
+            // the instruments that honour them take any, and only through the
+            // note path's own dispatch: a Yeast-routed, drum-kit or Toaster track
             // sends its notes elsewhere and its controllers nowhere.
             const honoursStoredControllers =
                 workletSynthNode !== null &&
@@ -1108,11 +1114,8 @@ export async function scheduleMidiNotes(
                             sampleRate: sr,
                             compensation,
                         }).sampleFrame,
-                    isCurrent,
+                    queue: posts,
                 });
-                if (!isCurrent()) {
-                    return;
-                }
             }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
@@ -1255,7 +1258,17 @@ export async function scheduleMidiNotes(
                         });
                         const durationSamples = noteEndSamples - noteStartSamples;
                         const duration = durationSamples / sr;
-                        const endSampleFrame = sampleFrame + durationSamples;
+                        // The release is placed on the clock exactly as the start
+                        // and a stored controller are, not as the start frame plus
+                        // a length: rounding the start and adding the length can
+                        // land a frame away from rounding the end, and a pedal on
+                        // the beat a note ends would then miss its own release.
+                        const endSampleFrame = placeSamplesOnClock({
+                            startSamples: noteEndSamples,
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                        }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
                         if (toasterRoute) {
@@ -1300,16 +1313,25 @@ export async function scheduleMidiNotes(
                                       articulation: projectedNote.articulation,
                                   })
                                 : null;
+                            // The note's posts wait for the window's queue: a
+                            // frame's events must reach the engine release,
+                            // controller, note-on, expression whichever clip or
+                            // window the note came from.
                             if (workletSynthDevice?.type === 'levain' && workletSynthNode?.levainControls) {
-                                workletSynthNode.levainControls.noteOn(
-                                    pitch,
-                                    vel,
-                                    sampleFrame,
-                                    noteChannel,
-                                    articulationId ?? undefined
+                                const levainControls = workletSynthNode.levainControls;
+                                posts.add('on', sampleFrame, () =>
+                                    levainControls.noteOn(
+                                        pitch,
+                                        vel,
+                                        sampleFrame,
+                                        noteChannel,
+                                        articulationId ?? undefined
+                                    )
                                 );
                             } else {
-                                workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                                posts.add('on', sampleFrame, () =>
+                                    workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel)
+                                );
                             }
                             // The depth the bend was recorded at, and only when
                             // there is a bend. Absent on notes captured before
@@ -1322,18 +1344,20 @@ export async function scheduleMidiNotes(
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
                             // to the voice this noteOn just started.
-                            applyNoteExpression({
-                                trackId: track.id,
-                                note: pitch,
-                                channel: noteChannel,
-                                expression: {
-                                    pressure: mpe?.pressure,
-                                    slide: mpe?.slide,
-                                    pitchBend: mpe?.pitchBend,
-                                },
-                                sampleFrame,
-                                bendRangeSemitones: noteBendRange,
-                            });
+                            posts.add('expression', sampleFrame, () =>
+                                applyNoteExpression({
+                                    trackId: track.id,
+                                    note: pitch,
+                                    channel: noteChannel,
+                                    expression: {
+                                        pressure: mpe?.pressure,
+                                        slide: mpe?.slide,
+                                        pitchBend: mpe?.pitchBend,
+                                    },
+                                    sampleFrame,
+                                    bendRangeSemitones: noteBendRange,
+                                })
+                            );
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain
@@ -1344,15 +1368,21 @@ export async function scheduleMidiNotes(
                             // pitch instead of the one held on that channel.
                             // All four control types accept three numbers, so
                             // the compiler had nothing to object to.
+                            //
+                            // A release on the frame its own note starts waits
+                            // behind that note's on and expression, or the voice
+                            // would be released before it exists and stick.
+                            const addRelease =
+                                endSampleFrame > sampleFrame
+                                    ? (post: () => void) => posts.add('off', endSampleFrame, post)
+                                    : (post: () => void) => posts.addStruckNoteRelease(endSampleFrame, post);
                             if (workletSynthDevice?.type === 'grand-boule' && workletSynthNode?.grandBouleControls) {
-                                workletSynthNode.grandBouleControls.noteOff(
-                                    pitch,
-                                    endSampleFrame,
-                                    undefined,
-                                    noteChannel
+                                const grandBouleControls = workletSynthNode.grandBouleControls;
+                                addRelease(() =>
+                                    grandBouleControls.noteOff(pitch, endSampleFrame, undefined, noteChannel)
                                 );
                             } else {
-                                workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
+                                addRelease(() => workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel));
                             }
                         } else if (faustDevice) {
                             scheduleFaustNote(
@@ -1390,5 +1420,6 @@ export async function scheduleMidiNotes(
                 }
             }
         }
+        posts.flush(isCurrent);
     }
 }

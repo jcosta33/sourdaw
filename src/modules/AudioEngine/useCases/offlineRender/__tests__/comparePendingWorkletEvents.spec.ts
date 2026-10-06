@@ -39,8 +39,20 @@ function controlEvent(controller: number): PendingControlWorkletEvent {
 }
 
 describe('comparePendingWorkletEvents', () => {
-    it('orders a stored controller ahead of the release and the note-on sharing its time', () => {
-        expect(comparePendingWorkletEvents(controlEvent(64), event('off', 60))).toBeLessThan(0);
+    it('sorts the four kinds sharing one time release, controller, note-on, expression', () => {
+        // A pedal pressed on the frame a note ends must not catch that note (the
+        // release applies first); a pedal on the frame a note starts must (the
+        // controller applies before the note-on).
+        const shuffled = [expressionEvent(60), event('on', 60), controlEvent(64), event('off', 60)];
+
+        const sorted = [...shuffled].sort(comparePendingWorkletEvents);
+
+        expect(sorted.map((pending) => pending.type)).toEqual(['off', 'control', 'on', 'expression']);
+    });
+
+    it('orders a stored controller after the release and ahead of the note-on sharing its time', () => {
+        expect(comparePendingWorkletEvents(event('off', 60), controlEvent(64))).toBeLessThan(0);
+        expect(comparePendingWorkletEvents(controlEvent(64), event('off', 60))).toBeGreaterThan(0);
         expect(comparePendingWorkletEvents(controlEvent(64), event('on', 60))).toBeLessThan(0);
         expect(comparePendingWorkletEvents(event('on', 60), controlEvent(64))).toBeGreaterThan(0);
         expect(comparePendingWorkletEvents(controlEvent(64), expressionEvent(60))).toBeLessThan(0);

@@ -5,7 +5,10 @@ import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arran
 import {
     applyNoteExpression,
     ensureTrackStrip,
+    getAudioContext,
+    getCurrentTime,
     getDrumKitByIndex,
+    getTrackStrip,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -30,6 +33,7 @@ import {
 } from '../../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
@@ -50,6 +54,10 @@ const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduled
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
+    // Read at module scope by the MIDI barrel's device-write wiring, which the
+    // tests that load the real projections past the barrel double evaluate.
+    persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
@@ -87,6 +95,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
+    getTrackStrip: vi.fn(),
+    // Read at module scope by the MIDI barrel's live-input wiring, which the tests
+    // that load the real projections past the barrel double evaluate.
+    startFaustNote: vi.fn(),
+    soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
+    isDeviceCarriedByNativeSession: vi.fn(() => false),
+    sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
+    sendNativeLiveMidiNote: vi.fn(() => Promise.resolve(true)),
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
@@ -203,6 +220,11 @@ describe('scheduleMidiNotes', () => {
                 }) as never
         );
         shouldPlayProbability.mockImplementation(() => true);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getAudioContext).mockReturnValue({
+            sampleRate: 48000,
+            createGain: vi.fn(() => ({ connect: vi.fn() })),
+        } as never);
     });
 
     it('schedules a frozen MIDI track once per playback session, not on every tick', async () => {
@@ -2280,6 +2302,13 @@ describe('scheduleMidiNotes', () => {
             );
         }
 
+        /** The projections the composition root injects, loaded past this spec's barrel double. */
+        async function useRealProjections() {
+            const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+            vi.mocked(projectClipMidiEvents).mockImplementation(actual.projectClipMidiEvents);
+            vi.mocked(projectClipControllerEvents).mockImplementation(actual.projectClipControllerEvents);
+        }
+
         function loadTrack(deviceType: string, deviceId: string, midi: Record<string, unknown>) {
             const track = midiTrack({ clips: [midiClip()], devices: [{ id: deviceId, type: deviceType }] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -2445,6 +2474,348 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(takeStoredControllerEngagements()).toEqual([]);
+        });
+
+        // One law, whichever window a note started in: at a frame the instrument
+        // receives releases, then controllers, then note-ons. Every case below
+        // reads the order of the posts as the instrument saw them.
+        describe('order of events sharing a frame', () => {
+            function postedAt(posted: string[], frame: number): string[] {
+                return posted.filter((entry) => entry.endsWith(`@${frame}`));
+            }
+
+            function recordingGrandBoule(posted: string[]) {
+                return {
+                    noteOn: vi.fn((note: number, _velocity: number, frame?: number) => {
+                        posted.push(`on ${note} @${frame}`);
+                    }),
+                    noteOff: vi.fn((note: number, frame?: number) => {
+                        posted.push(`off ${note} @${frame}`);
+                    }),
+                    noteExpression: vi.fn(),
+                    setSustain: vi.fn((position: number, frame?: number) => {
+                        posted.push(`sustain ${position} @${frame}`);
+                    }),
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                };
+            }
+
+            function recordingLevain(posted: string[]) {
+                return {
+                    noteOn: vi.fn((note: number, _velocity: number, frame?: number) => {
+                        posted.push(`on ${note} @${frame}`);
+                    }),
+                    noteOff: vi.fn((note: number, frame?: number) => {
+                        posted.push(`off ${note} @${frame}`);
+                    }),
+                    noteExpression: vi.fn(),
+                    handleCc: vi.fn((cc: number, value: number, frame?: number) => {
+                        posted.push(`cc ${cc} ${value} @${frame}`);
+                    }),
+                };
+            }
+
+            function note(id: string, startBeat: number, duration: number) {
+                return { id, pitch: 60, startBeat, duration, velocity: 100 };
+            }
+
+            it('releases a Grand Boule note before the pedal pressed on the frame it ends, in one window', async () => {
+                const posted: string[] = [];
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 1)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 2)] },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                    `off 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 1 @${2 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('posts the same order when the note started in an earlier window than the pedal', async () => {
+                const posted: string[] = [];
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 1)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 2)] },
+                });
+
+                // The audio clock stands where the second window's position does,
+                // so the frame a beat maps to is the same in both windows.
+                vi.mocked(getCurrentTime).mockReturnValue(0);
+                await scheduleMidiNotes(0, 1.5, 0, new Set<string>(), [], defaultTransportState, 120);
+                vi.mocked(getCurrentTime).mockReturnValue(0.75);
+                await scheduleMidiNotes(1.5, 4, 1.5, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                    `off 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 1 @${2 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('posts a pedal pressed with a chord before the chord, so the chord is caught', async () => {
+                const posted: string[] = [];
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 0.5)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 1)] },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, BEAT_FRAMES)).toEqual([`sustain 1 @${BEAT_FRAMES}`, `on 60 @${BEAT_FRAMES}`]);
+            });
+
+            it('orders Levain the same way: release, then controller, then note-on', async () => {
+                const posted: string[] = [];
+                stripWith({ type: 'levain', deviceId: 'levain-1', levainControls: recordingLevain(posted) });
+                loadTrack('levain', 'levain-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 1), { ...note('n2', 2, 1), pitch: 64 }] },
+                    ccByClipId: {
+                        'clip-1': [storedController('mid', 64, 100, 1), storedController('down', 64, 127, 2)],
+                    },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, BEAT_FRAMES)).toEqual([`cc 64 100 @${BEAT_FRAMES}`, `on 60 @${BEAT_FRAMES}`]);
+                expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                    `off 60 @${2 * BEAT_FRAMES}`,
+                    `cc 64 127 @${2 * BEAT_FRAMES}`,
+                    `on 64 @${2 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('keeps a note whose on and off share a frame on before off, so no voice sticks', async () => {
+                // A zero-length note is admitted by the projection and the
+                // scheduler posts both ends at one frame; the release must not be
+                // sorted ahead of the note-on it belongs to.
+                const posted: string[] = [];
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 0)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 1)] },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, BEAT_FRAMES)).toEqual([
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `off 60 @${BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('releases the last note of a looped pass before the pedal its next pass opens with', async () => {
+                // The clip loops every 2 beats and its lane presses sustain at each
+                // pass head; the note started in the first pass is clipped to end
+                // exactly where the second pass, and its pedal, begin.
+                const posted: string[] = [];
+                await useRealProjections();
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                const track = midiTrack({
+                    clips: [midiClip({ endBeat: 4, loopEnabled: true, loopLength: 2 })],
+                    devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 1.5)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 0)] },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                // The projection re-anchors the clipped tail to the pass head, so
+                // the head holds the release, the pedal, then the tail's note-on.
+                expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                    `off 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 1 @${2 * BEAT_FRAMES}`,
+                    `on 60 @${2 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('releases the last note of one clip before the carry its successor on the track opens with', async () => {
+                // The successor sits first in the track's clip list: the order
+                // must come from the frame, not from which clip is scheduled first.
+                const posted: string[] = [];
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                const track = midiTrack({
+                    clips: [
+                        midiClip({ id: 'clip-b', startBeat: 2, endBeat: 4 }),
+                        midiClip({ id: 'clip-a', endBeat: 2 }),
+                    ],
+                    devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-a': [note('n1', 1, 1)], 'clip-b': [] },
+                    ccByClipId: { 'clip-b': [storedController('down', 64, 127, 0)] },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                    `off 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 1 @${2 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('lands a release and a controller on one beat on one frame at a fractional samples-per-beat tempo', async () => {
+                // 113 BPM at 44.1 kHz is 23 415.9 samples per beat. With the clock
+                // standing half a sample off the grid, placing the release as the
+                // start frame plus a length rounds one frame away from placing the
+                // controller at its beat.
+                const posted: string[] = [];
+                vi.mocked(getAudioContext).mockReturnValue({
+                    sampleRate: 44_100,
+                    createGain: vi.fn(() => ({ connect: vi.fn() })),
+                } as never);
+                vi.mocked(getCurrentTime).mockReturnValue(26.5 / 44_100);
+                stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [note('n1', 1, 1)] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 2)] },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], { ...defaultTransportState, tempo: 113 }, 113);
+
+                const releaseFrame = posted.find((entry) => entry.startsWith('off'))?.split('@')[1];
+                const pedalFrame = posted.find((entry) => entry.startsWith('sustain'))?.split('@')[1];
+                expect(releaseFrame).toBeDefined();
+                expect(releaseFrame).toBe(pedalFrame);
+                expect(posted.map((entry) => entry.split(' @')[0])).toEqual(['on 60', 'off 60', 'sustain 1']);
+            });
+        });
+
+        describe('stored controllers through the real projection and release', () => {
+            it('releases every pedal and controller a real schedule left engaged, on stop', async () => {
+                const levain = { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc: vi.fn() };
+                const grandBoule = {
+                    noteOn: vi.fn(),
+                    noteOff: vi.fn(),
+                    noteExpression: vi.fn(),
+                    setSustain: vi.fn(),
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                };
+                const nodes: Record<string, Record<string, unknown>> = {
+                    'levain-track': { type: 'levain', deviceId: 'levain-1', levainControls: levain },
+                    'gb-track': { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: grandBoule },
+                };
+                const stripOf = (trackId: string) =>
+                    ({ gainNode: {}, preFaderTap: { connect: vi.fn() }, deviceNodes: [nodes[trackId]] }) as never;
+                vi.mocked(ensureTrackStrip).mockImplementation(stripOf);
+                vi.mocked(getTrackStrip).mockImplementation(stripOf);
+                (trackStore as { value: unknown }).value = {
+                    tracks: [
+                        midiTrack({
+                            id: 'levain-track',
+                            clips: [midiClip({ id: 'levain-clip' })],
+                            devices: [{ id: 'levain-1', type: 'levain' }],
+                        }),
+                        midiTrack({
+                            id: 'gb-track',
+                            clips: [midiClip({ id: 'gb-clip' })],
+                            devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                        }),
+                    ],
+                };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'levain-clip': [], 'gb-clip': [] },
+                    ccByClipId: {
+                        'levain-clip': [storedController('sustain', 64, 127, 1)],
+                        'gb-clip': [
+                            storedController('sostenuto', 66, 127, 1),
+                            storedController('unaCorda', 67, 127, 1),
+                        ],
+                    },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+                expect(levain.handleCc).toHaveBeenCalledExactlyOnceWith(64, 127, BEAT_FRAMES);
+                expect(grandBoule.setSostenuto).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES);
+                expect(grandBoule.setUnaCorda).toHaveBeenCalledExactlyOnceWith(true, BEAT_FRAMES);
+
+                releaseStoredControllers();
+
+                expect(levain.handleCc).toHaveBeenLastCalledWith(64, 0);
+                expect(grandBoule.setSostenuto).toHaveBeenLastCalledWith(false);
+                expect(grandBoule.setUnaCorda).toHaveBeenLastCalledWith(false);
+                expect(grandBoule.setSustain).not.toHaveBeenCalled();
+            });
+
+            it('opens each loop pass with the value carried into it, through the real projection', async () => {
+                // 4 beats of a clip looping every 2 over content that starts 1 beat
+                // in: the row before the offset is the value in force at each head.
+                await useRealProjections();
+                const setSustain = vi.fn();
+                stripWith({
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: {
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        setSustain,
+                        setSostenuto: vi.fn(),
+                        setUnaCorda: vi.fn(),
+                    },
+                });
+                const track = midiTrack({
+                    clips: [midiClip({ endBeat: 4, loopEnabled: true, loopLength: 2, midiOffsetBeats: 1 })],
+                    devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [] },
+                    ccByClipId: { 'clip-1': [storedController('held', 64, 127, 0.5)] },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(setSustain.mock.calls).toEqual([
+                    [1, 0],
+                    [1, 2 * BEAT_FRAMES],
+                ]);
+            });
+
+            it('moves a grooved note but keeps its controller at the ungrooved frame', async () => {
+                const posted: string[] = [];
+                stripWith({
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: {
+                        noteOn: vi.fn((note: number, _velocity: number, frame?: number) => {
+                            posted.push(`on ${note} @${frame}`);
+                        }),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        setSustain: vi.fn((position: number, frame?: number) => {
+                            posted.push(`sustain ${position} @${frame}`);
+                        }),
+                        setSostenuto: vi.fn(),
+                        setUnaCorda: vi.fn(),
+                    },
+                });
+                vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+                    input.events.map((event) => ({
+                        ...event,
+                        startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats + 0.25,
+                    }))
+                );
+                loadTrack('grand-boule', 'gb-1', {
+                    notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 }] },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 1)] },
+                });
+
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(posted).toEqual([`sustain 1 @${BEAT_FRAMES}`, `on 60 @${BEAT_FRAMES + BEAT_FRAMES / 4}`]);
+            });
         });
     });
 });
