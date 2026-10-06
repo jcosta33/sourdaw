@@ -16,11 +16,9 @@ export type TakeReKeyClipGeometry = {
  * the clip's pre-delete timeline span the fragment carries, and where that
  * window lands on the post-delete timeline under `targetClipId`.
  *
- * `sourceEndBeat - sourceStartBeat` always equals the fragment's post-delete
- * length; `targetStartBeat - sourceStartBeat` is the shift applied to every
- * beat inside the window (0 for the left half of a split, `-duration` for
- * material the ripple pulls left, and 0 again for the excise route's right
- * fragment, which stays at `endBeat`).
+ * The source edges come from the original clip and deletion span; the target
+ * edges are the emitted fragment's exact geometry. Keep both rather than
+ * reconstructing an edge by subtracting and re-adding fractional beat origins.
  */
 export type TakeReKeyClipWindow = {
     sourceClipId: string;
@@ -28,6 +26,7 @@ export type TakeReKeyClipWindow = {
     sourceStartBeat: number;
     sourceEndBeat: number;
     targetStartBeat: number;
+    targetEndBeat: number;
 };
 
 /**

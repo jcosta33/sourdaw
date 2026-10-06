@@ -18,16 +18,30 @@ type MappedPiece = {
     targetClipId: string;
     preImageStartBeat: number;
     preImageEndBeat: number;
-    deltaBeats: number;
+};
+
+type BeatWindow = {
+    sourceStartBeat: number;
+    sourceEndBeat: number;
+    targetStartBeat: number;
+    targetEndBeat: number;
 };
 
 /** One fragment a take survives as, in the shape a comp region maps through. */
-type TakeFragmentMap = {
-    takeId: string;
-    preImageStartBeat: number;
-    preImageEndBeat: number;
-    deltaBeats: number;
-};
+type TakeFragmentMap = BeatWindow & { takeId: string };
+
+function mapBeatThroughWindow(beat: number, window: BeatWindow): number {
+    if (beat === window.sourceStartBeat) {
+        return window.targetStartBeat;
+    }
+    if (beat === window.sourceEndBeat) {
+        return window.targetEndBeat;
+    }
+    if (window.sourceStartBeat === window.targetStartBeat) {
+        return beat;
+    }
+    return Math.min(window.targetEndBeat, window.targetStartBeat + (beat - window.sourceStartBeat));
+}
 
 /**
  * The portion of [startBeat, endBeat) covered by the surviving windows of the
@@ -49,14 +63,12 @@ function mapRangeThroughWindows(
         if (overlapStart >= overlapEnd) {
             continue;
         }
-        const deltaBeats = window.targetStartBeat - window.sourceStartBeat;
         pieces.push({
-            startBeat: overlapStart + deltaBeats,
-            endBeat: overlapEnd + deltaBeats,
+            startBeat: mapBeatThroughWindow(overlapStart, window),
+            endBeat: mapBeatThroughWindow(overlapEnd, window),
             targetClipId: window.targetClipId,
             preImageStartBeat: overlapStart,
             preImageEndBeat: overlapEnd,
-            deltaBeats,
         });
     }
     return pieces;
@@ -124,9 +136,10 @@ function buildTakeFragments(
         });
         fragments.push({
             takeId: fragmentTakeId,
-            preImageStartBeat: piece.preImageStartBeat,
-            preImageEndBeat: piece.preImageEndBeat,
-            deltaBeats: piece.deltaBeats,
+            sourceStartBeat: piece.preImageStartBeat,
+            sourceEndBeat: piece.preImageEndBeat,
+            targetStartBeat: piece.startBeat,
+            targetEndBeat: piece.endBeat,
         });
     }
     return { fragmentTakes, fragments };
@@ -177,14 +190,14 @@ function mapLaneTakes(
 function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeFragmentMap[]): CompRegion[] {
     const mapped: CompRegion[] = [];
     for (const fragment of fragments) {
-        const overlapStart = Math.max(region.startBeat, fragment.preImageStartBeat);
-        const overlapEnd = Math.min(region.endBeat, fragment.preImageEndBeat);
+        const overlapStart = Math.max(region.startBeat, fragment.sourceStartBeat);
+        const overlapEnd = Math.min(region.endBeat, fragment.sourceEndBeat);
         if (overlapStart >= overlapEnd) {
             continue;
         }
         mapped.push({
-            startBeat: overlapStart + fragment.deltaBeats,
-            endBeat: overlapEnd + fragment.deltaBeats,
+            startBeat: mapBeatThroughWindow(overlapStart, fragment),
+            endBeat: mapBeatThroughWindow(overlapEnd, fragment),
             takeId: fragment.takeId,
         });
     }

@@ -8,37 +8,45 @@ type CollectTakeReKeyWindowsInput = {
     /** Source clip id → the fresh id its re-keyed or split-off right fragment carries. */
     reKeyTargets: ReadonlyMap<string, string>;
     deleteStartBeat: number;
+    deleteEndBeat: number;
 };
 
 /**
- * Which part of a clip's pre-delete span a surviving fragment carries, derived
- * from the clip and the fragment alone. A fragment as long as the clip carries
- * it whole (a pure shift); a fragment still anchored at the clip's start whose
- * span ends at or before the deletion is the left survivor; anything else is
- * the right survivor, anchored at the clip's end. The deleted span itself is
- * never part of a window — it is the gap between them.
+ * Which part of a clip's pre-delete span a surviving fragment carries. Clips
+ * outside the span survive whole; the original id on a spanning clip keeps
+ * its left material, and every other overlap survivor carries the right
+ * material. Use the deletion's exact edges instead of reconstructing them
+ * from fragment lengths, which can round differently at fractional beats.
  */
 function createFragmentWindow(
     clip: TakeReKeyClipGeometry,
     fragment: TakeReKeyClipGeometry,
-    deleteStartBeat: number
+    deleteStartBeat: number,
+    deleteEndBeat: number
 ): TakeReKeyClipWindow {
-    const fragmentLength = fragment.endBeat - fragment.startBeat;
-    const clipLength = clip.endBeat - clip.startBeat;
     let sourceStartBeat: number;
-    if (fragmentLength === clipLength) {
+    let sourceEndBeat: number;
+    if (
+        (fragment.startBeat === clip.startBeat && fragment.endBeat === clip.endBeat) ||
+        clip.endBeat <= deleteStartBeat ||
+        clip.startBeat >= deleteEndBeat
+    ) {
         sourceStartBeat = clip.startBeat;
-    } else if (fragment.startBeat === clip.startBeat && clip.startBeat + fragmentLength <= deleteStartBeat) {
+        sourceEndBeat = clip.endBeat;
+    } else if (fragment.id === clip.id && clip.startBeat < deleteStartBeat) {
         sourceStartBeat = clip.startBeat;
+        sourceEndBeat = deleteStartBeat;
     } else {
-        sourceStartBeat = clip.endBeat - fragmentLength;
+        sourceStartBeat = deleteEndBeat;
+        sourceEndBeat = clip.endBeat;
     }
     return {
         sourceClipId: clip.id,
         targetClipId: fragment.id,
         sourceStartBeat,
-        sourceEndBeat: sourceStartBeat + fragmentLength,
+        sourceEndBeat,
         targetStartBeat: fragment.startBeat,
+        targetEndBeat: fragment.endBeat,
     };
 }
 
@@ -47,7 +55,8 @@ function isIdentityWindow(clip: TakeReKeyClipGeometry, window: TakeReKeyClipWind
         window.targetClipId === clip.id &&
         window.sourceStartBeat === clip.startBeat &&
         window.sourceEndBeat === clip.endBeat &&
-        window.targetStartBeat === clip.startBeat
+        window.targetStartBeat === clip.startBeat &&
+        window.targetEndBeat === clip.endBeat
     );
 }
 
@@ -77,7 +86,7 @@ export function collectTakeReKeyWindows(input: CollectTakeReKeyWindowsInput): Ma
         for (const clip of beforeTrack.clips) {
             const sameIdFragment = afterClips?.get(clip.id);
             if (sameIdFragment) {
-                const window = createFragmentWindow(clip, sameIdFragment, input.deleteStartBeat);
+                const window = createFragmentWindow(clip, sameIdFragment, input.deleteStartBeat, input.deleteEndBeat);
                 if (!isIdentityWindow(clip, window)) {
                     windows.push(window);
                 }
@@ -90,7 +99,7 @@ export function collectTakeReKeyWindows(input: CollectTakeReKeyWindowsInput): Ma
             if (!fragment) {
                 continue;
             }
-            windows.push(createFragmentWindow(clip, fragment, input.deleteStartBeat));
+            windows.push(createFragmentWindow(clip, fragment, input.deleteStartBeat, input.deleteEndBeat));
         }
         if (windows.length > 0) {
             windowsByTrackId.set(beforeTrack.trackId, windows);

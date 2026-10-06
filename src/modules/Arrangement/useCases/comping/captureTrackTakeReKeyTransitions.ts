@@ -49,6 +49,7 @@ export function captureTrackTakeReKeyTransitions(input: {
         })),
         reKeyTargets: input.reKeyTargets,
         deleteStartBeat: input.deleteStartBeat,
+        deleteEndBeat: input.deleteEndBeat,
     });
     return captureTakeReKeyTransitions({
         windowsByTrackId,

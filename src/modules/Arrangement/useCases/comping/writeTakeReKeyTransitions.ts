@@ -36,11 +36,13 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
  * touched here — and when live no longer holds it, it stays absent: its
  * deletion is a write the capture never recorded, the resurrection doctrine
  * `reconcileLane` documents. A take the transition never heard of — a
- * collaborator's write that landed after the capture — survives untouched.
+ * collaborator's write that landed after the capture — survives untouched
+ * while its clip survives. A facet keyed to a clip this replay removes cannot
+ * survive as an orphan, even when it was authored after the capture.
  *
  * `requireLiveClipIds` answers the liveness question, computing the
  * project-wide clip-id set on first use and caching it for the rest of the
- * write: a reconcile that only moves or drops takes never triggers the scan.
+ * write: moving captured takes alone never triggers the scan.
  */
 function reconcileTransitionTakes(
     live: readonly Take[],
@@ -91,7 +93,11 @@ function reconcileTransitionTakes(
             reconciled.push(liveTake);
         }
     }
-    return reconciled;
+    const targetClipIds = new Set(toTakes.map((take) => take.clipId));
+    const removedClipCandidates = new Set(fromTakes.map((take) => take.clipId).filter((id) => !targetClipIds.has(id)));
+    return reconciled.filter(
+        (take) => !removedClipCandidates.has(take.clipId) || requireLiveClipIds().has(take.clipId)
+    );
 }
 
 /**
@@ -141,13 +147,17 @@ function reconcileTransitionRegions(
     live: readonly CompRegion[],
     fromRegions: readonly CompRegion[],
     toRegions: readonly CompRegion[],
-    takes: readonly Take[]
+    takes: readonly Take[],
+    removedTakeIds: ReadonlySet<string>
 ): readonly CompRegion[] {
     const fromKeys = new Set(fromRegions.map(regionKey));
     const toKeys = new Set(toRegions.map(regionKey));
     const liveTakeIds = new Set(takes.map((take) => take.id));
 
-    const kept = live.filter((region) => !fromKeys.has(regionKey(region)) || toKeys.has(regionKey(region)));
+    const kept = live.filter(
+        (region) =>
+            !removedTakeIds.has(region.takeId) && (!fromKeys.has(regionKey(region)) || toKeys.has(regionKey(region)))
+    );
     const additions = toRegions.filter(
         (region) =>
             !fromKeys.has(regionKey(region)) && region.endBeat > region.startBeat && liveTakeIds.has(region.takeId)
@@ -199,7 +209,9 @@ function reconcileLaneTransition(
     const toRegions = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
 
     const takes = reconcileTransitionTakes(lane.takes, fromTakes, toTakes, requireLiveClipIds);
-    const regions = reconcileTransitionRegions(lane.activeCompRegions, fromRegions, toRegions, takes);
+    const liveTakeIds = new Set(takes.map((take) => take.id));
+    const removedTakeIds = new Set(lane.takes.filter((take) => !liveTakeIds.has(take.id)).map((take) => take.id));
+    const regions = reconcileTransitionRegions(lane.activeCompRegions, fromRegions, toRegions, takes, removedTakeIds);
     if (takesMatch(lane.takes, takes) && regionsMatch(lane.activeCompRegions, regions)) {
         return null;
     }
@@ -225,7 +237,7 @@ export function writeTakeReKeyTransitions(
     }
 
     // The clip ids currently in the project, collected once per write and only
-    // when some lane actually re-adds a take: the per-take liveness checks
+    // when some lane re-adds a take or retains a take on a removed clip: the liveness checks
     // share one scan instead of rebuilding per-track clip lists per take.
     let liveClipIds: ReadonlySet<string> | null = null;
     const requireLiveClipIds = (): ReadonlySet<string> => {
