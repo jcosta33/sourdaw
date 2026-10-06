@@ -1,0 +1,36 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_e075564776e5ff 170-172,176-177
+  s_2bfd55a4393d7c::t_281fa758e36e69 28,37-52,55-67
+  s_2bfd55a4393d7c::t_25a992c06b6d0d 53-54
+  s_2bfd55a4393d7c::t_31623ded410492 222-223,227,231-233,239-240
+  s_2bfd55a4393d7c::t_dc3f8dac2d94d6 130-137
+  s_2bfd55a4393d7c::t_2bcf4c25e9cad9 250
+  s_2bfd55a4393d7c::t_ee01a9f9478fd2 220-221,224-226,228-230,234-238,245,251-258,266-271,274-275,277-280,283,285
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_1dcf80ec85621f 25
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_1a0c09deaaf4e0 2934,2937-2940
+src/modules/MIDI/useCases/midiClipData/projectClipControllerRestore.ts
+  s_2bfd55a4393d7c::t_1df0f8878a7439 35-40,47-48,68,71,77,80,82,88-91,94-95
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_2bfd55a4393d7c::t_79207ef43c0056 403-417
+  s_2bfd55a4393d7c::t_10700d7b1315a6 230
+  s_2bfd55a4393d7c::t_ab77e1057ce0f7 201-207
+  s_2bfd55a4393d7c::t_dcab65a60e4d17 229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aeb7914b60e631a58a48749ab4f2b1bdb6e11ed2",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
