@@ -1,0 +1,146 @@
+src/modules/AiRuntime/useCases/agentWorkBudget.ts
+  s_1c08b47ac3792f::t_a4c8c8368f63c9 3-4
+  s_1c08b47ac3792f::t_589199e30f8712 69-74,99-104,106-107,110-118,120
+  s_1c08b47ac3792f::t_bed9ca32eea522 75-98,105,108-109
+src/modules/AudioRendering/useCases/renderAgentMeasurementTargets.ts
+  s_1c08b47ac3792f::t_32a15f29f8dc99 153
+  s_1c08b47ac3792f::t_633cc7c158c6a9 35-36
+src/modules/AiRuntime/models/AnalysisMeasureLimits.ts
+  s_1c08b47ac3792f::t_6b3708046b161e 6-9
+src/modules/AudioRendering/useCases/discardAgentMeasurementArtifacts.ts
+  s_1c08b47ac3792f::t_8b3b744e583d18 1-20
+src/modules/AiRuntime/models/AgentResourceLimits.ts
+  s_1c08b47ac3792f::t_0da40beb8cbd4e 70-72
+  s_1c08b47ac3792f::t_e776e48b6ecf70 41-46
+  s_1c08b47ac3792f::t_23935b071fc2d4 14-17
+src/modules/AiRuntime/models/__tests__/AgentDataPolicy.spec.ts
+  s_1c08b47ac3792f::t_42487596fe5f9b 5
+  s_1c08b47ac3792f::t_e1197978ea5bc8 47-67,72,75-76
+src/modules/AiRuntime/useCases/beginMeasurementRun.ts
+  s_1c08b47ac3792f::t_eb4d1e5dfa3143 1-28,31-53,55,57-65
+  s_1c08b47ac3792f::t_63640429b28f62 56
+  s_1c08b47ac3792f::t_2fe37bd5f3219c 54
+  s_1c08b47ac3792f::t_88ff38855da9a9 30
+  s_1c08b47ac3792f::t_0cca62688322a8 29
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_1c08b47ac3792f::t_6afbda4e196a6f 199-200
+  s_1c08b47ac3792f::t_6b502dbbe2f8cb 277-278
+  s_1c08b47ac3792f::t_efa3af5943d3bb 315-316
+  s_1c08b47ac3792f::t_f5d4058db3eec6 171
+  s_1c08b47ac3792f::t_1ad55e1340f51a 19
+  s_1c08b47ac3792f::t_13b00179d77c22 170
+src/modules/AiRuntime/useCases/__tests__/measurementBudgetsAndEgress.spec.ts
+  s_1c08b47ac3792f::t_81eefce1455f35 1062
+  s_1c08b47ac3792f::t_ea53e3db81d606 1084-1085
+  s_1c08b47ac3792f::t_b81db395e85d4a 33-34
+  s_1c08b47ac3792f::t_bbc494ee53a095 1138-1141
+  s_1c08b47ac3792f::t_122c55bdddf37c 422
+  s_1c08b47ac3792f::t_1e9b6c0462eff0 17-22
+  s_1c08b47ac3792f::t_e00aa42cd3abbc 54-57
+  s_1c08b47ac3792f::t_27896dfbeeef20 107-115
+  s_1c08b47ac3792f::t_ac426b023f9d6e 1-16,23-32,35-53,58-106,116-305,310-355,361-363,370,372-421,423-461,463-560,562-563,571-578,584-642,644-651,654-655,657-658,660-1060,1065-1073,1075-1083,1086-1092,1094-1109,1111-1137,1142-1143
+  s_1c08b47ac3792f::t_0e58ed73247bfa 652-653,656,659
+  s_1c08b47ac3792f::t_bba03d2a206fe5 1061,1063-1064
+  s_1c08b47ac3792f::t_64dd53e9311fc4 306-309
+  s_1c08b47ac3792f::t_1d1f5372e891c8 356-360,364-369,371
+  s_1c08b47ac3792f::t_b6cdc6b911a9e7 561,564-570,579-583
+  s_1c08b47ac3792f::t_26ccc3cb97f855 1093
+  s_1c08b47ac3792f::t_602f2ec4f37e88 1110
+  s_1c08b47ac3792f::t_fa1598f21ccb6d 462
+  s_1c08b47ac3792f::t_82b30e39db8b3c 643
+  s_1c08b47ac3792f::t_ff097e9de04136 1074
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_f9b9c0e364e9a0 609
+  s_1c08b47ac3792f::t_46dbc78f6568aa 1162-1163,1175-1176
+  s_1c08b47ac3792f::t_cfcf8cc6075bc5 356-357
+  s_1c08b47ac3792f::t_de2e58eaea47b7 18
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_1c08b47ac3792f::t_3e8c0dfd03dc11 194-195
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_1c08b47ac3792f::t_e14e1661f799e2 18-19
+  s_1c08b47ac3792f::t_6ae666a05e6b67 71
+src/modules/AiRuntime/useCases/reduceMeasuredTargets.ts
+  s_1c08b47ac3792f::t_52c5e999b7ebe1 1-28,30-36
+  s_1c08b47ac3792f::t_0a236c5cb3ba50 29
+src/modules/AiRuntime/useCases/readMeasurementRenderedSeconds.ts
+  s_1c08b47ac3792f::t_a35dd69909e6e9 1-6
+src/modules/AiRuntime/models/ApplicationToolReceiptData.ts
+  s_1c08b47ac3792f::t_0c171a6e223d5a 16
+  s_1c08b47ac3792f::t_95d9250f89ac1f 1,10-12
+  s_1c08b47ac3792f::t_739175881f5b79 2-9,13-15,17-19
+src/modules/AiRuntime/useCases/llmOrchestration/declareHostedTurnDataCategories.ts
+  s_1c08b47ac3792f::t_6623e5b3b8d63c 1-11,13-20
+  s_1c08b47ac3792f::t_face20943ca0be 12
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_2ceb42c4ed56af 63
+  s_1c08b47ac3792f::t_026515ea40ff89 499,503
+  s_1c08b47ac3792f::t_d7d228046092d2 544
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_de5c90e967714b 39
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_1c08b47ac3792f::t_298fd131dd0f7a 94-100
+  s_1c08b47ac3792f::t_a9376a8703e4f6 120-121
+  s_1c08b47ac3792f::t_b87be19b9013b4 118-119,122
+src/modules/AudioRendering/AGENTS.md
+  s_1c08b47ac3792f::t_8c94ff03054f2c 30
+src/modules/AudioRendering/useCases/renderAgentPreviewMeasurementScope.ts
+  s_1c08b47ac3792f::t_7379dfc65b5899 312
+  s_1c08b47ac3792f::t_dc95f77d7ae4cc 58-59
+src/modules/AudioRendering/useCases/index.ts
+  s_1c08b47ac3792f::t_bf9ae8e0d7490a 21
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_1c08b47ac3792f::t_ac162ddb522c51 49-50
+  s_1c08b47ac3792f::t_36e21d8687fe21 309
+  s_1c08b47ac3792f::t_6722aadffe5217 343
+  s_1c08b47ac3792f::t_97cf2f64c05e69 104
+  s_1c08b47ac3792f::t_e082f5df7660c2 358
+  s_1c08b47ac3792f::t_23104088e9c4ec 268
+  s_1c08b47ac3792f::t_ca851711a4e0f6 2-3,5,10,15-20,24,26,31-32
+  s_1c08b47ac3792f::t_98ed7f8d46a332 178-183,186
+  s_1c08b47ac3792f::t_8099af1b1e8025 264-265
+  s_1c08b47ac3792f::t_22d30336f8d580 81
+  s_1c08b47ac3792f::t_97663a7942d1c0 336-342,344,346-357
+  s_1c08b47ac3792f::t_6613209dda79cc 252-253,256,269,276-308,310-313
+  s_1c08b47ac3792f::t_4d0c1e8e742cae 4
+  s_1c08b47ac3792f::t_c59d2fb6f5c319 314
+src/modules/AiRuntime/models/AgentDataPolicy.ts
+  s_1c08b47ac3792f::t_1719f79d9c09e7 17-18
+  s_1c08b47ac3792f::t_f7c21299f565d7 46-51
+src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts
+  s_1c08b47ac3792f::t_aeb62ed2007719 116,122-124
+  s_1c08b47ac3792f::t_79f67981ef821d 51-76
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_1c08b47ac3792f::t_0a6cbe46ee0170 226
+  s_1c08b47ac3792f::t_0cd96379c07c8f 87
+  s_1c08b47ac3792f::t_90d442cd5ef2fa 242
+  s_1c08b47ac3792f::t_ddc456e6aef0dc 2,7,10-15,18,20,23-24,36-37
+  s_1c08b47ac3792f::t_c53e5ceac82ff8 266
+  s_1c08b47ac3792f::t_3529d467db4659 141
+  s_1c08b47ac3792f::t_5c7af91ea4557a 45-49
+  s_1c08b47ac3792f::t_16242ca82e6727 88-90,95
+  s_1c08b47ac3792f::t_bac195008354bb 214-225,227-235,239-240,243,246,251-265,267-269
+  s_1c08b47ac3792f::t_dbc41134221575 140
+src/modules/AiRuntime/models/MeasurementBudget.ts
+  s_1c08b47ac3792f::t_80159c87422e34 46
+  s_1c08b47ac3792f::t_9c6e0de79768a6 1-22,35-45,47-57,59-79
+  s_1c08b47ac3792f::t_dfd2209bc93e68 23-34
+  s_1c08b47ac3792f::t_33671ee4280d05 58
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_df8987e5f646ad 788
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5077b83319dd83d81b8c2a3aa2b897b44c9ff84e",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
