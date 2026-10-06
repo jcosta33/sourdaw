@@ -348,21 +348,63 @@ describe('canonical track roles', () => {
         { name: 'Nylon String Gtr', role: 'guitar' },
         { name: 'Steel String Gtr', role: 'guitar' },
         { name: 'Acoustic 12 String', role: 'guitar' },
+        // Each count and material alternative alone, with no other guitar evidence in the name.
+        { name: 'Steel String', role: 'guitar' },
+        { name: '6 String', role: 'guitar' },
+        { name: '7 String', role: 'guitar' },
+        { name: '8 String', role: 'guitar' },
         // A 5 string count names a banjo, not a guitar and not a section: no role claims it.
         { name: 'Banjo 5 String', role: 'unknown' },
+        // Another instrument's string count or material is not a guitar and not a section either.
+        { name: '6 String Violin', role: 'unknown' },
+        { name: '8 String Ukulele', role: 'unknown' },
+        { name: 'Mandolin 8 String', role: 'unknown' },
+        { name: '12 String Bouzouki', role: 'unknown' },
+        { name: 'Nylon String Ukulele', role: 'unknown' },
+        { name: 'Steel String Mandolin', role: 'unknown' },
     ] as const)('names a guitar by string count, material or abbreviation: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
+    // An extended-range bass is a bass: the string count belongs to the bass, not to a guitar.
+    it.each([
+        '5 String Bass',
+        '6 String Bass',
+        '6-String Bass',
+        '7 String Bass',
+        '8 String Bass',
+        '12 String Bass',
+        'Fretless 6 String Bass',
+        '6 String Bass Guitar',
+        'Bass 6 String',
+    ])('keeps an extended-range bass a bass: %s', (name) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe('bass');
+    });
+    // A bass voicing of a keys-family part is that part ("Bass Keys"); "Bass Synth" stays a bass
+    // as before, and a connector keeps the conflict.
+    it.each([
+        { name: 'Bass Keys', role: 'keys' },
+        { name: 'Bass Piano', role: 'keys' },
+        { name: 'Bass Organ', role: 'keys' },
+        { name: 'Bass Pad', role: 'pad' },
+        { name: 'Bass Synth', role: 'bass' },
+        { name: 'Bass & Keys', role: 'unknown' },
+        { name: 'Bass and Pad', role: 'unknown' },
+    ] as const)('reads bass before a keys-family word: $name is $role', ({ name, role }) => {
         expect(getCanonicalTrackRole(input(name)).role).toBe(role);
     });
     // Evidence from the drums family alone still names drums when no adjacency rule picks one role;
     // a conflict that crosses families stays unknown.
     it.each([
-        { name: 'Drums (Room)', role: 'drums' },
-        { name: 'Drums/Room', role: 'drums' },
-        { name: 'Drums: Room', role: 'drums' },
-        { name: 'Drums (Overheads)', role: 'drums' },
-        { name: 'Drums.Overheads', role: 'drums' },
+        // A generic drums word with exactly one kit-mic word names that kit mic, however separated.
+        { name: 'Drums (Room)', role: 'room' },
+        { name: 'Room (Drums)', role: 'room' },
+        { name: 'Drums/Room', role: 'room' },
+        { name: 'Drums: Room', role: 'room' },
+        { name: 'Drums (Overheads)', role: 'overhead' },
+        { name: 'Drums.Overheads', role: 'overhead' },
         { name: 'Snare Overhead', role: 'drums' },
         { name: 'Kick & Snare', role: 'drums' },
+        { name: 'Drums & Perc', role: 'drums' },
         { name: 'Kick Drum', role: 'kick' },
         { name: 'Drum Room', role: 'room' },
         { name: 'Overhead Drums', role: 'overhead' },

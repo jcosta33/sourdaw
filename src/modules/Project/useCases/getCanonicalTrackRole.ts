@@ -29,6 +29,10 @@ function wholeNameWithQualifiers(words: string, qualifiers: string): string {
     return String.raw`^\s*(?:${words})(?:\s+(?:${qualifiers}|\d+))*\s*$`;
 }
 
+// Instruments that carry a string count or material of their own, so "string(s)" beside them does
+// not name a guitar.
+const STRING_COUNT_OTHER_INSTRUMENTS = 'bass|violin|viola|cello|ukulele|uke|mandolin|banjo|bouzouki|sitar|harp';
+
 const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     [
         'kick',
@@ -60,8 +64,15 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
     ['backing vocal', /\b(?:backing vocals?|background vocals?|bgv)\b/],
     // A guitar named by its string count or material ("12 String", "Nylon String") is a guitar, not
-    // an orchestral strings section. Counts that name other instruments (a 5 string banjo) are not.
-    ['guitar', /\b(?:guitars?|gtrs?|(?:6|7|8|12|nylon|steel)\s+strings?)\b/],
+    // an orchestral strings section. The clause yields when another instrument is named beside it
+    // ("6 String Bass", "8 String Ukulele"), and counts that name other instruments (a 5 string
+    // banjo) are not guitar counts.
+    [
+        'guitar',
+        new RegExp(
+            String.raw`\b(?:guitars?|gtrs?)\b|(?<!\b(?:${STRING_COUNT_OTHER_INSTRUMENTS})\s+)\b(?:6|7|8|12|nylon|steel)\s+strings?\b(?!\s+(?:${STRING_COUNT_OTHER_INSTRUMENTS})\b)`
+        ),
+    ],
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
     ['synth', /\bsynths?\b/],
     ['pad', /\bpads?\b/],
@@ -74,7 +85,9 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
  * another role already names into a conflict.
  */
 const MODIFIER_NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
-    // A string count or material before the word names an instrument's strings, not a section.
+    // A string count or material before the word names an instrument's strings, not a section. The
+    // material words are reachable here when the guitar clause above yields to another instrument
+    // ("Nylon String Ukulele"), which must not fall through to an orchestral strings track.
     ['strings', /(?<!\b(?:\d+|nylon|steel)\s+)\bstrings?\b/],
     ['brass', /\bbrass\b/],
     // Session furniture that carries no part of the song.
@@ -95,6 +108,8 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
 // The kit-mic roles a generic drum word may qualify when it comes first ("Drum Overheads").
 const KIT_MIC_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['overhead', 'room']);
 
+const BASS_QUALIFIED_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['keys', 'pad']);
+
 const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_DRUM_ROLES, 'drums']);
 
 /**
@@ -102,7 +117,16 @@ const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_
  * is drums, even when no adjacency rule picks one role. A mixed-family conflict stays a conflict.
  */
 function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[]): CanonicalTrackRole | null {
-    return roles.every((role) => DRUM_FAMILY_ROLES.has(role)) ? 'drums' : null;
+    if (!roles.every((role) => DRUM_FAMILY_ROLES.has(role))) {
+        return null;
+    }
+    // A generic drums word paired with exactly one kit-mic word names that kit mic, whatever
+    // punctuation separates them ("Drums (Room)", "Room (Drums)").
+    const kitMic = roles.find((role) => role !== 'drums');
+    if (roles.length === 2 && roles.includes('drums') && kitMic !== undefined && KIT_MIC_ROLES.has(kitMic)) {
+        return kitMic;
+    }
+    return 'drums';
 }
 
 // An unqualified "vocal"/"vocals"/"vox" carries no dedicated pattern above: the canonical set has
@@ -165,6 +189,23 @@ function hasIndependentBareVocal(tokens: string, role: CanonicalTrackRole): bool
     });
 }
 
+/** What the word "bass" means directly before another role word, or null when it keeps the conflict. */
+function resolveBassQualifiedRole(secondRole: CanonicalTrackRole): CanonicalTrackRole | null {
+    // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
+    if (secondRole === 'drums') {
+        return 'kick';
+    }
+    // "Bass guitar" names the bass, by studio convention.
+    if (secondRole === 'guitar') {
+        return 'bass';
+    }
+    // "Bass keys" and "bass pad" are a keys-family part voiced as a bass, not a bass instrument.
+    if (BASS_QUALIFIED_ROLES.has(secondRole)) {
+        return secondRole;
+    }
+    return secondRole === 'synth' ? 'bass' : null;
+}
+
 /**
  * Interprets a name matching exactly two patterns as one convention-backed role instead of a
  * genuine conflict. Only these paired combinations carry an unambiguous studio meaning, and only
@@ -201,13 +242,8 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     if (firstRole === 'drums' && KIT_MIC_ROLES.has(secondRole)) {
         return secondRole;
     }
-    // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
-    if (firstRole === 'bass' && secondRole === 'drums') {
-        return 'kick';
-    }
-    // "Bass guitar" names the bass, by studio convention.
-    if (firstRole === 'bass' && secondRole === 'guitar') {
-        return 'bass';
+    if (firstRole === 'bass') {
+        return resolveBassQualifiedRole(secondRole);
     }
     // "Synth" directly adjacent to exactly one other role yields that other role, in either order.
     if (firstRole === 'synth') {

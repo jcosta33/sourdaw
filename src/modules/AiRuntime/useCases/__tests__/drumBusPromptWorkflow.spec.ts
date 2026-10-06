@@ -1227,6 +1227,29 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.approvalSnapshot.agentApproval?.targetFingerprints.master).toBe('system-output:master');
     });
 
+    it('accepts a drum room named "Drums (Room)" as the EX-11 room routed to master', async () => {
+        setEx11Project();
+        const tracks = (trackStore.value?.tracks ?? []).map((track) =>
+            track.id === 'track-room' ? { ...track, name: 'Drums (Room)' } : track
+        );
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+        ensureRealTrackStrips(tracks.map((track) => track.id));
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation).not.toBeNull();
+        expect(confirmation?.actions[0]).toMatchObject({
+            type: 'createBus',
+            payload: { expectedTrackOutputs: [{ trackId: 'track-room', outputId: 'master' }] },
+        });
+    });
+
     it('protects Ref Mix and Guide tracks in EX-11 instead of refusing the scope as ambiguous', async () => {
         setEx11Project();
         const tracks = [
@@ -3310,6 +3333,34 @@ describe('drum bus prompt workflow', () => {
                 action.type === 'setTrackOutput' ? [action.payload.trackId] : []
             )
         ).toEqual(['track-kick', 'track-drums-room']);
+    });
+
+    it('routes the kit and protects a Bass Pad track, a keys-family part, instead of refusing', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-snare', 'Snare'),
+                createTrack('track-bass-pad', 'Bass Pad'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-snare']);
+        expect(confirmation?.affectedIds).not.toContain('track-bass-pad');
     });
 
     it('routes Rim Click with the kit and protects Guide Vocal and String Bass instead of refusing', async () => {
