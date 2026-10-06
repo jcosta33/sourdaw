@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_4f1dc93f8d684f 1128-1252
+  s_1c08b47ac3792f::t_b57225cc7b20a7 455-461,463-465
+src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts
+  s_1c08b47ac3792f::t_e5928bb0af51dd 8
+  s_1c08b47ac3792f::t_dd9ee43fedfbb4 73-86,90-91,100
+  s_1c08b47ac3792f::t_a2d233e6d5bf39 258-262
+  s_1c08b47ac3792f::t_c61975c5a7792d 155-182,185-186,191-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b474f1e34051206f0a899bf9c32fa15219b59971",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
