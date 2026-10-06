@@ -1,0 +1,32 @@
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_1c08b47ac3792f::t_c6091b3f6cb6b5 10-12,17-22,24,39-42,162,164,168-172,175-177
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_58e7608b69a90c 47
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_b7f6c020756efd 366
+  s_1c08b47ac3792f::t_6c6e049a03c5e1 399
+  s_1c08b47ac3792f::t_b23c9906f08a31 403-406,409-414
+  s_1c08b47ac3792f::t_359d4da585d721 367-372
+  s_1c08b47ac3792f::t_40edbe10adae6c 391
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_1c08b47ac3792f::t_fa14d880c0e2d1 258
+  s_1c08b47ac3792f::t_8ee556cdc735e5 18-24,107-109,113,123,129,132,176-177,180,183,186-193,203,218,231,237,246,256-257,261-265,270,282-290,307-308,310-311,388-389,393-394
+  s_1c08b47ac3792f::t_b52aba1071242d 249
+  s_1c08b47ac3792f::t_08fd7229cc1417 278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35e148fc0f7732a04811ed3032f56f6f49c4b679",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
