@@ -1,0 +1,49 @@
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_1c08b47ac3792f::t_097aa1c6390748 117-120,123-129
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_f73c34dc9f9153 1145
+  s_1c08b47ac3792f::t_b65c802e148f3c 1125
+  s_1c08b47ac3792f::t_b722a0613778d8 1200
+  s_1c08b47ac3792f::t_917bdef4d00ed9 1140
+  s_1c08b47ac3792f::t_cd7a36bd023b9a 1195
+  s_1c08b47ac3792f::t_c217e87629e48a 525-575
+  s_1c08b47ac3792f::t_3162250e9d5503 913,919
+  s_1c08b47ac3792f::t_f6c090f677e5c7 1216
+  s_1c08b47ac3792f::t_dd74188d20cc26 988-1018,1043-1124,1126-1139,1141-1144,1146-1148,1153-1165,1167-1170,1172-1177,1179-1194,1196-1199,1201-1215
+  s_1c08b47ac3792f::t_67ba2b256c5f30 1166
+  s_1c08b47ac3792f::t_589fa7d04e580f 1019-1042
+  s_1c08b47ac3792f::t_94b7fa7b1f8c78 1171
+  s_1c08b47ac3792f::t_6f5c96374885fe 1149-1152,1178
+src/modules/AiRuntime/services/bulkSetSliceReplay.ts
+  s_1c08b47ac3792f::t_b5433c27621202 42,44,46
+  s_1c08b47ac3792f::t_59ba2419c4465a 39-41
+  s_1c08b47ac3792f::t_fbc119ab32d251 47
+  s_1c08b47ac3792f::t_32a7334982340b 81-83
+  s_1c08b47ac3792f::t_5e88c47bcbf7ca 13-23,26-38,43,45,48-53,58-60
+  s_1c08b47ac3792f::t_065e61616bf056 24-25
+src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts
+  s_1c08b47ac3792f::t_0a0e26b44650c8 42-44
+  s_1c08b47ac3792f::t_81d9af45e3df89 19-23,26-28,31-39,53-69,72-73,76-77,84,86,91,95
+  s_1c08b47ac3792f::t_acab6ac61f715e 45-50
+  s_1c08b47ac3792f::t_5695f9ed9337d4 120-134,136,140,144,149-153,160-162,167,170,173-176,178
+  s_1c08b47ac3792f::t_4c1f0d6b0802b4 190-193
+  s_1c08b47ac3792f::t_29c23679f2381a 41
+  s_1c08b47ac3792f::t_d44632694d857b 216,226
+  s_1c08b47ac3792f::t_c960fd2be1e999 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "009c72b0c23c37fb8ca80762196f8a9c51fc53fd",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
