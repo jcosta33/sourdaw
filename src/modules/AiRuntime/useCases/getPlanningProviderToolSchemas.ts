@@ -31,6 +31,7 @@ export function getPlanningProviderToolSchemas(): readonly ToolSchema[] {
     );
     const referenceLoaded = readAgentReference() !== null;
     const offeredSchemas = getPlanningProviderSchemaContract().schemas.filter(
-        (schema) => referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME    );
+        (schema) => referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+    );
     return [...offeredSchemas, ...uniqueWorkflowToolSchemas];
 }
