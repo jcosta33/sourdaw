@@ -42,6 +42,7 @@ vi.mock('#/infra/store/useStore', () => ({
 // `updateDeviceParam` is the wired stub; every other AudioEngine key in this
 // factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),

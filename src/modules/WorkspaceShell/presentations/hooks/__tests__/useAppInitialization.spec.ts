@@ -39,6 +39,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `loadProject` — never runs.
     syncNativeTimelineSamples: vi.fn(() => vi.fn()),
     syncControlRoomMonitoring: vi.fn(() => vi.fn()),
+    syncAutoInputMonitoring: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),

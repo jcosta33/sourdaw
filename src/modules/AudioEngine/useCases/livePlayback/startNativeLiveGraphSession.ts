@@ -231,15 +231,11 @@ export type NativeLiveGraphSessionResult =
 /**
  * Whether a live input is reaching this track's Web Audio strip.
  *
- * The predicate the app itself applies: `setInputMonitoring` and
- * `toggleInputMonitoring` are the only callers of `startInputMonitoring`, and
- * both start the monitor on `'on'` alone — `'auto'` is documented there as
- * engine-driven by arm state rather than an always-on monitor, and the arm path
- * (`Arrangement/useCases/recording/armTrack.ts`) engages no monitor of its own
- * today. `'auto'` while armed is included anyway, because that is what `auto`
- * means and arming is what will engage it: the cost of naming a track monitored
- * that is not is one strip left on Web Audio, while the cost of the opposite is
- * gating a musician's own signal out of their headphones mid-take.
+ * `'on'` always receives it. `'auto'` while armed is included even though the
+ * Auto owner (`syncAutoInputMonitoring`) closes the edge during playback of
+ * recorded material: the cost of naming a track monitored that is not is one
+ * strip left on Web Audio, while the cost of the opposite is gating a
+ * musician's own signal out of their headphones mid-take.
  */
 function receivesLiveInput(track: Track): boolean {
     return track.inputMonitoring === 'on' || (track.inputMonitoring === 'auto' && track.armed);
