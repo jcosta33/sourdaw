@@ -880,7 +880,16 @@ export function runWithAutomergeStorageTransaction<Result>(
 
 function flushMatchingAutomergeStorageWrites(
     matches: (pending: PendingAutomergeStorageWrite) => boolean,
-    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map()
+    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map(),
+    /**
+     * Attribution for an unscoped write a scoped transaction settles
+     * deliberately. The settlement is that transaction's own write
+     * preparation, so its document mutation counts as the transaction's work;
+     * only `settleUnscopedPredecessor` supplies this. Every other flush of an
+     * unscoped write — its own rAF, the external `flushPendingUnscopedWrite` —
+     * lands unowned, exactly like any foreign buffered write.
+     */
+    attributeMutationsTo?: object
 ): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
@@ -993,7 +1002,7 @@ function flushMatchingAutomergeStorageWrites(
 
                 const outcome = commitAutomergeStorageMutations(
                     mutations,
-                    firstWrite.scoped ? firstWrite.commitOwner : undefined,
+                    firstWrite.scoped ? firstWrite.commitOwner : attributeMutationsTo,
                     documentValidators.get(docId)
                 );
                 if (documentValidators.has(docId)) {
@@ -1072,10 +1081,12 @@ function flushMatchingAutomergeStorageWrites(
     }
 }
 
-function flushAutomergeStorageWriteOwner(write: PendingAutomergeStorageWrite): void {
+function flushAutomergeStorageWriteOwner(write: PendingAutomergeStorageWrite, attributeMutationsTo?: object): void {
     flushMatchingAutomergeStorageWrites(
         (pending) =>
-            pending.commitOwner === write.commitOwner && pending.snapshotTransaction === write.snapshotTransaction
+            pending.commitOwner === write.commitOwner && pending.snapshotTransaction === write.snapshotTransaction,
+        undefined,
+        attributeMutationsTo
     );
 }
 
@@ -1988,8 +1999,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      * provisional geometry). Landing the predecessor first makes the scoped
      * write reconcile against a document that already holds what its base
      * holds, so its skip decisions describe reality.
+     *
+     * The settlement's document mutation is attributed to the scoped
+     * transaction that demanded it. It is that write's own preparation —
+     * synchronous inside the transaction's window, and its content is exactly
+     * what the scoped write's base already carries — so mutation-epoch
+     * observers must count it as this transaction's work. Left unowned, the
+     * epoch moved outside the transaction and `captureProjectMutationAuthorization`
+     * read the writer's own preparation as a foreign project change: a plugin
+     * capture revoked its own execution authority after its handler had run,
+     * and the accepted runtime state never reached the document.
      */
-    const settleUnscopedPredecessor = (): void => {
+    const settleUnscopedPredecessor = (attributedTo: object | undefined): void => {
         const commitOwner = unscopedCommitOwner;
         if (!commitOwner) {
             return;
@@ -1999,7 +2020,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             return;
         }
         try {
-            flushAutomergeStorageWriteOwner(pending.write);
+            flushAutomergeStorageWriteOwner(pending.write, attributedTo);
         } catch (error) {
             if (
                 error instanceof AutomergeStorageFlushError &&
@@ -2027,7 +2048,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!predecessorOwner || !pendingWritesByOwner.has(predecessorOwner)) {
             return intendedValue;
         }
-        settleUnscopedPredecessor();
+        settleUnscopedPredecessor(context.commitOwner);
         if (!writeMetadata || !rebasePending) {
             return intendedValue;
         }

@@ -827,6 +827,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // dispatches through `executeAddDeviceAction`, which owns the compile
         // step; the hook no longer names a compiler.
         // 'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': removed (0),
+        // Count provenance: measured 4 after the creation-route conversion
+        // (#4618) — the drop path compiles its batches through
+        // `compileNewAudioTrackAction` (the family-patterned `compile[A-Z]…`
+        // identifier), whose declaration, the barrel path in its import line,
+        // the type-level `CreationBatchAction` reference, and the single call
+        // site each count one. The hook still writes no store directly: every
+        // mutation lands through `executeAppActionBatch`.
+        'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 4,
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
         'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
         'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,
