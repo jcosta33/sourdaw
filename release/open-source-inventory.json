@@ -1147,6 +1147,7 @@
                 "crates/daw-dsp/src/grand_boule/**",
                 ".agents/decisions/0036-readmit-grand-boule.md",
                 "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts",
+                "src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts",
                 "src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
                 "src/infra/release/deviceReleaseAdmission.ts",
