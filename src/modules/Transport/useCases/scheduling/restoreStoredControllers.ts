@@ -1,9 +1,11 @@
 import { projectClipControllerRestore } from '#/modules/MIDI/useCases';
+import { LEVAIN_CONTROLLER_DEFAULTS } from '#/utils/levainControllerDefaults';
 
 import { type StoredControllerNode } from '../../models/StoredControllerNode';
 import {
     noteStoredControllerMove,
     noteStoredControllerPost,
+    readStoredControllerPostedControllers,
     readStoredControllerPostedPedals,
 } from '../../services/storedControllerEngagement';
 
@@ -28,18 +30,20 @@ export type RestoreStoredControllersInput = {
 /**
  * Queue what one device must be told when playback is relocated to `atBeat` (a loop
  * wrap, a follow-action jump or an edit's re-emit): the value in force there for
- * each stored lane the window opening at the destination does not emit itself, and
- * the lift of every pedal stored playback moved that no lane has a value for there.
+ * each stored controller the window opening at the destination does not end on itself,
+ * the lift of every pedal stored playback moved that no row has a value for there, and
+ * the return of every other controller stored playback moved to the instrument's default
+ * (a Levain CC1, CC2, CC7 or CC11) when no row has a value for it.
  *
  * Without it a pedal pressed late in one pass stays down through every later pass
  * until the lane's next move, because a relocation stops notes but deliberately
- * keeps pedal state. A pedal that has a value in force is only given that value,
- * never lifted first: a Grand Boule releases the voices a lifted sustain was
- * holding, and pressing it again does not bring them back. The moved set is every
- * pedal posted so far, not those whose last post was a press, because the discard
- * of a still-queued lift leaves the pedal wherever the last applied move put it.
- * The lift names exactly the pedals stored playback moved, so a pedal the user
- * holds live is never touched.
+ * keeps pedal state, and a swell left at CC11 0 stays silent as well. A pedal that has a
+ * value in force is only given that value, never lifted first: a Grand Boule releases
+ * the voices a lifted sustain was holding, and pressing it again does not bring them
+ * back. The moved set is every pedal posted so far, not those whose last post was a
+ * press, because the discard of a still-queued lift leaves the pedal wherever the last
+ * applied move put it. The lift names exactly the pedals stored playback moved, so a
+ * pedal the user holds live is never touched.
  */
 export function restoreStoredControllers({
     trackId,
@@ -51,14 +55,10 @@ export function restoreStoredControllers({
     sampleFrameAtBeat,
     queue,
 }: RestoreStoredControllersInput): void {
-    const moved = readStoredControllerPostedPedals(trackId, device.id);
+    const movedPedals = readStoredControllerPostedPedals(trackId, device.id);
+    const movedControllers = readStoredControllerPostedControllers(trackId, device.id);
     const sampleFrame = sampleFrameAtBeat(atBeat);
-    const restore = projectClipControllerRestore({
-        clips,
-        atBeat,
-        windowToBeat,
-        onDestinationFrame: (beat) => sampleFrameAtBeat(beat) === sampleFrame,
-    });
+    const restore = projectClipControllerRestore({ clips, atBeat, windowToBeat, sampleFrameAtBeat });
     for (const move of restore.moves) {
         queue.add('control', sampleFrame, () =>
             postStoredControllerMove({
@@ -71,26 +71,37 @@ export function restoreStoredControllers({
             })
         );
     }
-    const stale = new Set<number>();
-    for (const controller of moved) {
+    const stalePedals = new Set<number>();
+    for (const controller of movedPedals) {
         if (!restore.held.has(controller)) {
-            stale.add(controller);
+            stalePedals.add(controller);
         }
     }
-    if (stale.size === 0) {
-        return;
-    }
-    queue.add('control', sampleFrame, () => {
-        releaseStoredEngagement({ deviceType: device.type, node, controllers: stale, sampleFrame });
-        noteStoredControllerPost({ trackId, deviceId: device.id, deviceType: device.type });
-        for (const controller of stale) {
-            noteStoredControllerMove({
-                trackId,
-                deviceId: device.id,
-                deviceType: device.type,
-                controller,
-                engaged: false,
-            });
+    const staleDefaults = new Map<number, number>();
+    for (const controller of movedControllers) {
+        const fallback = device.type === 'levain' ? LEVAIN_CONTROLLER_DEFAULTS.get(controller) : undefined;
+        if (!restore.held.has(controller) && fallback !== undefined) {
+            staleDefaults.set(controller, fallback);
         }
-    });
+    }
+    if (stalePedals.size > 0) {
+        queue.add('control', sampleFrame, () => {
+            releaseStoredEngagement({ deviceType: device.type, node, controllers: stalePedals, sampleFrame });
+            noteStoredControllerPost({ trackId, deviceId: device.id, deviceType: device.type });
+            for (const controller of stalePedals) {
+                noteStoredControllerMove({
+                    trackId,
+                    deviceId: device.id,
+                    deviceType: device.type,
+                    controller,
+                    engaged: false,
+                });
+            }
+        });
+    }
+    for (const [controller, value] of staleDefaults) {
+        queue.add('control', sampleFrame, () =>
+            postStoredControllerMove({ trackId, device, node, controller, value, sampleFrame })
+        );
+    }
 }

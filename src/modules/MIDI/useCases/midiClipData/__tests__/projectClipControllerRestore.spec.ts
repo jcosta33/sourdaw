@@ -22,7 +22,7 @@ function restoreTrackAt(clips: readonly TrackClip[], atBeat: number) {
         clips,
         atBeat,
         windowToBeat: atBeat + 1,
-        onDestinationFrame: (beat) => frameOf(beat) === frameOf(atBeat),
+        sampleFrameAtBeat: frameOf,
     });
 }
 
@@ -54,27 +54,37 @@ function laneOf(row: MidiCC): string {
 }
 
 /**
- * The value each lane holds at the destination frame had playback run through the clip
- * to get there: the real projection stepped in abutting windows from a beat before the
- * clip, every event up to the destination frame applied in order.
+ * The value each controller holds at the destination frame had playback run through the track
+ * to get there: each clip's real projection stepped in abutting windows from a beat before the
+ * track's first clip, every event up to the destination frame posted as the window's same-frame
+ * queue posts a window's controllers (by sample frame, then the order they were added: clip
+ * sequence, then each clip's row order) and applied in that order. The whole history is one
+ * window, because two moves a rounding step apart in beat share a frame and the window that
+ * posts them decides nothing the clip order does not.
  */
-function valuesHeldByContinuousPlayback(lanes: readonly MidiCC[], clip: Clip, atBeat: number): Map<string, number> {
-    const held = new Map<string, number>();
+function valuesHeldByContinuousPlayback(clips: readonly TrackClip[], atBeat: number): Map<string, number> {
+    const posts: { frame: number; sequence: number; event: MidiCC }[] = [];
     const step = 0.75;
-    const origin = clip.startBeat - 1;
-    // One window past the destination: an event placed a rounding step after its beat sits on the destination's frame.
-    for (let index = 0; origin + index * step <= atBeat + step; index++) {
-        const window = projectClipControllerEvents({
-            controlChanges: lanes,
-            clip,
-            fromBeat: origin + index * step,
-            toBeat: origin + (index + 1) * step,
-        });
-        for (const event of window) {
-            if (frameOf(event.beat) <= frameOf(atBeat)) {
-                held.set(laneOf(event), event.value);
+    const origin = Math.min(...clips.map(({ clip }) => clip.startBeat)) - 1;
+    for (const { clip, controlChanges } of clips) {
+        // One window past the destination: an event placed a rounding step after its beat sits on the destination's frame.
+        for (let index = 0; origin + index * step <= atBeat + step; index++) {
+            const window = projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: origin + index * step,
+                toBeat: origin + (index + 1) * step,
+            });
+            for (const event of window) {
+                if (frameOf(event.beat) <= frameOf(atBeat)) {
+                    posts.push({ frame: frameOf(event.beat), sequence: posts.length, event });
+                }
             }
         }
+    }
+    const held = new Map<string, number>();
+    for (const post of posts.sort((left, right) => left.frame - right.frame || left.sequence - right.sequence)) {
+        held.set(laneOf(post.event), post.event.value);
     }
     return held;
 }
@@ -219,6 +229,37 @@ describe('projectClipControllerRestore', () => {
             ];
 
             expect(placed(restoreTrackAt(clips, 3).moves)).toEqual([{ controller: 64, beat: 3, value: 0 }]);
+        });
+
+        it('orders two moves a rounding step apart by sample frame and clip, not by beat', () => {
+            // Clip 2's row lands on timeline beat 1.9999999999999998, a step before clip 1's row at 2: one
+            // sample frame, so the later clip is the last word, as the window posts them.
+            const clips = [
+                { clip: { startBeat: 0, endBeat: 4 }, controlChanges: [controller('first', 2, 127)] },
+                {
+                    clip: { startBeat: 0.3, endBeat: 4, midiOffsetBeats: 0.6 },
+                    controlChanges: [controller('second', 2.3, 0)],
+                },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 3).moves)).toEqual([{ controller: 64, beat: 3, value: 0 }]);
+        });
+
+        it('lets a move from before the destination that lands on its frame outrank the window of an earlier clip', () => {
+            // Clip 2's row is a step before the destination yet on its frame; clip 1's row sits on the
+            // destination. The restore posts after the window, and clip 2 is the later clip.
+            const clips = [
+                { clip: { startBeat: 0, endBeat: 4 }, controlChanges: [controller('window', 3, 0)] },
+                {
+                    clip: { startBeat: 0.3, endBeat: 4, midiOffsetBeats: 0.6 },
+                    controlChanges: [controller('history', 3.3, 127)],
+                },
+            ];
+
+            const sent = sentTrackAtDestination(clips, 3);
+
+            expect(sent.map((move) => move.value)).toEqual([0, 127]);
+            expect(restoreTrackAt(clips, 3).held).toEqual(new Set([64]));
         });
 
         it('leaves a controller a later clip emits on the destination frame to the window', () => {
@@ -384,7 +425,10 @@ describe('projectClipControllerRestore', () => {
                             for (let pass = 0; pass < 3; pass++) {
                                 for (const content of contents) {
                                     const destination = toBeat(startUnits + pass * length + (content - offset));
-                                    const expected = valuesHeldByContinuousPlayback(lanes, clip, destination);
+                                    const expected = valuesHeldByContinuousPlayback(
+                                        [{ clip, controlChanges: lanes }],
+                                        destination
+                                    );
 
                                     const sent = new Map<string, number>();
                                     for (const move of sentAtDestination(lanes, clip, destination)) {
@@ -394,6 +438,74 @@ describe('projectClipControllerRestore', () => {
                                     expect(
                                         sent,
                                         `start ${startUnits}/84 loop ${length}/84 offset ${offset}/84 pass ${pass} content ${content}`
+                                    ).toEqual(expected);
+                                    checked++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            expect(checked).toBeGreaterThan(2_000);
+        });
+    });
+
+    describe('against continuous playback across several clips of a track', () => {
+        /** Everything is a whole number of 1/84 beats; every start, offset and row is a multiple of 7 units (1/12 beat). */
+        const UNITS_PER_BEAT = 84;
+        const toBeat = (units: number) => units / UNITS_PER_BEAT;
+        const firstClipStarts = [0, 14, 28, 42];
+        // Overlapping the first clip, abutting it, and leaving a gap after it, for the lengths below.
+        const secondClipStarts = [56, 98, 126];
+        const lengths = [112, 168];
+        const offsets = [0, 14];
+        const loops = [null, 56];
+        // No row sits on a pass's end (offset + loop length, or offset + length): whether the projection
+        // admits a row exactly there is rounding, and the window's own answer is what plays.
+        const firstClipRows = [
+            controller('a-down', toBeat(21), 127),
+            controller('a-up', toBeat(77), 0),
+            controller('a-dynamics', toBeat(35), 33, 11, 2),
+        ];
+        const secondClipRows = [
+            controller('b-sustain', toBeat(49), 5, 64, 1),
+            controller('b-up', toBeat(91), 9, 64, 1),
+            controller('b-dynamics', toBeat(63), 77, 11, 3),
+        ];
+
+        it('sends exactly the value continuous playback holds at every destination: inside, between and after the clips', () => {
+            let checked = 0;
+            for (const firstStart of firstClipStarts) {
+                for (const secondStart of secondClipStarts) {
+                    for (const length of lengths) {
+                        for (const offset of offsets) {
+                            for (const loop of loops) {
+                                const shape = (start: number) => ({
+                                    startBeat: toBeat(start),
+                                    endBeat: toBeat(start + length),
+                                    midiOffsetBeats: toBeat(offset),
+                                    loopEnabled: loop !== null,
+                                    loopLength: loop === null ? undefined : toBeat(loop),
+                                });
+                                const clips = [
+                                    { clip: shape(firstStart), controlChanges: firstClipRows },
+                                    { clip: shape(secondStart), controlChanges: secondClipRows },
+                                ];
+                                for (
+                                    let destination = firstStart;
+                                    destination <= secondStart + length + 28;
+                                    destination += 7
+                                ) {
+                                    const expected = valuesHeldByContinuousPlayback(clips, toBeat(destination));
+
+                                    const sent = new Map<string, number>();
+                                    for (const move of sentTrackAtDestination(clips, toBeat(destination))) {
+                                        sent.set(laneOf(move), move.value);
+                                    }
+
+                                    expect(
+                                        sent,
+                                        `clips ${firstStart} and ${secondStart}, length ${length}, offset ${offset}, loop ${loop}, destination ${destination}`
                                     ).toEqual(expected);
                                     checked++;
                                 }

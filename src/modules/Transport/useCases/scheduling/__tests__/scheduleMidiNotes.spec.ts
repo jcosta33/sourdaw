@@ -2869,47 +2869,79 @@ describe('scheduleMidiNotes', () => {
                 return relocateTrackTo(destination, [{ lane, clip }]);
             }
 
+            type RelocationOptions = {
+                /** The instrument the track routes stored controllers to: the Grand Boule's sustain, or a Levain's raw controller. */
+                instrument?: 'grand-boule' | 'levain';
+                /** Devices after the instrument in the rack. */
+                rackAfterInstrument?: { id: string; type: string }[];
+                /** What stored playback already moved on the device, as a relocation finds it. */
+                alreadyMoved?: 'sustain' | 'cc11' | 'nothing';
+                /** The clips (by index) that have a stored lane but no note record. */
+                withoutNoteRecord?: readonly number[];
+            };
+
             /** A relocation of a track whose clips (each with its stored controller lane) are listed in track order. */
             async function relocateTrackTo(
                 destination: number,
-                clips: { lane: ReturnType<typeof storedController>[]; clip: Record<string, unknown> }[]
+                clips: { lane: ReturnType<typeof storedController>[]; clip: Record<string, unknown> }[],
+                {
+                    instrument = 'grand-boule',
+                    rackAfterInstrument = [],
+                    alreadyMoved = 'sustain',
+                    withoutNoteRecord = [],
+                }: RelocationOptions = {}
             ): Promise<string[]> {
                 const posted: string[] = [];
+                const deviceId = instrument === 'levain' ? 'lv-1' : 'gb-1';
                 vi.mocked(projectClipControllerEvents).mockImplementation(realMidiUseCases.projectClipControllerEvents);
                 vi.mocked(projectClipControllerRestore).mockImplementation(
                     realMidiUseCases.projectClipControllerRestore
                 );
-                stripWith({
-                    type: 'grand-boule',
-                    deviceId: 'gb-1',
-                    grandBouleControls: {
-                        noteOn: vi.fn(),
-                        noteOff: vi.fn(),
-                        noteExpression: vi.fn(),
-                        setSustain: vi.fn((position: number, frame?: number) => {
-                            posted.push(`sustain ${position} @${frame}`);
-                        }),
-                        setSostenuto: vi.fn(),
-                        setUnaCorda: vi.fn(),
-                    },
-                });
-                // The device is one stored playback already moved, as a relocation finds it.
-                noteStoredControllerPost({
-                    trackId: 'track-1',
-                    deviceId: 'gb-1',
-                    deviceType: 'grand-boule',
-                    pedal: 64,
-                });
+                if (instrument === 'levain') {
+                    stripWith({
+                        type: 'levain',
+                        deviceId,
+                        levainControls: {
+                            handleCc: vi.fn((cc: number, value: number, frame?: number) => {
+                                posted.push(`cc${cc} ${value} @${frame}`);
+                            }),
+                        },
+                    });
+                } else {
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId,
+                        grandBouleControls: {
+                            noteOn: vi.fn(),
+                            noteOff: vi.fn(),
+                            noteExpression: vi.fn(),
+                            setSustain: vi.fn((position: number, frame?: number) => {
+                                posted.push(`sustain ${position} @${frame}`);
+                            }),
+                            setSostenuto: vi.fn(),
+                            setUnaCorda: vi.fn(),
+                        },
+                    });
+                }
+                if (alreadyMoved === 'sustain') {
+                    noteStoredControllerPost({ trackId: 'track-1', deviceId, deviceType: instrument, pedal: 64 });
+                } else if (alreadyMoved === 'cc11') {
+                    noteStoredControllerPost({ trackId: 'track-1', deviceId, deviceType: instrument, controller: 11 });
+                }
                 (trackStore as { value: unknown }).value = {
                     tracks: [
                         midiTrack({
                             clips: clips.map(({ clip }, index) => midiClip({ id: `clip-${index + 1}`, ...clip })),
-                            devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                            devices: [{ id: deviceId, type: instrument }, ...rackAfterInstrument],
                         }),
                     ],
                 };
                 (midiStore as { value: unknown }).value = {
-                    notesByClipId: Object.fromEntries(clips.map((_, index) => [`clip-${index + 1}`, []])),
+                    notesByClipId: Object.fromEntries(
+                        clips.flatMap((_, index) =>
+                            withoutNoteRecord.includes(index) ? [] : [[`clip-${index + 1}`, []]]
+                        )
+                    ),
                     ccByClipId: Object.fromEntries(clips.map(({ lane }, index) => [`clip-${index + 1}`, lane])),
                 };
 
@@ -3076,6 +3108,115 @@ describe('scheduleMidiNotes', () => {
 
                         expect(posted).toEqual(['sustain 0 @0']);
                     });
+                });
+
+                describe('on the device the window routes stored controllers to', () => {
+                    const laterEmptyClip = { clip: { startBeat: 8, endBeat: 12 }, lane: [] };
+
+                    it('carries across a gap on a device stored playback has not posted to, as inside a later clip', async () => {
+                        const clips = [{ clip: clipA, lane: [storedController('down', 64, 127, 1)] }, laterEmptyClip];
+
+                        expect(await relocateTrackTo(6, clips, { alreadyMoved: 'nothing' })).toEqual(['sustain 1 @0']);
+                        expect(await relocateTrackTo(9, clips, { alreadyMoved: 'nothing' })).toEqual(['sustain 1 @0']);
+                    });
+
+                    it('posts the same for a gap and for a clip on a track the window routes no stored controllers on', async () => {
+                        const clips = [{ clip: clipA, lane: [storedController('down', 64, 127, 1)] }, laterEmptyClip];
+                        const rackAfterInstrument = [{ id: 'yeast-1', type: 'yeast' }];
+
+                        const inGap = await relocateTrackTo(6, clips, { rackAfterInstrument });
+                        const inClip = await relocateTrackTo(9, clips, { rackAfterInstrument });
+
+                        // The window never presses a pedal on a Yeast track, so a pedal stored playback moved
+                        // there is lifted by the sweep in both, never carried down.
+                        expect(inClip).toEqual(['sustain 0 @0']);
+                        expect(inGap).toEqual(inClip);
+                    });
+                });
+
+                describe('on a Levain', () => {
+                    const levainClip = { startBeat: 0, endBeat: 8 };
+                    const expressionLane = [storedController('mid', 11, 64, 6), storedController('low', 11, 0, 7.5)];
+
+                    it('returns a controller no row is in force for to the instrument default at the destination frame', async () => {
+                        const posted = await relocateTrackTo(0, [{ clip: levainClip, lane: expressionLane }], {
+                            instrument: 'levain',
+                            alreadyMoved: 'cc11',
+                        });
+
+                        expect(posted).toEqual(['cc11 127 @0']);
+                    });
+
+                    it('keeps the value of a controller a row is in force for', async () => {
+                        const posted = await relocateTrackTo(7, [{ clip: levainClip, lane: expressionLane }], {
+                            instrument: 'levain',
+                            alreadyMoved: 'cc11',
+                        });
+
+                        // The value in force at 7, then the lane's own row half a beat in.
+                        expect(posted).toEqual(['cc11 64 @0', 'cc11 0 @12000']);
+                    });
+
+                    it('leaves a controller stored playback never moved alone', async () => {
+                        const posted = await relocateTrackTo(0, [{ clip: levainClip, lane: expressionLane }], {
+                            instrument: 'levain',
+                            alreadyMoved: 'nothing',
+                        });
+
+                        expect(posted).toEqual([]);
+                    });
+                });
+
+                describe('in the order the window posts the moves', () => {
+                    const firstClip = { startBeat: 0, endBeat: 4 };
+                    const offsetClip = { startBeat: 0.3, endBeat: 4, midiOffsetBeats: 0.6 };
+
+                    it('ends on the later clip for two moves a rounding step apart in beat', async () => {
+                        // The second clip's row is placed at timeline beat 1.9999999999999998, a step before the
+                        // first clip's at 2: one sample frame, where the later clip is the last word.
+                        const posted = await relocateTrackTo(3, [
+                            { clip: firstClip, lane: [storedController('first', 64, 127, 2)] },
+                            { clip: offsetClip, lane: [storedController('second', 64, 0, 2.3)] },
+                        ]);
+
+                        expect(posted).toEqual(['sustain 0 @0']);
+                    });
+
+                    it('ends where the window does when both rows sit on the destination', async () => {
+                        const clips = [
+                            { clip: firstClip, lane: [storedController('first', 64, 127, 2)] },
+                            { clip: firstClip, lane: [storedController('second', 64, 0, 2)] },
+                        ];
+
+                        const window = await relocateTrackTo(2, clips);
+                        const restore = await relocateTrackTo(3, clips);
+
+                        expect(window).toEqual(['sustain 1 @0', 'sustain 0 @0']);
+                        expect(restore).toEqual(['sustain 0 @0']);
+                    });
+
+                    it('ends on the clip listed first when the clips are listed the other way round', async () => {
+                        const posted = await relocateTrackTo(3, [
+                            { clip: firstClip, lane: [storedController('second', 64, 0, 2)] },
+                            { clip: firstClip, lane: [storedController('first', 64, 127, 2)] },
+                        ]);
+
+                        expect(posted).toEqual(['sustain 1 @0']);
+                    });
+                });
+
+                it('does not carry the controllers of a clip that has no note record, as the window plays none of them', async () => {
+                    const posted = await relocateTrackTo(
+                        5,
+                        [
+                            { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                            { clip: clipB, lane: [] },
+                        ],
+                        { withoutNoteRecord: [0] }
+                    );
+
+                    // Nothing carries for the pedal stored playback moved, so it is lifted.
+                    expect(posted).toEqual(['sustain 0 @0']);
                 });
 
                 it('does not play the controllers of a muted clip', async () => {

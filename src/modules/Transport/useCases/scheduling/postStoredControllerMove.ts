@@ -58,11 +58,13 @@ export function postStoredControllerMove({
         return;
     }
     levain.handleCc(controller, value, sampleFrame, true);
+    const isPedal = controller === CC_SUSTAIN_PEDAL;
     noteStoredControllerPost({
         trackId,
         deviceId: device.id,
         deviceType: device.type,
-        pedal: controller === CC_SUSTAIN_PEDAL ? controller : undefined,
+        pedal: isPedal ? controller : undefined,
+        controller: isPedal ? undefined : controller,
     });
     if (controller === CC_SUSTAIN_PEDAL) {
         noteStoredControllerMove({
