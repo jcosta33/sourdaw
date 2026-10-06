@@ -511,6 +511,14 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
         creates: ['automation-lane', 'automation-point'],
     },
+    // The lane is created only when the track does not automate the parameter yet, and the points
+    // already inside the range are replaced.
+    automateParameterRange: {
+        dimensions: ['automation'],
+        scope: 'target',
+        creates: ['automation-lane', 'automation-point'],
+        removes: ['automation-point'],
+    },
     renderProjectSections: {
         dimensions: ['external'],
         scope: 'target',

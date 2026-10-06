@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
     createTimeSignatureChange,
     getBarBeatAtPosition,
+    getBarStartBeat,
     getMetricalBeatsBetween,
     getPrecedingBars,
     getTimeSignatureAtBeat,
@@ -63,6 +64,48 @@ describe('getBarBeatAtPosition', () => {
         const past = getBarBeatAtPosition(changes, 3, 4, 4);
         expect(past.bar).toBe(1);
         expect(past.beat).toBe(2);
+    });
+});
+
+describe('getBarStartBeat', () => {
+    // 4/4 for two bars, 7/8 (3.5 quarters) from beat 8, and a 3/4 change landing at beat 16.5,
+    // one quarter into the third 7/8 bar, which that change cuts short.
+    const changes: TimeSignatureChange[] = [
+        { id: 'seven-eight', beat: 8, numerator: 7, denominator: 8 },
+        { id: 'three-four', beat: 16.5, numerator: 3, denominator: 4 },
+    ];
+
+    it('places each bar start across a 4/4 to 7/8 change and a bar a mid-bar change shortens', () => {
+        expect([1, 2, 3, 4, 5, 6, 7].map((bar) => getBarStartBeat(changes, bar, 4, 4))).toEqual([
+            0,
+            4,
+            8,
+            11.5,
+            15,
+            16.5 + 3,
+            16.5 + 6,
+        ]);
+    });
+
+    it('is the exact inverse of getBarBeatAtPosition at every bar start', () => {
+        for (let bar = 1; bar <= 12; bar++) {
+            const beat = getBarStartBeat(changes, bar, 4, 4);
+            expect(beat).not.toBeNull();
+            expect(getBarBeatAtPosition(changes, beat ?? Number.NaN, 4, 4)).toEqual({ bar, beat: 1, tick: 0 });
+        }
+    });
+
+    it('opens the bar a mid-bar change shortens on its shortened piece, where its number is first read', () => {
+        // Bar 5 opens at 15 and runs only to the 3/4 change at 16.5, which reads as bar 5 too.
+        expect(getBarBeatAtPosition(changes, 16.5, 4, 4)).toEqual({ bar: 5, beat: 1, tick: 0 });
+        expect(getBarStartBeat(changes, 5, 4, 4)).toBe(15);
+        expect(getBarStartBeat(changes, 6, 4, 4)).toBe(19.5);
+    });
+
+    it('refuses a bar number that names no bar', () => {
+        expect(getBarStartBeat(changes, 0, 4, 4)).toBeNull();
+        expect(getBarStartBeat(changes, -2, 4, 4)).toBeNull();
+        expect(getBarStartBeat(changes, 2.5, 4, 4)).toBeNull();
     });
 });
 

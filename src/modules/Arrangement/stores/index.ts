@@ -5,6 +5,8 @@ export { clipSelectionStore, defaultClipSelectionState } from './clipSelectionSt
 export type { ClipSelectionState, MarqueeSelection } from './clipSelectionStore';
 export { markerStore } from './markerStore';
 export type { MarkerStoreState } from './markerStore';
+export { readMusicalRange } from './readMusicalRange';
+export { readMusicalRangeInputs } from './readMusicalRangeInputs';
 
 export { scratchPadStore } from './scratchPadStore';
 export type { ScratchPadStoreState } from './scratchPadStore';

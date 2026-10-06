@@ -67,6 +67,7 @@ vi.mock('../../../stores/loopStationStore', () => ({
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { __id: 'transport' },
     playheadPositionRef: { current: 0 },
+    readBarStartBeat: vi.fn(),
 }));
 
 // Wrap (not replace) the real formatLoopProgress so the rest of the suite

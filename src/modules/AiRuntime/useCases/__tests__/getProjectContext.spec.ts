@@ -19,7 +19,12 @@ const mocks = vi.hoisted(() => {
     const automationStoreValue: { value: unknown } = { value: null };
     const adjustmentLayerStoreValue: { value: { layers: ProjectContextAdjustmentLayer[] } | null } = { value: null };
     const sidechainStoreValue: { value: { routes: ProjectContextSidechainRoute[] } | null } = { value: null };
-    const markerStoreValue: { value: { sections: ProjectContextSection[] } | null } = { value: null };
+    const markerStoreValue: {
+        value: {
+            sections: ProjectContextSection[];
+            markers?: { id: string; name: string; beat: number; color: string }[];
+        } | null;
+    } = { value: null };
     const vcaStoreValue: { value: { groups: ProjectContextVcaGroup[] } | null } = { value: null };
     const projectStoreValue: { value: unknown } = { value: null };
     const repairStateStoreValue: { value: unknown } = { value: null };
@@ -336,7 +341,7 @@ describe('getProjectContext', () => {
         expect(context.sidechainRoutes).toEqual([]);
         expect(context.sections).toEqual([]);
         expect(context.vcaGroups).toEqual([]);
-        expect(context).not.toHaveProperty('markers');
+        expect(context.markers).toEqual([]);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
@@ -704,6 +709,25 @@ describe('getProjectContext', () => {
 
         expect(second).not.toBe(first);
         expect(second.sections?.[0]?.endBeat).toBe(36);
+    });
+
+    it('maps arrangement markers as named positions and invalidates the cache when one moves', () => {
+        mocks.markerStoreValue.value = {
+            sections: [],
+            markers: [{ id: 'marker-drop', name: 'Drop', beat: 64, color: '#ff0000' }],
+        };
+
+        const first = getProjectContext();
+        expect(first.markers).toEqual([{ id: 'marker-drop', name: 'Drop', beat: 64 }]);
+
+        mocks.markerStoreValue.value = {
+            sections: [],
+            markers: [{ id: 'marker-drop', name: 'Drop', beat: 72, color: '#ff0000' }],
+        };
+        const second = getProjectContext();
+
+        expect(second).not.toBe(first);
+        expect(second.markers).toEqual([{ id: 'marker-drop', name: 'Drop', beat: 72 }]);
     });
 
     it('maps adjustment layers and invalidates the cache when their regions change', () => {

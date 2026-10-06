@@ -985,6 +985,22 @@ const planPromptIntent = inject({ logger })(
                         drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
                         syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
                     });
+                    if (guarded.status === 'rejected' && guarded.questions !== undefined) {
+                        // Two sections answer the request equally: the request is
+                        // answerable, it only has to say which one it means.
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            planningOutcome: {
+                                kind: 'clarify',
+                                reason: guarded.reason,
+                                questions: [...guarded.questions],
+                            },
+                        };
+                    }
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
                         return {

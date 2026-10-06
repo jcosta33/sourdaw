@@ -1,4 +1,6 @@
+import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
+import { getBarStartBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -12,8 +14,57 @@ import { type SyncopatedArpeggioRequestScope } from './agentReference/getSyncopa
 import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
 import { stampProcessingOnlyParameterPolicy } from './stampProcessingOnlyParameterPolicy';
 
+/**
+ * A rejection carries `questions` only when the request is answerable but names
+ * its target ambiguously — two sections matching a reference equally — so the
+ * planner can ask which one instead of refusing.
+ */
 type MaterializeActionStateGuardsResult =
-    { status: 'accepted'; actions: AppAction[] } | { status: 'rejected'; reason: string };
+    | { status: 'accepted'; actions: AppAction[] }
+    | { status: 'rejected'; reason: string; questions?: readonly string[] };
+
+type MusicalRangeResolution = ReturnType<typeof resolveMusicalRange>;
+
+function askWhichSection(
+    resolution: Extract<MusicalRangeResolution, { kind: 'ambiguous-section' }>
+): readonly string[] {
+    const candidates = resolution.candidates
+        .map((section) => `"${section.name}" from beat ${String(section.startBeat)} to ${String(section.endBeat)}`)
+        .join(', or ');
+    return [`Which part of the song do you mean by "${resolution.reference}": ${candidates}?`];
+}
+
+/**
+ * The beats a range write covers in the plan's own project snapshot, so the
+ * production-brief guard that follows reads the interval the write will touch.
+ * The owning handler resolves the same range again against the live project
+ * when the command is admitted.
+ */
+function materializeParameterRange(
+    action: Extract<MaterializableRuntimeAction, { type: 'automateParameterRange' }>,
+    context: ProjectContext
+): { status: 'accepted'; action: AppAction } | Extract<MaterializeActionStateGuardsResult, { status: 'rejected' }> {
+    const resolution = resolveMusicalRange({
+        range: action.payload.range,
+        sections: context.sections ?? [],
+        markers: context.markers ?? [],
+        tracks: context.tracks,
+        barStartBeat: getBarStartBeat,
+    });
+    if (resolution.kind === 'ambiguous-section') {
+        return { status: 'rejected', reason: resolution.reason, questions: askWhichSection(resolution) };
+    }
+    if (resolution.kind !== 'resolved') {
+        return { status: 'rejected', reason: resolution.reason };
+    }
+    return {
+        status: 'accepted',
+        action: {
+            type: 'automateParameterRange',
+            payload: { ...action.payload, startBeat: resolution.startBeat, endBeat: resolution.endBeat },
+        },
+    };
+}
 
 type MaterializeActionStateGuardsOptions = {
     appOwnedRenderTailSeconds?: number;
@@ -599,6 +650,14 @@ export function materializeActionStateGuards(
                     },
                 },
             });
+            continue;
+        }
+        if (action.type === 'automateParameterRange') {
+            const parameterRange = materializeParameterRange(action, context);
+            if (parameterRange.status === 'rejected') {
+                return parameterRange;
+            }
+            materialized.push(parameterRange.action);
             continue;
         }
         if (action.type === 'automateTrackGainRange') {

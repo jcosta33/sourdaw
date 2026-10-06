@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "b6728e62114b2a83892082adadc4ad3b93d63dce43847382bb936c40eb687e54"
+        "digest": "488874c49e739cdab3731d45c18d369df0e8787b6ea7d0d576c1b5fb751423ba"
     },
     "census": {
-        "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
+        "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -126,7 +126,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
-                    "digest": "625e497ae368491fced2d34e1b4d33b96e620623c757d98389dba8b0fbb5c6bb"
+                    "digest": "a4bbeebe1ae8f13b5926aa112db92dc476e39e4668a93a16022e6bd3023280dd"
                 }
             ]
         },
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "0ffdb7ec07d950ddfdf859aaadb1233c5eeec8aa1a66d5562b660f735f7edeac"
+                    "digest": "c1f361a1aa08ea9996f9659da900a69dca9f8b6dcbc73d9e4e211a05fb8a58b9"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "557c3836fe72f17ea149f6a84152a1e11fe9afd9295e9ce9582dee9686f26445"
+                    "digest": "69d5dbf78d390991fb7d580f79067f7e93468e29a3c9d8736579eac148a1a425"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -907,7 +907,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts",
-                    "digest": "ddbe56795829a6276befd9725c29d52e78ad9acf1e504d8911d54a54d0623c98"
+                    "digest": "088dfbb6c6716027482ce0eceddbf878b9f558c2642c32090740d62ddd0a70c9"
                 }
             ]
         },

@@ -4,6 +4,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type LlmActionRejection, type SectionPlanningSignature } from '../llmActionBridgeContracts';
+import { resolveAutomationLaneTarget } from '../resolveAutomationLaneTarget';
 import { type ToolCallResult } from '../toolCallParser';
 
 import {
@@ -21,7 +22,81 @@ export const automationRangeActionNames = [
     'addAdjustmentRegion',
     'automateSendRange',
     'automateTrackGainRange',
+    'automateParameterRange',
 ] as const satisfies readonly Extract<RuntimeActionType, string>[];
+
+type ParameterRangePayload = Extract<RuntimeAction, { type: 'automateParameterRange' }>['payload'];
+
+const PARAMETER_RANGE_KEYS: readonly string[] = [
+    'trackId',
+    'parameterId',
+    'range',
+    'valueDb',
+    'deltaDb',
+    'value',
+    'rampIn',
+    'rampOut',
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The range exactly as the call stated it, in one form, or null when it states none or several. */
+function readStatedRange(value: unknown): ParameterRangePayload['range'] | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    if (hasExactKeys(value, ['section'])) {
+        return typeof value.section === 'string' && value.section.trim() !== '' ? { section: value.section } : null;
+    }
+    if (hasExactKeys(value, ['startBar', 'endBar'])) {
+        const { startBar, endBar } = value;
+        return isFiniteNumber(startBar) && isFiniteNumber(endBar) ? { startBar, endBar } : null;
+    }
+    if (hasExactKeys(value, ['startBeat', 'endBeat'])) {
+        const { startBeat, endBeat } = value;
+        return isFiniteNumber(startBeat) && isFiniteNumber(endBeat) ? { startBeat, endBeat } : null;
+    }
+    return null;
+}
+
+/** Decibels describe a gain amplitude or a send level, never a pan position or a device's own unit. */
+function acceptsDecibels(context: ProjectContext, trackId: string, parameterId: string): boolean {
+    if (parameterId.startsWith('send:')) {
+        return true;
+    }
+    if (parameterId !== 'gain') {
+        return false;
+    }
+    const lane = (context.automationLanes ?? []).find(
+        (candidate) => !candidate.clipId && candidate.trackId === trackId && candidate.parameterId === 'gain'
+    );
+    return lane === undefined || lane.minValue >= 0;
+}
+
+type StatedTargetAndRamps = Omit<ParameterRangePayload, 'trackId' | 'parameterId' | 'range'>;
+
+const TARGET_KEYS = ['valueDb', 'deltaDb', 'value'] as const;
+
+const NUMBER_KEYS = [...TARGET_KEYS, 'rampIn', 'rampOut'] as const;
+
+/** The target and ramps exactly as stated, each a finite number when present, or null when one is not. */
+function readStatedTargetAndRamps(args: Record<string, unknown>): StatedTargetAndRamps | null {
+    const stated: StatedTargetAndRamps = {};
+    for (const key of NUMBER_KEYS) {
+        const value = args[key];
+        if (value === undefined) {
+            continue;
+        }
+        if (!isFiniteNumber(value)) {
+            return null;
+        }
+        stated[key] = value;
+    }
+    const targetCount = TARGET_KEYS.filter((key) => stated[key] !== undefined).length;
+    return targetCount === 1 ? stated : null;
+}
 
 export type AutomationRangeCallName = (typeof automationRangeActionNames)[number];
 
@@ -199,6 +274,61 @@ const automationRangeStrategyDefinitions = [
                     sectionName: sections[0]!.name,
                     gainDb,
                 },
+            };
+        },
+    },
+    {
+        name: 'automateParameterRange',
+        transform: ({ call, context, index }) => {
+            const args = call.arguments;
+            const track = findTrack(context, args.trackId);
+            const parameterId = args.parameterId;
+            const range = readStatedRange(args.range);
+            const statedNumbers = readStatedTargetAndRamps(args);
+            if (
+                !Object.keys(args).every((key) => PARAMETER_RANGE_KEYS.includes(key)) ||
+                !track ||
+                typeof parameterId !== 'string' ||
+                range === null ||
+                statedNumbers === null
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected an existing track, one parameter, a range stated once, and a target stated exactly once'
+                );
+            }
+            if (track.automationMode === 'off') {
+                return rejection(index, call.name, 'Expected a track whose automation mode reads automation');
+            }
+            if (resolveAutomationLaneTarget(context, track.id, parameterId) === null) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected gain, pan, an existing send from the track, or a parameter of a device on the track'
+                );
+            }
+            const followsAnotherLane = (context.automationLanes ?? []).some(
+                (lane) =>
+                    !lane.clipId &&
+                    lane.trackId === track.id &&
+                    lane.parameterId === parameterId &&
+                    lane.linkedLaneId !== undefined
+            );
+            if (followsAnotherLane) {
+                return rejection(index, call.name, 'Expected a lane that holds its own points, not a linked follower');
+            }
+            const statesDecibels = statedNumbers.valueDb !== undefined || statedNumbers.deltaDb !== undefined;
+            if (statesDecibels && !acceptsDecibels(context, track.id, parameterId)) {
+                return rejection(
+                    index,
+                    call.name,
+                    "Expected a target in the lane's own units: decibels describe only a gain or send level"
+                );
+            }
+            return {
+                type: 'automateParameterRange',
+                payload: { trackId: track.id, parameterId, range, ...statedNumbers },
             };
         },
     },

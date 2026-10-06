@@ -29,6 +29,7 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
