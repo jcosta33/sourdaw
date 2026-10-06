@@ -145,7 +145,31 @@ describe('versionedCommandArgumentKeys — dense array admission (#4938)', () =>
         ).toBe(true);
     });
 
-    it('refuses a time-signature tuple carrying a hole', () => {
+    // The outer chunk array is dense, so the matchesSchema array branch passes
+    // it; the hole inside the nested json value is refused only by isJsonSafe's
+    // own denseness gate.
+    it('refuses a device state whose json-safe payload nests an array carrying a hole', () => {
+        const inner: unknown[] = [1];
+        inner[2] = 3;
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk: [inner] } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk: [[1, 2, 3]] } },
+            })
+        ).toBe(true);
+    });
+
+    // Pins the pre-existing indexed refusal: a tuple hole always reads
+    // undefined at its indexed position and no schema admits undefined. The
+    // emitted tuple-branch denseness gate additionally guards prototype-chain
+    // index masking, which every() alone would not.
+    it('refuses a time-signature tuple carrying a hole through the indexed position read', () => {
         const expectedTimeSignature: number[] = [3];
         expectedTimeSignature.length = 2;
         expect(
