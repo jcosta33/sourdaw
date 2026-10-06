@@ -12,7 +12,12 @@ import { EffectsSection } from '../EffectsSection';
 // section's paramId → onParam routing (the if/else chains) can be asserted
 // without rendering the real canvas visualisers.
 let distortionProps: { onParamChange?: (id: string, v: number) => void };
-let compressorProps: { onParamChange?: (id: string, v: number) => void };
+let compressorProps: {
+    onParamChange?: (id: string, v: number) => void;
+    threshold?: number;
+    ratio?: number;
+    makeup?: number;
+};
 let delayProps: { onParamChange?: (id: string, v: number) => void };
 let eqProps: { onParamChange?: (id: string, v: number) => void };
 
@@ -278,6 +283,33 @@ describe('EffectsSection', () => {
             const calls = onParam.mock.calls.length;
             compressorProps.onParamChange!('comp-unknown', 1);
             expect(onParam.mock.calls.length).toBe(calls);
+        });
+    });
+
+    describe('compressor visualizer auto-makeup law', () => {
+        /// The engine compressor boosts its output by
+        /// makeup = (1 − 1/ratio)·(−threshold)/2 for ratio > 1
+        /// (crates/daw-dsp/src/fermenter/effects.rs). The curve must be fed
+        /// that same amount or it shows a makeup=0 gain law the engine no
+        /// longer applies (#4865).
+        it('feeds the curve the engine auto-makeup at the defaults (−20 dB, 4:1 → +7.5 dB)', () => {
+            renderSection();
+            fireEvent.click(screen.getByText('Comp'));
+            expect(compressorProps.threshold).toBe(F.compThreshold);
+            expect(compressorProps.ratio).toBe(F.compRatio);
+            expect(compressorProps.makeup).toBeCloseTo(7.5, 10);
+        });
+
+        it('feeds the curve the engine auto-makeup at the extremes (−60 dB, 20:1 → +28.5 dB)', () => {
+            renderSection({ compThreshold: -60, compRatio: 20 });
+            fireEvent.click(screen.getByText('Comp'));
+            expect(compressorProps.makeup).toBeCloseTo(28.5, 10);
+        });
+
+        it('feeds the curve zero makeup at 1:1, where the engine applies none', () => {
+            renderSection({ compRatio: 1 });
+            fireEvent.click(screen.getByText('Comp'));
+            expect(compressorProps.makeup).toBe(0);
         });
     });
 
