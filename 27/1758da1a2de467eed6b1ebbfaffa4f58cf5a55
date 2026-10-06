@@ -1,0 +1,23 @@
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_606d2f55b3e24b 10
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_c5dfc50345117d 273
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_4f5aa3043381fa 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "271758da1a2de467eed6b1ebbfaffa4f58cf5a55",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
