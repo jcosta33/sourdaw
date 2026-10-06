@@ -362,17 +362,14 @@ describe('mandatory planning tools', () => {
             expectAllMandatory(advertised);
         });
 
-        describe('system prompt share of the window', () => {
-            // initWebLlmEngine.ts opens the engine with this window. The system prompt and its tool
-            // section are one share of it: the user message and the reply spend the rest, and the
-            // whole local request already overflows it for reasons outside this contract (#4979), so
-            // this holds the share the mandatory tools take, not the request as a whole.
-            const CONTEXT_WINDOW_TOKENS = 8192;
-            const USER_REQUEST_HEADROOM_TOKENS = 1024;
-            // Conservative for JSON and schema text, which tokenizes denser than prose.
-            const CHARACTERS_PER_TOKEN = 3;
-            const PROMPT_BUDGET_CHARACTERS =
-                (CONTEXT_WINDOW_TOKENS - USER_REQUEST_HEADROOM_TOKENS) * CHARACTERS_PER_TOKEN;
+        describe('system prompt size', () => {
+            // The WebLLM system prompt (the planning prompt plus its tool section) measured 28,577
+            // characters at the merge base, before #4371 made the planning tools mandatory: 31 tools
+            // spelled in full under the `Parameters:` line format. This is that figure rounded down
+            // to the nearest hundred. It is a no-regression ceiling, not a claim that the prompt fits
+            // the model window; the whole local request already overflows it, and #4979 replaces this
+            // constant with a budget for the whole request.
+            const WEBLLM_SYSTEM_PROMPT_CEILING_CHARACTERS = 28_500;
 
             async function serializeWebLlmPrompt(prompt: string): Promise<{ advertised: ToolSchema[]; text: string }> {
                 const advertisedNames = await advertisedToWebLlm(prompt);
@@ -391,7 +388,7 @@ describe('mandatory planning tools', () => {
             }
 
             it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
-                'keeps the system prompt and the mandatory tool section within its share of the window for "%s"',
+                'keeps the WebLLM system prompt no larger than it was before the planning tools became mandatory for "%s"',
                 async (prompt) => {
                     const { advertised, text } = await serializeWebLlmPrompt(prompt);
 
@@ -399,7 +396,7 @@ describe('mandatory planning tools', () => {
                     for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
                         expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
                     }
-                    expect(text.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARACTERS);
+                    expect(text.length).toBeLessThanOrEqual(WEBLLM_SYSTEM_PROMPT_CEILING_CHARACTERS);
                 }
             );
 

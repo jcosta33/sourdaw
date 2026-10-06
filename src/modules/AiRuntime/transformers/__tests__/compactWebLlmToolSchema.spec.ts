@@ -1,8 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
+import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
+import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+
+type SchemaPath = readonly (string | number)[];
+
+type Fact = {
+    keyword: string;
+    path: SchemaPath;
+    value: unknown;
+};
+
+/** Every keyword that decides which values a schema admits, other than `type`, which `isImpliedType` may drop. */
+const VALIDITY_KEYWORDS = [
+    'additionalProperties',
+    'minItems',
+    'maxItems',
+    'minLength',
+    'maxLength',
+    'uniqueItems',
+    'pattern',
+    'format',
+    'minimum',
+    'maximum',
+    'exclusiveMinimum',
+    'exclusiveMaximum',
+    'multipleOf',
+    'enum',
+    'const',
+    'required',
+] as const;
+
+const COMBINATORS = ['anyOf', 'oneOf', 'allOf'] as const;
+
+const SELECTOR_PATH = ['properties', 'list', 'properties', 'items', 'items', 'properties', 'selector'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function planningTool(name: string): ToolSchema {
     const tool = getPlanningProviderToolSchemas().find((schema) => schema.function.name === name);
@@ -12,25 +51,29 @@ function planningTool(name: string): ToolSchema {
     return tool;
 }
 
-type Essential = {
-    keyword: 'required' | 'enum' | 'const' | 'combinator';
-    path: readonly (string | number)[];
-    value: unknown;
-};
-
-const COMBINATORS = ['anyOf', 'oneOf', 'allOf'] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+function compactedParameters(name: string): Record<string, unknown> {
+    const parameters = compactWebLlmToolSchema(planningTool(name)).function.parameters;
+    if (parameters === undefined) {
+        throw new Error(`${name} has no parameters`);
+    }
+    return parameters;
 }
 
-function at(root: unknown, path: readonly (string | number)[]): unknown {
-    let current = root;
+/** A node the prompt replaced with `{ "$ref": "#/$defs/dN" }` stands for the definition it names. */
+function dereference(node: unknown, root: unknown): unknown {
+    if (!isRecord(node) || typeof node.$ref !== 'string' || !isRecord(root) || !isRecord(root.$defs)) {
+        return node;
+    }
+    return dereference(root.$defs[node.$ref.split('/').at(-1) ?? ''], root);
+}
+
+function at(root: unknown, path: SchemaPath): unknown {
+    let current = dereference(root, root);
     for (const step of path) {
         if (Array.isArray(current) && typeof step === 'number') {
-            current = current[step];
+            current = dereference(current[step], root);
         } else if (isRecord(current) && typeof step === 'string') {
-            current = current[step];
+            current = dereference(current[step], root);
         } else {
             return undefined;
         }
@@ -38,58 +81,95 @@ function at(root: unknown, path: readonly (string | number)[]): unknown {
     return current;
 }
 
+/** The prompt text with each reference replaced by its definition, the schema a reader of the prompt holds. */
+function inlineDefinitions(node: unknown, root: unknown): unknown {
+    if (Array.isArray(node)) {
+        return node.map((child) => inlineDefinitions(child, root));
+    }
+    if (!isRecord(node)) {
+        return node;
+    }
+    if (typeof node.$ref === 'string') {
+        return inlineDefinitions(dereference(node, root), root);
+    }
+    return Object.fromEntries(
+        Object.entries(node)
+            .filter(([keyword]) => keyword !== '$defs')
+            .map(([keyword, child]) => [keyword, inlineDefinitions(child, root)])
+    );
+}
+
 /** The properties the prompt replaces with a pointer to the schema that owns them. */
-function isPointedAt(toolName: string, path: readonly (string | number)[]): boolean {
+function isPointedAt(toolName: string, path: SchemaPath): boolean {
     return toolName === 'analysis.measure' && path[0] === 'properties' && path[1] === 'proposal';
 }
 
-/** Every required list, enum, const and combinator in a full schema, with where it sits. */
-function collectEssentials(node: unknown, path: (string | number)[], toolName: string): Essential[] {
+/** Every validity keyword and combinator of a full schema, with where it sits. */
+function collectFacts(node: unknown, path: SchemaPath, toolName: string): Fact[] {
     if (!isRecord(node) || isPointedAt(toolName, path)) {
         return [];
     }
-    const essentials: Essential[] = [];
-    if (Array.isArray(node.required)) {
-        essentials.push({ keyword: 'required', path, value: node.required });
-    }
-    if (node.enum !== undefined) {
-        essentials.push({ keyword: 'enum', path, value: node.enum });
-    }
-    if (node.const !== undefined) {
-        essentials.push({ keyword: 'const', path, value: node.const });
+    const facts: Fact[] = [];
+    for (const keyword of VALIDITY_KEYWORDS) {
+        if (Object.hasOwn(node, keyword)) {
+            facts.push({ keyword, path, value: node[keyword] });
+        }
     }
     for (const combinator of COMBINATORS) {
         const branches = node[combinator];
         if (Array.isArray(branches)) {
-            essentials.push({ keyword: 'combinator', path: [...path, combinator], value: branches.length });
+            facts.push({ keyword: combinator, path, value: branches.length });
             for (const [index, branch] of branches.entries()) {
-                essentials.push(...collectEssentials(branch, [...path, combinator, index], toolName));
+                facts.push(...collectFacts(branch, [...path, combinator, index], toolName));
             }
         }
     }
     if (isRecord(node.properties)) {
         for (const [name, property] of Object.entries(node.properties)) {
-            essentials.push(...collectEssentials(property, [...path, 'properties', name], toolName));
+            facts.push(...collectFacts(property, [...path, 'properties', name], toolName));
         }
     }
-    essentials.push(...collectEssentials(node.items, [...path, 'items'], toolName));
-    return essentials;
+    facts.push(...collectFacts(node.items, [...path, 'items'], toolName));
+    return facts;
 }
 
-function survives(compacted: unknown, essential: Essential): boolean {
-    if (essential.keyword === 'combinator') {
-        const branches = at(compacted, essential.path);
-        return Array.isArray(branches) && branches.length === essential.value;
+function survives(compacted: unknown, fact: Fact): boolean {
+    const node = at(compacted, fact.path);
+    if (!isRecord(node)) {
+        return false;
     }
-    const found = at(compacted, [...essential.path, essential.keyword]);
-    if (essential.keyword !== 'required') {
-        return JSON.stringify(found) === JSON.stringify(essential.value);
+    if ((COMBINATORS as readonly string[]).includes(fact.keyword)) {
+        const branches = node[fact.keyword];
+        return Array.isArray(branches) && branches.length === fact.value;
     }
-    const names = Array.isArray(essential.value) ? essential.value : [];
-    return (
-        JSON.stringify(found) === JSON.stringify(essential.value) &&
-        names.every((name) => at(compacted, [...essential.path, 'properties', String(name)]) !== undefined)
-    );
+    if (JSON.stringify(node[fact.keyword]) !== JSON.stringify(fact.value)) {
+        return false;
+    }
+    if (fact.keyword !== 'required') {
+        return true;
+    }
+    const names = Array.isArray(fact.value) ? fact.value : [];
+    return names.every((name) => at(compacted, [...fact.path, 'properties', String(name)]) !== undefined);
+}
+
+function maxItemsOf(toolName: string, property: string): number {
+    const maxItems = at(planningTool(toolName).function.parameters, ['properties', property, 'maxItems']);
+    if (typeof maxItems !== 'number') {
+        throw new TypeError(`${toolName}.${property} has no maxItems`);
+    }
+    return maxItems;
+}
+
+function strings(count: number): string[] {
+    return Array.from({ length: count }, (_, index) => `item-${String(index)}`);
+}
+
+function projectQueryType(): string {
+    const type = at(planningTool('project.query').function.parameters, ['properties', 'type', 'enum', 0]);
+    if (typeof type !== 'string') {
+        throw new TypeError('project.query has no query type');
+    }
+    return type;
 }
 
 describe('compactWebLlmToolSchema', () => {
@@ -106,7 +186,27 @@ describe('compactWebLlmToolSchema', () => {
         expect(compacted.function.description).toBe('Does one thing.');
     });
 
-    it('keeps names, enums, required and numeric bounds, drops annotations, size bounds and implied types', () => {
+    it('caps a long first sentence at 120 characters', () => {
+        const compacted = compactWebLlmToolSchema({
+            type: 'function',
+            function: { name: 'demo', description: `${'word '.repeat(60)}ends here.`, parameters: {} },
+        });
+
+        expect(compacted.function.description).toHaveLength(120);
+        expect(compacted.function.description?.endsWith('…')).toBe(true);
+    });
+
+    it('describes every advertised planning tool within the cap, but for the manifest sentence that says how to call it', () => {
+        for (const tool of getPlanningProviderToolSchemas()) {
+            const description = compactWebLlmToolSchema(tool).function.description;
+            expect(description, `${tool.function.name} keeps a description`).toBeDefined();
+            if (tool.function.name !== 'device.factory-manifest.read') {
+                expect(description?.length, `${tool.function.name} stays within the cap`).toBeLessThanOrEqual(120);
+            }
+        }
+    });
+
+    it('keeps names, enums, required and every validity keyword, and drops annotations and implied types', () => {
         const compacted = compactWebLlmToolSchema({
             type: 'function',
             function: {
@@ -115,8 +215,14 @@ describe('compactWebLlmToolSchema', () => {
                     type: 'object',
                     properties: {
                         mode: { type: 'string', enum: ['a', 'b'], description: 'Which one.', maxLength: 8 },
-                        gainDb: { type: 'number', minimum: -60, maximum: 6 },
-                        ids: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string', minLength: 1 } },
+                        gainDb: { type: 'number', minimum: -60, maximum: 6, multipleOf: 0.5, default: 0 },
+                        ids: {
+                            type: 'array',
+                            minItems: 1,
+                            maxItems: 4,
+                            uniqueItems: true,
+                            items: { type: 'string', minLength: 1, pattern: '^[a-z]+$', title: 'An id' },
+                        },
                     },
                     required: ['mode'],
                     additionalProperties: false,
@@ -127,11 +233,17 @@ describe('compactWebLlmToolSchema', () => {
         expect(compacted.function.parameters).toEqual({
             type: 'object',
             properties: {
-                mode: { enum: ['a', 'b'] },
-                gainDb: { type: 'number', minimum: -60, maximum: 6 },
-                ids: { items: { type: 'string' } },
+                mode: { enum: ['a', 'b'], maxLength: 8 },
+                gainDb: { type: 'number', minimum: -60, maximum: 6, multipleOf: 0.5 },
+                ids: {
+                    minItems: 1,
+                    maxItems: 4,
+                    uniqueItems: true,
+                    items: { type: 'string', minLength: 1, pattern: '^[a-z]+$' },
+                },
             },
             required: ['mode'],
+            additionalProperties: false,
         });
     });
 
@@ -148,45 +260,110 @@ describe('compactWebLlmToolSchema', () => {
         expect(JSON.stringify(compacted.function.parameters)).not.toContain('leaf');
     });
 
-    // Red when the prompt depth falls short of the deepest required shape: the selector then loses
-    // `quantity.unit`, and the application refuses a selector written without it.
-    it('keeps every required property, required list, enum, const and combinator branch of every planning tool', () => {
+    // Red when the prompt depth falls short of the deepest required shape, or when any keyword that
+    // decides which values validate is dropped: the reply is checked against the full schema, so a
+    // call the compacted text admits fails the whole provider attempt with no receipt to the model.
+    it('keeps every validity keyword, required list, enum, const and combinator of every planning tool', () => {
         const dropped: string[] = [];
         let checked = 0;
         for (const tool of getPlanningProviderToolSchemas()) {
             const compacted = compactWebLlmToolSchema(tool).function.parameters;
-            for (const essential of collectEssentials(tool.function.parameters, [], tool.function.name)) {
+            for (const fact of collectFacts(tool.function.parameters, [], tool.function.name)) {
                 checked += 1;
-                if (!survives(compacted, essential)) {
-                    dropped.push(`${tool.function.name}: ${essential.keyword} at ${essential.path.join('.')}`);
+                if (!survives(compacted, fact)) {
+                    dropped.push(`${tool.function.name}: ${fact.keyword} at ${fact.path.join('.')}`);
                 }
             }
         }
 
-        expect(checked).toBeGreaterThan(80);
+        expect(checked).toBeGreaterThan(300);
         expect(dropped).toEqual([]);
     });
 
-    it('keeps the selector quantity unit that a proposal list item is refused without', () => {
-        const compacted = compactWebLlmToolSchema(planningTool('command.batch.propose'));
+    it('defines a repeated sub-schema once and shows a reference at each use', () => {
+        const compacted = compactedParameters('command.batch.propose');
+        const text = JSON.stringify(compacted);
 
-        expect(compacted.function.parameters).toHaveProperty(
-            [
-                'properties',
-                'list',
-                'properties',
-                'items',
-                'items',
-                'properties',
-                'selector',
-                'properties',
-                'quantity',
-                'properties',
-                'unit',
-                'enum',
-            ],
-            ['targets']
+        expect(compacted).toHaveProperty(['$defs']);
+        expect(text).toContain('"$ref":"#/$defs/');
+        // The predicate sits under both `all` and `any` in the full schema and is spelled once here.
+        expect(text.split('"hasDeviceType"')).toHaveLength(2);
+    });
+
+    it('keeps the selector quantity unit that a proposal list item is refused without', () => {
+        expect(
+            at(compactedParameters('command.batch.propose'), [...SELECTOR_PATH, 'properties', 'quantity'])
+        ).toMatchObject({ properties: { unit: { enum: ['targets'] } }, required: ['unit'] });
+    });
+
+    it('states the exactly-one rules on the quantity and predicate nodes', () => {
+        const parameters = compactedParameters('command.batch.propose');
+        const matchPath = [...SELECTOR_PATH, 'properties', 'match', 'properties'];
+
+        expect(at(parameters, [...SELECTOR_PATH, 'properties', 'quantity', 'description'])).toBe(
+            'Name exactly one of exactly or maximum.'
         );
+        expect(at(parameters, [...matchPath, 'all', 'items', 'description'])).toBe('Name exactly one field.');
+        expect(at(parameters, [...matchPath, 'any', 'items', 'description'])).toBe('Name exactly one field.');
+    });
+
+    describe('refuses what the full schema refuses', () => {
+        const declineQuestions = COMMAND_BATCH_DECLINE_MAX_QUESTIONS;
+        const cases = [
+            {
+                label: 'recipe.discover with one descriptor more than it takes',
+                tool: 'recipe.discover',
+                refused: { descriptors: strings(maxItemsOf('recipe.discover', 'descriptors') + 1) },
+                admitted: { descriptors: strings(maxItemsOf('recipe.discover', 'descriptors')) },
+            },
+            {
+                label: 'project.query with a filter it does not list',
+                tool: 'project.query',
+                refused: { type: projectQueryType(), filters: { exactName: 'Kick' } },
+                admitted: { type: projectQueryType(), filters: {} },
+            },
+            {
+                label: 'command.batch.decline clarify with one question more than it takes',
+                tool: 'command.batch.decline',
+                refused: { kind: 'clarify', reason: 'Which kick?', questions: strings(declineQuestions + 1) },
+                admitted: { kind: 'clarify', reason: 'Which kick?', questions: strings(declineQuestions) },
+            },
+            {
+                label: 'device.factory-manifest.read with one type more than it takes',
+                tool: 'device.factory-manifest.read',
+                refused: { types: strings(maxItemsOf('device.factory-manifest.read', 'types') + 1) },
+                admitted: { types: strings(maxItemsOf('device.factory-manifest.read', 'types')) },
+            },
+            {
+                label: 'device.factory-manifest.read with no types listed',
+                tool: 'device.factory-manifest.read',
+                refused: { types: [] },
+                admitted: {},
+            },
+            {
+                label: 'analysis.measure with one scope id more than it takes',
+                tool: 'analysis.measure',
+                refused: {
+                    scope: { kind: 'tracks', ids: strings(ANALYSIS_MEASURE_MAX_TARGETS + 1) },
+                    range: { startBeat: 0, endBeat: 4 },
+                },
+                admitted: {
+                    scope: { kind: 'tracks', ids: strings(ANALYSIS_MEASURE_MAX_TARGETS) },
+                    range: { startBeat: 0, endBeat: 4 },
+                },
+            },
+        ];
+
+        it.each(cases)('$label', ({ tool, refused, admitted }) => {
+            const full = planningTool(tool).function.parameters;
+            const compacted = compactedParameters(tool);
+            const compactedSchema = inlineDefinitions(compacted, compacted);
+
+            expect(matchesJsonSchema(refused, full)).toBe(false);
+            expect(matchesJsonSchema(refused, compactedSchema)).toBe(false);
+            expect(matchesJsonSchema(admitted, full)).toBe(true);
+            expect(matchesJsonSchema(admitted, compactedSchema)).toBe(true);
+        });
     });
 
     it('does not mutate the schema the provider request validates against', () => {
@@ -209,7 +386,13 @@ describe('compactWebLlmToolSchema', () => {
         expect(text).not.toContain('schemaVersion');
     });
 
-    it('keeps the transform grammar its document description carries, without the worked example', () => {
+    it('keeps the sentence that says a manifest call without types lists every device type', () => {
+        const compacted = compactWebLlmToolSchema(planningTool('device.factory-manifest.read'));
+
+        expect(compacted.function.description).toContain('Call with no arguments to list every available device type');
+    });
+
+    it('keeps the transform grammar its document description carries, without the worked example or limits', () => {
         const original = planningTool('transform.compile');
         const compacted = compactWebLlmToolSchema(original);
 
@@ -219,6 +402,7 @@ describe('compactWebLlmToolSchema', () => {
         expect(compactedText).toContain('Required document keys');
         expect(compactedText).toContain('Step:');
         expect(compactedText).not.toContain('Valid complete document JSON text');
+        expect(compactedText).not.toContain('Limits:');
         expect(compactedText.length).toBeLessThan(originalText.length);
     });
 });

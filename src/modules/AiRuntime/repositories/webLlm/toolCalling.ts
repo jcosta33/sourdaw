@@ -29,8 +29,9 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 .map(compactWebLlmToolSchema)
                 .map((time) => {
                     const params = time.function.parameters;
-                    const paramStr = params ? ` Parameters: ${JSON.stringify(params)}` : '';
-                    return `- ${time.function.name}: ${time.function.description ?? ''}${paramStr}`;
+                    const paramStr = params ? ` ${JSON.stringify(params)}` : '';
+                    const description = time.function.description === undefined ? '' : `: ${time.function.description}`;
+                    return `- ${time.function.name}${description}${paramStr}`;
                 })
                 .join('\n');
 
