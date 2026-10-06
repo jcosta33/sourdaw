@@ -1,0 +1,45 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_2bfd55a4393d7c::t_84548312f356d8 156
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_2bfd55a4393d7c::t_ab2879c25fe3e4 130
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_2bfd55a4393d7c::t_f15cef0fd80cc7 157
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_2bfd55a4393d7c::t_dd77fe0279f4d5 201
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_2bfd55a4393d7c::t_cb75f36a0cf8b8 162
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_2bfd55a4393d7c::t_7a76271b3e1aa1 125
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_2bfd55a4393d7c::t_62e4dc2e281c9b 157
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_2bfd55a4393d7c::t_c35abfd4bc77c6 171
+src/modules/AudioEngine/services/__tests__/deviceResolution.spec.ts
+  s_2bfd55a4393d7c::t_1df773bc2fc19f 23-24
+  s_2bfd55a4393d7c::t_0f97570bc53238 20-22
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_2bfd55a4393d7c::t_34de3d5e36c135 80
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsDrumKitParity.spec.ts
+  s_2bfd55a4393d7c::t_f07de97299ebcb 64
+  s_2bfd55a4393d7c::t_938261935be886 143-144,146-151,153-162,164-165
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_2bfd55a4393d7c::t_966c9b6e91f95a 140
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_2bfd55a4393d7c::t_9dc2200631d4a0 3-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d151e86ebfd2c54aaa506d80e97fee057231dffc",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
