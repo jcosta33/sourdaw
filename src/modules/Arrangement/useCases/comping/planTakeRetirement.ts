@@ -22,8 +22,13 @@ export type TakeRetirementPlan = {
  *
  * Returns null when the store is absent, no clip id was given, or no take
  * names a retiring clip.
+ * A joined re-key transition can preserve its captured identities here so
+ * that it remains their sole owner, including when they are a lane's last takes.
  */
-export function planTakeRetirement(clipIds: readonly string[]): TakeRetirementPlan | null {
+export function planTakeRetirement(
+    clipIds: readonly string[],
+    preservedTakeIds?: ReadonlySet<string>
+): TakeRetirementPlan | null {
     const state = takeLaneStore.value;
     if (!state || clipIds.length === 0) {
         return null;
@@ -37,7 +42,9 @@ export function planTakeRetirement(clipIds: readonly string[]): TakeRetirementPl
     for (let index = 0; index < state.lanes.length; index += 1) {
         const lane = state.lanes[index]!;
         const removedTakeIds = new Set(
-            lane.takes.filter((take) => retiringClipIds.has(take.clipId)).map((take) => take.id)
+            lane.takes
+                .filter((take) => retiringClipIds.has(take.clipId) && !preservedTakeIds?.has(take.id))
+                .map((take) => take.id)
         );
         if (removedTakeIds.size === 0) {
             nextLanes.push(lane);

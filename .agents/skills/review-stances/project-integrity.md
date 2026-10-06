@@ -149,3 +149,17 @@ Drive follower-point refusal through both `executeAppAction` and its supported s
 Require the authoritative document, Automation projection, links, samples, and undo history to stay unchanged after
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
+
+## Lesson from the PR #645 selected-range undo escape
+
+PR #645 made selected-range deletion retain prepared publication handles for durable Undo. Ordinary CRDT settlement
+replaced the track projection with equal values and a new object reference, so the retained handle refused Undo before
+restoring clips or takes. Retained evidence of a real post-settlement Undo probe is missing; historical stance dispatch
+is unverified.
+
+Drive the selected UI callback through real Command history after flushing CRDT writes, with no peer edit first. Require
+exact raw/projected clips, takes, comp coverage and history through Undo and Redo. Repeat with a surviving peer take's
+selection and comp change, then change canonical clip geometry and require zero-write refusal with history pending.
+Prepare semantic restoration at durable replay time while retaining exact-reference guards inside one synchronous
+publication and compensation. For disappearing fragments, also start with no captured takes, add peer facets afterward,
+and prove only those fragment-owned facets retire; induce a later publication failure and require their exact recovery.
