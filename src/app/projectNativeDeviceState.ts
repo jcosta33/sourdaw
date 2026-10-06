@@ -11,6 +11,12 @@ export type ProjectNativeDeviceStateInput = {
     deviceType: string;
     /** Project state that configures the device beyond `parameterValues`. */
     deviceState: DeviceStateChunk | undefined;
+    /**
+     * The device belongs to a supplied document rather than the live project:
+     * project it as a freshly loaded document would, from `deviceState`
+     * alone, whatever live per-device state shares its id.
+     */
+    projectOnly?: boolean;
 };
 
 /**
@@ -26,6 +32,7 @@ export type ProjectNativeDeviceStateInput = {
 type ProjectDeviceState = (input: {
     deviceId: string;
     deviceState: DeviceStateChunk | undefined;
+    projectOnly: boolean;
 }) => Readonly<Record<string, number>> | null;
 
 /**
@@ -92,11 +99,16 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // `set_param` name here because the native body has no message port — the
     // engine's dedicated `set_temperament` door is the live handle's
     // (`GrandBouleEngineHandle`), not a body-build record's.
-    'grand-boule': ({ deviceId, deviceState }) => {
+    //
+    // A supplied document (`projectOnly`) takes its voicing from its own chunk
+    // and never the live store, which may belong to the live device it
+    // rewrote; its calibration, never project state, is the live store's or a
+    // fresh store's.
+    'grand-boule': ({ deviceId, deviceState, projectOnly }) => {
         if (deviceState === undefined) {
-            return projectGrandBouleCalibrationToNativePatch({ deviceId });
+            return projectGrandBouleCalibrationToNativePatch({ deviceId, projectOnly });
         }
-        const { calibration, voicing } = captureOfflineGrandBoule({ deviceId, deviceState });
+        const { calibration, voicing } = captureOfflineGrandBoule({ deviceId, deviceState, projectOnly });
         const patch: Record<string, number> = {
             temperament: voicing.temperament,
             hammer_hardness: voicing.parameters.hammerHardness,
@@ -158,5 +170,9 @@ export function projectNativeDeviceState(
         return null;
     }
 
-    return project({ deviceId: input.deviceId, deviceState: input.deviceState });
+    return project({
+        deviceId: input.deviceId,
+        deviceState: input.deviceState,
+        projectOnly: input.projectOnly === true,
+    });
 }

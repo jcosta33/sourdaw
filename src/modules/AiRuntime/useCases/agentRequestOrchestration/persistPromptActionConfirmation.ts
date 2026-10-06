@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
+import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
     getPendingActionConfirmation,
@@ -11,6 +12,7 @@ import {
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
@@ -31,6 +33,8 @@ type PersistPromptActionConfirmationInput = {
     protectedUnchanged: NonNullable<ConfirmationProposal['protectedUnchanged']>;
     matchSelectorPredicates?: ConfirmationProposal['matchSelectorPredicates'];
     adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
+    /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
+    measuredPreview?: MeasuredPreview;
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -111,6 +115,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             protectedUnchanged: input.protectedUnchanged,
             matchSelectorPredicates: input.matchSelectorPredicates,
             adoptedRecipes: input.adoptedRecipes,
+            measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

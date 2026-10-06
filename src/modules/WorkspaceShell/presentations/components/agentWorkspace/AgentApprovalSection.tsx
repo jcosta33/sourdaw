@@ -19,6 +19,21 @@ type ApprovalDestructiveChange = {
     recovery: string;
 };
 
+type MeasuredFigure = { value: number; unit: string } | null;
+
+type MeasuredPreviewTarget = {
+    targetId: string;
+    targetKind: string;
+    targetName: string | null;
+    metrics: readonly {
+        metricId: string;
+        baseline: MeasuredFigure;
+        preview: MeasuredFigure;
+        delta: { value: number; unit: string } | null;
+        incomparableReason: string | null;
+    }[];
+};
+
 /** The approval-projection fields this section renders, as a leaf-owned structural shape. */
 type AgentApprovalView = {
     confirmationId: string;
@@ -33,6 +48,7 @@ type AgentApprovalView = {
     };
     risk: { level: string; decision: string; reasons: readonly string[]; requiredTrustMode: string } | null;
     recipes: readonly { recipeId: string; title: string; targetId: string; targetName: string | null }[];
+    measuredPreview: { targets: readonly MeasuredPreviewTarget[] } | null;
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: readonly ApprovalDestructiveChange[];
     partialAcceptance: { available: boolean; reason: string | null };
@@ -174,6 +190,47 @@ function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | nu
     );
 }
 
+function formatFigure(figure: MeasuredFigure): string {
+    return figure === null ? 'n/a' : `${figure.value.toFixed(2)} ${figure.unit}`;
+}
+
+function formatMeasuredMetric(metric: MeasuredPreviewTarget['metrics'][number]): string {
+    if (metric.delta === null) {
+        return `${metric.metricId}: not comparable (${metric.incomparableReason ?? 'unavailable'})`;
+    }
+    const sign = metric.delta.value > 0 ? '+' : '';
+    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${sign}${metric.delta.value.toFixed(2)} ${metric.delta.unit})`;
+}
+
+function measuredTargetName(target: MeasuredPreviewTarget): string {
+    if (target.targetName !== null) {
+        return target.targetName;
+    }
+    return target.targetKind === 'master' ? 'Master' : target.targetId;
+}
+
+/** Each measured target's figures before and after the proposal, with the signed change and its unit. */
+function renderMeasuredPreview(measuredPreview: AgentApprovalView['measuredPreview']): ReactElement | null {
+    if (measuredPreview === null) {
+        return null;
+    }
+    return (
+        <Stack gap={0.5} aria-label="Measured preview">
+            {measuredPreview.targets.map((target) => (
+                <ul
+                    key={target.targetId}
+                    aria-label={`Measured preview of ${measuredTargetName(target)}`}
+                    className="flex flex-col gap-0.5 text-foreground"
+                >
+                    {target.metrics.map((metric) => (
+                        <li key={metric.metricId}>{formatMeasuredMetric(metric)}</li>
+                    ))}
+                </ul>
+            ))}
+        </Stack>
+    );
+}
+
 function renderRisk(risk: AgentApprovalView['risk']): ReactElement {
     if (risk === null) {
         return <p className="text-muted-foreground">Risk: unclassified</p>;
@@ -293,6 +350,7 @@ const ApprovalCard = ({
                 ))}
             </ul>
             {renderRecipes(view.recipes)}
+            {renderMeasuredPreview(view.measuredPreview)}
             {renderScope(view.scope)}
             {renderRisk(view.risk)}
             {renderIntentGroups(view, excludedGroupIds, onToggleGroup)}

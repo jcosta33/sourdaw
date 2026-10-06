@@ -9,6 +9,7 @@ export {
     LEGACY_SHARED_RACK_DEVICE_ID,
 } from './yeastStore';
 export { setYeastEventBus } from './yeastEventBus';
+export { holdsKeyedYeastRack, holdsLegacyYeastRack, readStoredYeastRack } from './yeastAutomergeStorage';
 // `YeastProcessorType` is re-exported deliberately: `YeastState.processors[].type`
 // carries it, so the store's public contract names the processor-kind union
 // explicitly rather than leaking the underlying use-case type transitively.

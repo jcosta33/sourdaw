@@ -56,6 +56,7 @@ export function captureOfflineDeviceSetup(
             const input: Parameters<typeof captureOfflineGrandBoule>[0] = { deviceId, deviceState };
             if (source) {
                 input.calibration = source.calibration;
+                input.projectOnly = true;
             }
             return { kind: 'grand-boule', value: captureOfflineGrandBoule(input) };
         }

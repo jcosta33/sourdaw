@@ -9,10 +9,20 @@ import { readLoadedExternalInstanceIds } from '../livePlayback/readLoadedExterna
 
 import { type OfflineRenderRuntimeSource } from './OfflineRenderSource';
 
+type CaptureOfflineRenderRuntimeOptions = {
+    /**
+     * The tracks are a supplied document's, not the live project's: per-device
+     * state is projected from each device's own record, as a freshly loaded
+     * document would project it.
+     */
+    projectOnly?: boolean;
+};
+
 /** Capture runtime facts for the supplied document; PCM is copied when constructing the render input. */
 export function captureOfflineRenderRuntimeInput(
     tracks: readonly Track[],
-    sampleRate: number
+    sampleRate: number,
+    { projectOnly = false }: CaptureOfflineRenderRuntimeOptions = {}
 ): OfflineRenderRuntimeSource {
     const sink = getAudioDeviceRuntimeSink();
     const deviceLatencyMs = new Map<string, number>();
@@ -28,6 +38,7 @@ export function captureOfflineRenderRuntimeInput(
                             deviceId: device.id,
                             deviceType: device.type,
                             deviceState: device.deviceState,
+                            projectOnly,
                         })
                     )
                 );
