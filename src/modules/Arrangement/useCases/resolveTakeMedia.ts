@@ -14,7 +14,10 @@ import { clipMediaOriginBeat } from './clipMediaOriginBeat';
  * plays the clip's media as the clip places it.
  *
  * `earliestBeat` is the first beat the take can sound. A pass cannot sound
- * before its media exists; any other take cannot sound before its clip.
+ * before its media exists or before its own start, which a start trim of the
+ * clip moves later (a pass that began before the clip, because recording started
+ * inside the loop, keeps that start until then); any other take cannot sound
+ * before its clip.
  * `sourceStartBeat` carries the loop-occurrence count for probability rolls.
  */
 export function resolveTakeMedia(
@@ -29,5 +32,5 @@ export function resolveTakeMedia(
         };
     }
     const originBeat = take.startBeat - take.sourceOffsetBeats;
-    return { originBeat, earliestBeat: originBeat, sourceStartBeat: originBeat };
+    return { originBeat, earliestBeat: Math.max(originBeat, take.startBeat), sourceStartBeat: originBeat };
 }

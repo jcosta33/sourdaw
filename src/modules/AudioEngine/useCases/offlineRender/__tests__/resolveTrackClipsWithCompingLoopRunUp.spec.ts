@@ -106,6 +106,18 @@ describe('resolveTrackClipsWithComping — loop takes of a recording that did no
         expect(bufferBeatAt(out, 15)).toBe(3);
     });
 
+    it('stays silent before the clip start for a pass whose start a trim moved later', () => {
+        // Loop [0,4) recorded from beat 0, then the clip start trimmed to beat 1:
+        // the trim left pass 1 starting at beat 1 with the media origin still at 0.
+        compPass([passTake('pass-1', 1, 4, 1)], 'pass-1', 0, 4);
+
+        const out = resolveTrackClipsWithComping('t1', [recording(1, 12, 1)]);
+
+        expect(bufferBeatAt(out, 0.5)).toBeNull();
+        expect(bufferBeatAt(out, 1)).toBe(1);
+        expect(bufferBeatAt(out, 3)).toBe(3);
+    });
+
     it('is unchanged when recording started exactly at the loop start', () => {
         const takes = [passTake('pass-1', 0, 4, 0), passTake('pass-2', 0, 4, 4)];
         compPass(takes, 'pass-2', 0, 4);

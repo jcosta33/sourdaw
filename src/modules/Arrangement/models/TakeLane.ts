@@ -86,6 +86,25 @@ export function rebaseTakeOntoMedia(take: Take, provisionalStartBeat: number, sh
     return { ...take, startBeat, sourceOffsetBeats: shiftBeats };
 }
 
+/**
+ * Hide a loop pass's material before `startBeat`, as trimming the start of the
+ * clip that holds it does. The pass begins at `startBeat` instead, and its
+ * offset deepens by the same distance, so the media it plays at every later
+ * beat is unchanged. A take without an offset plays the clip's own media, which
+ * the clip's start already bounds, so it is returned as it is.
+ */
+export function trimTakeStart(take: Take, startBeat: number): Take {
+    if (take.sourceOffsetBeats === undefined || take.startBeat >= startBeat) {
+        return take;
+    }
+    const trimmedStartBeat = Math.min(startBeat, take.endBeat);
+    return {
+        ...take,
+        startBeat: trimmedStartBeat,
+        sourceOffsetBeats: take.sourceOffsetBeats + (trimmedStartBeat - take.startBeat),
+    };
+}
+
 export function createTakeLane(trackId: string): TakeLane {
     return {
         id: `take-lane-${crypto.randomUUID()}`,

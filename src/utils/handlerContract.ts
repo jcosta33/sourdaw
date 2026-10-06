@@ -1385,6 +1385,17 @@ export type AppAction =
           };
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | {
+          /** Inverse of a `trimClipStart` that also moved loop-pass takes: trims the
+           *  clip back to `newStartBeat`, then returns each named take to the start
+           *  and media offset it held, in the one undo entry. */
+          type: 'restoreClipStartTrim';
+          payload: {
+              clipId: string;
+              newStartBeat: number;
+              takes: readonly { takeId: string; startBeat: number; sourceOffsetBeats: number }[];
+          };
+      }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
     | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
     | {

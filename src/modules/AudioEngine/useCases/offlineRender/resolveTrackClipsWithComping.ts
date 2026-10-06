@@ -40,7 +40,7 @@ function resolveTakeMedia(
         };
     }
     const originBeat = take.startBeat - take.sourceOffsetBeats;
-    return { originBeat, earliestBeat: originBeat, sourceStartBeat: originBeat };
+    return { originBeat, earliestBeat: Math.max(originBeat, take.startBeat), sourceStartBeat: originBeat };
 }
 
 /**
