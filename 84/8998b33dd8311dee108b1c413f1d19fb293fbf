@@ -1,0 +1,130 @@
+src/modules/AudioEngine/useCases/audioRecorder/deriveAutoInputMonitoring.ts
+  s_fd923bd45d1b20::t_65a2ddc8644315 1-24
+src/modules/AudioEngine/repositories/audioRecorder/isTrackInputMonitored.ts
+  s_fd923bd45d1b20::t_d0c13396973118 9
+  s_fd923bd45d1b20::t_aa6e6c76a17089 1-8,10
+src/modules/AudioEngine/useCases/audioRecorder/syncAutoInputMonitoring.ts
+  s_fd923bd45d1b20::t_a6b58b18746f6e 1-18
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_76e6edccd367e7::t_7b6209a073b49d 33
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_76e6edccd367e7::t_1042122d657828 31
+src/modules/Arrangement/useCases/__tests__/rearmInputMonitoring.spec.ts
+  s_1c08b47ac3792f::t_0f7046b1904e05 10,15,58-64
+src/modules/Arrangement/useCases/rearmInputMonitoring.ts
+  s_97ab82e0b4f10c::t_f7a5104a5ec176 1,18-22,26
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setInputMonitoring.spec.ts
+  s_1c08b47ac3792f::t_e5958a0ed262f4 18,30,75,78-80,84-89
+src/modules/Arrangement/useCases/setTrackGainPan/setInputMonitoring.ts
+  s_97ab82e0b4f10c::t_3985e445b51e86 1-5,23-24,27,29-30
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleInputMonitoring.spec.ts
+  s_1c08b47ac3792f::t_0e6ac775bdbacf 19,35,80,84-86,90-96
+src/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring.ts
+  s_97ab82e0b4f10c::t_92cbe23da72265 1-5,37-39,42,44-45
+src/modules/AudioEngine/AGENTS.md
+  s_97ab82e0b4f10c::t_0c8c9645948afc 11,42
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/deriveAutoInputMonitoring.spec.ts
+  s_97ab82e0b4f10c::t_c1555d9bf93eca 1-40
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_1c08b47ac3792f::t_c252736add14b7 87,92
+src/modules/AudioEngine/useCases/audioRecorder/startAudioRecording.ts
+  s_97ab82e0b4f10c::t_5edfe63ed16894 26-30,34-37
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_fd923bd45d1b20::t_ed0803f07883ec 234-238
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_fd923bd45d1b20::t_9cd8a2f291728d 18,36,102,216-217,226
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_fd923bd45d1b20::t_472c3a8975644f 42
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_97ab82e0b4f10c::t_cb3eea0f9f7dd4 9,39-40,51,67,79-80,128-131
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_fd923bd45d1b20::t_8387d3f68f337d 13
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_fd923bd45d1b20::t_c857cb3de291b8 160
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_fd923bd45d1b20::t_9db513013d692e 148
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/syncAutoInputMonitoring.spec.ts
+  s_fd923bd45d1b20::t_e0c7fe7e9e989c 1-246
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_fd923bd45d1b20::t_933ff845d9a42a 1-81
+src/modules/AudioEngine/useCases/index.ts
+  s_fd923bd45d1b20::t_ef5b19d93770e8 20-21
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fd923bd45d1b20::t_10fea3b1aeb887 244
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_fd923bd45d1b20::t_627abee2649d65 51
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fd923bd45d1b20::t_157c88ea3d6c21 42
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_fd923bd45d1b20::t_b72879b5457a17 43
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_fd923bd45d1b20::t_fdbdac1d59dbba 145
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_fd923bd45d1b20::t_1fdf0b0e0d4c8d 37
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_fd923bd45d1b20::t_80f7b6a008a844 244
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_fd923bd45d1b20::t_b12a746c71974c 21
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_fd923bd45d1b20::t_f6cfaadf991b7a 35
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_fd923bd45d1b20::t_37b4edf4c0e0a9 52
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_fd923bd45d1b20::t_844a82dc5d6540 106
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_fd923bd45d1b20::t_135edab1fc70f6 65
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_fd923bd45d1b20::t_679fde10914ae3 97
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_fd923bd45d1b20::t_8458e6eb4781e2 30
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_fd923bd45d1b20::t_2c776f8749f6cc 37
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_fd923bd45d1b20::t_73564dbb239f98 39
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_fd923bd45d1b20::t_0ed18978c42e39 45
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_fd923bd45d1b20::t_053e9de7a1e7bc 69
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fd923bd45d1b20::t_5ea49b4d7da35a 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "848998b33dd8311dee108b1c413f1d19fb293fbf",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76e6edccd367e7": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "fd2ec726-9073-4e6a-91ec-f5f68e63ed0d",
+        "model": "claude-opus-5-thinking-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fd923bd45d1b20": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2fa7ed5c-8ced-49ff-b150-83bece4d014c",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
