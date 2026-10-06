@@ -149,6 +149,26 @@ describe('playMacro with a folded addAutomationLane', () => {
         expect(lane.points.map((point) => point.beat)).toEqual([4]);
     });
 
+    it('lands the replayed point on the track-level lane even when a clip-scoped lane for the same parameter is listed first', async () => {
+        const trackLevelLane = automationStore.value?.lanes[0];
+        if (!trackLevelLane) {
+            throw new Error('expected the folded track-level lane to exist');
+        }
+        // The review's constructed mixup: a clip-scoped gain lane on the same
+        // track, listed before the fold target. The fold resolution must skip
+        // it explicitly, or the replayed point is redirected onto the clip.
+        automationStore.set({
+            lanes: [{ ...trackLevelLane, id: 'clip-gain-lane', clipId: 'clip-1' }, trackLevelLane],
+        });
+
+        await playMacro(FOLD_MACRO_ID);
+
+        expect(automationStore.value?.lanes.find((lane) => lane.id === 'clip-gain-lane')?.points).toHaveLength(0);
+        const lane = gainLane();
+        expect(lane.id).toBe('existing-lane');
+        expect(lane.points.map((point) => point.beat)).toEqual([4]);
+    });
+
     it('lands the point on each play of a replay-twice flow with an undo between', async () => {
         await playMacro(FOLD_MACRO_ID);
         expect(gainLane().points.map((point) => point.beat)).toEqual([4]);

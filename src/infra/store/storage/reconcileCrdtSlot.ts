@@ -220,8 +220,32 @@ function reconcileChild(input: ReconcileChildInput): void {
     // document for the next projection to erase. Without a snapshot the
     // absence stays undecided and the deletion-respecting behavior stands.
     if (isSameValue(base, desired)) {
-        if (current === undefined && desired !== undefined && presence === undefined) {
-            writeChild(container, field, desired);
+        if (current === undefined) {
+            if (desired !== undefined && presence === undefined) {
+                writeChild(container, field, desired);
+            }
+            return;
+        }
+        // The document holds this node and the writer carries no delta on it,
+        // so the node's own value is not its to write. A captured snapshot can
+        // still witness a seed deeper in — a node the base carried unchanged,
+        // the document still lacks, and no document ever held — so the walk
+        // continues below an unchanged value wherever a snapshot rides. A
+        // whole-slot write retained as a deferred baseline then seeds exactly
+        // like one whose changed sibling would have carried it down. Without a
+        // snapshot every nested absence stays undecided and the early return
+        // keeps the whole subtree untouched.
+        if (presence !== uncapturedDocumentPresence) {
+            reconcileEqualNode({
+                container,
+                field,
+                fieldName,
+                current,
+                base,
+                desired,
+                presence,
+                identityByField,
+            });
         }
         return;
     }
@@ -250,6 +274,59 @@ function reconcileChild(input: ReconcileChildInput): void {
     }
 
     writeChild(container, field, desired);
+}
+
+type ReconcileEqualNodeInput = {
+    container: MutableContainer | unknown[];
+    field: string | number;
+    fieldName: string;
+    /** The document's live node whose children the unchanged write may still seed. */
+    current: unknown;
+    base: unknown;
+    desired: unknown;
+    /** The snapshot's version of this node — never the undecided sentinel. */
+    presence: unknown;
+    identityByField: CrdtEntityIdentityByField;
+};
+
+/**
+ * Continues an unchanged write one level down, where the ownership law leaves
+ * exactly one effect available: the seed landing.
+ *
+ * Reached only when the writer's desired node equals its base, so every
+ * descendant is equal too and no deletion, replacement, reorder, or membership
+ * change can be this writer's — `reconcileRecord` removes only fields its base
+ * carried, and an identified collection's membership loop requires a base row
+ * while its placement applies only where the writer's order moved. What the
+ * walk can still do is land stranded seeds: a record field or a base-carried
+ * row the snapshot provably lacked, which skipping would strand outside the
+ * document for the next projection to erase. A collection that is one logical
+ * value rather than identified rows gets no walk: the writer owns no delta on
+ * it, and its whole-value replace would clobber wherever the document's copy
+ * moved past the base.
+ */
+function reconcileEqualNode(input: ReconcileEqualNodeInput): void {
+    const { container, field, fieldName, current, base, desired, presence, identityByField } = input;
+    if (isUnknownRecord(desired) && isUnknownRecord(current)) {
+        reconcileRecord({ target: current, base, desired, presence, identityByField });
+        return;
+    }
+    if (Array.isArray(desired) && Array.isArray(current)) {
+        const identify = identityByField[fieldName] ?? identifyById;
+        if (identifyRows(desired, identify) === null || identifyRows(current, identify) === null) {
+            return;
+        }
+        reconcileCollection({
+            container,
+            field,
+            fieldName,
+            current,
+            base,
+            desired,
+            presence,
+            identityByField,
+        });
+    }
 }
 
 type ReconcileRecordInput = {
@@ -668,6 +745,10 @@ function isPeerDeletedUnchangedRow(input: PeerDeletedUnchangedRowInput): boolean
  * the write's base was captured — decides: an absent node the snapshot also
  * lacked lands, one the snapshot held stands. Omitting it keeps the
  * deletion-respecting behavior for callers that cannot capture the snapshot.
+ * The snapshot carries that decision below an unchanged value too: a write
+ * whose desired slot equals its base still walks its subtree under a captured
+ * snapshot, so a seed nested inside an unchanged slot lands exactly as one
+ * beside a changed sibling does, while a node the snapshot held stays deleted.
  *
  * Collections whose rows carry no stable identity are replaced whole. That is
  * deliberate: a tuning table, a pitch curve and a step pattern are one logical

@@ -567,4 +567,71 @@ describe('reconcileCrdtSlot', () => {
 
         expect(slotOf(doc).rows).toStrictEqual([{ id: 'a', name: 'a0' }]);
     });
+
+    it('lands a nested seed under an unchanged slot value the snapshot provably lacked', () => {
+        // The whole-slot write is a deferred baseline re-flushed unchanged: it
+        // carries no delta of this writer's own, so the slot's value stands.
+        // The seed `x` is different — the snapshot taken beside the base says
+        // no document ever held it, so only the cache knows it, and skipping
+        // would strand it outside the document for the next projection to
+        // erase (#4962 review, reconcileCrdtSlot thread).
+        const doc: Doc = { slot: { a: 1 } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { a: 1, x: 2 },
+            value: { a: 1, x: 2 },
+            documentPresence: { slot: { a: 1 } },
+        });
+
+        expect(doc.slot).toEqual({ a: 1, x: 2 });
+    });
+
+    it('keeps a nested key the snapshot held deleted under an unchanged slot value', () => {
+        // The control for the seed landing above: the same unchanged write,
+        // but here the snapshot proves the document held `y` when the base was
+        // captured. Its absence is a peer's newer deletion and the unchanged
+        // write owns no delta on it — the snapshot decides, at depth as at the
+        // slot itself.
+        const doc: Doc = { slot: { a: 1 } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { a: 1, y: 3 },
+            value: { a: 1, y: 3 },
+            documentPresence: { slot: { a: 1, y: 3 } },
+        });
+
+        expect(doc.slot).toEqual({ a: 1 });
+    });
+
+    it('lands a base-carried row under an unchanged slot when the snapshot lacked it', () => {
+        const doc: Doc = { slot: { rows: [] } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { rows: [{ id: 'seed', name: 's0' }] },
+            value: { rows: [{ id: 'seed', name: 's0' }] },
+            documentPresence: { slot: { rows: [] } },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['seed']);
+    });
+
+    it('keeps a base-carried row deleted under an unchanged slot when the snapshot held it', () => {
+        const doc: Doc = { slot: { rows: [] } };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: { rows: [{ id: 'peer', name: 'p0' }] },
+            value: { rows: [{ id: 'peer', name: 'p0' }] },
+            documentPresence: { slot: { rows: [{ id: 'peer', name: 'p0' }] } },
+        });
+
+        expect(slotOf(doc).rows).toStrictEqual([]);
+    });
 });
