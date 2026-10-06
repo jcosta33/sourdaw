@@ -1,0 +1,25 @@
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_a53b51c28d12bf 1210-1211
+scripts/generateVersionedCommandArgumentSchemas.mjs
+  s_1c08b47ac3792f::t_45106f106060e4 225-235,244,286,291
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1c08b47ac3792f::t_58400efd95ff95 112-196
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1c08b47ac3792f::t_74bb2ce2fb4255 6012-6022,6031,6071,6076
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fb955164f26b0fe9f76588f1c964273098086a8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
