@@ -140,7 +140,7 @@ describe('canonical track roles', () => {
     ])('recognizes whole-name tokens in %s', (name, role) => {
         expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
     });
-    it.each(['Kick Snare', 'Bass Guitar', 'Lead Vocal Backing Vocal'])(
+    it.each(['Lead Vocal Backing Vocal', 'Kick Vocal', 'Bass and Guitar'])(
         'refuses conflicting name evidence: %s',
         (name) => {
             expect(getCanonicalTrackRole(input(name))).toEqual({
@@ -165,7 +165,13 @@ describe('canonical track roles', () => {
         { name: 'Backing Vox', role: 'backing vocal', evidence: 'resolved-name-tags' },
         { name: 'BGV', role: 'backing vocal', evidence: 'name-tokens' },
         { name: 'Backing Vocals', role: 'backing vocal', evidence: 'name-tokens' },
-        { name: 'Bass Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        // "Bass guitar" is the bass by studio convention, so it is not a bass-versus-guitar conflict.
+        { name: 'Bass Guitar', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Bass-Guitar', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Bass and Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass / Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Guitar Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Drums', role: 'drums', evidence: 'name-tokens' },
         { name: 'Synth', role: 'synth', evidence: 'name-tokens' },
         { name: 'Kick', role: 'kick', evidence: 'name-tokens' },
@@ -188,7 +194,8 @@ describe('canonical track roles', () => {
         { name: 'Bass_Drum / Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Bass / Bass Drum', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Bass Drum and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
-        { name: 'Drums & Perc', role: 'unknown', evidence: 'conflicting-name-tags' },
+        // Only drum-family evidence: no adjacency rule picks a role, so the track is drums.
+        { name: 'Drums & Perc', role: 'drums', evidence: 'resolved-name-tags' },
         { name: 'Synth & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Synth Pad, Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Pad Synth + Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
@@ -249,6 +256,288 @@ describe('canonical track roles', () => {
             expect(getCanonicalTrackRole(input(name)).role).toBe('unknown');
         }
     );
+    it.each([
+        { name: 'OH', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'OH L', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'Overheads', role: 'overhead', evidence: 'name-tokens' },
+        { name: 'Drum Overheads', role: 'overhead', evidence: 'resolved-name-tags' },
+        { name: 'Overhead Drums', role: 'overhead', evidence: 'resolved-name-tags' },
+        { name: 'BD', role: 'kick', evidence: 'name-tokens' },
+        { name: 'BD In', role: 'kick', evidence: 'name-tokens' },
+        { name: 'Bass Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Kick Out', role: 'kick', evidence: 'name-tokens' },
+        { name: 'SD', role: 'snare', evidence: 'name-tokens' },
+        { name: 'SD Top', role: 'snare', evidence: 'name-tokens' },
+        { name: 'Hat', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hats', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hat 2', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hats Open', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hi Hats', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'HiHat', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'HH Open', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Hi-Hat', role: 'hi-hat', evidence: 'name-tokens' },
+        { name: 'Drum Room', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Drums Room', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Room Drums', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'Drum Rooms', role: 'room', evidence: 'resolved-name-tags' },
+        { name: 'China', role: 'cymbal', evidence: 'name-tokens' },
+        { name: 'Splash 2', role: 'cymbal', evidence: 'name-tokens' },
+    ] as const)('names a kit track by its drum abbreviation or kit-mic word: $name', ({ name, role, evidence }) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+    });
+    it.each([
+        // A bare "hat" is a hi-hat only as the whole name; "Hat Tricks" matches neither it nor "hat trick".
+        { name: 'Black Hat Synth', role: 'synth' },
+        { name: 'Hat Tricks', role: 'unknown' },
+    ] as const)('does not read a hat inside a longer name as a hi-hat: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
+    it.each(['Room', 'Rooms', 'Room Tone', 'Amb', 'Ambience', 'Oh Yeah', 'China Girl'])(
+        'keeps a drum-sounding word that is not a kit track unknown: %s',
+        (name) => {
+            expect(getCanonicalTrackRole(input(name)).role).toBe('unknown');
+        }
+    );
+    it.each([
+        { name: 'Click', role: 'utility' },
+        { name: 'Metronome', role: 'utility' },
+        { name: 'Reference', role: 'utility' },
+        { name: 'Ref Mix', role: 'utility' },
+        { name: 'Guide', role: 'utility' },
+        { name: 'Cue 2', role: 'utility' },
+        // A football term, not a hi-hat: it is session furniture rather than a drum.
+        { name: 'Hat Trick', role: 'utility' },
+        { name: 'Hat trick 2', role: 'utility' },
+        { name: 'Strings', role: 'strings' },
+        { name: 'String 2', role: 'strings' },
+        { name: 'Low Strings', role: 'strings' },
+        { name: 'Brass', role: 'brass' },
+    ] as const)('names session furniture and orchestral parts: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
+    });
+    // These words describe a track; they claim a name only when no other role does, so they never
+    // turn a name another role already names into a conflict.
+    it.each([
+        { name: 'Rim Click', role: 'percussion' },
+        { name: 'Brass Snare', role: 'snare' },
+        { name: 'Kick Click', role: 'kick' },
+        { name: 'Kick Ref', role: 'kick' },
+        { name: 'String Bass', role: 'bass' },
+        { name: 'String Pad', role: 'pad' },
+        { name: 'Guide Vocal', role: 'lead vocal' },
+        // The bare vocal word names the part, so the guide word yields to it.
+        { name: 'Guide Vox', role: 'lead vocal' },
+        { name: 'Guide Guitar', role: 'guitar' },
+        { name: 'Bass Guide', role: 'bass' },
+        { name: 'Bass Ref', role: 'bass' },
+    ] as const)('lets a modifier word yield to the role the name already names: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toMatchObject({ role, source: 'name-tags' });
+    });
+    // By convention a string count or material with "string" names a guitar ("12 String", "Nylon
+    // String"), and "gtr" abbreviates guitar. Neither is an orchestral strings section.
+    it.each([
+        { name: 'Gtr', role: 'guitar' },
+        { name: 'Lead Gtr', role: 'guitar' },
+        // The abbreviation alone names the guitar here: 5 is not a guitar string count.
+        { name: '5 String Gtr', role: 'guitar' },
+        { name: 'Bass Gtr', role: 'bass' },
+        { name: '12 String', role: 'guitar' },
+        { name: '12-String', role: 'guitar' },
+        { name: '12 String Gtr', role: 'guitar' },
+        { name: 'Nylon String', role: 'guitar' },
+        { name: 'Nylon Strings', role: 'guitar' },
+        // A count names a guitar only before the singular; "12 Strings" is an orchestral section.
+        { name: '8 Strings', role: 'strings' },
+        { name: '12 Strings', role: 'strings' },
+        { name: 'Gtrs', role: 'guitar' },
+        { name: 'Guitars', role: 'guitar' },
+        // Each other instrument that carries its own string count, before or after the count.
+        { name: '6 String Viola', role: 'unknown' },
+        { name: 'Viola 6 String', role: 'unknown' },
+        { name: '6 String Cello', role: 'unknown' },
+        { name: 'Cello 6 String', role: 'unknown' },
+        { name: '6 String Ukulele', role: 'unknown' },
+        { name: 'Ukulele 6 String', role: 'unknown' },
+        { name: '6 String Uke', role: 'unknown' },
+        { name: 'Uke 6 String', role: 'unknown' },
+        { name: '6 String Mandolin', role: 'unknown' },
+        { name: 'Mandolin 6 String', role: 'unknown' },
+        { name: '6 String Banjo', role: 'unknown' },
+        { name: 'Banjo 6 String', role: 'unknown' },
+        { name: '12 String Bouzouki', role: 'unknown' },
+        { name: 'Bouzouki 12 String', role: 'unknown' },
+        { name: '7 String Sitar', role: 'unknown' },
+        { name: 'Sitar 7 String', role: 'unknown' },
+        { name: '12 String Harp', role: 'unknown' },
+        { name: 'Harp 12 String', role: 'unknown' },
+        { name: '6 String Violin', role: 'unknown' },
+        { name: 'Violin 6 String', role: 'unknown' },
+        { name: 'Acoustic Gtrs', role: 'guitar' },
+        { name: 'Nylon String Gtr', role: 'guitar' },
+        { name: 'Steel String Gtr', role: 'guitar' },
+        { name: 'Acoustic 12 String', role: 'guitar' },
+        // Each count and material alternative alone, with no other guitar evidence in the name.
+        { name: 'Steel String', role: 'guitar' },
+        { name: '6 String', role: 'guitar' },
+        { name: '7 String', role: 'guitar' },
+        { name: '8 String', role: 'guitar' },
+        // A 5 string count names a banjo, not a guitar and not a section: no role claims it.
+        { name: 'Banjo 5 String', role: 'unknown' },
+        // Another instrument's string count or material is not a guitar and not a section either.
+        { name: '6 String Violin', role: 'unknown' },
+        { name: '8 String Ukulele', role: 'unknown' },
+        { name: 'Mandolin 8 String', role: 'unknown' },
+        { name: '12 String Bouzouki', role: 'unknown' },
+        { name: 'Nylon String Ukulele', role: 'unknown' },
+        { name: 'Steel String Mandolin', role: 'unknown' },
+    ] as const)('names a guitar by string count, material or abbreviation: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
+    // An extended-range bass is a bass: the string count belongs to the bass, not to a guitar.
+    it.each([
+        '5 String Bass',
+        '6 String Bass',
+        '6-String Bass',
+        '7 String Bass',
+        '8 String Bass',
+        '12 String Bass',
+        'Fretless 6 String Bass',
+        '6 String Bass Guitar',
+        'Bass 6 String',
+    ])('keeps an extended-range bass a bass: %s', (name) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe('bass');
+    });
+    // A bass voicing of a keys-family part is that part ("Bass Keys"); "Bass Synth" stays a bass
+    // as before, and a connector keeps the conflict.
+    it.each([
+        { name: 'Bass Keys', role: 'keys' },
+        { name: 'Bass Piano', role: 'keys' },
+        { name: 'Bass Organ', role: 'keys' },
+        { name: 'Bass Pad', role: 'pad' },
+        { name: 'Bass Synth', role: 'bass' },
+        { name: 'Bass & Keys', role: 'unknown' },
+        { name: 'Bass and Pad', role: 'unknown' },
+        // Bass before strings or brass is that orchestral part; after it, the bass stays a bass.
+        { name: 'Bass Strings', role: 'strings' },
+        { name: 'Bass Strings 2', role: 'strings' },
+        { name: 'Bass Brass', role: 'brass' },
+        { name: 'Bass-Strings', role: 'strings' },
+        { name: 'Bass_Brass', role: 'brass' },
+        { name: 'String Bass', role: 'bass' },
+        { name: 'Brass Bass', role: 'bass' },
+        // Any other connector between bass and the orchestral word names two things: a conflict.
+        { name: 'Bass & Strings', role: 'unknown' },
+        { name: 'Bass + Strings', role: 'unknown' },
+        { name: 'Bass/Strings', role: 'unknown' },
+        { name: 'Bass, Strings', role: 'unknown' },
+        { name: 'Bass and Strings', role: 'unknown' },
+        { name: 'Bass + Strings Stem', role: 'unknown' },
+        { name: 'STEM Bass & Strings', role: 'unknown' },
+        { name: 'Bass & Brass', role: 'unknown' },
+        { name: 'Bass + Brass', role: 'unknown' },
+        { name: 'Bass/Brass', role: 'unknown' },
+    ] as const)('reads bass before a keys-family word: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
+    // Evidence from the drums family alone still names drums when no adjacency rule picks one role;
+    // a conflict that crosses families stays unknown.
+    it.each([
+        // A generic drums word with exactly one specific piece names that piece when the two are
+        // adjacent or joined by a labelling separator (brackets, colon, dot, slash, dash, underscore).
+        { name: 'Drums (Room)', role: 'room' },
+        { name: 'Room (Drums)', role: 'room' },
+        { name: 'Drums/Room', role: 'room' },
+        { name: 'Drums: Room', role: 'room' },
+        { name: 'Drums (Overheads)', role: 'overhead' },
+        { name: 'Drums.Overheads', role: 'overhead' },
+        { name: 'Drums - Overheads', role: 'overhead' },
+        { name: 'Drums - Kick In', role: 'kick' },
+        { name: 'Drums_Kick', role: 'kick' },
+        { name: 'DRUMS_KICK', role: 'kick' },
+        { name: 'Drums: Kick', role: 'kick' },
+        { name: 'Kick (Drums)', role: 'kick' },
+        { name: 'Drums - Snare Top', role: 'snare' },
+        { name: 'Drums_Snare', role: 'snare' },
+        { name: 'Drums - Hi-Hat', role: 'hi-hat' },
+        { name: 'Drums_HiHat', role: 'hi-hat' },
+        { name: 'Drums - Tom 1', role: 'tom' },
+        { name: 'Drums - Ride', role: 'cymbal' },
+        // A conjunction or negation between them or before the piece keeps the generic role, and so
+        // do two specific pieces.
+        { name: 'Drums & Room', role: 'drums' },
+        { name: 'Drums + Overheads', role: 'drums' },
+        { name: 'Drums and Overheads', role: 'drums' },
+        { name: 'Drums (No Overheads)', role: 'drums' },
+        { name: 'Drums No Overheads', role: 'drums' },
+        { name: 'Drums Without Overheads', role: 'drums' },
+        { name: 'Drums w/o Overheads', role: 'drums' },
+        { name: 'Drums w/ Overheads', role: 'drums' },
+        { name: 'No Overheads (Drums)', role: 'drums' },
+        { name: 'Drums & Rooms', role: 'drums' },
+        { name: 'Rooms (Drums)', role: 'drums' },
+        { name: 'Drum Room Overheads', role: 'drums' },
+        // A room word anywhere beside other drum evidence is a room mic: overheads plus room is two
+        // kit mics, so drums.
+        { name: 'Drum Overheads/Room', role: 'drums' },
+        { name: 'Drum Overheads + Rooms', role: 'drums' },
+        { name: 'Drum Overheads & Room', role: 'drums' },
+        { name: 'Overheads & Room', role: 'drums' },
+        { name: 'Overheads + Rooms', role: 'drums' },
+        // Piece first: a conjunction or comma between the piece and the drums word keeps drums.
+        { name: 'Kick & Drums', role: 'drums' },
+        { name: 'Room + Drums', role: 'drums' },
+        { name: 'Overheads, Drums', role: 'drums' },
+        { name: 'Snare, Drums', role: 'drums' },
+        // Percussion is the sibling family of the kit, not a piece of it, under any separator.
+        { name: 'Drums/Perc', role: 'drums' },
+        { name: 'Drums_Perc', role: 'drums' },
+        { name: 'Drums-Perc', role: 'drums' },
+        { name: 'DRUMS_PERC.wav', role: 'drums' },
+        { name: 'Drums Perc', role: 'drums' },
+        { name: 'Drum Perc', role: 'drums' },
+        { name: 'Drums/Percussion', role: 'drums' },
+        { name: 'Drums - Percussion', role: 'drums' },
+        { name: 'Drums_Snare_Top.wav', role: 'snare' },
+        // A conjunction, negation or non-labelling separator before the piece keeps drums, piece
+        // first as well: each word and the separator check is pinned by its own row.
+        { name: 'Without Overheads (Drums)', role: 'drums' },
+        { name: 'W/O Room (Drums)', role: 'drums' },
+        { name: 'W/ Room (Drums)', role: 'drums' },
+        { name: 'With Room (Drums)', role: 'drums' },
+        { name: 'Minus Overheads (Drums)', role: 'drums' },
+        { name: 'And Room (Drums)', role: 'drums' },
+        { name: 'Mono, Room (Drums)', role: 'drums' },
+        { name: 'Kit & Room (Drums)', role: 'drums' },
+        // Two specific pieces beside one drums word stay drums, even when one piece sits next to it.
+        { name: 'Overheads Drum Room', role: 'drums' },
+        { name: 'Drums Room + Overheads', role: 'drums' },
+        { name: 'Snare Overhead', role: 'drums' },
+        { name: 'Kick & Snare', role: 'drums' },
+        { name: 'Drums & Perc', role: 'drums' },
+        { name: 'Kick Drum', role: 'kick' },
+        { name: 'Drum Room', role: 'room' },
+        { name: 'Overhead Drums', role: 'overhead' },
+        { name: 'Kick Vocal', role: 'unknown' },
+        { name: 'Bass and Guitar', role: 'unknown' },
+    ] as const)('keeps a drums-family name in its family: $name is $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
+    it('keeps two modifier words on one name a conflict', () => {
+        expect(getCanonicalTrackRole(input('Strings Click'))).toEqual({
+            role: 'unknown',
+            source: 'name-tags',
+            evidence: 'conflicting-name-tags',
+        });
+    });
+    it.each([
+        { name: 'Oh Yeah Vox', role: 'lead vocal' },
+        { name: 'BD Synth Lead', role: 'synth' },
+        { name: 'SD Card Pad', role: 'pad' },
+        { name: 'Ohm Bass Synth', role: 'bass' },
+        { name: 'OH Drums', role: 'drums' },
+    ] as const)('matches an abbreviation only when it is the whole name, so $name stays $role', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name)).role).toBe(role);
+    });
     it.each(['bus', 'master'] as const)('recognizes structural %s before content', (kind) => {
         const source = content([36]);
         source.track = { ...source.track, kind, name: 'Kick Snare' };
