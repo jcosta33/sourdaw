@@ -5,7 +5,11 @@ import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../mode
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
-import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
+import {
+    buildLlmActionUserMessage,
+    type LlmActionCapabilityData,
+    type LlmActionMessageProfile,
+} from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
 const MAX_VALIDATION_FAILURES = 16;
@@ -294,9 +298,17 @@ function buildRevisionPayload(input: {
     };
 }
 
+/**
+ * The planning context for one turn, in two renderings of the same evidence. `message` is what a
+ * hosted provider reads. `localMessage` is what the local model reads inside its context window:
+ * no fixed policy or tool names, which its system prompt already carries; the capability data and
+ * the project once each; and devices by name and parameter value, a type's parameter ranges being
+ * one `device.factory-manifest.read` away.
+ */
 export function buildAgentContext(input: BuildAgentContextInput): {
     authorityComplete: boolean;
     message: string;
+    localMessage: string;
     evidence: AgentContextEvidence;
 } {
     const revision = input.projectRevision ?? null;
@@ -415,18 +427,71 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const userMessage = buildLlmActionUserMessage({
-        prompt: input.prompt,
-        context: input.context,
-        projectRevision: input.projectRevision,
-        ...input.capabilityData,
-    });
-
-    const suffix = evidence.delta.mode === 'delta' ? '' : `\n\n${userMessage}`;
+    const fullTurn = evidence.delta.mode === 'full';
+    const availableCapabilities = stableJson(input.capabilityData ?? null).slice(0, 8_192);
+    const leadingSections = [
+        `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
+        `user_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}`,
+        `production_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}`,
+        `revision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}`,
+        `relevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}`,
+    ];
+    const trailingSections = [
+        `validation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}`,
+        `measurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}`,
+    ];
+    const hostedSections = [
+        `fixed_policy:\n${input.fixedPolicy}`,
+        ...leadingSections,
+        `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities })}`,
+        ...trailingSections,
+        `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
+    ];
+    // The local system prompt already spells every tool the local model may call, so the local
+    // message names no tools; a full turn states the capability data and the project once, in the
+    // project context that closes it, and a delta turn, which carries no project context, states
+    // them here.
+    const localSections = [
+        ...leadingSections,
+        ...(fullTurn
+            ? []
+            : [`capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities })}`]),
+        ...trailingSections,
+        `untrusted_project_data:\n${stableJson({
+            snapshotIdentity: snapshot.identity,
+            mode: evidence.delta.mode,
+            data: fullTurn ? buildLocalProjectPayload(projectData) : revisionPayload.projectPayload,
+        })}`,
+    ];
+    const projectContextMessage = (profile: LlmActionMessageProfile): string =>
+        fullTurn
+            ? `\n\n${buildLlmActionUserMessage({
+                  prompt: input.prompt,
+                  context: input.context,
+                  projectRevision: input.projectRevision,
+                  profile,
+                  ...input.capabilityData,
+              })}`
+            : '';
 
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
+        message: `${hostedSections.join('\n\n')}${projectContextMessage('hosted')}`,
+        localMessage: `${localSections.join('\n\n')}${projectContextMessage('local')}`,
+    };
+}
+
+/**
+ * What a full local turn keeps of the bounded project payload: the project context after it
+ * already states every track, clip, section and lane, so only the level law and the canonical role
+ * evidence, which that context does not carry, stay here.
+ */
+function buildLocalProjectPayload(projectData: ReturnType<typeof buildProjectData>) {
+    return {
+        levelLaw: projectData.levelLaw,
+        canonicalRoles: projectData.selectableTargets.flatMap((target) =>
+            target.canonicalRole === null ? [] : [{ trackId: target.id, canonicalRole: target.canonicalRole }]
+        ),
     };
 }

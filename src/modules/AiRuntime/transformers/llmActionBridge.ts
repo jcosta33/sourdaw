@@ -1163,10 +1163,31 @@ export type LlmActionCapabilityData = {
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 };
 
+/**
+ * Who reads the project context. A local model reads it inside its context window, so it gets
+ * device types by name and device instances by parameter value: a type's parameter ids, ranges
+ * and legal values are one `device.factory-manifest.read` away, and a hosted model reads them
+ * inline instead.
+ */
+export type LlmActionMessageProfile = 'hosted' | 'local';
+
+function projectLocalDevice(device: ProjectContext['tracks'][number]['devices'][number]) {
+    return {
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        bypassed: device.bypassed,
+        parameterValues: Object.fromEntries(
+            (device.parameters ?? []).map((parameter) => [parameter.id, parameter.value])
+        ),
+    };
+}
+
 export function buildLlmActionUserMessage({
     prompt,
     context,
     projectRevision,
+    profile = 'hosted',
     articulationTransferCapability,
     creativeInterpretationCatalog,
     backingVocalPlateCapability,
@@ -1184,7 +1205,9 @@ export function buildLlmActionUserMessage({
     prompt: string;
     context: ProjectContext;
     projectRevision?: string;
+    profile?: LlmActionMessageProfile;
 } & LlmActionCapabilityData): string {
+    const local = profile === 'local';
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
         ...(context.productionBrief ? { productionBrief: context.productionBrief } : {}),
@@ -1215,7 +1238,9 @@ export function buildLlmActionUserMessage({
         metronomeVolume: context.metronomeVolume,
         masterGain: context.masterGain,
         masterGainDb: context.masterGainDb ?? toLevelDb(context.masterGain),
-        availableDeviceTypes: context.availableDeviceTypes ?? [],
+        availableDeviceTypes: local
+            ? (context.availableDeviceTypes ?? []).map((deviceType) => ({ id: deviceType.id, name: deviceType.name }))
+            : (context.availableDeviceTypes ?? []),
         automationLanes: (context.automationLanes ?? []).map((lane) => ({
             id: lane.id,
             trackId: lane.trackId,
@@ -1269,7 +1294,7 @@ export function buildLlmActionUserMessage({
             automationMode: track.automationMode,
             vcaGroupId: track.vcaGroupId ?? null,
             outputId: track.outputId,
-            devices: track.devices,
+            devices: local ? track.devices.map(projectLocalDevice) : track.devices,
             sends: (track.sends ?? []).map((send) => ({
                 ...send,
                 levelDb: send.levelDb ?? toLevelDb(send.level),

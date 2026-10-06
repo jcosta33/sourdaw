@@ -15,8 +15,8 @@
         "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
       },
       "engine": {
-        "contextWindowSize": 4096,
-        "vramRequiredMb": 2036.66,
+        "contextWindowSize": 8192,
+        "vramRequiredMb": 2484.66,
         "lowResourceRequired": true
       },
       "artifacts": [
@@ -280,7 +280,7 @@
           "sha256": "8161aaa4b40bccf19fcedb2f2e8c221eb9efb72d2198681f1958c9c1e05a682f"
         }
       ],
-      "artifactSetDigest": "932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255"
+      "artifactSetDigest": "eac07b6e30eb103c7bc0e2e910e83a902d03131ca6084cd5b3c3a957b9d374df"
     },
     {
       "modelId": "Qwen3-4B-q4f16_1-MLC",
@@ -295,8 +295,8 @@
         "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
       },
       "engine": {
-        "contextWindowSize": 4096,
-        "vramRequiredMb": 3431.59,
+        "contextWindowSize": 24576,
+        "vramRequiredMb": 6311.59,
         "lowResourceRequired": true
       },
       "artifacts": [
@@ -868,7 +868,7 @@
           "sha256": "a986a53c92579714eb7ec36856004f5fb75272c9f69091f14eb6b2086eea4440"
         }
       ],
-      "artifactSetDigest": "2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f"
+      "artifactSetDigest": "2dae6e8014a7c4ea0f31fe6bf9f208de07a632dda2344fb61293bbba0671a291"
     },
     {
       "modelId": "Qwen3-8B-q4f16_1-MLC",
@@ -883,8 +883,8 @@
         "revision": "025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
       },
       "engine": {
-        "contextWindowSize": 4096,
-        "vramRequiredMb": 5695.78,
+        "contextWindowSize": 8192,
+        "vramRequiredMb": 6271.78,
         "lowResourceRequired": false
       },
       "artifacts": [
@@ -1729,7 +1729,7 @@
           "sha256": "bf6384d9b30d6ae1eca567c65a893284ae2228fd57a432c3b795d06a803d9b72"
         }
       ],
-      "artifactSetDigest": "7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
+      "artifactSetDigest": "ea714c0b1de4cec41047e4f60cc669547ffe7fe43980eb541881800125e93a1d"
     }
   ]
 }

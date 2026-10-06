@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WEBLLM_MODELS } from '../../models/ModelInfo';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
+import { getWebLlmContextWindowSize } from '../webLlm/getWebLlmContextWindowSize';
 import { initWebLlmEngine } from '../webLlm/initWebLlmEngine';
 import { serializeWebLlmArtifactSet } from '../webLlm/serializeWebLlmArtifactSet';
 import { unloadWebLlmEngine } from '../webLlm/unloadWebLlmEngine';
@@ -295,6 +298,27 @@ describe('WebLLM provider artifact admission', () => {
                 expect(new URL(url).origin).toBe(source.origin);
                 expect(url).toContain(source.revision);
             }
+        }
+    });
+
+    // Admission refuses a model whose recorded digest is not the digest of its serialized set, so a
+    // hand-edited manifest entry (its window, its VRAM figure) must restate the digest with it.
+    it('records each artifact-set digest over the set it ships', () => {
+        for (const selectableModel of WEBLLM_MODELS) {
+            const model = getWebLlmArtifactManifestModel(selectableModel.id);
+            expect(createHash('sha256').update(serializeWebLlmArtifactSet(model)).digest('hex')).toBe(
+                model.artifactSetDigest
+            );
+        }
+    });
+
+    it('loads each model with the one context window the planning budget reads', () => {
+        for (const selectableModel of WEBLLM_MODELS) {
+            const model = getWebLlmArtifactManifestModel(selectableModel.id);
+            const [record] = createWebLlmAppConfig(model).model_list;
+
+            expect(record?.overrides?.context_window_size).toBe(getWebLlmContextWindowSize(selectableModel.id));
+            expect(getWebLlmContextWindowSize(selectableModel.id)).toBe(model.engine.contextWindowSize);
         }
     });
 

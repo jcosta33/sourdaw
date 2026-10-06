@@ -1,8 +1,12 @@
+import { createHash } from 'node:crypto';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
+
+import { createPlanningProject } from './planningProjectFixture';
 
 const context: ProjectContext = {
     tempo: 120,
@@ -540,5 +544,198 @@ describe('buildAgentContext', () => {
 
         const validationFailures = parseMessageSection(built.message, 'validation_failures') as Record<string, unknown>;
         expect(validationFailures.correction).toBeUndefined();
+    });
+
+    describe('hosted and local messages', () => {
+        const parameter = (id: string) => ({
+            id,
+            name: id,
+            type: 'float' as const,
+            value: 0.5,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+        });
+        const catalogue = [
+            { id: 'builtin-eq', name: 'EQ', parameters: [parameter('low-gain'), parameter('high-gain')] },
+            { id: 'builtin-compressor', name: 'Compressor', parameters: [parameter('threshold'), parameter('ratio')] },
+            { id: 'builtin-reverb', name: 'Reverb', parameters: [parameter('decay'), parameter('mix')] },
+        ];
+        const fiveTrackProject = createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 5);
+        const capabilityData = {
+            creativeInterpretationCatalog: {
+                schemaVersion: 1 as const,
+                catalogId: 'creative-catalog-1',
+                revision: 'revision-1',
+                requestDigest: 'digest-1',
+                selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' as const },
+                unresolvedExplicitReferences: [],
+                modes: ['edit' as const],
+                targets: [],
+                dimensions: [],
+                constraints: [],
+                creationSlots: [],
+            },
+        };
+        const hostedInputs = {
+            'a five-track first turn with capability data': {
+                fixedPolicy: 'policy',
+                prompt: 'make the chorus wider',
+                context: fiveTrackProject,
+                projectRevision: 'revision-1',
+                capabilitySchemas: [{ name: 'project.query', schemaVersion: 1 }],
+                capabilityData,
+            },
+            'a five-track receipt turn': {
+                fixedPolicy: 'policy',
+                prompt: 'make the chorus wider',
+                context: fiveTrackProject,
+                projectRevision: 'revision-1',
+                receipts: [{ id: 'application-tool-loop', summary: 'receipt '.repeat(1_024) }],
+                capabilityData,
+            },
+        };
+
+        // The hosted message is pinned to the bytes it had before the local message existed: a
+        // hosted provider's prompt cache and replay read these exact bytes.
+        it.each([
+            [
+                'a five-track first turn with capability data',
+                '46cf4b7ce38bf489815e6182d86ed340352e0ef1e8d7cb53e167c9f237cc4c01',
+            ],
+            ['a five-track receipt turn', 'b0a25b56b718a2baed28bb5ac7da7cec4e352b0d4bda12ba638c3f4ed1613b47'],
+        ] as const)('keeps the hosted message for %s byte-identical', (label, expectedDigest) => {
+            const built = buildAgentContext(hostedInputs[label]);
+
+            expect(createHash('sha256').update(built.message).digest('hex')).toBe(expectedDigest);
+        });
+
+        function projectContextOf(message: string): Record<string, unknown> {
+            const start = message.indexOf('<project_context>\n');
+            const end = message.indexOf('\n</project_context>');
+            if (start === -1 || end === -1) {
+                throw new Error('Expected the message to carry the project context.');
+            }
+            return JSON.parse(message.slice(start + '<project_context>\n'.length, end)) as Record<string, unknown>;
+        }
+
+        function occurrences(text: string, fragment: string): number {
+            return text.split(fragment).length - 1;
+        }
+
+        it('leaves the fixed policy out of the local message, which the system prompt already carries', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            expect(built.message.startsWith('fixed_policy:\npolicy\n\n')).toBe(true);
+            expect(built.localMessage).not.toContain('fixed_policy');
+            expect(built.localMessage.startsWith('run_authority:\n')).toBe(true);
+        });
+
+        it('lists the device catalogue as id and name only in the local message', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            expect(projectContextOf(built.localMessage).availableDeviceTypes).toEqual(
+                catalogue.map(({ id, name }) => ({ id, name }))
+            );
+            expect(projectContextOf(built.message).availableDeviceTypes).toEqual(catalogue);
+        });
+
+        it('states each device on a track by its parameter values in the local message', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            const localTracks = projectContextOf(built.localMessage).tracks as Array<{ devices: unknown[] }>;
+            const hostedTracks = projectContextOf(built.message).tracks as Array<{ devices: unknown[] }>;
+            expect(localTracks[0]?.devices).toEqual([
+                {
+                    id: 'track-1-device-1',
+                    name: 'EQ',
+                    type: 'builtin-eq',
+                    bypassed: false,
+                    parameterValues: { 'low-gain': 0.5, 'high-gain': 0.5 },
+                },
+                {
+                    id: 'track-1-device-2',
+                    name: 'Compressor',
+                    type: 'builtin-compressor',
+                    bypassed: false,
+                    parameterValues: { threshold: 0.5, ratio: 0.5 },
+                },
+                {
+                    id: 'track-1-device-3',
+                    name: 'Reverb',
+                    type: 'builtin-reverb',
+                    bypassed: false,
+                    parameterValues: { decay: 0.5, mix: 0.5 },
+                },
+            ]);
+            expect(hostedTracks[0]?.devices).toEqual(fiveTrackProject.tracks[0]?.devices);
+        });
+
+        it('names no tools in a full local turn, whose system prompt spells the tools it may call', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            expect(built.message).toContain('capability_schemas:\n');
+            expect(built.localMessage).not.toContain('capability_schemas');
+            expect(built.localMessage).not.toContain('"schemas"');
+        });
+
+        it.each(['a five-track first turn with capability data', 'a five-track receipt turn'] as const)(
+            'states the capability data and the project once each in the local message for %s',
+            (label) => {
+                const built = buildAgentContext(hostedInputs[label]);
+                const catalogId = capabilityData.creativeInterpretationCatalog.catalogId;
+                const clipName = fiveTrackProject.tracks[1]!.clips[0]!.name;
+
+                expect(occurrences(built.message, catalogId)).toBe(2);
+                expect(occurrences(built.localMessage, catalogId)).toBe(1);
+                expect(occurrences(built.message, clipName)).toBe(2);
+                expect(occurrences(built.localMessage, clipName)).toBe(1);
+                const project = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
+                    snapshotIdentity: string;
+                    mode: string;
+                    data: Record<string, unknown>;
+                };
+                expect(project.snapshotIdentity).toBe(built.evidence.snapshot.identity);
+                expect(project.mode).toBe('full');
+                expect(Object.keys(project.data).sort()).toEqual(['canonicalRoles', 'levelLaw']);
+            }
+        );
+
+        it('keeps the canonical role evidence the local project context does not carry', () => {
+            const canonicalRole = { role: 'kick', source: 'clip-content', evidence: 'stored-drum-voices' };
+            const withRole = {
+                ...fiveTrackProject,
+                tracks: fiveTrackProject.tracks.map((track, index) =>
+                    index === 0 ? { ...track, canonicalRole } : track
+                ),
+            };
+
+            const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'find the kick', context: withRole });
+
+            const project = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
+                data: { canonicalRoles: unknown };
+            };
+            expect(project.data.canonicalRoles).toEqual([
+                { trackId: 'track-1', canonicalRole: { ...canonicalRole, contentRevision: undefined } },
+            ]);
+        });
+
+        it('carries the capability data and the project delta of a delta turn, which has no project context', () => {
+            const first = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+            const delta = buildAgentContext({
+                ...hostedInputs['a five-track first turn with capability data'],
+                context: { ...fiveTrackProject, tempo: 128 },
+                projectRevision: 'revision-2',
+                priorEvidence: first.evidence,
+            });
+
+            expect(delta.evidence.delta.mode).toBe('delta');
+            expect(delta.localMessage).not.toContain('<project_context>');
+            expect(delta.localMessage).not.toContain('fixed_policy');
+            expect(occurrences(delta.localMessage, capabilityData.creativeInterpretationCatalog.catalogId)).toBe(1);
+            expect(parseMessageSection(delta.localMessage, 'untrusted_project_data')).toEqual(
+                parseMessageSection(delta.message, 'untrusted_project_data')
+            );
+        });
     });
 });

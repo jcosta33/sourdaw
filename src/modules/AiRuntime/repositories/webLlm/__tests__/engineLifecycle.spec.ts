@@ -14,9 +14,12 @@ const {
     terminateWorkerMock,
     MockLlmWorker,
     workerInstances,
+    MANIFEST_CONTEXT_WINDOW_SIZE,
 } = vi.hoisted(() => {
     const workerInstances: EventTarget[] = [];
     return {
+        // Distinct from every shipped window, so the engine can only load it from the manifest.
+        MANIFEST_CONTEXT_WINDOW_SIZE: 12_345,
         admissionGate: { webLlm: true },
         artifactAdmissionMock: vi.fn(),
         mockLogger: {
@@ -53,6 +56,7 @@ vi.mock('../webLlmArtifactAdmission', () => ({
 vi.mock('../webLlmArtifactManifest', () => ({
     getWebLlmArtifactManifestModel: (modelId: string) => ({
         artifactSetDigest: `digest:${modelId}`,
+        engine: { contextWindowSize: MANIFEST_CONTEXT_WINDOW_SIZE },
     }),
 }));
 vi.mock('../../llmWorker?worker', () => ({
@@ -234,7 +238,7 @@ describe('WebLLM engineLifecycle injectables', () => {
             expect.anything(),
             'test-model',
             expect.objectContaining({ appConfig }),
-            { context_window_size: 8192 }
+            { context_window_size: MANIFEST_CONTEXT_WINDOW_SIZE }
         );
         expect(engineState.activeArtifactSetDigest).toBe('digest:test-model');
     });
