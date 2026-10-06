@@ -1,0 +1,28 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_b170f8d359b096 47
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_d5a7f43c73e43e 403-430
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_1c08b47ac3792f::t_b80a9e54d5a80b 3
+  s_1c08b47ac3792f::t_bbc43906b92287 200-226,229
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_1c08b47ac3792f::t_d435362380679f 4
+  s_1c08b47ac3792f::t_4fa8eacb767b5a 88-93,95-98
+  s_1c08b47ac3792f::t_ea93160f3110e5 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cfd70449d43bce44baee91191a4f8459f53f9bb3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
