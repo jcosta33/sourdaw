@@ -412,7 +412,9 @@ describe('automation transform handlers — execute → undo restores pre-state'
         expect(automationStore.value?.lanes).toEqual([concurrentLane]);
 
         expect(handleAddAutomationLane.isNoop?.(action)).toBe(true);
-        expect(action.payload).toHaveProperty('laneId', concurrentLane.id);
+        // The fold never rewrites the stored action (#4823): it keeps the id its
+        // inverse names, and the use case's duplicate guard keeps the replay inert.
+        expect(action.payload).toHaveProperty('laneId', inverse.payload.laneId);
         void handleAddAutomationLane.execute(action);
         expect(automationStore.value?.lanes).toEqual([concurrentLane]);
     });

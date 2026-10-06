@@ -307,8 +307,12 @@ describe('transactSnapshot - explicit mutation ownership', () => {
             return Promise.resolve();
         });
 
+        // The settlement of the unscoped predecessor is the scoped write's own
+        // preparation, so it commits under the demanding transaction's mutation
+        // owner — the attribution the batch mutation authorization counts
+        // (PR #4962's settlement-attribution fix); rAF flushes stay unowned.
         expect(mutations).toEqual([
-            { owner: undefined, snapshotTransaction: undefined },
+            { owner: expect.any(Object), snapshotTransaction: undefined },
             { owner: expect.any(Object), snapshotTransaction: snapshotHandle },
         ]);
         expect(loadPresentSnapshot(snapshots.before, 'root').state).toEqual({ count: 1 });

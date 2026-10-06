@@ -130,4 +130,27 @@ describe('createAutomergeStorage deferred pending baseline', () => {
         expect(doc.state).toEqual({ count: 99 });
         expect(storage.get()).toEqual({ count: 99 });
     });
+
+    it('lands a nested seed when a retained baseline is re-set unchanged against a wired document', () => {
+        const storage = createAutomergeStorage<Record<string, number>>('root', 'state');
+
+        // The baseline is retained with no port to receive it (#4109), so the
+        // next genuine write's base is this cache value, not the document.
+        storage.set({ a: 1, x: 2 });
+        frameCallback?.(100);
+
+        // The document holds the slot without the seed. Re-setting the same
+        // value gives the flush no delta of its own; the seed must still land,
+        // because the presence snapshot captured beside the base proves no
+        // document ever held it. Letting the equal write stop at the slot
+        // would strand `x` and the committed projection would then erase it
+        // from the cache (#4962 review, reconcileCrdtSlot thread).
+        const { doc, port } = createTestPort({ state: { a: 1 } });
+        configureAutomergeStoragePort(port);
+        storage.set({ a: 1, x: 2 });
+        flushAutomergeStorageWrites();
+
+        expect(doc.state).toEqual({ a: 1, x: 2 });
+        expect(storage.get()).toEqual({ a: 1, x: 2 });
+    });
 });

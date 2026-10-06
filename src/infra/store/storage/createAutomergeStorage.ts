@@ -2,7 +2,7 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { reconcileCrdtSlot, type CrdtEntityIdentityByField } from './reconcileCrdtSlot';
+import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter } from './types';
 
 type AutomergeStorageDocId = string;
@@ -232,6 +232,18 @@ type PendingAutomergeStorageWrite = {
     readonly commitOwner: object;
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
+    /**
+     * The storage backend was swapped underneath this write. The presence
+     * snapshot described the outgoing backend's document, so it is dropped —
+     * no stale snapshot may vouch for a document that no longer exists — and
+     * the flush base is marked unknown, so the next flush writes the full
+     * value and decides no absence against a document it never saw. The
+     * pending's base itself stands: it is the provenance the three-way rebase
+     * attributes this writer's delta with, and destroying it would recast
+     * absorbed document content as this writer's edit. Writes buffered before
+     * any port existed keep the deferred-baseline contract (#4109) instead.
+     */
+    readonly notePortChange?: () => void;
     readonly scoped: boolean;
     readonly snapshotTransaction: object | undefined;
     readonly claim: () => ClaimedAutomergeStorageWrite | null;
@@ -880,7 +892,16 @@ export function runWithAutomergeStorageTransaction<Result>(
 
 function flushMatchingAutomergeStorageWrites(
     matches: (pending: PendingAutomergeStorageWrite) => boolean,
-    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map()
+    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map(),
+    /**
+     * Attribution for an unscoped write a scoped transaction settles
+     * deliberately. The settlement is that transaction's own write
+     * preparation, so its document mutation counts as the transaction's work;
+     * only `settleUnscopedPredecessor` supplies this. Every other flush of an
+     * unscoped write — its own rAF, the external `flushPendingUnscopedWrite` —
+     * lands unowned, exactly like any foreign buffered write.
+     */
+    attributeMutationsTo?: object
 ): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
@@ -993,7 +1014,7 @@ function flushMatchingAutomergeStorageWrites(
 
                 const outcome = commitAutomergeStorageMutations(
                     mutations,
-                    firstWrite.scoped ? firstWrite.commitOwner : undefined,
+                    firstWrite.scoped ? firstWrite.commitOwner : attributeMutationsTo,
                     documentValidators.get(docId)
                 );
                 if (documentValidators.has(docId)) {
@@ -1072,10 +1093,12 @@ function flushMatchingAutomergeStorageWrites(
     }
 }
 
-function flushAutomergeStorageWriteOwner(write: PendingAutomergeStorageWrite): void {
+function flushAutomergeStorageWriteOwner(write: PendingAutomergeStorageWrite, attributeMutationsTo?: object): void {
     flushMatchingAutomergeStorageWrites(
         (pending) =>
-            pending.commitOwner === write.commitOwner && pending.snapshotTransaction === write.snapshotTransaction
+            pending.commitOwner === write.commitOwner && pending.snapshotTransaction === write.snapshotTransaction,
+        undefined,
+        attributeMutationsTo
     );
 }
 
@@ -1091,7 +1114,19 @@ export function countPendingAutomergeStorageWrites(): number {
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
+    const previousPort = automergeStoragePort;
+    if (previousPort === port) {
+        return;
+    }
     automergeStoragePort = port;
+    if (previousPort === null) {
+        // Writes buffered before any port existed never belonged to an
+        // outgoing backend; they keep the deferred-baseline contract (#4109).
+        return;
+    }
+    for (const pending of [...pendingAutomergeStorageWrites]) {
+        pending.notePortChange?.();
+    }
 }
 
 /**
@@ -1177,7 +1212,28 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
     type AdapterPendingWrite = {
+        /**
+         * The base-capture snapshot of the document slot — `getDoc`, never
+         * the cache. The reconcile's absence law reads it: a node the
+         * document lacks that this snapshot also lacked is the writer's own
+         * stranded seed and lands; a node the snapshot held is a peer's newer
+         * deletion and stands. Refreshed at every re-anchor of `baseValue`
+         * below, so the two always describe the same moment.
+         */
+        baseDocumentPresence: CrdtSlotPresence | undefined;
         baseValue: TData | null;
+        /**
+         * Whether a port swap has invalidated the base as a description of
+         * the document this write will flush against. The flush then claims
+         * `baseValue: null` — every field is its delta and no absence is
+         * decided — while the pending's own `baseValue` stands untouched: it
+         * is the provenance the three-way rebase attributes this writer's
+         * delta with (#3183), and nulling it would recast document content
+         * the pending merely absorbed as this writer's edit (#4962). Cleared
+         * wherever the base is re-anchored beside a fresh presence snapshot,
+         * the instant it again describes the document it will flush against.
+         */
+        flushBaseUnknown: boolean;
         metadata: TWriteMetadata | null;
         message: string | undefined;
         rafId: number | null;
@@ -1308,6 +1364,23 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
+    /**
+     * What the document itself holds in this slot right now, detached from the
+     * live Automerge proxies — or `undefined` when there is no document to
+     * read, which leaves every absence undecided. Captured in the same
+     * instant as a pending's `baseValue`: a later read would describe a
+     * document the base never saw, and the reconcile's absence law needs the
+     * two to agree.
+     */
+    const captureBaseDocumentPresence = (): CrdtSlotPresence | undefined => {
+        const document = getAutomergeStoragePort()?.getDoc(docId);
+        if (!document) {
+            return undefined;
+        }
+        const rawValue = document[key];
+        return { slot: rawValue === undefined ? undefined : toDocSafe(rawValue) };
+    };
+
     const freezeMetadata = (metadata: TWriteMetadata): TWriteMetadata => {
         const cloned = toDocSafe(metadata);
         const freeze = (value: unknown): void => {
@@ -1357,7 +1430,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         message?: string,
         snapshotTransaction?: object,
         execution?: ClaimedAutomergeStorageWrite,
-        metadata: TWriteMetadata | null = null
+        metadata: TWriteMetadata | null = null,
+        baseDocumentPresence?: CrdtSlotPresence
     ): AutomergeStorageMutationInput | null => {
         const port = getAutomergeStoragePort();
         if (!port) {
@@ -1399,6 +1473,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                                 baseValue: nextBaseValue,
                                 value: toDocSafe(nextCrdtValue),
                                 identityByField: crdtEntityIdentity,
+                                documentPresence: baseDocumentPresence,
                             });
                         },
                     });
@@ -1423,6 +1498,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     baseValue: crdtBaseValue,
                     value: toDocSafe(crdtValue),
                     identityByField: crdtEntityIdentity,
+                    documentPresence: baseDocumentPresence,
                 });
             },
             message,
@@ -1516,7 +1592,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const preparePendingWrite = (
         pending: AdapterPendingWrite,
         execution: ClaimedAutomergeStorageWrite,
-        frozen: Pick<AdapterPendingWrite, 'baseValue' | 'message' | 'metadata' | 'revision' | 'value'>
+        frozen: Pick<
+            AdapterPendingWrite,
+            'baseDocumentPresence' | 'baseValue' | 'message' | 'metadata' | 'revision' | 'value'
+        >
     ): PendingWritePreparation => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending || pending.claimedExecution !== execution) {
             // A newer pending already owns this slot; this one is inert and
@@ -1568,7 +1647,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             frozen.message,
             pending.write.snapshotTransaction,
             execution,
-            frozen.metadata
+            frozen.metadata,
+            frozen.baseDocumentPresence
         );
         if (!mutation) {
             return { status: 'defer' };
@@ -1660,8 +1740,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         const visibleBefore = cachedValue;
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         committedSetRevision = Math.max(committedSetRevision, claimRevision);
+        const baseDocumentPresence = captureBaseDocumentPresence();
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = committedCacheValue;
+            remaining.baseDocumentPresence = baseDocumentPresence;
+            remaining.flushBaseUnknown = false;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1715,6 +1798,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             }
             if (rebasePending) {
                 successor.baseValue = projectedValue;
+                successor.baseDocumentPresence = captureBaseDocumentPresence();
+                successor.flushBaseUnknown = false;
             }
             successor.value = acceptedValue;
             projectedValue = acceptedValue;
@@ -1832,8 +1917,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             absencePresentation = 'default';
         }
         acceptedAuthorityEpoch += 1;
+        const baseDocumentPresence = captureBaseDocumentPresence();
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = projected;
+            remaining.baseDocumentPresence = baseDocumentPresence;
+            remaining.flushBaseUnknown = false;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1876,7 +1964,12 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     return null;
                 }
                 const frozen = {
-                    baseValue: current.baseValue,
+                    baseDocumentPresence: current.baseDocumentPresence,
+                    // A pending whose base no longer describes the target
+                    // document flushes as a full-value write: null here means
+                    // "every field is this writer's delta", never "the writer
+                    // saw an empty document".
+                    baseValue: current.flushBaseUnknown ? null : current.baseValue,
                     message: current.message,
                     metadata: current.metadata === null ? null : freezeMetadata(current.metadata),
                     revision: current.revision,
@@ -1905,10 +1998,20 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 return execution;
             },
             scoped: context.scoped,
+            notePortChange: () => {
+                const current = getPending();
+                if (pendingWritesByOwner.get(current.write.commitOwner) !== current) {
+                    return;
+                }
+                current.baseDocumentPresence = undefined;
+                current.flushBaseUnknown = true;
+            },
             snapshotTransaction: context.snapshotTransaction,
         };
         pending = {
+            baseDocumentPresence: captureBaseDocumentPresence(),
             baseValue: cachedValue,
+            flushBaseUnknown: false,
             metadata: initialMetadata,
             message: getSemanticMessage(),
             rafId: null,
@@ -1974,7 +2077,32 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         });
     };
 
-    const settleMetadataPredecessor = (): void => {
+    /**
+     * Flush this adapter's outstanding unscoped write, if any, before a scoped
+     * transaction's first write on the same slot commits on top of it.
+     *
+     * The scoped write's base was captured from the cache, which already
+     * includes the predecessor's value. If the predecessor were left pending,
+     * the document would lack content the scoped write's base and desired both
+     * carry — the reconciler's ownership law (#4858) would then read that
+     * content as "no delta of this writer's own" and skip it, stranding the
+     * predecessor's edit outside the document (a concurrent clip edit vanished
+     * on the next undo; a recording's punch-out extension reverted to its
+     * provisional geometry). Landing the predecessor first makes the scoped
+     * write reconcile against a document that already holds what its base
+     * holds, so its skip decisions describe reality.
+     *
+     * The settlement's document mutation is attributed to the scoped
+     * transaction that demanded it. It is that write's own preparation —
+     * synchronous inside the transaction's window, and its content is exactly
+     * what the scoped write's base already carries — so mutation-epoch
+     * observers must count it as this transaction's work. Left unowned, the
+     * epoch moved outside the transaction and `captureProjectMutationAuthorization`
+     * read the writer's own preparation as a foreign project change: a plugin
+     * capture revoked its own execution authority after its handler had run,
+     * and the accepted runtime state never reached the document.
+     */
+    const settleUnscopedPredecessor = (attributedTo: object | undefined): void => {
         const commitOwner = unscopedCommitOwner;
         if (!commitOwner) {
             return;
@@ -1984,7 +2112,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             return;
         }
         try {
-            flushAutomergeStorageWriteOwner(pending.write);
+            flushAutomergeStorageWriteOwner(pending.write, attributedTo);
         } catch (error) {
             if (
                 error instanceof AutomergeStorageFlushError &&
@@ -2002,7 +2130,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         intentBase: TData | null,
         metadata: TWriteMetadata | null
     ): TData | null => {
-        if (!context.scoped || !writeMetadata || !rebasePending) {
+        if (!context.scoped) {
             return intendedValue;
         }
         if (pendingWritesByOwner.has(context.commitOwner)) {
@@ -2012,7 +2140,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!predecessorOwner || !pendingWritesByOwner.has(predecessorOwner)) {
             return intendedValue;
         }
-        settleMetadataPredecessor();
+        settleUnscopedPredecessor(context.commitOwner);
+        if (!writeMetadata || !rebasePending) {
+            return intendedValue;
+        }
         if (cachedValue === null) {
             return intendedValue;
         }
@@ -2366,6 +2497,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         // pending delta purely local without granting a stale
                         // callback authority over a replacement pending.
                         visiblePending.baseValue = crdtData;
+                        visiblePending.baseDocumentPresence = captureBaseDocumentPresence();
+                        visiblePending.flushBaseUnknown = false;
                     }
                     cachedValue = acceptedVisible;
                     cachedRevision = ++nextRevision;
