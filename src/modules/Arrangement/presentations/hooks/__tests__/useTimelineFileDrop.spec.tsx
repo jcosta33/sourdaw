@@ -115,6 +115,7 @@ vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     pushUndoEntry: vi.fn(),

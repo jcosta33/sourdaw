@@ -35,6 +35,7 @@ export const COMMAND_APPLICATION_ID_RULES: Partial<Record<AppActionType, Applica
     addSection: { argument: 'sectionId', prefix: 'section-command-' },
     addSidechainRoute: { argument: 'routeId', prefix: 'sidechain-command-' },
     addTrack: { argument: 'id', prefix: 'track-command-' },
+    automateParameterRange: { argument: 'writeId', prefix: 'automation-range-command-' },
     createAdjustmentLayer: { argument: 'layerId', prefix: 'adjustment-layer-command-' },
     createBus: { argument: 'busId', prefix: 'bus-command-' },
     createTrackAlternative: { argument: 'alternativeId', prefix: 'alternative-command-' },

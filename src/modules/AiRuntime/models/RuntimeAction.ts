@@ -77,6 +77,7 @@ export const RUNTIME_ACTION_TYPES = [
     'automateSendRange',
     'automateSendRanges',
     'automateTrackGainRange',
+    'automateParameterRange',
     'renderProjectSections',
     'addAutomationPoint',
     'setAutomationLaneEnabled',
@@ -313,6 +314,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     automateSendRange: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
     automateSendRanges: ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
     automateTrackGainRange: ['trackIds', 'sectionName', 'gainDb'],
+    automateParameterRange: ['trackId', 'parameterId', 'range', 'valueDb', 'deltaDb', 'value', 'rampIn', 'rampOut'],
     renderProjectSections: ['sectionIds'],
     addAutomationPoint: [
         'laneId',
@@ -389,6 +391,7 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     automateSendRange: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
     automateSendRanges: ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
     automateTrackGainRange: ['trackIds', 'sectionName', 'gainDb'],
+    automateParameterRange: ['trackId', 'parameterId', 'range'],
     renderProjectSections: ['sectionIds'],
     addAutomationPoint: ['laneId', 'beat'],
     removeAutomationPoint: ['laneId', 'pointIndex'],

@@ -76,6 +76,7 @@ export const ACTION_LABELS: Record<string, string> = {
     renameSection: 'Rename section',
     addAutomationLane: 'Add automation',
     addAutomationPoint: 'Set automation',
+    automateParameterRange: 'Automate range',
     undo: 'Undo',
     redo: 'Redo',
     setYeastProcessorParam: 'Set Yeast parameter',
