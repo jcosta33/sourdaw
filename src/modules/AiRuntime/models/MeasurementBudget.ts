@@ -47,13 +47,18 @@ export function planMeasurementWork(input: {
 }
 
 /**
- * The wall-clock allowance of one measurement: four times the seconds it renders, never less than the
- * floor, and never more than the configured ceiling, which the floor does not override.
+ * The wall-clock allowance of one measurement: four times the total seconds all its renders process
+ * (`renderJobs` renders of `renderedSeconds` each), never less than the floor, and never more than the
+ * configured ceiling, which the floor does not override.
  */
-export function resolveMeasurementWallClockMs(input: { renderedSeconds: number; ceilingMs: number }): number {
+export function resolveMeasurementWallClockMs(input: {
+    renderedSeconds: number;
+    renderJobs: number;
+    ceilingMs: number;
+}): number {
     const proportionalMs = Math.max(
         ANALYSIS_MEASURE_MIN_WALL_CLOCK_MS,
-        input.renderedSeconds * ANALYSIS_MEASURE_WALL_CLOCK_MS_PER_RENDERED_SECOND
+        input.renderJobs * input.renderedSeconds * ANALYSIS_MEASURE_WALL_CLOCK_MS_PER_RENDERED_SECOND
     );
     return Math.min(input.ceilingMs, proportionalMs);
 }

@@ -447,6 +447,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.useRealTimers();
     agentRunLifecycle.clear();
     agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
     resetAiWorkflowCommandPreflightFixture();
@@ -770,18 +771,59 @@ describe('a planner measurement is bounded in duration', () => {
         expect(admitted.receipt.error).toBeNull();
     });
 
-    // Red when the allowance stops being four times the rendered seconds, floored, and capped by the ceiling.
+    // Red when the allowance stops being four times the total seconds all renders process, floored, and capped by the ceiling.
     it.each([
-        { renderedSeconds: 1_000, ceilingMs: 120_000, expectedMs: 120_000 },
-        { renderedSeconds: 10, ceilingMs: 120_000, expectedMs: 40_000 },
-        { renderedSeconds: 1, ceilingMs: 120_000, expectedMs: 10_000 },
-        { renderedSeconds: 10, ceilingMs: 5_000, expectedMs: 5_000 },
+        { renderJobs: 1, renderedSeconds: 1_000, ceilingMs: 120_000, expectedMs: 120_000 },
+        { renderJobs: 1, renderedSeconds: 10, ceilingMs: 120_000, expectedMs: 40_000 },
+        { renderJobs: 2, renderedSeconds: 10, ceilingMs: 120_000, expectedMs: 80_000 },
+        { renderJobs: 4, renderedSeconds: 5, ceilingMs: 120_000, expectedMs: 80_000 },
+        { renderJobs: 4, renderedSeconds: 10, ceilingMs: 120_000, expectedMs: 120_000 },
+        { renderJobs: 1, renderedSeconds: 1, ceilingMs: 120_000, expectedMs: 10_000 },
+        { renderJobs: 2, renderedSeconds: 1, ceilingMs: 120_000, expectedMs: 10_000 },
+        { renderJobs: 4, renderedSeconds: 10, ceilingMs: 5_000, expectedMs: 5_000 },
     ])(
-        'allows $expectedMs ms to a measurement of $renderedSeconds s under a $ceilingMs ms ceiling',
-        ({ renderedSeconds, ceilingMs, expectedMs }) => {
-            expect(resolveMeasurementWallClockMs({ renderedSeconds, ceilingMs })).toBe(expectedMs);
+        'allows $expectedMs ms to $renderJobs render(s) of $renderedSeconds s under a $ceilingMs ms ceiling',
+        ({ renderJobs, renderedSeconds, ceilingMs, expectedMs }) => {
+            expect(resolveMeasurementWallClockMs({ renderJobs, renderedSeconds, ceilingMs })).toBe(expectedMs);
         }
     );
+
+    // Red when the allowance is sized for one render although a two-target preview runs four of them.
+    it('lets a two-target preview finish four renders that together outlast one render’s allowance', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let rendersInFlight = 0;
+        engine.renderTrackSubgraphOffline.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    rendersInFlight += 1;
+                    setTimeout(() => {
+                        rendersInFlight -= 1;
+                        resolve(sineBuffer(0.5));
+                    }, 3_000);
+                })
+        );
+        let settled = false;
+        // 2.5 rendered seconds at 120 BPM: one render's allowance is the 10 s floor, four renders' is 40 s.
+        const pending = measure('preview', DRUMS_AND_BASS, { startBeat: 0, endBeat: 5 }).finally(() => {
+            settled = true;
+        });
+
+        // Lockstep: the clock moves only once a render's own timer is pending beside the deadline's,
+        // so real async work (hashing, previews) never lets the fake clock run ahead of the renders.
+        for (let tick = 0; tick < 10_000 && !settled; tick += 1) {
+            await new Promise((resolve) => {
+                setImmediate(resolve);
+            });
+            if (rendersInFlight > 0 || vi.getTimerCount() > 1) {
+                await vi.advanceTimersToNextTimerAsync();
+            }
+        }
+        const read = await pending;
+
+        expect(read.receipt.error).toBeNull();
+        expect(read.receipt.status).toBe('success');
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalledTimes(4);
+    });
 
     // Red when the deadline stops reaching the renders, or its expiry reads as a user cancel.
     it.each(['project', 'preview'] as const)(
