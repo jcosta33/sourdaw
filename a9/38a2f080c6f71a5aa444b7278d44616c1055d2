@@ -1,0 +1,50 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_2bfd55a4393d7c::t_c36cf5f3a11ec6 51
+  s_2bfd55a4393d7c::t_49a6d9ac17cbc1 680-701
+  s_2bfd55a4393d7c::t_5df8ddbe040dbe 34-36
+  s_2bfd55a4393d7c::t_85bf755ac4c600 29-30,32-33,37,42
+  s_2bfd55a4393d7c::t_62dac7b22d941a 62,65
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_a89fbd3d65c4a5 99-103
+  s_2bfd55a4393d7c::t_fadb8e385f79ae 104-108
+src/modules/Transport/useCases/scheduling/releaseUnrestoredStoredControllers.ts
+  s_2bfd55a4393d7c::t_2812761374f1b1 4,19-20,24-25,31-32,35-36,42,44-45,47,49-51
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_2bfd55a4393d7c::t_e2059c1a65151b 404,411-416
+  s_2bfd55a4393d7c::t_6c33ef60daeb1c 467-468
+  s_2bfd55a4393d7c::t_75e1cfe1eefd20 453-454
+  s_2bfd55a4393d7c::t_2ccec633f8e740 430-431,433-434
+src/modules/Transport/useCases/scheduling/restoreStoredControllers.ts
+  s_2bfd55a4393d7c::t_30e9eaa74b6823 7
+  s_2bfd55a4393d7c::t_b46c508cd336b1 31-33,37-43
+  s_2bfd55a4393d7c::t_0a73a05f01dc6f 75
+  s_2bfd55a4393d7c::t_19805e479afc2e 54
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_2bfd55a4393d7c::t_ba3695e96271a1 659
+  s_2bfd55a4393d7c::t_7c5448206bdcd4 696-697
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_2bfd55a4393d7c::t_f72e7781b35d84 373-377
+  s_2bfd55a4393d7c::t_d58e790cdb556c 637-639
+  s_2bfd55a4393d7c::t_7189889cf099cc 37
+  s_2bfd55a4393d7c::t_a17b1278724cde 541-543
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_727216840f86f4 25
+src/modules/Transport/useCases/scheduling/discardStaleStoredMoves.ts
+  s_2bfd55a4393d7c::t_8692271ae60363 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a938a2f080c6f71a5aa444b7278d44616c1055d2",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
