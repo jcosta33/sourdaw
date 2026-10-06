@@ -1,6 +1,5 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { markerStore } from '#/modules/Arrangement/stores';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
@@ -15,9 +14,11 @@ import {
 } from '../models/CreativeInterpretation';
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
+import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -84,6 +85,7 @@ import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
+import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -199,6 +201,17 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
         status: 'valid' as const,
         calls: calls.flatMap((call) => expandedByCall.get(call) ?? [call]),
     };
+}
+
+/**
+ * The measured preview a proposal adopted. Whether its figures describe the batch that runs is
+ * decided where that batch is persisted for approval, by content hash, because only there does
+ * the final batch exist: anything the turn added beside the preview, or any grounding that came
+ * out differently, changes the hash and drops the figures.
+ */
+function readAdoptedMeasuredPreview(selectedCompilations: readonly RetainedCompilation[]): MeasuredPreview | null {
+    const adopted = selectedCompilations.find((compiled) => compiled.kind === 'preview');
+    return adopted?.kind === 'preview' ? adopted.measuredPreview : null;
 }
 
 /**
@@ -582,6 +595,7 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                                  revision: projectRevision,
                                   execute: (call, { callId, turn, signal: loopSignal }) =>
                                       executeAnalysisMeasure({
                                           call,
@@ -590,6 +604,14 @@ const planPromptIntent = inject({ logger })(
                                           projectRevision,
                                           sections: context.sections ?? [],
                                           signal: loopSignal,
+                                          // A preview is compiled and grounded against what an adopting
+                                          // proposal is: this run's read model, request and authority.
+                                          preview: {
+                                              context,
+                                              prompt,
+                                              runId: streamIdentity?.runId ?? 'preview-measurement',
+                                              readCreativeAuthority: () => creativeAuthority,
+                                          },
                                       }),
                               },
                     requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
@@ -693,6 +715,7 @@ const planPromptIntent = inject({ logger })(
                 const adoptedRecipes = selectedCompilations.flatMap((compiled) =>
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
+                const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
                     if (call !== proposedBatch || !Array.isArray(selectedIds)) {
                         return call;
@@ -867,18 +890,7 @@ const planPromptIntent = inject({ logger })(
                         ...(providerProposal === null ? {} : { providerProposal }),
                     };
                 }
-                const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
-                    beat: marker.beat,
-                    color: marker.color,
-                    markerId: marker.id,
-                    name: marker.name,
-                }));
-                const sectionSignatures = (markerStore.value?.sections ?? []).map((section) => ({
-                    endBeat: section.endBeat,
-                    name: section.name,
-                    sectionId: section.id,
-                    startBeat: section.startBeat,
-                }));
+                const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
                 const bridged = bridgeGroundedLlmToolCalls({
                     calls: toolCalls,
                     context,
@@ -973,6 +985,22 @@ const planPromptIntent = inject({ logger })(
                         drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
                         syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
                     });
+                    if (guarded.status === 'rejected' && guarded.questions !== undefined) {
+                        // Two sections answer the request equally: the request is
+                        // answerable, it only has to say which one it means.
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            planningOutcome: {
+                                kind: 'clarify',
+                                reason: guarded.reason,
+                                questions: [...guarded.questions],
+                            },
+                        };
+                    }
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
                         return {
@@ -1056,6 +1084,7 @@ const planPromptIntent = inject({ logger })(
                               }),
                         ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(adoptedRecipes.length === 0 ? {} : { adoptedRecipes }),
+                        ...(measuredPreview === null ? {} : { measuredPreview }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

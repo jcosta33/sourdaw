@@ -146,6 +146,23 @@ const makeNote = (id: string, pitch: number, startBeat: number, duration: number
     velocity,
 });
 
+/** Every optional per-note field; a piano-roll duplicate must carry all of them (#4800, #4813). */
+const makeExpressiveNote = (id: string, pitch: number, startBeat: number, duration: number): Note => ({
+    ...makeNote(id, pitch, startBeat, duration),
+    probability: 73,
+    pressure: 31,
+    slide: 42,
+    pitchBend: -2048,
+    pitchBendRangeSemitones: 12,
+    channel: 3,
+    articulation: 'accent',
+    expression: {
+        pressure: [{ offsetBeats: 0.5, value: 90 }],
+        slide: [{ offsetBeats: 0.5, value: 91 }],
+        pitchBend: [{ offsetBeats: 0.5, value: 1024 }],
+    },
+});
+
 const latest: { current: Handlers | null } = { current: null };
 
 const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
@@ -222,8 +239,13 @@ describe('usePianoRollInteractions', () => {
             duration,
             velocity,
         }));
-        mocks.batchAddMidiNotes.mockImplementation((_clipId, list: Array<Omit<Note, 'id'>>) =>
-            list.map((entry) => ({ id: mocks.nextId(), ...entry }))
+        mocks.batchAddMidiNotes.mockImplementation((_clipId, list: Array<Omit<Note, 'id'> & { id?: string }>) =>
+            list.map((entry) => {
+                // The real admission mints an id when the caller passes none; the caller's
+                // explicit `id: undefined` must not override the minted one.
+                const { id: _callerId, ...fields } = entry;
+                return { id: mocks.nextId(), ...fields };
+            })
         );
         mocks.getNotesForClip.mockReturnValue([]);
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
@@ -461,12 +483,7 @@ describe('usePianoRollInteractions', () => {
         });
 
         it('alt-drag duplicates: original stays, copy lands at the offset position', () => {
-            const original = {
-                ...makeNote('n1', 60, 2, 2),
-                pressure: 31,
-                channel: 3,
-                expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
-            };
+            const original = makeExpressiveNote('n1', 60, 2, 2);
             const { canvas } = renderRoll({ notes: [original] });
 
             fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60), altKey: true });
@@ -484,6 +501,9 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+            const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+            undo();
+            expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-1', [copyId]);
         });
 
         it('right-edge drag resizes duration and commits via resizeMidiNote', () => {
@@ -820,12 +840,7 @@ describe('usePianoRollInteractions', () => {
         });
 
         it('cmd+D duplicates the selection forward by its span', () => {
-            const original = {
-                ...makeNote('n1', 60, 2, 2),
-                slide: 42,
-                articulation: 'accent',
-                expression: { slide: [{ offsetBeats: 0.5, value: 90 }] },
-            };
+            const original = makeExpressiveNote('n1', 60, 2, 2);
             const { canvas } = renderRoll({ notes: [original], selectedNoteIds: new Set(['n1']) });
 
             fireEvent.keyDown(canvas, { key: 'd', metaKey: true });
@@ -836,6 +851,9 @@ describe('usePianoRollInteractions', () => {
             ]);
             const copyId = mocks.batchAddMidiNotes.mock.results[0]?.value[0].id;
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set([copyId]));
+            const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+            undo();
+            expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-1', [copyId]);
         });
 
         it('arrow keys nudge and transpose the selection', () => {

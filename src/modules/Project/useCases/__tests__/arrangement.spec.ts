@@ -132,6 +132,7 @@ vi.mock('#/modules/Command/useCases', async () => {
         executeAppAction: actual.executeAppAction,
         executeAppActionBatch: vi.fn(),
         executeUserAppAction: vi.fn(),
+        getExecutableAppActionEffect: actual.getExecutableAppActionEffect,
         isAppActionCommittedError: vi.fn(),
         pushUndoEntry: vi.fn(),
         REDO_NOT_APPLIED: vi.fn(),

@@ -471,6 +471,64 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    // Red when a strict host is shown the open arguments object of a measured proposal, or the
+    // encoded leaves of a preview measurement are not restored before the loop reads them.
+    it('encodes a preview measurement’s proposal leaves for a strict host and decodes the reply', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const measureSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'analysis.measure'
+        );
+        expect(measureSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'measure-1',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: { kind: 'tracks', ids: ['track-kick'] },
+                        range: { startBeat: 0, endBeat: 8 },
+                        subject: 'preview',
+                        proposal: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'eq',
+                                    name: 'addDevice',
+                                    argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'make the kick punchier', [measureSchema!]);
+
+        const advertised: unknown = mocks.generateCloudToolCalls.mock.calls[0]?.[2];
+        const proposalItem = [0, 'function', 'parameters', 'properties', 'proposal', 'properties', 'items', 'items'];
+        expect(advertised).toHaveProperty([...proposalItem, 'properties', 'argumentsJson', 'type'], 'string');
+        expect(advertised).not.toHaveProperty([...proposalItem, 'properties', 'arguments']);
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    name: 'analysis.measure',
+                    arguments: {
+                        subject: 'preview',
+                        proposal: {
+                            items: [{ id: 'eq', arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } }],
+                        },
+                    },
+                },
+            ],
+        });
+    });
+
     it('keeps non-strict compatible proposals in the canonical object format', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai-compatible', model: 'compatible-model' });

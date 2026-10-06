@@ -14,6 +14,7 @@ import {
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
+import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
@@ -24,7 +25,13 @@ import {
     type HostedTurnRecord,
 } from '../models/HostedTurnHistory';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
-import { type AdoptedRecipe, type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
+import { type MeasuredPreview } from '../models/MeasuredPreview';
+import {
+    type AdoptedRecipe,
+    type RetainedCommand,
+    type RetainedCommandSet,
+    type RetainedCompilation,
+} from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
@@ -178,11 +185,13 @@ type RunApplicationOwnedToolLoopInput = {
     /**
      * The measurement read. It renders the project offline, so the caller binds it to the run's
      * revision and the loop executes at most one call to it per turn. Without it the tool stays
-     * unavailable to this run.
+     * unavailable to this run. A preview measurement also returns the commands it measured, which
+     * the loop retains for adoption only when `revision` names the revision they were compiled at.
      */
     measurement?: {
         toolName: string;
-        execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<ApplicationToolReceipt>;
+        revision?: string;
+        execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<AnalysisMeasureRead>;
     };
     transform?: {
         toolName: typeof TRANSFORM_COMPILE_TOOL_NAME;
@@ -1073,18 +1082,21 @@ async function executeMeasurement(
     measurement: NonNullable<RunApplicationOwnedToolLoopInput['measurement']>,
     call: ToolCallResult,
     context: MeasurementCallContext
-): Promise<ApplicationToolReceipt> {
+): Promise<ExecutedRead> {
     try {
         return await measurement.execute(call, context);
     } catch {
-        return failureReceipt({
-            callId: context.callId,
-            toolName: call.name,
-            turn: context.turn,
-            code: 'tool-execution-failed',
-            safeMessage: 'Measurement failed inside the application authority.',
-            retryable: true,
-        });
+        return {
+            commands: null,
+            receipt: failureReceipt({
+                callId: context.callId,
+                toolName: call.name,
+                turn: context.turn,
+                code: 'tool-execution-failed',
+                safeMessage: 'Measurement failed inside the application authority.',
+                retryable: true,
+            }),
+        };
     }
 }
 
@@ -1097,7 +1109,19 @@ type ExecutedRead = {
     commands: readonly RetainedCommand[] | null;
     /** Set only by a recipe expansion; it is what makes the entry the loop retains a recipe, not a transform. */
     recipe?: AdoptedRecipe | null;
+    /** Set only by a preview measurement; it is what makes the entry the loop retains a measured preview. */
+    measuredPreview?: MeasuredPreview | null;
 };
+
+function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
+    if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
+        return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
+    }
+    if (executed.recipe !== undefined && executed.recipe !== null) {
+        return { kind: 'recipe', ...retainable, recipe: executed.recipe };
+    }
+    return { kind: 'transform', ...retainable };
+}
 
 function executeTurnReads(input: {
     calls: readonly IdentifiedToolCall[];
@@ -1163,15 +1187,7 @@ function executeTurnReads(input: {
                 }),
             };
         }
-        return {
-            commands: null,
-            receipt: await executeMeasurement(measurement, call, {
-                callId,
-                turn,
-                loopId: input.loopId,
-                signal: input.signal,
-            }),
-        };
+        return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
     });
 }
 
@@ -1243,7 +1259,7 @@ function validateCommandBatchProposal(
             new Set(references).size !== references.length ||
             references.some((entry) => !retainedCompilations.has(entry)))
     ) {
-        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion.';
+        return 'Provider referenced an unknown, duplicate, or failed transform compilation or recipe expansion, or measured preview.';
     }
     const selectedCount = Array.isArray(references)
         ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
@@ -1372,7 +1388,7 @@ function validateCatalogTerminalCalls(
         ) {
             return {
                 status: 'rejected',
-                reason: 'Provider referenced a stale transform compilation or recipe expansion.',
+                reason: 'Provider referenced a stale transform compilation or recipe expansion, or measured preview.',
             };
         }
     }
@@ -1902,7 +1918,11 @@ export async function runApplicationOwnedToolLoop(
             terminalCalls,
             disclosedCommandSchemas,
             retainedCompilations,
-            { transform: input.transform?.revision, recipe: input.recipe?.revision }
+            {
+                transform: input.transform?.revision,
+                recipe: input.recipe?.revision,
+                preview: input.measurement?.revision,
+            }
         );
         if (terminalValidation.status === 'rejected') {
             return {
@@ -1994,11 +2014,7 @@ export async function runApplicationOwnedToolLoop(
                 revision: admitted.revision,
                 commands: executed.commands,
             };
-            if (executed.recipe === undefined || executed.recipe === null) {
-                retainedCompilations.set(admitted.callId, { kind: 'transform', ...retainable });
-            } else {
-                retainedCompilations.set(admitted.callId, { kind: 'recipe', ...retainable, recipe: executed.recipe });
-            }
+            retainedCompilations.set(admitted.callId, retainedCompilationOf(executed, retainable));
         }
     }
 

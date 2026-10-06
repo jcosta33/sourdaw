@@ -109,3 +109,88 @@ describe('versionedCommandArgumentKeys — restoreClipSplitState (#4521)', () =>
         expect(validateVersionedCommandArguments('restoreClipSplitState', legacyPayload)).toBe(true);
     });
 });
+
+describe('versionedCommandArgumentKeys — dense array admission (#4938)', () => {
+    // Assigning past the end leaves the skipped indices as holes; Array.prototype.every
+    // would visit only the populated slots and admit the array.
+    it('refuses a marquee selection whose trackIds carry a hole', () => {
+        const trackIds: string[] = ['t1'];
+        trackIds[2] = 't3';
+        expect(
+            validateVersionedCommandArguments('setMarqueeSelection', {
+                selection: { startBeat: 0, endBeat: 4, trackIds },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('setMarqueeSelection', {
+                selection: { startBeat: 0, endBeat: 4, trackIds: ['t1', 't2', 't3'] },
+            })
+        ).toBe(true);
+    });
+
+    it('refuses a device state whose json-safe payload array carries a hole', () => {
+        const chunk: unknown[] = [{ gain: 1 }];
+        chunk[2] = null;
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk: [{ gain: 1 }, null, null] } },
+            })
+        ).toBe(true);
+    });
+
+    // The outer chunk array is dense, so the matchesSchema array branch passes
+    // it; the hole inside the nested json value is refused only by isJsonSafe's
+    // own denseness gate.
+    it('refuses a device state whose json-safe payload nests an array carrying a hole', () => {
+        const inner: unknown[] = [1];
+        inner[2] = 3;
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk: [inner] } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('setDeviceState', {
+                deviceId: 'device-1',
+                state: { version: 1, data: { chunk: [[1, 2, 3]] } },
+            })
+        ).toBe(true);
+    });
+
+    // Pins the pre-existing indexed refusal: a tuple hole always reads
+    // undefined at its indexed position and no schema admits undefined. The
+    // emitted tuple-branch denseness gate additionally guards prototype-chain
+    // index masking, which every() alone would not.
+    it('refuses a time-signature tuple carrying a hole through the indexed position read', () => {
+        const expectedTimeSignature: number[] = [3];
+        expectedTimeSignature.length = 2;
+        expect(
+            validateVersionedCommandArguments('automateSendRanges', {
+                trackIds: ['t1'],
+                busId: 'bus-1',
+                sectionIds: ['s1'],
+                tailBars: 1,
+                targetLevelDb: -6,
+                expectedTimeSignature,
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('automateSendRanges', {
+                trackIds: ['t1'],
+                busId: 'bus-1',
+                sectionIds: ['s1'],
+                tailBars: 1,
+                targetLevelDb: -6,
+                expectedTimeSignature: [3, 4],
+            })
+        ).toBe(true);
+    });
+});

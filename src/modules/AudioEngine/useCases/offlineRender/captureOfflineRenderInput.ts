@@ -37,7 +37,8 @@ export function captureOfflineRenderInput(
         }),
     };
     const tracks = renderContext.tracks?.tracks ?? [];
-    const runtime = source?.runtime ?? captureOfflineRenderRuntimeInput(tracks, sampleRate);
+    const runtime =
+        source?.runtime ?? captureOfflineRenderRuntimeInput(tracks, sampleRate, { projectOnly: project !== undefined });
     const sink = getAudioDeviceRuntimeSink();
     const instruments = new Map<string, CapturedOfflineInstrument>();
     const nativeDevices = new Map<string, ReturnType<typeof projectDeviceForNativeBody>>();

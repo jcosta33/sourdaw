@@ -6,43 +6,7 @@ import { is_exact_automation_point, is_sorted_by_beat } from '../../stores/autom
 import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAutomationLanePoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
-function controlPointsMatch(
-    current: { x: number; y: number } | undefined,
-    expected: { readonly x: number; readonly y: number } | undefined
-): boolean {
-    return current?.x === expected?.x && current?.y === expected?.y;
-}
-
-/**
- * `expectedPoints` is document data carried by the inverse action (possibly a
- * remote peer's), so an entry can be null or a non-object at runtime even
- * though the contract types it as a snapshot. Such an entry cannot be compared
- * field-by-field and therefore cannot match — `pointsMatch` returning false
- * refuses the restore as a conflict, the same outcome as a divergence.
- */
-function isComparableSnapshot(value: unknown): value is AutomationPointSnapshot {
-    return value !== null && typeof value === 'object';
-}
-
-function pointsMatch(current: readonly AutomationPoint[], expected: readonly AutomationPointSnapshot[]): boolean {
-    return (
-        current.length === expected.length &&
-        current.every((point, index) => {
-            const expectedPoint = expected[index];
-            return (
-                isComparableSnapshot(expectedPoint) &&
-                point.id === expectedPoint.id &&
-                point.beat === expectedPoint.beat &&
-                point.value === expectedPoint.value &&
-                point.curve === expectedPoint.curve &&
-                point.tension === expectedPoint.tension &&
-                point.stairSteps === expectedPoint.stairSteps &&
-                controlPointsMatch(point.cp1, expectedPoint.cp1) &&
-                controlPointsMatch(point.cp2, expectedPoint.cp2)
-            );
-        })
-    );
-}
+import { automationPointSnapshotsMatch as pointsMatch } from './automationPointSnapshotsMatch';
 
 /**
  * Every replacement point carries exactly the store's point shape, checked per

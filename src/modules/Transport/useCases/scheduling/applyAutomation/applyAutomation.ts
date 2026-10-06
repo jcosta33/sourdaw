@@ -1,4 +1,4 @@
-import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
@@ -14,7 +14,6 @@ import {
     scheduleSendAutomation,
     scheduleTrackPan,
     updateDeviceParam,
-    updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
@@ -420,11 +419,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // lane. `gain`, `pan` and an existing send are the AudioParam-backed
         // families scheduled ahead at `now + compensationFor` (further down);
         // they keep reading the playhead's own `currentBeat`, unchanged.
-        // Every other lane — device parameters, MIDI-FX parameters, Fermenter
-        // runtime parameters — writes immediately rather than being scheduled
-        // ahead, so it reads `compensatedBeatFor`: the beat whose audio is
-        // entering the device chain right now, one PDC delay behind the
-        // playhead.
+        // Every other lane — device parameters and Fermenter runtime
+        // parameters — writes immediately rather than being scheduled ahead,
+        // so it reads `compensatedBeatFor`: the beat whose audio is entering
+        // the device chain right now, one PDC delay behind the playhead.
         const sendBusId = getSendAutomationBusId(lane.parameterId);
         const readsCompensatedClock = lane.parameterId !== 'gain' && lane.parameterId !== 'pan' && sendBusId === null;
         const readBeat = readsCompensatedClock ? compensatedBeatFor(lane.trackId) : currentBeat;
@@ -481,9 +479,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // getCompensationDelay(track)` — the same delayed clock scheduleAudioClips
         // places the compensated audio on — and ramps a-rate instead of stepping
         // at the tick grid; they read `currentBeat`, the playhead's own position.
-        // Device params (below), MIDI-FX params and Fermenter runtime params reach
+        // Device params (below) and Fermenter runtime params reach
         // their DSP through worklet MessagePort writes (updateDeviceParam /
-        // applyFermenterRuntimeParam / updateMidiFxParam), which apply on the next
+        // applyFermenterRuntimeParam), which apply on the next
         // render block and cannot be JS-scheduled a-rate here, so they cannot be
         // delayed the way the AudioParam families are. Instead they are read one
         // PDC delay earlier — `readBeat` above is `compensatedBeatFor(lane.trackId)`
@@ -677,73 +675,15 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 continue;
             }
 
-            // MIDI FX Automation
-            if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
-                continue;
-            }
-            for (const fx of track.midiFx) {
-                if (fx.parameterValues[lane.parameterId] === undefined) {
-                    continue;
-                }
-
-                // The owning MIDI FX is found by key presence, but whether a
-                // curve may drive that key is the descriptor's call, exactly as
-                // it is for a device param forty lines above. Note what this
-                // gate can actually decide today: `fx.type` is a Yeast
-                // `ProcessorType` and the lookup keys on `PluginDescriptor.id`,
-                // so it resolves nothing and the permissive "no declared
-                // contract" branch is the only one reachable. It stays because
-                // it is the gate a `ProcessorType`-keyed descriptor would flow
-                // through — but it is not enforcing anything right now.
-                if (!isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
-                    break;
-                }
-
-                if (!laneSlew) {
-                    laneSlew = new Map<string, number>();
-                    automationState.pluginParamSlew.set(lane.id, laneSlew);
-                }
-                // #4911: the first tick a lane drives this MIDI FX — entering
-                // its scope on a clip-window opening, or the first tick after
-                // load — has no previous value to glide from, so seeding it
-                // from the target and gating on movement would write nothing:
-                // a flat lane would sit on the manual value for ever. The
-                // entry tick snaps to the target and writes it once, the
-                // device branch's entry law (#4741). There is no offline slew
-                // to match here: the offline scheduler never schedules
-                // MIDI-FX parameters, so the live device semantics alone are
-                // the law being mirrored.
-                const previousSlew = laneSlew.get(fx.id);
-                const enteredLaneScope = previousSlew === undefined;
-                const seed = previousSlew ?? value;
-                const slewedFxValue =
-                    isDiscontinuity || enteredLaneScope ? value : slewStep(seed, value, AUTOMATION_SLEW_ALPHA);
-                const smoothed = clampDeviceParameterValue({
-                    deviceType: fx.type,
-                    paramId: lane.parameterId,
-                    value: slewedFxValue,
-                });
-                laneSlew.set(fx.id, smoothed);
-                // MIDI FX parameters are delivered UNQUANTISED, and that is a
-                // statement of fact rather than a policy: `fx.type` is a Yeast
-                // `ProcessorType` ('arpeggiator', 'euclidean', …), and the
-                // quantiser keys on `PluginDescriptor.id`. The two name spaces
-                // are disjoint (asserted in Yeast's `ProcessorCatalog.spec.ts`),
-                // so `getPluginById(fx.type)` is `undefined` for every processor
-                // that exists and a quantise call here could never do anything.
-                // Writing one anyway would read as coverage this branch does not
-                // have.
-                //
-                // Some of these parameters really are stepped —
-                // `EuclideanGenerator` uses `steps`/`hits` as loop bounds and a
-                // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
-                // 13 wide. Closing that needs descriptors keyed by
-                // `ProcessorType`, which is its own change; it is not closed here.
-                if (isDiscontinuity || enteredLaneScope || Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON) {
-                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
-                }
-                break;
-            }
+            // MIDI-FX parameters are not automation targets (#4789): nothing
+            // consumes their values — the engine-side write only fills
+            // `strip.midiFxNodes`, which nothing reads, and no note-transform
+            // code reads `track.midiFx`, live or offline — so a curve driving
+            // one has never been audible. No picker offers these lanes and the
+            // add-lane action refuses them; a lane that still arrives from a
+            // persisted project writes nothing. When a processor consumes
+            // MIDI-FX parameter values, a branch that delivers to it belongs
+            // here.
         }
     }
 

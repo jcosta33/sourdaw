@@ -1758,6 +1758,52 @@ export type AppAction =
           };
       }
     | {
+          /**
+           * Hold one track parameter at a target across a musical range, ramping in
+           * from and back out to the value its lane already draws there, and leaving
+           * the lane's curve outside the range unchanged.
+           *
+           * `range` is what the caller asked for and stays as asked. `startBeat` and
+           * `endBeat` are the half-open interval it resolves to, materialized by the
+           * owning handler when the command is admitted, so scope and lock checks read
+           * the beats the write will actually cover.
+           */
+          type: 'automateParameterRange';
+          payload: {
+              trackId: string;
+              /** `gain`, `pan`, `send:<busId>`, or `<deviceId>:<paramId>`. */
+              parameterId: string;
+              /** Exactly one form: `section`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
+              range: {
+                  /** A section name, optionally with an ordinal: "Chorus 2", "the second chorus". */
+                  section?: string;
+                  /** First bar, 1-based. */
+                  startBar?: number;
+                  /** Last bar, inclusive. */
+                  endBar?: number;
+                  startBeat?: number;
+                  /** Exclusive. */
+                  endBeat?: number;
+              };
+              /** Absolute level in decibels, gain and send targets only. Exactly one of `valueDb`, `deltaDb`, `value`. */
+              valueDb?: number;
+              /** Change in decibels from the level the lane draws at the range start, gain and send targets only. */
+              deltaDb?: number;
+              /** The target in the lane's own units. */
+              value?: number;
+              /** Length of the ramp into the target, in beats, from the range start. */
+              rampIn?: number;
+              /** Length of the ramp back out, in beats, ending at the range end. */
+              rampOut?: number;
+              /** Resolved range start, materialized at admission. Command-owned. */
+              startBeat?: number;
+              /** Resolved range end, exclusive, materialized at admission. Command-owned. */
+              endBeat?: number;
+              /** Command-owned identity of this write's lane and points, for exact undo and redo. AiRuntime rejects provider input. */
+              writeId?: string;
+          };
+      }
+    | {
           /** Internal guarded inverse for `automateTrackGainRange`. */
           type: 'removeTrackGainAutomationRange';
           payload: {
@@ -1794,9 +1840,11 @@ export type AppAction =
           };
       }
     | {
-          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute. */
+          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute.
+           *  `expectedPoints` is set by an inverse that created the lane together with
+           *  its points: the lane is removed only while it holds exactly those points. */
           type: 'removeAutomationLane';
-          payload: { laneId: string };
+          payload: { laneId: string; expectedPoints?: readonly AutomationPointSnapshot[] };
       }
     | { type: 'setAutomationLaneEnabled'; payload: { laneId: string; enabled: boolean } }
     | {

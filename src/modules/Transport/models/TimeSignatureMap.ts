@@ -210,6 +210,53 @@ export function getBarBeatAtPosition(
     return { bar, beat: beatInBar, tick };
 }
 
+/**
+ * The beat a 1-based bar opens on: the exact inverse of {@link getBarBeatAtPosition} at bar
+ * starts, or `null` for a bar number that names no bar or a map whose meter has no length.
+ *
+ * Bars are numbered the way that function counts them, by whole bars elapsed in each meter
+ * segment. A change landing mid-bar therefore does not mint a bar number of its own: the bar it
+ * cuts short and the bar it opens read as the same number, and that number opens on the
+ * shortened piece, where it is first read. The bar after a range's last bar is found the same
+ * way, so a range of whole bars ends exactly where the next bar number begins.
+ */
+export function getBarStartBeat(
+    changes: readonly TimeSignatureChange[],
+    bar: number,
+    defaultNumerator: number,
+    defaultDenominator: number
+): number | null {
+    if (!Number.isInteger(bar) || bar < 1) {
+        return null;
+    }
+    let segmentBar = 1;
+    let segmentStart = 0;
+    let numerator = defaultNumerator;
+    let denominator = defaultDenominator;
+
+    for (const change of sortTimeSignatureChanges(changes)) {
+        const barLength = numerator * (4 / denominator);
+        if (!Number.isFinite(barLength) || barLength <= 0) {
+            return null;
+        }
+        const barsIntoSegment = bar - segmentBar;
+        const barsBeforeChange = (change.beat - segmentStart) / barLength;
+        if (barsIntoSegment < barsBeforeChange) {
+            return segmentStart + barsIntoSegment * barLength;
+        }
+        segmentBar += Math.floor(barsBeforeChange);
+        segmentStart = change.beat;
+        numerator = change.numerator;
+        denominator = change.denominator;
+    }
+
+    const barLength = numerator * (4 / denominator);
+    if (!Number.isFinite(barLength) || barLength <= 0) {
+        return null;
+    }
+    return segmentStart + (bar - segmentBar) * barLength;
+}
+
 export type TimelineBar = {
     /** Timeline position of the bar's first beat, in quarter notes. May be negative. */
     startBeat: number;

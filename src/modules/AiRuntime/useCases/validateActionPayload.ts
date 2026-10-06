@@ -136,6 +136,30 @@ function statesLevelOnce(param: Record<string, unknown>, linearKey: string, abso
     return [linearKey, absoluteKey, 'deltaDb'].filter((key) => Object.hasOwn(param, key)).length === 1;
 }
 
+function isBarNumber(value: unknown): value is number {
+    return isNumber(value) && Number.isInteger(value) && value >= 1;
+}
+
+/**
+ * A range stated in exactly one form: a section reference, a bar range with both
+ * ends, or a beat range with both ends. Whether it ends after it starts is the
+ * resolver's to say, with the reason, rather than a bare shape refusal here.
+ */
+function isMusicalRangeReference(value: unknown): boolean {
+    if (!isObj(value)) {
+        return false;
+    }
+    if (hasExactKeys(value, ['section'])) {
+        return isNonEmptyString(value.section);
+    }
+    if (hasExactKeys(value, ['startBar', 'endBar'])) {
+        return isBarNumber(value.startBar) && isBarNumber(value.endBar);
+    }
+    return (
+        hasExactKeys(value, ['startBeat', 'endBeat']) && isNonNegativeNumber(value.startBeat) && isNumber(value.endBeat)
+    );
+}
+
 function isAutomationCurve(
     value: unknown
 ): value is 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier' {
@@ -537,6 +561,23 @@ const validators = {
         new Set(param.trackIds).size === param.trackIds.length &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.gainDb, Number.MIN_VALUE, 6),
+    // Shape only: whether the section exists, the bars fit the meter, and the
+    // target fits the lane's law is the owning handler's to judge against the
+    // live project, and the state guards resolve the range against the plan's.
+    automateParameterRange: (param): param is PayloadOf<'automateParameterRange'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'parameterId', 'range', 'valueDb', 'deltaDb', 'value', 'rampIn', 'rampOut']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.parameterId) &&
+        isMusicalRangeReference(param.range) &&
+        statesLevelOnce(param, 'value', 'valueDb') &&
+        isOptionalOwn(param, 'value', isNumber) &&
+        isOptionalOwn(param, 'valueDb', (value): value is number =>
+            isInRange(value, TRACK_FADER_LAW.floorDb, TRACK_FADER_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
+        isOptionalOwn(param, 'rampIn', isNonNegativeNumber) &&
+        isOptionalOwn(param, 'rampOut', isNonNegativeNumber),
     renderProjectSections: (param): param is PayloadOf<'renderProjectSections'> =>
         isObj(param) &&
         hasExactKeys(param, ['sectionIds']) &&

@@ -2,6 +2,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddAutomationLane } from '../handlers/automation/handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handlers/automation/handleAddAutomationPoint';
+import { handleAutomateParameterRange } from '../handlers/automation/handleAutomateParameterRange';
 import { handleAutomateSendRange } from '../handlers/automation/handleAutomateSendRange';
 import { handleAutomateSendRanges } from '../handlers/automation/handleAutomateSendRanges';
 import { handleAutomateTrackGainRange } from '../handlers/automation/handleAutomateTrackGainRange';
@@ -33,6 +34,7 @@ type AutomationAction =
     | Extract<AppAction, { type: 'automateSendRange' }>
     | Extract<AppAction, { type: 'automateSendRanges' }>
     | Extract<AppAction, { type: 'automateTrackGainRange' }>
+    | Extract<AppAction, { type: 'automateParameterRange' }>
     | Extract<AppAction, { type: 'removeSendAutomationRange' }>
     | Extract<AppAction, { type: 'removeSendAutomationRanges' }>
     | Extract<AppAction, { type: 'removeTrackGainAutomationRange' }>
@@ -67,6 +69,7 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         automateSendRange: handleAutomateSendRange,
         automateSendRanges: handleAutomateSendRanges,
         automateTrackGainRange: handleAutomateTrackGainRange,
+        automateParameterRange: handleAutomateParameterRange,
         removeSendAutomationRange: handleRemoveSendAutomationRange,
         removeSendAutomationRanges: handleRemoveSendAutomationRanges,
         removeTrackGainAutomationRange: handleRemoveTrackGainAutomationRange,

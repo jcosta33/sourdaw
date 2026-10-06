@@ -4,6 +4,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 
 import { addAutomationLane } from '../../useCases/automation/addAutomationLane';
 import { getAutomationParameterRangeResolver } from '../../useCases/automation/getAutomationParameterRangeResolver';
+import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomationBusId';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 type AddAutomationLaneAction = {
@@ -50,13 +51,19 @@ function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
 }
 
 /**
- * A device parameter is a target only when the owner's resolver hands back its
- * range: the resolver already answers null for a missing track, a device the
- * track does not carry, and a parameter no curve may drive.
+ * A send level is a target only while the track sends to that bus. A device
+ * parameter is a target only when the owner's resolver hands back its range:
+ * the resolver already answers null for a missing track, a device the track
+ * does not carry, and a parameter no curve may drive.
  */
 function isAutomatableTarget({ trackId, parameterId }: AddAutomationLaneAction['payload']): boolean {
     if (TRACK_PARAMETER_IDS.has(parameterId)) {
         return true;
+    }
+    const busId = getSendAutomationBusId(parameterId);
+    if (busId !== null) {
+        const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        return track?.sends.some((send) => send.busId === busId) === true;
     }
     const resolveParameterRange = getAutomationParameterRangeResolver();
     return (

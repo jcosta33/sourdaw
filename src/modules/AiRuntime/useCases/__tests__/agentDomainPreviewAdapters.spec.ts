@@ -369,6 +369,27 @@ describe('agent domain preview adapters', () => {
             });
         });
 
+        it('reports the lane a range write lands on by its track and parameter, and no other lane', () => {
+            const automateGainRange = {
+                type: 'automateParameterRange',
+                payload: {
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    range: { startBeat: 1, endBeat: 3 },
+                    valueDb: -6,
+                    startBeat: 1,
+                    endBeat: 3,
+                },
+            } satisfies AppAction;
+
+            expect(
+                previewAutomationCurve({
+                    actions: [automateGainRange],
+                    projectDocument: createProjectedDocument(),
+                })
+            ).toMatchObject({ status: 'previewed', handle: [{ laneId: 'lane-1' }] });
+        });
+
         it('reports a document that carries no automation slot', () => {
             expect(previewAutomationCurve({ actions: [addAutomationPoint], projectDocument: {} })).toEqual({
                 status: 'unsupported',

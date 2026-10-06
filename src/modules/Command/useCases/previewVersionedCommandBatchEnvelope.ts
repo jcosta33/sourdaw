@@ -250,6 +250,14 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 baseRevision: envelope.baseRevision,
                 release,
             },
+            // A reader of the previewed document — a measurement rendering it — needs the
+            // workspace's synchronous store scope, not the approval resource. Releasing either
+            // ends the whole preview, partial-acceptance selection included.
+            workspace: {
+                scope: previewWorkspace.scope,
+                getProjectDocument: previewWorkspace.getProjectDocument,
+                release,
+            },
             ...(divergence && divergence.kind !== 'none' ? { divergence } : {}),
         };
     } catch (error) {

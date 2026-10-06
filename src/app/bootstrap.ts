@@ -191,7 +191,14 @@ import {
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
-import { setYeastEventBus } from '#/modules/Yeast/stores';
+import {
+    holdsKeyedYeastRack,
+    holdsLegacyYeastRack,
+    readStoredYeastRack,
+    readYeastRack,
+    setYeastEventBus,
+    yeastDeviceIdsInProjectOrder,
+} from '#/modules/Yeast/stores';
 import {
     configureYeastRuntime,
     createOfflineYeastMidiProcessor,
@@ -315,7 +322,16 @@ configureOfflineDeviceParameterLaw({
     clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
-configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
+configureOfflineYeastMidiProcessing({
+    createProcessor: createOfflineYeastProcessor,
+    racks: {
+        readRack: (deviceId) => readYeastRack(deviceId).processors,
+        readStoredRack: readStoredYeastRack,
+        holdsKeyedRack: holdsKeyedYeastRack,
+        holdsLegacyRack: holdsLegacyYeastRack,
+        firstDeviceInProjectOrder: () => yeastDeviceIdsInProjectOrder()[0] ?? null,
+    },
+});
 setOfflineRenderDependencies({
     projectPpqEndpoints,
     createMidiEventProjector: createGrooveMidiEventProjector,

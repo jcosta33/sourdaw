@@ -466,6 +466,13 @@ The FaustWasm 0.18.5 poly generator compiled `dsp_code.effect` before a voice ev
 
 Probe that would have caught it: for a compiler or DSP runtime upgrade, trace every factory input for one declared effect-free poly voice, one effectful voice, and one mono source. Require the effect-free route to compile its voice without a failed optional-effect factory, while the effectful route still compiles its effect and the resulting instrument still emits PCM after `keyOn`.
 
+### 2026-09-30 — a widened join tolerance admitted the simultaneous notes it was never meant to rank (introduced in 6fa76ee35e; fixed in the #4860 repair)
+
+The bulk MIDI remediation commit widened `joinNotes`' run-extension tolerance from a fixed 0.001 to `gridSize/8` to absorb humanize and partial-quantize jitter. The predicate `|previous end − next start| ≤ tolerance` never asked whether the next note starts after the previous one begins, so two same-pitch notes stacked on the same beat — durations 0.1 and 1 on the default 1-beat grid — satisfied `0.1 ≤ 0.125` and joined into one note, silently discarding the second note's scalars and curves. The old constant was small enough that only genuine continuations passed, so the widening changed which population the predicate admits, not just its margin.
+
+Blind spot: the remediation's review tested the tolerance against the cases that motivated it — jitter gaps and genuine rests — and never enumerated what the old value refused that the new one accepts.
+
+Probe that would have caught it: for any widening of a tolerance or threshold on an admission predicate, construct an input inside the newly admitted band and outside every case the change names — here two same-pitch notes sharing `startBeat` whose first duration sits under the new tolerance — and require the changed behavior for it to be stated. A band a widening adds is a behavior change in its own right.
 ### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
 
 The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector

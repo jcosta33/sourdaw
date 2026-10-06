@@ -1,3 +1,5 @@
+import { type MeasuredPreview } from './MeasuredPreview';
+
 /**
  * One command an application compiler lowered into the batch: its own key, the emitting step, the
  * catalog operation and arguments, the batch-local binding it mints (or `null`), and the keys of the
@@ -31,9 +33,15 @@ export type AdoptedRecipe = {
 
 /**
  * What a successful application compiler call leaves behind for a later `command.batch.propose` to
- * adopt by call id through `compiledCallIds`. A transform document and a recipe expansion both
- * lower to ordinary catalog commands the application emitted, so one reference list names either
- * and the kind only says which compiler's revision and provenance the entry carries.
+ * adopt by call id through `compiledCallIds`. A transform document, a recipe expansion and a
+ * measured preview all lower to ordinary catalog commands the application emitted, so one reference
+ * list names any of them and the kind only says which compiler's revision and provenance the entry
+ * carries. A measured preview's commands are the semantic list the application compiled, grounded
+ * and rendered in isolation; its provenance is the measurement itself.
  */
 export type RetainedCompilation = RetainedCommandSet &
-    ({ kind: 'transform' } | { kind: 'recipe'; recipe: AdoptedRecipe });
+    (
+        | { kind: 'transform' }
+        | { kind: 'recipe'; recipe: AdoptedRecipe }
+        | { kind: 'preview'; measuredPreview: MeasuredPreview }
+    );

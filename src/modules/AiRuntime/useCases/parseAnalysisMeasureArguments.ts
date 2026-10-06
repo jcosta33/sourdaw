@@ -8,11 +8,19 @@ type AnalysisMeasureScope = { kind: 'master' | 'project' } | { kind: 'tracks' | 
 
 type AnalysisMeasureRange = { sectionId: string } | { startBeat: number; endBeat: number };
 
+/**
+ * What is measured: the project as it stands, or the project with a proposed semantic command list
+ * applied in isolation, beside the project itself. The list is validated by the compiler a
+ * proposal uses, not here.
+ */
+type AnalysisMeasureSubject = { kind: 'project' } | { kind: 'preview'; proposal: Readonly<Record<string, unknown>> };
+
 type AnalysisMeasureArguments = {
     scope: AnalysisMeasureScope;
     range: AnalysisMeasureRange;
     /** The requested metrics in receipt key order; every metric when the call names none. */
     metrics: AgentMeasurementMetricId[];
+    subject: AnalysisMeasureSubject;
 };
 
 type ParsedAnalysisMeasureArguments =
@@ -91,6 +99,16 @@ function parseMetrics(value: unknown): AgentMeasurementMetricId[] | null {
     return metricIds.filter((id) => requested.has(id));
 }
 
+function parseSubject(subject: unknown, proposal: unknown): AnalysisMeasureSubject | null {
+    if (subject === undefined || subject === 'project') {
+        return proposal === undefined ? { kind: 'project' } : null;
+    }
+    if (subject === 'preview' && isRecord(proposal)) {
+        return { kind: 'preview', proposal };
+    }
+    return null;
+}
+
 /**
  * The strict argument contract of one `analysis.measure` call.
  *
@@ -99,8 +117,21 @@ function parseMetrics(value: unknown): AgentMeasurementMetricId[] | null {
  * render ceilings are answered by the executor against the project.
  */
 export function parseAnalysisMeasureArguments(argumentsValue: unknown): ParsedAnalysisMeasureArguments {
-    if (!isRecord(argumentsValue) || !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics'])) {
-        return { status: 'invalid', reason: 'analysis.measure accepts only scope, range and metrics.' };
+    if (
+        !isRecord(argumentsValue) ||
+        !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics', 'subject', 'proposal'])
+    ) {
+        return {
+            status: 'invalid',
+            reason: 'analysis.measure accepts only scope, range, metrics, subject and proposal.',
+        };
+    }
+    const subject = parseSubject(argumentsValue.subject, argumentsValue.proposal);
+    if (subject === null) {
+        return {
+            status: 'invalid',
+            reason: 'analysis.measure subject is project, which takes no proposal, or preview, which requires a proposal list.',
+        };
     }
     const scope = parseScope(argumentsValue.scope);
     if (scope === null) {
@@ -123,5 +154,5 @@ export function parseAnalysisMeasureArguments(argumentsValue: unknown): ParsedAn
             reason: 'analysis.measure metrics must be a non-empty list of distinct measurement metric ids.',
         };
     }
-    return { status: 'valid', value: { scope, range, metrics } };
+    return { status: 'valid', value: { scope, range, metrics, subject } };
 }

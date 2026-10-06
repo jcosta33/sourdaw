@@ -541,6 +541,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: import, Parameters/ReturnType projections, and call
         // lower a validated transform into command descriptions; no device write.
         'src/modules/AiRuntime/useCases/executeTransformCompile.ts': 4,
+        // Count provenance: new file entry, measured 7 — `compileArbitraryCommandList`
+        // and `compilePlannedActionCommandBatch` (each an import, its module path in
+        // that import line, and one call) plus the exported declaration. A preview
+        // measurement compiles its proposal into an immutable Command batch only;
+        // the batch is previewed in an isolated workspace, never written to a device.
+        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 7,
+        // Count provenance: new file entry, measured 5 — the
+        // `compilePreviewMeasurementProposal` import, its module path and its one
+        // call, plus the local `compileProposal` declaration and call. Command
+        // batch compilation for an isolated preview; no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 5,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,

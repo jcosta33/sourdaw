@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {

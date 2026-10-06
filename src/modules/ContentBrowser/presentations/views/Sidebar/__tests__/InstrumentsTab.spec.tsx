@@ -79,6 +79,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: commandMocks.executeUserAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,

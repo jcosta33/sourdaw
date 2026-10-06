@@ -654,7 +654,14 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceEventBus: noop,
 }));
 
-vi.mock('#/modules/Yeast/stores', () => ({ setYeastEventBus: noop }));
+vi.mock('#/modules/Yeast/stores', () => ({
+    holdsKeyedYeastRack: noop,
+    holdsLegacyYeastRack: noop,
+    readStoredYeastRack: noop,
+    readYeastRack: noop,
+    setYeastEventBus: noop,
+    yeastDeviceIdsInProjectOrder: noop,
+}));
 
 vi.mock('#/modules/Yeast/useCases', () => ({
     configureYeastRuntime: noop,
