@@ -1,0 +1,59 @@
+src/modules/Arrangement/models/TakeLane.ts
+  s_8816a4d0d79768::t_c9b92bd80e63cd 89-107
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStartTakes.integration.spec.ts
+  s_8816a4d0d79768::t_6cbb59e1ce340f 1-147
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_8816a4d0d79768::t_00ea61d72f219c 34,61
+src/modules/Arrangement/handlers/clip/handleRestoreClipStartTrim.ts
+  s_8816a4d0d79768::t_a19ddc93994c5d 1-25
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_8816a4d0d79768::t_282fc5a4d711fe 4,8-20,36-46
+src/modules/Arrangement/useCases/__tests__/resolveCompingLoopRunUp.spec.ts
+  s_8816a4d0d79768::t_04fc897e811a54 110-121
+src/modules/Arrangement/useCases/comping/planTrimmedTakeStarts.ts
+  s_8816a4d0d79768::t_aef14aab0b54c5 1-50
+src/modules/Arrangement/useCases/comping/writeTakeStarts.ts
+  s_8816a4d0d79768::t_5912ff010bf4c9 1-24
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopRunUp.spec.ts
+  s_8816a4d0d79768::t_321fdd707fb23b 109-120
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_fb5e7ec91c4959::t_9049339d18293d 1609-1632,1678,1683,1689,1696,1711,1735,1744-1745,1791,1795,1798,1802,1808,1820,1824,1841,1847,1850,1868,1875,1886,1917,1929,1937,1949,1965,1973,1979,1988-1989,2005,2016,2053,2058,2101,2106,2192,2215-2216,2239,2258,2266,2275,2286-2288,2302-2304,2335,2341,2350,2361,2369,2380-2381,2403,2425-2426,2451-2452,2511,2519,2580,2598,2604,2652,2660,2669,2678-2679,2684-2689,2724,2731,2747,2755,2815-2816,2889,2900,2940,2946,2996,3011,3016,3034-3035,3055,3069-3070,3079,3081,3093-3094,3102-3103,3172-3173,3249-3250,3330-3331,3473,3479,3483-3484,3499,3506,3509,3518,3520,3601-3602,3629-3630,3652,3666,3675,3697,3711,3718,3725-3727,3768-3771,3793,3798,3810,3817,3822,3824,3830,3835,3837-3838,3857,3864,3872-3873,3879,3882,3926-3927,3936-3937,4000,4006-4007,4020-4021,4043-4044,4070,4078,4085,4090-4091,4107,4112-4113,4125,4135,4142,4148,4153,4162-4163,4185,4190-4191,4228-4229,4249,4263-4264,4272-4273,4314,4362,4369,4375-4376,4383,4397,4412,4426,4431-4434,4463,4469,4483,4489,4534,4536,4551,4560-4561,4563,4576-4577,4580,4587,4592,4619,4624,4719,4726,4754,4762,4768,4776-4777,4817,4828,4836,4842,4849,4854,4862-4863,5074,5090,5107,5114-5115,5118,5149,5162-5165,5175-5176,5221,5235,5240,5242,5290,5295,5313,5318,5350,5355,5422,5431,5443,5455,5476,5488,5494,5500-5501,5526,5532-5533,5597,5603,5606,5613,5618,5620,5629,5631,5640,5733-5754,5761-5792,5795-5800,5804,5806-5825,5828,5830-5840,5842-5843,5851-5884,5890-5891,5894-5898,5900-5901,5903,5905-5915,5919-5921,5923-5927,5929-5930,5932-5934,5936-5948,5950,5952-5954,5959,5962-5965,5969-5974,5979,5981-5982,5984-5985,5988-6000,6004-6008,6010-6013,6017-6018,6020-6028,6030
+src/utils/handlerContract.ts
+  s_fb5e7ec91c4959::t_4daa6b13d5af86 1388-1398
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_fb5e7ec91c4959::t_2d5a2445d38d93 39
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStart.spec.ts
+  s_fb5e7ec91c4959::t_5afe6526c3aab1 7-15,30,53,67-105
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStart.spec.ts
+  s_fb5e7ec91c4959::t_adab73d55d45e0 9-23,33-34,78-106
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_fb5e7ec91c4959::t_6f15667fc1f0ac 4-5,12,20,26,38-43
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_fb5e7ec91c4959::t_6c81254a09ce31 17-20,35
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_fb5e7ec91c4959::t_b244913e29c9d5 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ea9b77a1596ec8d1a41f3b4ac122c6086a1407f",
+  "prompts": {},
+  "sessions": {
+    "s_8816a4d0d79768": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9e1e1ed-790e-408d-a94d-a25aefc247fc",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fb5e7ec91c4959": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "996b450d-ae9f-4c06-8991-9d1123544829",
+        "model": "claude-fable-5-1-thinking-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
