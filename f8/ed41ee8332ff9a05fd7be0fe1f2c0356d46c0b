@@ -1,0 +1,26 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_8b2f1f50c2d109 1945
+  s_2bfd55a4393d7c::t_5a36e5d3620ed7 20-22,361,382,477,1946-1999
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_e4587b2788c9bd 1150,1208-1210,1213
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_2bfd55a4393d7c::t_32ffec2aeaaf53 260,370-373,529-532,553-557,611-615,647-650,982-985
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_03e2d5e3225ef5 36,292-355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8ed41ee8332ff9a05fd7be0fe1f2c0356d46c0b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
