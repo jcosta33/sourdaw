@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_9ee5270f9ecc3c 399
+  s_1c08b47ac3792f::t_ebc66ca24bb769 365-372
+  s_1c08b47ac3792f::t_08d708673ea069 391
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_1c08b47ac3792f::t_cb6e6c8e1839c3 3-4,7,10-45,54-60,62-67,70-71,74,76,84-101,103,107-108,112-116,121,123,129,132-133,136-139,141-143,145-172,189-209,218-225,236-243,246,263-266,271,273-274,279,283-292,294-304,306-366,389-395,405
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_1c08b47ac3792f::t_390c2ee1b9fd56 310
+  s_1c08b47ac3792f::t_ef1c70307a4c92 141
+  s_1c08b47ac3792f::t_2a4fb5102d2b04 77
+  s_1c08b47ac3792f::t_bb74ea7118f5ae 312
+  s_1c08b47ac3792f::t_b680701ade6788 2,48-73,76,78-80,85-89,93-98,164,196-289,292-294,299,306-307,311
+  s_1c08b47ac3792f::t_72313be1218e9d 16
+  s_1c08b47ac3792f::t_29c266d18be7ba 315
+  s_1c08b47ac3792f::t_7a5199ee6f8d5d 295-296,298
+  s_1c08b47ac3792f::t_ef4605a9ee3ac8 26-31
+  s_1c08b47ac3792f::t_9deeaf3e60941a 99
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_978bffc7b0c0e4 47
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_1c08b47ac3792f::t_39bff0166ad868 32-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47a3634227e202096dd37aa2ac8694fd0c1f95bf",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
