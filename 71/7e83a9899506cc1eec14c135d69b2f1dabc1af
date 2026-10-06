@@ -1,0 +1,149 @@
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_64d98fd255de7d 25
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_ff04d7518eb563 1640
+  s_2bfd55a4393d7c::t_beb6a99420cd20 1674
+  s_2bfd55a4393d7c::t_1ff3cd00d8a67c 27-30
+  s_2bfd55a4393d7c::t_a551c16b4e2169 1720
+  s_2bfd55a4393d7c::t_3b044709c920c6 164
+  s_2bfd55a4393d7c::t_f7b47c8d208b68 16
+  s_2bfd55a4393d7c::t_781838c80e17c1 2262-2448
+  s_2bfd55a4393d7c::t_c716bed8b84e51 187-194
+  s_2bfd55a4393d7c::t_37bcb5b50a3605 110
+  s_1c08b47ac3792f::t_5a0fbdc18281e7 2449
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_2bfd55a4393d7c::t_d2b13fb2a09b85 21
+  s_2bfd55a4393d7c::t_0f5725f6d83ddd 32
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_2bfd55a4393d7c::t_e3c0010238da70 213
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_2bfd55a4393d7c::t_6192b5742b622a 13
+  s_2bfd55a4393d7c::t_a7a84c6356a433 59-62
+src/app/__tests__/bootstrap.spec.ts
+  s_2bfd55a4393d7c::t_f2783051408b9f 547
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineMix.ts
+  s_2bfd55a4393d7c::t_dcca097a41f265 112
+  s_2bfd55a4393d7c::t_6ea003a781cfb4 73
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_2bfd55a4393d7c::t_1ab0244ab6fdbe 121
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  s_2bfd55a4393d7c::t_f4978a61708a1a 1-97
+src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts
+  s_2bfd55a4393d7c::t_34ebaed4c40a1f 26-27
+  s_2bfd55a4393d7c::t_b06e14824efadd 56-59
+  s_1c08b47ac3792f::t_32a77d6faa99a2 60
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_2bfd55a4393d7c::t_6b51fd6fba44ae 91
+src/modules/Transport/useCases/scheduling/scheduleStoredControllers.ts
+  s_2bfd55a4393d7c::t_76745a920e7e1d 1-100
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_3b840ea8ec2b7b 7
+  s_2bfd55a4393d7c::t_8be104dc68ed5d 709
+  s_2bfd55a4393d7c::t_30c993ae43c16b 753
+  s_2bfd55a4393d7c::t_5cfc7554502efa 838
+  s_2bfd55a4393d7c::t_763d1af0f26c12 28-32
+  s_2bfd55a4393d7c::t_9fd8a72b5e82f8 5-6
+  s_2bfd55a4393d7c::t_93915ce9a29944 1056-1060
+  s_2bfd55a4393d7c::t_aa75ee0c0f692e 1696-1819,1824-1873
+  s_2bfd55a4393d7c::t_9cb15baacec134 1172-1173
+  s_2bfd55a4393d7c::t_16d0f69ddfe02b 1820-1823
+  s_2bfd55a4393d7c::t_6111af7e75521f 1874
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_2bfd55a4393d7c::t_ed99c8ac6b72d5 55-56
+  s_2bfd55a4393d7c::t_fd59413d5153ee 73-75
+  s_2bfd55a4393d7c::t_05a68034ceef19 9
+  s_1c08b47ac3792f::t_6e3205e03f0820 76
+src/utils/__tests__/pianoPedalController.spec.ts
+  s_2bfd55a4393d7c::t_4a5009f35a241c 1-36
+src/utils/pianoPedalController.ts
+  s_2bfd55a4393d7c::t_b73a6e995f501e 2-10,13-38
+  s_2bfd55a4393d7c::t_40696465546ec1 1
+  s_2bfd55a4393d7c::t_8ab2af89777001 11-12
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_2bfd55a4393d7c::t_76632160da7a61 61-87,94,101
+src/app/bootstrap.ts
+  s_2bfd55a4393d7c::t_08923b40c3e47c 306
+  s_2bfd55a4393d7c::t_082905cb3611dd 146
+src/app/__tests__/main.spec.tsx
+  s_2bfd55a4393d7c::t_641ab6b768cab5 89
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_2bfd55a4393d7c::t_4fbbd0aebcd907 5,17,26,33
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_2bfd55a4393d7c::t_d3c927a22b2f13 1-4
+  s_2bfd55a4393d7c::t_cfff48fbd6027b 54-69,75
+  s_2bfd55a4393d7c::t_7de5fd826e5db8 53
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_2bfd55a4393d7c::t_93d3106edee098 1-147
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_2bfd55a4393d7c::t_6cb48545986df5 111
+  s_2bfd55a4393d7c::t_7622f069e98d45 15
+  s_2bfd55a4393d7c::t_be41a373bc607a 52
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_2bfd55a4393d7c::t_fe26b343490787 395
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_b703f83b70c466 62
+  s_2bfd55a4393d7c::t_984b79c2bba46c 1-61,63-73
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_2bfd55a4393d7c::t_13f62fe2bd7a97 53-55
+  s_2bfd55a4393d7c::t_4630f50bd724a9 3
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspControllerBinding.spec.ts
+  s_2bfd55a4393d7c::t_78e9dca7d8a06e 1-95
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_2bfd55a4393d7c::t_dfdd2d65657f73 166
+  s_2bfd55a4393d7c::t_57deb67a18d3d1 408
+  s_2bfd55a4393d7c::t_883d7a72fd4dd6 369
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_2bfd55a4393d7c::t_49fa6f31aa54ea 147
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_2bfd55a4393d7c::t_822e45bd2bfba4 123-136
+  s_2bfd55a4393d7c::t_d4d9dd3c2f7c87 180-186
+src/modules/AudioEngine/useCases/offlineRender/__tests__/comparePendingWorkletEvents.spec.ts
+  s_2bfd55a4393d7c::t_00563a3773944c 37-40,42-52
+  s_2bfd55a4393d7c::t_02de3420711299 4-8
+src/modules/Transport/useCases/scheduling/releaseStoredControllers.ts
+  s_2bfd55a4393d7c::t_21bbaba5010c19 2
+  s_2bfd55a4393d7c::t_2822e88cf7eb7d 1,3-40
+src/modules/AudioEngine/useCases/offlineRender/comparePendingWorkletEvents.ts
+  s_2bfd55a4393d7c::t_136571a4f68a88 4,6-12,14
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_e49eb5a6c14372 128
+src/modules/MIDI/useCases/index.ts
+  s_2bfd55a4393d7c::t_e3da46f1d52b81 51
+src/modules/Transport/useCases/playheadScheduler/__tests__/stopPlayheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_8a88d3993490c3 19-20
+  s_2bfd55a4393d7c::t_b60569e53f9a61 1-10,13-18,21-40,46-131
+  s_2bfd55a4393d7c::t_76a016c116c90c 11-12
+  s_2bfd55a4393d7c::t_a18f19b4ee9c62 41-45
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_70f11698f31f8b 81-85
+  s_2bfd55a4393d7c::t_43fff093e59b43 32
+  s_2bfd55a4393d7c::t_55792afc10c6b9 776-807
+  s_2bfd55a4393d7c::t_c8310b2b1c04cf 207
+  s_2bfd55a4393d7c::t_e1faeb841e1be4 495-498
+  s_2bfd55a4393d7c::t_43c5c93044b2c1 915-917
+  s_2bfd55a4393d7c::t_20e4eef40c4c86 912-914
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "717e83a9899506cc1eec14c135d69b2f1dabc1af",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
