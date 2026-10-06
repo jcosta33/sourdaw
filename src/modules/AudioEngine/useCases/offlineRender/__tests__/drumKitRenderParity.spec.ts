@@ -8,23 +8,26 @@ import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
-// Only the two leaf voice schedulers are observed. Everything above them —
-// device resolution, the drum-kit definitions, the factory kit table, the
-// kit-note schedulers — is production code, so the spec reads what an export
-// would actually hand to a voice.
-const leaves = vi.hoisted(() => ({
-    scheduleDrumVoice: vi.fn(),
-    scheduleNote: vi.fn(),
+// Only the two kit-note schedulers Synth's barrel exports are observed. The
+// device resolution, the drum-kit definitions and the factory kit table above
+// them are production code, so the spec reads the kit an export hands each
+// note to and resolves the voice that kit plays for the note.
+const kitSchedulers = vi.hoisted(() => ({
+    scheduleDrumKitNote: vi.fn(),
+    scheduleKitNote: vi.fn(() => null),
 }));
 
-vi.mock('#/modules/Synth/engine/drumSynthVoices', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Synth/engine/drumSynthVoices')>();
-    return { ...actual, scheduleDrumVoice: leaves.scheduleDrumVoice };
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
+    return {
+        ...actual,
+        scheduleDrumKitNote: kitSchedulers.scheduleDrumKitNote,
+        scheduleKitNote: kitSchedulers.scheduleKitNote,
+    };
 });
 
-vi.mock('#/modules/Synth/useCases/scheduleNote', () => ({
-    scheduleNote: leaves.scheduleNote,
-}));
+type DedicatedKit = { voices: readonly { midiNote: number; type: string }[] };
+type FactoryKit = { id: string; voices: readonly { name: string; pitchRange: [number, number] }[] };
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: () => 0,
@@ -38,7 +41,6 @@ vi.mock('../checkCancel', () => ({
     checkCancel: vi.fn(),
 }));
 
-const SECONDS_PER_PITCH = 0.125;
 const BEATS_PER_PITCH = 0.25;
 const HIGHEST_MIDI_PITCH = 127;
 
@@ -115,16 +117,6 @@ function expectedVoicesByPitch(kitIndex: number): Map<number, string> {
         }
     }
     return expected;
-}
-
-function pitchAt(startTime: number): number {
-    return Math.round(startTime / SECONDS_PER_PITCH);
-}
-
-function factoryVoiceLabel(params: unknown, kitIndex: number): string {
-    const kit = getDrumKitByIndex(kitIndex);
-    const voice = kit?.voices.find((candidate) => candidate.params === params);
-    return `${kit?.id}:${voice?.name}`;
 }
 
 function makeTrack(device: DeviceCase): Track {
@@ -258,19 +250,37 @@ async function renderVoicesByPitch(device: DeviceCase): Promise<Map<number, stri
     });
 
     const reached = new Map<number, string>();
-    for (const [, , voiceType, startTime] of leaves.scheduleDrumVoice.mock.calls) {
-        reached.set(pitchAt(startTime as number), `drum-voice:${voiceType as string}`);
+    for (const [, , kit, pitch] of kitSchedulers.scheduleDrumKitNote.mock.calls as unknown as [
+        unknown,
+        unknown,
+        DedicatedKit,
+        number,
+    ][]) {
+        const voice = kit.voices.find((candidate) => candidate.midiNote === pitch);
+        if (voice) {
+            reached.set(pitch, `drum-voice:${voice.type}`);
+        }
     }
-    for (const [, , , startTime, , , params] of leaves.scheduleNote.mock.calls) {
-        reached.set(pitchAt(startTime as number), factoryVoiceLabel(params, device.kitIndex));
+    for (const [, , kit, pitch] of kitSchedulers.scheduleKitNote.mock.calls as unknown as [
+        unknown,
+        unknown,
+        FactoryKit,
+        number,
+    ][]) {
+        const voice = kit.voices.find(
+            (candidate) => pitch >= candidate.pitchRange[0] && pitch <= candidate.pitchRange[1]
+        );
+        if (voice) {
+            reached.set(pitch, `${kit.id}:${voice.name}`);
+        }
     }
     return reached;
 }
 
 describe('offline render drum-kit parity', () => {
     beforeEach(() => {
-        leaves.scheduleDrumVoice.mockClear();
-        leaves.scheduleNote.mockClear();
+        kitSchedulers.scheduleDrumKitNote.mockClear();
+        kitSchedulers.scheduleKitNote.mockClear();
     });
 
     it.each(DEVICE_CASES)('sounds the same notes through the same voices as live playback — $label', async (device) => {
@@ -299,6 +309,6 @@ describe('offline render drum-kit parity', () => {
             'drum-voice:maracas',
             'drum-voice:clave',
         ]);
-        expect(leaves.scheduleNote).not.toHaveBeenCalled();
+        expect(kitSchedulers.scheduleKitNote).not.toHaveBeenCalled();
     });
 });
