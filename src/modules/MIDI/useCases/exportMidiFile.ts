@@ -56,23 +56,77 @@ type MidiEvent = {
     data: number[];
 };
 
+type TickedNote = {
+    startTick: number;
+    endTick: number;
+    pitch: number;
+    velocity: number;
+    channel: number;
+};
+
+function noteKey(note: Pick<TickedNote, 'pitch' | 'channel'>): string {
+    return `${note.channel}:${note.pitch}`;
+}
+
+/**
+ * The notes playback sounds, on the tick grid. Only a note of no duration is not
+ * played; a note shorter than a tick still is, so it keeps one tick of length.
+ *
+ * Its one-tick release would cut a note of the same pitch and channel that is
+ * sounding or struck within that tick, as the sliver a looped pass leaves before
+ * its wrapped tail does at the pass head. The sliver is dropped there: it is
+ * shorter than a tick, the other note sounds that pitch at that tick, and writing
+ * it could only cut that note or strike it twice.
+ */
+function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
+    const sounded: TickedNote[] = [];
+    const subTick: TickedNote[] = [];
+    for (const note of notes) {
+        if (!(note.duration > 0)) {
+            continue;
+        }
+        const startTick = Math.round((clipStartBeat + note.startBeat) * TICKS_PER_BEAT);
+        const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
+        const ticked = {
+            startTick,
+            endTick: Math.max(endTick, startTick + 1),
+            pitch: clampMidiData7(note.pitch),
+            velocity: clampVelocity(Math.round(note.velocity)),
+            channel: (note.channel ?? 0) & 0x0f,
+        };
+        (endTick > startTick ? sounded : subTick).push(ticked);
+    }
+
+    const soundedByKey = new Map<string, TickedNote[]>();
+    for (const note of sounded) {
+        const sameKey = soundedByKey.get(noteKey(note));
+        if (sameKey) {
+            sameKey.push(note);
+        } else {
+            soundedByKey.set(noteKey(note), [note]);
+        }
+    }
+    const survivingSubTick = subTick.filter((sliver) => {
+        const sameKey = soundedByKey.get(noteKey(sliver)) ?? [];
+        return !sameKey.some((other) => other.startTick <= sliver.endTick && other.endTick > sliver.startTick);
+    });
+    return [...sounded, ...survivingSubTick];
+}
+
 function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: number, trackName: string): number[] {
     const events: MidiEvent[] = [];
 
-    for (const note of notes) {
-        const startTick = Math.round((clipStartBeat + note.startBeat) * TICKS_PER_BEAT);
-        const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
-        // A note of no ticks is not played. Written, its release would sort ahead
-        // of its own start on the shared tick and leave the note held.
-        if (endTick <= startTick) {
-            continue;
-        }
-        const vel = clampVelocity(Math.round(note.velocity));
-        const pitch = clampMidiData7(note.pitch);
-        const channel = (note.channel ?? 0) & 0x0f;
-
-        events.push({ tick: startTick, kind: 'on', data: [SMF_NOTE_ON_STATUS | channel, pitch, vel] });
-        events.push({ tick: endTick, kind: 'off', data: [SMF_NOTE_OFF_STATUS | channel, pitch, 0] });
+    for (const note of toTickedNotes(notes, clipStartBeat)) {
+        events.push({
+            tick: note.startTick,
+            kind: 'on',
+            data: [SMF_NOTE_ON_STATUS | note.channel, note.pitch, note.velocity],
+        });
+        events.push({
+            tick: note.endTick,
+            kind: 'off',
+            data: [SMF_NOTE_OFF_STATUS | note.channel, note.pitch, 0],
+        });
     }
 
     for (const cc of ccs) {

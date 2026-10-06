@@ -216,7 +216,7 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(toHex(lastDownloadedBytes())).toContain('8360803c0000b0407f00903c64');
     });
 
-    it('does not write a note of no length, which would sort its release ahead of its own start', () => {
+    it('does not write a note of no duration, which playback does not sound', () => {
         downloadMidiFile({
             clipName: 'C',
             clipStartBeat: 0,

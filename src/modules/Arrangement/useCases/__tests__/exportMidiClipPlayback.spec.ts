@@ -1,6 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { projectClipControllerEvents, projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import {
+    assignGrooveTemplate,
+    createGrooveTemplate,
+    projectClipControllerEvents,
+    projectClipMidiEvents,
+} from '#/modules/MIDI/useCases';
 
 import { exportMidiClip } from '../exportMidiClip';
 
@@ -236,16 +242,98 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
-    it('does not write a note of no length', () => {
+    it('skips a note of no duration and writes a note shorter than a tick with one tick of length', () => {
         const events = exportClip(
             { startBeat: 0, endBeat: 4 },
             [note('zero', 1, 0), note('sliver', 2, 0.0004, 62), note('held', 3, 0.5, 64)],
             []
         );
 
-        expect(events.map((event) => [event.kind, event.data1])).toEqual([
-            ['on', 64],
-            ['off', 64],
+        expect(events.map((event) => [event.kind, event.data1, event.tick])).toEqual([
+            ['on', 62, 960],
+            ['off', 62, 961],
+            ['on', 64, 1440],
+            ['off', 64, 1680],
         ]);
+    });
+
+    it('writes the sliver a trimmed clip end leaves of a drum hit', () => {
+        const events = exportClip({ startBeat: 0, endBeat: 4 }, [note('kick', 3.9995, 0.25, 36)], []);
+
+        expect(events.map((event) => [event.kind, event.data1, event.tick])).toEqual([
+            ['on', 36, 1920],
+            ['off', 36, 1921],
+        ]);
+    });
+
+    it('writes the clip-edge sliver of the last loop pass as a fifth hit', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4.001, loopEnabled: true, loopLength: 1 },
+            [note('kick', 0, 0.25, 36)],
+            []
+        );
+
+        expect(ticks(events, 'on')).toEqual([0, 1, 2, 3, 4].map((beat) => beat * TICKS_PER_BEAT));
+        expect(ticks(events, 'off').at(-1)).toBe(4 * TICKS_PER_BEAT + 1);
+    });
+
+    it('keeps the wrapped tail struck at a pass head whole when a pass-end sliver shares its pitch', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 2 },
+            [note('crossing', 1.9996, 0.25)],
+            []
+        );
+
+        // Pass 0's sliver (tick 960) sits where pass 1's tail is struck, so it is not
+        // written and its release cannot cut the tail; pass 1's own sliver has no
+        // same-pitch note around it and keeps its tick of length.
+        expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['on', 0],
+            ['off', 120],
+            ['on', 960],
+            ['off', 1080],
+            ['on', 1920],
+            ['off', 1921],
+        ]);
+    });
+
+    describe('with a groove committed to the project', () => {
+        afterEach(() => {
+            grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        });
+
+        it('writes the stored timing and velocity, not the grooved ones', () => {
+            grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+            createGrooveTemplate({
+                id: 'push',
+                name: 'Push',
+                subdivision: '1/16',
+                slots: [{ index: 0, timingOffset: 0.5, dynamicsOffset: 0.2 }],
+                provenance: { type: 'user', sourceId: 'push' },
+            });
+            assignGrooveTemplate({ consumerType: 'sequencer', consumerId: 'project', templateId: 'push', amount: 0.8 });
+            assignGrooveTemplate({ consumerType: 'clip', consumerId: 'clip', templateId: 'push', amount: 0.6 });
+            const stored = { id: 'hit', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 };
+
+            // The same note is moved and re-weighted by the projection playback reads.
+            const [played] = projectClipMidiEvents({
+                events: [stored],
+                clipId: 'clip',
+                clipStartBeat: 0,
+                clipEndBeat: 4,
+                iterationStartBeat: 0,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 0,
+            });
+            expect(played?.startBeat).toBeGreaterThan(0);
+            expect(played?.velocity).not.toBe(80);
+
+            const events = exportClip({ startBeat: 0, endBeat: 4 }, [stored], []);
+
+            expect(events.map((event) => [event.kind, event.tick, event.data2])).toEqual([
+                ['on', 0, 80],
+                ['off', 0.5 * TICKS_PER_BEAT, 0],
+            ]);
+        });
     });
 });
