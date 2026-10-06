@@ -1,0 +1,39 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_2bfd55a4393d7c::t_1c72b8eb457fc0 2806-2853
+src/modules/AudioEngine/useCases/livePlayback/restoreNativeChains.ts
+  s_1c08b47ac3792f::t_8b3947a4b5f7ab 1-16
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_2bfd55a4393d7c::t_f549eb561d1a82 132,666-683,1153-1156,1169
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  s_1c08b47ac3792f::t_054b693f42ee2a 3,143-150,152-154
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_2bfd55a4393d7c::t_2b8ece88c1b83b 710-744
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_1c08b47ac3792f::t_c7beab606c3fd9 283-292,302
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_1c08b47ac3792f::t_ce6d8edcabb896 30,103-117,119-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20b3d3de33a4d895fee86518cc4a692d6a447333",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
