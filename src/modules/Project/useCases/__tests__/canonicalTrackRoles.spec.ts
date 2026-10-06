@@ -337,6 +337,10 @@ describe('canonical track roles', () => {
     // String"), and "gtr" abbreviates guitar. Neither is an orchestral strings section.
     it.each([
         { name: 'Gtr', role: 'guitar' },
+        { name: 'Lead Gtr', role: 'guitar' },
+        // The abbreviation alone names the guitar here: 5 is not a guitar string count.
+        { name: '5 String Gtr', role: 'guitar' },
+        { name: 'Bass Gtr', role: 'bass' },
         { name: '12 String', role: 'guitar' },
         { name: '12-String', role: 'guitar' },
         { name: '12 String Gtr', role: 'guitar' },
