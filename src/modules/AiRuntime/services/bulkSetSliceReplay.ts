@@ -1,5 +1,6 @@
 import {
     type BulkSetReplaySelector,
+    type BulkSetRunWrittenFact,
     type BulkSetSlice,
     SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS,
     type SemanticCommandListRoleFamily,
@@ -8,6 +9,47 @@ import {
 import { resolveSemanticCommandListSelector, type SemanticCommandListCandidate } from './semanticCommandListCandidates';
 
 type BulkSetSliceReplay = { status: 'accepted' } | { status: 'rejected'; reason: string };
+
+function withRunWrittenFact(
+    candidate: SemanticCommandListCandidate,
+    fact: BulkSetRunWrittenFact
+): SemanticCommandListCandidate {
+    switch (fact.field) {
+        case 'muted':
+            return { ...candidate, muted: fact.value ?? undefined };
+        case 'locked':
+            return { ...candidate, locked: fact.value ?? undefined };
+        case 'bypassed':
+            return { ...candidate, bypassed: fact.value ?? undefined };
+        case 'ownerMuted':
+            return { ...candidate, ownerMuted: fact.value ?? undefined };
+        case 'ownerDeviceTypes':
+            return { ...candidate, ownerDeviceTypes: fact.value ?? undefined };
+        case 'ownerTags':
+            return { ...candidate, ownerTags: fact.value ?? undefined };
+    }
+    const exhaustive: never = fact;
+    return exhaustive;
+}
+
+/**
+ * The live candidate universe with every fact the run's own earlier batches wrote restored to the
+ * value it held when the list was compiled. Every other fact stays live, so a selector replayed over
+ * this universe sees exactly the outside changes and none of the run's own.
+ */
+export function restoreRunWrittenFacts(
+    candidates: readonly SemanticCommandListCandidate[],
+    facts: readonly BulkSetRunWrittenFact[] | undefined
+): SemanticCommandListCandidate[] {
+    if (facts === undefined || facts.length === 0) {
+        return [...candidates];
+    }
+    return candidates.map((candidate) =>
+        facts
+            .filter((fact) => fact.candidateId === candidate.id)
+            .reduce((restored, fact) => withRunWrittenFact(restored, fact), candidate)
+    );
+}
 
 /**
  * Re-resolves the selector one slice of a bulk set was compiled from and decides whether the set

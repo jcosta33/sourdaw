@@ -4,7 +4,7 @@ import { type ActionCommandGraph } from '../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
-import { replayBulkSetSlice } from '../services/bulkSetSliceReplay';
+import { replayBulkSetSlice, restoreRunWrittenFacts } from '../services/bulkSetSliceReplay';
 import {
     collectSemanticCommandListCandidates,
     resolveSemanticCommandListSelector,
@@ -177,6 +177,9 @@ export function validateArbitraryCommandListEvidence(input: {
         roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
     });
     const candidatesById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+    // Fingerprints compare the live project; selector replays read it with the facts the run's own
+    // earlier batches wrote restored, so only an outside change can move a replayed set.
+    const replayCandidates = restoreRunWrittenFacts(candidates, evidence.runWrittenFacts);
     const selectorByItemId = new Map<string, ArbitraryCommandListSelectorEvidence>();
     for (const selector of evidence.selectors) {
         if (selectorByItemId.has(selector.itemId) || selector.stableIds.length === 0) {
@@ -213,13 +216,13 @@ export function validateArbitraryCommandListEvidence(input: {
         // A slice of a set larger than one batch is replayed differently: earlier batches of the same
         // run changed the members they carried, so the set is compared beyond those members.
         if (selector.slice !== undefined) {
-            const sliceRejection = replaySelectorSlice(selector, candidates, input.context);
+            const sliceRejection = replaySelectorSlice(selector, replayCandidates, input.context);
             if (sliceRejection !== null) {
                 return { status: 'rejected', reason: sliceRejection };
             }
         } else if (selector.predicate !== undefined) {
             const replayed = resolveSemanticCommandListSelector({
-                candidates,
+                candidates: replayCandidates,
                 context: input.context,
                 itemId: selector.itemId,
                 roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,

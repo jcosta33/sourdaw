@@ -61,10 +61,10 @@ function groundScheduledSlice(
     schedule: AgentRunBatchSchedule,
     position: number
 ): GroundedScheduledBatch {
-    const slice = schedule.slices[position - 1];
-    const evidence = slice === undefined ? null : readBulkSetSliceEvidence(slice.serializedSlice);
+    const slices = schedule.slices.map((stored) => readBulkSetSliceEvidence(stored.serializedSlice));
+    const evidence = slices[position - 1] ?? null;
     const providerProposal = readProviderProposal(schedule);
-    if (evidence === null || providerProposal === undefined) {
+    if (evidence === null || slices.includes(null) || providerProposal === undefined) {
         return { status: 'rejected', reason: 'its stored plan could not be read back' };
     }
     const revision = settlePendingProjectWritesAndCaptureRevision();
@@ -73,7 +73,16 @@ function groundScheduledSlice(
         evidence,
         context,
         revision,
-        runTouchedTargetIds: new Set(schedule.slices.slice(0, position - 1).flatMap((earlier) => earlier.targetIds)),
+        earlierCommands: slices.slice(0, position - 1).flatMap((earlier) => earlier?.commands ?? []),
+        recordedFingerprints: new Map(
+            slices.flatMap((stored) =>
+                (stored?.selectors ?? []).flatMap((selector) =>
+                    selector.preconditions.map(
+                        (precondition) => [precondition.stableId, precondition.fingerprint] as const
+                    )
+                )
+            )
+        ),
     });
     if (rebased.status === 'rejected') {
         return rebased;

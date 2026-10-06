@@ -520,6 +520,37 @@ function validateSlice(slice: ArbitraryCommandListEvidence, context: ProjectCont
     });
 }
 
+const LATER_REVISION = 'revision-after-batch-one';
+
+/** Every candidate fingerprint the schedule's slices recorded at compile time. */
+function recordedFingerprints(slices: readonly ArbitraryCommandListEvidence[]): Map<string, string> {
+    return new Map(
+        slices.flatMap((slice) =>
+            slice.selectors.flatMap((selector) =>
+                selector.preconditions.map((precondition): [string, string] => [
+                    precondition.stableId,
+                    precondition.fingerprint,
+                ])
+            )
+        )
+    );
+}
+
+/** Rebases slice `position` the way the run proposes it once every earlier slice committed, then validates it. */
+function replayLaterSlice(slices: readonly ArbitraryCommandListEvidence[], position: number, live: ProjectContext) {
+    const rebased = rebaseBulkSetSliceEvidence({
+        evidence: slices[position - 1]!,
+        context: live,
+        revision: LATER_REVISION,
+        earlierCommands: slices.slice(0, position - 1).flatMap((slice) => slice.commands),
+        recordedFingerprints: recordedFingerprints(slices),
+    });
+    if (rebased.status === 'rejected') {
+        return rebased;
+    }
+    return validateSlice(rebased.evidence, live, LATER_REVISION);
+}
+
 describe('bulk set commands across successive batches', () => {
     const layers = createBulkTracks('layer', 'Layer', 30);
     const context = createBulkContext(layers);
@@ -750,20 +781,7 @@ describe('bulk set commands across successive batches', () => {
         const secondSlice = slices[1]!;
         const firstSliceIds = layers.slice(0, 24).map((track) => track.id);
         const withTracks = (tracks: ProjectContextTrack[]) => ({ ...context, tracks });
-        const rebase = (live: ProjectContext) =>
-            rebaseBulkSetSliceEvidence({
-                evidence: secondSlice,
-                context: live,
-                revision: 'revision-after-batch-one',
-                runTouchedTargetIds: new Set(firstSliceIds),
-            });
-        const replay = (live: ProjectContext) => {
-            const rebased = rebase(live);
-            if (rebased.status === 'rejected') {
-                return rebased;
-            }
-            return validateSlice(rebased.evidence, live, 'revision-after-batch-one');
-        };
+        const replay = (live: ProjectContext) => replayLaterSlice(slices, 2, live);
         // Batch one muted its targets, and the user renamed a track no batch touches.
         const afterBatchOne = withTracks(
             context.tracks.map((track) => {
@@ -815,18 +833,8 @@ describe('bulk set commands across successive batches', () => {
             const middle = muteThenSolo[1]!;
 
             expect(muteThenSolo.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
-            const rebased = rebaseBulkSetSliceEvidence({
-                evidence: middle,
-                context: afterBatchOne,
-                revision: 'revision-after-batch-one',
-                runTouchedTargetIds: new Set(muteThenSolo[0]!.providerKnownTargetIds),
-            });
-            if (rebased.status === 'rejected') {
-                throw new Error(rebased.reason);
-            }
-            expect(validateSlice(rebased.evidence, afterBatchOne, 'revision-after-batch-one')).toMatchObject({
-                status: 'accepted',
-            });
+            expect(middle.selectors.map((selector) => selector.itemId)).toEqual(['mute-layers', 'solo-layers']);
+            expect(replayLaterSlice(muteThenSolo, 2, afterBatchOne)).toMatchObject({ status: 'accepted' });
         });
 
         it('revalidates a pending later batch against the set beyond its earlier members', () => {
@@ -840,6 +848,129 @@ describe('bulk set commands across successive batches', () => {
                 withTracks([...afterBatchOne.tracks, createTrack('track-layer-new', 'Layer 31')])
             );
             expect(revalidateApprovedMatchSelectors(records)).toMatchObject({ status: 'invalidated' });
+        });
+    });
+
+    describe("facts the run's own earlier batches wrote", () => {
+        const takeContext = createBulkContext(
+            layers.map((track, index) => ({
+                ...track,
+                clipCount: 1,
+                clips: [
+                    {
+                        id: `clip-take-${String(index + 1).padStart(3, '0')}`,
+                        name: `Take ${String(index + 1)}`,
+                        type: 'audio' as const,
+                        startBeat: 0,
+                        endBeat: 4,
+                        noteCount: 0,
+                        muted: false,
+                    },
+                ],
+            }))
+        );
+        // What the project holds once the run's batches muted the first `count` layer tracks.
+        const mutedThrough = (base: ProjectContext, count: number): ProjectContext => {
+            const mutedIds = new Set(layers.slice(0, count).map((track) => track.id));
+            return {
+                ...base,
+                tracks: base.tracks.map((track) => (mutedIds.has(track.id) ? { ...track, muted: true } : track)),
+            };
+        };
+        const setTakeGain = {
+            id: 'set-take-gain',
+            name: 'setClipGain',
+            arguments: { gain: 0.5 },
+            selector: {
+                targetArgument: 'clipId',
+                entity: 'clip',
+                match: { all: [{ nameIncludes: 'take' }] },
+                quantity: { unit: 'targets', exactly: 30 },
+            },
+        };
+        const soloUnmuted = {
+            id: 'solo-unmuted',
+            name: 'soloTrack',
+            arguments: { soloed: true },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                match: { all: [{ nameIncludes: 'layer' }, { isMuted: false }] },
+                quantity: { unit: 'targets', exactly: 30 },
+            },
+        };
+
+        it('accepts later batches whose candidates the run muted through their owner track', () => {
+            const slices = requireSlices(splitBulk(takeContext, [muteLayers, setTakeGain]).split);
+
+            expect(slices.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
+            expect(replayLaterSlice(slices, 2, mutedThrough(takeContext, 24))).toMatchObject({ status: 'accepted' });
+            expect(replayLaterSlice(slices, 3, mutedThrough(takeContext, 30))).toMatchObject({ status: 'accepted' });
+        });
+
+        it('still refuses a later batch whose candidate someone else muted', () => {
+            const slices = requireSlices(splitBulk(takeContext, [muteLayers, setTakeGain]).split);
+            const afterRun = mutedThrough(takeContext, 24);
+            const muteTakes = (track: ProjectContextTrack): ProjectContextTrack => {
+                if (track.id !== layers[4]!.id) {
+                    return track;
+                }
+                return { ...track, clips: track.clips.map((clip) => ({ ...clip, muted: true })) };
+            };
+            const userMutedTake = { ...afterRun, tracks: afterRun.tracks.map(muteTakes) };
+
+            expect(replayLaterSlice(slices, 2, userMutedTake)).toEqual({
+                status: 'rejected',
+                reason: 'Structured command compiler evidence preconditions no longer hold.',
+            });
+        });
+
+        it('accepts later batches whose set the run changed by muting its members', () => {
+            const slices = requireSlices(splitBulk(context, [muteLayers, soloUnmuted]).split);
+
+            expect(slices.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
+            expect(replayLaterSlice(slices, 2, mutedThrough(context, 24))).toMatchObject({ status: 'accepted' });
+            expect(replayLaterSlice(slices, 3, mutedThrough(context, 30))).toMatchObject({ status: 'accepted' });
+        });
+
+        it('revalidates at approval a later batch whose set the run changed, and refuses an outside change', () => {
+            const slices = requireSlices(splitBulk(context, [muteLayers, soloUnmuted]).split);
+            const afterRun = mutedThrough(context, 24);
+            const rebased = rebaseBulkSetSliceEvidence({
+                evidence: slices[1]!,
+                context: afterRun,
+                revision: LATER_REVISION,
+                earlierCommands: slices[0]!.commands,
+                recordedFingerprints: recordedFingerprints(slices),
+            });
+            if (rebased.status === 'rejected') {
+                throw new Error(rebased.reason);
+            }
+            const records = deriveMatchSelectorPredicates(rebased.evidence);
+            const contextSpy = vi.mocked(getProjectContext);
+
+            contextSpy.mockReturnValueOnce(afterRun);
+            expect(revalidateApprovedMatchSelectors(records)).toEqual({ status: 'unchanged' });
+            contextSpy.mockReturnValueOnce({
+                ...afterRun,
+                tracks: afterRun.tracks.map((track) =>
+                    track.id === layers[26]!.id ? { ...track, muted: true } : track
+                ),
+            });
+            expect(revalidateApprovedMatchSelectors(records)).toMatchObject({ status: 'invalidated' });
+        });
+
+        it('still refuses a later batch whose set someone else changed by muting a member', () => {
+            const slices = requireSlices(splitBulk(context, [muteLayers, soloUnmuted]).split);
+            const afterRun = mutedThrough(context, 24);
+            const userMuted = {
+                ...afterRun,
+                tracks: afterRun.tracks.map((track) =>
+                    track.id === layers[26]!.id ? { ...track, muted: true } : track
+                ),
+            };
+
+            expect(replayLaterSlice(slices, 2, userMuted)).toMatchObject({ status: 'rejected' });
         });
     });
 
@@ -969,6 +1100,14 @@ describe('bulk set commands across successive batches', () => {
             expect(agentRunLifecycle.get('run-two-batches')?.phase).toBe('executing');
         });
 
+        it('holds a request to complete the run while a later batch is owed', () => {
+            recordScheduledPlan('run-held');
+
+            agentRunLifecycle.transitionPhase({ runId: 'run-held', phase: 'completed' });
+
+            expect(agentRunLifecycle.get('run-held')?.phase).toBe('executing');
+        });
+
         it('does not complete the run when its first batch settles as a no-op', () => {
             recordScheduledPlan('run-no-op');
             const claimed = agentRunLifecycle.claimWorkLease({
@@ -1046,11 +1185,11 @@ function muteLayersItem() {
     };
 }
 
-function scriptMuteLayersProposal(): void {
+function scriptMuteLayersProposal(item: Record<string, unknown> = muteLayersItem()): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
         () => [MUTE_SEARCH_CALL],
         discoverSearchedCalls(['muteTrack']),
-        proposeDiscoveredCalls([muteLayersItem()], ['muteTrack']),
+        proposeDiscoveredCalls([item], ['muteTrack']),
     ]);
 }
 
@@ -1144,6 +1283,30 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(mutedTrackIds()).toEqual(layerIds);
         expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
         expect(proposedConfirmations()).toEqual([]);
+    });
+
+    it('refuses at approval a later batch whose where-only set gained a member while it waited', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal({
+            ...muteLayersItem(),
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { kind: 'audio' },
+                quantity: { unit: 'targets', exactly: LAYER_COUNT },
+            },
+        });
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        const second = requireOnlyProposedConfirmation();
+
+        await executeAppAction({ type: 'addTrack', payload: { name: 'Layer 27', kind: 'audio' } });
+        const approval = await confirmPendingChatActions({ confirmationId: second.id });
+
+        expect(approval).toMatchObject({ status: 'invalidated' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(agentRunLifecycle.get(first.runId)?.phase).not.toBe('completed');
     });
 
     it('refuses a later batch whose target someone else changed and leaves the run partially completed', async () => {

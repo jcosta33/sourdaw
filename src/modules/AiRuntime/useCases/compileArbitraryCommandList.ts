@@ -10,6 +10,7 @@ import { type CreativeRequestAuthority } from '../models/CreativeInterpretation'
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     type BulkSetReplaySelector,
+    type BulkSetRunWrittenFact,
     type BulkSetSlice,
     parseSemanticCommandList,
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
@@ -115,6 +116,11 @@ export type ArbitraryCommandListEvidence = {
      * in front of them came from a named generator and a seed rather than from the provider's hand.
      */
     expandedMidiTransforms: string[];
+    /**
+     * Present only on a later batch of a schedule: the facts the run's own earlier batches wrote,
+     * with their compiled values, which every selector replay restores before resolving.
+     */
+    runWrittenFacts?: BulkSetRunWrittenFact[];
 };
 
 type AcceptedCompilation = {

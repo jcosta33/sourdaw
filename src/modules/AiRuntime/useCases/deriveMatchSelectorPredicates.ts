@@ -23,7 +23,8 @@ export function deriveMatchSelectorPredicates(
     );
     return (
         compilerEvidence?.selectors.flatMap((selector) => {
-            if (selector.predicate === undefined) {
+            const replayed = getReplayedSelector(selector);
+            if (replayed === undefined) {
                 return [];
             }
             const actionPositions = actionPositionsByItemId.get(selector.itemId);
@@ -35,12 +36,12 @@ export function deriveMatchSelectorPredicates(
             }
             const record: SemanticCommandListMatchSelectorRecord = {
                 itemId: selector.itemId,
-                entity: selector.predicate.entity,
-                where: selector.predicate.where,
-                match: selector.predicate.match,
-                condition: selector.predicate.condition,
-                excludeIds: selector.predicate.excludeIds,
-                quantity: selector.predicate.quantity,
+                entity: replayed.entity,
+                where: replayed.where,
+                match: replayed.match,
+                condition: replayed.condition,
+                excludeIds: replayed.excludeIds,
+                quantity: replayed.quantity,
                 stableIds: [...selector.stableIds],
                 actionPositions: actionPositions.map((position) => position + actionPositionOffset),
             };
@@ -49,7 +50,33 @@ export function deriveMatchSelectorPredicates(
             if (selector.slice !== undefined) {
                 record.slice = { setStableIds: [...selector.slice.setStableIds], offset: selector.slice.offset };
             }
+            const runWrittenFacts = compilerEvidence?.runWrittenFacts;
+            if (runWrittenFacts !== undefined) {
+                record.runWrittenFacts = structuredClone(runWrittenFacts);
+            }
             return [record];
         }) ?? []
     );
+}
+
+type SelectorEvidence = ArbitraryCommandListEvidence['selectors'][number];
+
+/**
+ * The selector fields an approval re-resolves: a `match` selector's own, or — for a `where`-only
+ * selector carried as one slice of a larger set — the slice's replay fields, so a set that gains or
+ * loses a member while a later batch waits for approval is refused whichever form named it.
+ */
+function getReplayedSelector(
+    selector: SelectorEvidence
+): Omit<SemanticCommandListMatchSelectorRecord, 'itemId' | 'stableIds' | 'actionPositions'> | undefined {
+    if (selector.predicate !== undefined) {
+        return selector.predicate;
+    }
+    if (selector.slice === undefined) {
+        return undefined;
+    }
+    return {
+        ...selector.slice.selector,
+        quantity: { unit: 'targets', exactly: selector.slice.setStableIds.length },
+    };
 }

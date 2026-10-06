@@ -112,6 +112,16 @@ export type SemanticCommandListSelector = {
  */
 export type BulkSetSlice = { setStableIds: string[]; offset: number };
 
+/**
+ * One fact of one candidate that an earlier batch of the same run wrote, with the value the
+ * candidate held when the list was compiled. A later batch's replay reads the candidate with this
+ * value restored, so a set changed only by the run's own committed batches still resolves as it did,
+ * while every fact the run did not write is read live and any outside change to it still shows.
+ */
+export type BulkSetRunWrittenFact =
+    | { candidateId: string; field: 'muted' | 'locked' | 'bypassed' | 'ownerMuted'; value: boolean | null }
+    | { candidateId: string; field: 'ownerDeviceTypes' | 'ownerTags'; value: string[] | null };
+
 /** The selector fields a set slice re-resolves against the live project; its quantity is relaxed at replay. */
 export type BulkSetReplaySelector = Omit<SemanticCommandListSelector, 'targetArgument' | 'quantity'>;
 
@@ -133,7 +143,8 @@ export type SemanticCommandListMatchSelectorRecord = {
     itemId: string;
     entity: SemanticCommandListEntity;
     where?: SemanticCommandListSelector['where'];
-    match: SemanticCommandListMatch;
+    /** Absent only for a `where`-only selector carried as one slice of a set larger than one batch. */
+    match?: SemanticCommandListMatch;
     condition?: SemanticCommandListSelector['condition'];
     excludeIds?: string[];
     quantity: SemanticCommandListQuantity;
@@ -141,6 +152,8 @@ export type SemanticCommandListMatchSelectorRecord = {
     actionPositions: number[];
     /** Present only when this batch carries one slice of a set larger than one batch. */
     slice?: BulkSetSlice;
+    /** Facts the run's own earlier batches wrote, restored to their compiled values before replay. */
+    runWrittenFacts?: BulkSetRunWrittenFact[];
 };
 
 export type SemanticCommandListItem = {
