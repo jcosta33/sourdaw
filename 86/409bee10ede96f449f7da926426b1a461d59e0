@@ -1,0 +1,27 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_1c08b47ac3792f::t_93b9de57f04712 1977-1992,2020,2030-2033
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_1c08b47ac3792f::t_bcf9e5166c7e7f 164-173,175-177
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_1c08b47ac3792f::t_ef8f993636b6b8 1319-1332,1347
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_1c08b47ac3792f::t_9152b3475ce1e7 171-175,178
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_1c08b47ac3792f::t_529370d6dbc12d 328-330,336-339,343-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86409bee10ede96f449f7da926426b1a461d59e0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
