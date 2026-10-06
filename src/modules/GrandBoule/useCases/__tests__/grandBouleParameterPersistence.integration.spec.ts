@@ -104,6 +104,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         prepareMidiClipFanOutState: vi.fn(),
         prepareMidiClipGlueState: vi.fn(),
         prepareMidiClipSplit: vi.fn(),
+        projectMidiClipWindow: vi.fn(),
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
         projectMidiNotesByClipIdThroughRestores: vi.fn(),
         readMidiFile: vi.fn(),

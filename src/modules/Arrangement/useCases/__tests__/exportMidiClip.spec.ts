@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
     getMidiStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     downloadMidiFile: mocks.downloadMidiFile,
     getMidiStoreState: mocks.getMidiStoreState,
 }));
@@ -74,6 +75,73 @@ describe('exportMidiClip', () => {
             clipStartBeat: 8,
             notes: [note],
             ccs: [{ id: 'cc1', controller: 1, value: 64, beat: 0, channel: 0 }],
+        });
+    });
+
+    describe('slipped and trimmed clips', () => {
+        function note(id: string, startBeat: number, duration: number) {
+            return { id, pitch: 60, startBeat, duration, velocity: 100 };
+        }
+
+        function controller(id: string, beat: number, value: number) {
+            return { id, controller: 64, value, beat, channel: 0 };
+        }
+
+        function exportSlippedClip() {
+            mocks.getAllTracks.mockReturnValue([
+                {
+                    id: 't1',
+                    name: 'Keys',
+                    clips: [
+                        { id: 'clip-s', name: 'Slip', startBeat: 8, endBeat: 12, midiOffsetBeats: 2, type: 'midi' },
+                    ],
+                },
+            ] as any);
+            mocks.getMidiStoreState.mockReturnValue({
+                notesByClipId: {
+                    'clip-s': [
+                        note('before', 1, 0.5),
+                        note('straddles-start', 1.5, 1),
+                        note('inside', 3, 1),
+                        note('straddles-end', 5.5, 1),
+                        note('after', 7, 1),
+                    ],
+                },
+                ccByClipId: {
+                    'clip-s': [controller('hidden-down', 1, 100), controller('inside-up', 3, 20)],
+                },
+                pitchBendByClipId: { 'clip-s': [{ id: 'bend', value: 0.5, beat: 3, channel: 0 }] },
+            } as any);
+
+            exportMidiClip('clip-s');
+
+            return mocks.downloadMidiFile.mock.calls[0]?.[0];
+        }
+
+        it('exports the notes the clip plays for one pass, rebased by the content offset', () => {
+            const exported = exportSlippedClip();
+
+            expect(exported.clipStartBeat).toBe(8);
+            expect(
+                exported.notes.map((exportedNote: any) => [
+                    exportedNote.id,
+                    exportedNote.startBeat,
+                    exportedNote.duration,
+                ])
+            ).toEqual([
+                ['straddles-start', 0, 0.5],
+                ['inside', 1, 1],
+                ['straddles-end', 3.5, 0.5],
+            ]);
+        });
+
+        it('starts the exported controllers from the value in force at the window start', () => {
+            const exported = exportSlippedClip();
+
+            expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
+                ['hidden-down', 0, 100],
+                ['inside-up', 1, 20],
+            ]);
         });
     });
 

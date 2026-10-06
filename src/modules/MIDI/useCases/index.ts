@@ -47,6 +47,7 @@ export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGlueState';
 export { prepareMidiClipFanOutState } from './midiClipData/prepareMidiClipFanOutState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
+export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
 export { midiClipGlueStateMatches } from './midiClipData/midiClipGlueStateMatches';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
