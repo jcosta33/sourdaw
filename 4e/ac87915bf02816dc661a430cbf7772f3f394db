@@ -1,0 +1,18 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartMidiNoteShift.spec.ts
+  h_beb54bf43b47b7 4-5,105,142-165
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  h_beb54bf43b47b7 1,29-56,84-87
+src/modules/Transport/useCases/scheduling/__tests__/trimClipStartLoopedNoteStream.spec.ts
+  h_beb54bf43b47b7 1-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4eac87915bf02816dc661a430cbf7772f3f394db",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
