@@ -92,9 +92,15 @@ class GrandBouleInstanceMock {
         paramDispatches.push({ name, value, block: currentBlock() });
         engineEvents.push(`param:${name}:${String(value)}`);
     }
-    set_sustain(_position: number): void {}
-    set_una_corda(_engaged: boolean): void {}
-    set_sostenuto(_engaged: boolean): void {}
+    push_sustain(_position: number, _offset: number): boolean {
+        return true;
+    }
+    push_una_corda(_engaged: boolean, _offset: number): boolean {
+        return true;
+    }
+    push_sostenuto(_engaged: boolean, _offset: number): boolean {
+        return true;
+    }
     note_on_midi2(): void {}
     set_temperament(_index: number): void {}
     all_notes_off(): void {}
@@ -452,6 +458,22 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         renderBlock();
 
         expect(engineEvents).toEqual(['param:lid_position:0.25', 'note:60']);
+    });
+
+    it('lets frame-zero automation win over a saved value replayed without a frame', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        strategy.setParam('lidPosition', 1);
+        binding.apply([{ startFrame: 0, endFrame: 0, startValue: 0.25, endValue: 0.25 }]);
+        renderBlock();
+        renderBlock();
+        renderBlock();
+
+        expect(paramDispatches.at(-1)).toMatchObject({ name: 'lid_position', value: 0.25 });
     });
 
     it('applies automation before a note that shares a non-aligned frame inside the quantum', async () => {

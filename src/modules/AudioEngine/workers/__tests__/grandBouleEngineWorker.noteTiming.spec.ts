@@ -43,6 +43,8 @@ type Voiced = { note: number; block: number; offset: number };
 const voiced: Voiced[] = [];
 type FramedParam = { name: string; value: number; block: number };
 const framedParams: FramedParam[] = [];
+type PedalPush = { method: string; value: number | boolean };
+const pedalPushes: PedalPush[] = [];
 
 class GrandBouleInstanceMock {
     push_note_on(note: number, _velocity: number, _channel: number, offset: number): boolean {
@@ -61,9 +63,18 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         framedParams.push({ name, value, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
     }
-    set_sustain(): void {}
-    set_una_corda(): void {}
-    set_sostenuto(): void {}
+    push_sustain(position: number): boolean {
+        pedalPushes.push({ method: 'push_sustain', value: position });
+        return true;
+    }
+    push_una_corda(engaged: boolean): boolean {
+        pedalPushes.push({ method: 'push_una_corda', value: engaged });
+        return true;
+    }
+    push_sostenuto(engaged: boolean): boolean {
+        pedalPushes.push({ method: 'push_sostenuto', value: engaged });
+        return true;
+    }
     note_on_midi2(): void {}
     set_temperament(): void {}
     all_notes_off(): void {}
@@ -151,6 +162,7 @@ describe('Grand Boule engine worker note placement', () => {
     beforeEach(async () => {
         voiced.length = 0;
         framedParams.length = 0;
+        pedalPushes.length = 0;
         new Int32Array(syncSab).fill(0);
         await import('../grandBouleEngineWorker');
         await import('../../worklets/grandBouleProcessor');
@@ -325,13 +337,18 @@ describe('Grand Boule engine worker note placement', () => {
         const passed = writeHead() - BLOCK_FRAMES;
 
         send({ type: 'noteOn', midiNote: 64, velocity: 90, sampleFrame: passed, channel: 0 });
+        expect(voiced).toEqual([]);
 
-        // Dispatched on arrival — at the head the engine is already at, not the
-        // block that frame belonged to and not a block later.
+        // Open headroom for one block: the next render hands the late note to the
+        // engine at the head of that block, not the block that frame belonged to
+        // and not a block later.
+        consumeBlock(0);
+        renderTick();
+
         expect(voiced).toEqual([{ note: 64, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 0 }]);
     });
 
-    it('pushes a note arriving for the block about to render at its own offset', () => {
+    it('pushes a note arriving for the block about to render at its own offset in that render', () => {
         renderTick();
         const contextStart = 5000 * BLOCK_FRAMES;
         consumeBlock(contextStart);
@@ -339,13 +356,99 @@ describe('Grand Boule engine worker note placement', () => {
         // The consumer is at `contextStart`, the engine PRE_ROLL_FRAMES ahead, so
         // the block the worker renders next covers context frames
         // `contextStart + 768 .. +895`. A note stamped 50 samples into it arrives
-        // between renders and is delivered straight to the engine — the "voice
-        // now" path — but it is still due 50 samples in, not at the head.
+        // between renders and queues; that render pushes it 50 samples in, not at
+        // the head.
         const blockStart = contextStart + PRE_ROLL_FRAMES;
         send({ type: 'noteOn', midiNote: 66, velocity: 90, sampleFrame: blockStart + 50, channel: 0 });
+        expect(voiced).toEqual([]);
+        renderTick();
 
         expect(voiced).toEqual([{ note: 66, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 50 }]);
     });
+
+    const pedals = [
+        {
+            method: 'push_sustain',
+            press: { type: 'sustain', position: 1 },
+            lift: { type: 'sustain', position: 0 },
+            engaged: 1,
+            disengaged: 0,
+        },
+        {
+            method: 'push_sostenuto',
+            press: { type: 'sostenuto', engaged: true },
+            lift: { type: 'sostenuto', engaged: false },
+            engaged: true,
+            disengaged: false,
+        },
+        {
+            method: 'push_una_corda',
+            press: { type: 'unaCorda', engaged: true },
+            lift: { type: 'unaCorda', engaged: false },
+            engaged: true,
+            disengaged: false,
+        },
+    ];
+
+    it.each(pedals)('leaves the $method pedal up when its lift follows a press kept through a panic', (pedal) => {
+        renderTick();
+        const contextStart = 5000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+        renderTick();
+
+        // The press is queued ahead of the block about to render, so it keeps a
+        // stamp from the ring's lead. The panic flush then restarts the block
+        // clock at the frame the consumer applies it: lower than that stamp.
+        send({ ...pedal.press, sampleFrame: contextStart + 256 });
+        send({ type: 'allNotesOff' });
+        const flushFrame = contextStart + 2 * BLOCK_FRAMES;
+        consumeBlock(flushFrame);
+
+        // The lift arrives after the flush, stamped from the lower clock. It
+        // must still land after the press the player made before it.
+        send({ ...pedal.lift, sampleFrame: flushFrame + 3 * BLOCK_FRAMES });
+        for (let block = 1; block <= 18; block++) {
+            renderTick();
+            consumeBlock(flushFrame + block * BLOCK_FRAMES);
+        }
+
+        expect(pedalPushes).toEqual([
+            { method: pedal.method, value: pedal.engaged },
+            { method: pedal.method, value: pedal.disengaged },
+        ]);
+    });
+
+    it.each(pedals)(
+        'leaves the $method pedal up when a press arrives before the clock republishes after a panic',
+        (pedal) => {
+            renderTick();
+            const contextStart = 5000 * BLOCK_FRAMES;
+            consumeBlock(contextStart);
+            renderTick();
+
+            // The flush is not yet applied: the consumer's clock still maps the
+            // producer head through the pre-flush read head, so a block start
+            // taken from it is a ring's lead too high. A press behind that start
+            // arrives in this window.
+            send({ type: 'allNotesOff' });
+            send({ ...pedal.press, sampleFrame: contextStart + 256 });
+
+            // The consumer applies the flush and republishes; the lift arrives
+            // after it and must still land behind the press.
+            const flushFrame = contextStart + 2 * BLOCK_FRAMES;
+            consumeBlock(flushFrame);
+            send({ ...pedal.lift, sampleFrame: flushFrame + 3 * BLOCK_FRAMES });
+            for (let block = 1; block <= 18; block++) {
+                renderTick();
+                consumeBlock(flushFrame + block * BLOCK_FRAMES);
+            }
+
+            expect(pedalPushes).toEqual([
+                { method: pedal.method, value: pedal.engaged },
+                { method: pedal.method, value: pedal.disengaged },
+            ]);
+        }
+    );
 
     it('drops notes still waiting in the queue when the device panics', () => {
         renderTick();

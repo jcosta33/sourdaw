@@ -74,9 +74,9 @@ export type GrandBouleNodeResult = {
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     acceptsScheduledParam?: (name: string) => boolean;
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
-    setSustain: (position: number) => void;
-    setUnaCorda: (engaged: boolean) => void;
-    setSostenuto: (engaged: boolean) => void;
+    setSustain: (position: number, sampleFrame?: number) => void;
+    setUnaCorda: (engaged: boolean, sampleFrame?: number) => void;
+    setSostenuto: (engaged: boolean, sampleFrame?: number) => void;
     noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
     setTemperament: (index: number) => void;
     allNotesOff: () => void;
@@ -658,14 +658,14 @@ export async function createGrandBouleNode(
                 post({ type: 'paramAutomation', name, segments });
             }
         },
-        setSustain(position: number) {
-            post({ type: 'sustain', position });
+        setSustain(position: number, sampleFrame?: number) {
+            post({ type: 'sustain', position, sampleFrame });
         },
-        setUnaCorda(engaged: boolean) {
-            post({ type: 'unaCorda', engaged });
+        setUnaCorda(engaged: boolean, sampleFrame?: number) {
+            post({ type: 'unaCorda', engaged, sampleFrame });
         },
-        setSostenuto(engaged: boolean) {
-            post({ type: 'sostenuto', engaged });
+        setSostenuto(engaged: boolean, sampleFrame?: number) {
+            post({ type: 'sostenuto', engaged, sampleFrame });
         },
         noteOnMidi2(midiNote: number, velocity16bit: number, pitchOffsetQ24: number) {
             if (!bypassed) {

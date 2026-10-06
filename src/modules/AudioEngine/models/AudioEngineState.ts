@@ -213,11 +213,11 @@ export type DeviceController = {
     noteOff?(note: number, sampleFrame?: number): void;
     allNotesOff?(): void;
     reset?(): void;
-    handleCc?(cc: number, value: number): void;
+    handleCc?(cc: number, value: number, sampleFrame?: number): void;
     setPadParam?(pad: number, name: string, value: number): void;
-    setSustain?(position: number): void;
-    setUnaCorda?(engaged: boolean): void;
-    setSostenuto?(engaged: boolean): void;
+    setSustain?(position: number, sampleFrame?: number): void;
+    setUnaCorda?(engaged: boolean, sampleFrame?: number): void;
+    setSostenuto?(engaged: boolean, sampleFrame?: number): void;
     noteOnMidi2?(midiNote: number, velocity16bit: number, pitchOffsetQ24: number): void;
     setTemperament?(index: number): void;
     updateState?(clips: Record<string, unknown>): void;
@@ -327,9 +327,9 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         setParam: (name: string, value: number, sampleFrame?: number) => void;
-        setSustain: (position: number) => void;
-        setUnaCorda: (engaged: boolean) => void;
-        setSostenuto: (engaged: boolean) => void;
+        setSustain: (position: number, sampleFrame?: number) => void;
+        setUnaCorda: (engaged: boolean, sampleFrame?: number) => void;
+        setSostenuto: (engaged: boolean, sampleFrame?: number) => void;
         noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
         setTemperament: (index: number) => void;
         allNotesOff: () => void;
@@ -377,7 +377,7 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         allNotesOff: () => void;
-        handleCc: (cc: number, value: number) => void;
+        handleCc: (cc: number, value: number, sampleFrame?: number) => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
