@@ -1,0 +1,31 @@
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_e2e3b59ca46fbb 1209
+scripts/__tests__/resourceGuard.spec.ts
+  s_2bfd55a4393d7c::t_a1f1b55f8470fa 868
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_1c08b47ac3792f::t_77e0bf867e482c 632
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e65037bdbb526e28219efe671e371a2263aed2b0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
