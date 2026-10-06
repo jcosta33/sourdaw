@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStart.spec.ts
+  s_07156bcba0c71f::t_1bd2be3d6d1109 61-130
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_07156bcba0c71f::t_0005120783f2ec 26,31-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa9350fc23c9c9d105b1864e0bd5a80022dacbca",
+  "prompts": {},
+  "sessions": {
+    "s_07156bcba0c71f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "bffec011-e7ae-4ab5-8432-9456116defcb",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
