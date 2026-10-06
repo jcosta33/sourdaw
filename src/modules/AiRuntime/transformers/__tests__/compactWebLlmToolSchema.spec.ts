@@ -16,9 +16,9 @@ type Fact = {
 };
 
 /**
- * Every keyword the compaction must keep: those that decide which values a schema admits (`type` is
- * not among them, because `isImpliedType` may drop it where a sibling keyword implies it) and the
- * `description` that tells the model a unit, a range or an "exactly one of" rule.
+ * Every keyword the compaction must keep: those that decide which values a schema admits and the
+ * `description` that tells the model a unit, a range or an "exactly one of" rule. `type` is walked
+ * apart from these, because a sibling keyword may imply it (see `isImpliedType`).
  */
 const FACT_KEYWORDS = [
     'description',
@@ -104,7 +104,25 @@ function inlineDefinitions(node: unknown, root: unknown): unknown {
     );
 }
 
-/** Every description, validity keyword and combinator of a full schema, with where it sits. */
+/**
+ * A nested node's `type` the compaction may drop because a sibling keyword says it: an object that lists
+ * properties, an array that lists items, a string whose enum is all strings. The root keeps its type.
+ * Any other `type` (number, integer, boolean, a bare object or array) decides what validates and stays.
+ */
+function isImpliedType(node: Record<string, unknown>, path: SchemaPath): boolean {
+    if (path.length === 0) {
+        return false;
+    }
+    if (node.type === 'object') {
+        return isRecord(node.properties);
+    }
+    if (node.type === 'array') {
+        return isRecord(node.items);
+    }
+    return node.type === 'string' && Array.isArray(node.enum) && node.enum.every((value) => typeof value === 'string');
+}
+
+/** Every description, validity keyword, type and combinator of a full schema, with where it sits. */
 function collectFacts(node: unknown, path: SchemaPath): Fact[] {
     if (!isRecord(node)) {
         return [];
@@ -114,6 +132,9 @@ function collectFacts(node: unknown, path: SchemaPath): Fact[] {
         if (Object.hasOwn(node, keyword)) {
             facts.push({ keyword, path, value: node[keyword] });
         }
+    }
+    if (Object.hasOwn(node, 'type') && !isImpliedType(node, path)) {
+        facts.push({ keyword: 'type', path, value: node.type });
     }
     for (const combinator of COMBINATORS) {
         const branches = node[combinator];

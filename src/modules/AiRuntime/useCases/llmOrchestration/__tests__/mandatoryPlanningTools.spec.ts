@@ -37,6 +37,7 @@ import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
+import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
 const mocks = vi.hoisted(() => ({
@@ -96,8 +97,8 @@ const creativeCatalog: CreativeInterpretationCatalog = {
 };
 
 /** The list production sends to every backend: the planning schemas plus the creative interpretation tool. */
-function productionToolSchemas(): ToolSchema[] {
-    return [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(creativeCatalog)];
+function productionToolSchemas(catalog: CreativeInterpretationCatalog = creativeCatalog): ToolSchema[] {
+    return [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
 }
 
 function namesOf(tools: readonly ToolSchema[]): string[] {
@@ -291,10 +292,13 @@ describe('mandatory planning tools', () => {
     });
 
     describe('WebLLM', () => {
-        async function advertisedToWebLlm(prompt: string): Promise<string[]> {
+        async function advertisedToWebLlm(
+            prompt: string,
+            catalog: CreativeInterpretationCatalog = creativeCatalog
+        ): Promise<string[]> {
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
-            await generateToolPlanningOutcome('system', prompt, productionToolSchemas());
+            await generateToolPlanningOutcome('system', prompt, productionToolSchemas(catalog));
             return namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
         }
 
@@ -364,15 +368,22 @@ describe('mandatory planning tools', () => {
 
         describe('system prompt size', () => {
             // A ratchet, not a fit: the measured size of the WebLLM system prompt (the planning prompt
-            // plus its tool section) at this head, 37,043, rounded up to the next hundred. The merge base,
+            // plus its tool section) at this head, 37,199 with the creative catalogue the request and an empty project produce, rounded up to the next hundred. The merge base,
             // before #4371 made the planning tools mandatory, measured 28,577 with 31 tools. Growth has to
             // be justified in review by raising this number. It does not claim the prompt fits the model
             // window; the whole local request already overflows it, and #4979 replaces this constant with
             // a budget for the whole request.
-            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 37_100;
+            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 37_200;
 
+            // The creative interpretation tool is built from the catalogue the request and the project
+            // produce, as parsePromptToActions builds it, so its size is the production size.
             async function serializeWebLlmPrompt(prompt: string): Promise<{ advertised: ToolSchema[]; text: string }> {
-                const advertisedNames = await advertisedToWebLlm(prompt);
+                const catalog = prepareCreativeInterpretationCatalog({
+                    prompt,
+                    context: getProjectContext(),
+                    projectRevision: 'revision-1',
+                });
+                const advertisedNames = await advertisedToWebLlm(prompt, catalog);
                 const advertised = (mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[];
                 expect(advertised).toHaveLength(advertisedNames.length);
                 const { generateWebLlmToolCalls } = await vi.importActual<
