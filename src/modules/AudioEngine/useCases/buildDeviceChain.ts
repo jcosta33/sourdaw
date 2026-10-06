@@ -20,6 +20,7 @@ import {
 import { createWithheldDeviceStrategy } from '../repositories/deviceStrategy/createWithheldDeviceStrategy';
 import { isDesktopExternalPluginRuntime } from '../repositories/deviceStrategy/isDesktopExternalPluginRuntime';
 import { isEngineHostedPluginDeviceType } from '../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
+import { isHostedPluginInstanceLoaded } from '../repositories/deviceStrategy/isHostedPluginInstanceLoaded';
 import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 import { isUnrenderableCatalogDeviceType } from '../repositories/deviceStrategy/unrenderableCatalogDeviceTypes';
@@ -522,10 +523,7 @@ export const buildDeviceChain = inject({ logger })(
                         //
                         // A track whose audio cannot reach the file at all is never
                         // worth refusing over; see `contributesAudio`.
-                        const loaded =
-                            onDesktopRuntime &&
-                            device.externalInstanceId !== undefined &&
-                            loadedInstanceIds.has(device.externalInstanceId);
+                        const loaded = isHostedPluginInstanceLoaded(device, { loadedInstanceIds, onDesktopRuntime });
                         const refusal = unrenderableDeviceRefusal(device, trackLabel, loaded);
                         if (isUnsupportedDeviceTypeError(error) && contributesAudio && refusal !== undefined) {
                             releaseBuiltStrategies(entries, logger);

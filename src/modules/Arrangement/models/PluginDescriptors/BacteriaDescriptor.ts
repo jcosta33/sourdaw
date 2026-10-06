@@ -8,8 +8,11 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { BACTERIA_BANDS_PARAMETER_GUIDANCE } from './BacteriaDescriptorGuidanceBands';
+import { BACTERIA_EFFECTS_PARAMETER_GUIDANCE } from './BacteriaDescriptorGuidanceEffects';
+import { BACTERIA_MODULATION_PARAMETER_GUIDANCE } from './BacteriaDescriptorGuidanceModulation';
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { effectGuidance } from './GuidanceProfiles';
 
 const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     // Global
@@ -164,11 +167,12 @@ export const BACTERIA_DESCRIPTOR = applySingleDescriptorGuidance(
                 reason: 'Bacteria declares no automatic output compensation across its module chain.',
             }
         ),
-        declaredControl(
-            'Creative multi-effect control',
-            'Changes a module choice, its texture, or the processed-signal balance.',
-            ['Balance module settings with input, output, and mix.'],
-            ['Stacked effects can build level or lose clarity.']
-        )
+        // No fallback: every parameter is authored in the three Bacteria guidance files.
+        undefined,
+        {
+            ...BACTERIA_BANDS_PARAMETER_GUIDANCE,
+            ...BACTERIA_EFFECTS_PARAMETER_GUIDANCE,
+            ...BACTERIA_MODULATION_PARAMETER_GUIDANCE,
+        }
     )
 );

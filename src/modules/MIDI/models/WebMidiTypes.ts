@@ -73,12 +73,6 @@ export type HeldNoteExpressionTrails = {
     pitchBend?: HeldNoteExpressionTrail;
 };
 
-export type GeneratedYeastVoice = {
-    pitch: number;
-    channel: number;
-    release: (sampleFrame?: number, releaseVelocity?: number) => void;
-};
-
 export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
@@ -94,8 +88,6 @@ export type ActiveNoteData = {
     noteInstanceId?: string;
     /** Release closures bound to the exact controls that voiced transformed pitches. */
     yeastVoiceReleases?: Map<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
-    /** Worker-generated identity owns each captured transformed voice. */
-    yeastGeneratedVoices?: Map<string, GeneratedYeastVoice>;
     pressure?: number;
     slide?: number;
     pitchBend?: number;

@@ -9,7 +9,9 @@
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { GLUTEN_CHARACTER_PARAMETER_GUIDANCE } from './GlutenDescriptorGuidanceCharacter';
+import { GLUTEN_COMPRESSION_PARAMETER_GUIDANCE } from './GlutenDescriptorGuidanceCompression';
+import { effectGuidance } from './GuidanceProfiles';
 
 const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     // Core
@@ -137,11 +139,8 @@ export const GLUTEN_DESCRIPTOR = applySingleDescriptorGuidance(
                 detail: 'Gluten makeup gain restores deliberate level after compression.',
             }
         ),
-        declaredControl(
-            'Bus-compression control',
-            'Changes topology, reduction depth, timing, or output level.',
-            ['Set topology before threshold, ratio, and timing.'],
-            ['Aggressive compression can remove punch or create pumping.']
-        )
+        // No fallback: every parameter is authored in the two Gluten guidance files.
+        undefined,
+        { ...GLUTEN_COMPRESSION_PARAMETER_GUIDANCE, ...GLUTEN_CHARACTER_PARAMETER_GUIDANCE }
     )
 );

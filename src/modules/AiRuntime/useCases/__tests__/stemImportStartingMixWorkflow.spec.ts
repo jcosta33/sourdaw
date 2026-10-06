@@ -158,6 +158,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
     analyzeCurrentMix: mocks.analyzeCurrentMix,
+    compareAgentScopeMeasurements: vi.fn(),
     detectTempo: mocks.detectTempo,
     getAgentMeasurementMetricIds: () => [
         'integratedLoudness',

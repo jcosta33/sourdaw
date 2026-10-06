@@ -48,6 +48,32 @@ describe('agent resource limits', () => {
         expect(readAgentResourceLimits().maxProviderToolCalls).toBe(8);
     });
 
+    it('carries the measurement bounds as configurable categories seeded from their defaults', () => {
+        expect(DEFAULT_AGENT_RESOURCE_LIMITS).toMatchObject({
+            measurementMeasuredSeconds: 600,
+            measurementRenderedSeconds: 1200,
+            measurementWallClockMs: 120_000,
+        });
+
+        expect(configureAgentResourceLimits({ measurementWallClockMs: 5_000 })).toMatchObject({
+            status: 'configured',
+        });
+        expect(readAgentResourceLimits().measurementWallClockMs).toBe(5_000);
+    });
+
+    it.each(['measurementMeasuredSeconds', 'measurementRenderedSeconds', 'measurementWallClockMs'] as const)(
+        'refuses a %s bound that is not a positive integer',
+        (category) => {
+            expect(configureAgentResourceLimits({ [category]: 0 })).toEqual({
+                status: 'rejected',
+                reason: 'invalid-limit',
+                category,
+            });
+
+            expect(readAgentResourceLimits()).toEqual(DEFAULT_AGENT_RESOURCE_LIMITS);
+        }
+    );
+
     it('refuses a provider loop ceiling that is not a positive integer', () => {
         expect(configureAgentResourceLimits({ maxProviderToolCalls: 0 })).toEqual({
             status: 'rejected',
@@ -87,12 +113,15 @@ describe('agent resource limits', () => {
         expect(agentResourceLimitsStore.value).toEqual(DEFAULT_AGENT_RESOURCE_LIMITS);
     });
 
-    it('arms a created run with the configured budget categories and no lifecycle or provider ceiling', () => {
+    it('arms a created run with the configured budget categories and no lifecycle, provider or measurement ceiling', () => {
         createRun('armed-limits-run');
 
         const armed = agentRunLifecycle.get('armed-limits-run')?.budgets;
         expect(armed?.limits).not.toHaveProperty('maxProviderToolCalls');
         expect(armed?.limits).not.toHaveProperty('maxModelOutputTokens');
+        expect(armed?.limits).not.toHaveProperty('measurementMeasuredSeconds');
+        expect(armed?.limits).not.toHaveProperty('measurementRenderedSeconds');
+        expect(armed?.limits).not.toHaveProperty('measurementWallClockMs');
         expect(armed).toEqual({
             limits: {
                 maxCommands: DEFAULT_AGENT_RESOURCE_LIMITS.maxCommands,

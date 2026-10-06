@@ -71,9 +71,11 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     fermenter: 'descriptor-v1:42afff88',
     toaster: 'descriptor-v1:ef8943ce',
     levain: 'descriptor-v1:7b9657aa',
-    gluten: 'descriptor-v1:868d9641',
-    bacteria: 'descriptor-v1:14838614',
-    grinder: 'descriptor-v1:fe7c1d7a',
+    // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
+    // (#4370 AC-001), which is part of the descriptor fingerprint.
+    gluten: 'descriptor-v1:7883bbc4',
+    bacteria: 'descriptor-v1:2bd0e175',
+    grinder: 'descriptor-v1:2fc23570',
     proof: 'descriptor-v1:0f484ceb',
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's
     // arpeggiator never read them, so they move to per-processor commands.

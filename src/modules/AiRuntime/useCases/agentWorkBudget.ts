@@ -1,5 +1,7 @@
 import { getVersionedCommandBatchEffects } from '#/modules/Command/useCases';
 
+import { type MeasurementAdmitter, type MeasurementWork } from '../models/MeasurementBudget';
+
 import { agentRunLifecycle } from './agentRunLifecycle';
 
 export type AgentWorkBudgetEstimate = {
@@ -64,7 +66,58 @@ function reconcileAgentCommandWork(input: {
     }
 }
 
+/**
+ * The admission a run grants its planner measurements. Each measurement reserves its renders and
+ * reductions up front, under an attempt of its own, and trues both back to what ran once it settles.
+ */
+function createMeasurementAdmitter(runId: string): MeasurementAdmitter {
+    return (planned) => {
+        const measurementId = `measurement:${crypto.randomUUID()}`;
+        const spends = [
+            {
+                attemptId: `${measurementId}:maxRenderJobs`,
+                category: 'maxRenderJobs',
+                estimate: planned.renderJobs,
+                consumedBy: (actual: MeasurementWork) => actual.renderJobs,
+            },
+            {
+                attemptId: `${measurementId}:localAnalysis`,
+                category: 'localAnalysis',
+                estimate: planned.analyses,
+                consumedBy: (actual: MeasurementWork) => actual.analyses,
+            },
+        ];
+        const reservation = agentRunLifecycle.reserveBudgetBatch({
+            runId,
+            attempts: spends.map(({ attemptId, category, estimate }) => ({
+                attemptId,
+                category,
+                estimate,
+                provenance: 'versioned-estimate',
+            })),
+        });
+        if (reservation.status !== 'reserved') {
+            return { status: 'refused', category: reservation.reason ?? 'agent budget limit' };
+        }
+        return {
+            status: 'admitted',
+            settle: (actual) => {
+                for (const { attemptId, consumedBy } of spends) {
+                    agentRunLifecycle.reconcileBudgetAttempt({
+                        runId,
+                        attemptId,
+                        consumed: consumedBy(actual),
+                        mode: 'final',
+                        provenance: 'versioned-estimate',
+                    });
+                }
+            },
+        };
+    };
+}
+
 export const agentWorkBudget = {
+    admitMeasurement: createMeasurementAdmitter,
     reconcileCommandWork: reconcileAgentCommandWork,
     reserveCommandWork: reserveAgentCommandWork,
 } as const;

@@ -1,5 +1,8 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
+import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
+
+import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
 import { getProjectContext } from './getProjectContext';
 import { type RecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import {
@@ -39,6 +42,8 @@ type RecipeDiscoveryCandidate = {
     prerequisites: readonly string[];
     contraindications: readonly string[];
     metrics: MixRecipe['metrics'];
+    /** Present only on a recipe published from a factory preset; an authored recipe carries none. */
+    origin?: MixRecipe['origin'];
 };
 
 export type RecipeDiscoveryReceiptData = {
@@ -113,7 +118,7 @@ function buildCandidate(
     target: ResolvedTarget | null,
     effect: RecipeDescriptorEffect
 ): RecipeDiscoveryCandidate {
-    return {
+    const candidate: RecipeDiscoveryCandidate = {
         id: recipe.id,
         descriptor: recipe.descriptor,
         effect,
@@ -124,6 +129,10 @@ function buildCandidate(
         contraindications: recipe.contraindications,
         metrics: recipe.metrics,
     };
+    if (recipe.origin === undefined) {
+        return candidate;
+    }
+    return { ...candidate, origin: recipe.origin };
 }
 
 /** The fault noun each corrective descriptor's recipe removes, for the unresolved-term warning. */
@@ -218,9 +227,18 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
     const roleMatches = catalog.recipes.filter(
         (recipe) => resolvedDescriptors.includes(recipe.descriptor) && matchesRole(recipe, role)
     );
+    const expandable = roleMatches.filter(
+        (recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS
+    );
+    const withheldForSize = roleMatches.length - expandable.length;
+    if (withheldForSize > 0) {
+        warnings.push(
+            `${String(withheldForSize)} matching recipe(s) withheld: each expands to more than the ${String(RECIPE_EXPANSION_MAX_COMMANDS)} commands one expansion may add to a batch.`
+        );
+    }
 
     let excludedForChain = 0;
-    const matches = roleMatches.filter((recipe) => {
+    const matches = expandable.filter((recipe) => {
         if (target === null) {
             return true;
         }

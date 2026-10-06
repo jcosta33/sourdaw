@@ -91,6 +91,13 @@ const PROVIDER_BOUNDARY_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentRes
     'maxModelOutputTokens',
 ]);
 
+/** Limits a planner measurement reads each time it runs; a run's budgets never carry them either. */
+const MEASUREMENT_BOUND_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'measurementMeasuredSeconds',
+    'measurementRenderedSeconds',
+    'measurementWallClockMs',
+]);
+
 /**
  * A run counts toward `concurrentRuns` only while it can still reserve work. Once its current active
  * stretch exceeds `runDurationMs`, `reserveAgentRunBudgetBatch` refuses every further reservation for
@@ -108,7 +115,11 @@ function isRunHoldingCapacity(run: AgentRun, now: number, limits: AgentResourceL
 function armConfiguredAgentRunBudgets(limits: AgentResourceLimits): AgentRunBudgets {
     const armed: Record<string, number> = {};
     for (const [category, limit] of Object.entries(limits)) {
-        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) && !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category)) {
+        const armsRun =
+            !LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) &&
+            !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category) &&
+            !MEASUREMENT_BOUND_LIMIT_CATEGORIES.has(category);
+        if (armsRun) {
             armed[category] = limit;
         }
     }

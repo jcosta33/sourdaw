@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
@@ -372,5 +373,42 @@ describe('startPlayheadScheduler loop-seam timing', () => {
         await runUntilTwoWraps();
 
         expect(scheduled.filter((note) => note.pitch === AFTER_LOOP_PITCH)).toEqual([]);
+    });
+
+    // #4668 — the wrap count a backwards event-time capture reads must count
+    // exactly the wraps the published cursor has crossed: reset when the roll
+    // begins, advanced once per seam the clock actually pivots on — not at the
+    // look-ahead detection, which runs one grain before that pivot.
+    it('counts the wraps the published cursor has crossed since the roll began', async () => {
+        trackStoreState.value = { tracks: [midiTrack([midiClip('clip-loop', 0, LOOP_BEATS)])] };
+        midiStoreState.value = {
+            notesByClipId: { 'clip-loop': [midiNote('note-downbeat', 0, DOWNBEAT_PITCH)] },
+            probabilitySeed: 1,
+        };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+        });
+        // A stale count from an earlier roll must not survive the restart.
+        playheadWrapCountRef.current = 7;
+
+        startPlayheadScheduler();
+        expect(playheadWrapCountRef.current).toBe(0);
+
+        // Drive ticks until the count itself reaches two wraps. The scheduled
+        // seam moves `accumulatedPosition` one look-ahead before the pivot, so
+        // a position-drop loop would exit while the published cursor is still
+        // on the dying pass — exactly the window the count deliberately stays
+        // behind in.
+        const worker = schedulerWorker();
+        let ticks = 0;
+        while (playheadWrapCountRef.current < 2 && ticks < 500) {
+            ticks++;
+            await runTick(worker);
+        }
+
+        expect(playheadWrapCountRef.current).toBe(2);
     });
 });

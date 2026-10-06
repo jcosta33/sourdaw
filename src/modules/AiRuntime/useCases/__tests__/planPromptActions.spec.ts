@@ -191,7 +191,8 @@ describe('planPromptActions', () => {
             expect.any(Object),
             expect.any(Function),
             undefined,
-            'disabled'
+            'disabled',
+            expect.any(Function)
         );
     });
 

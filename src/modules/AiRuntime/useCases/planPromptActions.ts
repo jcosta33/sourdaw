@@ -16,6 +16,7 @@ import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVib
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { agentWorkBudget } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { getProjectContext } from './getProjectContext';
 import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
@@ -166,6 +167,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 ? { status: 'admitted' as const }
                 : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
         });
+    // Every planner measurement draws on the run planning it, the auto-created one included.
+    const onMeasurementAttempt = agentWorkBudget.admitMeasurement(streamIdentity.runId);
     let stemImportScope: StemImportPromptScope | undefined;
     let stemImportResourcesRegistered = false;
     const discardStemImportScope = async (): Promise<void> => {
@@ -193,7 +196,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             streamIdentity,
             onProviderAttempt,
             undefined,
-            input.providerPlanning
+            input.providerPlanning,
+            onMeasurementAttempt
         );
         const initialCreativeAuthority = result.creativeAuthority ?? null;
         const rejectionEvidence = result.rejectionEvidence;
@@ -270,7 +274,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                     // arrived as the same bare `agent.resolution` code.
                     rejectionEvidence,
                 },
-                input.providerPlanning
+                input.providerPlanning,
+                onMeasurementAttempt
             );
         }
         if (result.preparationRequest === 'stem-import') {
@@ -307,7 +312,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 streamIdentity,
                 onProviderAttempt,
                 undefined,
-                input.providerPlanning
+                input.providerPlanning,
+                onMeasurementAttempt
             );
         }
     } catch (error) {

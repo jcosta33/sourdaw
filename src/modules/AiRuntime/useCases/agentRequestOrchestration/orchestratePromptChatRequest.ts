@@ -340,6 +340,7 @@ async function dispatchPromptPlan(input: {
                 protectedUnchanged: confirmationDescription.protectedUnchanged,
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
+                measuredPreview: result.measuredPreview,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,

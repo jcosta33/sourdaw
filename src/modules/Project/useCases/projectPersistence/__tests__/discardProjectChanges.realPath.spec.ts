@@ -98,6 +98,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),

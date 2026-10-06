@@ -13,6 +13,7 @@ export { analyzeAgentRenderReceipt } from './analyzeAgentRenderReceipt';
 export { analyzeAgentAuditionBuffer } from './analyzeAgentAuditionBuffer';
 export { getAgentMeasurementMetricIds } from './getAgentMeasurementMetricIds';
 export { measureAgentScopeRender } from './measureAgentScopeRender';
+export { compareAgentScopeMeasurements } from './compareAgentScopeMeasurements';
 
 export { audioToMidi } from './audioToMidi';
 export { detectOnsets } from './detectOnsets';

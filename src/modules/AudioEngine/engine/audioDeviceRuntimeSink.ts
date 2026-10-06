@@ -145,6 +145,12 @@ export type AudioDeviceRuntimeSink = {
         deviceId: string;
         deviceType: string;
         deviceState: DeviceStateChunk | undefined;
+        /**
+         * The device belongs to a supplied document: project it from
+         * `deviceState` as a freshly loaded document would, never from live
+         * per-device state that shares its id.
+         */
+        projectOnly?: boolean;
     }) => Readonly<Record<string, number>> | null;
     /**
      * A bacteria device's whole modulation-assignment table, mapped onto the

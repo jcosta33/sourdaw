@@ -8,7 +8,6 @@ import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -61,6 +60,7 @@ import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
+import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
@@ -496,10 +496,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
+                const declaredDataCategories = declareHostedTurnDataCategories(hostedTurn?.history);
                 const remoteDisclosure =
                     backend === 'cloud'
                         ? remoteTransmissionDisclosure.prepare({
-                              categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                              categories: declaredDataCategories,
                               correlationId,
                               requestId,
                           })
@@ -540,7 +541,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ...(remoteDisclosure === undefined
                         ? {}
                         : {
-                              dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                              dataCategories: declaredDataCategories,
                               remoteDisclosure,
                           }),
                 });
@@ -703,17 +704,18 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         arguments: call.arguments,
                     }));
                     if (strictHostedProposalWire) {
-                        const canonicalProposalSchema = toolSchemas.find(
-                            (tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
-                        );
                         for (const [index, call] of normalizedToolCalls.entries()) {
-                            if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
+                            if (
+                                call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                call.name !== ANALYSIS_MEASURE_TOOL_NAME
+                            ) {
                                 continue;
                             }
+                            const canonicalSchema = toolSchemas.find((tool) => tool.function.name === call.name);
                             const decoded =
-                                canonicalProposalSchema === undefined
+                                canonicalSchema === undefined
                                     ? null
-                                    : decodeHostedProposalWireCall(call, canonicalProposalSchema);
+                                    : decodeHostedProposalWireCall(call, canonicalSchema);
                             if (decoded === null) {
                                 llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                                 return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };

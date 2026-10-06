@@ -4,6 +4,8 @@ import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { type TransportState } from '#/modules/Transport/stores';
 
+import { checkCancel } from '../offlineRender/checkCancel';
+import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
@@ -213,6 +215,55 @@ describe('renderOffline — cancelling an in-flight render', () => {
         // in the background. A resume here would mean the work continued.
         expect(context.resumeCount).toBe(1);
         expect(context.renderCompleted).toBe(false);
+    });
+
+    // Red when the mixdown stops reading its own abort signal at the segment boundaries.
+    it('stops at the next segment boundary on its own abort signal and leaves the export flag down', async () => {
+        const controller = new AbortController();
+        const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE, abortSignal: controller.signal });
+        const rejection = expect(rendering).rejects.toThrow('Export cancelled');
+
+        await reachCheckpoint(1);
+        const context = SuspendableOfflineContext.latest!;
+        controller.abort();
+        await reachCheckpoint(2);
+
+        await rejection;
+        expect(context.resumeCount).toBe(1);
+        expect(context.renderCompleted).toBe(false);
+        // A freeze or bounce beside this render reads this flag; the stop was this render's alone.
+        expect(exportCancellationState.cancelFlag).toBe(false);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
+    // Red when a render that owns an abort signal stops honouring the user's export Stop.
+    it('still stops at the next segment boundary on a user export cancel while its own signal is live', async () => {
+        const controller = new AbortController();
+        const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE, abortSignal: controller.signal });
+        const rejection = expect(rendering).rejects.toThrow('Export cancelled');
+
+        await reachCheckpoint(1);
+        const context = SuspendableOfflineContext.latest!;
+        cancelExport();
+        await reachCheckpoint(2);
+
+        await rejection;
+        expect(controller.signal.aborted).toBe(false);
+        expect(context.resumeCount).toBe(1);
+        expect(context.renderCompleted).toBe(false);
+    });
+
+    // Red when the track loops stop reading the render's own abort signal.
+    it('fails before scheduling on an abort signal already raised, leaving the export flag down', async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+            renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE, abortSignal: controller.signal })
+        ).rejects.toThrow('Export cancelled');
+
+        expect(mocks.scheduleTrackClips).not.toHaveBeenCalled();
+        expect(exportCancellationState.cancelFlag).toBe(false);
     });
 
     it('reports real render progress from reached segment boundaries', async () => {

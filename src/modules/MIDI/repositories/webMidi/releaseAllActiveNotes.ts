@@ -36,9 +36,9 @@ function releaseYeastVoices(noteData: ActiveNoteData): void {
     for (const release of noteData.yeastVoiceReleases?.values() ?? []) {
         release();
     }
-    for (const voice of noteData.yeastGeneratedVoices?.values() ?? []) {
-        voice.release();
-    }
+    // Generated voices are not held per note: they register in the shared
+    // pending registry at voice start, which `releaseAllPending` above
+    // releases (#4870).
 }
 
 function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput): void {

@@ -3,6 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { getYeastSchedulingLookahead } from '../getYeastSchedulingLookahead';
 
 import { processYeastMidi } from './processYeastMidi';
+import { startYeastIdleDrain } from './startYeastIdleDrain';
 
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
@@ -19,6 +20,14 @@ type ProcessRealtimeMidiInputInput = {
     sampleRate: number;
     noteInstanceId?: string;
     blockSize?: number;
+    /**
+     * Drained batches from the idle pump this input starts (#4870). While the
+     * transport is stopped and this input is the rack's only driver, generated
+     * and deferred events reach their block only if empty blocks keep being
+     * processed; the receiver owns voicing them on their instrument routes.
+     * Returning `false` from the callback cancels the remaining drain.
+     */
+    onDrainedEvents?: (events: readonly MidiEvent[]) => boolean | void;
 };
 
 const REALTIME_WORKER_LOOKAHEAD_SECONDS = 0.1;
@@ -29,6 +38,17 @@ function beatsToSamples(beats: number, bpm: number, sampleRate: number): number 
 
 function samplesToBeats(samples: number, bpm: number, sampleRate: number): number {
     return (samples * bpm) / (60 * sampleRate);
+}
+
+/** Furthest sample time a processed batch's note lifetimes still owe events. */
+function drainHorizonSamples(events: readonly MidiEvent[], floorSamples: number): number {
+    let horizon = floorSamples;
+    for (const event of events) {
+        if (event.kind.type === 'noteOn' && event.durationSamples !== undefined) {
+            horizon = Math.max(horizon, event.timeSamples + event.durationSamples);
+        }
+    }
+    return horizon;
 }
 
 export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
@@ -57,6 +77,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
     const event = createEvent(eventSampleTime);
     const minimumBlockEnd = input.sampleTime + (input.blockSize ?? 128);
     const grooveBlockEnd = eventSampleTime + lateSamples + 1;
+    const blockEndSamples = Math.max(minimumBlockEnd, grooveBlockEnd);
     const schedulingDelayBeats = samplesToBeats(eventSampleTime - input.sampleTime, transport.tempo, input.sampleRate);
 
     const transportInfo: TransportInfo = {
@@ -73,14 +94,40 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         loopEndPpq: transport.loopEnd,
     };
 
+    const routeId = input.routeId ?? input.trackId;
+    const { onDrainedEvents } = input;
     return processYeastMidi({
         context: input.context,
         rackId: input.rackId,
-        routeId: input.routeId ?? input.trackId,
+        routeId,
         trackId: input.trackId,
         events: [event],
         blockStartSamples: input.sampleTime,
-        blockEndSamples: Math.max(minimumBlockEnd, grooveBlockEnd),
+        blockEndSamples,
         transport: transportInfo,
+    }).then((processed) => {
+        if (onDrainedEvents === undefined || transport.isPlaying || processed.length === 0) {
+            return processed;
+        }
+        const horizonSamples = drainHorizonSamples(processed, blockEndSamples);
+        if (horizonSamples <= blockEndSamples) {
+            // Nothing the block emitted outlives it; no later block is owed.
+            return processed;
+        }
+        // #4870 — with the transport stopped and no clip carrier this input is
+        // the rack's only driver: keep feeding it empty blocks until every
+        // generated/deferred event has reached its block.
+        startYeastIdleDrain({
+            context: input.context,
+            rackId: input.rackId,
+            routeId,
+            trackId: input.trackId,
+            transport: transportInfo,
+            firstBlockEndSamples: blockEndSamples,
+            horizonSamples,
+            strideSamples: workerLookaheadSamples,
+            onEvents: onDrainedEvents,
+        });
+        return processed;
     });
 }

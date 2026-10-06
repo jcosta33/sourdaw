@@ -163,14 +163,32 @@ export type MixRecipeStep = {
 };
 
 /**
- * One authored mixing move.
+ * Where a recipe that is not authored in the recipe files came from.
+ *
+ * A factory chain preset is published as a recipe of the same shape. `tags` are
+ * the preset author's own character claims, kept so a reader sees what was
+ * claimed: a tag names a character the author intended, never a device
+ * algorithm the preset is proven to run. `presetVersion` is the preset's
+ * contract fingerprint, so a changed preset is a changed recipe version.
+ */
+export type MixRecipeOrigin = {
+    kind: 'preset';
+    presetId: string;
+    presetVersion: string;
+    tags: readonly string[];
+};
+
+/**
+ * One mixing move.
  *
  * `prerequisites` are the conditions the source must already satisfy,
  * `contraindications` the conditions under which the move makes the mix worse,
- * and `source` the engineering rationale for the windows chosen.
+ * and `source` the engineering rationale for the windows chosen. A recipe with
+ * no `origin` is authored in the catalog files.
  */
 export type MixRecipe = {
     id: string;
+    origin?: MixRecipeOrigin;
     descriptor: MixRecipeDescriptor;
     roles: readonly MixRecipeRole[];
     title: string;

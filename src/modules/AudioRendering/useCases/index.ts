@@ -14,6 +14,8 @@ export { getAudioRenderingHandlers } from './getAudioRenderingHandlers';
 export { rebindAgentProjectSectionArtifactRevisions } from './rebindAgentProjectSectionArtifactRevisions';
 export { retryAgentProjectSectionRenders } from './retryAgentProjectSectionRenders';
 export { renderAgentMeasurementScope } from './renderAgentMeasurementScope';
+export { renderAgentPreviewMeasurementScope } from './renderAgentPreviewMeasurementScope';
 export { getAgentMeasurementArtifact } from './getAgentMeasurementArtifact';
 export { getAgentMeasurementArtifacts } from './getAgentMeasurementArtifacts';
 export { clearAgentMeasurementArtifacts } from './clearAgentMeasurementArtifacts';
+export { retainAgentMeasurementRenders } from './retainAgentMeasurementRenders';

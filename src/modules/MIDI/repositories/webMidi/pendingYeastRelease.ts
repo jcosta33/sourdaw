@@ -1,5 +1,3 @@
-import type { GeneratedYeastVoice } from '../../models/WebMidiTypes';
-
 type Release = (sampleFrame?: number, releaseVelocity?: number) => void;
 
 type PendingVoice = {
@@ -28,6 +26,31 @@ function instanceKey(routeId: string, channel: number, noteInstanceId: string): 
     return `${routeId}:${channel}:${noteInstanceId}`;
 }
 
+/**
+ * Remove a voice's registry entry without releasing it: only the handle
+ * moves, the voice itself keeps sounding.
+ */
+function detachVoice(voice: PendingVoice): void {
+    if (!voice.owner.voices.delete(voice)) {
+        return;
+    }
+    const key = voiceKey(voice.owner.routeId, voice.channel, voice.pitch);
+    const peers = pendingByVoice.get(key);
+    peers?.delete(voice);
+    if (peers?.size === 0) {
+        pendingByVoice.delete(key);
+    }
+    if (voice.noteInstanceId !== undefined) {
+        const instanceId = instanceKey(voice.owner.routeId, voice.channel, voice.noteInstanceId);
+        if (pendingByInstance.get(instanceId) === voice) {
+            pendingByInstance.delete(instanceId);
+        }
+    }
+    if (voice.owner.voices.size === 0) {
+        pendingReleases.delete(voice.owner);
+    }
+}
+
 function addVoice(
     owner: PendingRelease,
     noteInstanceId: string | undefined,
@@ -35,6 +58,16 @@ function addVoice(
     channel: number,
     release: Release
 ): void {
+    if (noteInstanceId !== undefined) {
+        // One live registration per generated voice identity: a later
+        // registration of the same instance id replaces the earlier entry
+        // without releasing it, so the voice can never be released twice
+        // through two entries.
+        const existing = pendingByInstance.get(instanceKey(owner.routeId, channel, noteInstanceId));
+        if (existing) {
+            detachVoice(existing);
+        }
+    }
     const voice: PendingVoice = { owner, noteInstanceId, pitch, channel, release };
     owner.voices.add(voice);
     const key = voiceKey(owner.routeId, channel, pitch);
@@ -46,20 +79,21 @@ function addVoice(
     }
 }
 
-/** Keep transformed voices visible while their Note Off waits for Yeast. */
+/**
+ * Keep transformed voices visible while their Note Off waits for Yeast. A
+ * voice registered at its note's release snapshots the note's own pitch-keyed
+ * step releases; generated voices live here from the moment they start
+ * sounding (`registerVoice`), so this snapshot never sees one twice.
+ */
 function beginPendingYeastRelease(
     routeId: string,
     releases: ReadonlyMap<number, Release>,
-    generatedVoices: ReadonlyMap<string, GeneratedYeastVoice>,
     trackId: string,
     channel: number
 ): PendingRelease {
     const pending: PendingRelease = { routeId, trackId, voices: new Set() };
     for (const [pitch, release] of releases) {
         addVoice(pending, undefined, pitch, channel, release);
-    }
-    for (const [noteInstanceId, voice] of generatedVoices) {
-        addVoice(pending, noteInstanceId, voice.pitch, voice.channel, voice.release);
     }
     if (pending.voices.size > 0) {
         pendingReleases.add(pending);
@@ -128,6 +162,26 @@ type PendingYeastEvent = {
     releaseVelocity?: number;
 };
 
+/**
+ * Register a generated voice at the moment it starts sounding, not at its
+ * source note's release (#4870). The registry is keyed per route, so any
+ * session's drain can release a voice another session started, and a reset
+ * still reaches the voice through `releaseAllPending` — an owner that lives
+ * only as long as the voice does.
+ */
+function registerStartedYeastVoice(
+    routeId: string,
+    trackId: string,
+    noteInstanceId: string,
+    pitch: number,
+    channel: number,
+    release: Release
+): void {
+    const owner: PendingRelease = { routeId, trackId, voices: new Set() };
+    addVoice(owner, noteInstanceId, pitch, channel, release);
+    pendingReleases.add(owner);
+}
+
 function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     if (event.noteInstanceId === undefined) {
         return false;
@@ -164,6 +218,7 @@ function releaseAllPendingYeastReleases(): void {
 
 export const pendingYeastRelease = {
     begin: beginPendingYeastRelease,
+    registerVoice: registerStartedYeastVoice,
     retire: retirePendingYeastVoice,
     wasRetired: wasPendingYeastVoiceRetired,
     release: releasePendingYeastVoice,

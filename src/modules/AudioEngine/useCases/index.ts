@@ -164,6 +164,7 @@ export { configureOfflineDeviceParameterLaw } from './configureOfflineDevicePara
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';
 export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidiProcessing';
+export { getOfflineYeastRackReader } from './getOfflineYeastRackReader';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
@@ -205,6 +206,8 @@ export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnap
 export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTopology';
 
 export { captureOfflineRenderInput } from './offlineRender/captureOfflineRenderInput';
+export { captureOfflineRenderProjectSource } from './offlineRender/captureOfflineRenderProjectSource';
+export { findUnloadedHostedPluginDevices } from './offlineRender/findUnloadedHostedPluginDevices';
 export { renderOfflineInput } from './offlineRender/renderOfflineInput';
 
 export { captureOfflineRenderRuntimeInput } from './offlineRender/captureOfflineRenderRuntimeInput';
