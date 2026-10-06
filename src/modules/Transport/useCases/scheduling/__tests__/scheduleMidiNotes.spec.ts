@@ -2931,12 +2931,13 @@ describe('scheduleMidiNotes', () => {
                 expect(posted.filter((entry) => entry.endsWith('@0'))).toEqual(['sustain 1 @0']);
             });
 
-            it('sends nothing at the head of a pass whose lane has no row in force yet', async () => {
+            it('keeps the pedal the previous pass left down at the head of a pass that carries none', async () => {
                 const posted = await relocateTo(13 / 3, [storedController('late', 64, 127, 0.5)], oneBeatLoopFromThird);
 
-                // Nothing is in force at the head, so the pedal stored playback moved is lifted there;
-                // the lane's own press comes half a beat in.
-                expect(posted).toEqual(['sustain 0 @0', 'sustain 1 @12000']);
+                // No row precedes the pass's visible span, so its head carries nothing and the press from
+                // the pass before is still in force there, as in continuous playback: no lift; the lane's
+                // own press comes half a beat in.
+                expect(posted).toEqual(['sustain 1 @0', 'sustain 1 @12000']);
             });
 
             it('ends on the row at the destination, not the press carried from before it, with a content offset of 1/3', async () => {

@@ -198,7 +198,13 @@ function pedal(id: string, value: number, beat: number) {
 /** One 8-beat clip on a Grand Boule track, carrying the given controller lane and no notes. */
 function loadClip(
     lane: ReturnType<typeof controller>[],
-    clipBeats: { startBeat?: number; endBeat?: number; midiOffsetBeats?: number } = {}
+    clipBeats: {
+        startBeat?: number;
+        endBeat?: number;
+        midiOffsetBeats?: number;
+        loopEnabled?: boolean;
+        loopLength?: number;
+    } = {}
 ): void {
     trackStoreState.value = {
         tracks: [
@@ -220,7 +226,8 @@ function loadClip(
                         startBeat: clipBeats.startBeat ?? 0,
                         endBeat: clipBeats.endBeat ?? 8,
                         gain: 1,
-                        loopEnabled: false,
+                        loopEnabled: clipBeats.loopEnabled ?? false,
+                        loopLength: clipBeats.loopLength,
                         midiOffsetBeats: clipBeats.midiOffsetBeats ?? 0,
                     },
                 ],
@@ -391,6 +398,21 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             // could win over it.
             const onSeamFrame = pedalCalls.filter((call) => Math.abs(call.frame! - seamFrame) <= 1);
             expect(onSeamFrame.map((call) => call.position)).toEqual([1]);
+        });
+
+        it('keeps a pedal down across every wrap when the looped clip carries nothing on its pass heads', async () => {
+            // The press at content 2 only: no row precedes any pass's visible span, so no pass head
+            // carries or resets the pedal, and continuous playback holds it down through every pass.
+            loadClip([pedal('down', 127, 2)], { endBeat: 12, loopEnabled: true, loopLength: 4 });
+            transportStoreState.value = playingState({ isLooping: true, loopStart: 4.5, loopEnd: 5.5 });
+            startPlayheadScheduler();
+
+            // The press at 2, then one restore per wrap.
+            await runTicksUntil(() => pedalCalls.length >= 5);
+
+            expect(pedalCalls.map((call) => call.position)).toEqual([1, 1, 1, 1, 1]);
+            expect(pedalCalls.filter((call) => call.frame === undefined)).toEqual([]);
+            expect(otherPedalCalls).toEqual([]);
         });
 
         it('sends only the row on the loop start when the clip start and content offset are not dyadic fractions', async () => {

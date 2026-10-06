@@ -25,7 +25,7 @@ function restoreAt(lane: readonly MidiCC[], clip: Clip, atBeat: number) {
     });
 }
 
-/** Everything the instrument is told at the destination frame: the restore's moves and the window's own events there. */
+/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there, then the restore's moves. */
 function sentAtDestination(lane: readonly MidiCC[], clip: Clip, atBeat: number): MidiCC[] {
     const restore = restoreAt(lane, clip, atBeat);
     const window = projectClipControllerEvents({
@@ -34,7 +34,37 @@ function sentAtDestination(lane: readonly MidiCC[], clip: Clip, atBeat: number):
         fromBeat: atBeat,
         toBeat: atBeat + 1,
     }).filter((event) => frameOf(event.beat) === frameOf(atBeat));
-    return [...restore.moves, ...window];
+    return [...window, ...restore.moves];
+}
+
+function laneOf(row: MidiCC): string {
+    return `${row.channel}:${row.controller}`;
+}
+
+/**
+ * The value each lane holds at the destination frame had playback run through the clip
+ * to get there: the real projection stepped in abutting windows from a beat before the
+ * clip, every event up to the destination frame applied in order.
+ */
+function valuesHeldByContinuousPlayback(lanes: readonly MidiCC[], clip: Clip, atBeat: number): Map<string, number> {
+    const held = new Map<string, number>();
+    const step = 0.75;
+    const origin = clip.startBeat - 1;
+    // One window past the destination: an event placed a rounding step after its beat sits on the destination's frame.
+    for (let index = 0; origin + index * step <= atBeat + step; index++) {
+        const window = projectClipControllerEvents({
+            controlChanges: lanes,
+            clip,
+            fromBeat: origin + index * step,
+            toBeat: origin + (index + 1) * step,
+        });
+        for (const event of window) {
+            if (frameOf(event.beat) <= frameOf(atBeat)) {
+                held.set(laneOf(event), event.value);
+            }
+        }
+    }
+    return held;
 }
 
 function placed(moves: readonly MidiCC[]): { controller: number; beat: number; value: number }[] {
@@ -97,6 +127,14 @@ describe('projectClipControllerRestore', () => {
         expect(placed(restoreAt(lane, clip, 7.5).moves)).toEqual([{ controller: 64, beat: 7.5, value: 0 }]);
     });
 
+    it('carries the value an earlier pass left when the destination precedes the pass first row', () => {
+        const lane = [controller('up', 1, 0), controller('down', 3, 127)];
+        const clip = { startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 };
+
+        // Pass 1's rows sit at 5 and 7, so at 4.5 the press from 3 in pass 0 is still held.
+        expect(placed(restoreAt(lane, clip, 4.5).moves)).toEqual([{ controller: 64, beat: 4.5, value: 127 }]);
+    });
+
     it('reads the value in force past the clip content offset', () => {
         const clip = { startBeat: 4, endBeat: 8, midiOffsetBeats: 1 };
 
@@ -129,12 +167,14 @@ describe('projectClipControllerRestore', () => {
             expect(sent.map((move) => move.value)).toEqual([127]);
         });
 
-        it('sends nothing at the head of a pass whose lane has no row in force yet (start 1/3)', () => {
+        it('carries the value the previous pass left at the head of a pass that carries none (start 1/3)', () => {
+            // No row precedes a pass's visible span, so the projection places no carry on a head:
+            // continuous playback keeps the press from 0.5 of the pass before.
             const clip = { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 1 };
             const lane = [controller('late', 0.5, 127)];
 
-            expect(sentAtDestination(lane, clip, 13 / 3)).toEqual([]);
-            expect(restoreAt(lane, clip, 13 / 3).held).toEqual(new Set());
+            expect(sentAtDestination(lane, clip, 13 / 3).map((move) => move.value)).toEqual([127]);
+            expect(restoreAt(lane, clip, 13 / 3).held).toEqual(new Set([64]));
         });
 
         it('ends on the row at the destination, not the press carried from before it (offset 1/3)', () => {
@@ -177,30 +217,45 @@ describe('projectClipControllerRestore', () => {
         ];
         const loopUnits = [84, 168, 112];
         const offsetUnits = [0, 14, 28];
-        const rowSets = [
-            [
-                { content: 0, value: 127 },
-                { content: 63, value: 0 },
-            ],
-            [
-                { content: 10, value: 90 },
-                { content: 42, value: 127 },
-                { content: 83, value: 0 },
-                { content: 150, value: 64 },
-            ],
+        /** Sustain on channel 0 and a CC11 on channel 2: two lanes in one clip, each a row list. */
+        const laneSets = [
+            {
+                sustainRows: [
+                    { content: 0, value: 127 },
+                    { content: 63, value: 0 },
+                ],
+                dynamicsRows: [
+                    { content: 20, value: 33 },
+                    { content: 70, value: 99 },
+                ],
+            },
+            {
+                sustainRows: [
+                    { content: 10, value: 90 },
+                    { content: 42, value: 127 },
+                    { content: 83, value: 0 },
+                    { content: 150, value: 64 },
+                ],
+                dynamicsRows: [{ content: 5, value: 12 }],
+            },
         ];
         // No row sits on a pass's end (offset + loop length): whether the projection admits a row exactly
         // there is rounding, and the window's own answer is what plays.
 
-        it('sends exactly the value in force at every pass head and row placement', () => {
+        it('sends exactly the value continuous playback holds at every pass head, row and mid-pass destination', () => {
             let checked = 0;
             for (const startUnits of startNumerators) {
                 for (const length of loopUnits) {
                     for (const offset of offsetUnits) {
-                        for (const rows of rowSets) {
-                            const lane = rows.map((row, index) =>
-                                controller(`row-${index}`, toBeat(row.content), row.value)
-                            );
+                        for (const { sustainRows, dynamicsRows } of laneSets) {
+                            const lanes = [
+                                ...sustainRows.map((row, index) =>
+                                    controller(`sustain-${index}`, toBeat(row.content), row.value)
+                                ),
+                                ...dynamicsRows.map((row, index) =>
+                                    controller(`dynamics-${index}`, toBeat(row.content), row.value, 11, 2)
+                                ),
+                            ];
                             const clip = {
                                 startBeat: toBeat(startUnits),
                                 endBeat: toBeat(startUnits) + 3 * toBeat(length),
@@ -208,20 +263,26 @@ describe('projectClipControllerRestore', () => {
                                 loopLength: toBeat(length),
                                 midiOffsetBeats: toBeat(offset),
                             };
-                            const contents = [offset, ...rows.map((row) => row.content)].filter(
-                                (content) => content >= offset && content < offset + length
-                            );
+                            const contents = [
+                                offset,
+                                ...[...sustainRows, ...dynamicsRows].map((row) => row.content),
+                                offset + 5,
+                                offset + 11,
+                            ].filter((content) => content >= offset && content < offset + length);
                             for (let pass = 0; pass < 3; pass++) {
                                 for (const content of contents) {
-                                    const destinationUnits = startUnits + pass * length + (content - offset);
-                                    const inForce = rows.findLast((row) => row.content <= content)?.value;
+                                    const destination = toBeat(startUnits + pass * length + (content - offset));
+                                    const expected = valuesHeldByContinuousPlayback(lanes, clip, destination);
 
-                                    const sent = sentAtDestination(lane, clip, toBeat(destinationUnits));
+                                    const sent = new Map<string, number>();
+                                    for (const move of sentAtDestination(lanes, clip, destination)) {
+                                        sent.set(laneOf(move), move.value);
+                                    }
 
                                     expect(
-                                        sent.at(-1)?.value,
+                                        sent,
                                         `start ${startUnits}/84 loop ${length}/84 offset ${offset}/84 pass ${pass} content ${content}`
-                                    ).toBe(inForce);
+                                    ).toEqual(expected);
                                     checked++;
                                 }
                             }

@@ -26,19 +26,17 @@ function laneKey(row: MidiCC): string {
 }
 
 /**
- * A lane no stored row can belong to. A row before a pass's visible span is carried
- * to the span's head by the projection, so one such row makes the projection place
- * a marker at every pass head, exactly where it places the carries: the pass the
- * destination is in is read off the projection, not worked out a second time.
- */
-const PASS_HEAD_MARKER: MidiCC = { id: 'pass-head-marker', controller: -1, value: 0, beat: -1e9, channel: -1 };
-
-/**
  * What a clip's stored controllers must send when playback is relocated to
  * `atBeat` (a loop wrap, a follow-action jump or an edit's re-emit), which the
  * window opening there cannot: it carries a lane's value only on a pass head, so a
  * destination inside a pass would otherwise leave every controller wherever playback
  * came from.
+ *
+ * The oracle is continuous playback: the value a lane holds at the destination is
+ * the one it would hold had playback run through the clip to get there, so it is
+ * the lane's last event, across every pass, before the destination. A pass whose
+ * head carries nothing (no row of the lane precedes its visible span) leaves the
+ * value the previous pass ended on, exactly as it does when played through.
  *
  * Nothing here places a beat itself. Every event comes from
  * `projectClipControllerEvents`, the projection the window emits through, so a
@@ -46,10 +44,8 @@ const PASS_HEAD_MARKER: MidiCC = { id: 'pass-head-marker', controller: -1, value
  * and there, and "at the same time as the destination" is the caller's sample-frame
  * comparison, not a beat comparison.
  *
- * - The carried value of a lane is its last event before the destination within the
- *   pass the destination is in (a pass-head carry included, a same-beat tie going to
- *   the later source row). A destination that is itself a pass head, a marker on its
- *   frame, carries nothing: the window's own head carries and rows say it all.
+ * - The carried value of a lane is its last event before the destination, a
+ *   same-beat tie going to the later pass and then the later source row.
  * - A lane with a window event on the destination's frame is left to the window, so
  *   each value is sent once, and counts as in force.
  * - Every other lane with a carried value is in `moves`, placed at `atBeat`. An event
@@ -69,52 +65,35 @@ export function projectClipControllerRestore({
         return none;
     }
     const events = projectClipControllerEvents({
-        controlChanges: [...controlChanges, PASS_HEAD_MARKER],
+        controlChanges,
         clip,
         // From the first pass, however a rounding step places its head against the clip
-        // start: a head placed just before it is still the head the destination follows.
+        // start: a head placed just before it is still where playback began.
         fromBeat: Number.NEGATIVE_INFINITY,
         toBeat: windowToBeat,
     });
 
     const lanesOnDestination = new Set<string>();
-    let destinationIsPassHead = false;
-    let passHeadBeat = Number.NEGATIVE_INFINITY;
+    const carried = new Map<string, MidiCC>();
     for (const event of events) {
-        const isMarker = event.controller === PASS_HEAD_MARKER.controller;
         if (event.beat < atBeat) {
-            if (isMarker) {
-                passHeadBeat = Math.max(passHeadBeat, event.beat);
-            }
+            carried.set(laneKey(event), event);
         } else if (onDestinationFrame(event.beat)) {
-            if (isMarker) {
-                destinationIsPassHead = true;
-            } else {
-                lanesOnDestination.add(laneKey(event));
-            }
-        }
-    }
-
-    const latestInPass = new Map<string, MidiCC>();
-    if (!destinationIsPassHead) {
-        for (const event of events) {
-            if (event.controller !== PASS_HEAD_MARKER.controller && event.beat < atBeat && event.beat >= passHeadBeat) {
-                latestInPass.set(laneKey(event), event);
-            }
+            lanesOnDestination.add(laneKey(event));
         }
     }
 
     const held = new Set<number>();
     const moves: MidiCC[] = [];
-    for (const event of events) {
-        if (event.controller !== PASS_HEAD_MARKER.controller && lanesOnDestination.has(laneKey(event))) {
-            held.add(event.controller);
+    for (const [lane, event] of carried) {
+        held.add(event.controller);
+        if (!lanesOnDestination.has(lane)) {
+            moves.push({ ...event, beat: atBeat });
         }
     }
-    for (const [lane, event] of latestInPass) {
-        if (!lanesOnDestination.has(lane)) {
+    for (const event of events) {
+        if (lanesOnDestination.has(laneKey(event))) {
             held.add(event.controller);
-            moves.push({ ...event, beat: atBeat });
         }
     }
     return { moves, held };
