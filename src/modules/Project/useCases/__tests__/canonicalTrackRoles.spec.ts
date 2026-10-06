@@ -435,6 +435,8 @@ describe('canonical track roles', () => {
         { name: 'Drums & Rooms', role: 'drums' },
         { name: 'Rooms (Drums)', role: 'drums' },
         { name: 'Drum Room Overheads', role: 'drums' },
+        // Two specific pieces beside one drums word stay drums, even when one piece sits next to it.
+        { name: 'Overheads Drum Room', role: 'drums' },
         { name: 'Drums Room + Overheads', role: 'drums' },
         { name: 'Snare Overhead', role: 'drums' },
         { name: 'Kick & Snare', role: 'drums' },
