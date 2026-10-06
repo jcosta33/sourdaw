@@ -1,0 +1,46 @@
+src/modules/Transport/useCases/scheduling/restoreStoredControllers.ts
+  s_2bfd55a4393d7c::t_62dfdfd02708e9 56-72,76
+  s_2bfd55a4393d7c::t_d8784615b0b312 18
+  s_2bfd55a4393d7c::t_fed3c94d40154f 19
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_8d75873867c14e 2301-2302
+  s_2bfd55a4393d7c::t_b67bf955ff672e 2869-2875
+  s_2bfd55a4393d7c::t_ebee871e449954 2970-3028,3052-3061
+  s_2bfd55a4393d7c::t_061fe5407dfa74 2906,2912-2913
+  s_2bfd55a4393d7c::t_a80857ad172dcd 3029-3051
+  s_2bfd55a4393d7c::t_ebd60793c2afdc 2868
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_ca999dc580c9f0 110,122,125
+  s_2bfd55a4393d7c::t_ba4490f378d429 181
+  s_2bfd55a4393d7c::t_9676b7b8a7402b 319-322,329,342-344
+  s_2bfd55a4393d7c::t_2f553c49ee2e7f 17-20,22,29-43,47-51,53
+  s_2bfd55a4393d7c::t_93bbd7c3c6cb92 166,168-180,182-256
+  s_2bfd55a4393d7c::t_91b3bb1687b4f9 357,362-363
+  s_2bfd55a4393d7c::t_e8dc13c3162d6c 345,364,378-380
+src/modules/MIDI/useCases/midiClipData/projectClipControllerRestore.ts
+  s_2bfd55a4393d7c::t_b620349636b457 8-13,22,29,35-45,53-59,62,67-86,90,92-94
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_f24d3c1d136777 25
+src/modules/Transport/useCases/scheduling/resolveStoredControllerClips.ts
+  s_2bfd55a4393d7c::t_1e911b034ded2b 1-36
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_9123dc1909a15c 976
+  s_2bfd55a4393d7c::t_6425c7bc967aad 43
+  s_2bfd55a4393d7c::t_9a09dacdab6672 1462-1467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bde36f1d3f29214a303b49eaa71a99c8b7eecb41",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
