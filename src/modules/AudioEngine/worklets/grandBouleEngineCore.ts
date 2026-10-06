@@ -353,10 +353,12 @@ export type GrandBouleFrameQueue = {
     /** Drop every pending move of one pedal, leaving notes, parameters and the other pedals queued. */
     discardPedal: (kind: GrandBoulePedalMsg['type']) => void;
     /**
-     * Pull every pending message back to `frame` when it sits later, keeping
+     * Pull every pending pedal move back to `frame` when it sits later, keeping
      * their order. A host whose clock steps back (a flush that restarts the
-     * block clock) calls this so what it kept stays ahead of anything stamped
-     * from the new clock afterwards.
+     * block clock) calls this so the pedal state it kept stays ahead of any
+     * pedal move stamped from the new clock afterwards. Parameters keep their
+     * frames: their order against pedals decides nothing, and pulling a future
+     * parameter forward would apply it early.
      */
     capPendingFrames: (frame: number) => void;
     /** Pending messages, for tests and for host-side assertions. */
@@ -455,7 +457,7 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
         capPendingFrames(frame) {
             for (let index = head; index < queue.length; index++) {
                 const queued = queue[index];
-                if (queued && queued.sampleFrame > frame) {
+                if (queued && isPedalMsg(queued) && queued.sampleFrame > frame) {
                     queue[index] = { ...queued, sampleFrame: frame };
                 }
             }

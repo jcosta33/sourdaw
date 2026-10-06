@@ -528,7 +528,8 @@ function receive(msg: GrandBouleDispatchMsg): void {
         // afterwards is stamped from the lower clock and would sort ahead of it.
         // The new start is only known once the consumer has applied the flush, but
         // it never precedes the last audible frame the consumer published, so
-        // capping the kept messages there keeps them ahead of everything later.
+        // capping the kept pedal moves there keeps them ahead of everything later.
+        // Parameters keep their frames: pulling one forward would apply it early.
         frameQueue.capPendingFrames(audibleFloorContextFrame());
         flushHeadAwaitingClock = writeHead;
     }

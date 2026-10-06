@@ -158,10 +158,30 @@ describe('the Grand Boule frame queue', () => {
         queue.enqueue({ type: 'sustain', position: 0, sampleFrame: 1_000 });
         queue.drain(instance, 896, 2_304);
 
+        // The parameter keeps its own frame (2 100, offset 1 204) and so applies
+        // after both pedal moves, which sit at the capped frame.
         expect(calls).toEqual([
             { method: 'push_sustain', args: [1, 104] },
-            { method: 'set_param', args: ['tone_color', 0.3] },
             { method: 'push_sustain', args: [0, 104] },
+            { method: 'set_param', args: ['tone_color', 0.3] },
+        ]);
+    });
+
+    it('keeps a framed parameter queued beyond the block at its own frame through a flush cap', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'param', name: 'toneColor', value: 0.3, sampleFrame: 2_000 }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.capPendingFrames(1_000);
+
+        queue.drain(instance, 896, 1_024);
+        expect(calls.filter((call) => call.method === 'set_param')).toEqual([]);
+
+        queue.drain(instance, 1_920, 2_048);
+        expect(calls.filter((call) => call.method === 'set_param')).toEqual([
+            { method: 'set_param', args: ['tone_color', 0.3] },
         ]);
     });
 

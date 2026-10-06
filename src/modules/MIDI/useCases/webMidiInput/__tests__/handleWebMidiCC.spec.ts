@@ -38,6 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const { handleWebMidiCC } = await import('../handleWebMidiCC');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
+const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
 
 type HandleWebMidiCCDependencies = Parameters<typeof handleWebMidiCC._factory>[0];
 
@@ -95,6 +96,7 @@ function grand_boule_strip(controls: {
 
 describe('handleWebMidiCC', () => {
     beforeEach(() => {
+        resetLiveInputDispatchFrameFloor();
         activeNotes.clear();
         channelToNote.clear();
         resetChannelControllerState();
@@ -461,6 +463,39 @@ describe('handleWebMidiCC', () => {
         expect(send_native_live_midi_control.mock.calls).toEqual([
             [{ trackId: 'track-1', deviceId: 'lev-1', controller: 64, value: 127, channel: 0 }],
         ]);
+    });
+
+    it('never frames a Levain pedal release ahead of the press that a main-thread stall delayed', () => {
+        // The press waited 1.2 s, past the credible wait, so its arrival falls
+        // back to now; the release waited 0.3 s and so arrived credibly earlier
+        // than now. Frame order is apply order in the worklet: a release framed
+        // ahead of its press would be applied first and leave the pedal down.
+        const performance_now = vi.spyOn(performance, 'now').mockReturnValue(10_000);
+        target_track_id.value = 'track-1';
+        const handle_cc = vi.fn<(cc: number, value: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'lev-1', type: 'levain' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [{ type: 'levain', deviceId: 'lev-1', levainControls: { ready: true, handleCc: handle_cc } }],
+        });
+
+        try {
+            fn(0, 64, 127, 8_800);
+            fn(0, 64, 0, 9_700);
+        } finally {
+            performance_now.mockRestore();
+        }
+
+        const frames = handle_cc.mock.calls.map(([, , sampleFrame]) => sampleFrame);
+        expect(handle_cc.mock.calls.map(([, value]) => value)).toEqual([127, 0]);
+        expect(frames[0]).toBe(LIVE_DISPATCH_FRAME);
+        expect(frames[1]).toBeGreaterThanOrEqual(frames[0] ?? Number.POSITIVE_INFINITY);
     });
 
     it('sends a Grand Boule nothing for a controller that is not a pedal', () => {

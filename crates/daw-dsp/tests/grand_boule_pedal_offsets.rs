@@ -21,6 +21,10 @@ const BLOCK: usize = 4096;
 /// Blocks rendered after the first, far enough past the events that a damped
 /// string has died away while a sustained one is still ringing.
 const TAIL_BLOCKS: usize = 12;
+/// Frames from a pedal's own frame within which its effect must already be
+/// measurable: a pedal applied late leaves this window identical to a render
+/// that never had it, which the whole-tail energy bounds cannot see.
+const HEAD_WINDOW: usize = 64;
 
 /// Read one channel back out of the pointer `process` returned.
 ///
@@ -173,6 +177,15 @@ fn a_sustain_release_decays_the_note_from_its_frame_and_not_from_the_block_start
         "the note between its note-off and the pedal release does not ring as it \
          does with the pedal held, so the release was applied before its frame"
     );
+    // Within `HEAD_WINDOW` frames of the release the damper has already bitten:
+    // the head renders differ by about 5.9e-3 from the held pedal's, so 1.0e-3
+    // is well below it and far above the zero a late release produces.
+    let head = RELEASE_AT as usize..RELEASE_AT as usize + HEAD_WINDOW;
+    assert!(
+        max_abs_difference(&held_first[head.clone()], &lifted_first[head]) > 1.0e-3,
+        "the note is not yet damped {HEAD_WINDOW} frames after the pedal release frame, \
+         so the release was applied late"
+    );
     assert!(
         rms(&lifted_tail) < rms(&held_tail) / 5.0,
         "the note kept ringing after the pedal release ({} against a held pedal's {})",
@@ -263,6 +276,15 @@ fn a_sostenuto_release_damps_the_captured_note_from_its_frame() {
         "the captured note does not ring between its note-off and the sostenuto \
          release as it does with the pedal held, so the release was applied early"
     );
+    // The head renders differ by about 3.8e-3 within `HEAD_WINDOW` frames of the
+    // release; 1.0e-3 is well below that and far above the zero a late release
+    // produces.
+    let head = RELEASE_AT as usize..RELEASE_AT as usize + HEAD_WINDOW;
+    assert!(
+        max_abs_difference(&held_first[head.clone()], &released_first[head]) > 1.0e-3,
+        "the captured note is not yet damped {HEAD_WINDOW} frames after the sostenuto \
+         release frame, so the release was applied late"
+    );
     assert!(
         rms(&released_tail) < rms(&held_tail) / 3.0,
         "the captured note kept ringing after the sostenuto release ({} against a \
@@ -332,6 +354,15 @@ fn an_una_corda_takes_effect_at_its_frame() {
     assert!(
         max_abs_difference(&after_strike[..pedal_after], &plain[..pedal_after]) == 0.0,
         "an una corda pushed at frame {AFTER_STRIKE} changed frames ahead of it"
+    );
+    // Within `HEAD_WINDOW` frames of the engage the difference is already about
+    // 1.1e-4, so `AUDIBLE` (1.0e-5) is well below it; an engage landing later
+    // leaves this window identical to the plain render.
+    let head = pedal_after..pedal_after + HEAD_WINDOW;
+    assert!(
+        max_abs_difference(&after_strike[head.clone()], &plain[head]) > AUDIBLE,
+        "an una corda engaged at frame {AFTER_STRIKE} changed nothing within \
+         {HEAD_WINDOW} frames, so it was applied late"
     );
     assert!(
         max_abs_difference(&after_strike[pedal_after..], &plain[pedal_after..]) > AUDIBLE,
