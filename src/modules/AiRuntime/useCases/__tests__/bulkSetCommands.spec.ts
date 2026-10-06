@@ -452,8 +452,17 @@ function createBulkTracks(prefix: string, name: string, count: number): ProjectC
     });
 }
 
+/** The device catalogue the bridge resolves a device type argument against, by id or name. */
+const BULK_DEVICE_CATALOGUE = [
+    { id: 'builtin-eq', name: 'EQ' },
+    { id: 'builtin-compressor', name: 'Compressor' },
+    { id: 'builtin-reverb', name: 'Reverb' },
+];
+
 function createBulkContext(tracks: ProjectContextTrack[]): ProjectContext {
-    return createContext([...tracks, createTrack('bus-fx', 'FX Bus', { kind: 'bus', devices: [] })]);
+    return createContext([...tracks, createTrack('bus-fx', 'FX Bus', { kind: 'bus', devices: [] })], {
+        availableDeviceTypes: BULK_DEVICE_CATALOGUE,
+    });
 }
 
 function bulkPlan() {
@@ -1115,6 +1124,131 @@ describe('bulk set commands across successive batches', () => {
                 const slices = requireSlices(splitBulk(withBuses, [addCompressor, soloBusesBy(predicate)]).split);
 
                 expect(replayLaterSlice(slices, 2, afterRun)).toMatchObject({ status: 'accepted' });
+            });
+
+            // The bridge resolves a device type by catalogue id or name, case-insensitively, and the
+            // project stores the resolved id, so the run's addition is the resolved type.
+            it.each([
+                { argument: 'Compressor', fact: 'device types', predicate: { hasDeviceType: 'builtin-compressor' } },
+                { argument: 'Compressor', fact: 'tags', predicate: { tag: 'builtin-compressor' } },
+                {
+                    argument: 'BUILTIN-COMPRESSOR',
+                    fact: 'device types',
+                    predicate: { hasDeviceType: 'builtin-compressor' },
+                },
+                { argument: 'BUILTIN-COMPRESSOR', fact: 'tags', predicate: { tag: 'builtin-compressor' } },
+            ])('accepts the run addition named $argument through its owner $fact', ({ argument, predicate }) => {
+                const addNamedCompressor = { ...addCompressor, arguments: { deviceType: argument } };
+                const slices = requireSlices(splitBulk(withBuses, [addNamedCompressor, soloBusesBy(predicate)]).split);
+
+                expect(replayLaterSlice(slices, 2, afterRun)).toMatchObject({ status: 'accepted' });
+            });
+        });
+
+        describe('owner facts the run wrote on candidates no selector targeted', () => {
+            const takeClip = (trackId: string, name: string) => ({
+                id: `${trackId}-clip`,
+                name,
+                type: 'audio' as const,
+                startBeat: 0,
+                endBeat: 4,
+                noteCount: 0,
+                muted: false,
+                locked: false,
+            });
+            const busesWithClips = (muted: boolean) =>
+                createBulkTracks('bus', 'Comp Bus', 30).map((track) => ({
+                    ...track,
+                    muted,
+                    clipCount: 1,
+                    clips: [takeClip(track.id, 'Bus Take')],
+                    devices: [
+                        ...track.devices,
+                        { id: `${track.id}-comp`, name: 'Comp', type: 'builtin-compressor', bypassed: false },
+                    ],
+                }));
+            const layersWithTakes = layers.map((track) => ({
+                ...track,
+                clipCount: 1,
+                clips: [takeClip(track.id, 'Layer Take')],
+            }));
+            const gainCompClips = (predicate: Record<string, unknown>) => ({
+                id: 'gain-comp-clips',
+                name: 'setClipGain',
+                arguments: { gain: 0.5 },
+                selector: {
+                    targetArgument: 'clipId',
+                    entity: 'clip',
+                    match: { all: [predicate] },
+                    quantity: { unit: 'targets', exactly: 30 },
+                },
+            });
+            const deviceContext = createBulkContext([...layersWithTakes, ...busesWithClips(false)]);
+            const deviceSlices = requireSlices(
+                splitBulk(deviceContext, [addCompressor, gainCompClips({ hasDeviceType: 'builtin-compressor' })]).split
+            );
+            const afterAddDevice = addDeviceTo(deviceContext, firstLayers(24), 'builtin-compressor', 'added');
+
+            it("accepts a later batch whose untargeted clips gained the run's own device through their track", () => {
+                expect(deviceSlices.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
+                expect(replayLaterSlice(deviceSlices, 2, afterAddDevice)).toMatchObject({ status: 'accepted' });
+            });
+
+            it("refuses an outside device on a track the run already touched, through that track's untargeted clip", () => {
+                const outside = addDeviceTo(afterAddDevice, onLayer(4), 'builtin-reverb', 'outside');
+
+                expect(replayLaterSlice(deviceSlices, 2, outside)).toEqual({
+                    status: 'rejected',
+                    reason: 'Bulk selector gain-comp-clips no longer resolves the set its earlier batches started from.',
+                });
+            });
+
+            it('accepts a later batch whose untargeted clips the run muted through their track', () => {
+                const mutedBusContext = createBulkContext([...layersWithTakes, ...busesWithClips(true)]);
+                const slices = requireSlices(
+                    splitBulk(mutedBusContext, [muteLayers, gainCompClips({ isMuted: true })]).split
+                );
+
+                expect(slices.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
+                expect(replayLaterSlice(slices, 2, mutedThrough(mutedBusContext, 24))).toMatchObject({
+                    status: 'accepted',
+                });
+            });
+        });
+
+        it('revalidates at approval a whole later item whose set the run changed', () => {
+            const soloLayerOnes = {
+                id: 'solo-layer-ones',
+                name: 'soloTrack',
+                arguments: { soloed: true },
+                selector: {
+                    targetArgument: 'trackId',
+                    entity: 'track',
+                    match: { all: [{ nameIncludes: 'layer 1' }, { isMuted: false }] },
+                    quantity: { unit: 'targets', exactly: 11 },
+                },
+            };
+            const slices = requireSlices(splitBulk(context, [muteLayers, soloLayerOnes]).split);
+            const afterRun = mutedThrough(context, 24);
+            const rebased = rebaseBulkSetSliceEvidence({
+                evidence: slices[1]!,
+                context: afterRun,
+                revision: LATER_REVISION,
+                earlierCommands: slices[0]!.commands,
+                recordedFingerprints: recordedFingerprints(slices),
+            });
+            if (rebased.status === 'rejected') {
+                throw new Error(rebased.reason);
+            }
+            const records = deriveMatchSelectorPredicates(rebased.evidence);
+            const wholeRecord = records.find((record) => record.itemId === 'solo-layer-ones');
+
+            expect(slices.map((slice) => slice.commands.length)).toEqual([24, 17]);
+            expect(wholeRecord).toBeDefined();
+            expect(wholeRecord?.slice).toBeUndefined();
+            vi.mocked(getProjectContext).mockReturnValueOnce(afterRun);
+            expect(revalidateApprovedMatchSelectors(wholeRecord === undefined ? [] : [wholeRecord])).toEqual({
+                status: 'unchanged',
             });
         });
 

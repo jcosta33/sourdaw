@@ -5,6 +5,7 @@ import {
     collectSemanticCommandListCandidates,
     type SemanticCommandListCandidate,
 } from '../../services/semanticCommandListCandidates';
+import { findAvailableDeviceType } from '../../transformers/llmActionStrategies/bridgeArgumentGuards';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
@@ -69,10 +70,25 @@ function recordWrite(writes: RunWrites, candidateId: string, field: RunWrittenFi
     writes.set(candidateId, fields);
 }
 
+/**
+ * What a command wrote, as the project stores it. A device type argument is resolved against the
+ * context's catalogue exactly as the bridge resolves it — by id or name, case-insensitively — so the
+ * recorded addition is the device type the project holds; an argument the catalogue cannot resolve
+ * records nothing, and a later batch whose facts it changed is refused.
+ */
+function readWrittenValue(valueArgument: string, command: ToolCallResult, context: ProjectContext): unknown {
+    const value = command.arguments[valueArgument];
+    if (valueArgument !== 'deviceType') {
+        return value;
+    }
+    return findAvailableDeviceType(context, value)?.id;
+}
+
 /** What the run's earlier batches wrote to which facts of which live candidates. */
 function collectRunWrites(
     earlierCommands: readonly ToolCallResult[],
-    candidates: readonly SemanticCommandListCandidate[]
+    candidates: readonly SemanticCommandListCandidate[],
+    context: ProjectContext
 ): RunWrites {
     const writes: RunWrites = new Map();
     for (const command of earlierCommands) {
@@ -81,7 +97,7 @@ function collectRunWrites(
         if (rule === undefined || typeof target !== 'string') {
             continue;
         }
-        const value = command.arguments[rule.valueArgument];
+        const value = readWrittenValue(rule.valueArgument, command, context);
         for (const field of rule.ownFields) {
             recordWrite(writes, target, field, value);
         }
@@ -136,18 +152,44 @@ function toRunWrittenFact(
     return { candidateId, field, value: typeof compiled === 'boolean' ? compiled : null, written: write.written };
 }
 
+function isOwnerField(field: RunWrittenField): boolean {
+    return field === 'ownerMuted' || field === 'ownerDeviceTypes' || field === 'ownerTags';
+}
+
+/**
+ * The compiled value of one written fact. A candidate a selector recorded carries its own. An owner
+ * fact is the same for every candidate a track owns, so a candidate no selector recorded — a clip or
+ * device on a track the run wrote — reads it from its owner track's recorded candidate. Anything else
+ * has no compiled value and restores nothing.
+ */
+function readCompiledValue(input: {
+    candidateId: string;
+    field: RunWrittenField;
+    recorded: ReadonlyMap<string, Record<string, unknown>>;
+    candidatesById: ReadonlyMap<string, SemanticCommandListCandidate>;
+}): { value: unknown } | null {
+    const own = input.recorded.get(input.candidateId);
+    if (own !== undefined) {
+        return { value: own[input.field] };
+    }
+    const ownerTrackId = input.candidatesById.get(input.candidateId)?.ownerTrackId;
+    const owner = ownerTrackId === undefined ? undefined : input.recorded.get(ownerTrackId);
+    if (!isOwnerField(input.field) || owner === undefined) {
+        return null;
+    }
+    return { value: owner[input.field] };
+}
+
 function collectRunWrittenFacts(
     writes: RunWrites,
-    recorded: ReadonlyMap<string, Record<string, unknown>>
+    recorded: ReadonlyMap<string, Record<string, unknown>>,
+    candidatesById: ReadonlyMap<string, SemanticCommandListCandidate>
 ): BulkSetRunWrittenFact[] {
     const facts: BulkSetRunWrittenFact[] = [];
     for (const [candidateId, fields] of writes) {
-        const original = recorded.get(candidateId);
-        if (original === undefined) {
-            continue;
-        }
         for (const [field, write] of fields) {
-            const fact = toRunWrittenFact(candidateId, field, original[field], write);
+            const compiled = readCompiledValue({ candidateId, field, recorded, candidatesById });
+            const fact = compiled === null ? null : toRunWrittenFact(candidateId, field, compiled.value, write);
             if (fact !== null) {
                 facts.push(fact);
             }
@@ -213,7 +255,11 @@ export function rebaseBulkSetSliceEvidence(input: {
         return { status: 'rejected', reason: `Target ${missing.stableId} is no longer in the project.` };
     }
     const recorded = readRecordedCandidates(input.recordedFingerprints);
-    const runWrittenFacts = collectRunWrittenFacts(collectRunWrites(input.earlierCommands, candidates), recorded);
+    const runWrittenFacts = collectRunWrittenFacts(
+        collectRunWrites(input.earlierCommands, candidates, input.context),
+        recorded,
+        candidatesById
+    );
     const rebased: ArbitraryCommandListEvidence = {
         ...structuredClone(input.evidence),
         snapshotRevision: input.revision,
