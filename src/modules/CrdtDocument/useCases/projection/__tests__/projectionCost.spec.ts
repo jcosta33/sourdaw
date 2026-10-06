@@ -168,14 +168,24 @@ describe('projection cost per CRDT change (audit CC-1)', () => {
             });
         });
 
-        // Measured on this harness: 4 serializations for the local write —
+        // Measured on this harness: 5 serializations for the local write —
         // its authored `toDocSafe` round-trip, the #4858 ownership guard's
         // base-versus-desired compare (a composite slot write pays one
-        // stringify per side to learn whether the writer owns a delta), and
-        // the fresh terminal decode — against 49 for the full re-projection,
-        // which is what every local write used to pay, and grows with the
-        // project because each slot serializes its whole payload.
-        expect(localWriteCost).toBe(4);
+        // stringify per side to learn whether the writer owns a delta), the
+        // fresh terminal decode, and one base-capture presence snapshot —
+        // against 67 for the full re-projection, which is what every local
+        // write used to pay, and grows with the project because each slot
+        // serializes its whole payload.
+        //
+        // The presence snapshot (the #4962 flush guard) reads and serializes
+        // the document slot beside the base: once at pending creation and
+        // once at each commit re-anchor of surviving pendings. In this window
+        // only the commit re-anchor pays a stringify — the write's pending is
+        // created fresh and the new project document holds no transport slot
+        // yet, so that capture reads an absence without serializing. Seeding
+        // the slot at project creation would move this pin to 6, by the
+        // capture's own design.
+        expect(localWriteCost).toBe(5);
         expect(localWriteCost).toBeLessThan(fullProjectionCost);
         expect(fullProjectionCost).toBeGreaterThanOrEqual(projectSlotProjections.length);
     });

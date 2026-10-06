@@ -233,11 +233,15 @@ type PendingAutomergeStorageWrite = {
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
     /**
-     * The storage backend was swapped underneath this write. Its base and
-     * presence describe the outgoing backend's document, so they are
-     * re-anchored — the next flush writes the full value and decides no
-     * absence against a document it never saw. Writes buffered before any
-     * port existed keep the deferred-baseline contract (#4109) instead.
+     * The storage backend was swapped underneath this write. The presence
+     * snapshot described the outgoing backend's document, so it is dropped —
+     * no stale snapshot may vouch for a document that no longer exists — and
+     * the flush base is marked unknown, so the next flush writes the full
+     * value and decides no absence against a document it never saw. The
+     * pending's base itself stands: it is the provenance the three-way rebase
+     * attributes this writer's delta with, and destroying it would recast
+     * absorbed document content as this writer's edit. Writes buffered before
+     * any port existed keep the deferred-baseline contract (#4109) instead.
      */
     readonly notePortChange?: () => void;
     readonly scoped: boolean;
@@ -1218,6 +1222,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
          */
         baseDocumentPresence: CrdtSlotPresence | undefined;
         baseValue: TData | null;
+        /**
+         * Whether a port swap has invalidated the base as a description of
+         * the document this write will flush against. The flush then claims
+         * `baseValue: null` — every field is its delta and no absence is
+         * decided — while the pending's own `baseValue` stands untouched: it
+         * is the provenance the three-way rebase attributes this writer's
+         * delta with (#3183), and nulling it would recast document content
+         * the pending merely absorbed as this writer's edit (#4962). Cleared
+         * wherever the base is re-anchored beside a fresh presence snapshot,
+         * the instant it again describes the document it will flush against.
+         */
+        flushBaseUnknown: boolean;
         metadata: TWriteMetadata | null;
         message: string | undefined;
         rafId: number | null;
@@ -1728,6 +1744,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = committedCacheValue;
             remaining.baseDocumentPresence = baseDocumentPresence;
+            remaining.flushBaseUnknown = false;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1782,6 +1799,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             if (rebasePending) {
                 successor.baseValue = projectedValue;
                 successor.baseDocumentPresence = captureBaseDocumentPresence();
+                successor.flushBaseUnknown = false;
             }
             successor.value = acceptedValue;
             projectedValue = acceptedValue;
@@ -1903,6 +1921,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = projected;
             remaining.baseDocumentPresence = baseDocumentPresence;
+            remaining.flushBaseUnknown = false;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1946,7 +1965,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 }
                 const frozen = {
                     baseDocumentPresence: current.baseDocumentPresence,
-                    baseValue: current.baseValue,
+                    // A pending whose base no longer describes the target
+                    // document flushes as a full-value write: null here means
+                    // "every field is this writer's delta", never "the writer
+                    // saw an empty document".
+                    baseValue: current.flushBaseUnknown ? null : current.baseValue,
                     message: current.message,
                     metadata: current.metadata === null ? null : freezeMetadata(current.metadata),
                     revision: current.revision,
@@ -1980,14 +2003,15 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 if (pendingWritesByOwner.get(current.write.commitOwner) !== current) {
                     return;
                 }
-                current.baseValue = null;
                 current.baseDocumentPresence = undefined;
+                current.flushBaseUnknown = true;
             },
             snapshotTransaction: context.snapshotTransaction,
         };
         pending = {
             baseDocumentPresence: captureBaseDocumentPresence(),
             baseValue: cachedValue,
+            flushBaseUnknown: false,
             metadata: initialMetadata,
             message: getSemanticMessage(),
             rafId: null,
@@ -2474,6 +2498,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         // callback authority over a replacement pending.
                         visiblePending.baseValue = crdtData;
                         visiblePending.baseDocumentPresence = captureBaseDocumentPresence();
+                        visiblePending.flushBaseUnknown = false;
                     }
                     cachedValue = acceptedVisible;
                     cachedRevision = ++nextRevision;
