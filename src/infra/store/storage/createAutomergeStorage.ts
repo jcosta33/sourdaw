@@ -93,7 +93,31 @@ type AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata> = {
     reduce(input: { readonly current: TWriteMetadata | null; readonly captured: TWriteMetadata }): TWriteMetadata;
 };
 
+/**
+ * Decoder state an adapter keeps in its own closure between `fromCrdt`,
+ * `resolveCrdtConflicts` and `mutateCrdt` calls — a decode mirror, a collapsed
+ * conflict, a rejected-authority marker. A command-preview scope runs those
+ * hooks against the preview's document, so state they write would otherwise
+ * replace what the live document's next decode or write reads.
+ *
+ * `capture` returns the current state and `restore` reinstates a captured one;
+ * both must treat the state as an immutable snapshot (replace, never mutate in
+ * place), and must not throw.
+ */
+export type AutomergeStorageDecoderState<State> = {
+    capture(): State;
+    restore(state: State): void;
+};
+
 type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
+    /**
+     * REQUIRED for any adapter whose `fromCrdt`, `hydrateMissing`,
+     * `resolveCrdtConflicts`, `resolveConflicts` or `mutateCrdt` reads or
+     * writes closure state that outlives one call. The preview scope swaps
+     * this state in for the preview and back out afterwards, so a read inside
+     * the scope never changes what the live document decodes or writes.
+     */
+    decoderState?: AutomergeStorageDecoderState<unknown>;
     /** Optional function to strip ephemeral fields before writing to CRDT. */
     toCrdt?: (value: TData) => Partial<TData>;
     /** Optional function to normalize incoming data on hydrate (e.g. fill missing fields from older schemas). */
@@ -594,6 +618,35 @@ export function findAutomergeStorageRawProjectionLosses(input: {
     return losses.toSorted();
 }
 
+/**
+ * Installs one adapter's preview decoder state for a preview scope and returns
+ * the function that puts the live state back.
+ */
+type DecoderStateSwap = (context: AutomergeStoragePreviewContext) => () => void;
+
+const decoderStateSwaps = new Set<DecoderStateSwap>();
+
+/**
+ * A preview keeps its own decoder state per adapter across its scopes: a value
+ * the preview decoded in one scope is cached, so a later scope's write must
+ * find the state that decode produced. The first scope starts from the live
+ * state, which is what every hook read before adapters declared their state.
+ */
+function createDecoderStateSwap(state: AutomergeStorageDecoderState<unknown>): DecoderStateSwap {
+    const previewStates = new WeakMap<AutomergeStoragePreviewContext, { readonly value: unknown }>();
+    return (context) => {
+        const liveState = state.capture();
+        const previewState = previewStates.get(context);
+        if (previewState) {
+            state.restore(previewState.value);
+        }
+        return () => {
+            previewStates.set(context, { value: state.capture() });
+            state.restore(liveState);
+        };
+    };
+}
+
 function clonePreviewValue<Value>(value: Value): Value {
     return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as Value);
 }
@@ -629,9 +682,20 @@ export function createAutomergeStoragePreview(
             }
             const previous = activeAutomergeStoragePreview;
             activeAutomergeStoragePreview = context;
+            const swapOuts: (() => void)[] = [];
             try {
+                // Only the outermost entry swaps: a nested scope of the same
+                // preview already runs on the preview's adapter state.
+                if (previous === null) {
+                    for (const swapIn of decoderStateSwaps) {
+                        swapOuts.push(swapIn(context));
+                    }
+                }
                 return callback();
             } finally {
+                for (const swapOut of swapOuts.toReversed()) {
+                    swapOut();
+                }
                 activeAutomergeStoragePreview = previous;
             }
         },
@@ -2558,6 +2622,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
 
     automergeStorageProjections.add({ docId, resetProjection });
+    if (options?.decoderState) {
+        decoderStateSwaps.add(createDecoderStateSwap(options.decoderState));
+    }
 
     return adapter;
 };

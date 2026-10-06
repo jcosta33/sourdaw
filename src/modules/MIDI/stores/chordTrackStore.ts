@@ -336,6 +336,12 @@ function rebasePending({ baseValue, pendingValue, hydratedValue }: RebasePending
     });
 }
 
+/** The adapter's closure state a command-preview scope must swap out, never share with the live document. */
+type ChordTrackDecoderState = {
+    readonly reconciledConflictState: ChordTrackCrdtState | null;
+    readonly rejectedAuthority: Error | null;
+};
+
 export function createChordTrackAutomergeStorage() {
     let reconciledConflictState: ChordTrackCrdtState | null = null;
     let rejectedAuthority: Error | null = null;
@@ -351,6 +357,13 @@ export function createChordTrackAutomergeStorage() {
         }
     }
     return createAutomergeStorage<ChordTrackState>('root', 'chordTrack', {
+        decoderState: {
+            capture: () => ({ reconciledConflictState, rejectedAuthority }),
+            restore: (state: ChordTrackDecoderState) => {
+                reconciledConflictState = state.reconciledConflictState;
+                rejectedAuthority = state.rejectedAuthority;
+            },
+        },
         fromCrdt: (value) => {
             reconciledConflictState = null;
             return projectAuthority(() => decodeState(value));
