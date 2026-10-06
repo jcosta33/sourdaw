@@ -2,7 +2,6 @@ import { resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
 import { isExportActive } from '#/modules/AudioEngine/useCases';
 
 import { renderAgentMeasurementTargets } from './renderAgentMeasurementTargets';
-import { retainAgentMeasurementArtifacts } from './retainAgentMeasurementArtifacts';
 
 type MeasurementScope = Parameters<typeof resolveAgentMeasurementTargets>[0];
 type TargetsRender = Awaited<ReturnType<typeof renderAgentMeasurementTargets>>;
@@ -29,7 +28,7 @@ type RenderAgentMeasurementScopeResult =
           status: 'rendered';
           soloActive: boolean;
           targets: RenderedMeasurementTarget[];
-          /** Renderer warnings, then one line per render too large to retain. */
+          /** Renderer warnings. */
           warnings: string[];
       }
     | {
@@ -42,11 +41,14 @@ type RenderAgentMeasurementScopeResult =
 
 /**
  * Render every target of one agent measurement scope offline at the caller's
- * project revision, and retain each render as a content-addressed artifact.
+ * project revision.
  *
  * Targets are resolved and every refusal is decided before anything renders.
  * The live revision is compared before and after each render; a mismatch, an
- * abort, or a failed render retains nothing from the whole scope.
+ * abort, or a failed render yields no render from the whole scope. Nothing is
+ * retained here: the caller retains the renders once it has reported on them
+ * (`retainAgentMeasurementRenders`), so a measurement that stops first leaves
+ * the artifact store exactly as it found it.
  */
 export async function renderAgentMeasurementScope(
     input: RenderAgentMeasurementScopeInput
@@ -73,16 +75,6 @@ export async function renderAgentMeasurementScope(
     });
     if (rendered.status !== 'rendered') {
         return rendered;
-    }
-    const oversized = retainAgentMeasurementArtifacts({
-        renders: rendered.targets.map((target) => ({
-            contentAddress: target.artifact.contentAddress,
-            buffer: target.buffer,
-        })),
-        sourceRevision: input.sourceRevision,
-    });
-    for (const contentAddress of oversized) {
-        warnings.push(`Render ${contentAddress} exceeds the measurement retention limit and was not retained.`);
     }
     return { status: 'rendered', soloActive: resolution.soloActive, targets: rendered.targets, warnings };
 }

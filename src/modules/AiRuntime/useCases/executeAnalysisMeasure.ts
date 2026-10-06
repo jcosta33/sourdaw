@@ -1,5 +1,5 @@
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import { discardAgentMeasurementArtifacts, renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
+import { renderAgentMeasurementScope, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
 import { readSecondsAtBeat } from '#/modules/Transport/stores';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -138,7 +138,8 @@ function successReceipt(
     parsed: ParsedArguments,
     range: MeasuredRange,
     rendered: Extract<ScopeRender, { status: 'rendered' }>,
-    targets: readonly ReducedTarget[]
+    targets: readonly ReducedTarget[],
+    retentionWarnings: readonly string[]
 ): ApplicationToolReceipt {
     return {
         schema: 'sourdaw.application-tool-receipt',
@@ -158,7 +159,7 @@ function successReceipt(
             targets,
         },
         summary: `Measured ${String(targets.length)} target(s) over beats ${String(range.startBeat)} to ${String(range.endBeat)}.`,
-        warnings: boundedWarnings(rendered.warnings),
+        warnings: boundedWarnings([...rendered.warnings, ...retentionWarnings]),
         error: null,
     };
 }
@@ -262,9 +263,15 @@ async function renderAndReduce(
         }),
     });
     if (reduction.status === 'stopped') {
-        // The renders are already retained; a measurement that reports nothing leaves none behind.
-        discardAgentMeasurementArtifacts(rendered.targets.map((target) => target.artifact.contentAddress));
         return failureReceipt(input, describeMeasurementStop(reduction.reason));
     }
-    return successReceipt(input, parsed, range, rendered, reduction.reduced);
+    // Retained only now the measurement reports, so one that stops or throws first leaves the store as it was.
+    const retentionWarnings = retainAgentMeasurementRenders({
+        renders: rendered.targets.map((target) => ({
+            contentAddress: target.artifact.contentAddress,
+            buffer: target.buffer,
+        })),
+        sourceRevision: input.projectRevision,
+    });
+    return successReceipt(input, parsed, range, rendered, reduction.reduced, retentionWarnings);
 }

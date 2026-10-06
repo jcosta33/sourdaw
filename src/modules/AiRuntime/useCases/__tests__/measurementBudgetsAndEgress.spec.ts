@@ -12,7 +12,12 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
+import { checkCancel, resetCancelFlag } from '#/modules/AudioEngine/useCases';
+import {
+    clearAgentMeasurementArtifacts,
+    getAgentMeasurementArtifacts,
+    retainAgentMeasurementRenders,
+} from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -442,6 +447,8 @@ afterEach(() => {
     clearUndoHistory();
     resetActionReplayAuthority();
     clearAgentMeasurementArtifacts();
+    // The export cancel flag is process-wide; a row that raised it must not fail a later spec's render.
+    resetCancelFlag();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
@@ -788,6 +795,169 @@ describe('a planner measurement is bounded in duration', () => {
             expect(consumedBudget()).toEqual({ maxRenderJobs: 1, localAnalysis: 0 });
         }
     );
+
+    // Red when the deadline stops joining the run's signal: a live run signal alone never fires.
+    it.each(['project', 'preview'] as const)(
+        'times a %s measurement out while the run it belongs to is still live',
+        async (subject) => {
+            configureAgentResourceLimits({ measurementWallClockMs: 50 });
+            engine.renderTrackSubgraphOffline.mockImplementation(renderUntilAborted);
+            const liveRun = new AbortController();
+
+            const read = await measure(subject, DRUMS, SHORT_RANGE, { signal: liveRun.signal });
+
+            expect(receiptCode(read)).toBe('measurement-timed-out');
+            expect(liveRun.signal.aborted).toBe(false);
+        }
+    );
+});
+
+/** Content addresses of the retained renders, in a stable order. */
+function retainedAddresses(): string[] {
+    return getAgentMeasurementArtifacts()
+        .map((artifact) => artifact.contentAddress)
+        .toSorted();
+}
+
+function tinyBuffer(): AudioBuffer {
+    return {
+        sampleRate: SAMPLE_RATE,
+        length: 4,
+        numberOfChannels: 1,
+        duration: 4 / SAMPLE_RATE,
+        getChannelData: () => new Float32Array(4),
+    } as unknown as AudioBuffer;
+}
+
+/** Fills the store with `count` renders of earlier measurements, as many as it holds when `count` is 16. */
+function seedArtifacts(count: number): string[] {
+    const addresses = Array.from(
+        { length: count },
+        (_unused, index) => `seed-render-${String(index).padStart(2, '0')}`
+    );
+    retainAgentMeasurementRenders({
+        renders: addresses.map((contentAddress) => ({ contentAddress, buffer: tinyBuffer() })),
+        sourceRevision: 'seed-revision',
+    });
+    return addresses;
+}
+
+describe('a measurement that does not report leaves the shared state as it found it', () => {
+    // Red when renders are retained before they are reported, or a stop discards what an earlier receipt cites.
+    it.each(['project', 'preview'] as const)(
+        'keeps the renders an earlier %s receipt cites when the same measurement is cancelled in its first reduction',
+        async (subject) => {
+            const first = await measure(subject, DRUMS_AND_BASS, SHORT_RANGE, { callId: 'measure-1' });
+            const cited = retainedAddresses();
+            const controller = new AbortController();
+            await abortInFirstReduction(controller);
+
+            const repeat = await measure(subject, DRUMS_AND_BASS, SHORT_RANGE, {
+                callId: 'measure-2',
+                signal: controller.signal,
+            });
+
+            expect(first.receipt.error).toBeNull();
+            expect(cited.length).toBeGreaterThan(0);
+            expect(receiptCode(repeat)).toBe('cancelled');
+            expect(retainedAddresses()).toEqual(cited);
+        }
+    );
+
+    // Red when a stopped measurement on a full store evicts older renders it never reports.
+    it.each(['project', 'preview'] as const)(
+        'leaves all 16 retained renders when a 2-target %s measurement is cancelled on a full store',
+        async (subject) => {
+            const seeded = seedArtifacts(16);
+            const controller = new AbortController();
+            await abortInFirstReduction(controller);
+
+            const read = await measure(subject, DRUMS_AND_BASS, SHORT_RANGE, { signal: controller.signal });
+
+            expect(receiptCode(read)).toBe('cancelled');
+            expect(retainedAddresses()).toEqual(seeded);
+        }
+    );
+
+    // Red when a reduction that throws still leaves its renders in the store.
+    it.each(['project', 'preview'] as const)(
+        'leaves the store unchanged when a %s reduction throws',
+        async (subject) => {
+            const seeded = seedArtifacts(3);
+            createRun();
+            vi.mocked(measureAgentScopeRender).mockImplementationOnce(() => {
+                throw new Error('reduction failed');
+            });
+
+            await expect(measure(subject, DRUMS_AND_BASS, SHORT_RANGE, { admit: runAdmitter() })).rejects.toThrow(
+                'reduction failed'
+            );
+
+            expect(retainedAddresses()).toEqual(seeded);
+            expect(consumedBudget()).toEqual({ maxRenderJobs: subject === 'preview' ? 4 : 2, localAnalysis: 0 });
+        }
+    );
+
+    // Red when a measurement that reports stops retaining its renders against the revision it measured.
+    it.each(['project', 'preview'] as const)(
+        'retains the renders a reporting %s measurement cites, against the revision it measured',
+        async (subject) => {
+            const revision = captureProjectRevision();
+
+            const read = await measure(subject, DRUMS, SHORT_RANGE);
+
+            const cited = Array.from(
+                JSON.stringify(read.receipt.data).matchAll(/"contentAddress":"([^"]+)"/gu),
+                (match) => match[1]
+            ).toSorted();
+            expect(read.receipt.error).toBeNull();
+            expect(cited).toHaveLength(subject === 'preview' ? 2 : 1);
+            expect(retainedAddresses()).toEqual(cited);
+            expect(getAgentMeasurementArtifacts().map((artifact) => artifact.sourceRevision)).toEqual(
+                cited.map(() => revision)
+            );
+        }
+    );
+
+    // Red when a measurement's own stop raises the export flag a freeze or bounce beside it reads.
+    it('times a master measurement out while a render reading the export cancel flag carries on', async () => {
+        configureAgentResourceLimits({ measurementWallClockMs: 50 });
+        engine.renderOffline.mockImplementation(
+            (options: { abortSignal?: AbortSignal }) =>
+                new Promise((_resolve, reject) => {
+                    // A real render winds down at its next segment boundary, not at the abort itself.
+                    options.abortSignal?.addEventListener(
+                        'abort',
+                        () => {
+                            setTimeout(() => {
+                                reject(new Error('Export cancelled'));
+                            }, 30);
+                        },
+                        { once: true }
+                    );
+                })
+        );
+        let measuring = true;
+        const freezeFailures: unknown[] = [];
+        const freeze = (async () => {
+            while (measuring) {
+                try {
+                    checkCancel();
+                } catch (error) {
+                    freezeFailures.push(error);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+        })();
+
+        const read = await measure('project', MASTER, SHORT_RANGE, { signal: new AbortController().signal });
+        measuring = false;
+        await freeze;
+
+        expect(receiptCode(read)).toBe('measurement-timed-out');
+        expect(freezeFailures).toEqual([]);
+        expect(() => checkCancel()).not.toThrow();
+    });
 });
 
 function measurementReceipt(subject: 'project' | 'preview', callId: string): Promise<ApplicationToolReceipt> {

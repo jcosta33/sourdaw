@@ -1,8 +1,5 @@
 import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import {
-    discardAgentMeasurementArtifacts,
-    renderAgentPreviewMeasurementScope,
-} from '#/modules/AudioRendering/useCases';
+import { renderAgentPreviewMeasurementScope, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
 import { previewVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -161,8 +158,8 @@ function pairTargets(rendered: RenderedPreview): Array<[RenderedTarget, Rendered
     return pairs.length === rendered.preview.targets.length ? pairs : null;
 }
 
-function boundedWarnings(rendered: RenderedPreview): string[] {
-    return [...rendered.baseline.warnings, ...rendered.preview.warnings]
+function boundedWarnings(rendered: RenderedPreview, retentionWarnings: readonly string[]): string[] {
+    return [...rendered.baseline.warnings, ...rendered.preview.warnings, ...retentionWarnings]
         .slice(0, ANALYSIS_MEASURE_MAX_WARNINGS)
         .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
 }
@@ -180,10 +177,11 @@ function successRead(
         commands: readonly RetainedCommand[];
         batchContentHash: string;
         targets: MeasuredPreview['targets'];
+        retentionWarnings: readonly string[];
     }
 ): AnalysisMeasureRead {
     const { parsed } = input;
-    const { commands, batchContentHash, targets } = measured;
+    const { commands, batchContentHash, targets, retentionWarnings } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
     const measuredPreview: MeasuredPreview = {
         scope: parsed.scope,
@@ -224,7 +222,7 @@ function successRead(
             ]),
         },
         summary: `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}. Adopt exactly these commands with compiledCallIds ["${input.callId}"].`,
-        warnings: boundedWarnings(rendered),
+        warnings: boundedWarnings(rendered, retentionWarnings),
         error: null,
     };
     return { receipt, commands, measuredPreview };
@@ -273,8 +271,11 @@ async function renderPreview(
     }
 }
 
-function renderedAddresses(rendered: RenderedPreview): string[] {
-    return [...rendered.baseline.targets, ...rendered.preview.targets].map((target) => target.artifact.contentAddress);
+function renderedRenders(rendered: RenderedPreview) {
+    return [...rendered.baseline.targets, ...rendered.preview.targets].map((target) => ({
+        contentAddress: target.artifact.contentAddress,
+        buffer: target.buffer,
+    }));
 }
 
 /** Render the preview's scope against the live project, then reduce each target's pair of renders. */
@@ -305,11 +306,14 @@ async function renderAndReduce(
         reduce: ([baseline, previewTarget]) => measureTarget(baseline, previewTarget, input.parsed.metrics),
     });
     if (reduction.status === 'stopped') {
-        // Both documents' renders are already retained; a measurement that reports nothing leaves none behind.
-        discardAgentMeasurementArtifacts(renderedAddresses(rendered));
         return failure(input, describeMeasurementStop(reduction.reason));
     }
-    return successRead(input, rendered, pairs, { ...measured, targets: reduction.reduced });
+    // Retained only now the measurement reports, so one that stops or throws first leaves the store as it was.
+    const retentionWarnings = retainAgentMeasurementRenders({
+        renders: renderedRenders(rendered),
+        sourceRevision: input.projectRevision,
+    });
+    return successRead(input, rendered, pairs, { ...measured, targets: reduction.reduced, retentionWarnings });
 }
 
 /**
