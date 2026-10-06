@@ -454,9 +454,11 @@ describe('projectClipControllerRestore', () => {
         /** Everything is a whole number of 1/84 beats; every start, offset and row is a multiple of 7 units (1/12 beat). */
         const UNITS_PER_BEAT = 84;
         const toBeat = (units: number) => units / UNITS_PER_BEAT;
-        const firstClipStarts = [0, 14, 28, 42];
-        // Overlapping the first clip, abutting it, and leaving a gap after it, for the lengths below.
-        const secondClipStarts = [56, 98, 126];
+        const firstClipStarts = [28, 42, 56, 70];
+        // The second clip's start against the first's: a start behind it, and starts 28 units off, where the
+        // rows of the two clips are placed on the same beat by different float arithmetic; then overlapping,
+        // abutting it and leaving a gap after it, for the lengths below.
+        const secondClipDeltas = [-28, 28, 56, 98, 126];
         const lengths = [112, 168];
         const offsets = [0, 14];
         const loops = [null, 56];
@@ -476,7 +478,8 @@ describe('projectClipControllerRestore', () => {
         it('sends exactly the value continuous playback holds at every destination: inside, between and after the clips', () => {
             let checked = 0;
             for (const firstStart of firstClipStarts) {
-                for (const secondStart of secondClipStarts) {
+                for (const delta of secondClipDeltas) {
+                    const secondStart = firstStart + delta;
                     for (const length of lengths) {
                         for (const offset of offsets) {
                             for (const loop of loops) {
@@ -492,8 +495,8 @@ describe('projectClipControllerRestore', () => {
                                     { clip: shape(secondStart), controlChanges: secondClipRows },
                                 ];
                                 for (
-                                    let destination = firstStart;
-                                    destination <= secondStart + length + 28;
+                                    let destination = Math.min(firstStart, secondStart);
+                                    destination <= Math.max(firstStart, secondStart) + length + 28;
                                     destination += 7
                                 ) {
                                     const expected = valuesHeldByContinuousPlayback(clips, toBeat(destination));
