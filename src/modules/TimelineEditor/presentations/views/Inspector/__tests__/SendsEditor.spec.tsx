@@ -13,6 +13,7 @@ const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
 // calls, so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn().mockResolvedValue([]),
     pushUndoEntry: vi.fn(),
