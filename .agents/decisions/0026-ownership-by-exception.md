@@ -96,11 +96,9 @@ The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the mode
 6. Small batches, few live lanes, prompt merges.
 
 Amended 2026-10-06 by the owner: at most four live lanes, opened while other heads wait on CI or
-review. Agent lanes spend most of their life waiting on hour-long pipeline runs rather than in
-active development, so the DORA evidence for three or fewer active branches, measured on human
-teams, does not bound them. Lanes sharing a source file still wait or stack on a real dependency;
-lanes sharing only pins a script regenerates run in parallel and the later merge regenerates them,
-while measured pins count as shared source.
+review rather than after they drain. Agent lanes spend most of their life waiting on hour-long
+pipeline runs, so the DORA evidence for three or fewer active branches, measured on human teams,
+does not bound them; lanes stay write-disjoint, including generated artifacts and pinned digests.
 
 ## Consequences
 

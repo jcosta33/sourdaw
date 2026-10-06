@@ -68,7 +68,7 @@ name or changed-line target is insufficient. If a review repair introduces a new
 reassess the PR scope before dispatching more author work.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
-and overlapping files, except pins the Delivery lane rule lets the later merge regenerate.
+and overlapping files.
 
 ## Review
 
@@ -667,16 +667,12 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small and merges prompt. Hold at most four live lanes at once. Before opening a lane,
-compare the files it will change with the files each live lane changes. Work that shares a source
-file with a live lane waits for that lane to merge, or stacks on it with `--stack-on` only when it
-depends on that lane's change. Lanes that share only pins a script regenerates from the merged tree — tracked-set and inventory
-digests, generated schemas, snapshots, wasm manifests and artifacts, evidence the gate re-records
-— may run in parallel; whichever merges second merges `main` into its lane and regenerates those
-pins before its final review. A pin recorded by measurement, such as the Grand Boule quantum cost
-table, counts as shared source: lanes inside its measured census wait or stack. A head waiting on CI or review does not block a new lane; merge each as soon as its
-Gate and approval allow. If reviewers cannot attack a diff whole, reassess its scope under
-Delegation before review.
+Keep batches small and merges prompt. Hold at most four live lanes at once, each write-disjoint
+from the others as Delegation requires; work that shares a file, generated artifact or pinned
+digest with a live lane waits for it to merge, or stacks on it only when it depends on that
+lane's change. A head waiting on CI or review does not block opening a new lane; merge each as
+soon as its Gate and approval allow. If reviewers cannot attack a diff whole, reassess its scope
+under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
