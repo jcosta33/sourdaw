@@ -1,0 +1,127 @@
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_1c08b47ac3792f::t_10f5ef7f4160f8 431-432,438-439,442-459,463,466-475,480-481
+  s_1c08b47ac3792f::t_944410116657d3 430,433-437,440-441,460-462,464-465,482-495
+  s_1c08b47ac3792f::t_ada051c207089b 8-12
+  s_1c08b47ac3792f::t_ecfd318ac3079b 301-303,307,311
+  s_1c08b47ac3792f::t_4167396e5a9007 304-306
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_81eacb93c64455 14
+  s_1c08b47ac3792f::t_5aefbc83200d81 24,27-28
+  s_1c08b47ac3792f::t_c449419cc2806d 1511-1515,1520-1522,1526-1544
+  s_1c08b47ac3792f::t_4e216794833fc2 1492-1493
+  s_76e6edccd367e7::t_4b668394ddead1 1545-1546
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_1c08b47ac3792f::t_540c1b8be8f333 7,16-17,26-27,32-40,42-43
+  s_1c08b47ac3792f::t_3011b20f1aedfc 41
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_1c08b47ac3792f::t_c83e7ac5bbe911 17,21-22
+  s_1c08b47ac3792f::t_361a70e9198097 59
+  s_1c08b47ac3792f::t_7510cc6a2c830d 241
+src/modules/AiRuntime/repositories/webLlm/getWebLlmContextWindowSize.ts
+  s_1c08b47ac3792f::t_2ce42755fd5083 1-11
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_571729b64a405c 48
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_1c08b47ac3792f::t_e5ab9e16f24065 304-324
+  s_1c08b47ac3792f::t_f4041a9b57fdda 1-2,9
+src/modules/AiRuntime/models/LocalPlanningBudget.ts
+  s_1c08b47ac3792f::t_26b23f9855b3e9 1-18
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1c08b47ac3792f::t_694fca1666a74e 1166-1176,1178-1185,1190
+  s_1c08b47ac3792f::t_d8e452109c4c0a 1208,1210
+  s_1c08b47ac3792f::t_ed59187ba0f883 1177
+  s_1c08b47ac3792f::t_d83480108faeb4 1241-1243
+  s_1c08b47ac3792f::t_dbc3160f6245bb 1297
+src/modules/AiRuntime/models/ModelInfo.ts
+  s_1c08b47ac3792f::t_0d254e4af2c3d7 37
+  s_1c08b47ac3792f::t_bbcfcf91a020ca 29
+  s_1c08b47ac3792f::t_0004983371ec0e 15-20
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_f33bb768e10e79 1764
+src/modules/AiRuntime/transformers/__tests__/budgetLocalPlanningRequest.spec.ts
+  s_1c08b47ac3792f::t_6ccabb8075ad18 1-16,18-114
+  s_1c08b47ac3792f::t_641603f0258e86 17
+  s_1c08b47ac3792f::t_c1923f0934dc28 115-117
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_1f82700b7bf30d 723-724
+src/modules/AiRuntime/transformers/estimateConservativePromptTokens.ts
+  s_1c08b47ac3792f::t_2d672fb0e3f045 1-17
+src/modules/AiRuntime/transformers/budgetLocalPlanningRequest.ts
+  s_1c08b47ac3792f::t_7453c8211a9a21 1-36
+src/modules/AiRuntime/useCases/__tests__/planningProjectFixture.ts
+  s_1c08b47ac3792f::t_44f4e7ae85d643 1-127
+src/modules/AiRuntime/repositories/webLlm/generateWebLlmCompletion.ts
+  s_1c08b47ac3792f::t_9c5e10bd52394a 96-110
+  s_1c08b47ac3792f::t_e22047865e973a 44-46
+  s_1c08b47ac3792f::t_4949d56eb43388 57
+  s_1c08b47ac3792f::t_251523ae8d5bea 15-18
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_1c08b47ac3792f::t_bb2cd28e3b1176 8
+  s_1c08b47ac3792f::t_1da93f25916e49 149
+src/modules/AiRuntime/transformers/localContextWindowRefusal.ts
+  s_1c08b47ac3792f::t_10d812c62f2faa 1-41
+src/modules/AiRuntime/transformers/serializeWebLlmToolPlanningPrompt.ts
+  s_1c08b47ac3792f::t_63472e94da7185 1-34
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_e2683e0c04f334 714
+  s_1c08b47ac3792f::t_80dac95ded7a4c 343-394
+  s_1c08b47ac3792f::t_ea5d850233191b 15-18
+  s_1c08b47ac3792f::t_783b23e4c227a7 465-466
+  s_1c08b47ac3792f::t_e187f5ff6682a5 44,51-56,58
+  s_1c08b47ac3792f::t_3af48b5e0370ef 467-469
+  s_1c08b47ac3792f::t_714ebcab42f879 692-713,715-717
+  s_1c08b47ac3792f::t_0eb10684409e6c 464
+  s_1c08b47ac3792f::t_24656e4c1a60fc 691
+  s_1c08b47ac3792f::t_f5a12738b91864 583,719
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_2d3bc49232eb50 557
+  s_1c08b47ac3792f::t_53476f7a0285b9 612-626,628-640,680-722,724-732,735,739
+  s_1c08b47ac3792f::t_9870322e1d69ed 1-2,9
+  s_1c08b47ac3792f::t_51fa985b7417c9 602-603,605
+  s_1c08b47ac3792f::t_87c243cf90f820 641-679
+  s_1c08b47ac3792f::t_65fc9929ab811a 604,606
+  s_1c08b47ac3792f::t_794caecac191af 723,733-734,736-738
+  s_1c08b47ac3792f::t_6f7a8548496024 627
+  s_1c08b47ac3792f::t_5282bf688a01b3 548-556,558-601,607-611,740
+  s_1c08b47ac3792f::t_22a54754a1d172 10
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_bdadd4f326d34e 382-449,454-529,531
+  s_1c08b47ac3792f::t_8b374427ffb5e3 556
+  s_1c08b47ac3792f::t_8e5c109487d944 450-453
+  s_1c08b47ac3792f::t_9cc4b23f3ba261 10-16
+  s_1c08b47ac3792f::t_ec120ed3198a3a 28-29,31,33-35
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_1c08b47ac3792f::t_ba8dcda20d803b 75-103
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_1c08b47ac3792f::t_e998702f92e8dc 3
+  s_1c08b47ac3792f::t_07cc131fec1af5 79,94,110
+  s_1c08b47ac3792f::t_ab99131ea0eed0 113-130
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_d26054e07958a4 386,539
+src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json
+  s_1c08b47ac3792f::t_50fe8e5ba422b3 18-19,283,298-299,871,886-887,1732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "307611ae203b49f372abbea8f1b771383287771c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76e6edccd367e7": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "fd2ec726-9073-4e6a-91ec-f5f68e63ed0d",
+        "model": "claude-opus-5-thinking-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
