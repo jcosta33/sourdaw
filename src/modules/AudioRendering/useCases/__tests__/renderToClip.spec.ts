@@ -147,6 +147,40 @@ describe('renderToClip', () => {
             expect.objectContaining({ trackId: 'track-1', startBeat: 0, endBeat: expect.closeTo(12, 5) })
         );
     });
+
+    it('places a clip that starts after beat zero through the end of a buffer that outlasts the selection', async () => {
+        const { renderToClip } = await import('../renderToClip');
+
+        // Beats 16–24 at the 120 BPM fallback are 4 seconds starting at second 8.
+        // Six seconds of audio keeps two seconds of decay, which lands at beat 28.
+        const sampleRate = 48_000;
+        const buffer = createRenderedBuffer(6 * sampleRate, sampleRate);
+        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+
+        renderToClip({
+            targetTrackId: 'track-1',
+            startBeat: 16,
+            endBeat: 24,
+            buffer,
+            name: 'Rendered Tail',
+        });
+
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-1', startBeat: 16, endBeat: expect.closeTo(28, 5) })
+        );
+
+        const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
+        if (!recordedUndo) {
+            throw new Error('expected a render-to-clip undo entry');
+        }
+        const redo: () => void = recordedUndo[2];
+        mocks.addClip.mockClear();
+        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+        redo();
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-1', startBeat: 16, endBeat: expect.closeTo(28, 5) })
+        );
+    });
 });
 
 function createRenderedBuffer(lengthSamples: number, sampleRate: number): AudioBuffer {
