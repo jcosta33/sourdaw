@@ -85,12 +85,22 @@ const SYNTH_FAMILY_IDS_UNDER_CENSUS = [
 ] as const;
 
 /**
- * Standalone effect descriptor ids authored directly in their own descriptor
- * file (`CrustDescriptor.ts`, `KneadDescriptor.ts`, `ProofDescriptor.ts`,
- * `YeastDescriptor.ts`) rather than through the shared `declaredControl`
- * fallback. Pinned rather than derived, matching `SYNTH_FAMILY_IDS_UNDER_CENSUS`.
+ * Standalone effect descriptor ids authored in their own descriptor files
+ * (`BacteriaDescriptor.ts`, `CrustDescriptor.ts`, `GlutenDescriptor.ts`,
+ * `GrinderDescriptor.ts`, `KneadDescriptor.ts`, `ProofDescriptor.ts`,
+ * `YeastDescriptor.ts`, plus their `*Guidance*.ts` companions) rather than
+ * through the shared `declaredControl` fallback. Pinned rather than derived,
+ * matching `SYNTH_FAMILY_IDS_UNDER_CENSUS`.
  */
-const STANDALONE_EFFECT_IDS_UNDER_CENSUS = ['crust', 'knead', 'proof', 'yeast'] as const;
+const STANDALONE_EFFECT_IDS_UNDER_CENSUS = [
+    'bacteria',
+    'crust',
+    'gluten',
+    'grinder',
+    'knead',
+    'proof',
+    'yeast',
+] as const;
 
 const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
     ...EFFECT_IDS_UNDER_CENSUS,
@@ -100,8 +110,8 @@ const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
 
 /**
  * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
- * joined this census. This includes three standalone effects as well as the
- * remaining instrument families; all still use shared fallback guidance.
+ * joined this census. These are the remaining instrument families; all still
+ * use shared fallback guidance.
  */
 const DESCRIPTOR_IDS_EXCLUDED = [
     // BuiltinInstrumentDescriptors.ts
@@ -110,10 +120,6 @@ const DESCRIPTOR_IDS_EXCLUDED = [
     'faust-rhodes',
     'faust-fm-synth',
     'faust-supersaw-unison',
-    // Standalone effect descriptor files
-    'bacteria',
-    'gluten',
-    'grinder',
     // Standalone instrument descriptor files
     'builtin-crumbs',
     'fermenter',
@@ -222,6 +228,10 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
     [
         'dutch-oven/high_cut',
         'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
+    ],
+    [
+        'bacteria/convolutionMix',
+        'The 0.3 default blends in a peak-normalised body impulse response that gains 20 to 23 dB on broadband material, so the blend a mix can actually use sits far below it.',
     ],
     [
         'crust/release',
