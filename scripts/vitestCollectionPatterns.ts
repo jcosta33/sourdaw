@@ -13,16 +13,21 @@ export const specFilePattern = /\.(?:test|spec)\.(?:c|m)?[jt]sx?$/;
 /** Mirrors the `**\/*.e2e.spec.*` entry in the config's `exclude`. */
 export const e2eSpecPattern = /\.e2e\.spec\./;
 
+/** The `exclude` glob `e2eSpecPattern` mirrors; the one file-level glob the config adds itself. */
+export const e2eSpecExcludeGlob = '**/*.e2e.spec.*';
+
 /**
  * The directory prefixes `vite.config.ts` adds to `exclude`, which stop the root Vitest run from
  * collecting a spec there. `**\/*.e2e.spec.*` is `e2eSpecPattern`; the rest are these prefixes.
  * `tests/e2e` and `server` are excluded from Vitest because Playwright and node:test own them.
+ * Both agent directories (author lanes and review probes) mirror `src/` and must stay excluded.
  */
 export const vitestExcludePrefixes: readonly string[] = [
     'dist/',
     'electron/out/',
     'server/',
     '.agents/worktrees/',
+    '.agents/review-worktrees/',
     'tests/e2e/',
 ];
 

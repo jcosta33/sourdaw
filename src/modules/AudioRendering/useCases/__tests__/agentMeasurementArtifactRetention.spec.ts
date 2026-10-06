@@ -82,6 +82,22 @@ describe('agent measurement artifact retention', () => {
         expect(contentAddresses()).toEqual(['addr-fits']);
     });
 
+    it('returns the earlier render of one batch that a later render of the same batch evicted', () => {
+        const chunk = Math.floor(AGENT_MEASUREMENT_RETENTION_POLICY.maxPcmBytes * 0.6);
+
+        const notKept = retainAgentMeasurementArtifacts({
+            renders: [
+                { contentAddress: 'addr-first', buffer: bufferOfBytes(chunk) },
+                { contentAddress: 'addr-second', buffer: bufferOfBytes(chunk) },
+            ],
+            sourceRevision: 'rev-1',
+            now: 1,
+        });
+
+        expect(notKept).toEqual(['addr-first']);
+        expect(contentAddresses()).toEqual(['addr-second']);
+    });
+
     it('expires a retained artifact by itself once its age limit passes, with no read or new render', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-08-28T20:00:00Z'));

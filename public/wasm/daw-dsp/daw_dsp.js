@@ -865,11 +865,14 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
-     * Panic: silence every voice immediately, and drop what has not sounded.
+     * Panic: silence every voice immediately, and drop the notes that have
+     * not sounded.
      *
-     * The queued list is cleared with the voices: a panic asks for silence,
-     * and an event still waiting for its offset would strike a note after the
-     * user pressed the button.
+     * Queued note events are dropped with the voices: a panic asks for
+     * silence, and an event still waiting for its offset would strike a note
+     * after the user pressed the button. Queued pedal events stay, in order,
+     * because the engine keeps pedal state through a panic and a dropped
+     * pedal-up would leave the pedal down for good.
      */
     all_notes_off() {
         wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
@@ -1065,6 +1068,44 @@ export class GrandBouleInstance {
         return ret !== 0;
     }
     /**
+     * Queue the sostenuto pedal engaging or releasing at `offset` samples into
+     * the next rendered block. Ordering and refusal as [`Self::push_sustain`].
+     * @param {boolean} engaged
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_sostenuto(engaged, offset) {
+        const ret = wasm.grandbouleinstance_push_sostenuto(this.__wbg_ptr, engaged, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a sustain pedal position (`0..1`) at `offset` samples into the
+     * next rendered block.
+     *
+     * A pedal belongs on the offset-queued tier for the same reason a note
+     * does: a pedal pressed between two notes of one block must damp the first
+     * and sustain the second, which only holds if it lands on its own frame
+     * in push order with them. Ordering and refusal as [`Self::push_note_on`].
+     * @param {number} position
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_sustain(position, offset) {
+        const ret = wasm.grandbouleinstance_push_sustain(this.__wbg_ptr, position, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue the una corda pedal engaging or releasing at `offset` samples into
+     * the next rendered block. Ordering and refusal as [`Self::push_sustain`].
+     * @param {boolean} engaged
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_una_corda(engaged, offset) {
+        const ret = wasm.grandbouleinstance_push_una_corda(this.__wbg_ptr, engaged, offset);
+        return ret !== 0;
+    }
+    /**
      * Set a global parameter (`master_gain`, `soundboard_send`,
      * `sympathetic_send`).
      * @param {string} name
@@ -1076,33 +1117,12 @@ export class GrandBouleInstance {
         wasm.grandbouleinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
     /**
-     * Set the sostenuto pedal state.
-     * @param {boolean} engaged
-     */
-    set_sostenuto(engaged) {
-        wasm.grandbouleinstance_set_sostenuto(this.__wbg_ptr, engaged);
-    }
-    /**
-     * Set the sustain pedal position (0..1).
-     * @param {number} position
-     */
-    set_sustain(position) {
-        wasm.grandbouleinstance_set_sustain(this.__wbg_ptr, position);
-    }
-    /**
      * Set the historical temperament (0 = Equal, 1 = Werckmeister III,
      * 2 = Kirnberger III, 3 = Vallotti, 4 = Young II, 5 = Meantone ¼-comma).
      * @param {number} index
      */
     set_temperament(index) {
         wasm.grandbouleinstance_set_temperament(this.__wbg_ptr, index);
-    }
-    /**
-     * Set the una-corda pedal state.
-     * @param {boolean} engaged
-     */
-    set_una_corda(engaged) {
-        wasm.grandbouleinstance_set_una_corda(this.__wbg_ptr, engaged);
     }
 }
 if (Symbol.dispose) GrandBouleInstance.prototype[Symbol.dispose] = GrandBouleInstance.prototype.free;

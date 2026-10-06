@@ -2,24 +2,6 @@ import { CLIP_GAIN_LAW, CLIP_MAX_GAIN, describeLevelLawDb } from '#/utils/audioL
 
 import { tool, type ToolSchema } from './Types';
 
-const DEVICE_TYPES = [
-    'EQ',
-    'Compressor',
-    'Reverb',
-    'Delay',
-    'Gain',
-    'Chorus',
-    'Flanger',
-    'Phaser',
-    'Distortion',
-    'Limiter',
-    'Gate',
-    'BitCrusher',
-    'Filter',
-    'Saturator',
-    'DeEsser',
-];
-
 export const clipTools: readonly ToolSchema[] = [
     tool(
         'addClip',
@@ -218,11 +200,7 @@ export const deviceTools: readonly ToolSchema[] = [
         "Add an audio effect to a track's device chain.",
         {
             trackId: { type: 'string' },
-            deviceType: {
-                type: 'string',
-                enum: DEVICE_TYPES,
-                description: 'The type of effect to add',
-            },
+            deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
             afterDeviceId: {
                 type: 'string',
                 description: 'Existing device ID after which to insert; omit to append',

@@ -18,3 +18,4 @@ export { renderAgentPreviewMeasurementScope } from './renderAgentPreviewMeasurem
 export { getAgentMeasurementArtifact } from './getAgentMeasurementArtifact';
 export { getAgentMeasurementArtifacts } from './getAgentMeasurementArtifacts';
 export { clearAgentMeasurementArtifacts } from './clearAgentMeasurementArtifacts';
+export { retainAgentMeasurementRenders } from './retainAgentMeasurementRenders';

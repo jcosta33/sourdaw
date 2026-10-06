@@ -53,8 +53,24 @@ function isMidiNote(value: unknown): value is MidiNote {
     );
 }
 
+// #4876 — a note snapshot is a dense array. Array.prototype.every skips missing
+// slots and Array.prototype.map preserves them, so a sparse hole used to pass
+// both the note check and the id-count check, then normalized away into an
+// empty write. Every position must hold a value; a hole is never a JSON value.
+function isDense(value: readonly unknown[]): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export function isMidiNoteSnapshot(value: unknown): value is MidiNote[] {
     return (
-        Array.isArray(value) && value.every(isMidiNote) && new Set(value.map((note) => note.id)).size === value.length
+        Array.isArray(value) &&
+        isDense(value) &&
+        value.every(isMidiNote) &&
+        new Set(value.map((note) => note.id)).size === value.length
     );
 }

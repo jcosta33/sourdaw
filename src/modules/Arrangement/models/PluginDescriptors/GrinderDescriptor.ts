@@ -8,7 +8,8 @@
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { GRINDER_PARAMETER_GUIDANCE } from './GrinderDescriptorGuidance';
+import { effectGuidance } from './GuidanceProfiles';
 
 const GRINDER_PARAMS: readonly PluginParamDef[] = [
     // Input
@@ -133,11 +134,8 @@ export const GRINDER_DESCRIPTOR = applySingleDescriptorGuidance(
                 reason: 'Grinder declares no automatic loudness matching across amp and cabinet choices.',
             }
         ),
-        declaredControl(
-            'Amp and cabinet control',
-            'Changes gain staging, tone, model choice, or signal-chain routing.',
-            ['Set input stage before drive and output.'],
-            ['High gain can amplify noise and overload later devices.']
-        )
+        // No fallback: every parameter is authored in GrinderDescriptorGuidance.ts.
+        undefined,
+        GRINDER_PARAMETER_GUIDANCE
     )
 );

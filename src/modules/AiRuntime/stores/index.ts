@@ -29,6 +29,8 @@ export { aiBackendPreferenceStore } from './aiBackendPreferenceStore';
 
 export { agentResourceLimitsStore } from './agentResourceLimitsStore';
 
+export { agentReferenceStore } from './agentReferenceStore';
+
 export { llmStatusStore } from './llmStatusStore';
 export type { LlmEngineStatus } from './llmStatusStore';
 

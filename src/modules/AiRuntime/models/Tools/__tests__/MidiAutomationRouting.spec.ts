@@ -11,15 +11,15 @@ function getRoutingTool(name: string) {
 }
 
 describe('automation tool schemas', () => {
-    it('keeps automation-lane creation limited to app-owned gain and pan metadata', () => {
+    it('describes the automation-lane targets the lane resolver admits, without a closed list of them', () => {
         expect(getAutomationTool('addAutomationLane')?.function.parameters).toEqual({
             type: 'object',
             properties: {
                 trackId: { type: 'string' },
                 parameterId: {
                     type: 'string',
-                    enum: ['gain', 'pan'],
-                    description: 'Track parameter to automate',
+                    description:
+                        'Parameter to automate: "gain" or "pan" for the track itself, or "<deviceId>:<parameterId>" for a parameter of a device already on this track, joining that device\'s ID and the parameter\'s ID with a colon',
                 },
             },
             required: ['trackId', 'parameterId'],

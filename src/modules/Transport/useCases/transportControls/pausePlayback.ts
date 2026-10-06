@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
@@ -82,6 +83,11 @@ export function pausePlayback(): void {
     );
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: pausedBeat });
+    // The parked epoch above ends the roll whose wraps the count holds. While
+    // parked no capture reads it (the parked branch answers the store), and
+    // the next play zeroes beside its own epoch write — dropping it here keeps
+    // a dead roll's wraps from ever standing beside a written position.
+    playheadWrapCountRef.current = 0;
 
     // Cancel any pending count-in. During count-in `isRecording` is still
     // false, so `stopActiveRecording` would otherwise be skipped and the

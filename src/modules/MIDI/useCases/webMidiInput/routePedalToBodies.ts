@@ -22,6 +22,11 @@ export type PedalMessage = Readonly<{
     normalized: number;
     /** MIDI channel the message arrived on: `0` through `15`. */
     channel: number;
+    /**
+     * Audio-thread frame the Web Audio node places the movement at, the same
+     * one the notes of this input are voiced at.
+     */
+    sampleFrame: number;
 }>;
 
 export type PedalRouteDependencies = Readonly<{
@@ -96,10 +101,10 @@ function writePedalToWebAudioNode(pedal: PedalMessage): void {
 
     const engaged = pedal.value >= PEDAL_LATCH_THRESHOLD;
     if (pedal.cc === CC_SUSTAIN_PEDAL) {
-        controls.setSustain(pedal.normalized);
+        controls.setSustain(pedal.normalized, pedal.sampleFrame);
     } else if (pedal.cc === CC_SOSTENUTO_PEDAL) {
-        controls.setSostenuto(engaged);
+        controls.setSostenuto(engaged, pedal.sampleFrame);
     } else if (pedal.cc === CC_UNA_CORDA_PEDAL) {
-        controls.setUnaCorda(engaged);
+        controls.setUnaCorda(engaged, pedal.sampleFrame);
     }
 }

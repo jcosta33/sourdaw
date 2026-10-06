@@ -15,7 +15,6 @@ import { readSecondsAtBeat } from '#/modules/Transport/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { renderAgentMeasurementTargets } from './renderAgentMeasurementTargets';
-import { retainAgentMeasurementArtifacts } from './retainAgentMeasurementArtifacts';
 
 type MeasurementScope = Parameters<typeof resolveAgentMeasurementTargets>[0];
 type TargetResolution = ReturnType<typeof resolveAgentMeasurementTargets>;
@@ -55,6 +54,8 @@ type RenderAgentPreviewMeasurementScopeInput = {
     /** Released by this call on every outcome, before anything renders. */
     preview: PreviewWorkspace;
     signal?: AbortSignal;
+    /** Called as each target's render begins, in either document. */
+    onRenderStart?: () => void;
 };
 
 type Subject = 'baseline' | 'preview';
@@ -95,7 +96,7 @@ type RenderedSubject = {
     soloActive: boolean;
     rangeSeconds: RangeSeconds;
     targets: RenderedMeasurementTarget[];
-    /** Renderer warnings, then one line per render too large to retain. */
+    /** Renderer warnings. */
     warnings: string[];
 };
 
@@ -307,6 +308,7 @@ async function renderSubject(
         sourceRevision: input.sourceRevision,
         signal: input.signal,
         project,
+        onRenderStart: input.onRenderStart,
         onWarning: (message) => warnings.push(message),
     });
     if (rendered.status !== 'rendered') {
@@ -323,27 +325,11 @@ async function renderSubject(
     };
 }
 
-/** Retain every render of both documents; a render too large to retain is reported by each subject holding it. */
-function retainRenders(input: RenderAgentPreviewMeasurementScopeInput, subjects: readonly RenderedSubject[]): void {
-    const renders = subjects.flatMap((subject) =>
-        subject.targets.map((target) => ({ contentAddress: target.artifact.contentAddress, buffer: target.buffer }))
-    );
-    const oversized = new Set(retainAgentMeasurementArtifacts({ renders, sourceRevision: input.sourceRevision }));
-    for (const subject of subjects) {
-        for (const target of subject.targets) {
-            if (oversized.has(target.artifact.contentAddress)) {
-                subject.warnings.push(
-                    `Render ${target.artifact.contentAddress} exceeds the measurement retention limit and was not retained.`
-                );
-            }
-        }
-    }
-}
-
 /**
  * Render one agent measurement scope twice over the same beat range — the
  * live project at the preview's base revision, then the isolated preview of a
- * proposal — and retain both as content-addressed artifacts.
+ * proposal. Nothing is retained here: the caller retains both documents'
+ * renders once it has reported on them (`retainAgentMeasurementRenders`).
  *
  * Every store read either render needs is taken before anything renders, the
  * preview's through its workspace, which is released before the first render
@@ -386,6 +372,5 @@ export async function renderAgentPreviewMeasurementScope(
     if (preview.status !== 'rendered') {
         return subjectRefusal(preview, 'preview');
     }
-    retainRenders(input, [baseline.subject, preview.subject]);
     return { status: 'rendered', baseline: baseline.subject, preview: preview.subject };
 }

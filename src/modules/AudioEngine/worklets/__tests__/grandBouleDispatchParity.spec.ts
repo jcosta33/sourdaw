@@ -83,14 +83,17 @@ class GrandBouleInstanceMock {
     set_param(name: string, value: number): void {
         this.record('set_param', [name, value]);
     }
-    set_sustain(position: number): void {
-        this.record('set_sustain', [position]);
+    push_sustain(position: number, offset: number): boolean {
+        this.record('push_sustain', [position, offset]);
+        return true;
     }
-    set_una_corda(engaged: boolean): void {
-        this.record('set_una_corda', [engaged]);
+    push_una_corda(engaged: boolean, offset: number): boolean {
+        this.record('push_una_corda', [engaged, offset]);
+        return true;
     }
-    set_sostenuto(engaged: boolean): void {
-        this.record('set_sostenuto', [engaged]);
+    push_sostenuto(engaged: boolean, offset: number): boolean {
+        this.record('push_sostenuto', [engaged, offset]);
+        return true;
     }
     note_on_midi2(note: number, velocity16bit: number, pitchOffsetQ24: number): void {
         this.record('note_on_midi2', [note, velocity16bit, pitchOffsetQ24]);
@@ -150,15 +153,15 @@ const workerSelf = {
 /**
  * The worker paces its producer loop through a `MessageChannel` macrotask.
  * Capturing the callback instead of running it keeps this comparison at frame 0:
- * the worker must not render — and therefore must not drain — while the
- * processor is still being driven.
+ * the worker renders — and therefore drains — only when the harness runs the
+ * captured tick, once, after every message has arrived.
  */
 const capturedYields: Array<() => void> = [];
 
 /** The three messages the union carries beyond the framed ones, plus every framed shape. */
 const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
-    // Framed, inside the first block: both hosts must push these now, each at its
-    // own sample offset inside that block.
+    // Framed, inside the first block: both hosts queue these and the render
+    // pushes them, each at its own sample offset inside that block.
     { type: 'noteOn', midiNote: 60, velocity: 0.8, sampleFrame: 10, channel: 3 },
     {
         type: 'noteExpression',
@@ -172,32 +175,46 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     { type: 'noteOff', midiNote: 60, sampleFrame: 12, releaseVelocity: 0.5, channel: 3 },
     // Framed with no channel: releases every voice at the pitch.
     { type: 'noteOff', midiNote: 62, sampleFrame: 20 },
-    // Framed with no frame at all: voices now, at offset 0.
+    // Pedal moves with no frame sit at the block head. They arrive ahead of the
+    // framed moves of the same pedals below: a frameless move supersedes the
+    // queued moves of its own pedal, so the other order would drop them.
+    { type: 'sustain', position: 0.6 },
+    { type: 'unaCorda', engaged: true },
+    { type: 'sostenuto', engaged: false },
+    // Pedals carry their frame like notes do and land at the same offset.
+    { type: 'sustain', position: 1, sampleFrame: 21 },
+    { type: 'sostenuto', engaged: true, sampleFrame: 22 },
+    { type: 'unaCorda', engaged: false, sampleFrame: 23 },
+    // Framed with no frame at all: voices at the head of the block.
     { type: 'noteOn', midiNote: 64, velocity: 0.4 },
-    // Framed beyond the first block: both hosts must queue these, so neither may
-    // record a call for them.
+    // Framed beyond the first block: both hosts must keep these queued, so
+    // neither may record a call for them.
     { type: 'noteOn', midiNote: 67, velocity: 0.9, sampleFrame: 5_000 },
     { type: 'noteOff', midiNote: 67, sampleFrame: 6_000 },
-    // Unframed control messages.
+    // Parameters with no frame to place: both hosts apply them on arrival.
     { type: 'param', name: 'masterGain', value: 0.7 },
     { type: 'param', name: 'lidPosition', value: 0.5 },
     { type: 'param', name: 'micPosition', value: 2 },
     { type: 'param', name: 'already_snake_case', value: 0.25 },
-    { type: 'sustain', position: 0.6 },
-    { type: 'unaCorda', engaged: true },
-    { type: 'sostenuto', engaged: false },
+    // Block-rate messages the engine takes the moment they arrive.
     { type: 'noteOnMidi2', midiNote: 72, velocity16bit: 32_000, pitchOffsetQ24: 1_024 },
     { type: 'temperament', index: 4 },
-    // Panic. Both hosts must forward it. That it also drops the two queued notes
-    // is not observable at frame 0 and is guarded in `grandBouleEngineCore.spec`
-    // instead, on the shared implementation both hosts route through.
-    { type: 'allNotesOff' },
 ];
+
+/**
+ * Panic, sent after the first render. Both hosts must forward it. That it also
+ * drops the two queued notes is not observable at frame 0 and is guarded in
+ * `grandBouleEngineCore.spec` instead, on the shared implementation both hosts
+ * route through. Sent before the render it would drop the notes the render is
+ * meant to push.
+ */
+const PANIC_MESSAGE: GrandBouleDispatchMsg = { type: 'allNotesOff' };
 
 describe('the worker and the offline processor dispatch identically', () => {
     let workerCalls: EngineCall[] = [];
     let processorCalls: EngineCall[] = [];
     let processorPort: HarnessPort;
+    let processorHost: ProcessorLike | undefined;
 
     beforeAll(async () => {
         Object.defineProperty(globalThis, 'self', { configurable: true, value: workerSelf });
@@ -212,10 +229,10 @@ describe('the worker and the offline processor dispatch identically', () => {
             class {
                 port1 = { onmessage: null as ((event: MessageEvent) => void) | null };
                 port2 = {
-                    postMessage: () => {
+                    postMessage: (generation: number) => {
                         const callback = this.port1.onmessage;
                         if (callback) {
-                            capturedYields.push(() => callback({ data: null } as MessageEvent));
+                            capturedYields.push(() => callback({ data: generation } as MessageEvent));
                         }
                     },
                 };
@@ -249,7 +266,7 @@ describe('the worker and the offline processor dispatch identically', () => {
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
         try {
-            new OfflineProcessor({ processorOptions: { wasmModule: EMPTY_WASM_MODULE } });
+            processorHost = new OfflineProcessor({ processorOptions: { wasmModule: EMPTY_WASM_MODULE } });
         } finally {
             pendingProcessorPort = null;
         }
@@ -261,6 +278,20 @@ describe('the worker and the offline processor dispatch identically', () => {
             workerSelf.onmessage?.({ data: msg } as MessageEvent);
             processorPort.onmessage?.({ data: msg } as MessageEvent);
         }
+
+        // One render per host: the drain that hands the queued messages to the
+        // engine. Messages only queue on arrival, so nothing framed was pushed
+        // before this point.
+        for (const tick of capturedYields.splice(0)) {
+            tick();
+        }
+        if (!processorHost) {
+            throw new Error('grand-boule-offline-processor was not constructed');
+        }
+        processorHost.process([], [[new Float32Array(BLOCK_FRAMES), new Float32Array(BLOCK_FRAMES)]]);
+
+        workerSelf.onmessage?.({ data: PANIC_MESSAGE } as MessageEvent);
+        processorPort.onmessage?.({ data: PANIC_MESSAGE } as MessageEvent);
     });
 
     it('produces the same engine call sequence from the same messages', () => {
@@ -297,20 +328,25 @@ describe('the worker and the offline processor dispatch identically', () => {
         // were queued rather than collapsed onto frame 0.
         expect(workerCalls).toEqual([
             { method: 'construct', args: [HOST_SAMPLE_RATE, 64] },
-            { method: 'push_note_on', args: [60, 0.8, 3, 10] },
-            { method: 'push_note_expression', args: [60, 3, 1.5, 0.2, 0.4, 11] },
-            { method: 'push_note_off_on_channel', args: [60, 3, 12] },
-            { method: 'push_note_off', args: [62, 20] },
-            { method: 'push_note_on', args: [64, 0.4, 0, 0] },
+            // Parameters and block-rate messages take effect on arrival, ahead of the render.
             { method: 'set_param', args: ['master_gain', 0.7] },
             { method: 'set_param', args: ['lid_position', 0.5] },
             { method: 'set_param', args: ['mic_position', 2] },
             { method: 'set_param', args: ['already_snake_case', 0.25] },
-            { method: 'set_sustain', args: [0.6] },
-            { method: 'set_una_corda', args: [true] },
-            { method: 'set_sostenuto', args: [false] },
             { method: 'note_on_midi2', args: [72, 32_000, 1_024] },
             { method: 'set_temperament', args: [4] },
+            // The render's drain: frame order, arrival order at equal frames.
+            { method: 'push_sustain', args: [0.6, 0] },
+            { method: 'push_una_corda', args: [true, 0] },
+            { method: 'push_sostenuto', args: [false, 0] },
+            { method: 'push_note_on', args: [64, 0.4, 0, 0] },
+            { method: 'push_note_on', args: [60, 0.8, 3, 10] },
+            { method: 'push_note_expression', args: [60, 3, 1.5, 0.2, 0.4, 11] },
+            { method: 'push_note_off_on_channel', args: [60, 3, 12] },
+            { method: 'push_note_off', args: [62, 20] },
+            { method: 'push_sustain', args: [1, 21] },
+            { method: 'push_sostenuto', args: [true, 22] },
+            { method: 'push_una_corda', args: [false, 23] },
             { method: 'all_notes_off', args: [] },
         ]);
     });

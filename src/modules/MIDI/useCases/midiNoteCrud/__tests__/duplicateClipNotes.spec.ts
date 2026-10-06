@@ -103,4 +103,63 @@ describe('duplicateClipNotes', () => {
         // duplicate silently re-routes the copy to channel 0 (issue #1832 F8).
         expect(midiStore.value?.notesByClipId.dst?.[0]?.channel).toBe(8);
     });
+
+    describe('recorded controller lanes', () => {
+        const sustain = [
+            { id: 'cc-a', controller: 64, value: 127, beat: 1, channel: 0 },
+            { id: 'cc-b', controller: 64, value: 0, beat: 1, channel: 0 },
+            { id: 'cc-c', controller: 64, value: 90, beat: 2, channel: 5 },
+        ];
+        const bends = [{ id: 'pb-a', value: 0.5, beat: 1, channel: 0 }];
+
+        it('copies controller and pitch bend rows to the destination in source order', () => {
+            midiStore.set({
+                notesByClipId: { src: [{ id: 's1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+                ccByClipId: { src: sustain },
+                pitchBendByClipId: { src: bends },
+            });
+
+            duplicateClipNotes('src', 'dst');
+
+            expect(midiStore.value?.ccByClipId.dst?.map(({ id: _id, ...row }) => row)).toEqual(
+                sustain.map(({ id: _id, ...row }) => row)
+            );
+            expect(midiStore.value?.pitchBendByClipId.dst?.map(({ id: _id, ...row }) => row)).toEqual(
+                bends.map(({ id: _id, ...row }) => row)
+            );
+            expect(midiStore.value?.ccByClipId.src).toEqual(sustain);
+            expect(midiStore.value?.pitchBendByClipId.src).toEqual(bends);
+        });
+
+        it('copies the controllers of a clip that holds no notes', () => {
+            midiStore.set({ notesByClipId: {}, ccByClipId: { src: sustain }, pitchBendByClipId: {} });
+
+            duplicateClipNotes('src', 'dst');
+
+            expect(midiStore.value?.ccByClipId.dst).toHaveLength(sustain.length);
+        });
+
+        it('removing the copy leaves the source, and duplicating again restores the same copy ids', () => {
+            const before = {
+                notesByClipId: { src: [{ id: 's1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+                ccByClipId: { src: sustain },
+                pitchBendByClipId: { src: bends },
+            };
+            midiStore.set(before);
+            const prepared = midiStore.value!;
+
+            duplicateClipNotes('src', 'dst');
+            const firstCopy = midiStore.value?.ccByClipId.dst;
+            const firstBendCopy = midiStore.value?.pitchBendByClipId.dst;
+            expect(firstCopy).toHaveLength(sustain.length);
+
+            midiStore.set(prepared);
+            expect(midiStore.value?.ccByClipId.dst).toBeUndefined();
+            expect(midiStore.value?.ccByClipId.src).toEqual(sustain);
+
+            duplicateClipNotes('src', 'dst');
+            expect(midiStore.value?.ccByClipId.dst).toEqual(firstCopy);
+            expect(midiStore.value?.pitchBendByClipId.dst).toEqual(firstBendCopy);
+        });
+    });
 });

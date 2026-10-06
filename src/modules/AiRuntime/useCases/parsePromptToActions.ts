@@ -15,6 +15,7 @@ import {
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
+import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
@@ -58,6 +59,7 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -72,6 +74,7 @@ import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
+import { executeReferenceMeasurement } from './executeReferenceMeasurement';
 import { executeTransformCompile } from './executeTransformCompile';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
@@ -352,7 +355,8 @@ const planPromptIntent = inject({ logger })(
                 creativeAuthority: CreativeRequestAuthority | null;
                 rejectionEvidence?: PlanningRejectionEvidence;
             },
-            providerPlanning: 'enabled' | 'disabled' = 'enabled'
+            providerPlanning: 'enabled' | 'disabled' = 'enabled',
+            onMeasurementAttempt?: MeasurementAdmitter
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
@@ -595,24 +599,38 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                                  // The reference comparison renders the project the same way, so it
+                                  // spends the same one measurement per turn.
+                                  companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
                                   revision: projectRevision,
                                   execute: (call, { callId, turn, signal: loopSignal }) =>
-                                      executeAnalysisMeasure({
-                                          call,
-                                          callId,
-                                          turn,
-                                          projectRevision,
-                                          sections: context.sections ?? [],
-                                          signal: loopSignal,
-                                          // A preview is compiled and grounded against what an adopting
-                                          // proposal is: this run's read model, request and authority.
-                                          preview: {
-                                              context,
-                                              prompt,
-                                              runId: streamIdentity?.runId ?? 'preview-measurement',
-                                              readCreativeAuthority: () => creativeAuthority,
-                                          },
-                                      }),
+                                      call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+                                          ? executeReferenceMeasurement({
+                                                call,
+                                                callId,
+                                                turn,
+                                                projectRevision,
+                                                sections: context.sections ?? [],
+                                                signal: loopSignal,
+                                                admit: onMeasurementAttempt,
+                                            })
+                                          : executeAnalysisMeasure({
+                                                call,
+                                                callId,
+                                                turn,
+                                                projectRevision,
+                                                sections: context.sections ?? [],
+                                                signal: loopSignal,
+                                                admit: onMeasurementAttempt,
+                                                // A preview is compiled and grounded against what an adopting
+                                                // proposal is: this run's read model, request and authority.
+                                                preview: {
+                                                    context,
+                                                    prompt,
+                                                    runId: streamIdentity?.runId ?? 'preview-measurement',
+                                                    readCreativeAuthority: () => creativeAuthority,
+                                                },
+                                            }),
                               },
                     requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
                         const planningContext =
@@ -1156,7 +1174,8 @@ export async function parsePromptToActions(
         creativeAuthority: CreativeRequestAuthority | null;
         rejectionEvidence?: PlanningRejectionEvidence;
     },
-    providerPlanning: 'enabled' | 'disabled' = 'enabled'
+    providerPlanning: 'enabled' | 'disabled' = 'enabled',
+    onMeasurementAttempt?: MeasurementAdmitter
 ): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(
         prompt,
@@ -1168,7 +1187,8 @@ export async function parsePromptToActions(
         streamIdentity,
         onProviderAttempt,
         correction,
-        providerPlanning
+        providerPlanning,
+        onMeasurementAttempt
     );
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }

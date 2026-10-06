@@ -20,10 +20,12 @@ import {
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
+import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
@@ -1583,8 +1585,14 @@ describe('generateToolPlanningOutcome', () => {
         const schemas = getPlanningProviderToolSchemas();
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
+        // The reference comparison is the one contract tool offered only while the user has a reference loaded, and none is loaded here.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
-            new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
+            new Set([
+                ...planningContract
+                    .map((tool) => tool.function.name)
+                    .filter((name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME),
+                ...WORKFLOW_ACTION_TOOL_NAMES,
+            ])
         );
 
         // Production appends the creative interpretation schema to that list on every run.
@@ -1697,6 +1705,53 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).not.toContain(RECIPE_EXPANSION_TOOL_NAME);
         expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
         expect(advertisedNames).not.toContain('transform.compile');
+    });
+
+    // Red when the WebLLM list stops excluding the reference comparison, or the hosted list stops carrying it while loaded.
+    it('never advertises analysis.compareReference to WebLLM with a reference loaded, and advertises it to a hosted backend', async () => {
+        agentReferenceStore.set({
+            reference: {
+                referenceId: 'reference-test',
+                name: 'reference.wav',
+                contentAddress: 'content-address',
+                measurements: {},
+                sampleRate: 48_000,
+                frameCount: 48_000,
+                channelCount: 2,
+                durationSeconds: 1,
+            },
+            loadEpoch: 1,
+        });
+        try {
+            const prompt = 'compare my mix to the reference track I loaded';
+            const productionSchemas = [
+                ...getPlanningProviderToolSchemas(),
+                createCreativeInterpretationToolSchema(creativeCatalog),
+            ];
+
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome('system', prompt, productionSchemas);
+            const localNames = (mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []).map(
+                (tool: ToolSchema) => tool.function.name
+            );
+            expect(localNames).not.toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [],
+                strictToolSchemas: false,
+                usage: null,
+            });
+            await generateToolPlanningOutcome('system', prompt, productionSchemas);
+            const hostedNames = (mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? []).map(
+                (tool: ToolSchema) => tool.function.name
+            );
+            expect(hostedNames).toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+        } finally {
+            agentReferenceStore.set({ reference: null, loadEpoch: 0 });
+        }
     });
 
     it('still advertises recipe.discover, recipe.expand and analysis.measure to a hosted cloud backend', async () => {

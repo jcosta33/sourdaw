@@ -1247,6 +1247,48 @@ fn grand_boule_process_with_pushed_notes_does_not_allocate() {
     );
 }
 
+/// The offset-queued pedal path allocates nothing either.
+///
+/// Every guarded block carries a sustain, a sostenuto and an una corda push at
+/// distinct offsets between two notes, so the guard wraps the pedal writes, the
+/// sostenuto capture across the voice pool, the pedal-up release of the voices
+/// the pedal held, and the split renders around them.
+#[test]
+fn grand_boule_process_with_pushed_pedals_does_not_allocate() {
+    use daw_dsp::grand_boule::GrandBouleInstance;
+
+    let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 0);
+    instance.set_param("cc_smoothing_ms", 25.0);
+    instance.set_param("sustain_threshold", 0.3);
+    instance.set_param("lid_position", 0.35);
+    instance.set_param("mic_position", 2.0);
+    instance.note_on(48, 0.9);
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "grand_boule");
+
+    assert_no_alloc(|| {
+        for block in 0..GUARDED_BLOCKS {
+            let note = 55 + (block % 5) as u8;
+            let engaged = block % 2 == 0;
+            instance.push_note_on(note, 0.8, 0, 17);
+            instance.push_sustain(if engaged { 1.0 } else { 0.0 }, 33);
+            instance.push_sostenuto(engaged, 49);
+            instance.push_una_corda(engaged, 65);
+            instance.push_note_off(note, 111);
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "grand_boule");
+    assert!(
+        peak(&out) > 1e-6,
+        "grand_boule produced silence after the guarded region, so the pushed \
+         pedals never reached a sounding modal model"
+    );
+}
+
 #[test]
 fn grand_boule_fir_body_tail_and_control_updates_do_not_allocate() {
     use daw_dsp::grand_boule::GrandBouleInstance;

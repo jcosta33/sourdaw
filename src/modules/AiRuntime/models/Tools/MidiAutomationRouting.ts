@@ -57,8 +57,8 @@ export const midiTools: readonly ToolSchema[] = [
         'Convert chords into an arpeggiated pattern.',
         {
             clipId: { type: 'string' },
-            pattern: { type: 'string', enum: ['up', 'down', 'updown', 'downup', 'random'] },
-            rate: { type: 'number', enum: [4, 8, 16, 32], description: 'Notes per whole note: 8=eighths' },
+            pattern: { type: 'string' },
+            rate: { type: 'number', description: 'Notes per whole note: 8=eighths' },
             octaves: { type: 'number', description: 'Number of octaves to span (1–4)' },
             gate: { type: 'number', description: 'Note length as percent of step (50=staccato, 100=legato)' },
         },
@@ -74,8 +74,8 @@ export const automationTools: readonly ToolSchema[] = [
             trackId: { type: 'string' },
             parameterId: {
                 type: 'string',
-                enum: ['gain', 'pan'],
-                description: 'Track parameter to automate',
+                description:
+                    'Parameter to automate: "gain" or "pan" for the track itself, or "<deviceId>:<parameterId>" for a parameter of a device already on this track, joining that device\'s ID and the parameter\'s ID with a colon',
             },
         },
         ['trackId', 'parameterId']

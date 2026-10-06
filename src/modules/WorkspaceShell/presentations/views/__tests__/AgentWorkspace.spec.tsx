@@ -52,6 +52,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     revertAiActionGroup: revertAiActionGroupMock,
     agentChangeComparison: agentChangeComparisonMock,
     getAgentChangeComparisonView: getAgentChangeComparisonViewMock,
+    loadAgentReference: vi.fn(),
+    clearAgentReference: vi.fn(),
 }));
 
 // Real `createStore` instances so `useStore` subscribes for real: the focus
@@ -65,6 +67,7 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
         aiActionHistoryStore: createStore({ initialData: { groups: [], panelOpen: false } }),
         pendingActionConfirmationStore: createStore({ initialData: { confirmations: [] } }),
         agentChangeComparisonStore: createStore({ initialData: { active: null, lastEnded: null } }),
+        agentReferenceStore: createStore({ initialData: { reference: null, loadEpoch: 0 } }),
     };
 });
 

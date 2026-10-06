@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AGENT_DATA_CATEGORIES,
+    REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES,
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
     assertRemoteAgentDataPolicy,
     classifyAgentDataPolicy,
@@ -43,16 +44,36 @@ describe('agent data policy', () => {
         expect(decision.transmission).toBe('allowed');
     });
 
-    it('is exactly the union of the blocked and text-allowed category sets, with no overlap', () => {
-        expect(REMOTE_BLOCKED_AGENT_DATA_CATEGORIES.length + REMOTE_TEXT_AGENT_DATA_CATEGORIES.length).toBe(15);
+    it.each(REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES)('allows %s evidence alone to a provider destination', (category) => {
+        const decision = classifyAgentDataPolicy({ destination: 'provider', categories: [category] });
+
+        expect(decision.transmission).toBe('allowed');
+        expect(decision.blockedCategories).toEqual([]);
+    });
+
+    it('classifies a measurement as local numeric evidence a provider may receive, beside the audio it never may', () => {
+        expect(REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES).toEqual(['measurement']);
+        expect(REMOTE_BLOCKED_AGENT_DATA_CATEGORIES).not.toContain('measurement');
+        expect(
+            classifyAgentDataPolicy({ destination: 'provider', categories: ['measurement', 'render'] })
+        ).toMatchObject({ transmission: 'blocked', blockedCategories: ['render'] });
+    });
+
+    it('is exactly the union of the blocked, text-allowed and evidence-allowed category sets, with no overlap', () => {
+        expect(
+            REMOTE_BLOCKED_AGENT_DATA_CATEGORIES.length +
+                REMOTE_TEXT_AGENT_DATA_CATEGORIES.length +
+                REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES.length
+        ).toBe(16);
 
         const union = new Set<AgentDataCategory>([
             ...REMOTE_BLOCKED_AGENT_DATA_CATEGORIES,
             ...REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+            ...REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES,
         ]);
 
-        expect(AGENT_DATA_CATEGORIES).toHaveLength(15);
-        expect(union.size).toBe(15);
+        expect(AGENT_DATA_CATEGORIES).toHaveLength(16);
+        expect(union.size).toBe(16);
         expect(new Set(AGENT_DATA_CATEGORIES)).toEqual(union);
     });
 
