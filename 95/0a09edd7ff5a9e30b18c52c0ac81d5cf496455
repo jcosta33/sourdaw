@@ -1,0 +1,95 @@
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_8f7b0c4fe044b2 1-87
+  s_1c08b47ac3792f::t_3014733a48ca4e 88-93
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptor.ts
+  s_1c08b47ac3792f::t_d2b1f232c28dfe 112-113
+  s_1c08b47ac3792f::t_a7d8ef2aeaf8ea 9
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_8fe53b7531d6e7 1-81
+  s_1c08b47ac3792f::t_a61f852dcb4ee8 82-85
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptor.ts
+  s_1c08b47ac3792f::t_8191d8701b5d89 9
+  s_1c08b47ac3792f::t_7e436e7b22523f 102-103
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_1c08b47ac3792f::t_14fac8574e205e 3-6,8
+  s_1c08b47ac3792f::t_5d61f55751af10 368-375,377-378
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_1c08b47ac3792f::t_d63202bf39ea1e 262-265,270
+  s_1c08b47ac3792f::t_f5811edbbb3d7e 106-112,114,116-119,129-140
+  s_2bfd55a4393d7c::t_2a11144e50ce3b 141
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts
+  s_1c08b47ac3792f::t_974cf93fde445a 4-10
+  s_1c08b47ac3792f::t_30dab750d98e34 149,151-153
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_923363ed92b40c 35
+  s_1c08b47ac3792f::t_a776821a05a4a7 1-34,36-165
+  s_1c08b47ac3792f::t_203b0ffa8ffd29 166-176
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_1c08b47ac3792f::t_66a03a590e1173 8
+  s_1c08b47ac3792f::t_f53c12d486c558 275-276
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidanceFm.ts
+  s_1c08b47ac3792f::t_c48eb27e414ab6 1-50,52-323
+  s_1c08b47ac3792f::t_6422190b6af45f 51
+  s_1c08b47ac3792f::t_1bc54bc4e6fccf 324-356
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_b08b84195cbd98 1-11,16-23,25-26,28-34,36-45,47-52,54-58,60-75,77-78,80-105
+  s_1c08b47ac3792f::t_b1a9469e3dde54 106-109
+  s_1c08b47ac3792f::t_4441a796f80ded 24,27
+  s_1c08b47ac3792f::t_c9148385096b5a 59
+  s_1c08b47ac3792f::t_4da8d19b274ca5 35
+  s_1c08b47ac3792f::t_e593e9b3aebdb0 53
+  s_1c08b47ac3792f::t_f9ec8252a34032 12-15
+  s_1c08b47ac3792f::t_2211fed26bb48e 46
+  s_1c08b47ac3792f::t_9098eaaf6d23ff 76,79
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_866268b7e7c365 45-48
+  s_1c08b47ac3792f::t_ab741f0d73c607 70-73,75
+  s_1c08b47ac3792f::t_d0512136b7555d 64
+  s_1c08b47ac3792f::t_ab76e6723a7717 90-91
+  s_1c08b47ac3792f::t_98b798c274a30f 63
+  s_1c08b47ac3792f::t_bfcc71aa2ca58e 76
+  s_1c08b47ac3792f::t_485dd43771a413 65
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidance.ts
+  s_1c08b47ac3792f::t_8759397c4ff770 1-40,42-132,134-138,140-176,180-260
+  s_1c08b47ac3792f::t_066f4e89644b46 261-264
+  s_1c08b47ac3792f::t_b36cdf867744fc 139
+  s_1c08b47ac3792f::t_8b3334923ca69f 133
+  s_1c08b47ac3792f::t_955773b07f4f71 41
+  s_1c08b47ac3792f::t_264a53b40a7a7f 177-179
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_1c08b47ac3792f::t_7bb92c82309920 89-90
+  s_1c08b47ac3792f::t_81100ef95e11e9 9
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptorsGuidance.ts
+  s_1c08b47ac3792f::t_39c870eafebe78 214-250
+scripts/checkReleaseInventory.ts
+  s_1c08b47ac3792f::t_426e0b5e39351a 1615,1621
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_40074c95d5f74d 1150
+  s_1c08b47ac3792f::t_534b04ba775dba 1208,1213
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_40073c44edfb03 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "950a09edd7ff5a9e30b18c52c0ac81d5cf496455",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
