@@ -4,10 +4,16 @@ import { thinAutomationPoints } from '../../useCases/automation/thinAutomationPo
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
+import { findFollowerLaneRefusal } from './followerLaneRefusal';
 
 export const handleThinAutomation = createHandler<'thinAutomation'>({
     execute: (alpha) => {
+        const followerRefusal = findFollowerLaneRefusal(alpha.payload.laneId);
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
+        }
         thinAutomationPoints(alpha.payload.laneId, alpha.payload.tolerance);
+        return undefined;
     },
     isNoop: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);
