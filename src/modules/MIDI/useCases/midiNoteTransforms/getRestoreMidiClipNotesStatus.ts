@@ -39,12 +39,26 @@ export type GetRestoreMidiClipNotesStatusInput = {
 type NoteTransformReplayTarget = NonNullable<GetRestoreMidiClipNotesStatusInput['projectedNoteTransformReplayTarget']>;
 
 function readLiveNoteTransformReplayTarget(trackId: string, clipId: string): NoteTransformReplayTarget | undefined {
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    const clip = track?.clips.find((candidate) => candidate.id === clipId);
-    if (!track || !clip || clip.type !== 'midi') {
-        return undefined;
+    let target: NoteTransformReplayTarget | undefined;
+    for (const track of trackStore.value?.tracks ?? []) {
+        for (const clip of track.clips) {
+            if (clip.id !== clipId) {
+                continue;
+            }
+            if (target) {
+                return undefined;
+            }
+            if (track.id !== trackId || track.kind !== 'midi' || clip.type !== 'midi') {
+                return undefined;
+            }
+            target = {
+                trackId: track.id,
+                trackFrozen: track.frozen === true,
+                clipLocked: clip.locked === true,
+            };
+        }
     }
-    return { trackId: track.id, trackFrozen: track.frozen === true, clipLocked: clip.locked === true };
+    return target;
 }
 
 export function getRestoreMidiClipNotesStatus({

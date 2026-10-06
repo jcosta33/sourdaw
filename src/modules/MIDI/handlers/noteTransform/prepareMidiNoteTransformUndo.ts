@@ -3,6 +3,7 @@ import { type HandlerDescribeResult } from '#/utils/handlerContract';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 type PrepareMidiNoteTransformUndoInput = {
     clipId: string;
@@ -29,17 +30,21 @@ export function prepareMidiNoteTransformUndo({
     if (midiNotesEqual(notes, expectedNotes)) {
         return { description: { label }, isNoop: true };
     }
+    const noteTransformReplayGuard = getWritableMidiClipReplayGuardForBatch(clipId);
+    if (!noteTransformReplayGuard) {
+        return { description: { label }, isNoop: false };
+    }
 
     return {
         description: {
             label,
             inverseAction: {
                 type: 'restoreMidiClipNotes',
-                payload: { clipId, notes, expectedNotes },
+                payload: { clipId, notes, expectedNotes, noteTransformReplayGuard },
             },
             redoAction: {
                 type: 'restoreMidiClipNotes',
-                payload: { clipId, notes: expectedNotes, expectedNotes: notes },
+                payload: { clipId, notes: expectedNotes, expectedNotes: notes, noteTransformReplayGuard },
             },
         },
         isNoop: false,
