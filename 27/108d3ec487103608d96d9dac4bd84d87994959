@@ -1,0 +1,94 @@
+src/modules/Transport/useCases/scheduling/resolveDrumKit.ts
+  s_2bfd55a4393d7c::t_197fce368d18e7 19
+  s_2bfd55a4393d7c::t_838f9ffefe8bb4 2
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_82534d6885c5ff 26
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_2bfd55a4393d7c::t_9dc2200631d4a0 3-21
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_2bfd55a4393d7c::t_e1300c83283134 158
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_2bfd55a4393d7c::t_fccc1278521de3 65
+  s_2bfd55a4393d7c::t_599d9e18615243 23
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_2bfd55a4393d7c::t_cc19fb95b75368 65
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_1dc2dbef677676 462-465
+  s_2bfd55a4393d7c::t_ff6fb2409a0220 7
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_b1b8e53979d3b8 97
+  s_2bfd55a4393d7c::t_029973939a1b0d 265
+  s_2bfd55a4393d7c::t_66c4a616358a9f 477,484,517,1383,1520
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/resolveDrumKitDef.ts
+  s_2bfd55a4393d7c::t_a35f5e56b31560 1-20
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_119a8609ffbde4 94
+  s_2bfd55a4393d7c::t_3c6437a3de1a30 1445
+  s_2bfd55a4393d7c::t_31ee3f4b8084f6 1464-1468
+  s_2bfd55a4393d7c::t_957e85e45e024a 22
+  s_2bfd55a4393d7c::t_d153273bbbb6b1 2225
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_2bfd55a4393d7c::t_f2ee960fe1b73f 172
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_2bfd55a4393d7c::t_54ac9eb7b19f2d 141
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_2bfd55a4393d7c::t_84f7d2f3d153d9 157
+src/utils/deviceTypeMatching.ts
+  s_2bfd55a4393d7c::t_5ad098fbdf56ae 33
+  s_2bfd55a4393d7c::t_b79d0ea582d9dd 34-41
+src/modules/Synth/useCases/index.ts
+  s_2bfd55a4393d7c::t_806cb856ba7182 6
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsDrumKitParity.spec.ts
+  s_2bfd55a4393d7c::t_f07de97299ebcb 64
+  s_2bfd55a4393d7c::t_938261935be886 143-144,146-151,153-162,164-165
+  s_2bfd55a4393d7c::t_b682f8104fc138 1-63,65-142,145,152,163,166-203
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_2bfd55a4393d7c::t_8e09d8dbb2c307 163
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_2bfd55a4393d7c::t_804d038cd85f33 81
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_2bfd55a4393d7c::t_149401af3d966a 158
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_2bfd55a4393d7c::t_71906d0bfc7048 126
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_2bfd55a4393d7c::t_c887f59cdff436 60
+  s_2bfd55a4393d7c::t_a7992b63052d40 22
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_3ecdb1a189d359 1209
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_2bfd55a4393d7c::t_a6e2417ec8053e 2
+  s_2bfd55a4393d7c::t_1d17a4c27406a0 11,15
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_2bfd55a4393d7c::t_a8d6e1fd2fc9a9 202
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_2bfd55a4393d7c::t_473a092fb424f3 131
+src/modules/Synth/useCases/drumSynthEngine/kitDefinitions/__tests__/resolveDrumKitDef.spec.ts
+  s_2bfd55a4393d7c::t_59d3340370967b 7
+src/modules/AudioEngine/services/__tests__/deviceResolution.spec.ts
+  s_2bfd55a4393d7c::t_1df773bc2fc19f 23-24
+  s_2bfd55a4393d7c::t_0f97570bc53238 20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27108d3ec487103608d96d9dac4bd84d87994959",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
