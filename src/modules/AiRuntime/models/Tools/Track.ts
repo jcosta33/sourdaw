@@ -13,7 +13,7 @@ export const trackTools: readonly ToolSchema[] = [
         'Create a new track in the session.',
         {
             name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
-            kind: { type: 'string', enum: ['audio', 'midi', 'bus', 'folder'], description: 'Track type' },
+            kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
         },
         ['name', 'kind']
     ),
