@@ -16,15 +16,17 @@ import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
  * stored-controller projection and the engagement records all run. The engine is a
  * small model of the contract the real queues keep (their own specs, in the
  * AudioEngine module, pin it against `createGrandBouleFrameQueue` and the Levain
- * processor): a framed move waits for its frame, a frameless move applies at once,
- * a move marked `stored` is the only kind `discardStored*` drops, and a frameless
- * stored move supersedes nothing. Every assertion reads the value the instrument
+ * processor): a framed move waits for its frame, a frameless Levain controller
+ * applies at once while a frameless Grand Boule pedal or latch queues at the
+ * current frame (so a later discard drops it), a move marked `stored` is the only
+ * kind `discardStored*` drops, and a frameless stored move supersedes nothing.
+ * Every assertion reads the value the instrument
  * holds after the whole queue has drained, not the order of the posts.
  */
 
 type Move = { key: string; value: number; frame: number; stored: boolean };
 
-function createEngineModel() {
+function createEngineModel(currentFrame: () => number) {
     const applied = new Map<string, number>();
     /** Every value a key has taken, in order: a lift that was never applied never shows here. */
     const history = new Map<string, number[]>();
@@ -44,7 +46,18 @@ function createEngineModel() {
     }
     return {
         post(key: string, value: number, frame: number | undefined, stored: boolean): void {
+            if (frame === undefined && (key === 'sustain' || key === 'sostenuto')) {
+                // A Grand Boule queues a frameless pedal at the block start
+                // (`receiveGrandBouleMessage`), where a later `discardStoredPedals` drops it
+                // if it is a stored move: so the lift has to follow the discard, never precede it.
+                if (!stored) {
+                    pending = pending.filter((move) => move.key !== key);
+                }
+                pending.push({ key, value, frame: currentFrame(), stored });
+                return;
+            }
             if (frame === undefined) {
+                // A Levain applies a frameless controller at once.
                 if (!stored) {
                     pending = pending.filter((move) => move.key !== key);
                 }
@@ -68,7 +81,7 @@ function createEngineModel() {
     };
 }
 
-const engine = createEngineModel();
+const engine = createEngineModel(() => Math.round(ctxTime.now * SAMPLE_RATE));
 const callLog: string[] = [];
 
 const transportStoreState: { value: typeof defaultTransportState | null } = { value: null };
@@ -104,7 +117,12 @@ const grandBouleControls = {
         );
         engine.post('sustain', position, frame, stored === true);
     },
-    setSostenuto: vi.fn(),
+    setSostenuto: (engaged: boolean, frame?: number, stored?: boolean) => {
+        callLog.push(
+            `sostenuto ${engaged} ${frame === undefined ? 'now' : 'framed'}${stored === true ? ' stored' : ''}`
+        );
+        engine.post('sostenuto', engaged ? 1 : 0, frame, stored === true);
+    },
     setUnaCorda: vi.fn(),
     discardStoredPedals: () => {
         callLog.push('discard');
@@ -460,6 +478,53 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
             await runTick();
 
             expect(callLog).toEqual(['discard', 'cc11 100 framed stored']);
+        });
+    });
+
+    describe('relocation with no row in force', () => {
+        /** The lane's lift is queued, so the post record says "up" while the engine still holds the pedal down. */
+        async function playUntilLiftQueued(controls: 'sustain' | 'sostenuto', clipEndBeat?: number): Promise<void> {
+            const controller = controls === 'sustain' ? 64 : 66;
+            loadClip('grand-boule', [row('down', controller, 127, 1), row('up', controller, 0, 3.35)], clipEndBeat);
+            transportStoreState.value = playingState({ playheadPosition: 0.8 });
+            startPlayheadScheduler();
+            await playUntilQueued(`${controls} ${controls === 'sustain' ? 0 : false}`);
+            engine.advanceTo(frameNow());
+            expect(engine.value(controls)).toBe(1);
+            callLog.length = 0;
+        }
+
+        async function jumpTo(beat: number): Promise<void> {
+            evaluateFollowActionsMock.mockImplementationOnce(() => ({ jumpToPosition: beat, shouldStop: false }));
+            await runTick();
+            engine.drainAll();
+        }
+
+        it('lifts a sustain down before the clip has any row, though its last posted move was a lift', async () => {
+            await playUntilLiftQueued('sustain');
+
+            await jumpTo(0.5);
+
+            expect(callLog).toEqual(['discard', 'sustain 0 framed stored']);
+            expect(engine.value('sustain')).toBe(0);
+        });
+
+        it('lifts a sustain down on a track whose clip ends before the destination, though its last posted move was a lift', async () => {
+            await playUntilLiftQueued('sustain', 4);
+
+            await jumpTo(6);
+
+            expect(callLog).toEqual(['discard', 'sustain 0 framed stored']);
+            expect(engine.value('sustain')).toBe(0);
+        });
+
+        it('releases a sostenuto latch down before the clip has any row, though its last posted move was a release', async () => {
+            await playUntilLiftQueued('sostenuto');
+
+            await jumpTo(0.5);
+
+            expect(callLog).toEqual(['discard', 'sostenuto false framed stored']);
+            expect(engine.value('sostenuto')).toBe(0);
         });
     });
 

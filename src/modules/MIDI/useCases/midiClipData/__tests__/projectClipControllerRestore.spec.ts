@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type MidiCC } from '../../../models/MidiNote';
+import { projectClipControllerEvents } from '../projectClipControllerEvents';
 import { projectClipControllerRestore } from '../projectClipControllerRestore';
 
 function controller(id: string, beat: number, value: number, cc = 64, channel = 0): MidiCC {
@@ -109,6 +110,22 @@ describe('projectClipControllerRestore', () => {
 
         expect(onSecondHead.moves).toEqual([]);
         expect(onSecondHead.held).toEqual(new Set([64]));
+    });
+
+    it('agrees with the window on which row sits on the destination when the clip beats are not dyadic', () => {
+        // Content beat 3 is timeline beat 4 by the clip's own arithmetic, but the window and a
+        // content-beat comparison place it a rounding step apart: whichever side the window puts
+        // it, the restore and the window's own emission must end on that row's value, never on
+        // the press carried from content 1.
+        const clip = { startBeat: 7 / 6, endBeat: 7 / 6 + 8, midiOffsetBeats: 1 / 6 };
+        const lane = [controller('down', 1, 127), controller('up', 3, 0)];
+
+        const restore = projectClipControllerRestore({ controlChanges: lane, clip, atBeat: 4 });
+        const window = projectClipControllerEvents({ controlChanges: lane, clip, fromBeat: 4, toBeat: 5 });
+
+        const sent = [...restore.moves, ...window];
+        expect(sent.map((move) => move.value)).toEqual([0]);
+        expect(restore.held).toEqual(new Set([64]));
     });
 
     it('sends nothing for a destination outside the clip', () => {

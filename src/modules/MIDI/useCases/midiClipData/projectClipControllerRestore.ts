@@ -26,6 +26,14 @@ type ClipControllerRestore = {
     held: ReadonlySet<number>;
 };
 
+/**
+ * How far past `atBeat` a placed row may sit and still be on the destination: the
+ * rounding noise between the window's arithmetic (`iterationStart - midiOffset`
+ * added to a content beat) and the destination beat, at the beat magnitudes a song
+ * reaches. Far below any musical distance and below a sample at any tempo.
+ */
+const DESTINATION_BEAT_TOLERANCE = 1e-9;
+
 function laneKey(row: MidiCC): string {
     return `${row.channel}:${row.controller}`;
 }
@@ -44,18 +52,22 @@ function loopPassAt(
 
 /**
  * What a clip's stored controllers must send when playback is relocated to
- * `atBeat` (a loop wrap or a follow-action jump), which a scheduler window opening
- * there cannot: `projectClipControllerEvents` emits a carry only on a pass head, so
- * a destination inside a pass would otherwise leave every controller wherever the
- * pass playback left them.
+ * `atBeat` (a loop wrap, a follow-action jump or an edit's re-emit), which a
+ * scheduler window opening there cannot: `projectClipControllerEvents` emits a
+ * carry only on a pass head, so a destination inside a pass would otherwise leave
+ * every controller wherever the pass playback left them.
  *
- * `moves` is, per lane, the value in force at the destination by the same carry
- * rule a pass head uses: the latest row before it within that pass, a same-beat tie
- * going to the later source row. A lane with a row exactly on the destination is
- * left to the window that opens there, which emits that row, so each value is sent
- * once. A destination on a pass head is likewise owned by the window (it carries the
- * head), so `moves` is empty there, but `held` still names what the head holds, for
- * the caller to tell which engaged controllers nothing is in force for.
+ * The pass is placed on the timeline by `projectMidiClipWindow`, the very projection
+ * the window emits through, and every row is classified by where that placement puts
+ * it, never by a second computation of the same beat: a content-beat comparison
+ * disagrees with the window by a rounding step whenever the clip start or content
+ * offset is not a dyadic fraction, which sent a stale carried value after the row
+ * the window emits. A row placed at the destination (the window emits it, and a
+ * pass head's carry is such a row) leaves its lane to the window, so each value is
+ * sent once, and the lane counts as in force. A row placed before it is carried: per
+ * lane the latest, a same-beat tie going to the later source row, sent as `moves`.
+ * A row placed after the destination is the window's to emit when its time comes
+ * and says nothing about what is in force now.
  *
  * A destination outside the clip yields nothing.
  */
@@ -73,31 +85,49 @@ export function projectClipControllerRestore({
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    const iteration = loopPassAt(clip, expansion, atBeat);
-    const iterationStartBeat = clip.startBeat + iteration * expansion.loopLengthBeats;
+    const iterationStartBeat = clip.startBeat + loopPassAt(clip, expansion, atBeat) * expansion.loopLengthBeats;
+    const iterationEndBeat = Math.min(iterationStartBeat + expansion.loopLengthBeats, clip.endBeat);
     const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-    const contentBeat = midiOffsetBeats + (atBeat - iterationStartBeat);
-
-    const lanesOnDestination = new Set<string>();
-    const held = new Set<number>();
-    for (const row of controlChanges) {
-        if (row.beat === contentBeat) {
-            lanesOnDestination.add(laneKey(row));
-            held.add(row.controller);
-        }
-    }
-    // A window that has no visible span carries every row before its start and
-    // emits none, which is exactly the value in force at the destination.
-    const carried = projectMidiClipWindow({
+    const placed = projectMidiClipWindow({
         notes: [],
         controlChanges,
         pitchBends: [],
-        window: { beatOffset: atBeat - contentBeat, visibleStartBeat: contentBeat, visibleEndBeat: contentBeat },
-    }).controlChanges.filter((row) => !lanesOnDestination.has(laneKey(row)));
-    for (const row of carried) {
-        held.add(row.controller);
+        window: {
+            beatOffset: iterationStartBeat - midiOffsetBeats,
+            visibleStartBeat: midiOffsetBeats,
+            visibleEndBeat: midiOffsetBeats + (iterationEndBeat - iterationStartBeat),
+        },
+    }).controlChanges;
+
+    const lanesOnDestination = new Set<string>();
+    const latestBefore = new Map<string, MidiCC>();
+    for (const row of placed) {
+        const lane = laneKey(row);
+        if (row.beat >= atBeat) {
+            if (row.beat - atBeat <= DESTINATION_BEAT_TOLERANCE) {
+                lanesOnDestination.add(lane);
+            }
+            continue;
+        }
+        const current = latestBefore.get(lane);
+        if (!current || current.beat <= row.beat) {
+            latestBefore.set(lane, row);
+        }
     }
 
-    const onPassHead = atBeat <= iterationStartBeat;
-    return { moves: onPassHead ? [] : carried.map((row) => ({ ...row, beat: atBeat })), held };
+    const held = new Set<number>();
+    const moves: MidiCC[] = [];
+    for (const [lane, row] of latestBefore) {
+        if (lanesOnDestination.has(lane)) {
+            continue;
+        }
+        held.add(row.controller);
+        moves.push({ ...row, beat: atBeat });
+    }
+    for (const row of placed) {
+        if (lanesOnDestination.has(laneKey(row))) {
+            held.add(row.controller);
+        }
+    }
+    return { moves, held };
 }

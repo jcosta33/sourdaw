@@ -196,7 +196,10 @@ function pedal(id: string, value: number, beat: number) {
 }
 
 /** One 8-beat clip on a Grand Boule track, carrying the given controller lane and no notes. */
-function loadClip(lane: ReturnType<typeof controller>[]): void {
+function loadClip(
+    lane: ReturnType<typeof controller>[],
+    clipBeats: { startBeat?: number; endBeat?: number; midiOffsetBeats?: number } = {}
+): void {
     trackStoreState.value = {
         tracks: [
             {
@@ -214,11 +217,11 @@ function loadClip(lane: ReturnType<typeof controller>[]): void {
                         id: 'clip-1',
                         type: 'midi',
                         muted: false,
-                        startBeat: 0,
-                        endBeat: 8,
+                        startBeat: clipBeats.startBeat ?? 0,
+                        endBeat: clipBeats.endBeat ?? 8,
                         gain: 1,
                         loopEnabled: false,
-                        midiOffsetBeats: 0,
+                        midiOffsetBeats: clipBeats.midiOffsetBeats ?? 0,
                     },
                 ],
                 freezeState: { status: 'unfrozen', frozenBufferId: null },
@@ -231,6 +234,9 @@ function loadClip(lane: ReturnType<typeof controller>[]): void {
         probabilitySeed: 1,
     };
 }
+
+/** A clip whose start (7/6) and content offset (1/6) are not dyadic fractions of a beat. */
+const NON_DYADIC_CLIP = { startBeat: 7 / 6, endBeat: 7 / 6 + 8, midiOffsetBeats: 1 / 6 };
 
 function playingState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
     return { ...defaultTransportState, isPlaying: true, tempo: TEMPO_BPM, playheadPosition: 0, ...overrides };
@@ -386,6 +392,25 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             const onSeamFrame = pedalCalls.filter((call) => Math.abs(call.frame! - seamFrame) <= 1);
             expect(onSeamFrame.map((call) => call.position)).toEqual([1]);
         });
+
+        it('sends only the row on the loop start when the clip start and content offset are not dyadic fractions', async () => {
+            // Content beat 3 sits on timeline beat 4 by the clip's own arithmetic
+            // (7/6 + (3 - 1/6)), but the two computations of it differ by a rounding step.
+            loadClip([pedal('down', 127, 1), pedal('up', 0, 3), pedal('down-late', 127, 4.5)], NON_DYADIC_CLIP);
+            transportStoreState.value = playingState({
+                playheadPosition: 3,
+                isLooping: true,
+                loopStart: 4,
+                loopEnd: 6,
+            });
+            startPlayheadScheduler();
+
+            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+            const seamFrame = frameOf(schedulerSession.pendingSeam!.seamAudioTime);
+
+            const onSeamFrame = pedalCalls.filter((call) => Math.abs(call.frame! - seamFrame) <= 1);
+            expect(onSeamFrame.map((call) => call.position)).toEqual([0]);
+        });
     });
 
     describe('late loop wrap', () => {
@@ -467,6 +492,21 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             // Nothing is in force at 2, so the pedal stored playback moved is lifted at the jump frame.
             expect(pedalCalls).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
             expect(otherPedalCalls).toEqual([]);
+        });
+
+        it('sends only the row on the destination when the clip start and content offset are not dyadic fractions', async () => {
+            loadClip([pedal('down', 127, 1), pedal('up', 0, 3)], NON_DYADIC_CLIP);
+            transportStoreState.value = playingState({ playheadPosition: 1.9 });
+            startPlayheadScheduler();
+            await playUntilPedalDown();
+            pedalCalls.length = 0;
+
+            evaluateFollowActionsMock.mockImplementationOnce(() => ({ jumpToPosition: 4, shouldStop: false }));
+            await runTick();
+
+            // The pedal went down at 2 and content beat 3 (timeline 4) lifts it: that row is all
+            // that may reach the engine at the jump frame, not the press carried from content 1.
+            expect(framedCalls()).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
         });
 
         it('emits a row sitting exactly on the destination once', async () => {
