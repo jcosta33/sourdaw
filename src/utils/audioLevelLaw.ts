@@ -440,6 +440,25 @@ export function toStereoPan(lanePan: number): number {
 }
 
 /**
+ * Make `node` — the node that feeds a strip's `StereoPannerNode` — present the
+ * panner a two-channel signal even when its sources are mono.
+ *
+ * A `StereoPannerNode` picks its law by input channel count: one channel gets
+ * the mono equal-power law (−3.01 dB at centre), two channels get the stereo
+ * law (identity at centre). The native engine plays a mono source to both
+ * outputs and then applies the stereo law, so a mono clip is unity at centre
+ * there. Forcing the feeding node to an explicit two-channel `speakers` mix
+ * up-mixes mono to dual-mono (L = R = s) before the panner, so Web Audio
+ * applies the same law and a mono clip renders at the same level in both
+ * engines. Stereo sources pass through unchanged.
+ */
+export function configureDualMonoPannerInput(node: AudioNode): void {
+    node.channelCount = 2;
+    node.channelCountMode = 'explicit';
+    node.channelInterpretation = 'speakers';
+}
+
+/**
  * Inverse of {@link toStereoPan}: the stored pan position a node's −1…+1 pan
  * value represents. Clamped to ±{@link PAN_SCALE_MAX} so an out-of-range node
  * value (an imported project, a stray automation write) cannot pin a control
