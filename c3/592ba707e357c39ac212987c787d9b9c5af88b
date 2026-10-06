@@ -1,0 +1,19 @@
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_50690f46c21325::t_91a00788b56ab8 150-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3592ba707e357c39ac212987c787d9b9c5af88b",
+  "prompts": {},
+  "sessions": {
+    "s_50690f46c21325": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "79b71cc2-08f8-4064-a10c-3fc775b0185e",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
