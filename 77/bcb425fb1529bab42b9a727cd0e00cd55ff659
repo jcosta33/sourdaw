@@ -1,0 +1,27 @@
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_440baeb78ec8d1::t_c00c44e330a0a7 98-99,132-148,517,540-550,552-554,556-559,620-663
+  s_440baeb78ec8d1::t_325769a0f2ba2d 664
+.agents/skills/review-stances/project-integrity.md
+  s_440baeb78ec8d1::t_b02d8ed5787eb4 173-177
+src/modules/MIDI/useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus.ts
+  s_440baeb78ec8d1::t_51a28c0f014fc0 42,54-58,61
+  s_440baeb78ec8d1::t_f84e6151133002 43-53,59
+.agents/skills/review-stances/test-validity.md
+  s_440baeb78ec8d1::t_b02d8ed5787eb4 613-619
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77bcb425fb1529bab42b9a727cd0e00cd55ff659",
+  "prompts": {},
+  "sessions": {
+    "s_440baeb78ec8d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a4-6293-7383-9164-1c36e1e38035",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
