@@ -32,6 +32,8 @@ type RenderAgentMeasurementTargetsInput = {
     /** The document the targets were resolved from; absent, the live project renders. */
     project?: ProjectSource;
     onWarning: (message: string) => void;
+    /** Called as each target's render begins, so a caller counts the renders that actually ran. */
+    onRenderStart?: () => void;
 };
 
 type RenderedMeasurementTarget = {
@@ -148,6 +150,7 @@ async function renderMeasurementTarget(
     if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
         return refused('stale-revision', target.targetId);
     }
+    input.onRenderStart?.();
     const outcome = await renderTarget(target, input);
     if (outcome.status === 'cancelled' || input.signal?.aborted) {
         return { status: 'cancelled' };

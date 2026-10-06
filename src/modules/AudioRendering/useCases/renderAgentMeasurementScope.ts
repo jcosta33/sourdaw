@@ -15,6 +15,8 @@ type RenderAgentMeasurementScopeInput = {
     /** The revision the caller read the project at; every render must still describe it. */
     sourceRevision: string;
     signal?: AbortSignal;
+    /** Called as each target's render begins. */
+    onRenderStart?: () => void;
 };
 
 type MeasurementScopeRefusalCode =
@@ -66,6 +68,7 @@ export async function renderAgentMeasurementScope(
         endBeat: input.endBeat,
         sourceRevision: input.sourceRevision,
         signal: input.signal,
+        onRenderStart: input.onRenderStart,
         onWarning: (message) => warnings.push(message),
     });
     if (rendered.status !== 'rendered') {

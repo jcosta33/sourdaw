@@ -11,6 +11,10 @@ import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from './HostedToolPlanLimits';
  * excludes them from the budgets it copies, exactly as it excludes the three lifecycle-enforced
  * categories.
  *
+ * `measurementMeasuredSeconds`, `measurementRenderedSeconds` and `measurementWallClockMs` bound one
+ * planner measurement and are read from the configured limits each time one runs, so they arm no
+ * run either.
+ *
  * Every remaining category arms the run's budgets at creation, where the reservation path already
  * spends them.
  */
@@ -34,6 +38,12 @@ export const AGENT_RESOURCE_LIMIT_CATEGORIES = [
     'maxProviderToolCalls',
     /** The output token ceiling every compiled provider request carries. */
     'maxModelOutputTokens',
+    /** Seconds between the start and the end beat of one planner measurement. */
+    'measurementMeasuredSeconds',
+    /** Seconds the offline renderers process for one planner measurement, which start at beat 0. */
+    'measurementRenderedSeconds',
+    /** The longest wall-clock time one planner measurement may run before it is stopped. */
+    'measurementWallClockMs',
 ] as const;
 
 export type AgentResourceLimitCategory = (typeof AGENT_RESOURCE_LIMIT_CATEGORIES)[number];
@@ -57,6 +67,9 @@ export const DEFAULT_AGENT_RESOURCE_LIMITS: AgentResourceLimits = {
     storageBytes: 1024 * 1024 * 1024,
     maxProviderToolCalls: 64,
     maxModelOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
+    measurementMeasuredSeconds: 600,
+    measurementRenderedSeconds: 1200,
+    measurementWallClockMs: 120_000,
 };
 
 /** Why the lifecycle refused to create a run, named by the resource limit that refused it. */

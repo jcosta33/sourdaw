@@ -55,6 +55,8 @@ type RenderAgentPreviewMeasurementScopeInput = {
     /** Released by this call on every outcome, before anything renders. */
     preview: PreviewWorkspace;
     signal?: AbortSignal;
+    /** Called as each target's render begins, in either document. */
+    onRenderStart?: () => void;
 };
 
 type Subject = 'baseline' | 'preview';
@@ -307,6 +309,7 @@ async function renderSubject(
         sourceRevision: input.sourceRevision,
         signal: input.signal,
         project,
+        onRenderStart: input.onRenderStart,
         onWarning: (message) => warnings.push(message),
     });
     if (rendered.status !== 'rendered') {

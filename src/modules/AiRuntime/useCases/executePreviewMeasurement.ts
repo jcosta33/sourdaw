@@ -1,27 +1,35 @@
 import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import { renderAgentPreviewMeasurementScope } from '#/modules/AudioRendering/useCases';
+import {
+    discardAgentMeasurementArtifacts,
+    renderAgentPreviewMeasurementScope,
+} from '#/modules/AudioRendering/useCases';
 import { previewVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import {
-    ANALYSIS_MEASURE_MAX_MEASURED_SECONDS,
-    ANALYSIS_MEASURE_MAX_RENDERED_SECONDS,
-    ANALYSIS_MEASURE_MAX_WARNING_LENGTH,
-    ANALYSIS_MEASURE_MAX_WARNINGS,
-} from '../models/AnalysisMeasureLimits';
+import { ANALYSIS_MEASURE_MAX_WARNING_LENGTH, ANALYSIS_MEASURE_MAX_WARNINGS } from '../models/AnalysisMeasureLimits';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
+import {
+    describeMeasurementStop,
+    planMeasurementWork,
+    type MeasurementAdmitter,
+    type MeasurementRun,
+} from '../models/MeasurementBudget';
 import { type ProjectContext, type ProjectContextSection } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../models/ToolCallResult';
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
+import { beginMeasurementRun } from './beginMeasurementRun';
 import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { type parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
+import { readMeasurementRenderedSeconds } from './readMeasurementRenderedSeconds';
+import { reduceMeasuredTargets } from './reduceMeasuredTargets';
 import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
@@ -38,6 +46,8 @@ type ExecutePreviewMeasurementInput = {
     projectRevision: string;
     sections: readonly ProjectContextSection[];
     signal?: AbortSignal;
+    /** The run's admission of this measurement's renders and reductions; absent outside a run, which spends no budget. */
+    admit?: MeasurementAdmitter;
     parsed: ParsedArguments;
     proposal: Readonly<Record<string, unknown>>;
     /** The run's read model, request and authority, which the proposal is compiled and grounded against. */
@@ -68,6 +78,7 @@ function failure(input: ExecutePreviewMeasurementInput, reason: Failure): Analys
 }
 
 function refusalFailure(refusal: PreviewRefusal): Failure {
+    const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
     const target = refusal.targetId ?? 'master';
     const device = refusal.deviceId ?? 'unknown';
     const document = refusal.subject === 'preview' ? 'the preview' : 'the project';
@@ -90,7 +101,7 @@ function refusalFailure(refusal: PreviewRefusal): Failure {
         'empty-render': { safeMessage: `The render of ${target} in ${document} holds no audio.`, retryable: false },
         'render-failed': { safeMessage: `The render of ${target} in ${document} failed.`, retryable: false },
         'range-exceeds-ceiling': {
-            safeMessage: `In ${document}, a measurement covers at most ${String(ANALYSIS_MEASURE_MAX_MEASURED_SECONDS)} s and ends within ${String(ANALYSIS_MEASURE_MAX_RENDERED_SECONDS)} s of the project start.`,
+            safeMessage: `In ${document}, a measurement covers at most ${String(measurementMeasuredSeconds)} s and ends within ${String(measurementRenderedSeconds)} s of the project start.`,
             retryable: true,
         },
         'unprojectable-device-state': {
@@ -164,12 +175,16 @@ function successRead(
     input: ExecutePreviewMeasurementInput,
     rendered: RenderedPreview,
     pairs: ReadonlyArray<[RenderedTarget, RenderedTarget]>,
-    measured: { beats: MeasuredPreview['range']; commands: readonly RetainedCommand[]; batchContentHash: string }
+    measured: {
+        beats: MeasuredPreview['range'];
+        commands: readonly RetainedCommand[];
+        batchContentHash: string;
+        targets: MeasuredPreview['targets'];
+    }
 ): AnalysisMeasureRead {
     const { parsed } = input;
-    const { commands, batchContentHash } = measured;
+    const { commands, batchContentHash, targets } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
-    const targets = pairs.map(([baseline, preview]) => measureTarget(baseline, preview, parsed.metrics));
     const measuredPreview: MeasuredPreview = {
         scope: parsed.scope,
         range: { startBeat, endBeat, sectionId },
@@ -234,9 +249,11 @@ function compileProposal(input: ExecutePreviewMeasurementInput) {
 async function renderPreview(
     input: ExecutePreviewMeasurementInput,
     preview: Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>,
-    beats: { startBeat: number; endBeat: number }
+    beats: { startBeat: number; endBeat: number },
+    run: MeasurementRun
 ): Promise<PreviewRender> {
     const { scope } = input.parsed;
+    const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
     try {
         return await renderAgentPreviewMeasurementScope({
             scope: scope.kind === 'tracks' || scope.kind === 'buses' ? scope : { kind: 'master' },
@@ -244,15 +261,55 @@ async function renderPreview(
             endBeat: beats.endBeat,
             sourceRevision: input.projectRevision,
             rangeCeilings: {
-                measuredSeconds: ANALYSIS_MEASURE_MAX_MEASURED_SECONDS,
-                renderedSeconds: ANALYSIS_MEASURE_MAX_RENDERED_SECONDS,
+                measuredSeconds: measurementMeasuredSeconds,
+                renderedSeconds: measurementRenderedSeconds,
             },
             preview: preview.workspace,
-            signal: input.signal,
+            signal: run.signal,
+            onRenderStart: run.countRender,
         });
     } finally {
         preview.resource.release();
     }
+}
+
+function renderedAddresses(rendered: RenderedPreview): string[] {
+    return [...rendered.baseline.targets, ...rendered.preview.targets].map((target) => target.artifact.contentAddress);
+}
+
+/** Render the preview's scope against the live project, then reduce each target's pair of renders. */
+async function renderAndReduce(
+    input: ExecutePreviewMeasurementInput,
+    preview: Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>,
+    measured: { beats: MeasuredPreview['range']; commands: readonly RetainedCommand[]; batchContentHash: string },
+    run: MeasurementRun
+): Promise<AnalysisMeasureRead> {
+    const rendered = await renderPreview(input, preview, measured.beats, run);
+    if (rendered.status === 'cancelled') {
+        return failure(input, describeMeasurementStop(run.stopReason() ?? 'cancelled'));
+    }
+    if (rendered.status === 'refused') {
+        return failure(input, refusalFailure(rendered));
+    }
+    const pairs = pairTargets(rendered);
+    if (pairs === null) {
+        return failure(input, {
+            code: 'preview-unavailable',
+            safeMessage: 'The project and the preview rendered different targets for this scope.',
+            retryable: false,
+        });
+    }
+    const reduction = await reduceMeasuredTargets({
+        targets: pairs,
+        run,
+        reduce: ([baseline, previewTarget]) => measureTarget(baseline, previewTarget, input.parsed.metrics),
+    });
+    if (reduction.status === 'stopped') {
+        // Both documents' renders are already retained; a measurement that reports nothing leaves none behind.
+        discardAgentMeasurementArtifacts(renderedAddresses(rendered));
+        return failure(input, describeMeasurementStop(reduction.reason));
+    }
+    return successRead(input, rendered, pairs, { ...measured, targets: reduction.reduced });
 }
 
 /**
@@ -276,24 +333,28 @@ export async function executePreviewMeasurement(input: ExecutePreviewMeasurement
     if (preview.status !== 'previewed') {
         return failure(input, previewFailure(preview.status, 'reason' in preview ? preview.reason : undefined));
     }
-    const rendered = await renderPreview(input, preview, resolved.beats);
-    if (rendered.status === 'cancelled') {
-        return failure(input, { code: 'cancelled', safeMessage: 'The measurement was cancelled.', retryable: false });
-    }
-    if (rendered.status === 'refused') {
-        return failure(input, refusalFailure(rendered));
-    }
-    const pairs = pairTargets(rendered);
-    if (pairs === null) {
-        return failure(input, {
-            code: 'preview-unavailable',
-            safeMessage: 'The project and the preview rendered different targets for this scope.',
-            retryable: false,
-        });
-    }
-    return successRead(input, rendered, pairs, {
-        beats: resolved.beats,
-        commands: compiled.commands,
-        batchContentHash: digestCommandBatchContent(compiled.envelope),
+    const started = beginMeasurementRun({
+        admit: input.admit,
+        planned: planMeasurementWork({ scope: input.parsed.scope, subject: 'preview' }),
+        runSignal: input.signal,
+        renderedSeconds: readMeasurementRenderedSeconds(resolved.beats.endBeat),
     });
+    if (started.status === 'refused') {
+        preview.resource.release();
+        return failure(input, started.failure);
+    }
+    try {
+        return await renderAndReduce(
+            input,
+            preview,
+            {
+                beats: resolved.beats,
+                commands: compiled.commands,
+                batchContentHash: digestCommandBatchContent(compiled.envelope),
+            },
+            started.run
+        );
+    } finally {
+        started.run.settle();
+    }
 }
