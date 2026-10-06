@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
     commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
     discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
     startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(),
+    stopRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    startNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
     startPlayheadScheduler: vi.fn<() => void>(),
 }));
@@ -41,6 +43,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
     startRecording: mocks.startRecording,
+    stopRecording: mocks.stopRecording,
     discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -55,6 +58,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAudioRecording: vi.fn(() => Promise.resolve()),
     getCompensationDelay: () => 0,
     nativeLiveGraphSessionOffered: () => false,
+    startNativeLiveGraphSession: mocks.startNativeLiveGraphSession,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
