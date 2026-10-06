@@ -58,7 +58,9 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['percussion', /\b(?:percussion|perc|clap|claps|rim|rimshot|shaker|tambourine|cowbell|conga|bongo)\b/],
     ['overhead', new RegExp(String.raw`\boverheads?\b|${wholeNameWithQualifiers('oh', 'left|right|l|r|mono|stereo')}`)],
     // A room needs a drum word beside it: room tone and "Room" alone name non-drum tracks.
-    ['room', /\broom(?=\s+drums?\b)|(?<=\bdrums?\s+)rooms?\b/],
+    // A room word names the room mic only beside other drum evidence (see `namedRolesFromTokens`):
+    // room tone and "Room" alone name non-drum tracks.
+    ['room', /\brooms?\b/],
     ['drums', /\bdrums?\b/],
     ['bass', /\bbass\b/],
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
@@ -155,6 +157,10 @@ function labelsDrumPiece(name: string, piece: CanonicalTrackRole): boolean {
     if (!drums || !pieceSpan) {
         return false;
     }
+    // "Room (Drums)" labels the room mic; a plural "Rooms" before the drums word is no label.
+    if (piece === 'room' && pieceSpan.first < drums.first && words[pieceSpan.first] === 'rooms') {
+        return false;
+    }
     const [first, second] = drums.first < pieceSpan.first ? [drums, pieceSpan] : [pieceSpan, drums];
     if (second.first !== first.last + 1 || !LABELLING_SEPARATOR.test(separators[first.last] ?? '')) {
         return false;
@@ -210,16 +216,26 @@ function normalizedTokens(name: string): string {
 }
 
 function namedRolesFromTokens(tokens: string): CanonicalTrackRole[] {
-    return NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+    const roles = NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+    const hasOtherDrumEvidence = roles.some((role) => role !== 'room' && DRUM_FAMILY_ROLES.has(role));
+    return hasOtherDrumEvidence ? roles : roles.filter((role) => role !== 'room');
 }
 
-/** "Bass strings" and "bass brass" are an orchestral part voiced as a bass, not a bass instrument. */
-function bassQualifiedModifierRole(tokens: string): CanonicalTrackRole | null {
-    const match = /\bbass\s+(strings|brass)\b/.exec(tokens);
-    if (!match) {
+/**
+ * A bass word followed by "strings" or "brass". Written as one compound ("Bass Strings",
+ * "Bass-Brass") it is an orchestral part voiced as a bass, not a bass instrument; with any other
+ * connector ("Bass & Strings", "Bass, Strings") it names two things and stays a conflict. Null
+ * when the name has no such pair, so "String Bass" stays a bass.
+ */
+function resolveBassWithOrchestralWord(name: string, tokens: string): CanonicalTrackRoleProjection | null {
+    if (!/\bbass\b.*\b(?:strings|brass)\b/.test(tokens)) {
         return null;
     }
-    return match[1] === 'brass' ? 'brass' : 'strings';
+    const match = /\bbass\s+(strings|brass)\b/.exec(compoundAdjacencyTokens(name));
+    if (!match) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
+    return { role: match[1] === 'brass' ? 'brass' : 'strings', source: 'name-tags', evidence: 'resolved-name-tags' };
 }
 
 function modifierRolesFromTokens(tokens: string): CanonicalTrackRole[] {
@@ -457,9 +473,10 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length === 1) {
-        const bassVoiced = roles[0] === 'bass' ? bassQualifiedModifierRole(tokens) : null;
-        if (bassVoiced) {
-            return { role: bassVoiced, source: 'name-tags', evidence: 'resolved-name-tags' };
+        const bassWithOrchestralWord =
+            roles[0] === 'bass' ? resolveBassWithOrchestralWord(input.track.name, tokens) : null;
+        if (bassWithOrchestralWord) {
+            return bassWithOrchestralWord;
         }
         return { role: roles[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
