@@ -610,3 +610,10 @@ seed control for humanize. Delete `noteTransformReplayGuard` from the inverse an
 case turns red. Separate cases must show invalid initial topology rejects both atomic and direct
 execution without notes or history changing, and that stale topology or notes leaves committed undo
 pending. A helper-level payload assertion alone is not caller admission proof.
+
+Make the direct-dispatch topology oracle individually load-bearing for every registered transform:
+cross each transform with missing, wrong-kind, frozen, locked, and duplicate-ID targets through the
+real dispatcher, and assert notes plus both history stacks stay unchanged. One representative action
+cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
+track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
+blocked history entry stays on its original stack.

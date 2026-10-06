@@ -170,3 +170,8 @@ missing, ambiguous, wrong-kind, locked, or frozen topology must reject atomic an
 before a write, because the direct dispatcher does not use handler validation as an execution gate.
 After commit, independently change notes or make the target missing, moved, wrong-kind, locked, or
 owned by a frozen track; replay must refuse without consuming history or replacing live notes.
+For a guarded clip restore, also duplicate the captured clip ID after commit, both within its owning
+track and on another active track. Undo must keep the original history head and transformed notes;
+after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
+notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
+matching clip in that track.

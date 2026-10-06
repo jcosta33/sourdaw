@@ -95,6 +95,8 @@ function resetMidiClipTopology(): void {
 
 type InvalidMidiTarget = 'missing' | 'wrong-kind' | 'frozen' | 'locked' | 'ambiguous';
 
+const invalidMidiTargets: readonly InvalidMidiTarget[] = ['missing', 'wrong-kind', 'frozen', 'locked', 'ambiguous'];
+
 function setInvalidMidiTarget(invalidTarget: InvalidMidiTarget): void {
     const track = trackStore.value!.tracks[0]!;
     const clip = track.clips[0]!;
@@ -117,6 +119,23 @@ function setInvalidMidiTarget(invalidTarget: InvalidMidiTarget): void {
         setTrackStoreState({
             ...defaultTrackState,
             tracks: [{ ...track, clips: [{ ...clip, locked: true }] }],
+        });
+        return;
+    }
+    const duplicateTrack = createTrack({ id: 'track-duplicate', kind: 'midi', name: 'Duplicate MIDI' });
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [track, { ...duplicateTrack, clips: [{ ...clip, trackId: duplicateTrack.id }] }],
+    });
+}
+
+function duplicateMidiClip(location: 'same-track' | 'different-track'): void {
+    const track = trackStore.value!.tracks[0]!;
+    const clip = track.clips[0]!;
+    if (location === 'same-track') {
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [{ ...track, clips: [...track.clips, { ...clip }] }],
         });
         return;
     }
@@ -495,7 +514,7 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(undoStore.value?.future).toEqual([]);
     });
 
-    it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'ambiguous'] as const)(
+    it.each(invalidMidiTargets)(
         'refuses an atomic transform against a %s target before notes or undo change',
         async (invalidTarget) => {
             const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
@@ -518,22 +537,26 @@ describe('MIDI note transforms through AppAction execution', () => {
         }
     );
 
-    it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'ambiguous'] as const)(
-        'refuses a direct transform against a %s target without losing undo authority',
-        async (invalidTarget) => {
-            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
-            seedNotes(before);
-            setInvalidMidiTarget(invalidTarget);
+    it.each(
+        atomicTransformCases.flatMap((testCase) =>
+            invalidMidiTargets.map((invalidTarget) => ({
+                ...testCase,
+                invalidTarget,
+            }))
+        )
+    )('refuses $name directly against a $invalidTarget target before notes or history change', async (testCase) => {
+        const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+        seedNotes(before);
+        setInvalidMidiTarget(testCase.invalidTarget);
 
-            await expect(
-                executeAppAction({ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } })
-            ).rejects.toThrow('Action conflicts with current project state: setAllVelocities');
+        await expect(executeAppAction(structuredClone(testCase.action))).rejects.toThrow(
+            `Action conflicts with current project state: ${testCase.action.type}`
+        );
 
-            expect(currentNotes()).toEqual(before);
-            expect(undoStore.value?.past).toEqual([]);
-            expect(undoStore.value?.future).toEqual([]);
-        }
-    );
+        expect(currentNotes()).toEqual(before);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual([]);
+    });
 
     it.each(['missing', 'wrong-kind', 'frozen', 'locked', 'moved', 'changed-notes'] as const)(
         'keeps the guarded atomic undo pending when the target is %s',
@@ -591,6 +614,51 @@ describe('MIDI note transforms through AppAction execution', () => {
             expect(currentNotes()).toEqual(expectedCurrentNotes);
             expect(undoStore.value?.past).toHaveLength(1);
             expect(undoStore.value?.future).toEqual([]);
+        }
+    );
+
+    it.each(['same-track', 'different-track'] as const)(
+        'keeps guarded atomic undo pending when the live clip id is duplicated on the %s',
+        async (location) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            const transformed = [
+                atomicNote('a', 60, 0.125, { velocity: 96 }),
+                atomicNote('b', 67, 1.25, { velocity: 96 }),
+            ];
+            seedNotes(before);
+            await expect(
+                executeAppActionBatch([{ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } }], {
+                    requireCompensation: true,
+                })
+            ).resolves.toMatchObject({ status: 'committed' });
+
+            duplicateMidiClip(location);
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+            expect(currentNotes()).toEqual(transformed);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
+
+    it.each(['same-track', 'different-track'] as const)(
+        'keeps guarded atomic redo pending when the live clip id is duplicated on the %s',
+        async (location) => {
+            const before = [atomicNote('a', 60, 0.125), atomicNote('b', 67, 1.25)];
+            seedNotes(before);
+            await expect(
+                executeAppActionBatch([{ type: 'setAllVelocities', payload: { clipId: CLIP_ID, velocity: 96 } }], {
+                    requireCompensation: true,
+                })
+            ).resolves.toMatchObject({ status: 'committed' });
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+            duplicateMidiClip(location);
+
+            await redo();
+            expect(currentNotes()).toEqual(before);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toHaveLength(1);
         }
     );
 
