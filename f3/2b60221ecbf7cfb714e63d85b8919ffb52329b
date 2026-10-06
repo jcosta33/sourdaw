@@ -3,6 +3,10 @@ src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStart.spec.ts
   s_18b6d51f8f82fe::t_abf8070a30040c 62-71
 src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
   s_07156bcba0c71f::t_0005120783f2ec 26,31-37
+src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts
+  s_de6d093fdd8efd::t_a20835d33f9e94 26
+src/modules/CrdtDocument/useCases/__tests__/startCrdtAutoSave.spec.ts
+  s_de6d093fdd8efd::t_2f21ab33dc3ac6 3
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -23,6 +27,14 @@ src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
         "tool": "cursor",
         "id": "44659e90-da17-4a82-9ccc-6c6df7deb444",
         "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_de6d093fdd8efd": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "04c68436-9996-45f3-b4f9-943458b47834",
+        "model": "grok-4.7-high-fast"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
