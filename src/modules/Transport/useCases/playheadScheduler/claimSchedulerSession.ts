@@ -1,3 +1,5 @@
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
+
 import { schedulerSession } from './schedulerSession';
 
 /**
@@ -15,8 +17,15 @@ import { schedulerSession } from './schedulerSession';
  * a hold. `startPlayheadScheduler` already does this for itself, so the
  * synchronous path needs nothing; only a play that waits before starting the
  * scheduler has to claim the session up front.
+ *
+ * The retirement also drops the dead roll's wrap count: the claiming play
+ * writes a fresh epoch beside this handover, and between the two the count
+ * still describes the retired session's wraps — exactly the window a capture
+ * in the hold reads. Zeroing here keeps the law local to the handover, so any
+ * future caller that claims the session inherits a clean count.
  */
 export function claimSchedulerSession(): number {
     schedulerSession.generation += 1;
+    playheadWrapCountRef.current = 0;
     return schedulerSession.generation;
 }

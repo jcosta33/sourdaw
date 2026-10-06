@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { playheadPositionRef } from './playheadPositionRef';
+export { playheadClockRef } from './playheadClockRef';
 export { playheadWrapCountRef } from './playheadWrapCountRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 

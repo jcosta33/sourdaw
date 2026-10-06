@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     defaultTransportState,
+    playheadClockRef,
     playheadWrapCountRef,
     setGestureClockSource,
     tempoMapStore,
@@ -64,6 +65,7 @@ function dispatch(data: number[], timeStamp?: number): Promise<void> | void {
 function playTransport(
     overrides: Partial<{
         tempo: number;
+        isPlaying: boolean;
         isLooping: boolean;
         loopStart: number;
         loopEnd: number;
@@ -73,7 +75,7 @@ function playTransport(
     const previous = transportStore.value;
     transportStore.set({
         ...defaultTransportState,
-        isPlaying: true,
+        isPlaying: overrides.isPlaying ?? true,
         tempo: overrides.tempo ?? 120,
         isLooping: overrides.isLooping ?? false,
         loopStart: overrides.loopStart ?? 0,
@@ -235,6 +237,53 @@ describe('event-time recording beat (#4875)', () => {
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.2, 9);
     });
 
+    // #4935 review — the seam window: between the seam instant and the arrival
+    // tick that increments the count, the publisher clamps the dying-pass pair
+    // at loopEnd but the capture's projection integrates past it, and the raw
+    // cursor routed a dying-pass event to the direct-epoch bound — charging a
+    // multi-wrap roll zero of its completed passes. A counted wrap beside a
+    // cursor at or past loopEnd routes through the seam-aware bound instead.
+    it('routes a seam-window projection past loopEnd through the wrap-aware seam bound', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The projector, not the engine, is the cursor: a browser build reads
+        // the dying-pass pair the publisher clamped at 7.99 as of 20 ms ago.
+        // The seam instant passed 15 ms ago and the arrival tick has not run,
+        // so the count still reads one wrap and the projection (7.99 + 0.04
+        // beats) runs past the loop end.
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.02;
+        wrapsSinceEpochStart(1);
+
+        await dispatch([0x91, 60, 100], 500);
+
+        // The direct bound answered 7, the epoch start; the arrival tick 15 ms
+        // later answers 6.83 for the same event — one grain, two beats.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.83, 9);
+    });
+
+    // The seam-window routing keys on a COUNTED wrap: a roll that has not
+    // wrapped keeps the direct-epoch bound, so a genuinely pre-roll stamp in
+    // the same window still answers the epoch start.
+    it('keeps a pre-roll stamp in the seam window of an un-wrapped roll on the epoch', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.02;
+        // wrapsSinceEpochStart(0): a first seam whose arrival tick has not
+        // run — the roll is 20 ms old and the 0.6 s stamp predates it.
+
+        await dispatch([0x91, 60, 100], 500);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7, 9);
+    });
+
     // #4668 review — the same-pass floor compared the epoch beat against the
     // cursor beat, which on a later pass reads the epoch (7) as "in this
     // pass": young events clamped to it instead of inverting within the pass.
@@ -332,6 +381,18 @@ describe('event-time recording beat (#4875)', () => {
         await dispatch([0x91, 60, 100]);
 
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(2.2, 9);
+    });
+
+    // #4935 review — a capture on a parked transport reads the store, never
+    // the wrap count: whatever the dead roll left beside the parked epoch, a
+    // stopped capture answers where the transport came to rest.
+    it('answers a stopped capture from the store position, whatever count the dead roll left', async () => {
+        playTransport({ isPlaying: false, playheadPosition: 4 });
+        wrapsSinceEpochStart(2);
+
+        await dispatch([0x91, 60, 100], 500);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(4, 9);
     });
 
     it('records a member-channel expression change against the corrected onset', async () => {

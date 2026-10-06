@@ -104,7 +104,12 @@ function invertTravelToSeam(elapsedSeconds: number, loopStart: number, loopEnd: 
  * predates playback and answers the epoch start instead of beats the
  * transport never traversed (#4668); the same bound holds on earlier passes
  * past any number of wraps, so a looping transport cannot answer a beat the
- * roll never reached (#4875).
+ * roll never reached (#4875). Between the seam instant and the arrival tick
+ * that counts it, the projected cursor runs past `loopEnd` — the publisher
+ * clamps the dying-pass pair there but this capture's projection does not —
+ * so a counted wrap beside such a cursor routes through the seam-aware bound
+ * instead of the direct one, and the same physical event answers the same
+ * beat on both sides of the arrival grain.
  */
 export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number {
     const transport = transportStore.value;
@@ -147,6 +152,43 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
         }
         return invertTravelBackward(beatNow, elapsed, floor);
     };
+
+    // The seam window: between the seam instant and the arrival tick that
+    // increments the count, the publisher clamps the dying-pass pair at
+    // `loopEnd` (`startPlayheadScheduler`'s pending-seam publish) but the
+    // projection above integrates past it, so `insideLoopRegion` reads false
+    // and the direct bound below would charge a multi-wrap roll zero of its
+    // completed passes — the same event answering the epoch before the grain
+    // and its own dying-pass beat after it. A counted wrap beside a cursor at
+    // or past `loopEnd` is that window, never a play-through: a roll past the
+    // region end plays straight and the scheduler never counts it a wrap.
+    const inSeamWindow =
+        transport.isLooping && loopLengthBeats > 0 && wrapsSinceEpoch >= 1 && beatNow >= transport.loopEnd;
+    if (inSeamWindow) {
+        // The overshoot past the seam stands in for the incoming pass's
+        // distance — the same quantity the post-arrival branch reads off the
+        // wrapped cursor — so charging it first lands the event where the
+        // next grain's capture will.
+        const incomingSeconds = travelSeconds(transport.loopEnd, beatNow);
+        if (elapsedSeconds <= incomingSeconds) {
+            // Younger than the seam: the event sits on the incoming pass
+            // within a grain of its origin, which is the seam instant on
+            // that pass.
+            return transport.loopStart;
+        }
+        // The dying pass closing here is the roll's `wrapsSinceEpoch + 1`th,
+        // so the traversal is the epoch-to-seam span plus every pass the
+        // count already covers plus the incoming distance — the post-arrival
+        // bound with the count the arrival tick is about to write.
+        const traversalSeconds =
+            travelSeconds(epochStartBeat, transport.loopEnd) +
+            wrapsSinceEpoch * travelSeconds(transport.loopStart, transport.loopEnd) +
+            incomingSeconds;
+        if (elapsedSeconds > traversalSeconds) {
+            return epochStartBeat;
+        }
+        return invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd);
+    }
 
     if (!insideLoopRegion) {
         return travelBackBounded(elapsedSeconds, epochStartBeat);

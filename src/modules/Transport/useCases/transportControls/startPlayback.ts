@@ -6,6 +6,7 @@ import { getPrecedingBars } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
@@ -67,6 +68,12 @@ export async function startPlayback(): Promise<void> {
 
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
+    // The store position above is the new roll's epoch, and the wrap count
+    // must describe the same roll from this instant: the scheduler that
+    // resets it starts only after the native-session hold (up to its 250 ms
+    // cap), and a capture in the hold would otherwise bound old events by the
+    // dead roll's wraps instead of the fresh epoch.
+    playheadWrapCountRef.current = 0;
 
     if (!nativeLiveGraphSessionOffered()) {
         startPlayheadScheduler();

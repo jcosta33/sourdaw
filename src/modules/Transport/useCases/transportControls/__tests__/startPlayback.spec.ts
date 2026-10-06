@@ -11,6 +11,7 @@ import { defaultTransportState, type TransportState } from '../../../models/Tran
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
 // Real, not mocked: `generation` is the identity the hold compares, so bumping
 // the live holder is the only way to test the relation it actually reads.
@@ -63,6 +64,7 @@ vi.mock('../../ensureTrackStrips', () => ({
 describe('startPlayback', () => {
     beforeEach(() => {
         playheadPositionRef.current = 0;
+        playheadWrapCountRef.current = 0;
         timeSignatureMapStore.value = { changes: [] };
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
@@ -496,6 +498,23 @@ describe('startPlayback', () => {
             answer();
             await drainHold();
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('drops the dead roll wrap count beside the epoch write, while the hold still stands', () => {
+            // The previous roll wrapped twice; the claiming play retires its
+            // session and writes a fresh epoch before the hold opens. The
+            // scheduler that resets the count beside its own clock anchor only
+            // starts after the hold, so a capture in the hold would otherwise
+            // bound old events by the dead roll's wraps.
+            playheadWrapCountRef.current = 2;
+
+            startPlayback();
+
+            // The epoch write and the reset are synchronous, and the session
+            // has not answered, so the zero below can only have come from the
+            // epoch write.
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            expect(playheadWrapCountRef.current).toBe(0);
         });
 
         it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {

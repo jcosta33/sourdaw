@@ -8,6 +8,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { pausePlayback } from '../pausePlayback';
 import { stopActiveRecording } from '../stopActiveRecording';
@@ -71,6 +72,7 @@ describe('pausePlayback', () => {
         loggerMock.error.mockClear();
         loggerMock.warn.mockClear();
         playheadPositionRef.current = 0;
+        playheadWrapCountRef.current = 0;
     });
 
     it('publishes isPlaying: false and paused position to audioEngine.setTransportInfo on pause', () => {
@@ -313,5 +315,28 @@ describe('pausePlayback', () => {
         expect(update).not.toHaveBeenCalled();
         expect(stopPlayheadScheduler).not.toHaveBeenCalled();
         expect(stopActiveRecording).not.toHaveBeenCalled();
+    });
+
+    it('drops the dead roll wrap count beside the parked epoch write', () => {
+        // The parked epoch ends the roll whose wraps the count holds. While
+        // parked no capture reads it, and the next play zeroes beside its own
+        // epoch write — this keeps the dead count from ever standing beside a
+        // freshly written position.
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        playheadPositionRef.current = 42;
+        playheadWrapCountRef.current = 2;
+
+        pausePlayback();
+
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 42,
+        });
+        expect(playheadWrapCountRef.current).toBe(0);
     });
 });
