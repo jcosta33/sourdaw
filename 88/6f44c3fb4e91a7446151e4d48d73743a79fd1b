@@ -1,0 +1,31 @@
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_2bfd55a4393d7c::t_703e4597bae7ff 176-181
+  s_2bfd55a4393d7c::t_8eb5567bc45f18 2
+  s_2bfd55a4393d7c::t_35dedb832422be 20
+  s_2bfd55a4393d7c::t_6aa61a3c717eec 34-35
+  s_2bfd55a4393d7c::t_07e5bf4d0a4df5 195-207
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_52b50e263b01d9 663-684
+  s_2bfd55a4393d7c::t_08a4556f6866bd 1082-1086,1089-1091,1095-1117
+  s_2bfd55a4393d7c::t_68191d398d9b6b 1087,1092-1093
+  s_2bfd55a4393d7c::t_8b9f5ddecb9d67 1094
+  s_2bfd55a4393d7c::t_b0e1b184b28783 1250-1255
+  s_2bfd55a4393d7c::t_d3f41236704251 42
+  s_2bfd55a4393d7c::t_73809ded3ba307 1088
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "886f44c3fb4e91a7446151e4d48d73743a79fd1b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
