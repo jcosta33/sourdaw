@@ -8,10 +8,12 @@ import {
     dbToGain,
     formatGainDb,
     fromStereoPan,
+    gainLaneLevelLaw,
     gainToDb,
     levelToSendPosition,
     METER_FLOOR_DB,
     PAN_SCALE_MAX,
+    resolveLevelArgument,
     sendPositionToLevel,
     toStereoPan,
 } from '../audioLevelLaw';
@@ -86,6 +88,32 @@ describe('clampFaderGain', () => {
 
     it('floors negative gain at 0', () => {
         expect(clampFaderGain(-0.5)).toBe(0);
+    });
+});
+
+describe('gainLaneLevelLaw', () => {
+    it('states the ceiling of a lane bounded at the fader maximum as the exact fader headroom', () => {
+        // gainToDb(FADER_MAX_GAIN) round-trips to 5.999999999999998, which refused the +6 dB the
+        // fader itself offers (#4964); the ceiling must be the headroom constant, as TRACK_FADER_LAW states it.
+        expect(gainLaneLevelLaw({ minValue: 0, maxValue: FADER_MAX_GAIN }).ceilingDb).toBe(FADER_HEADROOM_DB);
+    });
+
+    it('admits +6 dB on that lane and resolves it to exactly the fader maximum the mixer tops out at', () => {
+        const resolved = resolveLevelArgument(
+            { absoluteDb: FADER_HEADROOM_DB },
+            0,
+            gainLaneLevelLaw({ minValue: 0, maxValue: FADER_MAX_GAIN })
+        );
+        expect(resolved).toEqual({ ok: true, linear: FADER_MAX_GAIN });
+    });
+
+    it('refuses a level past the +6 dB ceiling on that lane', () => {
+        const resolved = resolveLevelArgument(
+            { absoluteDb: 6.01 },
+            0,
+            gainLaneLevelLaw({ minValue: 0, maxValue: FADER_MAX_GAIN })
+        );
+        expect(resolved.ok).toBe(false);
     });
 });
 

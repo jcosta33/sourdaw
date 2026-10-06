@@ -33,6 +33,7 @@ import {
 } from '../../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
@@ -286,6 +287,70 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
+    // #4784 review — nothing observed the frozen path's fifth argument, so the
+    // wiring `floorsToWindowStart ? fromBeat : null` could silently collapse to
+    // either side: a wrap emission must pass the window's first beat (the floor
+    // holds the whole-arrangement buffer until it is due), and a steady-state
+    // emission must pass null (a late join starts immediately with due
+    // content).
+    it('passes the window start to the frozen path on a wrap emission and null on a steady-state one', async () => {
+        const track = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+        // Wrap emission: the window opens at loopStart while the playhead
+        // stands negative-phase before it — the seam handover shape.
+        await scheduleMidiNotes(
+            4,
+            12,
+            3.8,
+            new Set<string>(),
+            [],
+            { ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 12 },
+            120
+        );
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4);
+
+        // Steady-state emission: the window opens one look-ahead ahead of the
+        // playhead, so the frozen buffer must not be floored.
+        await scheduleMidiNotes(7.9, 8, 6, new Set<string>(), [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[1]?.[4]).toBeNull();
+    });
+
+    // A frozen MIDI track first becoming schedulable mid-handover (a frozen
+    // buffer whose cache lookup lands on a seam tick) must floor like the
+    // clip twin: the playhead sits below loopStart while a seam is pending,
+    // so an unfloored join would sound pre-loop content under the dying pass.
+    it('passes the window start to the frozen path when the track first becomes schedulable mid-handover', async () => {
+        const track = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+        const previousPendingSeam = schedulerSession.pendingSeam;
+        schedulerSession.pendingSeam = { seamAudioTime: 10.1, anchorAudioTime: 10, anchorPosition: 11.9 };
+        try {
+            await scheduleMidiNotes(
+                4.05,
+                12,
+                3.8,
+                new Set<string>(),
+                [],
+                { ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 12 },
+                120
+            );
+        } finally {
+            schedulerSession.pendingSeam = previousPendingSeam;
+        }
+
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4.05);
     });
 
     // audit MD-6 — the built-in synth voice is a bare oscillator written into

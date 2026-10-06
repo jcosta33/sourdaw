@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { cancelExport, checkCancel, resetCancelFlag } from '#/modules/AudioEngine/useCases';
+import { cancelExport, checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { renderAgentMeasurementScope } from '../renderAgentMeasurementScope';
@@ -58,10 +58,10 @@ beforeEach(() => {
 
 afterEach(() => {
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-    // The export cancel flag is a process-wide singleton shared with every other
-    // spec file; a row that leaves it raised would otherwise fail unrelated
-    // freeze/bounce specs that happen to run after this file.
-    resetCancelFlag();
+    // The export cancel flag is a process-wide singleton shared with every
+    // other spec file; a row that leaves it raised would otherwise fail
+    // unrelated export specs that happen to run after this file.
+    endExportCancellationScope();
 });
 
 describe('renderAgentMeasurementScope — export cancel flag', () => {
@@ -108,7 +108,7 @@ describe('renderAgentMeasurementScope — export cancel flag', () => {
             // silently clear an unrelated export's cancellation.
             expect(() => checkCancel()).toThrow('Export cancelled');
         } finally {
-            resetCancelFlag();
+            endExportCancellationScope();
         }
     });
 

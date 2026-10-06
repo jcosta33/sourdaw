@@ -594,3 +594,26 @@ The EDM status-bar E2E cases asserted rate and latency text but did not observe 
 Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
+
+### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
+
+PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
+exercised handlers through direct execution before a replay guard contract existed. The checks were
+not extended when commit `64b9d77c01a` added guarded compensation preflight or when PR #2747
+(`06fb56e3897`) restricted restore replay to guarded actions. They therefore preserved snapshot shape
+and ordinary undo while never entering the atomic admission that now rejected the family. No
+pull-request number is recorded in Git history for `64b9d77c01a`.
+
+Parameterize every handler registered by the shared transform map through the real atomic executor,
+with one undo entry and concrete full-note poststate, undo, and redo oracles. Include deterministic
+seed control for humanize. Delete `noteTransformReplayGuard` from the inverse and redo to prove the
+case turns red. Separate cases must show invalid initial topology rejects both atomic and direct
+execution without notes or history changing, and that stale topology or notes leaves committed undo
+pending. A helper-level payload assertion alone is not caller admission proof.
+
+Make the direct-dispatch topology oracle individually load-bearing for every registered transform:
+cross each transform with missing, wrong-kind, frozen, locked, and duplicate-ID targets through the
+real dispatcher, and assert notes plus both history stacks stay unchanged. One representative action
+cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
+track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
+blocked history entry stays on its original stack.

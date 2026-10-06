@@ -155,7 +155,7 @@ export { clearReportedLatency } from './latencyCompensation/compensation/clearRe
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
 export { checkCancel } from './offlineRender/checkCancel';
-export { resetCancelFlag } from './offlineRender/resetCancelFlag';
+export { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';

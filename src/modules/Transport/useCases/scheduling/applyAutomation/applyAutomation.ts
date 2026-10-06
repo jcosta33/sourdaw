@@ -34,6 +34,7 @@ import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/util
 import { secondsBetweenBeats, samplesToBeat } from '../../../models/TempoMap';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStore';
+import { beatAtSecondsFromAnchor } from '../../playheadScheduler/beatAtSecondsFromAnchor';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
@@ -270,18 +271,50 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // edges. Bounded above by `currentBeat`: this clock only ever
             // looks backward from the playhead.
             //
-            // After any landing (play/resume, seek while playing, loop wrap,
-            // follow-action jump) `scheduleAudioClips.ts` backdates a clip
-            // spanning the landing beat P by the track's compensation D, so
-            // the audio entering the devices from that instant onward is
-            // P − D, advancing forward from there — never the landing beat
-            // itself. This read follows that backdated material rather than
-            // clamping to the landing beat, which would read ahead of what
-            // is actually sounding.
-            beat = Math.min(
-                currentBeat,
-                Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
-            );
+            // On a landing (play/resume, seek while playing, follow-action
+            // jump) the window's own first beat is what `scheduleAudioClips.ts`
+            // starts, one compensation D after the landing — so the audio
+            // entering the devices from that instant onward is the window
+            // advancing on the compensated clock, which is this read. Across a
+            // loop wrap the first D feeds the dying pass's tail instead
+            // (#4784): the fence spares it past the seam, and the mapped read
+            // below follows it back across the region rather than naming the
+            // pre-loop beats nothing plays.
+            //
+            // The region gate below reads the UNCLAMPED compensated read: the
+            // clamp's floor is beat 0, so a region that begins at the
+            // arrangement origin (loopStart 0) would never see a clamped beat
+            // below loopStart and the wrap-back could not engage (#4784
+            // review). Above zero the clamp only moves negative reads to the
+            // same side of the gate, so the unclamped comparison admits
+            // exactly the set the clamped one did, plus the origin region.
+            const unclampedBeat = samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1);
+            beat = Math.min(currentBeat, Math.max(0, unclampedBeat));
+            const region = transportStore.value;
+            const seamAudioTime = schedulerSession.lastLoopSeamAudioTime;
+            const secondsSinceSeam = seamAudioTime === null ? Infinity : now - seamAudioTime;
+            if (
+                region?.isLooping === true &&
+                seamAudioTime !== null &&
+                secondsSinceSeam >= 0 &&
+                secondsSinceSeam < compensation &&
+                currentBeat >= region.loopStart &&
+                unclampedBeat < region.loopStart
+            ) {
+                // The dying pass died on the seam at loopEnd, and the chain
+                // entry sits `compensation` behind the clock, so the material
+                // the track is fed is the tail that many seconds before
+                // loopEnd — mapped through the same integration the seam model
+                // uses (`beatAtSecondsFromAnchor` over the map), never a
+                // beat-space region-span addition, which reads the wrong beat
+                // once a tempo change sits inside the region.
+                beat = beatAtSecondsFromAnchor(
+                    changes,
+                    region.loopEnd,
+                    now - seamAudioTime - compensation,
+                    defaultTempo
+                );
+            }
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;

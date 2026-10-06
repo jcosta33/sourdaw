@@ -629,7 +629,7 @@ describe('getProjectContext', () => {
                 // asked for on an old project and takes it on a new one.
                 declaredMaxValue: 1,
                 maxValue: FADER_MAX_GAIN,
-                maxValueDb: 5.999999999999998,
+                maxValueDb: 6,
                 points: [
                     {
                         beat: 0,

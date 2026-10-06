@@ -17,6 +17,9 @@ import { type OfflineMidiProbabilitySelector } from '../../../repositories/offli
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
+import { cancelExport } from '../exportCancellation';
+import { exportCancellationState } from '../exportCancellationState';
+import { isCancelRequested } from '../isCancelRequested';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types';
@@ -108,7 +111,6 @@ const mocks = vi.hoisted(() => {
         scheduleKitNote: vi.fn(),
         scheduleNoteOffline: vi.fn(),
         resolveDrumKit: vi.fn<() => unknown>(() => null),
-        checkCancel: vi.fn(),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         /** Flips the scheduler double onto the real `scheduleTrackAutomation`. */
         runProductionScheduler: false,
@@ -256,10 +258,6 @@ vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: mocks.audioBufferCache,
 }));
 
-vi.mock('../checkCancel', () => ({
-    checkCancel: mocks.checkCancel,
-}));
-
 // Synth note-scheduling helpers are unused on the worklet-instrument path
 // (instrumentControls present → events go to pendingWorkletEvents), but the
 // module is imported so we stub it to keep it inert.
@@ -360,6 +358,7 @@ type RunScheduleInput = {
     useLegacyScheduler?: boolean;
     trackDeviceType?: string;
     includeSecondNote?: boolean;
+    abortSignal?: AbortSignal;
 };
 
 async function runSchedule({
@@ -380,6 +379,7 @@ async function runSchedule({
     useLegacyScheduler = false,
     trackDeviceType,
     includeSecondNote = false,
+    abortSignal,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -474,6 +474,7 @@ async function runSchedule({
         allTracks: [track],
         deviceEntriesByTrack,
         regionStartBeat,
+        abortSignal,
     });
 
     return pendingWorkletEvents;
@@ -485,14 +486,12 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
     });
 
     afterEach(() => {
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
     });
 
     it('passes clip gain and recorded MPE expression to the offline built-in synth', async () => {
@@ -579,20 +578,6 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
             pitchBend: 8_191,
             pitchBendRangeSemitones: 127,
         });
-    });
-
-    it('stops a dense note batch as soon as export cancellation is observed', async () => {
-        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
-        mocks.checkCancel
-            .mockImplementationOnce(() => {})
-            .mockImplementationOnce(() => {
-                throw new Error('Export cancelled');
-            });
-
-        await expect(runSchedule({ useLegacyScheduler: true, includeSecondNote: true })).rejects.toThrow(
-            'Export cancelled'
-        );
-        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -1393,7 +1378,6 @@ describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => 
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
         offlineDeviceParameterLawState.isAutomatable = null;
         offlineDeviceParameterLawState.clampValue = null;
         offlineDeviceParameterLawState.quantiseValue = null;
@@ -1532,7 +1516,6 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
     });
 
     type Arrivals = {
@@ -1700,7 +1683,6 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
     });
 
     // At 120 BPM and 48 kHz a beat is 24 000 frames.
@@ -1957,5 +1939,60 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
         });
 
         expect(events.filter((event) => event.type === 'control')).toEqual([]);
+    });
+});
+
+describe('scheduleTrackClips — export cancellation is caller-owned', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        exportCancellationState.cancelFlag = false;
+        exportCancellationState.isRenderingActive = false;
+    });
+
+    afterEach(() => {
+        exportCancellationState.cancelFlag = false;
+    });
+
+    // The freeze path's per-note checkpoint used to read the process-wide flag
+    // here (#4782): a cancelled mixdown left it raised, and every later freeze
+    // failed with "Export cancelled" although the musician cancelled nothing.
+    it('schedules a freeze whose caller signal is live while a cancelled export left the flag raised', async () => {
+        cancelExport();
+        expect(isCancelRequested()).toBe(true);
+
+        const events = await runSchedule({ abortSignal: new AbortController().signal });
+
+        expect(events.filter((event) => event.type === 'on')).toHaveLength(1);
+        // Neither consulted nor cleared by a render that does not own the flag.
+        expect(isCancelRequested()).toBe(true);
+    });
+
+    it('completes a running schedule when an export cancel fires mid-batch', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        // The musician cancels an export while a freeze is already scheduling.
+        mocks.scheduleNoteOffline.mockImplementationOnce(() => cancelExport());
+
+        await runSchedule({ useLegacyScheduler: true, includeSecondNote: true });
+
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(2);
+    });
+
+    // The stop this scheduler keeps: the same mid-batch granularity the export
+    // flag used to provide, carried by the caller's own signal instead.
+    it('stops a dense note batch as soon as its own caller aborts', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        const controller = new AbortController();
+        mocks.scheduleNoteOffline.mockImplementationOnce(() => controller.abort());
+
+        await expect(
+            runSchedule({ useLegacyScheduler: true, includeSecondNote: true, abortSignal: controller.signal })
+        ).rejects.toThrow('Render aborted');
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
     });
 });
