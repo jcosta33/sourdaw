@@ -153,6 +153,24 @@ describe('exportMidiClip', () => {
             ]);
         });
 
+        it('starts from the latest hidden controller beat when rows are stored out of beat order', () => {
+            const exported = exportSlippedClip([controller('up', 1, 0), controller('down', 0, 127)]);
+
+            expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
+                ['up', 0, 0],
+                ['inside-up', 1, 20],
+            ]);
+        });
+
+        it('leaves out controller rows after the window end', () => {
+            const exported = exportSlippedClip([controller('hidden-down', 1, 100), controller('after-end', 7, 55)]);
+
+            expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
+                ['hidden-down', 0, 100],
+                ['inside-up', 1, 20],
+            ]);
+        });
+
         it('starts from the later source row when hidden controller rows share a beat', () => {
             const exported = exportSlippedClip([controller('z-release', 1, 0), controller('a-press', 1, 127)]);
 

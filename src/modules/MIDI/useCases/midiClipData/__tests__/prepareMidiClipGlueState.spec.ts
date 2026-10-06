@@ -236,6 +236,14 @@ describe('prepareMidiClipGlueState', () => {
             carried: ['up', 6, 0],
         },
         {
+            name: 'the latest hidden beat when rows are stored out of beat order',
+            rows: [
+                { id: 'up', controller: 64, value: 0, beat: 1, channel: 0 },
+                { id: 'down', controller: 64, value: 127, beat: 0, channel: 0 },
+            ],
+            carried: ['up', 6, 0],
+        },
+        {
             name: 'the later source row when hidden rows share a beat',
             rows: [
                 { id: 'z-release', controller: 64, value: 0, beat: 1, channel: 0 },
