@@ -1,0 +1,22 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  h_beb54bf43b47b7 287-379
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  h_beb54bf43b47b7 4,100-101,134-142,168-179,181-185,212
+src/modules/Transport/stores/captureGestureBeat.ts
+  h_beb54bf43b47b7 46
+src/modules/Transport/stores/index.ts
+  h_beb54bf43b47b7 9
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  h_beb54bf43b47b7 16-20,63-66,96-97,517-526,528,530-537
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "216fd46aa8a8f9b9592eeb25252c0e5b76ad9d87",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
