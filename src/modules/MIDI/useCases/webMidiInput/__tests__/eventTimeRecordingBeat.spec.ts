@@ -304,6 +304,90 @@ describe('event-time recording beat (#4875)', () => {
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(8.8, 9);
     });
 
+    // #4935 review — the seam window is dated by the projector's own overshoot,
+    // converted back to wall clock at the anchor's tempo, never by a
+    // re-integration through the post-seam map: a change just past loopEnd sits
+    // in a zone a looping roll never travels, and charging the overshoot to it
+    // turned 0.095 s of projection into 0.445 s of "travel" — enough to close
+    // the window on the whole genuine seam band and route its events to the
+    // direct bound's never-played beats.
+    it('admits the seam window past a post-seam tempo change for a grain-young event', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // 120 BPM with an instant drop to 20 at 8.05: the overshoot zone is
+        // six times slower than the anchor that produced it.
+        tempoMapStore.set({
+            changes: [
+                { id: 't0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 't1', beat: 8.05, tempo: 20, curve: 'instant' },
+            ],
+        });
+        // The dying-pass pair stands at 7.99 as of 0.1 s ago; the projection
+        // (7.99 + 0.2 beats at the anchor tempo) runs 0.19 beats past the seam,
+        // whose post-seam integral reads 0.445 s.
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.1;
+        wrapsSinceEpochStart(1);
+
+        await dispatch([0x91, 60, 100], 1050);
+
+        // The direct bound answered 8.17, a beat past the seam the roll never
+        // played; the overshoot's wall age (0.095 s) dates the 50 ms event
+        // inside the incoming pass's first grain — the transport wrapped
+        // 0.095 s ago and the truth (beat 0.1) sits on that pass — whose
+        // origin is the seam itself.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0, 9);
+    });
+
+    // #4935 review — same window, older event: the 400 ms stamp predates the
+    // seam (the overshoot's wall age is 0.095 s), so it belongs on the dying
+    // pass, 0.305 s before it: beat 7.39 (truth 7.4). The post-seam
+    // integration charged the stamp's whole age to the 20 BPM zone and
+    // answered 8.06 instead.
+    it('inverts a pre-seam stamp onto the dying pass across a post-seam tempo change', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        tempoMapStore.set({
+            changes: [
+                { id: 't0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 't1', beat: 8.05, tempo: 20, curve: 'instant' },
+            ],
+        });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.1;
+        wrapsSinceEpochStart(1);
+
+        await dispatch([0x91, 60, 100], 700);
+
+        // The direct bound answered 8.06.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.39, 9);
+    });
+
+    // Control — the same geometry without the post-seam change: the flat map
+    // makes the old post-seam integral and the anchor-tempo conversion agree
+    // exactly, so the admission, the incoming distance, and the dying-pass
+    // answer stand unchanged.
+    it('keeps the constant-tempo seam window on the same dying-pass answer', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.1;
+        wrapsSinceEpochStart(1);
+
+        await dispatch([0x91, 60, 100], 700);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.39, 9);
+    });
+
     // #4935 review — a loop disabled mid-roll leaves the roll's completed
     // passes in the count: the wrapped cursor below the epoch rides a pass
     // that began at loopStart, so the direct epoch bound reads a negative
@@ -351,6 +435,41 @@ describe('event-time recording beat (#4875)', () => {
         await dispatch([0x91, 60, 100], 300);
 
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.3, 9);
+    });
+
+    // #4935 review — the disabled roll's line does not stop at the seam:
+    // turned off mid-pass, the cursor kept playing straight past the last
+    // loopEnd it crossed, and the motion from loopStart through the cursor is
+    // one continuous line over the same map, so the wrap-aware traversal
+    // covers this shape too. The direct epoch-to-cursor span charged none of
+    // the completed passes.
+    it('inverts a stamp on a disabled roll that played straight past loopEnd', async () => {
+        playTransport({ tempo: 300, isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The roll ran epoch 7 over the seam, wrapped twice, and the loop was
+        // turned off on the third pass; the cursor kept playing straight to 9.
+        // The note is 600 ms old — 3 beats at 300 BPM — and beat 6 sits on
+        // that straight line.
+        cursorAt(9);
+        wrapsSinceEpochStart(2);
+
+        await dispatch([0x91, 60, 100], 500);
+
+        // The direct span (7 -> 9 = 0.4 s of travel) answered 7, the epoch.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6, 9);
+    });
+
+    // Control — a plain never-looping roll carries a zero count beside the
+    // same shape: its `wrapsSinceEpoch <= 0` branch answers the same straight
+    // epoch-to-cursor line the direct bound does, byte-identically.
+    it('keeps a never-looped roll past loopEnd on the direct epoch answers', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        cursorAt(9);
+        // wrapsSinceEpochStart stays 0: the loop was off before the roll began.
+
+        await dispatch([0x91, 60, 100], 1000);
+
+        // 100 ms old — 0.2 beats back from 9 at 120 BPM.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(8.8, 9);
     });
 
     // Control — a roll whose loop was already off at the epoch carries a zero
