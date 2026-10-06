@@ -187,9 +187,12 @@ type RunApplicationOwnedToolLoopInput = {
      * revision and the loop executes at most one call to it per turn. Without it the tool stays
      * unavailable to this run. A preview measurement also returns the commands it measured, which
      * the loop retains for adoption only when `revision` names the revision they were compiled at.
+     * `companionToolNames` are further tools `execute` answers that render the project the same
+     * way, so they share the one-measurement-per-turn limit with `toolName`.
      */
     measurement?: {
         toolName: string;
+        companionToolNames?: readonly string[];
         revision?: string;
         execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<AnalysisMeasureRead>;
     };
@@ -211,6 +214,11 @@ type RunApplicationOwnedToolLoopInput = {
 };
 
 type MeasurementCallContext = { callId: string; turn: number; loopId: string; signal?: AbortSignal };
+
+/** Every tool name the measurement read answers: its own and its companions'. */
+function getMeasurementToolNames(measurement: RunApplicationOwnedToolLoopInput['measurement']): readonly string[] {
+    return measurement === undefined ? [] : [measurement.toolName, ...(measurement.companionToolNames ?? [])];
+}
 
 /** `ordinal` numbers this run's expansions from 1, so the batch-local names two of them mint never collide. */
 type RecipeExpansionCallContext = { callId: string; turn: number; ordinal: number };
@@ -1134,8 +1142,8 @@ function executeTurnReads(input: {
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
-    const firstMeasurementIndex =
-        measurement === undefined ? -1 : input.calls.findIndex(({ call }) => call.name === measurement.toolName);
+    const measurementToolNames = getMeasurementToolNames(measurement);
+    const firstMeasurementIndex = input.calls.findIndex(({ call }) => measurementToolNames.includes(call.name));
     return input.calls.map(async ({ call, callId }, index) => {
         if (input.transform !== undefined && call.name === input.transform.toolName) {
             try {
@@ -1171,7 +1179,7 @@ function executeTurnReads(input: {
                 };
             }
         }
-        if (measurement === undefined || call.name !== measurement.toolName) {
+        if (measurement === undefined || !measurementToolNames.includes(call.name)) {
             return { receipt: executeSafeRead(call, callId, turn), commands: null };
         }
         if (index !== firstMeasurementIndex) {
@@ -1890,7 +1898,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
             RECIPE_DISCOVERY_TOOL_NAME,
-            ...(input.measurement === undefined ? [] : [input.measurement.toolName]),
+            ...getMeasurementToolNames(input.measurement),
             ...(input.transform === undefined ? [] : [input.transform.toolName]),
             ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
         ]);
