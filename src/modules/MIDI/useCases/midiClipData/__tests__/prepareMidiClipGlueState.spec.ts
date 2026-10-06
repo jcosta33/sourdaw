@@ -226,6 +226,40 @@ describe('prepareMidiClipGlueState', () => {
         ]);
     });
 
+    it.each([
+        {
+            name: 'the latest hidden beat',
+            rows: [
+                { id: 'down', controller: 64, value: 127, beat: 0, channel: 0 },
+                { id: 'up', controller: 64, value: 0, beat: 1, channel: 0 },
+            ],
+            carried: ['up', 6, 0],
+        },
+        {
+            name: 'the later source row when hidden rows share a beat',
+            rows: [
+                { id: 'z-release', controller: 64, value: 0, beat: 1, channel: 0 },
+                { id: 'a-press', controller: 64, value: 127, beat: 1, channel: 0 },
+            ],
+            carried: ['a-press', 6, 127],
+        },
+    ])('carries the value in force at a source window start from $name', ({ rows, carried }) => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: { 'source-b': rows },
+            pitchBendByClipId: {},
+        };
+        const midPedalSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 2, visibleEndBeat: 6 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: midPedalSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([carried]);
+    });
+
     it('does not carry a controller value over a row the lane already has at the visible start', () => {
         mocks.state.value = {
             notesByClipId: {},

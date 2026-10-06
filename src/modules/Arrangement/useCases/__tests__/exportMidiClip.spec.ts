@@ -87,7 +87,7 @@ describe('exportMidiClip', () => {
             return { id, controller: 64, value, beat, channel: 0 };
         }
 
-        function exportSlippedClip() {
+        function exportSlippedClip(hiddenControllers = [controller('hidden-down', 1, 100)]) {
             mocks.getAllTracks.mockReturnValue([
                 {
                     id: 't1',
@@ -108,7 +108,7 @@ describe('exportMidiClip', () => {
                     ],
                 },
                 ccByClipId: {
-                    'clip-s': [controller('hidden-down', 1, 100), controller('inside-up', 3, 20)],
+                    'clip-s': [...hiddenControllers, controller('inside-up', 3, 20)],
                 },
                 pitchBendByClipId: { 'clip-s': [{ id: 'bend', value: 0.5, beat: 3, channel: 0 }] },
             } as any);
@@ -140,6 +140,24 @@ describe('exportMidiClip', () => {
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
                 ['hidden-down', 0, 100],
+                ['inside-up', 1, 20],
+            ]);
+        });
+
+        it('starts from the latest hidden controller beat, not the first hidden row', () => {
+            const exported = exportSlippedClip([controller('down', 0, 127), controller('up', 1, 0)]);
+
+            expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
+                ['up', 0, 0],
+                ['inside-up', 1, 20],
+            ]);
+        });
+
+        it('starts from the later source row when hidden controller rows share a beat', () => {
+            const exported = exportSlippedClip([controller('z-release', 1, 0), controller('a-press', 1, 127)]);
+
+            expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
+                ['a-press', 0, 127],
                 ['inside-up', 1, 20],
             ]);
         });
