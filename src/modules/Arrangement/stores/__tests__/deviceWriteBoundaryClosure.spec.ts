@@ -792,6 +792,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // same import line, one ReturnType projection, and the one call.
         // Immutable Command-envelope compilation; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts': 4,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The file only reads back a serialized compiled slice; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/readBulkSetSliceEvidence.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The file only re-fingerprints a compiled slice's preconditions; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts': 1,
         // Count provenance: new file entry, measured 2 — the
         // `compileVersionedCommandBatchEnvelope` type import and one ReturnType
         // projection in the manual-repair missing-effects branch (#2988). Agent-run
@@ -823,9 +831,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // type import from compileArbitraryCommandList. The file only projects compiler
         // evidence into match selector records; no device hydration or write.
         'src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The grounding extracted from parsePromptToActions builds immutable actions;
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // compiled-evidence type import from compileArbitraryCommandList. The file
+        // splits immutable compiled evidence into slices; no device hydration or write.
+        'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /

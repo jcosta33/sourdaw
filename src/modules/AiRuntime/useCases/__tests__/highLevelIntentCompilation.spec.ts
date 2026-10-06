@@ -9,8 +9,10 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import {
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
+    SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS,
     SEMANTIC_COMMAND_LIST_MAX_ITEMS,
     SEMANTIC_COMMAND_LIST_MAX_REPEAT,
+    SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS,
 } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { buildLlmActionSystemPrompt } from '../../transformers/llmActionBridge';
@@ -1664,7 +1666,7 @@ describe('high-level intent compilation', () => {
         expect(systemPrompt).toContain('agent.catalog.discover');
         expect(systemPrompt).toContain('exactly one command.batch.propose');
         expect(systemPrompt).toContain(
-            `at most ${String(SEMANTIC_COMMAND_LIST_MAX_ITEMS)} list items, ${String(SEMANTIC_COMMAND_LIST_MAX_COMMANDS)} expanded commands, a repeat count of ${String(SEMANTIC_COMMAND_LIST_MAX_REPEAT)}, ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} created project objects, and ${String(ADD_NOTES_MAX_NOTES_PER_COMMAND)} notes in one addNotes`
+            `at most ${String(SEMANTIC_COMMAND_LIST_MAX_ITEMS)} list items, ${String(SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS)} targets in one selector, ${String(SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS)} expanded commands, which the application runs as successive approved batches of ${String(SEMANTIC_COMMAND_LIST_MAX_COMMANDS)}, a repeat count of ${String(SEMANTIC_COMMAND_LIST_MAX_REPEAT)}, ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} created project objects, and ${String(ADD_NOTES_MAX_NOTES_PER_COMMAND)} notes in one addNotes`
         );
         expect(systemPrompt).toContain('command.batch.decline');
     });

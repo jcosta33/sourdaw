@@ -33,19 +33,23 @@ export function deriveMatchSelectorPredicates(
                 // position list a later coverage check would silently accept.
                 throw new Error(`Compiler evidence has no item "${selector.itemId}" for its own match selector.`);
             }
-            return [
-                {
-                    itemId: selector.itemId,
-                    entity: selector.predicate.entity,
-                    where: selector.predicate.where,
-                    match: selector.predicate.match,
-                    condition: selector.predicate.condition,
-                    excludeIds: selector.predicate.excludeIds,
-                    quantity: selector.predicate.quantity,
-                    stableIds: [...selector.stableIds],
-                    actionPositions: actionPositions.map((position) => position + actionPositionOffset),
-                },
-            ];
+            const record: SemanticCommandListMatchSelectorRecord = {
+                itemId: selector.itemId,
+                entity: selector.predicate.entity,
+                where: selector.predicate.where,
+                match: selector.predicate.match,
+                condition: selector.predicate.condition,
+                excludeIds: selector.predicate.excludeIds,
+                quantity: selector.predicate.quantity,
+                stableIds: [...selector.stableIds],
+                actionPositions: actionPositions.map((position) => position + actionPositionOffset),
+            };
+            // A batch carrying one slice of a larger set is re-resolved beyond the members earlier
+            // batches carried, so the record keeps where in the set this batch sits.
+            if (selector.slice !== undefined) {
+                record.slice = { setStableIds: [...selector.slice.setStableIds], offset: selector.slice.offset };
+            }
+            return [record];
         }) ?? []
     );
 }

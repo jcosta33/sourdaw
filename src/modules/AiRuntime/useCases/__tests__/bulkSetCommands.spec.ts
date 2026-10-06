@@ -1,14 +1,132 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    commandTrackDefaultsPort,
+    executeAppAction,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import { WORKFLOW_CAPABILITY_IDS, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { resolveSemanticCommandListSelector } from '../../services/semanticCommandListCandidates';
+import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
+import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { chatStore } from '../../stores/chatStore';
+import {
+    clearPendingActionConfirmations,
+    getPendingActionConfirmation,
+    pendingActionConfirmationStore,
+} from '../../stores/pendingActionConfirmationStore';
 import { getBulkDeviceInsertionTrackScope } from '../agentReference/getBulkDeviceInsertionTrackScope';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
+import { rebaseBulkSetSliceEvidence } from '../agentRequestOrchestration/rebaseBulkSetSliceEvidence';
+import { revalidateApprovedMatchSelectors } from '../agentRequestOrchestration/revalidateApprovedMatchSelectors';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { type ArbitraryCommandListEvidence, compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
+import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getProjectContext } from '../getProjectContext';
+import { planAgentRun } from '../planAgentRun';
+import { sendChatMessage } from '../sendChatMessage';
+import { splitCompiledCommandList } from '../splitCompiledCommandList';
+import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
+import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
+
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+import {
+    cycleProviderAttempt,
+    discoverSearchedCalls,
+    emptyMidiState,
+    proposeDiscoveredCalls,
+    scriptProviderTurns,
+} from './highLevelIntentWorkflowFixture';
+
+const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
+
+/**
+ * Muting a live track writes its channel strip, which builds a stereo panner. `src/setupTests.ts`
+ * stubs an AudioContext with only the nodes the engine constructor needs, so the panner is added
+ * here, as the other command-committing AI workflow suites do.
+ */
+vi.hoisted(() => {
+    const OriginalAudioContext = globalThis.AudioContext;
+    const createAudioParam = (value: number) => ({
+        value,
+        setValueAtTime: () => undefined,
+        linearRampToValueAtTime: () => undefined,
+        exponentialRampToValueAtTime: () => undefined,
+        setTargetAtTime: () => undefined,
+        cancelScheduledValues: () => undefined,
+    });
+    function AudioContextWithPanner(options?: AudioContextOptions): AudioContext {
+        const context = new OriginalAudioContext(options);
+        return Object.assign(context, {
+            currentTime: 0,
+            createStereoPanner: () => ({
+                connect: (destination: unknown) => destination,
+                disconnect: () => undefined,
+                pan: createAudioParam(0),
+            }),
+        });
+    }
+    Object.defineProperty(globalThis, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: AudioContextWithPanner,
+    });
+});
+
+vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
+    getBackendChain: () => ['webllm'],
+}));
+
+vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
+    resolveBackend: () => 'webllm',
+}));
+
+vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
+    generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
+}));
+
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
+    isWebLlmLoaded: () => true,
+}));
 
 vi.mock('../../services/semanticCommandListCandidates', async (importOriginal) => {
     const original = await importOriginal<typeof import('../../services/semanticCommandListCandidates')>();
     return { ...original, resolveSemanticCommandListSelector: vi.fn(original.resolveSemanticCommandListSelector) };
+});
+
+vi.mock('../getProjectContext', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../getProjectContext')>();
+    return { ...original, getProjectContext: vi.fn(original.getProjectContext) };
 });
 
 const resolverSpy = vi.mocked(resolveSemanticCommandListSelector);
@@ -306,5 +424,794 @@ describe('whole-project vibe-mix scope', () => {
         );
 
         expect(getWholeProjectVibeMixScope(withSecondDrumBus)).toBeNull();
+    });
+});
+
+const BULK_REVISION = 'revision-bulk';
+
+const gainParameter = {
+    id: 'gain',
+    name: 'Gain',
+    type: 'float' as const,
+    value: 0,
+    minValue: -24,
+    maxValue: 24,
+    unit: 'dB',
+};
+
+function bulkTrackId(prefix: string, index: number): string {
+    return `track-${prefix}-${String(index + 1).padStart(3, '0')}`;
+}
+
+function createBulkTracks(prefix: string, name: string, count: number): ProjectContextTrack[] {
+    return Array.from({ length: count }, (_unused, index) => {
+        const id = bulkTrackId(prefix, index);
+        return createTrack(id, `${name} ${String(index + 1)}`, {
+            devices: [{ id: `${id}-eq`, name: 'EQ', type: 'builtin-eq', bypassed: false, parameters: [gainParameter] }],
+        });
+    });
+}
+
+function createBulkContext(tracks: ProjectContextTrack[]): ProjectContext {
+    return createContext([...tracks, createTrack('bus-fx', 'FX Bus', { kind: 'bus', devices: [] })]);
+}
+
+function bulkPlan() {
+    return {
+        semantic: { classification: 'complex', uncertainty: [] },
+        objective: 'Apply one change across a set of tracks.',
+        constraints: [],
+        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        capabilityIds: [],
+        assetIds: [],
+        alternatives: [],
+        validationStrategy: [],
+        stoppingConditions: [],
+    };
+}
+
+function matchTracks(nameIncludes: string, exactly: number, targetArgument = 'trackId') {
+    return {
+        targetArgument,
+        entity: 'track',
+        match: { all: [{ nameIncludes }] },
+        quantity: { unit: 'targets', exactly },
+    };
+}
+
+function compileBulk(context: ProjectContext, items: Array<Record<string, unknown>>) {
+    const compiled = compileArbitraryCommandList({
+        context,
+        revision: BULK_REVISION,
+        calls: [{ name: 'command.batch.propose', arguments: { plan: bulkPlan(), list: { schemaVersion: 1, items } } }],
+    });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        throw new Error(`Expected the bulk list to compile: ${JSON.stringify(compiled)}`);
+    }
+    return compiled;
+}
+
+function splitBulk(context: ProjectContext, items: Array<Record<string, unknown>>) {
+    const compiled = compileBulk(context, items);
+    return {
+        evidence: compiled.compilerEvidence!,
+        split: splitCompiledCommandList({
+            evidence: compiled.compilerEvidence!,
+            maxCommandsPerBatch: MAX_LLM_ACTIONS_PER_BATCH,
+            setSelectors: compiled.setSelectors,
+        }),
+    };
+}
+
+function requireSlices(result: ReturnType<typeof splitCompiledCommandList>): ArbitraryCommandListEvidence[] {
+    if (result.status !== 'accepted') {
+        throw new Error(`Expected the list to split: ${result.reason}`);
+    }
+    return result.slices;
+}
+
+function validateSlice(slice: ArbitraryCommandListEvidence, context: ProjectContext, revision = BULK_REVISION) {
+    return validateArbitraryCommandListEvidence({
+        evidence: slice,
+        calls: slice.commands,
+        context,
+        revision,
+        creativeAuthority: undefined,
+    });
+}
+
+describe('bulk set commands across successive batches', () => {
+    const layers = createBulkTracks('layer', 'Layer', 30);
+    const context = createBulkContext(layers);
+    const familyItems = {
+        'device insertion': {
+            id: 'insert-eq',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-eq' },
+            selector: matchTracks('layer', 30),
+        },
+        send: {
+            id: 'send-to-fx',
+            name: 'addSend',
+            arguments: { busId: 'bus-fx', levelDb: -6 },
+            selector: matchTracks('layer', 30),
+        },
+        output: {
+            id: 'route-to-fx',
+            name: 'setTrackOutput',
+            arguments: { outputId: 'bus-fx' },
+            selector: matchTracks('layer', 30),
+        },
+        parameter: {
+            id: 'set-eq-gain',
+            name: 'setDeviceParameter',
+            arguments: { paramId: 'gain', value: 3 },
+            selector: {
+                targetArgument: 'deviceId',
+                entity: 'device',
+                where: { type: 'builtin-eq' },
+                quantity: { unit: 'targets', exactly: 30 },
+            },
+        },
+        automation: {
+            id: 'automate-gain',
+            name: 'addAutomationLane',
+            arguments: { parameterId: 'gain' },
+            selector: matchTracks('layer', 30),
+        },
+    } as const;
+
+    it.each(Object.entries(familyItems))(
+        'splits a 30-target %s into a batch of 24 and a batch of 6 that each validate',
+        (_family, item) => {
+            const slices = requireSlices(splitBulk(context, [item]).split);
+
+            expect(slices.map((slice) => slice.commands.length)).toEqual([24, 6]);
+            for (const slice of slices) {
+                expect(validateSlice(slice, context)).toMatchObject({ status: 'accepted' });
+            }
+        }
+    );
+
+    const muteLayers = {
+        id: 'mute-layers',
+        name: 'muteTrack',
+        arguments: { muted: true },
+        selector: matchTracks('layer', 30),
+    };
+
+    it('records where each batch of a 30-target mute sits in its set', () => {
+        const slices = requireSlices(splitBulk(context, [muteLayers]).split);
+        const layerIds = layers.map((track) => track.id);
+
+        expect(slices.map((slice) => slice.selectors[0]?.slice?.offset)).toEqual([0, 24]);
+        expect(slices.map((slice) => slice.selectors[0]?.stableIds)).toEqual([
+            layerIds.slice(0, 24),
+            layerIds.slice(24),
+        ]);
+        expect(slices.map((slice) => slice.selectors[0]?.slice?.setStableIds)).toEqual([layerIds, layerIds]);
+        expect(slices.map((slice) => slice.providerKnownTargetIds)).toEqual([
+            layerIds.slice(0, 24),
+            layerIds.slice(24),
+        ]);
+    });
+
+    it('leaves a list of 24 or fewer exactly as compiled', () => {
+        const smaller = createBulkContext(createBulkTracks('layer', 'Layer', 24));
+        const { evidence, split } = splitBulk(smaller, [{ ...muteLayers, selector: matchTracks('layer', 24) }]);
+
+        expect(requireSlices(split)[0]).toBe(evidence);
+        expect(requireSlices(split)).toHaveLength(1);
+        expect(evidence.selectors[0]).not.toHaveProperty('slice');
+    });
+
+    const alphaBeta = createBulkContext([
+        ...createBulkTracks('alpha', 'Alpha', 10),
+        ...createBulkTracks('beta', 'Beta', 20),
+    ]);
+    const parallelBus = { id: 'make-bus', name: 'createBus', arguments: { name: 'Parallel', binding: 'par' } };
+    const sendToParallel = (nameIncludes: string, exactly: number) => ({
+        id: 'send-to-parallel',
+        name: 'addSend',
+        arguments: { busId: '$par', levelDb: -6 },
+        selector: matchTracks(nameIncludes, exactly),
+        dependsOn: ['make-bus'],
+    });
+
+    it('keeps a binding producer and every command naming it in one batch', () => {
+        const slices = requireSlices(
+            splitBulk(alphaBeta, [
+                { ...muteLayers, id: 'mute-alpha', selector: matchTracks('alpha', 10) },
+                parallelBus,
+                sendToParallel('beta', 20),
+            ]).split
+        );
+
+        expect(slices.map((slice) => slice.commands.length)).toEqual([10, 21]);
+        expect(slices.map((slice) => validateSlice(slice, alphaBeta).status)).toEqual(['accepted', 'accepted']);
+    });
+
+    it('refuses a binding whose producer and consumers exceed one batch', () => {
+        expect(splitBulk(context, [parallelBus, sendToParallel('layer', 30)]).split).toEqual({
+            status: 'rejected',
+            reason: 'Batch-local binding $par and the commands that use it exceed one batch of 24 commands.',
+        });
+    });
+
+    it('keeps a command that writes a whole set in one batch', () => {
+        const slices = requireSlices(
+            splitBulk(context, [
+                muteLayers,
+                {
+                    id: 'group-layers',
+                    name: 'createVcaGroup',
+                    arguments: { name: 'Layers' },
+                    selector: matchTracks('layer', 30, 'trackIds'),
+                },
+            ]).split
+        );
+
+        expect(slices.map((slice) => slice.commands.length)).toEqual([24, 7]);
+        expect(slices[1]?.commands.at(-1)?.arguments.trackIds).toEqual(layers.map((track) => track.id));
+        expect(slices.map((slice) => validateSlice(slice, context).status)).toEqual(['accepted', 'accepted']);
+    });
+
+    it.each([
+        { refused: 'creative authority', evidence: { creativeAuthorityId: 'creative-authority-1' } },
+        { refused: 'MIDI transforms', evidence: { expandedMidiTransforms: ['chordProgression'] } },
+    ])('refuses to split a list carrying $refused', ({ evidence }) => {
+        const compiled = compileBulk(context, [muteLayers]);
+
+        expect(
+            splitCompiledCommandList({
+                evidence: { ...compiled.compilerEvidence!, ...evidence },
+                maxCommandsPerBatch: MAX_LLM_ACTIONS_PER_BATCH,
+                setSelectors: compiled.setSelectors,
+            })
+        ).toMatchObject({ status: 'rejected' });
+    });
+
+    it('refuses to split a list whose items share one command', () => {
+        expect(
+            splitBulk(context, [
+                muteLayers,
+                {
+                    id: 'mute-first-layer',
+                    name: 'muteTrack',
+                    arguments: { muted: true },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { name: 'Layer 1' },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                },
+            ]).split
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Commands shared between list items cannot run as successive batches.',
+        });
+    });
+
+    it('rejects a selector over 129 targets and splits 128 into six batches', () => {
+        const wide = createBulkContext(createBulkTracks('layer', 'Layer', 129));
+        const narrower = createBulkContext(createBulkTracks('layer', 'Layer', 128));
+
+        expect(
+            compileArbitraryCommandList({
+                context: wide,
+                revision: BULK_REVISION,
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: bulkPlan(),
+                            list: { schemaVersion: 1, items: [{ ...muteLayers, selector: matchTracks('layer', 129) }] },
+                        },
+                    },
+                ],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list does not match the versioned application contract.',
+        });
+        const slices = requireSlices(
+            splitBulk(narrower, [{ ...muteLayers, selector: matchTracks('layer', 128) }]).split
+        );
+        expect(slices.map((slice) => slice.commands.length)).toEqual([24, 24, 24, 24, 24, 8]);
+    });
+
+    it('rejects an expansion past the run command ceiling', () => {
+        const wide = createBulkContext(createBulkTracks('layer', 'Layer', 128));
+        const items = [
+            { id: 'mute', name: 'muteTrack', arguments: { muted: true } },
+            { id: 'solo', name: 'soloTrack', arguments: { soloed: true } },
+            { id: 'insert', name: 'addDevice', arguments: { deviceType: 'builtin-eq' } },
+            { id: 'automate', name: 'addAutomationLane', arguments: { parameterId: 'gain' } },
+            { id: 'send', name: 'addSend', arguments: { busId: 'bus-fx', levelDb: -6 } },
+        ].map((item) => ({ ...item, selector: matchTracks('layer', 128) }));
+
+        expect(
+            compileArbitraryCommandList({
+                context: wide,
+                revision: BULK_REVISION,
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { plan: bulkPlan(), list: { schemaVersion: 1, items } },
+                    },
+                ],
+            })
+        ).toEqual({ status: 'rejected', reason: 'Structured command list exceeds the application command budget.' });
+    });
+
+    describe('a later batch replayed against the live project', () => {
+        const slices = requireSlices(splitBulk(context, [muteLayers]).split);
+        const secondSlice = slices[1]!;
+        const firstSliceIds = layers.slice(0, 24).map((track) => track.id);
+        const withTracks = (tracks: ProjectContextTrack[]) => ({ ...context, tracks });
+        const rebase = (live: ProjectContext) =>
+            rebaseBulkSetSliceEvidence({
+                evidence: secondSlice,
+                context: live,
+                revision: 'revision-after-batch-one',
+                runTouchedTargetIds: new Set(firstSliceIds),
+            });
+        const replay = (live: ProjectContext) => {
+            const rebased = rebase(live);
+            if (rebased.status === 'rejected') {
+                return rebased;
+            }
+            return validateSlice(rebased.evidence, live, 'revision-after-batch-one');
+        };
+        // Batch one muted its targets, and the user renamed a track no batch touches.
+        const afterBatchOne = withTracks(
+            context.tracks.map((track) => {
+                if (firstSliceIds.includes(track.id)) {
+                    return { ...track, muted: true };
+                }
+                return track.id === 'bus-fx' ? { ...track, name: 'Renamed FX Bus' } : track;
+            })
+        );
+
+        it('accepts the batch after the run changed earlier members and the user edited an unrelated track', () => {
+            expect(replay(afterBatchOne)).toMatchObject({ status: 'accepted' });
+        });
+
+        it('refuses the batch when one of its own targets changed', () => {
+            const changed = withTracks(
+                afterBatchOne.tracks.map((track) => (track.id === layers[26]!.id ? { ...track, muted: true } : track))
+            );
+
+            expect(replay(changed)).toEqual({
+                status: 'rejected',
+                reason: 'Structured command compiler evidence preconditions no longer hold.',
+            });
+        });
+
+        it('refuses the batch when one of its targets vanished', () => {
+            const vanished = withTracks(afterBatchOne.tracks.filter((track) => track.id !== layers[27]!.id));
+
+            expect(replay(vanished)).toEqual({
+                status: 'rejected',
+                reason: `Target ${layers[27]!.id} is no longer in the project.`,
+            });
+        });
+
+        it('refuses the batch when its set gained a member', () => {
+            const gained = withTracks([...afterBatchOne.tracks, createTrack('track-layer-new', 'Layer 31')]);
+
+            expect(replay(gained)).toEqual({
+                status: 'rejected',
+                reason: 'Bulk selector mute-layers no longer resolves the set its earlier batches started from.',
+            });
+        });
+
+        it('accepts a later batch whose targets an earlier batch of the same run already changed', () => {
+            const soloLayers = { id: 'solo-layers', name: 'soloTrack', arguments: { soloed: true } };
+            const muteThenSolo = requireSlices(
+                splitBulk(context, [muteLayers, { ...soloLayers, selector: matchTracks('layer', 30) }]).split
+            );
+            const middle = muteThenSolo[1]!;
+
+            expect(muteThenSolo.map((slice) => slice.commands.length)).toEqual([24, 24, 12]);
+            const rebased = rebaseBulkSetSliceEvidence({
+                evidence: middle,
+                context: afterBatchOne,
+                revision: 'revision-after-batch-one',
+                runTouchedTargetIds: new Set(muteThenSolo[0]!.providerKnownTargetIds),
+            });
+            if (rebased.status === 'rejected') {
+                throw new Error(rebased.reason);
+            }
+            expect(validateSlice(rebased.evidence, afterBatchOne, 'revision-after-batch-one')).toMatchObject({
+                status: 'accepted',
+            });
+        });
+
+        it('revalidates a pending later batch against the set beyond its earlier members', () => {
+            const records = deriveMatchSelectorPredicates(secondSlice);
+            const contextSpy = vi.mocked(getProjectContext);
+
+            expect(records[0]?.slice).toEqual({ setStableIds: layers.map((track) => track.id), offset: 24 });
+            contextSpy.mockReturnValueOnce(afterBatchOne);
+            expect(revalidateApprovedMatchSelectors(records)).toEqual({ status: 'unchanged' });
+            contextSpy.mockReturnValueOnce(
+                withTracks([...afterBatchOne.tracks, createTrack('track-layer-new', 'Layer 31')])
+            );
+            expect(revalidateApprovedMatchSelectors(records)).toMatchObject({ status: 'invalidated' });
+        });
+    });
+
+    it('refuses a schedule whose remaining batches exceed the run command budget', () => {
+        expect(
+            planAgentRun({
+                request: 'Mute every layer track',
+                revision: BULK_REVISION,
+                actions: [{ type: 'muteTrack' }],
+                actionLabels: ['Mute Layer 1'],
+                scope: {
+                    targetIds: ['track-layer-001'],
+                    targetRanges: [],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                grants: {
+                    allowedOperationPrefixes: ['muteTrack'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                budgets: { limits: { maxCommands: 40 }, consumed: { maxCommands: 24 } },
+                requiresConfirmation: true,
+                scheduledCommandCount: 17,
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: "The scheduled batches need 17 commands, more than the 16 this run's maxCommands budget has left.",
+        });
+    });
+
+    describe('a run whose request spans two batches', () => {
+        beforeEach(() => {
+            agentRunLifecycle.clear();
+        });
+
+        afterEach(() => {
+            agentRunLifecycle.clear();
+        });
+
+        function recordScheduledPlan(runId: string) {
+            const slices = requireSlices(splitBulk(context, [muteLayers]).split);
+            const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+            agentRunLifecycle.create({
+                runId,
+                request: 'Mute every layer track',
+                mode: 'apply',
+                createdRevision: BULK_REVISION,
+            });
+            agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+            agentRunLifecycle.recordPlan({
+                runId,
+                summary: 'Mute 24 layers',
+                commandIds: ['command-1'],
+                serializedBatchIdentity: 'batch-1',
+                revision: BULK_REVISION,
+                scope,
+                grants: {
+                    allowedOperationPrefixes: ['muteTrack'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                budgets: { limits: {}, consumed: {} },
+            });
+            const plan = agentRunLifecycle.get(runId)!.plan!;
+            const batchSchedule = {
+                schemaVersion: 1 as const,
+                scheduleId: 'schedule-1',
+                position: 1,
+                total: 2,
+                totalCommands: 30,
+                interactionMode: 'apply' as const,
+                trustCeiling: null,
+                serializedProviderProposal: null,
+                slices: slices.map((slice, index) => ({
+                    position: index + 1,
+                    commandCount: slice.commands.length,
+                    targetIds: slice.providerKnownTargetIds,
+                    serializedSlice: JSON.stringify(slice),
+                })),
+            };
+            agentRunLifecycle.recordPlan({
+                runId,
+                summary: plan.summary,
+                commandIds: plan.commandIds,
+                serializedBatchIdentity: plan.serializedBatchIdentity,
+                revision: BULK_REVISION,
+                scope,
+                grants: agentRunLifecycle.get(runId)!.grants,
+                budgets: { limits: {}, consumed: {} },
+                plan: { ...plan, batchSchedule },
+            });
+            agentRunLifecycle.recordBatch({
+                runId,
+                batch: { batchId: 'batch-1', commandIds: ['command-1'], status: 'executing', receiptIdentity: null },
+            });
+            agentRunLifecycle.transitionPhase({ runId, phase: 'executing' });
+            return batchSchedule;
+        }
+
+        it('does not complete the run when its first batch commits', () => {
+            recordScheduledPlan('run-two-batches');
+
+            agentRunLifecycle.recordCommittedWork({
+                runId: 'run-two-batches',
+                workId: 'batch-1',
+                receiptIdentity: 'receipt-1',
+                completesRun: true,
+            });
+
+            expect(agentRunLifecycle.get('run-two-batches')?.phase).toBe('executing');
+            agentRunLifecycle.transitionPhase({ runId: 'run-two-batches', phase: 'completed' });
+            expect(agentRunLifecycle.get('run-two-batches')?.phase).toBe('executing');
+        });
+
+        it('does not complete the run when its first batch settles as a no-op', () => {
+            recordScheduledPlan('run-no-op');
+            const claimed = agentRunLifecycle.claimWorkLease({
+                runId: 'run-no-op',
+                workId: 'batch-1',
+                ownerKind: 'command',
+                cleanupOwner: 'command-executor',
+                idempotencyKey: 'batch-1-key',
+                receiptIdentity: 'batch-1-receipt',
+                idempotent: true,
+                retriable: false,
+            });
+            if (claimed.status !== 'claimed') {
+                throw new Error('Expected the first batch to be claimed');
+            }
+
+            expect(
+                agentRunLifecycle.settleWorkLeaseAndTerminalize({
+                    runId: 'run-no-op',
+                    workId: 'batch-1',
+                    leaseId: claimed.lease.leaseId,
+                    cancellationGeneration: claimed.lease.cancellationGeneration,
+                    idempotencyKey: claimed.lease.idempotencyKey,
+                    receiptIdentity: claimed.lease.receiptIdentity,
+                    outcome: 'no-op',
+                })
+            ).toEqual({ status: 'settled' });
+            expect(agentRunLifecycle.get('run-no-op')).toMatchObject({
+                phase: 'executing',
+                batches: [{ batchId: 'batch-1', status: 'no-op' }],
+            });
+        });
+
+        it('keeps the schedule through a store round trip', () => {
+            const batchSchedule = recordScheduledPlan('run-round-trip');
+            // The run state persists as JSON, so the schedule must survive being written as text.
+            const persistedText = JSON.stringify(readAgentRunState());
+            const restored = sanitizeAgentRunState(JSON.parse(persistedText));
+
+            expect(restored.runs.find((run) => run.runId === 'run-round-trip')?.plan?.batchSchedule).toEqual(
+                batchSchedule
+            );
+        });
+    });
+});
+
+const LAYER_COUNT = 26;
+const MUTE_LAYERS_PROMPT = 'Mute all layer tracks';
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
+
+async function seedLayerTracks(): Promise<string[]> {
+    for (let index = 0; index < LAYER_COUNT; index += 1) {
+        await executeAppAction({ type: 'addTrack', payload: { name: `Layer ${String(index + 1)}`, kind: 'audio' } });
+    }
+    return (trackStore.value?.tracks ?? []).map((track) => track.id);
+}
+
+/** One intent wide enough that the index page carries muteTrack among its matches. */
+const MUTE_SEARCH_CALL = {
+    name: 'agent.command-index.search',
+    arguments: { intent: 'mute track', page: { limit: 8 } },
+};
+
+function muteLayersItem() {
+    return {
+        id: 'mute-layers',
+        name: 'muteTrack',
+        arguments: { muted: true },
+        selector: matchTracks('layer', LAYER_COUNT),
+    };
+}
+
+function scriptMuteLayersProposal(): void {
+    scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        () => [MUTE_SEARCH_CALL],
+        discoverSearchedCalls(['muteTrack']),
+        proposeDiscoveredCalls([muteLayersItem()], ['muteTrack']),
+    ]);
+}
+
+async function requestMuteLayers(options?: { mode: 'preview' }): Promise<void> {
+    flushAutomergeStorageWrites();
+    await sendChatMessage(MUTE_LAYERS_PROMPT, options);
+}
+
+function proposedConfirmations() {
+    return (pendingActionConfirmationStore.value?.confirmations ?? []).filter(
+        (confirmation) => confirmation.status === 'proposed'
+    );
+}
+
+function requireOnlyProposedConfirmation() {
+    const proposed = proposedConfirmations();
+    if (proposed.length !== 1) {
+        throw new Error(`Expected exactly one proposed confirmation, found ${String(proposed.length)}`);
+    }
+    return proposed[0]!;
+}
+
+function mutedTrackIds(): string[] {
+    return (trackStore.value?.tracks ?? []).filter((track) => track.muted).map((track) => track.id);
+}
+
+describe('a bulk request confirmed one batch at a time', () => {
+    beforeEach(async () => {
+        Container.clear();
+        configureAiWorkflowCommandPreflightFixture();
+        runtimeMocks.generateWebLlmCompletion.mockReset();
+        await cloudSession.clear();
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('bulk set commands test');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        clearAiHistory();
+        clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        midiStore.set(emptyMidiState());
+        automationStore.set({ lanes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
+        chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+    });
+
+    afterEach(async () => {
+        clearUndoHistory();
+        resetAiWorkflowCommandPreflightFixture();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
+        clearAiHistory();
+        clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        midiStore.set(emptyMidiState());
+        configureAutomergeStoragePort(null);
+        await cloudSession.clear();
+        removeCrdtDoc('root');
+    });
+
+    it('proposes the second batch for its own approval once the first commits, then completes the run', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        expect(first.approvalSnapshot.batchPosition).toEqual({ index: 1, total: 2 });
+        expect(first.actions).toHaveLength(MAX_LLM_ACTIONS_PER_BATCH);
+
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('waiting-for-approval');
+        const second = requireOnlyProposedConfirmation();
+        expect(second.runId).toBe(first.runId);
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        expect(getAgentApprovalView({ confirmationId: second.id })?.batchPosition).toEqual({ index: 2, total: 2 });
+
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
+        expect(proposedConfirmations()).toEqual([]);
+    });
+
+    it('refuses a later batch whose target someone else changed and leaves the run partially completed', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        const changedTargetId = layerIds.at(-1)!;
+
+        // The set keeps every member, so the first batch still matches it and only asks to be
+        // approved again; the second batch's own target is what changed.
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: changedTargetId, name: 'Layer 26 Lead' } });
+        const firstAttempt = await confirmPendingChatActions({ confirmationId: first.id });
+        expect(firstAttempt).toMatchObject({ status: 'reapproval_required' });
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(proposedConfirmations()).toEqual([]);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('partially-completed');
+        const refusal = chatStore.value?.messages.at(-1)?.content ?? '';
+        expect(refusal).toMatch(
+            /^Batch 2 of 2 was not proposed: .*preconditions no longer hold\. Batch 1 remains applied\.$/u
+        );
+        expect(getPendingActionConfirmation(first.id)?.status).toBe('executed');
+    });
+
+    it('refuses to preview a request that spans several batches', async () => {
+        await seedLayerTracks();
+        scriptMuteLayersProposal();
+
+        await requestMuteLayers({ mode: 'preview' });
+
+        expect(proposedConfirmations()).toEqual([]);
+        expect(mutedTrackIds()).toEqual([]);
+        expect(chatStore.value?.messages.at(-1)?.content).toBe(
+            'Command not executed: This request runs as 2 successive batches, which only apply mode can run one approval at a time.'
+        );
+    });
+
+    it('refuses a list larger than one batch that shares its turn with a specialized workflow', async () => {
+        await seedLayerTracks();
+        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            () => [MUTE_SEARCH_CALL],
+            discoverSearchedCalls(['muteTrack']),
+            (message) => [
+                { name: WORKFLOW_CAPABILITY_TOOL_NAME, arguments: { capabilityId: WORKFLOW_CAPABILITY_IDS[0] } },
+                ...proposeDiscoveredCalls([muteLayersItem()], ['muteTrack'])(message),
+            ],
+        ]);
+
+        await requestMuteLayers();
+
+        expect(proposedConfirmations()).toEqual([]);
+        expect(mutedTrackIds()).toEqual([]);
+        expect(chatStore.value?.messages.at(-1)?.content).toBe(
+            'Command not executed: Provider action rejected: A list larger than one batch cannot share its turn with a specialized workflow or another request.'
+        );
+    });
+
+    it('refuses a request that spans several batches from the prompt bar', async () => {
+        await seedLayerTracks();
+        scriptMuteLayersProposal();
+        flushAutomergeStorageWrites();
+
+        const submitted = await submitAdmittedPromptRequest({ prompt: MUTE_LAYERS_PROMPT, source: 'prompt-bar' });
+
+        expect(submitted.status).toBe('rejected');
+        expect(proposedConfirmations()).toEqual([]);
+        expect(mutedTrackIds()).toEqual([]);
     });
 });

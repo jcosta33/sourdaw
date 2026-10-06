@@ -4,6 +4,7 @@ import { type ActionCommandGraph } from '../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
+import { replayBulkSetSlice } from '../services/bulkSetSliceReplay';
 import {
     collectSemanticCommandListCandidates,
     resolveSemanticCommandListSelector,
@@ -98,6 +99,38 @@ function evidenceDependsTransitivelyOn(
     return false;
 }
 
+/**
+ * A slice's targets must be the contiguous run of its whole set that starts at its offset; then the
+ * set is replayed against the live project beyond the members earlier batches carried.
+ */
+function replaySelectorSlice(
+    selector: ArbitraryCommandListSelectorEvidence,
+    candidates: ReturnType<typeof collectSemanticCommandListCandidates>,
+    context: ProjectContext
+): string | null {
+    const slice = selector.slice;
+    if (slice === undefined) {
+        return null;
+    }
+    const carried = slice.setStableIds.slice(slice.offset, slice.offset + selector.stableIds.length);
+    if (
+        !Number.isSafeInteger(slice.offset) ||
+        slice.offset < 0 ||
+        JSON.stringify(carried) !== JSON.stringify(selector.stableIds)
+    ) {
+        return 'Structured command compiler evidence selector scope is invalid.';
+    }
+    const replayed = replayBulkSetSlice({
+        candidates,
+        context,
+        itemId: selector.itemId,
+        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+        selector: slice.selector,
+        slice,
+    });
+    return replayed.status === 'rejected' ? replayed.reason : null;
+}
+
 /** Re-checks bounded, app-owned compiler proof at the bridge boundary before any grounding bypass. */
 export function validateArbitraryCommandListEvidence(input: {
     evidence: ArbitraryCommandListEvidence;
@@ -176,7 +209,15 @@ export function validateArbitraryCommandListEvidence(input: {
         // same context with no await between them, so this can never observe a project change made
         // after the compile — that guard lives in `resolveConfirmationAdmission`'s approval-time
         // re-resolution instead.
-        if (selector.predicate !== undefined) {
+        //
+        // A slice of a set larger than one batch is replayed differently: earlier batches of the same
+        // run changed the members they carried, so the set is compared beyond those members.
+        if (selector.slice !== undefined) {
+            const sliceRejection = replaySelectorSlice(selector, candidates, input.context);
+            if (sliceRejection !== null) {
+                return { status: 'rejected', reason: sliceRejection };
+            }
+        } else if (selector.predicate !== undefined) {
             const replayed = resolveSemanticCommandListSelector({
                 candidates,
                 context: input.context,
