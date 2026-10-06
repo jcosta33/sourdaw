@@ -98,8 +98,8 @@ The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the mode
 Amended 2026-10-06 by the owner: at most four live lanes, opened while other heads wait on CI or
 review. Agent lanes spend most of their life waiting on hour-long pipeline runs rather than in
 active development, so the DORA evidence for three or fewer active branches, measured on human
-teams, does not bound them; collisions on shared files and recomputed digests are prevented by
-the stacking rule in AGENTS.md Delivery.
+teams, does not bound them. Lanes sharing a source file still wait or stack on a real dependency;
+lanes sharing only recomputed pins run in parallel, and the later merge re-records them.
 
 ## Consequences
 

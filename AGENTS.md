@@ -61,7 +61,7 @@ session owns. Require back only status, changed paths, decisive evidence, and bl
 
 Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
 together. Split distinct outcomes when separate review materially helps, provided each slice can land
-safely and final integration stays coherent. Stack only separately useful slices with a real dependency, or to serialize lanes that share a recomputed digest (Delivery).
+safely and final integration stays coherent. Stack only separately useful slices with a real dependency.
 A size report alone never requires a split, and no numeric threshold decides one. When distinct
 outcomes must land together, name the invariant or dependency that requires joint landing; a feature
 name or changed-line target is insufficient. If a review repair introduces a new mechanism or outcome,
@@ -667,7 +667,15 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small and merges prompt. Hold at most four live lanes at once. Before opening a lane, list the paths each live lane changes and the paths yours will change. Two lanes collide when they share a file, or when both touch members of one recomputed digest: a `GRAND_BOULE_RELEASE_REGISTRY` tracked set, the wasm manifest and committed artifacts, the agent-campaign evidence manifest and capability baseline, or `package.json` and the lockfiles. Open a new lane only when it collides with no live lane, or stack it on the one lane it collides with or depends on through `--stack-on`; a lane that collides with two live lanes waits for one to merge. A head waiting on CI or review does not block a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff whole, reassess its scope under Delegation before review.
+Keep batches small and merges prompt. Hold at most four live lanes at once. Before opening a lane,
+compare the files it will change with the files each live lane changes. Work that shares a source
+file with a live lane waits for that lane to merge, or stacks on it with `--stack-on` only when it
+depends on that lane's change. Lanes that share only recomputed or generated pins — checked-in
+digests, snapshots, generated schemas, inventories or evidence the checks recompute — may run in
+parallel; whichever merges second merges `main` into its lane and re-records those pins before its
+final review. A head waiting on CI or review does not block a new lane; merge each as soon as its
+Gate and approval allow. If reviewers cannot attack a diff whole, reassess its scope under
+Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
