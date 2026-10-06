@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_b1b0209a630a53 78
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_1bd1b979ef5171 10
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_632066eb7ce3bc 86
+  s_1c08b47ac3792f::t_77a7b10e2665b4 273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19cd99d90832820714e01d15beca08c12a87eba1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
