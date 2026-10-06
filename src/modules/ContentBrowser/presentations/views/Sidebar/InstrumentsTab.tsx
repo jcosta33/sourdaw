@@ -11,13 +11,13 @@ import { Input } from '#/components/ui/input';
 import { logger } from '#/infra/logger/appLogger';
 import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import {
-    addTrack,
     getFactoryPresets,
     getUserPresets,
     saveCurrentAsPreset,
     deleteUserPreset,
     compileLoadPresetActions,
 } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { compileToasterTrackStackActions } from '#/modules/Toaster/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -208,7 +208,7 @@ export const InstrumentsTab = ({
     };
 
     const handleAddBlankMidiTrack = () => {
-        addTrack({ name: 'MIDI', kind: 'midi' });
+        void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } });
     };
 
     const handleAddFermenterTrack = () => {

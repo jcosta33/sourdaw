@@ -8,14 +8,27 @@ import type { Track } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetSend = vi.fn();
 
-const mockAddTrack = vi.fn();
+const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
+// The action-routed graph pulls more of the barrel in than the view itself
+// calls, so the mock has to supply every name the graph imports.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+    getExecutableAppActionEffect: vi.fn(() => null),
+    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppActionBatch: vi.fn().mockResolvedValue([]),
+    pushUndoEntry: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         toggleSendPreFader: vi.fn(),
         setSend: (...args: unknown[]) => mockSetSend(...args),
-        addTrack: (...args: unknown[]) => mockAddTrack(...args),
     };
 });
 
@@ -184,11 +197,16 @@ describe('SendsEditor', () => {
         expect(screen.getByText('POST')).toBeInTheDocument();
     });
 
-    it('should call addTrack when create bus button is clicked', () => {
+    it('dispatches the createBus app action when create bus button is clicked', () => {
         mockUseTracks.mockReturnValue({ tracks: [] });
         render(<SendsEditor track={mockTrack} />);
         const createButton = screen.getByText(/Create Bus/i);
         fireEvent.click(createButton);
-        expect(mockAddTrack).toHaveBeenCalled();
+        // The registered bus-creation action, not the bare addTrack use case,
+        // so the bus enters undo history (#4618).
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+            type: 'createBus',
+            payload: { name: 'Bus 1' },
+        });
     });
 });

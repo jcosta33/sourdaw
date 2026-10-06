@@ -9,13 +9,8 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
-import {
-    getClipGainEnvelope,
-    toggleClipGainEnvelope,
-    addGainEnvelopePoint,
-    removeGainEnvelopePoint,
-    resetClipGainEnvelope,
-} from '#/modules/Arrangement/useCases';
+import { getClipGainEnvelope } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
@@ -24,6 +19,24 @@ type ClipGainEnvelopeSectionProps = {
     clipId: string;
     duration: number;
 };
+
+// The envelope edits dispatch through the command path (#4617); the guarded
+// inverses live beside their siblings in Arrangement's handlers.
+function dispatchToggle(clipId: string, enabled: boolean): void {
+    void executeUserAppAction({ type: 'toggleClipGainEnvelope', payload: { clipId, expectedEnabled: enabled } });
+}
+
+function dispatchAddPoint(clipId: string, beatOffset: number): void {
+    void executeUserAppAction({ type: 'addGainEnvelopePoint', payload: { clipId, beatOffset, gainDb: 0 } });
+}
+
+function dispatchRemovePoint(clipId: string, pointId: string): void {
+    void executeUserAppAction({ type: 'removeGainEnvelopePoint', payload: { clipId, pointId } });
+}
+
+function dispatchReset(clipId: string): void {
+    void executeUserAppAction({ type: 'resetClipGainEnvelope', payload: { clipId } });
+}
 
 export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSectionProps): ReactElement => {
     // §197.1 — subscribe to the canonical store so undo/redo, collab
@@ -53,7 +66,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
-                                    onClick={() => toggleClipGainEnvelope(clipId)}
+                                    onClick={() => dispatchToggle(clipId, envelope.enabled)}
                                     aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
                                 >
                                     <Activity
@@ -70,7 +83,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
-                                    onClick={() => addGainEnvelopePoint(clipId, duration / 2, 0)}
+                                    onClick={() => dispatchAddPoint(clipId, duration / 2)}
                                     aria-label="Add breakpoint"
                                 >
                                     <Plus className="size-3" />
@@ -83,7 +96,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
-                                    onClick={() => resetClipGainEnvelope(clipId)}
+                                    onClick={() => dispatchReset(clipId)}
                                     aria-label="Reset gain envelope"
                                 >
                                     <RotateCcw className="size-3" />
@@ -108,7 +121,7 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                                     variant="ghost"
                                     size="icon-xs"
                                     className="h-4 w-4"
-                                    onClick={() => removeGainEnvelopePoint(clipId, pt.id)}
+                                    onClick={() => dispatchRemovePoint(clipId, pt.id)}
                                     aria-label={`Remove breakpoint at beat ${pt.beatOffset}`}
                                 >
                                     <span className="text-[9px] text-muted-foreground">×</span>
