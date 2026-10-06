@@ -34,7 +34,7 @@ import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAut
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
-import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
+import { discardStaleStoredMoves } from '../scheduling/discardStaleStoredMoves';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
@@ -370,10 +370,11 @@ export function startPlayheadScheduler(): void {
             // The teardown stops notes, not pedals or controllers (a controller
             // is state), so the stored moves still queued for the cut look-ahead
             // would apply at their old frames after the re-emitted window: drop
-            // them on every device stored playback posted to and lift the pedals
-            // it moved. The re-emitted window restores the values in force where
-            // it opens, so a pedal the lane holds down stays down.
-            releaseStoredControllers();
+            // them on every device stored playback posted to. The re-emitted
+            // window restores the values in force where it opens and lifts a
+            // pedal only where nothing is in force, so a pedal the lane holds
+            // down is never lifted and pressed again.
+            discardStaleStoredMoves();
             reemitAfterEdit = true;
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
@@ -537,9 +538,9 @@ export function startPlayheadScheduler(): void {
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             // Stops notes, not pedals or controllers: drop the stored moves still
-            // queued for the old position (a no-op after an edit's teardown, which
-            // already did), as the edit teardown above does.
-            releaseStoredControllers();
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the loop start restores what is in force there.
+            discardStaleStoredMoves();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -633,8 +634,9 @@ export function startPlayheadScheduler(): void {
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             // Stops notes, not pedals or controllers: drop the stored moves still
-            // queued for the old position, as the edit teardown above does.
-            releaseStoredControllers();
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the destination restores what is in force there.
+            discardStaleStoredMoves();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();

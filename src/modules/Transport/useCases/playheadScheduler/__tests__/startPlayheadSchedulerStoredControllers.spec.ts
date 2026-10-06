@@ -401,20 +401,19 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             };
         }
 
-        it('lifts the pedal the dying pass left down and restores the value in force at the loop start', async () => {
+        it('restores the value in force at the loop start, with no lift ahead of it', async () => {
             loadClip(pedalLane());
             transportStoreState.value = playingState({ playheadPosition: 3.3, isLooping: true, ...SHORT_LOOP });
             startPlayheadScheduler();
 
             await runTicksUntil(hasWrapped({ beat: 3.3 }));
 
-            // The pedal pressed at 3.5 inside the dying pass, then the wrap: a
-            // frameless lift (it also supersedes any press still queued behind the
-            // old position), the framed restore of the up in force at 3.4, and the
-            // incoming pass's own press at 3.5.
-            expect(pedalCalls.map((call) => call.position)).toEqual([1, 0, 0, 1]);
-            const [, lift, restore, secondPress] = pedalCalls;
-            expect(lift!.frame).toBeUndefined();
+            // The pedal pressed at 3.5 inside the dying pass, then the wrap: the
+            // framed restore of the up in force at 3.4 (the queued moves for the old
+            // position are dropped by the discard, not superseded by a frameless
+            // lift), and the incoming pass's own press at 3.5.
+            expect(pedalCalls.map((call) => call.position)).toEqual([1, 0, 1]);
+            const [, restore, secondPress] = pedalCalls;
             expect(restore!.frame).toBeDefined();
             expect(restore!.frame!).toBeLessThanOrEqual(frameOf(ctxTime.now));
             expect(restore!.frame!).toBeGreaterThan(frameOf(ctxTime.now - 2 * TICK_SECONDS));
@@ -428,10 +427,11 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
 
             await runTicksUntil(hasWrapped({ beat: 3.3 }));
 
-            // The press, the frameless lift at the wrap, and the new pass's own
-            // press at 3.5: nothing is restored, because nothing is in force.
+            // The press, the framed lift at the wrap (nothing is in force, so the
+            // pedal is lifted rather than restored), and the new pass's own press.
             expect(pedalCalls.map((call) => call.position)).toEqual([1, 0, 1]);
-            expect(pedalCalls[1]!.frame).toBeUndefined();
+            expect(pedalCalls[1]!.frame).toBeDefined();
+            expect(pedalCalls[1]!.frame!).toBeLessThanOrEqual(frameOf(ctxTime.now));
         });
     });
 
@@ -450,12 +450,8 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             evaluateFollowActionsMock.mockImplementationOnce(() => ({ jumpToPosition: 2, shouldStop: false }));
             await runTick();
 
-            // Lifted frameless (supersedes the press still queued behind the old
-            // position), then the up that is in force at 2, at the jump frame.
-            expect(pedalCalls).toEqual([
-                { position: 0, frame: undefined },
-                { position: 0, frame: frameOf(ctxTime.now) },
-            ]);
+            // Only the up that is in force at 2, at the jump frame: no frameless lift first.
+            expect(pedalCalls).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
         });
 
         it('lifts and does not restore when no row of the lane is in force at the destination', async () => {
@@ -468,7 +464,8 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             evaluateFollowActionsMock.mockImplementationOnce(() => ({ jumpToPosition: 2, shouldStop: false }));
             await runTick();
 
-            expect(pedalCalls).toEqual([{ position: 0, frame: undefined }]);
+            // Nothing is in force at 2, so the pedal stored playback moved is lifted at the jump frame.
+            expect(pedalCalls).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
             expect(otherPedalCalls).toEqual([]);
         });
 

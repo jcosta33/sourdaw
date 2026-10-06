@@ -58,19 +58,6 @@ export function noteStoredControllerMove(input: {
     });
 }
 
-/** The controllers stored playback has left engaged on one device. */
-export function readStoredControllerEngagement(trackId: string, deviceId: string): ReadonlySet<number> {
-    return new Set(engagementByDevice.get(storedControllerDeviceKey(trackId, deviceId))?.controllers);
-}
-
-/** Every engagement recorded so far, leaving the record as it is. */
-export function listStoredControllerEngagements(): StoredControllerEngagement[] {
-    return Array.from(engagementByDevice.values(), (engagement) => ({
-        ...engagement,
-        controllers: new Set(engagement.controllers),
-    }));
-}
-
 export type StoredControllerDevice = { trackId: string; deviceId: string; deviceType: string };
 
 export type StoredControllerPostedDevice = StoredControllerDevice & {
@@ -107,6 +94,16 @@ export function noteStoredControllerPost(device: StoredControllerDevice & { peda
         existing.pedals.add(device.pedal);
     }
     postedDeviceByKey.set(key, existing);
+}
+
+/** The pedals stored playback has moved on one device: the ones a relocation may have to lift. */
+export function readStoredControllerPostedPedals(trackId: string, deviceId: string): ReadonlySet<number> {
+    return new Set(postedDeviceByKey.get(storedControllerDeviceKey(trackId, deviceId))?.pedals);
+}
+
+/** Every device stored playback has posted to, leaving the record as it is: a relocation restores from it. */
+export function listStoredControllerPostedDevices(): StoredControllerPostedDevice[] {
+    return Array.from(postedDeviceByKey.values(), (device) => ({ ...device, pedals: new Set(device.pedals) }));
 }
 
 /** Every device stored playback has posted to, forgetting them: the caller is about to drop each one's queued stored moves. */

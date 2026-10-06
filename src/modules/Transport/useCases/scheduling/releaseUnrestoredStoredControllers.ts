@@ -1,9 +1,8 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import {
-    listStoredControllerEngagements,
+    listStoredControllerPostedDevices,
     noteStoredControllerMove,
-    noteStoredControllerPost,
     storedControllerDeviceKey,
 } from '../../services/storedControllerEngagement';
 
@@ -17,44 +16,39 @@ type ReleaseUnrestoredStoredControllersInput = {
 };
 
 /**
- * Release, at the relocation's frame, every controller stored playback left
- * engaged on a device the relocation did not restore.
+ * Lift, at the relocation's frame, every pedal stored playback moved on a device the
+ * relocation did not restore.
  *
  * A device is restored only when its track has a clip of this window to restore
  * it from. A track with no clip at the destination, or one that is muted or frozen
- * there, still holds the pedal the last pass left down, and nothing else would
- * lift it before the next stop.
+ * there, has no row in force for any pedal, and still holds the pedal the last pass
+ * left down, which nothing else would lift before the next stop.
  */
 export function releaseUnrestoredStoredControllers({
     restored,
     sampleFrameOnTrack,
 }: ReleaseUnrestoredStoredControllersInput): void {
-    for (const engagement of listStoredControllerEngagements()) {
-        if (restored.has(storedControllerDeviceKey(engagement.trackId, engagement.deviceId))) {
+    for (const device of listStoredControllerPostedDevices()) {
+        if (device.pedals.size === 0 || restored.has(storedControllerDeviceKey(device.trackId, device.deviceId))) {
             continue;
         }
-        const node = getTrackStrip(engagement.trackId)?.deviceNodes.find(
-            (candidate) => candidate.deviceId === engagement.deviceId
+        const node = getTrackStrip(device.trackId)?.deviceNodes.find(
+            (candidate) => candidate.deviceId === device.deviceId
         );
         if (!node) {
             continue;
         }
         releaseStoredEngagement({
-            deviceType: engagement.deviceType,
+            deviceType: device.deviceType,
             node,
-            controllers: engagement.controllers,
-            sampleFrame: sampleFrameOnTrack(engagement.trackId),
+            controllers: device.pedals,
+            sampleFrame: sampleFrameOnTrack(device.trackId),
         });
-        noteStoredControllerPost({
-            trackId: engagement.trackId,
-            deviceId: engagement.deviceId,
-            deviceType: engagement.deviceType,
-        });
-        for (const controller of engagement.controllers) {
+        for (const controller of device.pedals) {
             noteStoredControllerMove({
-                trackId: engagement.trackId,
-                deviceId: engagement.deviceId,
-                deviceType: engagement.deviceType,
+                trackId: device.trackId,
+                deviceId: device.deviceId,
+                deviceType: device.deviceType,
                 controller,
                 engaged: false,
             });

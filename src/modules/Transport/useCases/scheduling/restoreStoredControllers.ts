@@ -4,7 +4,7 @@ import { type StoredControllerNode } from '../../models/StoredControllerNode';
 import {
     noteStoredControllerMove,
     noteStoredControllerPost,
-    readStoredControllerEngagement,
+    readStoredControllerPostedPedals,
 } from '../../services/storedControllerEngagement';
 
 import { postStoredControllerMove } from './postStoredControllerMove';
@@ -28,15 +28,19 @@ export type RestoreStoredControllersInput = {
 
 /**
  * Queue what one device must be told when playback is relocated to `atBeat` (a loop
- * wrap or a follow-action jump): the value in force there for each stored lane the
- * window opening at the destination does not emit itself, and the release of every
- * controller stored playback left engaged that no lane has a value for there.
+ * wrap, a follow-action jump or an edit's re-emit): the value in force there for
+ * each stored lane the window opening at the destination does not emit itself, and
+ * the lift of every pedal stored playback moved that no lane has a value for there.
  *
  * Without it a pedal pressed late in one pass stays down through every later pass
  * until the lane's next move, because a relocation stops notes but deliberately
- * keeps pedal state. The engaged set is read now, before this window posts
- * anything, so it is what earlier windows left; the release names exactly those
- * controllers, so a pedal the user holds live is never touched.
+ * keeps pedal state. A pedal that has a value in force is only given that value,
+ * never lifted first: a Grand Boule releases the voices a lifted sustain was
+ * holding, and pressing it again does not bring them back. The moved set is every
+ * pedal posted so far, not those whose last post was a press, because the discard
+ * of a still-queued lift leaves the pedal wherever the last applied move put it.
+ * The lift names exactly the pedals stored playback moved, so a pedal the user
+ * holds live is never touched.
  */
 export function restoreStoredControllers({
     trackId,
@@ -47,7 +51,7 @@ export function restoreStoredControllers({
     sampleFrame,
     queue,
 }: RestoreStoredControllersInput): void {
-    const engaged = readStoredControllerEngagement(trackId, device.id);
+    const moved = readStoredControllerPostedPedals(trackId, device.id);
     const held = new Set<number>();
     for (const { clip, controlChanges } of clips) {
         const restore = projectClipControllerRestore({ controlChanges, clip, atBeat });
@@ -68,7 +72,7 @@ export function restoreStoredControllers({
         }
     }
     const stale = new Set<number>();
-    for (const controller of engaged) {
+    for (const controller of moved) {
         if (!held.has(controller)) {
             stale.add(controller);
         }

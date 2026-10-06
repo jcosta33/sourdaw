@@ -656,7 +656,7 @@ describe('startPlayheadScheduler stored controllers at the seam-edit wrap', () =
         vi.unstubAllGlobals();
     });
 
-    it('drops the stored moves queued for the old timeline and lifts the pedal before it restores the loop start', async () => {
+    it('drops the stored moves queued for the old timeline and restores the loop start without lifting the pedal', async () => {
         transportStoreState.value = playingState({
             playheadPosition: 0,
             isLooping: true,
@@ -693,7 +693,7 @@ describe('startPlayheadScheduler stored controllers at the seam-edit wrap', () =
         });
         await runTick(worker, 0.01);
 
-        // Dropped and lifted first, then the value in force at 3.9 (down) restored at its frame.
-        expect(stored.slice(0, 3)).toEqual(['discard', 'sustain 0 now stored', 'sustain 1 framed stored']);
+        // Dropped first, then the value in force at 3.9 (down) restored at its frame, with no lift between.
+        expect(stored.slice(0, 2)).toEqual(['discard', 'sustain 1 framed stored']);
     });
 });

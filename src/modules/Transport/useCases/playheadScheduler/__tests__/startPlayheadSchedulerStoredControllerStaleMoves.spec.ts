@@ -26,12 +26,20 @@ type Move = { key: string; value: number; frame: number; stored: boolean };
 
 function createEngineModel() {
     const applied = new Map<string, number>();
+    /** Every value a key has taken, in order: a lift that was never applied never shows here. */
+    const history = new Map<string, number[]>();
     let pending: Move[] = [];
+    function apply(key: string, value: number): void {
+        applied.set(key, value);
+        const values = history.get(key) ?? [];
+        values.push(value);
+        history.set(key, values);
+    }
     function advanceTo(frame: number): void {
         const due = pending.filter((move) => move.frame <= frame).sort((a, b) => a.frame - b.frame);
         pending = pending.filter((move) => move.frame > frame);
         for (const move of due) {
-            applied.set(move.key, move.value);
+            apply(move.key, move.value);
         }
     }
     return {
@@ -40,7 +48,7 @@ function createEngineModel() {
                 if (!stored) {
                     pending = pending.filter((move) => move.key !== key);
                 }
-                applied.set(key, value);
+                apply(key, value);
                 return;
             }
             pending.push({ key, value, frame, stored });
@@ -51,8 +59,10 @@ function createEngineModel() {
         advanceTo,
         drainAll: () => advanceTo(Number.POSITIVE_INFINITY),
         value: (key: string) => applied.get(key),
+        history: (key: string) => history.get(key) ?? [],
         reset(): void {
             applied.clear();
+            history.clear();
             pending = [];
         },
     };
@@ -667,10 +677,28 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
             tempoMapStoreState.value = { changes: [{ id: 'slow', beat: 0, tempo: 60, curve: 'instant' }] };
             await runTick();
 
-            // Lifted and pressed again in the same breath: the press is at or before now, so
-            // it applies in the very block the lift does and no gap is audible.
-            expect(callLog).toEqual(['discard', 'sustain 0 now stored', 'sustain 1 framed stored']);
-            engine.advanceTo(frameNow());
+            // The queued moves are dropped and the value in force is restored: no lift
+            // first. A Grand Boule releases the voices a lifted sustain was holding and a
+            // press does not bring them back, so the pedal must never reach the engine up.
+            expect(callLog).toEqual(['discard', 'sustain 1 framed stored']);
+            engine.drainAll();
+            expect(engine.history('sustain')).toEqual([1, 1]);
+        });
+
+        it('lifts a pedal stored playback moved when no row of the lane is in force where the edit re-emits', async () => {
+            loadClip('grand-boule', [row('down', 64, 127, 3.5)]);
+            transportStoreState.value = playingState({ playheadPosition: 3.0 });
+            startPlayheadScheduler();
+            await playUntilQueued('sustain 1');
+            callLog.length = 0;
+
+            tempoMapStoreState.value = { changes: [{ id: 'slow', beat: 0, tempo: 60, curve: 'instant' }] };
+            await runTick();
+
+            // Nothing is in force before 3.5: the queued press is dropped, the moved pedal is
+            // lifted at the re-emit frame, and the re-emitted window presses it at 3.5.
+            expect(callLog).toEqual(['discard', 'sustain 0 framed stored', 'sustain 1 framed stored']);
+            engine.drainAll();
             expect(engine.value('sustain')).toBe(1);
         });
     });
