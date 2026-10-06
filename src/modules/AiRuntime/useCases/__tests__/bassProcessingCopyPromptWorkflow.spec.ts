@@ -626,6 +626,35 @@ function renameBassTrack(name: string): void {
     });
 }
 
+/** Adds a track and one reverb layer on it, `layer-<trackId>`, with one region over the given beats. */
+function addLayerOnNewTrack(trackId: string, name: string, startBeat: number, endBeat: number): void {
+    const trackState = trackStore.value;
+    const layerState = adjustmentLayerStore.value;
+    if (!trackState || !layerState) {
+        throw new TypeError('Expected project state');
+    }
+    trackStore.set({ ...trackState, tracks: [...trackState.tracks, createTrack(trackId, name)] });
+    adjustmentLayerStore.set({
+        layers: [
+            ...layerState.layers,
+            createLayer({
+                id: `layer-${trackId}`,
+                name: `Layer ${trackId}`,
+                effectType: 'reverb',
+                affectedTrackIds: [trackId],
+                region: {
+                    id: `region-${trackId}`,
+                    startBeat,
+                    endBeat,
+                    blend: 1,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                },
+            }),
+        ],
+    });
+}
+
 function createLayer(input: {
     id: string;
     name: string;
@@ -1078,6 +1107,52 @@ describe('bass-processing section copy workflow', () => {
         });
         await sendChatMessage(PROMPT);
         expect(getConfirmationId()).toBe('');
+    });
+
+    it('refuses the scope for an unplaced bass track whose layer sits only on Chorus Two', async () => {
+        addLayerOnNewTrack('track-bass-fx', 'Bass FX', 48, 64);
+
+        expect(getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-03 track role is ambiguous: track-bass-fx',
+        });
+    });
+
+    it('protects a Violin track and its Chorus One layer instead of refusing, as for any non-bass track', async () => {
+        addLayerOnNewTrack('track-violin', 'Violin', 16, 32);
+
+        const scope = getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test');
+        expect(scope.status).toBe('request');
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                { id: 'track-violin', name: 'Violin' },
+                { id: 'layer-track-violin', name: 'Layer track-violin' },
+            ])
+        );
+    });
+
+    it('protects the Chorus One layer of a Bass Strings track, an orchestral part, instead of copying it', async () => {
+        addLayerOnNewTrack('track-bass-strings', 'Bass Strings', 16, 32);
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([{ id: 'layer-track-bass-strings', name: 'Layer track-bass-strings' }])
+        );
     });
 
     it('targets a bass named String Bass, which a strings word must not turn into an unknown role', async () => {

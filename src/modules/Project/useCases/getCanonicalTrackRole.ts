@@ -179,8 +179,15 @@ function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[], name: s
     if (!roles.every((role) => DRUM_FAMILY_ROLES.has(role))) {
         return null;
     }
+    // Percussion is the sibling family of the kit, not a piece of it: it never yields.
     const piece = roles.find((role) => role !== 'drums');
-    if (roles.length === 2 && roles.includes('drums') && piece !== undefined && labelsDrumPiece(name, piece)) {
+    if (
+        roles.length === 2 &&
+        roles.includes('drums') &&
+        piece !== undefined &&
+        piece !== 'percussion' &&
+        labelsDrumPiece(name, piece)
+    ) {
         return piece;
     }
     return 'drums';
@@ -204,6 +211,15 @@ function normalizedTokens(name: string): string {
 
 function namedRolesFromTokens(tokens: string): CanonicalTrackRole[] {
     return NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+}
+
+/** "Bass strings" and "bass brass" are an orchestral part voiced as a bass, not a bass instrument. */
+function bassQualifiedModifierRole(tokens: string): CanonicalTrackRole | null {
+    const match = /\bbass\s+(strings|brass)\b/.exec(tokens);
+    if (!match) {
+        return null;
+    }
+    return match[1] === 'brass' ? 'brass' : 'strings';
 }
 
 function modifierRolesFromTokens(tokens: string): CanonicalTrackRole[] {
@@ -441,6 +457,10 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length === 1) {
+        const bassVoiced = roles[0] === 'bass' ? bassQualifiedModifierRole(tokens) : null;
+        if (bassVoiced) {
+            return { role: bassVoiced, source: 'name-tags', evidence: 'resolved-name-tags' };
+        }
         return { role: roles[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
     if (bareVocalRole) {

@@ -395,6 +395,12 @@ describe('canonical track roles', () => {
         { name: 'Bass Synth', role: 'bass' },
         { name: 'Bass & Keys', role: 'unknown' },
         { name: 'Bass and Pad', role: 'unknown' },
+        // Bass before strings or brass is that orchestral part; after it, the bass stays a bass.
+        { name: 'Bass Strings', role: 'strings' },
+        { name: 'Bass Strings 2', role: 'strings' },
+        { name: 'Bass Brass', role: 'brass' },
+        { name: 'String Bass', role: 'bass' },
+        { name: 'Brass Bass', role: 'bass' },
     ] as const)('reads bass before a keys-family word: $name is $role', ({ name, role }) => {
         expect(getCanonicalTrackRole(input(name)).role).toBe(role);
     });
@@ -435,6 +441,26 @@ describe('canonical track roles', () => {
         { name: 'Drums & Rooms', role: 'drums' },
         { name: 'Rooms (Drums)', role: 'drums' },
         { name: 'Drum Room Overheads', role: 'drums' },
+        // Percussion is the sibling family of the kit, not a piece of it, under any separator.
+        { name: 'Drums/Perc', role: 'drums' },
+        { name: 'Drums_Perc', role: 'drums' },
+        { name: 'Drums-Perc', role: 'drums' },
+        { name: 'DRUMS_PERC.wav', role: 'drums' },
+        { name: 'Drums Perc', role: 'drums' },
+        { name: 'Drum Perc', role: 'drums' },
+        { name: 'Drums/Percussion', role: 'drums' },
+        { name: 'Drums - Percussion', role: 'drums' },
+        { name: 'Drums_Snare_Top.wav', role: 'snare' },
+        // A conjunction, negation or non-labelling separator before the piece keeps drums, piece
+        // first as well: each word and the separator check is pinned by its own row.
+        { name: 'Without Overheads (Drums)', role: 'drums' },
+        { name: 'W/O Room (Drums)', role: 'drums' },
+        { name: 'W/ Room (Drums)', role: 'drums' },
+        { name: 'With Room (Drums)', role: 'drums' },
+        { name: 'Minus Overheads (Drums)', role: 'drums' },
+        { name: 'And Room (Drums)', role: 'drums' },
+        { name: 'Mono, Room (Drums)', role: 'drums' },
+        { name: 'Kit & Room (Drums)', role: 'drums' },
         // Two specific pieces beside one drums word stay drums, even when one piece sits next to it.
         { name: 'Overheads Drum Room', role: 'drums' },
         { name: 'Drums Room + Overheads', role: 'drums' },
