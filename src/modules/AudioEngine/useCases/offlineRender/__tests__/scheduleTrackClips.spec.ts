@@ -1683,7 +1683,6 @@ describe('scheduleTrackClips — stored controllers for offline worklet instrume
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
-        mocks.checkCancel.mockImplementation(() => {});
     });
 
     // At 120 BPM and 48 kHz a beat is 24 000 frames.
