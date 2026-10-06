@@ -1,0 +1,63 @@
+src/modules/Transport/useCases/scheduling/releaseUnrestoredStoredControllers.ts
+  s_2bfd55a4393d7c::t_5c48436462d087 23-27
+src/modules/Transport/useCases/scheduling/postStoredControllerMove.ts
+  s_2bfd55a4393d7c::t_5e52d67d16bfe3 61,66-67
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_09bbcda5dd9559 2926-2929
+  s_2bfd55a4393d7c::t_1a4925b52030b7 3156-3157
+  s_2bfd55a4393d7c::t_3d4634079781ac 2872-2882,2886-2890,2892,2895,2900-2925,2930,2935,2940-2944
+  s_2bfd55a4393d7c::t_d122ad5df286b3 3113-3155,3158-3221
+  s_2bfd55a4393d7c::t_4e85cb6c6cf8ae 2891
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_b6e1ec25939b75 83,86-89,96,101-103,112-127,129,134
+  s_2bfd55a4393d7c::t_a15140fc3e9e2b 66-67
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_2bfd55a4393d7c::t_0ac34f1e638036 487-488
+  s_2bfd55a4393d7c::t_ef9a31ffe315ad 234-264
+  s_2bfd55a4393d7c::t_b658586236cdb3 452-486,489-519
+  s_2bfd55a4393d7c::t_3a365313e4ec8f 69
+  s_2bfd55a4393d7c::t_a5d74c24e33dcc 25
+  s_2bfd55a4393d7c::t_15aa5f7cc32aa4 57-63,65-66,68,70-81,85-87
+  s_2bfd55a4393d7c::t_7ebd6d3245c1bd 88,428-431
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_bfbb9ad65dd857 1091
+  s_2bfd55a4393d7c::t_70a854d286637f 44
+  s_2bfd55a4393d7c::t_0ec2a0acb0d7f7 839-841,843-857,859-860,869-870,872-880,882-884
+  s_2bfd55a4393d7c::t_47ba0178fcb7d1 89-156
+  s_2bfd55a4393d7c::t_22c7bb0d40502b 1135-1156
+  s_2bfd55a4393d7c::t_16d4633ddf2c38 1193-1205
+  s_2bfd55a4393d7c::t_7866c12dbf92e7 1515-1516
+src/utils/levainControllerDefaults.ts
+  s_2bfd55a4393d7c::t_43450702d65256 1-13
+src/utils/__tests__/levainControllerDefaults.spec.ts
+  s_2bfd55a4393d7c::t_3272ccc30494df 1-36
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_2bfd55a4393d7c::t_d6050b6235083c 780-794
+src/modules/MIDI/useCases/midiClipData/projectClipControllerRestore.ts
+  s_2bfd55a4393d7c::t_9767b4e3992873 90,99,102
+  s_2bfd55a4393d7c::t_a75def7df7f2c2 9-11,17-18,22,28-39,41-42,44-45,54-56,61-65,73,75-80,86,88-89,100-101,104-107,112,114,116-117
+  s_2bfd55a4393d7c::t_1dd8843d6c2cdd 40,43,103
+src/modules/Transport/useCases/scheduling/restoreStoredControllers.ts
+  s_2bfd55a4393d7c::t_283e9aad4822d1 58-59,61
+  s_2bfd55a4393d7c::t_287f9fc3e2a09c 74-75,77,80-84,86-106
+  s_2bfd55a4393d7c::t_b7ec643b79d011 33-36,40-46
+  s_2bfd55a4393d7c::t_44c2b14ec913cd 2,8
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_835128493969f2 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10e1eab6b2db0f98e78ee7915ff4eb34d261a748",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
