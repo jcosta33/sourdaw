@@ -1,0 +1,91 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_6e6c03a81c99af::t_52cc2af991aeed 31,507-539
+src/modules/Arrangement/models/TakeLane.ts
+  s_2c6ea7d20eea02::t_caf0d4cc3aab0f 56-88
+src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
+  s_2c6ea7d20eea02::t_dd3b27949df243 253-255,264,288
+src/modules/Arrangement/useCases/__tests__/resolveCompingLoopRunUp.spec.ts
+  s_2c6ea7d20eea02::t_8f4fdf676173c5 20-21,36-39,99-101,119-164
+src/modules/Arrangement/useCases/clipMediaOriginBeat.ts
+  s_2c6ea7d20eea02::t_7416042449fed9 1-13
+src/modules/Arrangement/useCases/index.ts
+  s_2c6ea7d20eea02::t_b94fcf756e5de3 204
+src/modules/Arrangement/useCases/recording/__tests__/rebaseRecordingTakes.spec.ts
+  s_2bfd55a4393d7c::t_e5b730160b27c7 1-88
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_2c6ea7d20eea02::t_7f89642b7efeb0 150-174
+src/modules/Arrangement/useCases/recording/rebaseRecordingTakes.ts
+  s_2c6ea7d20eea02::t_3858585b7eb3b7 1-32
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_2c6ea7d20eea02::t_f0a46ca097f6d3 5,110,116-126
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_2c6ea7d20eea02::t_ee5b4bb3d33d0c 4-7,48-49,56,61,91
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_2c6ea7d20eea02::t_31bbe275cc5d9e 1-33
+src/modules/Arrangement/useCases/withMediaOffsetBeats.ts
+  s_2c6ea7d20eea02::t_9038b8b3c29b41 1-21
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopRunUp.spec.ts
+  s_2c6ea7d20eea02::t_0c34322ad288f1 19-20,35-38,98-100,118-163
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_2c6ea7d20eea02::t_07c6d645a7d618 4,13-17,19,21,23,27-49,51-59,61,111-112,119,124,150
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_2bfd55a4393d7c::t_e08414268da35d 156
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_2bfd55a4393d7c::t_5d655e4fb2e55f 32
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_1c08b47ac3792f::t_97803b2a8b87da 55-56,95
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_1c08b47ac3792f::t_03e71db81c770d 51-52,102,440-480
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_1c08b47ac3792f::t_8367ceb15fc7fd 47-48,98
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_cf9a991c800dda::t_0d9d95edcf2c9f 3-9,151-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbea143fe021e1ffc0784ffc4ca2b3228bccd3e9",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2c6ea7d20eea02": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1cc571ec-f90b-4772-98f8-90fa32535c52",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_6e6c03a81c99af": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "08053f3e-990b-427b-b7f8-ee99558449d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_cf9a991c800dda": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9811e589-a670-4599-935d-e9770e57b4e0",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
