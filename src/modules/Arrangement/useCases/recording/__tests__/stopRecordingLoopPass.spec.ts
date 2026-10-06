@@ -86,10 +86,20 @@ function writtenClipEnd(): number {
     return mocks.setTrackState.mock.calls[0]![0].tracks[0]!.clips[0]!.endBeat;
 }
 
+function writtenTakes(): Take[] {
+    const written = mocks.takeLaneStoreSet.mock.calls[0]?.[0];
+    if (!written) {
+        throw new Error('stopRecording wrote no take-lane state');
+    }
+    const lane = written.lanes[0];
+    if (!lane) {
+        throw new Error('stopRecording wrote no take lane');
+    }
+    return lane.takes;
+}
+
 function writtenTakeSpans(): (readonly [string, number, number])[] {
-    return mocks.takeLaneStoreSet.mock.calls[0]![0].lanes[0]!.takes.map(
-        (take) => [take.id, take.startBeat, take.endBeat] as const
-    );
+    return writtenTakes().map((take) => [take.id, take.startBeat, take.endBeat] as const);
 }
 
 describe('stopRecording during a loop recording', () => {
@@ -160,7 +170,7 @@ describe('stopRecording during a loop recording', () => {
             ['pass-1', 12, 16],
             ['pass-2', 8, 16],
         ]);
-        const offsets = mocks.takeLaneStoreSet.mock.calls[0]![0].lanes[0]!.takes.map((take) => take.sourceOffsetBeats);
+        const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0, 4]);
     });
 
@@ -169,7 +179,7 @@ describe('stopRecording during a loop recording', () => {
 
         void stopRecording(14);
 
-        const offsets = mocks.takeLaneStoreSet.mock.calls[0]![0].lanes[0]!.takes.map((take) => take.sourceOffsetBeats);
+        const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0]);
     });
 });
