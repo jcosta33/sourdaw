@@ -1,0 +1,56 @@
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_69f103cccd6f67 9-10
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_2bfd55a4393d7c::t_73866d2da4bdc5 9
+  s_2bfd55a4393d7c::t_a7802880805a19 35-38
+  s_2bfd55a4393d7c::t_a7e1cea604a0c3 64-65,73,78
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_c07eaea0ca74be 168-169
+  s_2bfd55a4393d7c::t_cdd6e4855a0ed8 23-31,33-41,43-48,50-52
+  s_2bfd55a4393d7c::t_9e25bb989baaa7 72,75-77
+  s_2bfd55a4393d7c::t_6e75438d324e4f 71,167
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_dbdf5efb9e880f 252-291
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  s_2bfd55a4393d7c::t_6b82ca01d081d4 32-33
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_2bfd55a4393d7c::t_1a0deae3716949 224,227-230,236-259
+  s_2bfd55a4393d7c::t_37145fc9b7a811 173
+src/modules/AiRuntime/useCases/agentReference/getDrumPreviewBranchesPromptScope.ts
+  s_2bfd55a4393d7c::t_e3ee2e1acb980a 50-52
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingRole.ts
+  s_2bfd55a4393d7c::t_49f92f9222a0a9 1-2,14-20,22
+  s_2bfd55a4393d7c::t_dbf47722990966 3-13,21
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  s_2bfd55a4393d7c::t_52fc593731b276 46
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_d77cf1543f5288 3352
+  s_2bfd55a4393d7c::t_166be48786b44d 3258-3260,3272-3275
+  s_2bfd55a4393d7c::t_97df757738fd35 3261-3271,3276
+  s_2bfd55a4393d7c::t_a3ded23eafe51b 3231
+  s_2bfd55a4393d7c::t_bb70da30219a80 3344
+src/modules/AiRuntime/useCases/agentReference/getDrumRenderComparisonPromptScope.ts
+  s_2bfd55a4393d7c::t_b99328f8e1d993 38-56
+  s_2bfd55a4393d7c::t_401b0f524a72ec 5
+  s_2bfd55a4393d7c::t_ff4e959c05f4e7 73
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_2bfd55a4393d7c::t_bd04b31aa287e7 61-62
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveWorkflowTrackIds.spec.ts
+  s_2bfd55a4393d7c::t_b2895a63c85966 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7bfb45d5f07492514170d1f0abbbed9d8f42990",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
