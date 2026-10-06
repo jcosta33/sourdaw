@@ -18,7 +18,7 @@ type Fact = {
 /**
  * Every keyword the compaction must keep: those that decide which values a schema admits and the
  * `description` that tells the model a unit, a range or an "exactly one of" rule. `type` is walked
- * apart from these, because a sibling keyword may imply it (see `isImpliedType`).
+ * apart from these, because one case is exempt (see `collectFacts`).
  */
 const FACT_KEYWORDS = [
     'description',
@@ -104,24 +104,6 @@ function inlineDefinitions(node: unknown, root: unknown): unknown {
     );
 }
 
-/**
- * A nested node's `type` the compaction may drop because a sibling keyword says it: an object that lists
- * properties, an array that lists items, a string whose enum is all strings. The root keeps its type.
- * Any other `type` (number, integer, boolean, a bare object or array) decides what validates and stays.
- */
-function isImpliedType(node: Record<string, unknown>, path: SchemaPath): boolean {
-    if (path.length === 0) {
-        return false;
-    }
-    if (node.type === 'object') {
-        return isRecord(node.properties);
-    }
-    if (node.type === 'array') {
-        return isRecord(node.items);
-    }
-    return node.type === 'string' && Array.isArray(node.enum) && node.enum.every((value) => typeof value === 'string');
-}
-
 /** Every description, validity keyword, type and combinator of a full schema, with where it sits. */
 function collectFacts(node: unknown, path: SchemaPath): Fact[] {
     if (!isRecord(node)) {
@@ -133,7 +115,13 @@ function collectFacts(node: unknown, path: SchemaPath): Fact[] {
             facts.push({ keyword, path, value: node[keyword] });
         }
     }
-    if (Object.hasOwn(node, 'type') && !isImpliedType(node, path)) {
+    // Every `type` must survive, with one exception written out here and nowhere shared with the
+    // compactor: a "string" type on a node whose enum lists only strings. That enum already refuses
+    // every value that is not one of its strings, so the type adds nothing. An object or array type
+    // is never exempt, because `properties` and `items` are ignored for any other kind of value.
+    const isStringEnum =
+        node.type === 'string' && Array.isArray(node.enum) && node.enum.every((value) => typeof value === 'string');
+    if (Object.hasOwn(node, 'type') && !isStringEnum) {
         facts.push({ keyword: 'type', path, value: node.type });
     }
     for (const combinator of COMBINATORS) {
@@ -221,7 +209,7 @@ describe('compactWebLlmToolSchema', () => {
         );
     });
 
-    it('keeps names, enums, required, descriptions and every validity keyword, and drops annotations and implied types', () => {
+    it("keeps names, enums, required, descriptions, every validity keyword and every type but an all-string enum's, and drops annotations", () => {
         const compacted = compactWebLlmToolSchema({
             type: 'function',
             function: {
@@ -252,6 +240,7 @@ describe('compactWebLlmToolSchema', () => {
                 mode: { enum: ['a', 'b'], description: 'Which one.', maxLength: 8 },
                 gainDb: { type: 'number', minimum: -60, maximum: 6, multipleOf: 0.5 },
                 ids: {
+                    type: 'array',
                     minItems: 1,
                     maxItems: 4,
                     uniqueItems: true,
@@ -364,6 +353,18 @@ describe('compactWebLlmToolSchema', () => {
                 tool: 'device.factory-manifest.read',
                 refused: { types: [] },
                 admitted: {},
+            },
+            {
+                label: 'device.factory-manifest.read with a string where the types array belongs',
+                tool: 'device.factory-manifest.read',
+                refused: { types: 'eq' },
+                admitted: { types: ['eq'] },
+            },
+            {
+                label: 'project.query with a number where the page object belongs',
+                tool: 'project.query',
+                refused: { type: projectQueryType(), page: 2 },
+                admitted: { type: projectQueryType(), page: { limit: 2 } },
             },
             {
                 label: 'analysis.measure with one scope id more than it takes',

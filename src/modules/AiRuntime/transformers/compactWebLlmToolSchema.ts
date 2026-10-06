@@ -45,20 +45,14 @@ function collapseSchema(schema: SchemaRecord): SchemaRecord {
 }
 
 /**
- * A nested node that lists `properties` is an object, one that lists `items` is an array, and one
- * that lists string `enum` values is a string; the root keeps its type for the model to read first.
+ * The one `type` that says nothing its sibling does not: a string type on a node whose `enum` lists
+ * only strings, because the enum already admits those strings and no other value. Every other type
+ * stays. `properties` is ignored for a value that is not an object and `items` for one that is not
+ * an array, so an object or array type is what refuses a string where an object belongs.
  */
-function isImpliedType(schema: SchemaRecord, keyword: string, depth: number): boolean {
-    if (depth === 0 || keyword !== 'type') {
-        return false;
-    }
-    if (schema.type === 'object') {
-        return isRecord(schema.properties);
-    }
-    if (schema.type === 'array') {
-        return isRecord(schema.items);
-    }
+function isImpliedType(schema: SchemaRecord, keyword: string): boolean {
     return (
+        keyword === 'type' &&
         schema.type === 'string' &&
         Array.isArray(schema.enum) &&
         schema.enum.every((value) => typeof value === 'string')
@@ -74,7 +68,7 @@ function compactSchema(schema: unknown, depth: number): unknown {
     }
     const compacted: SchemaRecord = {};
     for (const [keyword, value] of Object.entries(schema)) {
-        if (ANNOTATION_KEYWORDS.has(keyword) || isImpliedType(schema, keyword, depth)) {
+        if (ANNOTATION_KEYWORDS.has(keyword) || isImpliedType(schema, keyword)) {
             continue;
         }
         if (keyword === 'properties' && isRecord(value)) {
@@ -168,8 +162,8 @@ function compactParameters(parameters: SchemaRecord): SchemaRecord {
  * The tool as the local model's prompt spells it. The compaction is structural and lossless for text
  * and for validity: every description, tool and property, is kept word for word, and so is every
  * keyword that decides which values validate. What goes is what the model gains nothing from: titles,
- * examples, defaults, type keywords a nested node implies, and a sub-schema repeated within the tool,
- * which is defined once and referenced.
+ * examples, defaults, the string type of an all-string enum, and a sub-schema repeated within the
+ * tool, which is defined once and referenced.
  */
 export function compactWebLlmToolSchema(tool: CompactableTool): CompactableTool {
     const { parameters } = tool.function;

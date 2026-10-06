@@ -368,12 +368,12 @@ describe('mandatory planning tools', () => {
 
         describe('system prompt size', () => {
             // A ratchet, not a fit: the measured size of the WebLLM system prompt (the planning prompt
-            // plus its tool section) at this head, 37,199 with the creative catalogue the request and an empty project produce, rounded up to the next hundred. The merge base,
+            // plus its tool section) at this head, 38,197 with the creative catalogue the request and an empty project produce, rounded up to the next hundred. The merge base,
             // before #4371 made the planning tools mandatory, measured 28,577 with 31 tools. Growth has to
             // be justified in review by raising this number. It does not claim the prompt fits the model
             // window; the whole local request already overflows it, and #4979 replaces this constant with
             // a budget for the whole request.
-            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 37_200;
+            const WEBLLM_SYSTEM_PROMPT_RATCHET_CHARACTERS = 38_200;
 
             // The creative interpretation tool is built from the catalogue the request and the project
             // produce, as parsePromptToActions builds it, so its size is the production size.
