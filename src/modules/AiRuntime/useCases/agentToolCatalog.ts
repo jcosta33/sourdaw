@@ -54,6 +54,7 @@ export {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
+    MANDATORY_PLANNING_TOOL_NAMES,
     PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
@@ -323,7 +324,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
+            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. Call with no arguments to list every available device type as { id, name }; a later turn's context omits that list. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
             {
                 types: {
                     type: 'array',
@@ -339,8 +340,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     },
                     additionalProperties: false,
                 },
-            },
-            ['types']
+            }
         ),
         tool(
             COMMAND_BATCH_PROPOSAL_TOOL_NAME,

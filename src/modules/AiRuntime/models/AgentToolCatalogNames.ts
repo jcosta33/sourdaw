@@ -22,6 +22,23 @@ export const RECIPE_DISCOVERY_TOOL_NAME = 'recipe.discover';
 export const RECIPE_EXPANSION_TOOL_NAME = 'recipe.expand';
 export const TRANSFORM_COMPILE_TOOL_NAME = 'transform.compile';
 
+/**
+ * The planning tools every backend advertises on every request. A backend that narrows its tool
+ * list (WebLLM, under its prompt budget) may drop any other tool but never one of these, so the
+ * planner can always read the project, measure, discover and expand recipes, read the device
+ * manifest, compile a transform, and end the run by proposing or declining.
+ */
+export const MANDATORY_PLANNING_TOOL_NAMES = [
+    PROJECT_QUERY_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
+] as const;
+
 export const MAX_DISCOVERED_COMMAND_SCHEMAS = 8;
 
 /**
