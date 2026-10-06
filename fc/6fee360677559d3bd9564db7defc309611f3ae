@@ -1,0 +1,41 @@
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_c8acbb4b726643 351-355,358-364,368-392,394
+  s_2bfd55a4393d7c::t_978fc652f68aee 398-404,407
+  s_1c08b47ac3792f::t_d374dc720f462a 393
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_8c39ea91399288 3338-3365
+  s_2bfd55a4393d7c::t_fe022911ed71d4 1230-1252
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_66567668685cf8 125
+  s_2bfd55a4393d7c::t_d4311abe15eda4 67-75
+  s_2bfd55a4393d7c::t_bd8c41ae6b95a2 245-246
+  s_2bfd55a4393d7c::t_dd991fc22b2db6 192-208
+  s_2bfd55a4393d7c::t_5bbb99360369ac 32-35
+  s_2bfd55a4393d7c::t_f309688311dd86 88-90
+  s_2bfd55a4393d7c::t_d313f50187cf7e 111-112
+  s_2bfd55a4393d7c::t_8fc4e66754b1bb 120-124,126-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc6fee360677559d3bd9564db7defc309611f3ae",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
