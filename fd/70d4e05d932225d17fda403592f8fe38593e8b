@@ -1,0 +1,29 @@
+src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts
+  s_1519b79b41b123::t_880d1125c7deb2 124-125,128,157-158
+  s_1519b79b41b123::t_23eb72d257f712 209
+  s_1519b79b41b123::t_a56dec859ca4dd 218,221-225
+  s_1519b79b41b123::t_c60de6910c90c4 159
+src/modules/CrdtDocument/useCases/__tests__/startCrdtAutoSave.spec.ts
+  s_1519b79b41b123::t_b6e93161b6e497 377-379,381-392,394-402,404-410
+  s_1519b79b41b123::t_5f5b1156dde138 457-459,461-472,474-482,484-493,495-503,505-511
+  s_1519b79b41b123::t_9eb1d44c48c90c 424-448
+  s_1519b79b41b123::t_7b415d8fea2730 334-338,346,349,360-361,369-375,380,393,403,411-423,449-456,460,473,483,494,504,512-513
+  s_1519b79b41b123::t_b374e28ef5f170 339-345,347-348,350-359,362-368
+  s_1519b79b41b123::t_607c9567be63e2 376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd70d4e05d932225d17fda403592f8fe38593e8b",
+  "prompts": {},
+  "sessions": {
+    "s_1519b79b41b123": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f8b5e974-646d-4694-adce-e184c46d73d3",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
