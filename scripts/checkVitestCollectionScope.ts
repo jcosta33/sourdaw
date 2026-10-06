@@ -16,9 +16,11 @@
  *
  *  1. **Absence, with the subject planted.** The check writes a real spec file into
  *     a throwaway directory under every `.agents/` prefix in `vitestExcludePrefixes`
- *     before collecting, so each "no worktree paths were collected" assertion always
- *     has something it could have caught. A prefix with no planted fixture fails
- *     naming it. A clean clone has no worktrees; without the fixture this assertion
+ *     and under `requiredAgentRoots` before collecting, so each "no worktree paths
+ *     were collected" assertion always has something it could have caught. A root
+ *     with no planted fixture fails naming it. `requiredAgentRoots` is declared
+ *     apart from the mirror, so removing an agent root from both the config and the
+ *     mirror fails naming the root instead of passing. A clean clone has no worktrees; without the fixture this assertion
  *     would pass by having nothing to look at, which is the blind shape ADR 0015
  *     rule 4 names.
  *  2. **Server ownership parity.** One recursive walk finds every server spec while
@@ -59,11 +61,14 @@ import { configDefaults } from 'vitest/config';
 import { resolveConfig } from 'vitest/node';
 
 import {
-    agentExcludeRoots,
+    agentRootsToCheck,
+    classifyExcludeGlobs,
     describeExcludeMirrorDrift,
+    describeScopeVerdicts,
     findLeftoverFixtures,
     listFixtureDirectories,
     plantWorktreeFixture,
+    requiredAgentRoots,
     type PlantedFixture,
 } from './collectionScopeSupport.ts';
 import {
@@ -90,8 +95,11 @@ const collectableRoots = ['src', 'scripts', 'electron'] as const;
 /** Specs owned by the dedicated server test gate, not root Vitest. */
 const serverRoot = 'server';
 
-/** Directories the exclusions under test are responsible for, derived from the mirror so none can be forgotten. */
-const excludedWorktreeRoots = agentExcludeRoots(vitestExcludePrefixes);
+/** Directories the exclusions under test are responsible for: the required roots and any the mirror adds. */
+const excludedWorktreeRoots = agentRootsToCheck(requiredAgentRoots, vitestExcludePrefixes);
+
+/** File-level globs `vite.config.ts` adds to `exclude` that are not directory prefixes. */
+const knownFileExcludeGlobs = [...configDefaults.exclude, e2eSpecExcludeGlob];
 
 /** Directories a walk must not descend into, matching the config's `exclude`. */
 const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);
@@ -219,27 +227,6 @@ async function main(): Promise<number> {
     const serverSpecs = enumerateSpecs([serverRoot]);
     const serverRunner = enumerateServerRunnerSpecs();
 
-    // 1. Absence, with the subject planted under every agent prefix the mirror names.
-    for (const root of agentExcludeRoots(vitestExcludePrefixes)) {
-        const fixture = fixtures.find((planted) => planted.root === root);
-        if (fixture === undefined) {
-            failures.push(`  ✗ no fixture was planted under ${root}/; its leak check would be vacuous.`);
-            continue;
-        }
-        const collectedSpecsForRoot = collected.filter((path) => path.startsWith(`${root}/`));
-        if (collectedSpecsForRoot.length === 0) {
-            console.log(`  ✓ no spec under ${root}/ was collected (fixture planted at ${fixture.specPath})`);
-        } else {
-            failures.push(
-                [
-                    `  ✗ the root run collected ${collectedSpecsForRoot.length} spec(s) under ${root}/.`,
-                    '    The exclusion in vite.config.ts is not matching agent worktrees.',
-                    formatSample(collectedSpecsForRoot),
-                ].join('\n')
-            );
-        }
-    }
-
     // 2. Exact ownership parity between every server spec and the actual npm test glob.
     const serverSpecSet = new Set(serverSpecs);
     const serverRunnerSpecSet = new Set(serverRunner.specs);
@@ -316,18 +303,25 @@ async function main(): Promise<number> {
         );
     }
 
-    // 6. Exclude mirror, from the resolved config.
-    const mirrorDrift = describeExcludeMirrorDrift(
-        await readResolvedExclude(),
-        [...configDefaults.exclude, e2eSpecExcludeGlob],
-        vitestExcludePrefixes
-    );
-    if (mirrorDrift.length === 0) {
+    // 1 and 6. Agent-root absence with the subject planted, and the exclude mirror from the resolved config.
+    const resolvedExclude = await readResolvedExclude();
+    const scopeFailures = describeScopeVerdicts({
+        mirrorDrift: describeExcludeMirrorDrift(resolvedExclude, knownFileExcludeGlobs, vitestExcludePrefixes),
+        requiredRoots: requiredAgentRoots,
+        mirrorPrefixes: vitestExcludePrefixes,
+        configPrefixes: classifyExcludeGlobs(resolvedExclude, knownFileExcludeGlobs).prefixes,
+        plantedFixtures: fixtures,
+        collected,
+    });
+    if (scopeFailures.length === 0) {
         console.log(
-            `  ✓ every resolved exclude is a known glob or a prefix, and the ${vitestExcludePrefixes.length} prefixes match vitestExcludePrefixes`
+            `  ✓ no spec under ${excludedWorktreeRoots.join(', ')} was collected (fixtures planted at ${fixtures.map((fixture) => fixture.specPath).join(', ')})`
+        );
+        console.log(
+            `  ✓ every resolved exclude is a known glob or a prefix, the ${vitestExcludePrefixes.length} prefixes match vitestExcludePrefixes, and both agent roots are required`
         );
     } else {
-        failures.push(mirrorDrift.join('\n'));
+        failures.push(scopeFailures.join('\n'));
     }
 
     // 7. Fixture cleanup, observed.

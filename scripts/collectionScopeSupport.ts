@@ -76,6 +76,62 @@ export function agentExcludeRoots(mirrorPrefixes: readonly string[]): string[] {
     return mirrorPrefixes.filter((prefix) => prefix.startsWith('.agents/')).map((prefix) => prefix.slice(0, -1));
 }
 
+/**
+ * The agent directories that must stay out of the root run: author lanes and review probes. Declared
+ * apart from `vitestExcludePrefixes` so that deleting an entry from the config and its mirror together
+ * cannot go unnoticed.
+ */
+export const requiredAgentRoots: readonly string[] = ['.agents/worktrees', '.agents/review-worktrees'];
+
+/** Every agent root the gate plants a fixture under: the required roots plus any the mirror adds. */
+export function agentRootsToCheck(requiredRoots: readonly string[], mirrorPrefixes: readonly string[]): string[] {
+    return [...new Set([...requiredRoots, ...agentExcludeRoots(mirrorPrefixes)])];
+}
+
+export type ScopeVerdictInput = {
+    mirrorDrift: readonly string[];
+    requiredRoots: readonly string[];
+    /** `vitestExcludePrefixes`. */
+    mirrorPrefixes: readonly string[];
+    /** The directory prefixes of the resolved `vite.config.ts` `exclude`. */
+    configPrefixes: readonly string[];
+    plantedFixtures: readonly { root: string; specPath: string }[];
+    collected: readonly string[];
+};
+
+/**
+ * The failure lines for the agent-root verdicts: mirror drift, a required root absent from the mirror or
+ * the resolved config, a root with no planted fixture, and a root the root run collected specs from.
+ */
+export function describeScopeVerdicts(input: ScopeVerdictInput): string[] {
+    const failures = [...input.mirrorDrift];
+    for (const root of input.requiredRoots) {
+        const prefix = `${root}/`;
+        if (!input.mirrorPrefixes.includes(prefix)) {
+            failures.push(`  ✗ vitestExcludePrefixes has no '${prefix}' entry; the root run must exclude it.`);
+        }
+        if (!input.configPrefixes.includes(prefix)) {
+            failures.push(
+                `  ✗ vite.config.ts has no '${prefix}**' entry in test.exclude; the root run must exclude it.`
+            );
+        }
+    }
+    for (const root of agentRootsToCheck(input.requiredRoots, input.mirrorPrefixes)) {
+        const fixture = input.plantedFixtures.find((planted) => planted.root === root);
+        if (fixture === undefined) {
+            failures.push(`  ✗ no fixture was planted under ${root}/; its leak check would be vacuous.`);
+            continue;
+        }
+        const collectedUnderRoot = input.collected.filter((path) => path.startsWith(`${root}/`));
+        if (collectedUnderRoot.length > 0) {
+            failures.push(
+                `  ✗ the root run collected ${collectedUnderRoot.length} spec(s) under ${root}/ (planted fixture ${fixture.specPath}); the exclusion in vite.config.ts is not matching agent worktrees.`
+            );
+        }
+    }
+    return failures;
+}
+
 export const fixtureDirectoryPrefix = 'collection-scope-guard-';
 
 export type PlantedFixture = {

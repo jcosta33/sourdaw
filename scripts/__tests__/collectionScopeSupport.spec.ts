@@ -6,11 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     agentExcludeRoots,
+    agentRootsToCheck,
     classifyExcludeGlobs,
     describeExcludeMirrorDrift,
+    describeScopeVerdicts,
     findLeftoverFixtures,
     listFixtureDirectories,
     plantWorktreeFixture,
+    type ScopeVerdictInput,
 } from '../collectionScopeSupport.ts';
 
 const knownFileGlobs = ['**/node_modules/**', '**/*.e2e.spec.*'];
@@ -59,6 +62,78 @@ describe('agentExcludeRoots', () => {
             '.agents/worktrees',
             '.agents/review-worktrees',
         ]);
+    });
+
+    it('derives roots from the prefixes it is given, not from a fixed pair', () => {
+        expect(agentExcludeRoots(['x/', '.agents/other/'])).toEqual(['.agents/other']);
+    });
+});
+
+describe('agentRootsToCheck', () => {
+    it('adds the required roots to the agent roots the mirror names, once each', () => {
+        expect(agentRootsToCheck(['.agents/a', '.agents/b'], ['dist/', '.agents/b/', '.agents/c/'])).toEqual([
+            '.agents/a',
+            '.agents/b',
+            '.agents/c',
+        ]);
+    });
+});
+
+describe('describeScopeVerdicts', () => {
+    const requiredRoots = ['.agents/worktrees', '.agents/review-worktrees'];
+    const cleanInput: ScopeVerdictInput = {
+        mirrorDrift: [],
+        requiredRoots,
+        mirrorPrefixes: ['dist/', '.agents/worktrees/', '.agents/review-worktrees/'],
+        configPrefixes: ['dist/', '.agents/worktrees/', '.agents/review-worktrees/'],
+        plantedFixtures: requiredRoots.map((root) => ({
+            root,
+            specPath: `${root}/collection-scope-guard-x/src/collectionScopeGuard.spec.ts`,
+        })),
+        collected: ['src/a.spec.ts'],
+    };
+
+    it('passes when both roots are required, excluded, planted, and uncollected', () => {
+        expect(describeScopeVerdicts(cleanInput)).toEqual([]);
+    });
+
+    it('fails on mirror drift, carrying the drift line', () => {
+        const failures = describeScopeVerdicts({ ...cleanInput, mirrorDrift: ['  ✗ drift line'] });
+        expect(failures).toEqual(['  ✗ drift line']);
+    });
+
+    it('fails when the mirror lacks a required root, even though the config and mirror agree', () => {
+        const failures = describeScopeVerdicts({
+            ...cleanInput,
+            mirrorPrefixes: ['dist/', '.agents/worktrees/'],
+            configPrefixes: ['dist/', '.agents/worktrees/'],
+        });
+        expect(failures).toHaveLength(2);
+        expect(failures[0]).toContain("vitestExcludePrefixes has no '.agents/review-worktrees/'");
+        expect(failures[1]).toContain("vite.config.ts has no '.agents/review-worktrees/**'");
+    });
+
+    it('fails when only the resolved config lacks a required root', () => {
+        const failures = describeScopeVerdicts({ ...cleanInput, configPrefixes: ['dist/', '.agents/worktrees/'] });
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toContain("vite.config.ts has no '.agents/review-worktrees/**'");
+    });
+
+    it('fails when a required root has no planted fixture', () => {
+        const failures = describeScopeVerdicts({
+            ...cleanInput,
+            plantedFixtures: cleanInput.plantedFixtures.slice(0, 1),
+        });
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toContain('no fixture was planted under .agents/review-worktrees/');
+    });
+
+    it('fails when the root run collected a spec under an agent root', () => {
+        const leaked = '.agents/review-worktrees/collection-scope-guard-x/src/collectionScopeGuard.spec.ts';
+        const failures = describeScopeVerdicts({ ...cleanInput, collected: ['src/a.spec.ts', leaked] });
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toContain('collected 1 spec(s) under .agents/review-worktrees/');
+        expect(failures[0]).toContain(leaked);
     });
 });
 
