@@ -1,0 +1,28 @@
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_86720a06bbd7ef 424-425,428-438
+  s_2bfd55a4393d7c::t_369343cfb69e64 295
+  s_2bfd55a4393d7c::t_8b547047d92f42 479-490
+  s_2bfd55a4393d7c::t_1116d53c25ddc8 353-374
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_04f25a27f999fc 224-231,234-238
+  s_2bfd55a4393d7c::t_2561c7ff76c00a 160-163
+  s_2bfd55a4393d7c::t_51843545ec9296 476-479
+  s_2bfd55a4393d7c::t_fa5363fd640e8c 219-221
+  s_2bfd55a4393d7c::t_624fb6f3c990b7 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03ba04310415c1c01f358a8e4853a427a2fe005b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
