@@ -3,6 +3,8 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type WholeProjectVibeMixCapability, type WholeProjectVibeMixPlan } from '../../models/WholeProjectVibeMixPlan';
 
+import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
+
 const IMPACT_GAIN_DB = 1.5;
 
 type WholeProjectVibeMixScope = {
@@ -31,7 +33,13 @@ function isChorusSection(section: ProjectContextSection): boolean {
 }
 
 function findUniqueImpactBus(context: ProjectContext, role: 'drum' | 'bass'): ProjectContextTrack | null {
-    const matches = context.tracks.filter((track) => track.kind === 'bus' && hasRoleWords(track, [role, 'bus']));
+    // `nameIncludes` reads substrings; the bus must name the role and "bus" as whole words.
+    const candidateIds = new Set(
+        resolveWorkflowTrackIds(context, `vibe-mix-${role}-bus`, {
+            all: [{ kind: 'bus' }, { nameIncludes: role }, { nameIncludes: 'bus' }],
+        })
+    );
+    const matches = context.tracks.filter((track) => candidateIds.has(track.id) && hasRoleWords(track, [role, 'bus']));
     if (matches.length !== 1) {
         return null;
     }

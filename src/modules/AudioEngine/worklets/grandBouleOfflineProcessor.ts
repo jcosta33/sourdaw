@@ -45,7 +45,6 @@ import {
     createGrandBouleInstance,
     createGrandBouleFrameQueue,
     dispatch,
-    isFramedGrandBouleMsg,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
@@ -259,19 +258,14 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             return;
         }
         // Offline scheduling posts the complete part before rendering starts.
-        // Hold a framed event exactly on the next frame so frame-zero automation
-        // reaches the sleeping engine first; preserve shared behavior for events
-        // already inside the remainder of the current quantum and for late ones.
-        const holdAtCurrentFrame = isFramedGrandBouleMsg(msg) && msg.sampleFrame === currentFrame;
+        // Framed messages only queue here; `process` applies the block's
+        // parameter automation first and then drains, so frame-zero automation
+        // reaches the sleeping engine before the notes it governs.
         receiveGrandBouleMessage({
             instance,
             queue: this._queue,
             msg,
-            block: {
-                startFrame: currentFrame,
-                // An empty block holds nothing, so the hold above enqueues.
-                endFrame: holdAtCurrentFrame ? currentFrame : currentFrame + RENDER_QUANTUM_FRAMES,
-            },
+            block: { startFrame: currentFrame, endFrame: currentFrame + RENDER_QUANTUM_FRAMES },
         });
     }
 

@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "488874c49e739cdab3731d45c18d369df0e8787b6ea7d0d576c1b5fb751423ba"
+        "digest": "60c12e0aa935d0be2044954dd7d00617cc03c7d417b7da43b166f163add007c4"
     },
     "census": {
         "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "0ff890809b30d891cee396d3b320c474e13ae06c98133a60139fee8e4eae86d1"
+                    "digest": "a40fe20fc42dd9642adb35b3857d10d7d3fdb94f313d89d8b949693ae6e3f17c"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "0e4364582314e8a509b945947101e2e7d1a0e7e843baa76673b6ab2e2091c87e"
+                    "digest": "35a520c57bb5caf37b40d20f02bca3ac7949819b8d7f0225af510a2fb7b5bdde"
                 }
             ]
         },
@@ -560,7 +560,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
-                    "digest": "e1c5c358581f844b272f95956e4da9f612fa148757c46ae795601b23b155688f"
+                    "digest": "f5c45eb9d3be0ffa908586764dc9b6bd9fc8315789aa7e802fdb2f59a19e9804"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "b2f83171a5b1adf3054cd82628d7c865ef56b6c694646397d92e4a11d5cd338a"
+                    "digest": "78a3c5082b7a9ace738aa54fa608d58f3d114938ab3f4dd7fcf1ba0b2e17c9e5"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

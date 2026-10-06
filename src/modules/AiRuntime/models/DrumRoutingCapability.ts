@@ -1,4 +1,5 @@
-export type DrumRoutingRole = 'kick' | 'snare' | 'hi-hat' | 'tom' | 'cymbal' | 'percussion' | 'overhead' | 'room';
+export type DrumRoutingRole =
+    'kick' | 'snare' | 'hi-hat' | 'tom' | 'cymbal' | 'percussion' | 'overhead' | 'room' | 'drums';
 
 export type DrumRoutingCandidate = {
     id: string;

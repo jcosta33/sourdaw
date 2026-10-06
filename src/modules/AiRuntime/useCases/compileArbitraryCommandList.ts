@@ -9,9 +9,13 @@ import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
+    type BulkSetReplaySelector,
+    type BulkSetRunWrittenFact,
+    type BulkSetSlice,
     parseSemanticCommandList,
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
+    SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS,
     SEMANTIC_COMMAND_LIST_MAX_REPEAT,
     type SemanticCommandListItem,
     type SemanticCommandListMatch,
@@ -62,7 +66,15 @@ export type ArbitraryCommandListSelectorEvidence = {
         excludeIds?: string[];
         quantity: SemanticCommandListSelector['quantity'];
     };
+    /**
+     * Present only on a batch that carries one slice of a set larger than one batch: where its
+     * targets sit in the whole set, and the selector fields that set is re-resolved through.
+     */
+    slice?: BulkSetSlice & { selector: BulkSetReplaySelector };
 };
+
+/** The replayable fields of one item's selector, recorded only for a list larger than one batch. */
+export type ArbitraryCommandListSetSelector = { itemId: string; selector: BulkSetReplaySelector };
 
 export type ArbitraryCommandListDirectTargetEvidence = {
     argument: string;
@@ -104,6 +116,11 @@ export type ArbitraryCommandListEvidence = {
      * in front of them came from a named generator and a seed rather than from the provider's hand.
      */
     expandedMidiTransforms: string[];
+    /**
+     * Present only on a later batch of a schedule: the facts the run's own earlier batches wrote,
+     * with their compiled values, which every selector replay restores before resolving.
+     */
+    runWrittenFacts?: BulkSetRunWrittenFact[];
 };
 
 type AcceptedCompilation = {
@@ -111,6 +128,12 @@ type AcceptedCompilation = {
     calls: ToolCallResult[];
     evidence: ArbitraryCommandListSelectorEvidence[];
     compilerEvidence?: ArbitraryCommandListEvidence;
+    /**
+     * Every selector's replayable fields, present only when the expansion is larger than one batch
+     * and will run as successive batches. It stays out of the evidence, which a list that fits one
+     * batch carries exactly as before.
+     */
+    setSelectors?: ArbitraryCommandListSetSelector[];
     snapshotRevision: string;
 };
 
@@ -228,6 +251,16 @@ function resolveSelector(input: {
                       },
                   }),
         },
+    };
+}
+
+function toBulkSetReplaySelector(selector: SemanticCommandListSelector): BulkSetReplaySelector {
+    return {
+        entity: selector.entity,
+        ...(selector.where === undefined ? {} : { where: structuredClone(selector.where) }),
+        ...(selector.condition === undefined ? {} : { condition: { ...selector.condition } }),
+        ...(selector.match === undefined ? {} : { match: structuredClone(selector.match) }),
+        ...(selector.excludeIds === undefined ? {} : { excludeIds: [...selector.excludeIds] }),
     };
 }
 
@@ -1179,6 +1212,7 @@ export function compileArbitraryCommandList(input: {
     const itemsById = new Map(items.map((item) => [item.id, item]));
     const producersByBinding = new Map<string, DeclaredBatchLocalProducer>();
     const expandedMidiTransforms: string[] = [];
+    const setSelectors: ArbitraryCommandListSetSelector[] = [];
 
     for (const item of items) {
         const commandStart = commands.length;
@@ -1205,6 +1239,8 @@ export function compileArbitraryCommandList(input: {
                 return expansion;
             }
             commands.push(...expansion.commands);
+            // A batch carrying a transform cannot be split into successive batches, so it is held to
+            // one batch here rather than admitted to an expansion the split would refuse.
             if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
                 return {
                     status: 'rejected',
@@ -1281,7 +1317,7 @@ export function compileArbitraryCommandList(input: {
                 representativeCommandIndexes.push(commandIndex);
                 commands.push(command);
             }
-            if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
+            if (commands.length > SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS) {
                 return {
                     status: 'rejected',
                     reason: 'Structured command list exceeds the application command budget.',
@@ -1433,9 +1469,10 @@ export function compileArbitraryCommandList(input: {
                 commands.push(command);
             }
         }
-        if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
+        if (commands.length > SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS) {
             return { status: 'rejected', reason: 'Structured command list exceeds the application command budget.' };
         }
+        setSelectors.push({ itemId: item.id, selector: toBulkSetReplaySelector(selector) });
         compiledItems.push({
             canonicalStableIds,
             declaredCommandIdentities,
@@ -1474,6 +1511,7 @@ export function compileArbitraryCommandList(input: {
         status: 'accepted',
         snapshotRevision: input.revision,
         evidence,
+        ...(plan !== null && commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS ? { setSelectors } : {}),
         compilerEvidence:
             plan === null
                 ? undefined

@@ -94,6 +94,8 @@ export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
 export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
+export { loadAgentReference } from './agentReferenceMeasurement/loadAgentReference';
+export { clearAgentReference } from './agentReferenceMeasurement/clearAgentReference';
 export { auditionAgentCatalogCandidate } from './agentCatalogAudition/auditionAgentCatalogCandidate';
 export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAuditionCandidate';
 export { resolveAgentPreviewDomains } from './agentDomainPreview/resolveAgentPreviewDomains';

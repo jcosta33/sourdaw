@@ -2,9 +2,9 @@ import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from
 import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
-import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { projectMidiClipWindow } from './projectMidiClipWindow';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiGlueSource = {
@@ -26,31 +26,6 @@ function snapshotState(state: MidiStoreState, clipIds: readonly string[]): MidiC
             present: state.migratedAbsoluteNoteClipIds !== undefined,
             value: structuredClone(state.migratedAbsoluteNoteClipIds ?? []),
         },
-    };
-}
-
-function projectVisibleNote({ source, note }: { source: MidiGlueSource; note: MidiNote }): MidiNote | null {
-    if (!Number.isFinite(note.startBeat) || !Number.isFinite(note.duration) || note.duration < 0) {
-        return null;
-    }
-    if (note.duration === 0) {
-        if (note.startBeat < source.visibleStartBeat || note.startBeat >= source.visibleEndBeat) {
-            return null;
-        }
-        return { ...note, startBeat: note.startBeat + source.beatOffset };
-    }
-
-    const clippedStartBeat = Math.max(note.startBeat, source.visibleStartBeat);
-    const clippedEndBeat = Math.min(note.startBeat + note.duration, source.visibleEndBeat);
-    if (clippedEndBeat <= clippedStartBeat) {
-        return null;
-    }
-    return {
-        ...sliceMidiNoteExtent(note, {
-            fromOffset: clippedStartBeat - note.startBeat,
-            duration: clippedEndBeat - clippedStartBeat,
-        }),
-        startBeat: clippedStartBeat + source.beatOffset,
     };
 }
 
@@ -126,12 +101,6 @@ export function prepareMidiClipGlueState({
         ) {
             return null;
         }
-        for (const note of sourceNotes) {
-            const projected = projectVisibleNote({ source, note });
-            if (projected) {
-                mergedNotes.push(projected);
-            }
-        }
         const controlChanges = state.ccByClipId[source.clipId] ?? [];
         const pitchBends = state.pitchBendByClipId[source.clipId] ?? [];
         if (
@@ -140,16 +109,15 @@ export function prepareMidiClipGlueState({
         ) {
             return null;
         }
-        mergedControlChanges.push(
-            ...controlChanges
-                .filter((row) => row.beat >= source.visibleStartBeat && row.beat < source.visibleEndBeat)
-                .map((row) => ({ ...row, beat: row.beat + source.beatOffset }))
-        );
-        mergedPitchBends.push(
-            ...pitchBends
-                .filter((row) => row.beat >= source.visibleStartBeat && row.beat < source.visibleEndBeat)
-                .map((row) => ({ ...row, beat: row.beat + source.beatOffset }))
-        );
+        const projected = projectMidiClipWindow({
+            notes: sourceNotes,
+            controlChanges,
+            pitchBends,
+            window: source,
+        });
+        mergedNotes.push(...projected.notes);
+        mergedControlChanges.push(...projected.controlChanges);
+        mergedPitchBends.push(...projected.pitchBends);
     }
     if (
         mergedNotes.some((row) => !Number.isFinite(row.startBeat) || !Number.isFinite(row.duration)) ||
@@ -162,8 +130,10 @@ export function prepareMidiClipGlueState({
         return null;
     }
     mergedNotes.sort((left, right) => left.startBeat - right.startBeat || compareCodeUnits(left.id, right.id));
-    mergedControlChanges.sort((left, right) => left.beat - right.beat || compareCodeUnits(left.id, right.id));
-    mergedPitchBends.sort((left, right) => left.beat - right.beat || compareCodeUnits(left.id, right.id));
+    // Controller rows tie-break by source order (the sort is stable), never by id:
+    // ids are random, and a same-tick re-pedal must keep its order.
+    mergedControlChanges.sort((left, right) => left.beat - right.beat);
+    mergedPitchBends.sort((left, right) => left.beat - right.beat);
 
     const firstMigratedSourceIndex = previous.migratedAbsoluteNoteClipIds.value.findIndex((clipId) =>
         sourceIds.includes(clipId)

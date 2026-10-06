@@ -24,6 +24,8 @@ import { useAgentChangeComparisonController } from '../hooks/useAgentChangeCompa
 import { useAgentWorkspaceFocusDispatch } from '../hooks/useAgentWorkspaceFocusDispatch';
 import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSelection';
 
+import { AgentReferenceControls } from './AgentReferenceControls';
+
 function cancelApproval(confirmationId: string): void {
     void cancelPendingChatActions({ confirmationId }).catch((error: unknown) => {
         notifyAiChange(
@@ -107,6 +109,7 @@ export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId
                             void reproposePendingChatActions({ confirmationId, selectedIntentGroupIds });
                         }}
                     />
+                    <AgentReferenceControls />
                     <AgentRouteSection route={route} />
                     <AgentRunControlsSection
                         controls={projection}

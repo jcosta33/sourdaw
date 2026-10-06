@@ -57,6 +57,7 @@ const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
+const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
 
 type HandleWebMidiNoteOnDependencies = Parameters<typeof handleWebMidiNoteOn._factory>[0];
 
@@ -93,6 +94,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
 const LIVE_DISPATCH_FRAME = 96_128;
 describe('handleWebMidiNoteOn', () => {
     beforeEach(() => {
+        resetLiveInputDispatchFrameFloor();
         activeNotes.clear();
         channelToNote.clear();
         ensure_track_strip.mockReset();

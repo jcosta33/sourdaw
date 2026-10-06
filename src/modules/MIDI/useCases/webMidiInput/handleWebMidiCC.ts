@@ -153,6 +153,11 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                 audioEngine.setTrackPan(targetTrackId, (controlChange.normalized * 2 - 1) * PAN_RANGE);
             }
 
+            // The frame the notes around this controller are voiced at, so a pedal
+            // pressed between two keys lands between them inside the block
+            // instead of ahead of both.
+            const dispatchFrame = resolveInputDispatchFrame({ eventTime: resolveInputEventTime({ timeStamp }) });
+
             const trackState = deps.getTrackStoreState();
             const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
             const grandBouleDevice = track?.devices.find((device) => device.type === 'grand-boule');
@@ -165,6 +170,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         value: controlChange.value,
                         normalized: controlChange.normalized,
                         channel,
+                        sampleFrame: dispatchFrame,
                     },
                     {
                         sendNativeLiveMidiControl: deps.sendNativeLiveMidiControl,
@@ -181,7 +187,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                     // The raw wire bytes, deliberately: `handleCc` is the
                     // message boundary into the Levain worklet and its Rust
                     // engine reads a controller number and a 7-bit value.
-                    deviceNode.levainControls.handleCc(cc, value);
+                    deviceNode.levainControls.handleCc(cc, value, dispatchFrame);
                 }
                 // Both carriers, every time, and unconditionally: the native
                 // session carries its own copy of this device, its readiness is

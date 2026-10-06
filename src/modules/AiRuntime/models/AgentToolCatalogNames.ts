@@ -17,8 +17,31 @@ export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
 export const RENDER_REQUEST_TOOL_NAME = 'render.request';
 export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
 export const ANALYSIS_MEASURE_TOOL_NAME = 'analysis.measure';
+export const ANALYSIS_COMPARE_REFERENCE_TOOL_NAME = 'analysis.compareReference';
 export const RECIPE_DISCOVERY_TOOL_NAME = 'recipe.discover';
 export const RECIPE_EXPANSION_TOOL_NAME = 'recipe.expand';
 export const TRANSFORM_COMPILE_TOOL_NAME = 'transform.compile';
 
 export const MAX_DISCOVERED_COMMAND_SCHEMAS = 8;
+
+/**
+ * The categories `agent.catalog.discover` admits. The published schema enum, the loop's argument
+ * check and the catalog's entry lookup all read this one list, so a category cannot be offered to a
+ * provider that the lookup does not serve, or served without being offered. `command-index` is
+ * searched through its own tool and is not one of them.
+ */
+export const AGENT_CATALOG_CATEGORIES = [
+    'query',
+    'resolve',
+    'capability',
+    'catalog',
+    'preview',
+    'command',
+    'commit',
+    'history',
+    'render',
+    'analysis',
+    'approval',
+] as const;
+
+export type AgentCatalogCategory = (typeof AGENT_CATALOG_CATEGORIES)[number];

@@ -42,9 +42,9 @@
  *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide, sampleFrame? }
  *   ← { type: 'noteOff', midiNote, sampleFrame?, releaseVelocity }
  *   ← { type: 'param', name, value, sampleFrame? }
- *   ← { type: 'sustain', position }
- *   ← { type: 'unaCorda', engaged }
- *   ← { type: 'sostenuto', engaged }
+ *   ← { type: 'sustain', position, sampleFrame? }
+ *   ← { type: 'unaCorda', engaged, sampleFrame? }
+ *   ← { type: 'sostenuto', engaged, sampleFrame? }
  *   ← { type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 }
  *   ← { type: 'temperament', index }
  *   ← { type: 'allNotesOff' }
@@ -139,6 +139,8 @@ let syncInts: Int32Array | null = null;
 let anchorContextFrame = 0;
 const consumerClock: GrandBouleConsumerClock = { contextFrame: 0, readHead: 0 };
 let hasConsumerClock = false;
+/** Producer head at an `allNotesOff` flush the consumer has not yet applied. */
+let flushHeadAwaitingClock: number | null = null;
 
 /**
  * Control messages waiting for the block that contains their frame.
@@ -251,6 +253,7 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     syncInts = nextSyncInts;
     anchorContextFrame = nextAnchorContextFrame;
     hasConsumerClock = false;
+    flushHeadAwaitingClock = null;
     frameQueue.clear();
 
     // Parse SAB layout.
@@ -335,6 +338,7 @@ function stopEngine(): void {
     syncInts = null;
     anchorContextFrame = 0;
     hasConsumerClock = false;
+    flushHeadAwaitingClock = null;
     frameQueue.clear();
 }
 
@@ -357,6 +361,41 @@ function blockEndContextFrame(writeHead: number): number {
 
     const framesAhead = (writeHead - consumerClock.readHead) | 0;
     return consumerClock.contextFrame + framesAhead + BLOCK_SIZE;
+}
+
+/**
+ * The earliest context frame any block this engine produces from now on can
+ * start at: the last audible frame the consumer published, or the construction
+ * anchor before it has published. The consumer clock only moves forward.
+ */
+function audibleFloorContextFrame(): number {
+    if (syncInts && readGrandBouleConsumerClock(syncInts, consumerClock)) {
+        hasConsumerClock = true;
+    }
+    return hasConsumerClock ? consumerClock.contextFrame : anchorContextFrame;
+}
+
+/**
+ * The block start to stamp controls from while a flush is waiting for the
+ * consumer to republish its clock, or `null` once it has.
+ *
+ * Until then the clock still maps the producer head through the pre-flush read
+ * head, which puts block starts a ring's lead too high. A control stamped from
+ * it would sort behind a later one stamped from the republished clock. The
+ * floor is at or below every later start, so arrivals in this window keep
+ * their arrival order. The republish is seen when the consumer's read head has
+ * reached the flush head, which it only ever does by applying the flush.
+ */
+function flushFloorContextFrame(): number | null {
+    if (flushHeadAwaitingClock === null) {
+        return null;
+    }
+    const floor = audibleFloorContextFrame();
+    if (hasConsumerClock && ((consumerClock.readHead - flushHeadAwaitingClock) | 0) >= 0) {
+        flushHeadAwaitingClock = null;
+        return null;
+    }
+    return floor;
 }
 
 function renderLoop(generation: number): void {
@@ -451,9 +490,10 @@ type GrandBouleWorkerMsg =
  * The ring's write head plus the consumer offset is this transport's answer to
  * "which context frames does the block I am about to produce cover"; the offline
  * worklet answers the same question with `currentFrame` and `currentFrame + 128`.
- * Everything after that — enqueue or deliver, the sample offset, and the engine
- * call itself — is one implementation shared by both, so the two hosts cannot
- * disagree about a message.
+ * Everything after that — the placement in the frame queue, then the drain's
+ * sample offset and engine call — is one implementation shared by both, so the
+ * two hosts cannot disagree about a message. The drain runs once per render,
+ * right before `process()`.
  *
  * `null` before the ring is mapped: nothing can be placed yet, so voice now.
  */
@@ -464,8 +504,13 @@ function receive(msg: GrandBouleDispatchMsg): void {
 
     let block: GrandBouleBlockFrames | null = null;
     if (controlInts) {
-        const endFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
-        block = { startFrame: endFrame - BLOCK_SIZE, endFrame };
+        const flushFloor = flushFloorContextFrame();
+        if (flushFloor !== null) {
+            block = { startFrame: flushFloor, endFrame: flushFloor + BLOCK_SIZE };
+        } else {
+            const endFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
+            block = { startFrame: endFrame - BLOCK_SIZE, endFrame };
+        }
     }
 
     receiveGrandBouleMessage({ instance, queue: frameQueue, msg, block });
@@ -477,6 +522,16 @@ function receive(msg: GrandBouleDispatchMsg): void {
         const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
         Atomics.store(controlInts, GRAND_BOULE_FLUSH_HEAD_IDX, writeHead);
         Atomics.add(controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX, 1);
+        // The consumer republishes its clock when it applies the flush, so the
+        // block clock steps back by the ring's lead (up to the pre-roll). What the
+        // queue kept through the flush keeps its pre-flush stamps; a move arriving
+        // afterwards is stamped from the lower clock and would sort ahead of it.
+        // The new start is only known once the consumer has applied the flush, but
+        // it never precedes the last audible frame the consumer published, so
+        // capping the kept pedal moves there keeps them ahead of everything later.
+        // Parameters keep their frames: pulling one forward would apply it early.
+        frameQueue.capPendingFrames(audibleFloorContextFrame());
+        flushHeadAwaitingClock = writeHead;
     }
 
     const lifecycleState = instance.lifecycle_state();

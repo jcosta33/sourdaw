@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureActiveBranchReference: vi.fn(),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectIdentity: vi.fn(() => 'project-identity'),

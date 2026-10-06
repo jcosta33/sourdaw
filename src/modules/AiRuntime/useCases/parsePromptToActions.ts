@@ -21,7 +21,6 @@ import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
-import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
     isWorkflowCapabilityId,
@@ -41,9 +40,7 @@ import {
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
-import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
-import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
@@ -55,10 +52,10 @@ import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVoca
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
-import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -69,14 +66,15 @@ import {
 } from './agentToolCatalog';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
-import { compileArbitraryCommandList } from './compileArbitraryCommandList';
-import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
+import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
+import { executeReferenceMeasurement } from './executeReferenceMeasurement';
 import { executeTransformCompile } from './executeTransformCompile';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
+import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
 import {
     generateToolPlanningOutcome,
     type ProviderAttemptAdmission,
@@ -86,7 +84,7 @@ import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
-import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
+import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -213,6 +211,79 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
 function readAdoptedMeasuredPreview(selectedCompilations: readonly RetainedCompilation[]): MeasuredPreview | null {
     const adopted = selectedCompilations.find((compiled) => compiled.kind === 'preview');
     return adopted?.kind === 'preview' ? adopted.measuredPreview : null;
+}
+
+type AcceptedCompiledList = Extract<ArbitraryCommandListCompilation, { status: 'accepted' }>;
+
+type ScheduledCompiledBatches =
+    | { status: 'scheduled'; firstBatch: AcceptedCompiledList; batchSchedule?: IntentResult['batchSchedule'] }
+    | { status: 'rejected'; reason: string };
+
+/**
+ * A list that expands past one batch runs as successive batches, each approved on its own. This
+ * planning turn carries the first; the rest are kept serialized on the result until the run proposes
+ * them. A list that fits one batch passes through untouched. Only a plain structured list can be
+ * split: an adopted transform, recipe or measured preview, or a specialized workflow or other request
+ * beside the list, describes one batch and is refused rather than cut apart.
+ */
+function scheduleCompiledBatches(input: {
+    compiledList: AcceptedCompiledList;
+    selectedCompilations: readonly RetainedCompilation[];
+    providerProposal: IntentResult['providerProposal'] | null;
+}): ScheduledCompiledBatches {
+    const evidence = input.compiledList.compilerEvidence;
+    if (evidence === undefined || evidence.commands.length <= MAX_LLM_ACTIONS_PER_BATCH) {
+        return { status: 'scheduled', firstBatch: input.compiledList };
+    }
+    if (input.selectedCompilations.length > 0) {
+        return {
+            status: 'rejected',
+            reason: 'An adopted transform, recipe or measured preview cannot run as successive batches.',
+        };
+    }
+    if (input.compiledList.calls.some((call) => call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME)) {
+        return {
+            status: 'rejected',
+            reason: 'A list larger than one batch cannot share its turn with a specialized workflow or another request.',
+        };
+    }
+    const split = splitCompiledCommandList({
+        evidence,
+        maxCommandsPerBatch: MAX_LLM_ACTIONS_PER_BATCH,
+        setSelectors: input.compiledList.setSelectors,
+    });
+    if (split.status === 'rejected') {
+        return split;
+    }
+    const first = split.slices[0]!;
+    return {
+        status: 'scheduled',
+        firstBatch: {
+            ...input.compiledList,
+            compilerEvidence: first,
+            calls: input.compiledList.calls.map((call) => ({
+                name: call.name,
+                arguments: { plan: call.arguments.plan, commands: structuredClone(first.commands) },
+            })),
+        },
+        batchSchedule: {
+            schemaVersion: 1,
+            scheduleId: `batch-schedule-${crypto.randomUUID()}`,
+            position: 1,
+            total: split.slices.length,
+            totalCommands: evidence.commands.length,
+            serializedProviderProposal:
+                input.providerProposal === null || input.providerProposal === undefined
+                    ? null
+                    : JSON.stringify(input.providerProposal),
+            slices: split.slices.map((slice, index) => ({
+                position: index + 1,
+                commandCount: slice.commands.length,
+                targetIds: [...slice.providerKnownTargetIds],
+                serializedSlice: JSON.stringify(slice),
+            })),
+        },
+    };
 }
 
 /**
@@ -597,25 +668,38 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                                  // The reference comparison renders the project the same way, so it
+                                  // spends the same one measurement per turn.
+                                  companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
                                   revision: projectRevision,
                                   execute: (call, { callId, turn, signal: loopSignal }) =>
-                                      executeAnalysisMeasure({
-                                          call,
-                                          callId,
-                                          turn,
-                                          projectRevision,
-                                          sections: context.sections ?? [],
-                                          signal: loopSignal,
-                                          admit: onMeasurementAttempt,
-                                          // A preview is compiled and grounded against what an adopting
-                                          // proposal is: this run's read model, request and authority.
-                                          preview: {
-                                              context,
-                                              prompt,
-                                              runId: streamIdentity?.runId ?? 'preview-measurement',
-                                              readCreativeAuthority: () => creativeAuthority,
-                                          },
-                                      }),
+                                      call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+                                          ? executeReferenceMeasurement({
+                                                call,
+                                                callId,
+                                                turn,
+                                                projectRevision,
+                                                sections: context.sections ?? [],
+                                                signal: loopSignal,
+                                                admit: onMeasurementAttempt,
+                                            })
+                                          : executeAnalysisMeasure({
+                                                call,
+                                                callId,
+                                                turn,
+                                                projectRevision,
+                                                sections: context.sections ?? [],
+                                                signal: loopSignal,
+                                                admit: onMeasurementAttempt,
+                                                // A preview is compiled and grounded against what an adopting
+                                                // proposal is: this run's read model, request and authority.
+                                                preview: {
+                                                    context,
+                                                    prompt,
+                                                    runId: streamIdentity?.runId ?? 'preview-measurement',
+                                                    readCreativeAuthority: () => creativeAuthority,
+                                                },
+                                            }),
                               },
                     requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
                         const planningContext =
@@ -759,9 +843,21 @@ const planPromptIntent = inject({ logger })(
                         },
                     };
                 }
+                const scheduled = scheduleCompiledBatches({ compiledList, selectedCompilations, providerProposal });
+                if (scheduled.status === 'rejected') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        rejectionReason: `Provider action rejected: ${scheduled.reason}`,
+                    };
+                }
+                const { firstBatch, batchSchedule } = scheduled;
                 const transformCommands = materializeTransformToolCalls(selectedCompilations);
                 const transformTargetIds = getCompiledTransformTargetIds(transformCommands, context);
-                const combinedProposalCalls = compiledList.calls.map((call) => {
+                const combinedProposalCalls = firstBatch.calls.map((call) => {
                     if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || transformCommands.length === 0) {
                         return call;
                     }
@@ -893,203 +989,64 @@ const planPromptIntent = inject({ logger })(
                         ...(providerProposal === null ? {} : { providerProposal }),
                     };
                 }
-                const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
-                const bridged = bridgeGroundedLlmToolCalls({
-                    calls: toolCalls,
+                const grounded = groundCompiledCommandBatch({
+                    toolCalls,
                     context,
-                    markerSignatures,
-                    sectionSignatures,
                     prompt,
-                    compilerEvidence: compiledList.compilerEvidence,
-                    ...(selectedCompilations.length === 0
-                        ? {}
-                        : {
-                              transformProof: {
-                                  revision: projectRevision ?? '',
-                                  creativeAuthorityId: creativeAuthority?.authorityId ?? null,
-                                  compilations: selectedCompilations,
-                              },
-                          }),
                     projectRevision,
                     workflowCapabilityId,
-                    ...creativeAuthorityFields,
+                    compilerEvidence: firstBatch.compilerEvidence,
+                    selectedCompilations,
+                    transformCommands,
+                    transformTargetIds,
+                    creativeAuthority,
+                    providerProposal,
                 });
-                for (const rejected of bridged.rejections) {
-                    logger.warn(
-                        `[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`
-                    );
-                }
-
-                if (bridged.rejections.length > 0) {
-                    const reason = bridged.rejections
-                        .map((rejection) => `${rejection.name}: ${rejection.reason}`)
-                        .join('; ');
-                    // The correction gets one bounded, structured diagnostic for
-                    // the first failing item: which command, what the app
-                    // expects, and the provider's own rejected arguments.
-                    const firstRejection = bridged.rejections[0]!;
-                    const rejectedCall = toolCalls[firstRejection.index];
+                if (grounded.status === 'rejected') {
                     return {
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
-                        rejectionReason: `Provider action rejected: ${reason}`,
-                        rejectionEvidence: {
-                            kind: 'constraint',
-                            command: { index: firstRejection.index, name: firstRejection.name },
-                            reason: firstRejection.reason,
-                            ...(rejectedCall
-                                ? { rejectedFragment: boundedProviderFragment(rejectedCall.arguments) }
-                                : {}),
-                        },
+                        rejectionReason: grounded.rejectionReason,
+                        ...(grounded.rejectionEvidence === undefined
+                            ? {}
+                            : { rejectionEvidence: grounded.rejectionEvidence }),
                     };
                 }
-
-                if (bridged.actions.length > 0) {
-                    const validated = validateActions(bridged.actions, bridged.batchLocalActionIdentities);
-                    if (validated.length !== bridged.actions.length) {
-                        const rejectedTypes = bridged.actions
-                            .filter((action) => !validated.includes(action))
-                            .map((action) => action.type)
-                            .join(', ');
-                        logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            ...applicationToolReceiptFields,
-                            ...creativeAuthorityFields,
-                            rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
-                        };
-                    }
-
-                    const materialized = materializeBatchLocalActionIdentities(
-                        validated,
-                        bridged.batchLocalActionIdentities ?? []
-                    );
-                    if (materialized.status === 'rejected') {
-                        logger.warn(`[AI] Rejected LLM action batch because ${materialized.reason}`);
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            ...applicationToolReceiptFields,
-                            ...creativeAuthorityFields,
-                            rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
-                        };
-                    }
-
-                    const guarded = materializeActionStateGuards(materialized.actions, context, {
-                        appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
-                        bassProcessingCopyScope: bridged.bassProcessingCopyScope,
-                        midiOverlapTransformScope: bridged.midiOverlapTransformScope,
-                        drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
-                        syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
-                    });
-                    if (guarded.status === 'rejected' && guarded.questions !== undefined) {
-                        // Two sections answer the request equally: the request is
-                        // answerable, it only has to say which one it means.
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            ...applicationToolReceiptFields,
-                            ...creativeAuthorityFields,
-                            planningOutcome: {
-                                kind: 'clarify',
-                                reason: guarded.reason,
-                                questions: [...guarded.questions],
-                            },
-                        };
-                    }
-                    if (guarded.status === 'rejected') {
-                        logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            ...applicationToolReceiptFields,
-                            ...creativeAuthorityFields,
-                            rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
-                        };
-                    }
-                    if (!doesProductionBriefAllowActionBatch(guarded.actions)) {
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            ...applicationToolReceiptFields,
-                            ...creativeAuthorityFields,
-                            rejectionReason: 'Provider action conflicts with locked production intent.',
-                        };
-                    }
-
-                    const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
-                        actions: guarded.actions,
-                        compilerEvidence: compiledList.compilerEvidence,
-                        ...(transformCommands.length === 0 ? {} : { appOwnedTargetIds: transformTargetIds }),
-                        context,
-                        prompt,
-                        workflowCapabilityId,
-                    });
-                    let effectiveProviderProposal = providerProposal;
-                    if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {
-                        effectiveProviderProposal = {
-                            ...effectiveProviderProposal,
-                            scope: verifiedProviderProposalScope,
-                        };
-                    }
-                    if (
-                        effectiveProviderProposal !== null &&
-                        bridged.actionCommandGraph !== undefined &&
-                        compiledList.compilerEvidence === undefined
-                    ) {
-                        effectiveProviderProposal = {
-                            ...effectiveProviderProposal,
-                            scope: {
-                                ...effectiveProviderProposal.scope,
-                                targetIds: [
-                                    ...new Set([
-                                        ...effectiveProviderProposal.scope.targetIds,
-                                        ...(bridged.batchLocalActionIdentities ?? []).flatMap((identity) =>
-                                            identity.actionType === 'createBus' ? [identity.busId] : []
-                                        ),
-                                    ]),
-                                ],
-                            },
-                        };
-                    }
-
-                    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-                        deriveMatchSelectorPredicates(compiledList.compilerEvidence, transformCommands.length);
-
+                if (grounded.status === 'clarify') {
                     return {
-                        actions: guarded.actions,
-                        ...(bridged.actionCommandGraph === undefined
-                            ? {}
-                            : { actionCommandGraph: bridged.actionCommandGraph }),
+                        actions: [],
                         rawText: prompt,
-                        requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        planningOutcome: grounded.planningOutcome,
+                    };
+                }
+                if (grounded.status === 'grounded') {
+                    return {
+                        actions: grounded.actions,
+                        ...(grounded.actionCommandGraph === undefined
+                            ? {}
+                            : { actionCommandGraph: grounded.actionCommandGraph }),
+                        rawText: prompt,
+                        requiresConfirmation: grounded.requiresConfirmation,
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        ...(compiledList.compilerEvidence === undefined && transformCommands.length === 0
+                        ...(grounded.providerKnownTargetIds === undefined
                             ? {}
-                            : {
-                                  providerKnownTargetIds: [
-                                      ...new Set([
-                                          ...(compiledList.compilerEvidence?.providerKnownTargetIds ?? []),
-                                          ...transformTargetIds,
-                                      ]),
-                                  ],
-                              }),
-                        ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
+                            : { providerKnownTargetIds: grounded.providerKnownTargetIds }),
+                        ...(grounded.matchSelectorPredicates.length === 0
+                            ? {}
+                            : { matchSelectorPredicates: grounded.matchSelectorPredicates }),
                         ...(adoptedRecipes.length === 0 ? {} : { adoptedRecipes }),
                         ...(measuredPreview === null ? {} : { measuredPreview }),
-                        ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
+                        ...(grounded.providerProposal === null ? {} : { providerProposal: grounded.providerProposal }),
                         ...creativeAuthorityFields,
+                        ...(batchSchedule === undefined ? {} : { batchSchedule }),
                     };
                 }
 

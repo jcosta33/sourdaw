@@ -307,6 +307,7 @@ describe('agent tool catalog', () => {
             'render.request',
             'analysis.request',
             'analysis.measure',
+            'analysis.compareReference',
             'recipe.discover',
             'recipe.expand',
         ]);
@@ -347,6 +348,10 @@ describe('agent tool catalog', () => {
         expect(firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'agent.catalog.discover')).toBe(
             true
         );
+        // The reference comparison is published to the planner only while the user has loaded one.
+        expect(
+            firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'analysis.compareReference')
+        ).toBe(false);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('catalog-1');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });

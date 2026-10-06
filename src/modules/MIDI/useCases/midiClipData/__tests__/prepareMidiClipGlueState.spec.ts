@@ -128,7 +128,7 @@ describe('prepareMidiClipGlueState', () => {
         });
     });
 
-    it('orders equal-time Unicode row ids by UTF-16 code unit', () => {
+    it('orders equal-time notes by UTF-16 code unit of the id and equal-time controller rows by source order', () => {
         mocks.state.value = {
             notesByClipId: {
                 'source-a': [
@@ -154,7 +154,152 @@ describe('prepareMidiClipGlueState', () => {
         const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
 
         expect(target?.data.notes.value.map((note) => note.id)).toEqual(['z-note', 'é-note']);
-        expect(target?.data.controlChanges.value.map((controlChange) => controlChange.id)).toEqual(['z-cc', 'é-cc']);
-        expect(target?.data.pitchBends.value.map((pitchBend) => pitchBend.id)).toEqual(['z-bend', 'é-bend']);
+        expect(target?.data.controlChanges.value.map((controlChange) => controlChange.id)).toEqual(['é-cc', 'z-cc']);
+        expect(target?.data.pitchBends.value.map((pitchBend) => pitchBend.id)).toEqual(['é-bend', 'z-bend']);
+    });
+
+    it('keeps a same-beat re-pedal in source order whatever the ids sort to', () => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-a': [
+                    { id: 'z-release', controller: 64, value: 0, beat: 3, channel: 0 },
+                    { id: 'a-press', controller: 64, value: 127, beat: 3, channel: 0 },
+                ],
+                'source-b': [
+                    { id: 'y-release', controller: 64, value: 0, beat: 1, channel: 0 },
+                    { id: 'b-press', controller: 64, value: 127, beat: 1, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {
+                'source-a': [
+                    { id: 'z-down', value: -0.5, beat: 3, channel: 0 },
+                    { id: 'a-up', value: 0.5, beat: 3, channel: 0 },
+                ],
+            },
+        };
+
+        const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+            ['z-release', 3, 0],
+            ['a-press', 3, 127],
+            ['y-release', 5, 0],
+            ['b-press', 5, 127],
+        ]);
+        expect(target?.data.pitchBends.value.map(({ id, value }) => [id, value])).toEqual([
+            ['z-down', -0.5],
+            ['a-up', 0.5],
+        ]);
+    });
+
+    it('carries the pedal held into a source whose visible window starts mid-pedal', () => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-b': [
+                    { id: 'hidden-down', controller: 64, value: 127, beat: 1, channel: 0 },
+                    { id: 'visible-up', controller: 64, value: 0, beat: 3, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {},
+        };
+        const midPedalSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 2, visibleEndBeat: 6 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: midPedalSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(
+            target?.data.controlChanges.value.map(({ beat, value, controller, channel }) => ({
+                beat,
+                value,
+                controller,
+                channel,
+            }))
+        ).toEqual([
+            { beat: 6, value: 127, controller: 64, channel: 0 },
+            { beat: 7, value: 0, controller: 64, channel: 0 },
+        ]);
+    });
+
+    it.each([
+        {
+            name: 'the latest hidden beat',
+            rows: [
+                { id: 'down', controller: 64, value: 127, beat: 0, channel: 0 },
+                { id: 'up', controller: 64, value: 0, beat: 1, channel: 0 },
+            ],
+            carried: ['up', 6, 0],
+        },
+        {
+            name: 'the latest hidden beat when rows are stored out of beat order',
+            rows: [
+                { id: 'up', controller: 64, value: 0, beat: 1, channel: 0 },
+                { id: 'down', controller: 64, value: 127, beat: 0, channel: 0 },
+            ],
+            carried: ['up', 6, 0],
+        },
+        {
+            name: 'the later source row when hidden rows share a beat',
+            rows: [
+                { id: 'z-release', controller: 64, value: 0, beat: 1, channel: 0 },
+                { id: 'a-press', controller: 64, value: 127, beat: 1, channel: 0 },
+            ],
+            carried: ['a-press', 6, 127],
+        },
+    ])('carries the value in force at a source window start from $name', ({ rows, carried }) => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: { 'source-b': rows },
+            pitchBendByClipId: {},
+        };
+        const midPedalSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 2, visibleEndBeat: 6 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: midPedalSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([carried]);
+    });
+
+    it('does not carry a controller value over a row the lane already has at the visible start', () => {
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {
+                'source-b': [
+                    { id: 'hidden-down', controller: 64, value: 127, beat: 1, channel: 0 },
+                    { id: 'at-start', controller: 64, value: 40, beat: 2, channel: 0 },
+                    { id: 'other-lane-hidden', controller: 1, value: 9, beat: 0, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {
+                'source-b': [
+                    { id: 'bend-hidden', value: 0.25, beat: 1, channel: 2 },
+                    { id: 'bend-late', value: 0.75, beat: 5, channel: 2 },
+                ],
+            },
+        };
+        const midPedalSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 2, visibleEndBeat: 6 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: midPedalSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.controlChanges.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+            ['other-lane-hidden', 6, 9],
+            ['at-start', 6, 40],
+        ]);
+        expect(target?.data.pitchBends.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
+            ['bend-hidden', 6, 0.25],
+            ['bend-late', 9, 0.75],
+        ]);
     });
 });

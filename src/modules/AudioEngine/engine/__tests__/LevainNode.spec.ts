@@ -220,6 +220,19 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'noteOff', note: 60, sampleFrame: 128 });
     });
 
+    it('handleCc posts the controller with the frame it should land on', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.handleCc(64, 127, 4_096);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'cc', cc: 64, value: 127, sampleFrame: 4_096 });
+
+        postMessage.mockClear();
+        result.handleCc(1, 40);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'cc', cc: 1, value: 40, sampleFrame: undefined });
+    });
+
     it('setParam forwards finite values and drops non-finite ones', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);

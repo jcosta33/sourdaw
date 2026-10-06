@@ -38,6 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const { handleWebMidiCC } = await import('../handleWebMidiCC');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
+const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
 
 type HandleWebMidiCCDependencies = Parameters<typeof handleWebMidiCC._factory>[0];
 
@@ -95,6 +96,7 @@ function grand_boule_strip(controls: {
 
 describe('handleWebMidiCC', () => {
     beforeEach(() => {
+        resetLiveInputDispatchFrameFloor();
         activeNotes.clear();
         channelToNote.clear();
         resetChannelControllerState();
@@ -235,7 +237,7 @@ describe('handleWebMidiCC', () => {
 
     it('forwards sustain pedal CC 64 to a Grand Boule as a normalized 0..1 sustain', () => {
         target_track_id.value = 'track-1';
-        const set_sustain = vi.fn<(value: number) => void>();
+        const set_sustain = vi.fn<(value: number, sampleFrame?: number) => void>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiCC._factory(
             make_dependencies({
@@ -265,7 +267,7 @@ describe('handleWebMidiCC', () => {
         fn(0, 64, 127);
 
         // Full sustain = 1.0.
-        expect(set_sustain).toHaveBeenCalledWith(1);
+        expect(set_sustain).toHaveBeenCalledWith(1, LIVE_DISPATCH_FRAME);
         expect(emitted).toContainEqual({
             type: 'midi.pedalCc',
             payload: { deviceId: 'gb-1', cc: 64, value: 1 },
@@ -284,7 +286,7 @@ describe('handleWebMidiCC', () => {
 
     it('treats sostenuto CC 66 as a switch (on only at value >= 64)', () => {
         target_track_id.value = 'track-1';
-        const set_sostenuto = vi.fn<(on: boolean) => void>();
+        const set_sostenuto = vi.fn<(on: boolean, sampleFrame?: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -305,16 +307,16 @@ describe('handleWebMidiCC', () => {
 
         // Below the switch threshold: off.
         fn(0, 66, 0);
-        expect(set_sostenuto).toHaveBeenLastCalledWith(false);
+        expect(set_sostenuto).toHaveBeenLastCalledWith(false, LIVE_DISPATCH_FRAME);
 
         // At/above threshold: on.
         fn(0, 66, 64);
-        expect(set_sostenuto).toHaveBeenLastCalledWith(true);
+        expect(set_sostenuto).toHaveBeenLastCalledWith(true, LIVE_DISPATCH_FRAME);
     });
 
     it('treats una corda CC 67 as a switch (on only at value >= 64)', () => {
         target_track_id.value = 'track-1';
-        const set_una_corda = vi.fn<(on: boolean) => void>();
+        const set_una_corda = vi.fn<(on: boolean, sampleFrame?: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -334,17 +336,17 @@ describe('handleWebMidiCC', () => {
         });
 
         fn(0, 67, 63);
-        expect(set_una_corda).toHaveBeenLastCalledWith(false);
+        expect(set_una_corda).toHaveBeenLastCalledWith(false, LIVE_DISPATCH_FRAME);
 
         fn(0, 67, 127);
-        expect(set_una_corda).toHaveBeenLastCalledWith(true);
+        expect(set_una_corda).toHaveBeenLastCalledWith(true, LIVE_DISPATCH_FRAME);
     });
 
     it('sends a Grand Boule its pedals natively, with the raw 7-bit value', () => {
         target_track_id.value = 'track-1';
-        const set_sustain = vi.fn<(value: number) => void>();
-        const set_sostenuto = vi.fn<(on: boolean) => void>();
-        const set_una_corda = vi.fn<(on: boolean) => void>();
+        const set_sustain = vi.fn<(value: number, sampleFrame?: number) => void>();
+        const set_sostenuto = vi.fn<(on: boolean, sampleFrame?: number) => void>();
+        const set_una_corda = vi.fn<(on: boolean, sampleFrame?: number) => void>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiCC._factory(
             make_dependencies({
@@ -399,9 +401,9 @@ describe('handleWebMidiCC', () => {
         // And the Web Audio node takes the same movement, normalized. Both
         // bodies exist; only one of them is audible, and which one that is can
         // change between a press and its release.
-        expect(set_sustain).toHaveBeenCalledWith(96 / 127);
-        expect(set_sostenuto).toHaveBeenCalledWith(true);
-        expect(set_una_corda).toHaveBeenCalledWith(false);
+        expect(set_sustain).toHaveBeenCalledWith(96 / 127, LIVE_DISPATCH_FRAME);
+        expect(set_sostenuto).toHaveBeenCalledWith(true, LIVE_DISPATCH_FRAME);
+        expect(set_una_corda).toHaveBeenCalledWith(false, LIVE_DISPATCH_FRAME);
 
         // The panel reads its pedal indicators off this event whichever
         // carrier sounds the instrument, and the foot moved once per message.
@@ -410,6 +412,90 @@ describe('handleWebMidiCC', () => {
             { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 66, value: true } },
             { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 67, value: false } },
         ]);
+    });
+
+    it.each([
+        { cc: 64, value: 127, setter: 'setSustain' as const, expected: 1 as number | boolean },
+        { cc: 66, value: 127, setter: 'setSostenuto' as const, expected: true as number | boolean },
+        { cc: 67, value: 0, setter: 'setUnaCorda' as const, expected: false as number | boolean },
+    ])('places Grand Boule pedal CC $cc at the frame its event time resolves to', (pedal) => {
+        // The harness clock stands at 2 s; the pedal was performed at 2.5 s, so
+        // its frame is the arrival frame plus the scheduling budget — not the
+        // frame a controller with no timestamp would get.
+        const EVENT_TIME_SECONDS = 2.5;
+        const EVENT_TIME_FRAME = 120_128;
+        target_track_id.value = 'track-1';
+        const setters = {
+            setSustain: vi.fn<(value: number, sampleFrame?: number) => void>(),
+            setSostenuto: vi.fn<(on: boolean, sampleFrame?: number) => void>(),
+            setUnaCorda: vi.fn<(on: boolean, sampleFrame?: number) => void>(),
+        };
+        const fn = handleWebMidiCC._factory(make_dependencies({ getTrackStoreState: grand_boule_track_state }));
+        get_track_strip.mockReturnValue(grand_boule_strip(setters));
+
+        fn(0, pedal.cc, pedal.value, { audioTime: EVENT_TIME_SECONDS });
+
+        expect(setters[pedal.setter]).toHaveBeenCalledExactlyOnceWith(pedal.expected, EVENT_TIME_FRAME);
+        // The native route takes the raw byte with no frame, as it always did.
+        expect(send_native_live_midi_control.mock.calls).toEqual([
+            [{ trackId: 'track-1', deviceId: 'gb-1', controller: pedal.cc, value: pedal.value, channel: 0 }],
+        ]);
+    });
+
+    it('places a Levain controller at the frame its event time resolves to', () => {
+        target_track_id.value = 'track-1';
+        const handle_cc = vi.fn<(cc: number, value: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'lev-1', type: 'levain' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [{ type: 'levain', deviceId: 'lev-1', levainControls: { ready: true, handleCc: handle_cc } }],
+        });
+
+        fn(0, 64, 127, { audioTime: 2.5 });
+
+        expect(handle_cc).toHaveBeenCalledExactlyOnceWith(64, 127, 120_128);
+        expect(send_native_live_midi_control.mock.calls).toEqual([
+            [{ trackId: 'track-1', deviceId: 'lev-1', controller: 64, value: 127, channel: 0 }],
+        ]);
+    });
+
+    it('never frames a Levain pedal release ahead of the press that a main-thread stall delayed', () => {
+        // The press waited 1.2 s, past the credible wait, so its arrival falls
+        // back to now; the release waited 0.3 s and so arrived credibly earlier
+        // than now. Frame order is apply order in the worklet: a release framed
+        // ahead of its press would be applied first and leave the pedal down.
+        const performance_now = vi.spyOn(performance, 'now').mockReturnValue(10_000);
+        target_track_id.value = 'track-1';
+        const handle_cc = vi.fn<(cc: number, value: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'lev-1', type: 'levain' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [{ type: 'levain', deviceId: 'lev-1', levainControls: { ready: true, handleCc: handle_cc } }],
+        });
+
+        try {
+            fn(0, 64, 127, 8_800);
+            fn(0, 64, 0, 9_700);
+        } finally {
+            performance_now.mockRestore();
+        }
+
+        const frames = handle_cc.mock.calls.map(([, , sampleFrame]) => sampleFrame);
+        expect(handle_cc.mock.calls.map(([, value]) => value)).toEqual([127, 0]);
+        expect(frames[0]).toBe(LIVE_DISPATCH_FRAME);
+        expect(frames[1]).toBeGreaterThanOrEqual(frames[0] ?? Number.POSITIVE_INFINITY);
     });
 
     it('sends a Grand Boule nothing for a controller that is not a pedal', () => {
@@ -440,9 +526,9 @@ describe('handleWebMidiCC', () => {
         // One log for all three setters, so the expectation below also proves
         // no pedal other than the one under test was written.
         const web_audio: Array<number | boolean> = [];
-        const set_sustain = vi.fn<(value: number) => void>((value) => web_audio.push(value));
-        const set_sostenuto = vi.fn<(on: boolean) => void>((on) => web_audio.push(on));
-        const set_una_corda = vi.fn<(on: boolean) => void>((on) => web_audio.push(on));
+        const set_sustain = vi.fn<(value: number, sampleFrame?: number) => void>((value) => web_audio.push(value));
+        const set_sostenuto = vi.fn<(on: boolean, sampleFrame?: number) => void>((on) => web_audio.push(on));
+        const set_una_corda = vi.fn<(on: boolean, sampleFrame?: number) => void>((on) => web_audio.push(on));
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: grand_boule_track_state,
@@ -494,7 +580,7 @@ describe('handleWebMidiCC', () => {
 
     it('forwards CC to a Levain device via handleCc', () => {
         target_track_id.value = 'track-1';
-        const handle_cc = vi.fn<(cc: number, value: number) => void>();
+        const handle_cc = vi.fn<(cc: number, value: number, sampleFrame?: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -509,12 +595,12 @@ describe('handleWebMidiCC', () => {
 
         fn(0, 74, 40);
 
-        expect(handle_cc).toHaveBeenCalledWith(74, 40);
+        expect(handle_cc).toHaveBeenCalledWith(74, 40, LIVE_DISPATCH_FRAME);
     });
 
     it('sends a Levain CC gesture to the native session as well as the worklet', () => {
         target_track_id.value = 'track-1';
-        const handle_cc = vi.fn<(cc: number, value: number) => void>();
+        const handle_cc = vi.fn<(cc: number, value: number, sampleFrame?: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -531,7 +617,7 @@ describe('handleWebMidiCC', () => {
         // raw 7-bit byte and the same channel the worklet is handed.
         fn(3, 11, 40);
 
-        expect(handle_cc).toHaveBeenCalledWith(11, 40);
+        expect(handle_cc).toHaveBeenCalledWith(11, 40, LIVE_DISPATCH_FRAME);
         expect(send_native_live_midi_control).toHaveBeenCalledWith({
             trackId: 'track-1',
             deviceId: 'lev-1',

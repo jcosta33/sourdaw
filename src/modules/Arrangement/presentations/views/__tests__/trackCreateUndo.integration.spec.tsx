@@ -113,6 +113,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         prepareMidiClipFanOutState: actual.prepareMidiClipFanOutState,
         prepareMidiClipGlueState: actual.prepareMidiClipGlueState,
         prepareMidiClipSplit: actual.prepareMidiClipSplit,
+        projectMidiClipWindow: actual.projectMidiClipWindow,
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
         projectMidiNotesByClipIdThroughRestores: actual.projectMidiNotesByClipIdThroughRestores,
         readMidiFile: actual.readMidiFile,

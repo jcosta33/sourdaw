@@ -76,11 +76,9 @@ export default defineConfig({
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
         /**
-         * Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree.
-         * The path is `.agents/worktrees/` (see CLAUDE.md); it used to be `.claude/worktrees/`,
-         * and the exclusion kept naming the old location for four months after the move, so a
-         * root `vitest run` collected every live lane's copy of the whole suite.
-         * `pnpm test:collection-scope` now fails the gate if this stops matching.
+         * Agent worktrees and review probe trees mirror `src/` — exclude so `vitest run`
+         * only hits the main tree. `.agents/worktrees/` holds author lanes; `.agents/review-worktrees/`
+         * holds probe fixtures. `pnpm test:collection-scope` fails the gate if either stops matching.
          */
         exclude: [
             ...configDefaults.exclude,
@@ -94,6 +92,7 @@ export default defineConfig({
             // `pnpm health:server:full`, not the root Vitest harness.
             'server/**',
             '.agents/worktrees/**',
+            '.agents/review-worktrees/**',
             'tests/e2e/**',
             '**/*.e2e.spec.*',
         ],
