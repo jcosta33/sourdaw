@@ -1,0 +1,121 @@
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_2bfd55a4393d7c::t_ee0f3539d4535a 665,668,671
+  s_2bfd55a4393d7c::t_65d30d56062076 77-82
+  s_2bfd55a4393d7c::t_2d6ee980db6603 664,667,670,672-674
+src/modules/Transport/models/StoredControllerNode.ts
+  s_2bfd55a4393d7c::t_479f4dac590b61 5-8,12-15,18-19
+src/modules/AudioEngine/services/__tests__/levainProcessorStopQueue.spec.ts
+  s_2bfd55a4393d7c::t_37eaf5ec4a18a5 189-288
+src/modules/Transport/useCases/scheduling/releaseUnrestoredStoredControllers.ts
+  s_2bfd55a4393d7c::t_133ca9e57f46f5 48-52
+  s_2bfd55a4393d7c::t_c78393f439a6d0 6
+src/modules/Transport/useCases/scheduling/discardStoredMoves.ts
+  s_2bfd55a4393d7c::t_edc528b31de268 1-21
+src/modules/Transport/useCases/scheduling/releaseStoredControllers.ts
+  s_2bfd55a4393d7c::t_c2d7eb57f51938 4,12,16-17,21-25,27-29,32-33,35-40,42,44-46,51-52
+  s_2bfd55a4393d7c::t_b3bb3961e41f61 3,5-7,9,13,15,18-20,41,43
+  s_2bfd55a4393d7c::t_e1e5b3c6011662 34
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_2bfd55a4393d7c::t_bbf1fd001e9289 921-952
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_2bfd55a4393d7c::t_6ffffa7028757a 26-30
+  s_2bfd55a4393d7c::t_f590b281a7bc59 580-693
+  s_2bfd55a4393d7c::t_54564c10d65e1f 7
+  s_2bfd55a4393d7c::t_20ffc7eabf6354 694-699
+src/modules/Transport/useCases/scheduling/releaseStoredEngagement.ts
+  s_2bfd55a4393d7c::t_81e2aed1677e8b 10,18-21,31,34,37,41
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_2bfd55a4393d7c::t_fc99e73381fa5c 134-136
+  s_2bfd55a4393d7c::t_f99897aabcf345 318-321
+  s_2bfd55a4393d7c::t_187e7a67b844d6 367-368
+  s_2bfd55a4393d7c::t_9e31308b86291e 557-559,569-572,575
+  s_2bfd55a4393d7c::t_5b8b3e3023292e 471-474
+  s_2bfd55a4393d7c::t_aea1affed5ee7f 97-103,105,107
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_2bfd55a4393d7c::t_6ac2b0411c792a 1564
+  s_2bfd55a4393d7c::t_aab6be69873508 409
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  s_2bfd55a4393d7c::t_0e8e124e824d8d 116
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_1a96393baacc1a 77-78
+  s_2bfd55a4393d7c::t_e99fc8bd52c0fb 74-75,81,84,91,96,110-112,115-118
+  s_2bfd55a4393d7c::t_478308f7dced8a 76,79-80,82-83,85-90,92-95,97-109,113-114
+  s_2bfd55a4393d7c::t_428f0b73c1380f 132
+src/modules/AudioEngine/AGENTS.md
+  s_2bfd55a4393d7c::t_6562c48fdfe346 31
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_2bfd55a4393d7c::t_e3bf6bca72384e 330-335
+  s_2bfd55a4393d7c::t_3843c1d586b775 383-386
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_2bfd55a4393d7c::t_6c748701f7da5f 1007
+  s_2bfd55a4393d7c::t_ad47c56d6b206e 956-1006,1008-1019,1021-1034
+  s_2bfd55a4393d7c::t_bce5cf7b464f69 1020
+src/modules/Transport/useCases/scheduling/postStoredControllerMove.ts
+  s_2bfd55a4393d7c::t_7532a880e3fa87 40,42,44
+  s_2bfd55a4393d7c::t_81be525b84f9ae 46
+  s_2bfd55a4393d7c::t_04382f0c3a0343 4
+  s_2bfd55a4393d7c::t_c55eb3a298b0d4 60
+  s_2bfd55a4393d7c::t_901f275c1b7f7f 61-66
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_2bfd55a4393d7c::t_b9ad3c2d8f9d91 572-576
+  s_2bfd55a4393d7c::t_3ef5ff6ef0481c 467-480
+  s_2bfd55a4393d7c::t_9a21a7c8e72654 131-134
+  s_2bfd55a4393d7c::t_b51bc8329440ba 163
+  s_2bfd55a4393d7c::t_c6758da48559c4 13-14
+  s_2bfd55a4393d7c::t_00cb904e5718ed 506,509-511
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_2bfd55a4393d7c::t_b00b3ff96daf28 32-35
+  s_2bfd55a4393d7c::t_3f96a6337f156c 185,187-190
+  s_2bfd55a4393d7c::t_0d81344650877a 186
+  s_2bfd55a4393d7c::t_66c4d3b65a8643 233
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_2bfd55a4393d7c::t_a04395d85cb261 236-246,248-253
+  s_2bfd55a4393d7c::t_f9e15a683c6556 247
+src/modules/Transport/useCases/scheduling/restoreStoredControllers.ts
+  s_2bfd55a4393d7c::t_6159af58f60367 81
+  s_2bfd55a4393d7c::t_b3e067226310db 4-8
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_2bfd55a4393d7c::t_fd5700e4af5aae 1756
+  s_2bfd55a4393d7c::t_1f5f19853eb9e0 575
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_2bfd55a4393d7c::t_28f386a9b3e2ab 444-446,448
+  s_2bfd55a4393d7c::t_2d98741f62b59b 6
+  s_2bfd55a4393d7c::t_924f0c87a2d116 459
+  s_2bfd55a4393d7c::t_d8b622ef2579ca 268-272
+  s_2bfd55a4393d7c::t_77d427727d5a68 470
+  s_2bfd55a4393d7c::t_cb33d4aa6be122 1-5,7-267,273-443,447,449-458,460-469,471-581
+src/modules/Transport/useCases/playheadScheduler/__tests__/stopPlayheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_d64d0d903483a7 113
+  s_2bfd55a4393d7c::t_36a5e052194b2d 60-62
+  s_2bfd55a4393d7c::t_3840b9fb3fa85b 95,97
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_d7eb20f3a7e81c 2387-2388
+  s_2bfd55a4393d7c::t_488d1150c860c8 2642
+  s_2bfd55a4393d7c::t_578ac38befbd4c 2352-2353
+  s_2bfd55a4393d7c::t_05ec4cd531790a 2389-2390
+  s_2bfd55a4393d7c::t_e5f11243b2ab62 2313-2316
+  s_2bfd55a4393d7c::t_e5f45bb3b4850d 2602,2612-2641,2643-2658,2787,2789,2829
+  s_2bfd55a4393d7c::t_02f140404466ba 140-146
+  s_2bfd55a4393d7c::t_c45b785b264906 2379-2380
+  s_2bfd55a4393d7c::t_5a7be779905fc2 2407
+  s_2bfd55a4393d7c::t_f656eaf53170c8 2434
+  s_2bfd55a4393d7c::t_15fe7f114132e3 2666,2788,2793-2795,2802,2830
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_027c544fc8521f 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f141bd90b17350aaff60c4d6262eba3c160231b1",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
