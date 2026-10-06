@@ -1,0 +1,37 @@
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  s_1c08b47ac3792f::t_67dd20a7e642c1 107-112,156-192
+src/modules/Transport/stores/index.ts
+  s_1c08b47ac3792f::t_8e8251344a4131 5
+src/modules/Transport/useCases/playheadScheduler/__tests__/claimSchedulerSession.spec.ts
+  s_1c08b47ac3792f::t_a6210f4e4f2006 1-25
+src/modules/Transport/useCases/playheadScheduler/claimSchedulerSession.ts
+  s_1c08b47ac3792f::t_695fc57f168ef6 1-2,20-25,29
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_1c08b47ac3792f::t_641355da59c552 57,65,206-231
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_1c08b47ac3792f::t_598a46683c4141 12,64,312-335
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_1c08b47ac3792f::t_85a55585681383 9,80-85
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_1c08b47ac3792f::t_cfdb93a002da41 9,86-90
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_1c08b47ac3792f::t_fc88da70758350 9,71-76
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_1c08b47ac3792f::t_3d32a483158e10 9,81-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7bba8f8770b92352136b81bb5fefd959acd731f8",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
