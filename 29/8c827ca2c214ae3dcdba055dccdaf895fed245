@@ -1,0 +1,32 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_cf9a991c800dda::t_95b8527aade7e1 421
+  s_cf9a991c800dda::t_42c97b1cda6a11 412-420
+src/modules/Arrangement/useCases/index.ts
+  s_cf9a991c800dda::t_ec708f607cb0f5 39
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_cf9a991c800dda::t_65b105dccf39d8 793-807
+src/modules/AudioRendering/useCases/renderToClip.ts
+  s_cf9a991c800dda::t_7e610a1cd4abfe 46-53,57
+  s_cf9a991c800dda::t_96dd0e7d254ac1 7,12
+  s_cf9a991c800dda::t_fcc8dc0a2996cb 92
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_cf9a991c800dda::t_30d37b3c326270 116-137,143-149,151-163
+  s_cf9a991c800dda::t_20212f4bc1e42b 138-142
+  s_cf9a991c800dda::t_7d509fed159943 28-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "298c827ca2c214ae3dcdba055dccdaf895fed245",
+  "prompts": {},
+  "sessions": {
+    "s_cf9a991c800dda": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9811e589-a670-4599-935d-e9770e57b4e0",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
