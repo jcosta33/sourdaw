@@ -20,6 +20,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
@@ -168,6 +169,10 @@ describe('scheduleAudioClips', () => {
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
         vi.mocked(getAssetTransfer).mockReturnValue(null);
         mockResolveClips.mockReturnValue([]);
+        // The seam records are scheduler-session singletons: a case that leaves
+        // either standing would floor the next case's emissions as handovers.
+        schedulerSession.pendingSeam = null;
+        schedulerSession.lastLoopSeamAudioTime = null;
         disposeAudioClipScheduling();
     });
 
@@ -271,6 +276,35 @@ describe('scheduleAudioClips', () => {
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
+    // #4784 review — nothing observed the frozen path's fifth argument, so the
+    // wiring `floorsToWindowStart ? fromBeat : null` could silently collapse to
+    // either side: a wrap emission must pass the window's first beat (the floor
+    // holds the whole-arrangement buffer until it is due), and a steady-state
+    // emission must pass null (a late join starts immediately with due
+    // content).
+    it('passes the window start to the frozen path on a wrap emission and null on a steady-state one', () => {
+        const frozenTrack = {
+            ...(makeAudioTrack([]) as Record<string, unknown>),
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        };
+        trackStoreState.value = { tracks: [frozenTrack] };
+
+        // Wrap emission: the window opens at loopStart while the playhead
+        // stands negative-phase before it — the seam handover shape.
+        scheduleAudioClips(4, 12, 3.8, new Set(), new Set(), [], {
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+        });
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4);
+
+        // Steady-state emission: the window opens one look-ahead ahead of the
+        // playhead, so the frozen buffer must not be floored.
+        scheduleAudioClips(7.9, 8, 6, new Set(), new Set(), [], defaultTransportState);
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[1]?.[4]).toBeNull();
     });
 
     // ── Clip filtering & dedup ──────────────────────────────────────────────
@@ -1471,6 +1505,52 @@ describe('scheduleAudioClips', () => {
         expect(when).toBeCloseTo(10, 9);
         expect(offset).toBeCloseTo(2.75, 9);
         expect(duration).toBeCloseTo(5.25, 9);
+    });
+
+    // #4784 review — the handover ticks between the scheduled seam and its
+    // instant emit with fromBeat = wrappedUpTo: AHEAD of the negative-phase
+    // playhead and not equal to loopStart, so neither of the two wrap clauses
+    // above floored them. A clip that first becomes schedulable there (a
+    // decode finishing, an unmute mid-handover) joined at `now` with pre-loop
+    // content. While the playhead itself sits in the wrap handover — below
+    // loopStart while a seam is pending — the join floors to the window start.
+    it('floors a join first scheduled on a handover tick instead of starting pre-loop content at now', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+        // The handover state startPlayheadScheduler holds between the scheduled
+        // seam and its instant: the wrap record and the pending seam whose
+        // instant (10.1) is still ahead of the clock (10).
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            anchorAudioTime: 9.9,
+            anchorPosition: 11.8,
+        };
+        schedulerSession.lastLoopSeamAudioTime = 10.1;
+
+        // A handover tick's emission: the window opens at the incoming pass's
+        // high-water mark (4.05, where the seam tick's incoming window ended),
+        // while the playhead is still negative-phase at 3.9 — below loopStart 4.
+        scheduleAudioClips(4.05, 4.1, 3.9, new Set(), new Set(), [], {
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+        });
+
+        // Unfixed, the unfloored join starts at now with buffer content at
+        // 1.7 s = beat 3.4 — before the loop. Floored, the earliest content is
+        // the window's first beat: due at 10 + seconds(3.9 → 4.05) + 0.25 =
+        // 10.325, carrying beat 4.05's content (2.025 s into the buffer).
+        const [when, offset] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.325, 9);
+        expect(offset).toBeCloseTo(2.025, 9);
     });
 
     it('carries its track compensation on the source so a wrap fence can spare its tail', () => {

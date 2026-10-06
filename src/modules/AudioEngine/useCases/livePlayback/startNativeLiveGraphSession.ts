@@ -129,6 +129,7 @@ import { readLiveStripTracks } from './readLiveStripTracks';
 import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
+import { restoreNativeChains } from './restoreNativeChains';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
@@ -663,6 +664,24 @@ function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBac
 }
 
 /**
+ * Settle the chain record a refused first batch leaves behind.
+ *
+ * The refusal changed nothing the engine holds, so the truth is whatever this
+ * start found: a session still adopted — the one a refused park deliberately
+ * keeps, engine still rolling — gets its own record back, and the projection
+ * this start wrote over it goes. With nothing adopted, the projected chains
+ * name a graph nothing built, and the empty record the stop left is the truth
+ * to restore — the same reason the unreconciled branch below clears.
+ */
+function settleRefusedStartRecord(chainsTheStartFound: ReadonlyMap<string, readonly string[]>): void {
+    if (nativeLiveGraphSession.backend === null) {
+        clearNativeChains();
+    } else {
+        restoreNativeChains(chainsTheStartFound);
+    }
+}
+
+/**
  * Put the engine back where the roll found it, after an answer nobody could
  * read.
  *
@@ -1131,8 +1150,10 @@ export function startNativeLiveGraphSession(
                 // The chains travel with the claim (#4785): recorded from the
                 // projected batch, they carry the carriage answer the write
                 // doors read across the whole start window, and every way out
-                // of the start that reopens the gates below also drops the
-                // record or replaces it with the applied batch's reports.
+                // of the start that reopens the gates below also settles the
+                // record — dropping it, restoring it, or replacing it with the
+                // applied batch's reports.
+                const chainsTheStartFound = nativeLiveGraphSession.nativeChainByStripId;
                 claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
                 if (audible) {
                     replaceNativeChains(projectedChainReports(firstCommands));
@@ -1145,8 +1166,7 @@ export function startNativeLiveGraphSession(
                 if (started.outcome !== 'applied') {
                     releaseCarriedStrips();
                     backend.dispose();
-                    // Refused whole, so the projected chains name a graph nothing built — clearing restores the record the stop left, as the unreconciled branch below.
-                    clearNativeChains();
+                    settleRefusedStartRecord(chainsTheStartFound);
                     notifyNativeDecline(started.reason);
                     return { outcome: 'declined', reason: started.reason };
                 }

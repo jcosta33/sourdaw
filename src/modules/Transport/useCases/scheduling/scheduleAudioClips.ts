@@ -27,7 +27,7 @@ import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
+import { type SourceWithFade, schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
@@ -100,8 +100,25 @@ export function scheduleAudioClips(
     // and flooring a fresh mid-pass join to it held the source silent for
     // look-ahead + compensation while skipping the material in between; there
     // the unfloored mid-buffer continuation is the correct join.
+    //
+    // The seam handover has a second window shape those clauses miss: on the
+    // ticks between the scheduled seam and its instant, the emission opens at
+    // the incoming pass's high-water mark (`wrappedUpTo`, ahead of loopStart)
+    // while the playhead is still negative-phase below it, and a clip that
+    // first becomes schedulable there — a decode finishing, an unmute — joined
+    // at `now` with content from before loopStart. When the playhead itself
+    // sits in the wrap handover (below loopStart while a seam is pending or
+    // just recorded), the join floors to the window start: the earlier windows
+    // already emitted everything before it, and nothing pre-loop may sound in
+    // the incoming pass.
+    const playheadInWrapHandover =
+        transport.isLooping === true &&
+        accumulatedPosition < transport.loopStart &&
+        (schedulerSession.pendingSeam !== null || schedulerSession.lastLoopSeamAudioTime !== null);
     const floorsToWindowStart =
-        fromBeat <= accumulatedPosition || (transport.isLooping === true && fromBeat === transport.loopStart);
+        fromBeat <= accumulatedPosition ||
+        (transport.isLooping === true && fromBeat === transport.loopStart) ||
+        playheadInWrapHandover;
 
     for (const track of tracks) {
         if (track.kind !== 'audio') {

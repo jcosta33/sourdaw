@@ -280,10 +280,16 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // (#4784): the fence spares it past the seam, and the mapped read
             // below follows it back across the region rather than naming the
             // pre-loop beats nothing plays.
-            beat = Math.min(
-                currentBeat,
-                Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
-            );
+            //
+            // The region gate below reads the UNCLAMPED compensated read: the
+            // clamp's floor is beat 0, so a region that begins at the
+            // arrangement origin (loopStart 0) would never see a clamped beat
+            // below loopStart and the wrap-back could not engage (#4784
+            // review). Above zero the clamp only moves negative reads to the
+            // same side of the gate, so the unclamped comparison admits
+            // exactly the set the clamped one did, plus the origin region.
+            const unclampedBeat = samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1);
+            beat = Math.min(currentBeat, Math.max(0, unclampedBeat));
             const region = transportStore.value;
             const seamAudioTime = schedulerSession.lastLoopSeamAudioTime;
             const secondsSinceSeam = seamAudioTime === null ? Infinity : now - seamAudioTime;
@@ -293,7 +299,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 secondsSinceSeam >= 0 &&
                 secondsSinceSeam < compensation &&
                 currentBeat >= region.loopStart &&
-                beat < region.loopStart
+                unclampedBeat < region.loopStart
             ) {
                 // The dying pass died on the seam at loopEnd, and the chain
                 // entry sits `compensation` behind the clock, so the material

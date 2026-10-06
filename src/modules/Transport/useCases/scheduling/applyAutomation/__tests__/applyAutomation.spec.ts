@@ -709,6 +709,41 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
         });
 
+        // #4784 review — a region that begins at the arrangement origin made
+        // the wrap-back gate dead: the compensated read is clamped with
+        // Math.max(0, …) upstream, so at loopStart 0 the clamped beat could
+        // never sit below loopStart and the gate never fired. The gate reads
+        // the UNCLAMPED compensated read instead, so a region at [0, 8] maps
+        // back onto the dying pass exactly as a region at [4, 8] does.
+        it('maps the wrap-back across a region starting at beat 0, whose clamped read can never sit below loopStart', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7 ? 0 : 1));
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 0, loopEnd: 8 });
+            // The seam the scheduler just crossed: the published beat is 0.1 s
+            // (0.2 beats at 120 BPM) past loopStart 0, and the dying tail is
+            // fed for another 0.15 s of the 0.25 s compensation window.
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 700;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 701;
+            applyAutomation(0.2);
+
+            // Wrapped-domain read: 0.2 beats = 0.1 s − 0.25 s = −0.15 s, which
+            // the clamp pins to beat 0 — indistinguishable from loopStart for a
+            // gate comparing the clamped value. The unclamped read is what
+            // crosses the gate, and the mapped read follows the dying tail:
+            // 0.15 s before the seam at 120 BPM is 0.3 beats → 7.7.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.7, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
         it('gates a clip-owned device lane on the compensated beat, not the playhead beat, so it does not fire before the clip audio has reached the device', () => {
             seedDeviceLane({
                 devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],

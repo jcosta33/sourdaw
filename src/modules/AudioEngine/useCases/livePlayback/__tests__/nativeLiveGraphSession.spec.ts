@@ -2803,6 +2803,54 @@ describe('the chain record a rolling mirror addresses', () => {
 
         expect(isDeviceHeldByNativeSession('audio-1', 'dev-1')).toBe(false);
     });
+
+    /**
+     * A park the engine refused keeps the session it failed to stop: the engine
+     * is still rolling, and the record it kept is the only account of the graph
+     * it is sounding. A later start whose first batch is refused changed
+     * nothing that engine holds, so the record the start found is the one to
+     * hand back — emptied, the still-sounding session loses every mirror edit
+     * to "strip not built" and every held message to "no body".
+     */
+    it('survives a refused start that follows the park the engine refused', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+        });
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'transport busy',
+        });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 3 });
+
+        const addedDevice: Device = {
+            id: 'dev-1',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: {},
+        };
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [addedDevice] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.topologyOverride = [
+            { ...CARRIED_STRIP, devices: [addedDevice] },
+            { kind: 'set-transport', playing: false, positionSeconds: 0 },
+        ];
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(isDeviceHeldByNativeSession('audio-1', 'device-a')).toBe(true);
+        // The survivor's record is restored, not merged with the projection:
+        // the added device names a body the engine has never built.
+        expect(isDeviceHeldByNativeSession('audio-1', 'dev-1')).toBe(false);
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([['audio-1', ['device-a']]]);
+    });
 });
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { stopActiveSources, type SourceWithFade } from '../schedulerSession';
+import { schedulerSession, stopActiveSources, type SourceWithFade } from '../schedulerSession';
 
 type MockGainParam = {
     value: number;
@@ -140,7 +140,18 @@ describe('stopActiveSources', () => {
 
         stopActiveSources([compensated], ctx, 10.5);
 
+        // #4784 review pin — kept while its instant (10.75) is still ahead of
+        // the clock: the fence empties the pool, so this list is the spared
+        // tail's only reference.
+        expect(schedulerSession.pendingFences.map((fence) => fence.source)).toContain(compensated);
+
+        // #4784 review pin — a later FENCED stop prunes the passed instant.
+        // The teardown call below clears the list unconditionally, so only a
+        // second fence call can observe the prune filter's deletion.
         const laterCtx = { currentTime: 11 } as BaseAudioContext;
+        stopActiveSources([], laterCtx, 11.2);
+        expect(schedulerSession.pendingFences.map((fence) => fence.source)).not.toContain(compensated);
+
         stopActiveSources([], laterCtx);
 
         // The fence instant (10.75) is behind the later clock: the source has

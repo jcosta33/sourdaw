@@ -34,6 +34,7 @@ import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { resolveDrumKit } from './resolveDrumKit';
@@ -706,9 +707,15 @@ export async function scheduleMidiNotes(
     // audio-clip twin's does — a wrap handover or a landing, where the window
     // opens at a boundary the playhead stands at or behind — never on a
     // steady-state window, whose first beat sits a look-ahead ahead of the
-    // playhead and would hold a late join silent.
+    // playhead and would hold a late join silent. A frozen track first becoming
+    // schedulable mid-handover floors too: the playhead sits below loopStart
+    // while a seam is pending or just recorded.
     const floorsToWindowStart =
-        fromBeat <= accumulatedPosition || (transport.isLooping === true && fromBeat === transport.loopStart);
+        fromBeat <= accumulatedPosition ||
+        (transport.isLooping === true && fromBeat === transport.loopStart) ||
+        (transport.isLooping === true &&
+            accumulatedPosition < transport.loopStart &&
+            (schedulerSession.pendingSeam !== null || schedulerSession.lastLoopSeamAudioTime !== null));
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
     // #4924 — the earliest start an admitted Yeast segment may still schedule
