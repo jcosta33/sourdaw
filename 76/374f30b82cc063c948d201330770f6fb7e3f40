@@ -1,0 +1,216 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_f9a39e755f90eb 45
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_1c08b47ac3792f::t_0e8de5c0528bea 318
+  s_1c08b47ac3792f::t_aea2f460cbcbd7 328
+  s_1c08b47ac3792f::t_b8dfd04c04bb92 85-86
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_1c08b47ac3792f::t_59b6472346b821 11
+  s_1c08b47ac3792f::t_4f94f9b37812d3 118,123-126
+  s_1c08b47ac3792f::t_c892bb99aec69f 1-10,12-102,112-117,119-122,128-220,225-254,256,258-278,280-286
+  s_1c08b47ac3792f::t_f407bab7a8b4bc 221-224
+  s_1c08b47ac3792f::t_0e8ecfe29e98d3 255
+  s_1c08b47ac3792f::t_b0fee8746d1616 257
+  s_1c08b47ac3792f::t_3b6d16fa59389e 103-111
+  s_1c08b47ac3792f::t_e746e95452c5aa 279
+  s_1c08b47ac3792f::t_b6746c91662d9b 127
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_1c08b47ac3792f::t_0fc6607184aa07 88
+  s_1c08b47ac3792f::t_7ab12053bf9d31 252
+  s_1c08b47ac3792f::t_bab77052fa889f 221,225-233
+  s_1c08b47ac3792f::t_aaf93229a37b85 72-83
+  s_1c08b47ac3792f::t_f36e6dead0ae96 126-129
+  s_1c08b47ac3792f::t_855b7ffabe95bc 57-62,84-86
+  s_1c08b47ac3792f::t_ebbcb3e3f58175 96,99,112-115,117-120
+  s_1c08b47ac3792f::t_79241b5c0d9719 179
+  s_1c08b47ac3792f::t_de1fa438bbdf3d 1-56,63-71,87,89-95,97-98,100-111,116,121-125,130-178,180-220,222-224,234-251,253-256
+src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts
+  s_1c08b47ac3792f::t_91bb288cf6439e 1-8,22-43,45-54,56-60
+  s_1c08b47ac3792f::t_7d9cc084780482 16
+  s_1c08b47ac3792f::t_352a327ffc82b9 55
+  s_1c08b47ac3792f::t_81e11b5d20ec79 44
+  s_1c08b47ac3792f::t_0365211a72a605 9-15,17-21
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revalidateApprovedMatchSelectors.ts
+  s_1c08b47ac3792f::t_2c1f518ccfcbbf 52
+  s_1c08b47ac3792f::t_283a81cf7fee89 4
+  s_1c08b47ac3792f::t_83f3239d035451 53-74
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1c08b47ac3792f::t_c4b139099be4df 349-353
+  s_1c08b47ac3792f::t_e9f81dba8d7176 43-44
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_e9b54422f117cc 398-399
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_1c08b47ac3792f::t_f8247300438829 404,420-423
+  s_1c08b47ac3792f::t_eebc91b75a37f8 245-253
+  s_1c08b47ac3792f::t_0e10e452f6243e 317-319
+  s_1c08b47ac3792f::t_8ee7d84aa3be76 316
+  s_1c08b47ac3792f::t_dd2984c718167c 254-288
+  s_1c08b47ac3792f::t_8fc32098c91c67 29
+  s_1c08b47ac3792f::t_644241de99cbe6 53-54
+  s_1c08b47ac3792f::t_8a9e81841fe837 395
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_1c08b47ac3792f::t_002c695acdb084 239-240,249-268,270-271,274-280,286-290
+  s_1c08b47ac3792f::t_9a3189d67fae8a 291-292
+src/modules/AiRuntime/models/IntentResult.ts
+  s_1c08b47ac3792f::t_22cb2481661a3c 56-61
+  s_1c08b47ac3792f::t_88376209e4caf3 2
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_1c08b47ac3792f::t_6838c9bbaab39b 55-60
+  s_1c08b47ac3792f::t_9f6a3532ba9724 213
+  s_1c08b47ac3792f::t_f100f2734d2fce 200-211,214-216
+src/modules/AiRuntime/useCases/splitCompiledCommandList.ts
+  s_1c08b47ac3792f::t_df7ea4691f805b 1-37,39-40,42-43,45-88,91,107-114,116-121,123-125,128-131,133,137-143,154-178,180-238,250-267,269-271,279-290,292-295,310-330,337-352,354-358,360-407
+  s_1c08b47ac3792f::t_4ce8d24071fe8c 353,359
+  s_1c08b47ac3792f::t_e9b8b35fc366b3 38,41,44
+  s_1c08b47ac3792f::t_43637eb22c707c 239-249,268,272-278,291,296-309
+  s_1c08b47ac3792f::t_a1e592bfd39765 90,115,122,126-127,132,134-136,144-153
+  s_1c08b47ac3792f::t_4f70f63443279e 89,92-106
+  s_1c08b47ac3792f::t_81371199bd723e 179
+  s_1c08b47ac3792f::t_dfe8044b82e280 331-336
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_407c133a2445f0 674-695
+  s_1c08b47ac3792f::t_0fe817c4e0387c 32,35-41
+  s_1c08b47ac3792f::t_d86752e612c272 810-831
+  s_1c08b47ac3792f::t_62e7a42f747b7b 1007-1009
+  s_1c08b47ac3792f::t_02ceeaef5ef2f6 1106
+  s_1c08b47ac3792f::t_48a9c37c0f552f 130,1017-1018,1020-1033,1049,1054-1105,1107-1148,1150-1153,1155,1162-1165,1170-1185,1206-1217
+  s_1c08b47ac3792f::t_69bf7392336247 1186-1205
+  s_1c08b47ac3792f::t_5ed996f8808913 429-589,591-673,696-761,766-782,784-809,832-856,858-896,898-971,1005-1006,1010-1016
+  s_1c08b47ac3792f::t_a083a9d59fb3d7 63,65-69
+  s_1c08b47ac3792f::t_768c0ec64a407b 762-765
+  s_1c08b47ac3792f::t_ad26b24fc73436 1019
+  s_1c08b47ac3792f::t_c3b22b75b10ad4 31
+  s_1c08b47ac3792f::t_a5f51eadac1fc2 972-1004
+  s_1c08b47ac3792f::t_69fae341559ce3 1149,1154,1156-1161,1166-1169
+  s_1c08b47ac3792f::t_91957128643220 3-24,26-28
+  s_1c08b47ac3792f::t_779741d702ee18 29,34,45-48,50,52-53,55,57,127-129
+  s_1c08b47ac3792f::t_85ce2e22932ff5 73-105
+  s_1c08b47ac3792f::t_5ccf6a9177074d 783
+  s_1c08b47ac3792f::t_44ba7565f2a96f 1034-1036,1038,1050-1052
+  s_1c08b47ac3792f::t_75f223a1c98335 1039
+  s_1c08b47ac3792f::t_1a6f88787ca0a6 1040-1048,1053
+  s_1c08b47ac3792f::t_4f8d0adf6b1b72 64
+  s_1c08b47ac3792f::t_8f8f1d5ebe0d04 49,51,54,56,58-62,70-72,106-120
+  s_1c08b47ac3792f::t_0c84c68ce03bc5 25
+  s_1c08b47ac3792f::t_b548a41a261e50 131,590,857,897,1037
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_1c6016fecaf43a 251-260
+  s_1c08b47ac3792f::t_ee935c884af6e0 1314
+  s_1c08b47ac3792f::t_4caaab47ecd476 1508
+  s_1c08b47ac3792f::t_9dd82a5b52293a 68-72,75-76
+  s_1c08b47ac3792f::t_4f2bea0a7e8ac5 1466
+  s_1c08b47ac3792f::t_bc8289336d42b1 125-130
+  s_1c08b47ac3792f::t_9a0a9a45d8eb68 1209
+  s_1c08b47ac3792f::t_a9ed1d5bf3a7cb 12-13,17
+  s_1c08b47ac3792f::t_c8d7c9a6aa563d 1236-1237
+  s_1c08b47ac3792f::t_36ca3639cd62b9 1469
+  s_1c08b47ac3792f::t_d998544cc91fb4 77
+src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts
+  s_1c08b47ac3792f::t_fae92db1de49f0 36-52
+src/modules/AiRuntime/models/AgentRun.ts
+  s_1c08b47ac3792f::t_2957c521efe5cb 2
+  s_1c08b47ac3792f::t_0135ba15aa40ce 81-82,85-115
+  s_1c08b47ac3792f::t_1b2026069f1605 116
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_1c08b47ac3792f::t_03857a2d9ba477 1357
+  s_1c08b47ac3792f::t_894abb93af13ed 1383
+  s_1c08b47ac3792f::t_2ada5e6cdcb6d8 1144-1215
+  s_1c08b47ac3792f::t_1f2023ec3f8077 6
+  s_1c08b47ac3792f::t_d5fa30d8919ce7 1324-1325
+  s_1c08b47ac3792f::t_6a73e4e9ac373a 18-19
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_1c08b47ac3792f::t_6b480d32868adf 373
+  s_1c08b47ac3792f::t_d37825bc0a7645 125-126,129
+  s_1c08b47ac3792f::t_2676b8092a0cba 328
+  s_2bfd55a4393d7c::t_6608ae2a9eabbb 130
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_1c08b47ac3792f::t_892245c87a5951 453-454
+  s_1c08b47ac3792f::t_3b1a3865990df2 455-457
+  s_1c08b47ac3792f::t_6b03b4824fa842 497-509,515-520
+  s_1c08b47ac3792f::t_f669897fb8b53d 2404-2406
+  s_1c08b47ac3792f::t_dcf80199be7322 962
+  s_1c08b47ac3792f::t_ac26a8f8496014 2398
+  s_1c08b47ac3792f::t_5b4fab5b8b15e5 34
+  s_1c08b47ac3792f::t_939a8bd204bd21 1748
+  s_1c08b47ac3792f::t_b15c6fdbfbcb33 521-522
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_1c08b47ac3792f::t_c67cbce75ab8b6 127
+  s_1c08b47ac3792f::t_3e510bbddf5c6c 148
+  s_1c08b47ac3792f::t_aa80faad712f89 38-39
+  s_1c08b47ac3792f::t_3e981821f80b6b 52-57
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_1c08b47ac3792f::t_652da5e10b6c78 12,15
+  s_1c08b47ac3792f::t_6602f86f7e2ad3 1669
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_1c08b47ac3792f::t_5a71a6d6402c6d 142-143
+  s_1c08b47ac3792f::t_b983631655b7cb 108-117
+  s_1c08b47ac3792f::t_dd9f1f510bac4b 258,263
+  s_1c08b47ac3792f::t_f3f09e2cf4a145 220
+  s_1c08b47ac3792f::t_0f57a0ba66cd6e 1,6,8-18,107
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_1c08b47ac3792f::t_d2f3b50a4c2e4d 4
+  s_1c08b47ac3792f::t_93e93c46f231b9 115-137
+  s_1c08b47ac3792f::t_1f32ad5717ad1f 138-141,262,293,350
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_1c08b47ac3792f::t_aeeb840576658a 47
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1c08b47ac3792f::t_ac6d3634a87fcc 1143
+  s_1c08b47ac3792f::t_b6b77a79e5ffc2 32,35
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_1c08b47ac3792f::t_95648913b7fadd 795-802
+  s_1c08b47ac3792f::t_34e23c26ffb370 834-838
+  s_1c08b47ac3792f::t_720c40559ef841 842-845
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_5cc5538ecef8ed 757-772
+  s_1c08b47ac3792f::t_a4b1e05e841cd9 233
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_1c08b47ac3792f::t_bf9f5be8c03a8a 12
+  s_1c08b47ac3792f::t_12b741edf1cb12 67-68,70-72
+  s_1c08b47ac3792f::t_7831fc01986f38 69
+src/modules/AiRuntime/services/bulkSetSliceReplay.ts
+  s_1c08b47ac3792f::t_96818191787537 1-52
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_1c08b47ac3792f::t_c1a9b61d4824ee 255-256,258-265
+  s_1c08b47ac3792f::t_5e51138846b9c8 257
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readBulkSetSliceEvidence.ts
+  s_1c08b47ac3792f::t_40685f0598ee08 1-124
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_fc665da4d5b63c 69
+  s_1c08b47ac3792f::t_103b7c679fb1f7 87
+  s_1c08b47ac3792f::t_ebcca0a391631a 244
+  s_1c08b47ac3792f::t_dfb6342812d2be 846-857,860
+  s_1c08b47ac3792f::t_a8530d80acd7ca 216-243,245-288
+  s_1c08b47ac3792f::t_7e5b3baafc7939 77
+  s_1c08b47ac3792f::t_822fe41e87bfb6 992-993,998-1003,1005-1016,1018,1025,1028,1030-1031,1033,1035,1039,1041-1044,1047,1049
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_1c08b47ac3792f::t_b68b808bbb384a 212-215,217-220
+  s_1c08b47ac3792f::t_ff0bab01e7c41c 7
+  s_1c08b47ac3792f::t_8b6bcf4238d81c 102-133
+  s_1c08b47ac3792f::t_20a88b28f18597 216
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_12f2fe5f03f8b0 563,748
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76374f30b82cc063c948d201330770f6fb7e3f40",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
