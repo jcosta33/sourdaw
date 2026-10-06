@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
         } | null,
     },
     midiStore: {
-        value: null as { notesByClipId: Record<string, unknown[]> } | null,
+        value: null as {
+            notesByClipId: Record<string, unknown[]>;
+            ccByClipId: Record<string, unknown[]>;
+            pitchBendByClipId: Record<string, unknown[]>;
+        } | null,
     },
     getTrackStoreState: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
@@ -274,7 +278,7 @@ describe('copySelectedClip', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-1', clips: [{ id: 'midi-1', type: 'midi' }] }],
         });
-        mocks.midiStore.value = { notesByClipId: { 'midi-1': [sourceNote] } };
+        mocks.midiStore.value = { notesByClipId: { 'midi-1': [sourceNote] }, ccByClipId: {}, pitchBendByClipId: {} };
 
         expect(copySelectedClip()).toBe(true);
 

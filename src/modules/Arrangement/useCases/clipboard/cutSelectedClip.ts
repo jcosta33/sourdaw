@@ -1,5 +1,3 @@
-import { midiStore } from '#/modules/MIDI/stores';
-
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
@@ -8,6 +6,8 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { removeClip } from '../clip/removeClip';
 import { getTrackStoreState } from '../getTrackStoreState';
+
+import { captureMidiClipRows } from './captureMidiClipRows';
 
 export function cutSelectedClip(): boolean {
     const workspace = clipSelectionStore.value;
@@ -39,7 +39,6 @@ export function cutSelectedClip(): boolean {
         }
     }
 
-    const midiState = midiStore.value;
     const state = getTrackStoreState();
     if (!state) {
         return false;
@@ -51,14 +50,13 @@ export function cutSelectedClip(): boolean {
         if (!found) {
             return false;
         }
-        const midiNotes = found.clip.type === 'midi' ? midiState?.notesByClipId[found.clip.id] : undefined;
         entries.push({
             clip: { ...found.clip },
-            midiNotes: midiNotes ? midiNotes.map((node) => ({ ...node })) : undefined,
+            ...captureMidiClipRows(found.clip),
             // Same self-contained payload `copySelectedClip` builds: cut is a
-            // copy whose paste must carry the satellites and clip-scoped
-            // automation lanes too, and the removal below retires the live
-            // copies right after this read.
+            // copy whose paste must carry the notes, controller streams,
+            // satellites and clip-scoped automation lanes too, and the removal
+            // below retires the live copies right after this read.
             satellites: readClipSatelliteEntry(found.clip.id),
             automationLanes: readClipScopedAutomationLanes([found.clip.id]),
             sourceTrackId: found.trackId,

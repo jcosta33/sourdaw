@@ -125,6 +125,59 @@ function laneCurveCoversNoSpan(points: SchedulerAutomationLane['points']): boole
 }
 
 /**
+ * Which export merge group a track-level lane competes under — the group key
+ * `scheduleTrackAutomation` collects that lane's compiled stream into, so the
+ * pre-pass sees exactly the siblings the export's merge sees.
+ *
+ * The export collects device-parameter streams under the *resolved* target,
+ * `${deviceId}::${parameterId}`: `resolveDeviceAutomationTargetIndex` lands the
+ * canonical `device-id:param` spelling and the legacy `device-type:param`
+ * spelling of one target on the same device, so both compile into one merge
+ * group offline. Keying live by the raw string would split them, and a
+ * single-point duplicate spelled the legacy way would stand beside a material
+ * sibling spelled the canonical way with neither suppressing the other — the
+ * held duplicate drives flat over the sibling's ramp. So a lane whose
+ * parameter resolves to a device (the same resolution the tick's write path
+ * runs) groups by `${deviceId}::${paramId}`.
+ *
+ * The strip families have no device target: the export groups gain, pan and
+ * each send pot per track+parameter (`track:${trackId}::${parameterId}`),
+ * which the raw key already is, so they keep it — gain/pan/send are decided
+ * before device resolution here exactly as the tick decides them before its
+ * own device branch. A device spelling that resolves to no target (absent or
+ * ambiguous owner) never writes from the tick path either, so it stays on the
+ * raw key. A linked lane competes under its own target — the group its stream
+ * is compiled under, since a follower's values come from the resolved source
+ * but the target stays the follower's — while its material is read through
+ * {@link resolveLinkedLane}, the same link walk the export runs before it
+ * compiles the source's points into that group.
+ */
+function resolveTrackLaneGroupKey(lane: SchedulerAutomationLane): string {
+    const rawKey = `${lane.trackId}::${lane.parameterId}`;
+    if (
+        lane.parameterId === 'gain' ||
+        lane.parameterId === 'pan' ||
+        getSendAutomationBusId(lane.parameterId) !== null
+    ) {
+        return rawKey;
+    }
+    const track = automationState.trackIndex.get(lane.trackId);
+    if (!track) {
+        return rawKey;
+    }
+    const deviceIndex = resolveDeviceAutomationTargetIndex(
+        lane.parameterId,
+        track.devices,
+        deviceAcceptsAutomationParameter
+    );
+    const paramId = deviceIndex >= 0 ? getDeviceAutomationParameterId(lane.parameterId) : null;
+    if (deviceIndex < 0 || !paramId) {
+        return rawKey;
+    }
+    return `${track.devices[deviceIndex]!.id}::${paramId}`;
+}
+
+/**
  * Which track-level lanes must stand down this tick because a sibling with
  * material drives the same parameter (#4928).
  *
@@ -143,10 +196,11 @@ function laneCurveCoversNoSpan(points: SchedulerAutomationLane['points']): boole
  * a clip-scoped lane is the more specific scope and keeps its #4736 law; a
  * disabled lane is not in the export's collection at all, so it neither
  * suppresses nor stands down; and material is read off the resolved link
- * source's points, which is what both sides compile. With no material sibling
- * the set is empty and every lane applies as before — a lone single-point lane
- * still drives, and equal zero-span duplicates keep the merge's
- * last-terminator-wins order.
+ * source's points, which is what both sides compile. Siblings are matched the
+ * way the export merges its compiled streams — see
+ * {@link resolveTrackLaneGroupKey}. With no material sibling the set is empty
+ * and every lane applies as before — a lone single-point lane still drives, and
+ * equal zero-span duplicates keep the merge's last-terminator-wins order.
  */
 function resolveZeroSpanDuplicateTrackLanes(lanes: readonly SchedulerAutomationLane[]): Set<string> {
     const laneById = new Map<string, SchedulerAutomationLane>();
@@ -159,7 +213,7 @@ function resolveZeroSpanDuplicateTrackLanes(lanes: readonly SchedulerAutomationL
         if (lane.clipId !== undefined || lane.enabled === false) {
             continue;
         }
-        const groupKey = `${lane.trackId}::${lane.parameterId}`;
+        const groupKey = resolveTrackLaneGroupKey(lane);
         const source = resolveLinkedLane(lane.id, (id) => laneById.get(id));
         const sourcePoints = source ? (laneById.get(source.sourceLaneId)?.points ?? []) : [];
         if (sourcePoints.length === 0) {

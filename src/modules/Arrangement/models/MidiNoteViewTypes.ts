@@ -1,7 +1,8 @@
 /**
- * Arrangement-local view shape of MIDI's note model (AGENTS.md §95 — model
- * isolation). Arrangement stores clipboard / duplication records containing
- * these shapes; it does not import MIDI's model.
+ * Arrangement-local view shapes of MIDI's note and controller-event models
+ * (AGENTS.md §95 — model isolation). Arrangement stores clipboard /
+ * duplication records containing these shapes; it does not import MIDI's
+ * model.
  */
 
 export type MidiNote = {
@@ -24,4 +25,21 @@ export type MidiNote = {
         slide?: { offsetBeats: number; value: number }[];
         pitchBend?: { offsetBeats: number; value: number }[];
     };
+};
+
+/** View shape of MIDI's controller-change point; clip association is the store's clip-id key. */
+export type MidiCC = {
+    id: string;
+    controller: number;
+    value: number;
+    beat: number;
+    channel: number;
+};
+
+/** View shape of MIDI's pitch-bend point; clip association is the store's clip-id key. */
+export type MidiPitchBend = {
+    id: string;
+    value: number;
+    beat: number;
+    channel: number;
 };

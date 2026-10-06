@@ -255,6 +255,46 @@ describe('direct track and clip creation and Undo', () => {
         expect(sourceLane?.points).toEqual([{ beat: 0, value: 0.75, curve: 'linear', tension: 0 }]);
     });
 
+    it('undoes a paste together with the midi rows the paste cloned onto its clip', async () => {
+        await executeAppAction({
+            type: 'addClip',
+            payload: { id: 'clip-src', trackId: 't-drums', startBeat: 0, endBeat: 4, name: 'Source', type: 'midi' },
+        });
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { 'clip-src': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+            ccByClipId: { 'clip-src': [{ id: 'cc-1', controller: 11, value: 64, beat: 0, channel: 0 }] },
+            pitchBendByClipId: { 'clip-src': [{ id: 'pb-1', value: 100, beat: 0, channel: 0 }] },
+        });
+        selectClip('clip-src');
+        copySelectedClip();
+
+        await executeAppAction({ type: 'pasteClip' });
+
+        const pasted = trackStore.value?.tracks
+            .find((track) => track.id === 't-drums')
+            ?.clips.find((clip) => clip.id !== 'clip-src');
+        if (!pasted) {
+            throw new Error('expected the pasted clip on the drums track');
+        }
+        expect(midiStore.value?.notesByClipId[pasted.id]).toHaveLength(1);
+        expect(midiStore.value?.ccByClipId[pasted.id]).toHaveLength(1);
+        expect(midiStore.value?.pitchBendByClipId[pasted.id]).toHaveLength(1);
+
+        await undo();
+
+        const clips = trackStore.value?.tracks.find((track) => track.id === 't-drums')?.clips ?? [];
+        expect.soft(clips.map((clip) => clip.id)).toEqual(['clip-src']);
+        // The pasted clip's rows go with it — every stream the restore's
+        // dropped-rows sweep retires; the source's stay.
+        expect(midiStore.value?.notesByClipId[pasted.id]).toBeUndefined();
+        expect(midiStore.value?.ccByClipId[pasted.id]).toBeUndefined();
+        expect(midiStore.value?.pitchBendByClipId[pasted.id]).toBeUndefined();
+        expect(midiStore.value?.notesByClipId['clip-src']).toHaveLength(1);
+        expect(midiStore.value?.ccByClipId['clip-src']).toHaveLength(1);
+        expect(midiStore.value?.pitchBendByClipId['clip-src']).toHaveLength(1);
+    });
+
     it('undoes an import batch whose track was created solely for its clip', async () => {
         await executeAppAction({ type: 'setTrackColor', payload: { trackId: 't-drums', color: '#222222' } });
 

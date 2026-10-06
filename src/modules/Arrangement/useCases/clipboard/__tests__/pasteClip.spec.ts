@@ -41,9 +41,19 @@ const mocks = vi.hoisted(() => {
     return {
         addClip: vi.fn<(input: AddClipInput) => { id: string } | null>(),
         cloneClipAutomationLanes: vi.fn<(lanes: readonly unknown[], targetClipId: string) => void>(),
+        shiftClipAutomation: vi.fn<(clipId: string, beatDelta: number, targetTrackId?: string) => void>(),
         getTrackState: vi.fn<() => MockTrackState | null>(),
         removeClip: vi.fn<(clipId: string) => void>(),
         resolveEligibleClipWriteTarget: vi.fn(),
+        restoreMidiClipData:
+            vi.fn<
+                (input: {
+                    clipId: string;
+                    notesSnapshot: readonly unknown[] | null;
+                    controlChangeSnapshot: readonly unknown[] | null;
+                    pitchBendSnapshot: readonly unknown[] | null;
+                }) => void
+            >(),
         setNotesForClip: vi.fn<(clipId: string, notes: MidiNote[]) => void>(),
         setEnvelope: vi.fn(),
         setWarpState: vi.fn(),
@@ -60,8 +70,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('#/modules/Automation/useCases', () => ({
     cloneClipAutomationLanes: mocks.cloneClipAutomationLanes,
+    shiftClipAutomation: mocks.shiftClipAutomation,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    restoreMidiClipData: mocks.restoreMidiClipData,
     setNotesForClip: mocks.setNotesForClip,
 }));
 vi.mock('#/modules/Transport/stores', () => ({
@@ -145,8 +157,10 @@ describe('pasteClip', () => {
         vi.restoreAllMocks();
         mocks.addClip.mockReset();
         mocks.cloneClipAutomationLanes.mockReset();
+        mocks.shiftClipAutomation.mockReset();
         mocks.getTrackState.mockReset();
         mocks.removeClip.mockReset();
+        mocks.restoreMidiClipData.mockReset();
         mocks.setNotesForClip.mockReset();
         mocks.setEnvelope.mockReset();
         mocks.setWarpState.mockReset();

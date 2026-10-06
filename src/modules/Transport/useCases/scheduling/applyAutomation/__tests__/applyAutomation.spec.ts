@@ -1688,6 +1688,34 @@ describe('applyAutomation', () => {
             expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
         });
 
+        it('device param: a legacy-spelled single-point duplicate stands down beside a canonical material sibling', () => {
+            // Both spellings resolve to one device target — the canonical
+            // `device-id:param` and the legacy `device-type:param` — so the
+            // export merges both streams into one (device, parameter) group
+            // where the lone terminator contributes nothing. Live must group
+            // by that resolved target too: keyed by the raw string, the held
+            // duplicate would see no material sibling and drive flat 0.9 over
+            // the sibling's ramp.
+            seedDuplicateTrackLanes(
+                [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                [
+                    { id: 'lane-ramp', parameterId: 'device-eq1:eq-low-gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'builtin-eq:eq-low-gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            schedulerSession.discontinuityEpoch = 900;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 901;
+            applyAutomation(8);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
+        });
+
         it('lets the single-point lane drive again once the material lane is gone', () => {
             seedDuplicateTrackLanes(
                 [],

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
 import { type Clip } from '../../../models/Track';
 import { clipboardStore } from '../../../stores/clipboardStore';
 import { cutSelectedClip } from '../cutSelectedClip';
@@ -14,7 +14,11 @@ const mocks = vi.hoisted(() => ({
         } | null,
     },
     midiStore: {
-        value: null as { notesByClipId: Record<string, MidiNote[]> } | null,
+        value: null as {
+            notesByClipId: Record<string, MidiNote[]>;
+            ccByClipId: Record<string, MidiCC[]>;
+            pitchBendByClipId: Record<string, MidiPitchBend[]>;
+        } | null,
     },
     getTrackStoreState: vi.fn(),
     mapAllTracks: vi.fn(),
@@ -130,12 +134,18 @@ describe('cutSelectedClip', () => {
             velocity: 0.8,
         };
         const midiNotes = [midiNote];
+        const midiCC = [{ id: 'cc-1', controller: 11, value: 64, beat: 0, channel: 0 }];
+        const midiPitchBend = [{ id: 'pb-1', value: 200, beat: 1, channel: 0 }];
 
         mocks.clipSelectionStore.value = {
             selectedClipId: 'clip-midi',
             selectedClipIds: ['clip-midi', 'clip-audio'],
         };
-        mocks.midiStore.value = { notesByClipId: { 'clip-midi': midiNotes } };
+        mocks.midiStore.value = {
+            notesByClipId: { 'clip-midi': midiNotes },
+            ccByClipId: { 'clip-midi': midiCC },
+            pitchBendByClipId: { 'clip-midi': midiPitchBend },
+        };
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 TrackDummy.create({ id: 'track-midi', kind: 'midi', clips: [midiClip] }),
@@ -159,6 +169,8 @@ describe('cutSelectedClip', () => {
                 {
                     clip: midiClip,
                     midiNotes,
+                    midiCC,
+                    midiPitchBend,
                     satellites: { clipId: 'clip-midi', gainEnvelope: null, warpState: null },
                     automationLanes: [],
                     sourceTrackId: 'track-midi',
@@ -179,6 +191,12 @@ describe('cutSelectedClip', () => {
         expect(audioEntry?.clip).not.toBe(audioClip);
         expect(midiEntry?.midiNotes).not.toBe(midiNotes);
         expect(midiEntry?.midiNotes?.[0]).not.toBe(midiNote);
+        // The controller streams clone like the notes do: the removal below
+        // retires the live rows right after this read.
+        expect(midiEntry?.midiCC).toEqual(midiCC);
+        expect(midiEntry?.midiCC?.[0]).not.toBe(midiCC[0]);
+        expect(midiEntry?.midiPitchBend).toEqual(midiPitchBend);
+        expect(midiEntry?.midiPitchBend?.[0]).not.toBe(midiPitchBend[0]);
     });
 
     it('captures the clip-scoped automation lanes held at cut time', () => {
