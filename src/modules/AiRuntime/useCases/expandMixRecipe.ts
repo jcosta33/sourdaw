@@ -139,9 +139,14 @@ function findValueRefusal(recipe: MixRecipe, supplied: RecipeExpansionInput['val
 
 /**
  * The value a parameter takes when none is supplied: the middle of its window, resolved onto the
- * descriptor's own legal settings so a discrete parameter never lands between two of them.
+ * descriptor's own legal settings so a discrete parameter never lands between two of them. An exact
+ * window (a recipe published from a preset) holds one value, which is taken as stored: rounding it to
+ * the midpoint's precision would move a long-precision stored value out of its own window.
  */
 function chooseMidpoint(deviceType: string, parameter: MixRecipeParameter): number {
+    if (parameter.minimum === parameter.maximum) {
+        return quantiseDeviceParameterValue({ deviceType, paramId: parameter.paramId, value: parameter.minimum });
+    }
     const midpoint = Number(((parameter.minimum + parameter.maximum) / 2).toPrecision(MIDPOINT_SIGNIFICANT_DIGITS));
     return quantiseDeviceParameterValue({ deviceType, paramId: parameter.paramId, value: midpoint });
 }
@@ -275,9 +280,11 @@ function expandEditStep(context: StepContext, chosen: readonly ExpandedParameter
 }
 
 /**
- * Expands one authored recipe against one concrete track into the ordinary catalog commands a
- * batch carries: `addDevice` for each insert step and `setDeviceParameter` for every authored
- * parameter, in the recipe's order. The expansion is a pure reading of the recipe and the project
+ * Expands one recipe against one concrete track into the ordinary catalog commands a batch
+ * carries: `addDevice` for each insert step and `setDeviceParameter` for every authored
+ * parameter, in the recipe's order. A recipe published from a factory preset takes this same path:
+ * each of its windows holds one value, so the midpoint is the stored value, and a value that
+ * cannot be written as stored leaves the window and is refused. The expansion is a pure reading of the recipe and the project
  * read model. It writes nothing, and the commands it returns reach the project only when a
  * proposal adopts them and passes every grounding and validation step a hand-written item passes.
  */
