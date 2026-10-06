@@ -1,0 +1,124 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_2a0e424c170dd2 448-449,451,455-456
+  s_1c08b47ac3792f::t_383f10eff26238 11
+  s_1c08b47ac3792f::t_008e511aca80c4 64-76
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_1f0c1e44436687 738-758,760-762
+  s_1c08b47ac3792f::t_2d9c20116e7e3a 1-5
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1c08b47ac3792f::t_9ef4ad1560c7df 254-255
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_72a88124e95297 1694
+  s_1c08b47ac3792f::t_41f9b38b90db29 1538-1541
+  s_1c08b47ac3792f::t_302c74db2fec64 1618-1620,1630-1634
+  s_1c08b47ac3792f::t_183630c2074cc7 1706-1714
+  s_1c08b47ac3792f::t_ef814d356824ec 1695-1698,1700-1701,1703-1705,1715-1720
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_23fe25b87033b8 259-269
+  s_1c08b47ac3792f::t_8980671840a370 288-290
+  s_1c08b47ac3792f::t_c2c9b02af133f6 12
+  s_1c08b47ac3792f::t_ffc8e6176b23e4 1-11,13-21,23-31,33-39,41-45,47-68,72-99,102-212,216-258,270-287,291-294,299-300,302-316,318-327,330-332,334-346,360,362,364,366-367,445-546,548-567
+  s_1c08b47ac3792f::t_3ff194799faf76 213-215
+  s_1c08b47ac3792f::t_428926c8cab00a 547
+  s_1c08b47ac3792f::t_efcec9596c8829 69-71
+  s_1c08b47ac3792f::t_51dd4f56cc265e 333,347-359,361,363,365,368,382,389-397,399-403,405-411,413-415,432-443
+  s_1c08b47ac3792f::t_fbe7f15e613a41 22
+  s_1c08b47ac3792f::t_91a0e1452ac969 32
+  s_1c08b47ac3792f::t_06e834fb589a93 398
+  s_1c08b47ac3792f::t_38859ecaa851c4 46
+  s_1c08b47ac3792f::t_f4121163ba4b5d 444
+  s_1c08b47ac3792f::t_3a5f01905f1d65 317
+  s_1c08b47ac3792f::t_e1101a6581a4e7 328-329
+  s_1c08b47ac3792f::t_ebc66ca24bb769 369
+  s_1c08b47ac3792f::t_d5a7f43c73e43e 420-421,428-431
+  s_1c08b47ac3792f::t_b7f6c020756efd 370
+  s_1c08b47ac3792f::t_6c6e049a03c5e1 412
+  s_1c08b47ac3792f::t_b23c9906f08a31 416-419,422-427
+  s_1c08b47ac3792f::t_359d4da585d721 375-377
+  s_1c08b47ac3792f::t_40edbe10adae6c 404
+  s_1c08b47ac3792f::t_9dfa996dab47f6 100-101
+  s_1c08b47ac3792f::t_af2c5166b1ff4c 295-298
+  s_1c08b47ac3792f::t_d61f1eb439048e 380-381,383-388
+  s_1c08b47ac3792f::t_120afe1019ea91 40
+  s_1c08b47ac3792f::t_8ce77db7448050 301
+  s_1c08b47ac3792f::t_99fab55c7772bc 378
+  s_1c08b47ac3792f::t_64cde5ee0ce509 371-372
+  s_1c08b47ac3792f::t_a442076c830498 373-374
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1c08b47ac3792f::t_98ca9f4931c16d 25-41
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_fada51de89a0cc 343
+  s_1c08b47ac3792f::t_09d374a8462ec8 57
+  s_1c08b47ac3792f::t_b39394c139bbfc 327
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_1c08b47ac3792f::t_95751aff0df08a 29
+  s_1c08b47ac3792f::t_4437e6d7ddfc59 7
+  s_1c08b47ac3792f::t_39bff0166ad868 32-34
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_1c08b47ac3792f::t_cc321c34611f9d 1-8
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_a8ded7d021c5c4 31
+  s_1c08b47ac3792f::t_509943e31863ba 529
+src/modules/AiRuntime/transformers/compactWebLlmToolSchema.ts
+  s_1c08b47ac3792f::t_b4fa50a349698c 167-168
+  s_1c08b47ac3792f::t_77b2ff36f6a987 25
+  s_1c08b47ac3792f::t_75b361839a495f 6-7,33,37-38,43-44,69,154-155
+  s_1c08b47ac3792f::t_d29c7c9f7a3839 2
+  s_1c08b47ac3792f::t_15eb22742f64a6 106-107,111,157
+  s_1c08b47ac3792f::t_da2616ce465468 1,3-5,8,13,15,26-27,34-36,45-46,62-68,70,72-88,159-161
+  s_1c08b47ac3792f::t_109418f4bbb99d 121-122,141
+  s_1c08b47ac3792f::t_f5db05d5679f81 172
+  s_1c08b47ac3792f::t_6c202bce635f86 47,52,54,61
+  s_1c08b47ac3792f::t_d9cc8af1c5d906 9,14
+  s_1c08b47ac3792f::t_eb52997c332c58 56-57
+  s_1c08b47ac3792f::t_b4cd12a9bc40c6 16,23
+  s_1c08b47ac3792f::t_6f908f5c9e56c4 58-60
+  s_1c08b47ac3792f::t_2a4fb5102d2b04 29
+  s_1c08b47ac3792f::t_b680701ade6788 23,25,28,30-32,89-155
+  s_1c08b47ac3792f::t_ef4605a9ee3ac8 16
+  s_1c08b47ac3792f::t_c6091b3f6cb6b5 10-12,17-22,24,39-42,156,158,162-164,169-171
+  s_1c08b47ac3792f::t_b8aa7ae299259e 71
+  s_1c08b47ac3792f::t_2610d13b66442f 48-51,53,55
+  s_1c08b47ac3792f::t_def115feaac280 165-166
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_1c08b47ac3792f::t_95633373b2b270 1-2,5-6,8-9,51-58,184,187-188,190-191,210-211,213-220,230-239,250-251,253-255,261-262,379-380,382,393-403
+  s_1c08b47ac3792f::t_2f892b4e5c06d9 406,408-409
+  s_1c08b47ac3792f::t_9a090f992d55c1 412,413-414,417-418
+  s_1c08b47ac3792f::t_ac25fb9e7162c9 257-258,260,263,269-270,276-279,281,284-287,289-291,311
+  s_1c08b47ac3792f::t_302ff98b48788d 66,73-74,77-78,80,82-88,105-106,110-111,117,126-129,134-137,139-140,143-144,149,153,182-183
+  s_1c08b47ac3792f::t_134a7c0edba177 131,133
+  s_1c08b47ac3792f::t_cb6e6c8e1839c3 3-4,7,10-17,25-50,59-65,67-72,75-76,79,81,89-106,112,114-116,130,142,145-148,150-152,154-181,198,203,210-211,221-226,228-229,241-242,244-246,248-249,252,282-283,301-310,312-316,319,322-356,369-392,404-409
+  s_1c08b47ac3792f::t_bbc43906b92287 203-209,210-211
+  s_1c08b47ac3792f::t_fa14d880c0e2d1 268
+  s_1c08b47ac3792f::t_8ee556cdc735e5 18,22-24,108-109,113,132,138,141,185-186,189,192,195-202,227,240,247,256,266-267,271-275,280,292-300,317-318,320-321,410-411,415-416
+  s_1c08b47ac3792f::t_b52aba1071242d 259
+  s_1c08b47ac3792f::t_08fd7229cc1417 288
+  s_1c08b47ac3792f::t_09eb3010181006 107,125
+  s_1c08b47ac3792f::t_b0a557bf4b665a 19-20
+  s_1c08b47ac3792f::t_9ed77dcd9d21fa 126
+  s_1c08b47ac3792f::t_e0f5a765a108fd 118-124
+  s_1c08b47ac3792f::t_5c0fff2af4e6a4 212
+  s_1c08b47ac3792f::t_0b65c6a16a0ecb 21
+  s_1c08b47ac3792f::t_fd9579a230ade7 243
+  s_1c08b47ac3792f::t_ee26b14baa9c46 357-368
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_e4a15e99111895 527
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_3e3ea7f20244d3 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45a017c4d1212f710ddf5e6fbde77519066d9c98",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
