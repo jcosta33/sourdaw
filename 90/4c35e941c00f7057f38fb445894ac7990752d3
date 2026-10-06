@@ -1,0 +1,75 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_07e4a26c359ff9 37
+.agents/skills/review-stances/correctness.md
+  s_1c08b47ac3792f::t_37f9decad93c51 469-475
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_1c08b47ac3792f::t_9b842da736d210 1-506
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_1c08b47ac3792f::t_b2c8728b040b47 1056-1057
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_c7a811123314e4 202
+src/modules/AiRuntime/useCases/countRecipeExpansionCommands.ts
+  s_1c08b47ac3792f::t_a6ab4c91407a51 1-12
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_1c08b47ac3792f::t_66cd5f1576daaf 3-5,45-46,121,132-135,230-238,241
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_1c08b47ac3792f::t_ea5095b93c9871 142-144,147-149,283-287
+src/modules/Arrangement/AGENTS.md
+  s_1c08b47ac3792f::t_16b5a13cc4cf7a 28
+src/modules/Arrangement/models/GetPresetContractVersion.ts
+  s_1c08b47ac3792f::t_f73831c99dcf4f 1-10
+src/modules/Arrangement/models/MixRecipe.ts
+  s_1c08b47ac3792f::t_adfd13d553b46f 166-182,186-187,191
+src/modules/Arrangement/services/__tests__/buildPresetMixRecipes.spec.ts
+  s_1c08b47ac3792f::t_b9b4d561094fcf 1-223
+src/modules/Arrangement/services/buildPresetMixRecipes.ts
+  s_1c08b47ac3792f::t_32180de4cb5018 1-132
+src/modules/Arrangement/useCases/__tests__/getMixRecipeCatalog.spec.ts
+  s_1c08b47ac3792f::t_152cc2d2451137 4,7,10-16
+src/modules/Arrangement/useCases/getAgentPresetDiscoveryManifest.ts
+  s_1c08b47ac3792f::t_eca7192f03436b 2,73
+src/modules/Arrangement/useCases/getMixRecipeCatalog.ts
+  s_1c08b47ac3792f::t_e85bc694b4af0a 3-5,11-16,20-21
+src/modules/MIDI/useCases/index.ts
+  s_1c08b47ac3792f::t_d77d304c553324 90
+src/modules/MIDI/useCases/midiEvent/__tests__/restoreMidiCCPoints.spec.ts
+  s_1c08b47ac3792f::t_03ec09653d99e4 1-97
+src/modules/MIDI/useCases/midiEvent/restoreMidiCCPoints.ts
+  s_1c08b47ac3792f::t_6c0aa67413ae0a 1-27
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/joinNotes.spec.ts
+  s_1c08b47ac3792f::t_b83f5856c9c749 290-323
+src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts
+  s_1c08b47ac3792f::t_ab3cc52080df6a 165-167,170
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_1c08b47ac3792f::t_01929eee4ebcaa 149-165,242-248,486,504-506,843,854-856
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_1c08b47ac3792f::t_029700bf01ef81 8,65-83,86-90,151-152,156
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_1c08b47ac3792f::t_4ad8a25733d970 5,59-73,78-89,196,230-415,807,809-813
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationLaneEntry.spec.ts
+  s_1c08b47ac3792f::t_6bebb0d494b536 4,6,42-43
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/midiFxAutomationNotDriven.spec.ts
+  s_1c08b47ac3792f::t_8f224fe3eb123b 1-138
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_1c08b47ac3792f::t_8ca5ac4f51a38e 113-124,126-127,131-134
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_1c08b47ac3792f::t_f068278e68f5e3 1,422-425,482,484,678-686
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_1c08b47ac3792f::t_d82d087dea0604 33-35,88-89,98-103,172-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "904c35e941c00f7057f38fb445894ac7990752d3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
