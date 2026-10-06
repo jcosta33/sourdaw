@@ -1,0 +1,74 @@
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_8f7b0c4fe044b2 1-87
+  s_1c08b47ac3792f::t_3014733a48ca4e 88-93
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptor.ts
+  s_1c08b47ac3792f::t_d2b1f232c28dfe 112-113
+  s_1c08b47ac3792f::t_a7d8ef2aeaf8ea 9
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_8fe53b7531d6e7 1-81
+  s_1c08b47ac3792f::t_a61f852dcb4ee8 82-85
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptor.ts
+  s_1c08b47ac3792f::t_8191d8701b5d89 9
+  s_1c08b47ac3792f::t_7e436e7b22523f 102-103
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_1c08b47ac3792f::t_14fac8574e205e 3-6,8
+  s_1c08b47ac3792f::t_5d61f55751af10 368-375,377-378
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_1c08b47ac3792f::t_d63202bf39ea1e 262-265,270
+  s_1c08b47ac3792f::t_f5811edbbb3d7e 106-112,114,116-119,129-140
+  s_2bfd55a4393d7c::t_2a11144e50ce3b 141
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts
+  s_1c08b47ac3792f::t_974cf93fde445a 4-10
+  s_1c08b47ac3792f::t_30dab750d98e34 149,151-153
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_923363ed92b40c 35
+  s_1c08b47ac3792f::t_a776821a05a4a7 1-34,36-165
+  s_1c08b47ac3792f::t_203b0ffa8ffd29 166-176
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_1c08b47ac3792f::t_66a03a590e1173 8
+  s_1c08b47ac3792f::t_f53c12d486c558 275-276
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidanceFm.ts
+  s_1c08b47ac3792f::t_c48eb27e414ab6 1-50,52-323
+  s_1c08b47ac3792f::t_6422190b6af45f 51
+  s_1c08b47ac3792f::t_1bc54bc4e6fccf 324-356
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_1c08b47ac3792f::t_b08b84195cbd98 1-103
+  s_1c08b47ac3792f::t_b1a9469e3dde54 104-107
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_866268b7e7c365 45-48
+  s_1c08b47ac3792f::t_ab741f0d73c607 70-73,75-76
+  s_1c08b47ac3792f::t_d0512136b7555d 63-65
+  s_1c08b47ac3792f::t_ab76e6723a7717 90-91
+src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptorsGuidance.ts
+  s_1c08b47ac3792f::t_8759397c4ff770 1-258
+  s_1c08b47ac3792f::t_066f4e89644b46 259-262
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_1c08b47ac3792f::t_7bb92c82309920 89-90
+  s_1c08b47ac3792f::t_81100ef95e11e9 9
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptorsGuidance.ts
+  s_1c08b47ac3792f::t_39c870eafebe78 214-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39a1f4d66e4e69ea048c06be971b61ba56704b12",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
