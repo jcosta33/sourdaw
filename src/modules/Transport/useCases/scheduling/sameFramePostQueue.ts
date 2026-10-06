@@ -1,8 +1,4 @@
-import {
-    SAME_FRAME_EVENT_ORDER,
-    STRUCK_NOTE_RELEASE_ORDER,
-    type SameFrameEventKind,
-} from '#/utils/sameFrameEventOrder';
+import { SAME_FRAME_EVENT_ORDER, type SameFrameEventKind } from '#/utils/sameFrameEventOrder';
 
 type QueuedPost = { sampleFrame: number; order: number; sequence: number; post: () => void };
 
@@ -17,11 +13,13 @@ type QueuedPost = { sampleFrame: number; order: number; sequence: number; post: 
  * ended where a pedal went down was released before the pedal in one case and
  * after it in the other. Sorting the window's posts removes that dependence;
  * posts of earlier windows are always ahead of these, which is the same order.
+ *
+ * A note whose release lands on its own start frame is never queued (the
+ * scheduler skips a note of no samples), so a release at a frame always follows
+ * the note it belongs to by at least a frame.
  */
 export type SameFramePostQueue = {
     add: (kind: SameFrameEventKind, sampleFrame: number, post: () => void) => void;
-    /** As `add`, for a release that falls on the frame its own note starts. */
-    addStruckNoteRelease: (sampleFrame: number, post: () => void) => void;
     /** Post everything queued, in order, stopping as soon as `isCurrent` turns false. */
     flush: (isCurrent: () => boolean) => void;
 };
@@ -29,13 +27,10 @@ export type SameFramePostQueue = {
 export function createSameFramePostQueue(): SameFramePostQueue {
     const queued: QueuedPost[] = [];
 
-    function enqueue(order: number, sampleFrame: number, post: () => void): void {
-        queued.push({ sampleFrame, order, sequence: queued.length, post });
-    }
-
     return {
-        add: (kind, sampleFrame, post) => enqueue(SAME_FRAME_EVENT_ORDER[kind], sampleFrame, post),
-        addStruckNoteRelease: (sampleFrame, post) => enqueue(STRUCK_NOTE_RELEASE_ORDER, sampleFrame, post),
+        add: (kind, sampleFrame, post) => {
+            queued.push({ sampleFrame, order: SAME_FRAME_EVENT_ORDER[kind], sequence: queued.length, post });
+        },
         flush: (isCurrent) => {
             queued.sort(
                 (alpha, beta) =>

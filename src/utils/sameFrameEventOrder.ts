@@ -24,10 +24,3 @@ export const SAME_FRAME_EVENT_ORDER: Readonly<Record<SameFrameEventKind, number>
     on: 2,
     expression: 3,
 };
-
-/**
- * Where the release of a note sits when it falls on the very frame the note starts
- * (a zero-length note, or one shorter than a frame): after its own note-on and
- * expression, or the voice would be released before it exists and stick.
- */
-export const STRUCK_NOTE_RELEASE_ORDER = SAME_FRAME_EVENT_ORDER.expression + 1;

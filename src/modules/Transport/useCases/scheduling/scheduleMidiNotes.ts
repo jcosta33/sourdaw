@@ -1332,6 +1332,17 @@ export async function scheduleMidiNotes(
                                 registerScheduledSource(kitVoice);
                             }
                         } else if (workletSynthControls && workletSynthEntry) {
+                            // A note of no samples is not played, as the export skips a
+                            // note of no duration. Posting it would put its release on
+                            // its own start frame, where it would cut a different note
+                            // of the same pitch struck there; the sliver a looped
+                            // clip's pass wrap re-anchors onto a pass head is the usual
+                            // case. Only this path is skipped: its release is a message
+                            // that can collide, while a built-in synth voice or a drum
+                            // hit of no length has nothing to cut.
+                            if (durationSamples <= 0) {
+                                continue;
+                            }
                             const rawVel = projectedNote.velocity;
                             const vel = workletSynthEntry.velocityTransform
                                 ? workletSynthEntry.velocityTransform(rawVel)
@@ -1398,21 +1409,15 @@ export async function scheduleMidiNotes(
                             // pitch instead of the one held on that channel.
                             // All four control types accept three numbers, so
                             // the compiler had nothing to object to.
-                            //
-                            // A release on the frame its own note starts waits
-                            // behind that note's on and expression, or the voice
-                            // would be released before it exists and stick.
-                            const addRelease =
-                                endSampleFrame > sampleFrame
-                                    ? (post: () => void) => posts.add('off', endSampleFrame, post)
-                                    : (post: () => void) => posts.addStruckNoteRelease(endSampleFrame, post);
                             if (workletSynthDevice?.type === 'grand-boule' && workletSynthNode?.grandBouleControls) {
                                 const grandBouleControls = workletSynthNode.grandBouleControls;
-                                addRelease(() =>
+                                posts.add('off', endSampleFrame, () =>
                                     grandBouleControls.noteOff(pitch, endSampleFrame, undefined, noteChannel)
                                 );
                             } else {
-                                addRelease(() => workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel));
+                                posts.add('off', endSampleFrame, () =>
+                                    workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel)
+                                );
                             }
                         } else if (faustDevice) {
                             scheduleFaustNote(
