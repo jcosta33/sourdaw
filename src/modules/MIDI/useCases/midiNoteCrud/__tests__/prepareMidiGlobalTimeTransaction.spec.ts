@@ -211,6 +211,9 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         // the right half used to be rebuilt without it and fell back to 0.
         expect(appliedState.notesByClipId.right?.[0]?.channel).toBe(4);
         expect(appliedState.ccByClipId.source).toBe(sourceCc);
+        expect(appliedState.ccByClipId.right).toEqual([
+            { id: 'cc-split:right:0', controller: 1, value: 2, beat: 0, channel: 1 },
+        ]);
         expect(appliedState.notesByClipId).not.toHaveProperty('remove');
         expect(appliedState.ccByClipId).not.toHaveProperty('remove');
         expect(appliedState.pitchBendByClipId).not.toHaveProperty('remove');

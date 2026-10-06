@@ -1,6 +1,6 @@
 import { createMidiNote, type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
-import { midiStore } from '../../stores/midiStore';
+import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 type MidiClipDataSlotSnapshot<Row> = {
     present: boolean;
@@ -21,8 +21,7 @@ type PrepareMidiClipSplitInput = {
     targetNoteIds?: readonly string[];
 };
 
-function snapshotClipData(clipId: string): MidiClipDataActionSnapshot {
-    const state = midiStore.value;
+function snapshotClipData(clipId: string, state: MidiStoreState | null): MidiClipDataActionSnapshot {
     return {
         notes: {
             present: state ? Object.hasOwn(state.notesByClipId, clipId) : false,
@@ -46,9 +45,9 @@ export function prepareMidiClipSplit({
     splitNotes,
     targetNoteIds,
 }: PrepareMidiClipSplitInput) {
-    const previousSource = snapshotClipData(sourceClipId);
-    const previousRight = snapshotClipData(rightClipId);
     const state = midiStore.value;
+    const previousSource = snapshotClipData(sourceClipId, state);
+    const previousRight = snapshotClipData(rightClipId, state);
     if (!state || !splitNotes) {
         return {
             targetNoteIds: [] as readonly string[],
@@ -75,21 +74,7 @@ export function prepareMidiClipSplit({
         targetNoteIds: [...replayIds],
         previousSource,
         previousRight,
-        nextSource: {
-            notes: {
-                present: Object.hasOwn(nextState.notesByClipId, sourceClipId),
-                value: structuredClone(nextState.notesByClipId[sourceClipId] ?? []),
-            },
-            controlChanges: previousSource.controlChanges,
-            pitchBends: previousSource.pitchBends,
-        },
-        nextRight: {
-            notes: {
-                present: Object.hasOwn(nextState.notesByClipId, rightClipId),
-                value: structuredClone(nextState.notesByClipId[rightClipId] ?? []),
-            },
-            controlChanges: previousRight.controlChanges,
-            pitchBends: previousRight.pitchBends,
-        },
+        nextSource: snapshotClipData(sourceClipId, nextState),
+        nextRight: snapshotClipData(rightClipId, nextState),
     };
 }
