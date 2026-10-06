@@ -7,6 +7,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { checkCancel } from '../offlineRender/checkCancel';
 import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
+import { isCancelRequested } from '../offlineRender/isCancelRequested';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
 import { renderOffline } from '../renderOffline';
@@ -233,6 +234,21 @@ describe('renderOffline — cancelling an in-flight render', () => {
         expect(context.renderCompleted).toBe(false);
         // A freeze or bounce beside this render reads this flag; the stop was this render's alone.
         expect(exportCancellationState.cancelFlag).toBe(false);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
+    // The flag a cancelled export raised used to outlive its render (#4782),
+    // sitting raised until some later export happened to run.
+    it('lowers the export cancel flag once a cancelled render settles', async () => {
+        const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE });
+        const rejection = expect(rendering).rejects.toThrow('Export cancelled');
+
+        await reachCheckpoint(1);
+        exportCancellationState.cancelFlag = true;
+        await reachCheckpoint(2);
+
+        await rejection;
+        expect(isCancelRequested()).toBe(false);
         expect(() => checkCancel()).not.toThrow();
     });
 

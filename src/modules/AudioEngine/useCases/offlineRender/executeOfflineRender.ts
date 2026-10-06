@@ -7,6 +7,7 @@ import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { createOfflineRenderBackend } from './createOfflineRenderBackend';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
+import { endExportCancellationScope } from './endExportCancellationScope';
 import { resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { scheduleOfflineMix } from './scheduleOfflineMix';
 import { tryNativeOfflineRender } from './tryNativeOfflineRender';
@@ -62,6 +63,9 @@ export async function executeOfflineRender(
         callbacks.onProgress?.(1);
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } finally {
+        // The mixdown owns its scope's lifetime: a cancelled render's flag must
+        // not outlive it (#4782).
+        endExportCancellationScope();
         backend?.dispose();
         releaseLock();
     }

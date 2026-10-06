@@ -134,7 +134,18 @@ function rebuildLaneMetadata(lanes: readonly AutomationLane[], tracks: readonly 
     for (let index = 0; index < lanes.length; index++) {
         const lane = lanes[index]!;
         const track = trackById.get(lane.trackId);
-        if (!track || track.automationMode === 'off' || lane.parameterId === 'gain' || lane.parameterId === 'pan') {
+        // Same lane gates as the Transport apply path, `enabled` included
+        // (#4786): a disabled lane writes nothing live, so its curve must not
+        // become the base a modulator combines onto either. `enabled` is
+        // compared against `false` rather than falsy so a lane persisted
+        // before the flag existed still plays.
+        if (
+            !track ||
+            track.automationMode === 'off' ||
+            lane.enabled === false ||
+            lane.parameterId === 'gain' ||
+            lane.parameterId === 'pan'
+        ) {
             continue;
         }
         const deviceIndex = resolveDeviceAutomationTargetIndex(
