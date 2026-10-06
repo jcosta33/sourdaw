@@ -19,6 +19,7 @@ import {
     OPENAI_RESPONSES_ADAPTER_ID,
 } from '../../../repositories/providerAdapterRegistry';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
+import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -28,6 +29,7 @@ import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     MANDATORY_PLANNING_TOOL_NAMES,
+    PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../../agentToolCatalog';
@@ -40,6 +42,7 @@ import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
     generateCloudToolCalls: vi.fn(),
+    generateWebLlmCompletion: vi.fn(),
     generateWebLlmToolCalls: vi.fn(),
     getCloudProviderInfo: vi.fn(),
     usesStrictCloudToolSchemas: vi.fn(),
@@ -62,6 +65,9 @@ vi.mock('../../../repositories/cloudLlm/usesStrictCloudToolSchemas', () => ({
 }));
 vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
 vi.mock('../../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: mocks.isWebLlmLoaded }));
+vi.mock('../../../repositories/webLlm/generateWebLlmCompletion', () => ({
+    generateWebLlmCompletion: mocks.generateWebLlmCompletion,
+}));
 vi.mock('../../../repositories/webLlm/toolCalling', () => ({
     generateWebLlmToolCalls: mocks.generateWebLlmToolCalls,
 }));
@@ -320,7 +326,7 @@ describe('mandatory planning tools', () => {
             expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
         });
 
-        it('does not advertise analysis.compareReference with a reference loaded', async () => {
+        it('does not advertise analysis.compareReference with a reference loaded, even ahead of the free slot', async () => {
             agentReferenceStore.set({
                 reference: {
                     referenceId: 'reference-test',
@@ -334,11 +340,79 @@ describe('mandatory planning tools', () => {
                 },
                 loadEpoch: 1,
             });
+            const loaded = productionToolSchemas();
+            const comparison = loaded.find((tool) => tool.function.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+            if (comparison === undefined) {
+                throw new Error('A loaded reference must offer analysis.compareReference to hosted backends.');
+            }
+            // Ahead of every other optional tool, it would take the one prompt-selected slot unless
+            // the WebLLM narrowing excludes it by name.
+            const comparisonFirst = [
+                comparison,
+                ...loaded.filter((tool) => tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME),
+            ];
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-            const advertised = await advertisedToWebLlm('compare my mix to the reference track I loaded');
+            await generateToolPlanningOutcome('system', 'compare my mix to the reference track', comparisonFirst);
 
+            const advertised = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
             expect(advertised).not.toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+            expect(advertised).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expectAllMandatory(advertised);
+        });
+
+        describe('prompt window', () => {
+            // initWebLlmEngine.ts opens the engine with this window; the prompt, the request and the
+            // reply all spend it.
+            const CONTEXT_WINDOW_TOKENS = 8192;
+            const USER_REQUEST_HEADROOM_TOKENS = 1024;
+            // Conservative for JSON and schema text, which tokenizes denser than prose.
+            const CHARACTERS_PER_TOKEN = 3;
+            const PROMPT_BUDGET_CHARACTERS =
+                (CONTEXT_WINDOW_TOKENS - USER_REQUEST_HEADROOM_TOKENS) * CHARACTERS_PER_TOKEN;
+
+            async function serializeWebLlmPrompt(prompt: string): Promise<{ advertised: ToolSchema[]; text: string }> {
+                const advertisedNames = await advertisedToWebLlm(prompt);
+                const advertised = (mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[];
+                expect(advertised).toHaveLength(advertisedNames.length);
+                const { generateWebLlmToolCalls } = await vi.importActual<
+                    typeof import('../../../repositories/webLlm/toolCalling')
+                >('../../../repositories/webLlm/toolCalling');
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+                await generateWebLlmToolCalls(buildPlanningSystemPrompt(), prompt, advertised, 1024);
+                const text = mocks.generateWebLlmCompletion.mock.calls[0]?.[0];
+                if (typeof text !== 'string') {
+                    throw new TypeError('Expected the WebLLM system prompt to be serialized.');
+                }
+                return { advertised, text };
+            }
+
+            it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
+                'serializes the mandatory tool set and the system prompt within the window for "%s"',
+                async (prompt) => {
+                    const { advertised, text } = await serializeWebLlmPrompt(prompt);
+
+                    expect(advertised.length).toBeGreaterThanOrEqual(MANDATORY_PLANNING_TOOL_NAMES.length);
+                    for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
+                        expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
+                    }
+                    expect(text.length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARACTERS);
+                }
+            );
+
+            it('sends the full schemas to the provider request that validates the reply', async () => {
+                const { advertised } = await serializeWebLlmPrompt('add an eq device to the vocals');
+
+                const proposal = advertised.find((tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME);
+                expect(proposal?.function.parameters).toHaveProperty([
+                    'properties',
+                    'list',
+                    'properties',
+                    'items',
+                    'maxItems',
+                ]);
+            });
         });
     });
 

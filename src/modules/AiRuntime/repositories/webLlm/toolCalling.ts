@@ -4,6 +4,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { TOOL_CALLING_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
+import { compactWebLlmToolSchema } from '../../transformers/compactWebLlmToolSchema';
 import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
 import { generateWebLlmCompletion } from './generateWebLlmCompletion';
@@ -25,6 +26,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
             const maxTokens = typeof maxOutputTokensOrSignal === 'number' ? maxOutputTokensOrSignal : undefined;
             const actualSignal = maxOutputTokensOrSignal instanceof AbortSignal ? maxOutputTokensOrSignal : signal;
             const toolDescriptions = tools
+                .map(compactWebLlmToolSchema)
                 .map((time) => {
                     const params = time.function.parameters;
                     const paramStr = params ? ` Parameters: ${JSON.stringify(params)}` : '';

@@ -29,7 +29,7 @@ import {
     WORKFLOW_CAPABILITY_TOOL_NAME,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
-import { buildLlmActionSystemPrompt } from '../transformers/llmActionBridge';
+import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
@@ -457,7 +457,7 @@ const planPromptIntent = inject({ logger })(
                     ANALYSIS_REQUEST_TOOL_NAME,
                     ...WORKFLOW_ACTION_TOOL_NAMES,
                 ]);
-                const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.\nWhen the request delegates a musical or artistic outcome rather than naming exact edits, call ${CREATIVE_INTERPRETATION_TOOL_NAME} alone in one turn, choosing only the published candidates, then wait for its receipt before proposing ordinary commands. Do not call it for explicit literal edits or when a specialized workflow covers the request.`;
+                const systemPrompt = buildPlanningSystemPrompt();
                 const getPlanningSystemPrompt = () => {
                     const resume = streamIdentity
                         ? (agentRunLifecycle.get(streamIdentity.runId)?.resume ?? null)
