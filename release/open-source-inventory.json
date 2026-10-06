@@ -1207,8 +1207,8 @@
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:364c143af5af473031551d068c5478f78ab5ef161bdd1b0764f05c498317becf:grand-boule-live-runtime",
-                "tracked-set-sha256:a8af38b3c8a40dd78dbbefdfa626fdbe4ffa80b55d31c62df3b184d5510a7839:grand-boule-project-state",
-                "tracked-set-sha256:85bf4ef283dd30d2453566604bf76bbe6c7f93e6f3400bf38a20d983b986b108:grand-boule-offline-composition",
+                "tracked-set-sha256:9170bba21f5ad1cc25cc2339bfee9eaf8b39bae83c5ed640c3a0a71c33ef040d:grand-boule-project-state",
+                "tracked-set-sha256:67166eae730be899f2ae574e09d0b97074cd60b893c7d2c7c0ce5d835a8c127c:grand-boule-offline-composition",
                 "tracked-set-sha256:f3122db6685e99834e238b4f862e6007db9f83dc7959390caf20896c65776743:grand-boule-release-proof"
             ],
             "licenses": [
