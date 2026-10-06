@@ -17,6 +17,7 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),

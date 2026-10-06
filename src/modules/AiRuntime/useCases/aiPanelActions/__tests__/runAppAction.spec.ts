@@ -39,6 +39,7 @@ function create_unknown_internal_replay_action(): RunAppActionInput {
 }
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),

@@ -16,8 +16,7 @@
             "sealed": true
         },
         "time-scoped-level": {
-            "sealed": false,
-            "pendingContract": "automateParameterRange over a musical range in either direction"
+            "sealed": true
         },
         "bulk-by-role": {
             "sealed": false,
@@ -1310,6 +1309,212 @@
                     "touchedIdsWithin": ["track-bass-di"],
                     "protectedIds": ["track-drum-bus"],
                     "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-RANGE-1",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Duck the Guitar by 4 dB during the Verse, ramping in and out over one beat.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["duck a track level across a section"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "duck-guitar",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "gain",
+                                "range": {
+                                    "section": "Verse"
+                                },
+                                "deltaDb": -4,
+                                "rampIn": 1,
+                                "rampOut": 1
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "parameterId": "gain",
+                            "range": {
+                                "section": "Verse"
+                            },
+                            "deltaDb": -4,
+                            "rampIn": 1,
+                            "rampOut": 1,
+                            "startBeat": 16,
+                            "endBeat": 48
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-guitar"],
+                    "protectedIds": ["track-lead-vocal", "track-keys"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-RANGE-2",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Automate the Keys pan to -0.5 over bars 1 to 4.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["automate a parameter over a bar range"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "pan-keys",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "pan",
+                                "range": {
+                                    "startBar": 1,
+                                    "endBar": 4
+                                },
+                                "value": -0.5
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Keys"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "parameterId": "pan",
+                            "range": {
+                                "startBar": 1,
+                                "endBar": 4
+                            },
+                            "value": -0.5,
+                            "startBeat": 0,
+                            "endBeat": 16
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-keys"],
+                    "protectedIds": ["track-guitar"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-RANGE-3",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Dip the Backing Vocals L to -18 dB from beat 48 to beat 64.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["dip a track level over a beat range"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "dip-backing-left",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "gain",
+                                "range": {
+                                    "startBeat": 48,
+                                    "endBeat": 64
+                                },
+                                "valueDb": -18
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals L"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "parameterId": "gain",
+                            "range": {
+                                "startBeat": 48,
+                                "endBeat": 64
+                            },
+                            "valueDb": -18,
+                            "startBeat": 48,
+                            "endBeat": 64
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left"],
+                    "protectedIds": ["track-backing-vocal-right", "track-lead-vocal"],
+                    "maxCommands": 1
                 }
             }
         }

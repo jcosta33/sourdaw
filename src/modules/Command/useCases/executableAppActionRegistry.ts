@@ -2433,6 +2433,69 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'automateParameterRange',
+        risk: 'bounded-reversible',
+        description:
+            "Hold one parameter of an existing track — its gain, its pan, the level of one of its sends, or an automatable parameter of a device on it — at a target across a section, a run of bars, or a span of beats, in either direction. The lane ramps in from the value it already draws at the range start and back out to the value it draws at the range end; outside the range it is unchanged, and the lane is created when the track has none. State the range once and the target exactly once: valueDb or deltaDb for gain and send levels, value in the lane's own units otherwise.",
+        intentPhrases: ['dip', 'duck', 'automate'],
+        targetRules: existingTrackTargetRules,
+        valueRules: [],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing track ID' },
+                parameterId: {
+                    type: 'string',
+                    description:
+                        'Parameter to automate: "gain" or "pan" for the track itself, "send:<busId>" for the level of this track\'s existing send to that bus, or "<deviceId>:<parameterId>" for an automatable parameter of a device already on this track',
+                },
+                range: {
+                    type: 'object',
+                    additionalProperties: false,
+                    description:
+                        'Exactly one form: section; startBar with endBar; or startBeat with endBeat. Bars count from 1 through the project meter.',
+                    properties: {
+                        section: {
+                            type: 'string',
+                            description:
+                                'Existing section name, optionally with an ordinal among sections of that name: "Chorus", "Chorus 2", "the second chorus", "the last verse"',
+                        },
+                        startBar: { type: 'integer', minimum: 1, description: 'First bar of the range' },
+                        endBar: { type: 'integer', minimum: 1, description: 'Last bar of the range, inclusive' },
+                        startBeat: { type: 'number', minimum: 0, description: 'Range start, in beats' },
+                        endBeat: { type: 'number', exclusiveMinimum: 0, description: 'Range end, in beats, exclusive' },
+                    },
+                },
+                valueDb: {
+                    type: 'number',
+                    description: `Absolute level the range holds, gain and send targets only. Gain: ${describeLevelLawDb(TRACK_FADER_LAW)}. Send: ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+                },
+                deltaDb: {
+                    type: 'number',
+                    description:
+                        'Change from the level the lane draws at the range start, in decibels (negative is quieter); gain and send targets only, and the result must stay within the same window as valueDb',
+                },
+                value: {
+                    type: 'number',
+                    description:
+                        "Target in the lane's own units: pan runs from -1 (hard left) through 0 (center) to 1 (hard right); a device parameter uses its own unit and range",
+                },
+                rampIn: {
+                    type: 'number',
+                    minimum: 0,
+                    description:
+                        'Length in beats of the ramp from the range start into the target; a short ramp such as half a beat keeps a level change from clicking. Omit for an instant change',
+                },
+                rampOut: {
+                    type: 'number',
+                    minimum: 0,
+                    description:
+                        'Length in beats of the ramp from the target back to the range end; a short ramp keeps the change from clicking. Omit for an instant change. rampIn and rampOut together must fit in the range',
+                },
+            },
+            required: ['trackId', 'parameterId', 'range'],
+        },
+    },
+    {
         actionType: 'renderProjectSections',
         risk: 'external-effect',
         description: 'Render exact arrangement sections to owner-local audio objects after project commit.',
@@ -3119,6 +3182,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     automateSendRange: AUTOMATED_SEND_MUTATION_IDENTITY,
     automateTrackGainRange: AUTOMATED_TRACK_MUTATION_IDENTITY,
     automateSendRanges: AUTOMATED_SEND_MUTATION_IDENTITY,
+    automateParameterRange: AUTOMATION_LANE_CREATION_IDENTITY,
     renderProjectSections: NO_MUTATION_IDENTITY,
     addAutomationLane: AUTOMATION_LANE_CREATION_IDENTITY,
     addAutomationPoint: AUTOMATION_LANE_RESOURCE_REFERENCE_IDENTITY,
@@ -3234,6 +3298,7 @@ export const executableAppActionMutationIdempotenceByType = {
     automateSendRange: false,
     automateTrackGainRange: false,
     automateSendRanges: false,
+    automateParameterRange: false,
     renderProjectSections: false,
     addAutomationLane: false,
     addAutomationPoint: false,

@@ -218,6 +218,11 @@ export function getProjectContext(): ProjectContext {
             startBeat: section.startBeat,
             endBeat: section.endBeat,
         })),
+        markers: (markerState?.markers ?? []).map((marker) => ({
+            id: marker.id,
+            name: marker.name,
+            beat: marker.beat,
+        })),
         vcaGroups: (vcaState?.groups ?? []).map((group) => ({
             id: group.id,
             name: group.name,

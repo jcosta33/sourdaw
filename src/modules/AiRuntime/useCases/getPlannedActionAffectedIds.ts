@@ -46,6 +46,16 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);
     }
+    if (action.type === 'automateParameterRange') {
+        // A send level names its bus and a device parameter its device, the
+        // objects `setSend` and `setDeviceParameter` would name for the same edit.
+        const { parameterId } = action.payload;
+        const separatorIndex = parameterId.indexOf(':');
+        if (separatorIndex > 0) {
+            const ownerId = parameterId.slice(0, separatorIndex);
+            affectedIds.add(ownerId === 'send' ? parameterId.slice(separatorIndex + 1) : ownerId);
+        }
+    }
     for (const targetId of getAppActionStaticAuthority(action)) {
         affectedIds.add(targetId);
     }

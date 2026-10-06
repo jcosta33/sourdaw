@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
+import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
 
 import { type MidiCC } from '../../../../models/MidiNoteViewTypes';
 import { CCLane } from '../CCLane';
@@ -49,6 +49,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
@@ -56,15 +57,36 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    addMidiCC: vi.fn((clipId: string, controller: number, value: number, beat: number, channel: number = 0): MidiCC => {
-        const cc: MidiCC = { id: `cc-${controller}-${beat}-${value}`, controller, value, beat, channel };
-        const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
-        laneMocks.midiState.ccByClipId[clipId] = [...existing, cc];
-        return cc;
-    }),
+    addMidiCC: vi.fn(
+        (clipId: string, controller: number, value: number, beat: number, channel: number = 0, id?: string): MidiCC => {
+            const created: MidiCC = { id: `cc-${controller}-${beat}-${value}`, controller, value, beat, channel };
+            // Undo/redo re-adds under the captured id; every other call mints one.
+            const cc: MidiCC = id === undefined ? created : { ...created, id };
+            const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
+            // Mirrors the real use case: a point is keyed by (beat, channel, controller)
+            // and replaces the point already sitting at that key.
+            const deduped = existing.filter(
+                (point) => !(point.beat === beat && point.channel === channel && point.controller === controller)
+            );
+            laneMocks.midiState.ccByClipId[clipId] = [...deduped, cc];
+            return cc;
+        }
+    ),
     removeMidiCC: vi.fn((clipId: string, ccId: string): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
         laneMocks.midiState.ccByClipId[clipId] = existing.filter((point) => point.id !== ccId);
+    }),
+    restoreMidiCCPoints: vi.fn((clipId: string, points: readonly MidiCC[]): void => {
+        // Mirrors the real use case: inserts each captured row missing by id and
+        // never removes or reorders rows the gesture did not touch.
+        const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
+        const restored = [...existing];
+        for (const point of points) {
+            if (!restored.some((row) => row.id === point.id)) {
+                restored.push(point);
+            }
+        }
+        laneMocks.midiState.ccByClipId[clipId] = restored;
     }),
     moveMidiCC: vi.fn((clipId: string, ccId: string, beat: number, value: number): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
@@ -172,7 +194,7 @@ describe('CCLane', () => {
 
             fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
 
-            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, value, beat);
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, value, beat, 0);
             expect(pushUndoEntry).toHaveBeenCalledWith('Add CC point', expect.any(Function), expect.any(Function));
         });
 
@@ -204,6 +226,192 @@ describe('CCLane', () => {
                 0,
                 addedCC?.id
             );
+        });
+
+        it('should restore the replaced point on undo when the click lands on an occupied key (#4840)', () => {
+            // The lane already holds a point at beat 1 (value 40), written by an
+            // earlier route. The click below lands on that exact key, so addMidiCC
+            // replaces it under a fresh id.
+            laneMocks.midiState.ccByClipId['clip-1'] = [
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ];
+            render(<CCLane {...defaultProps} />);
+            const value = valueFromY(40, 80);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+
+            // The click replaced the musician's point rather than stacking a second one.
+            const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+            expect(afterAdd).toHaveLength(1);
+            const clickedId = afterAdd[0]?.id;
+            expect(clickedId).not.toBe('cc-original');
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ]);
+
+            redoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: clickedId, controller: 1, value, beat: 1, channel: 0 },
+            ]);
+
+            // The cycle keeps holding: a second undo restores the musician's point again.
+            undoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: 'cc-original', controller: 1, value: 40, beat: 1, channel: 0 },
+            ]);
+        });
+
+        it('restores the points a doubly-occupied key held before the click replaced them (#4840)', () => {
+            // moveMidiCC maps without a key dedupe, so a drag can strand two
+            // points on one (beat, channel, controller) key; seeding writes
+            // them the way the store actually holds them. The click below
+            // replaces BOTH, and undo must return the clip to this exact
+            // pre-click array.
+            const preClick = [
+                { id: 'cc-first', controller: 1, value: 40, beat: 1, channel: 0 },
+                { id: 'cc-second', controller: 1, value: 60, beat: 1, channel: 0 },
+            ];
+            laneMocks.midiState.ccByClipId['clip-1'] = [...preClick];
+            render(<CCLane {...defaultProps} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 40 });
+
+            // The click replaced the whole key rather than stacking a third point.
+            const afterAdd = laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+            expect(afterAdd).toHaveLength(1);
+            const clickedId = afterAdd[0]?.id;
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // Undo removes the gesture's written point, then re-inserts the
+            // captured rows by id — the FULL pre-click array comes back under
+            // its original ids. Re-adding through addMidiCC would re-trigger its
+            // per-key dedupe and strand all but the last point; that collapsed
+            // state is what this assertion discriminates against.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual(preClick);
+
+            redoFn!();
+            // Redo re-adds the clicked point through the deduping add path, so
+            // the restored pair collapses back to the clicked point.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: clickedId, controller: 1, value: valueFromY(40, 80), beat: 1, channel: 0 },
+            ]);
+
+            // The cycle keeps holding: the second undo restores both points again.
+            undoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual(preClick);
+        });
+
+        it('leaves a row deleted between the gesture and the undo deleted when undoing an add', () => {
+            // The seeded row sits on another key AND another controller, so the
+            // gesture never displaced it. A collaborator's merged delete removes
+            // it after the click; the undo captured only the clicked key's rows
+            // and must not resurrect what that delete removed.
+            laneMocks.midiState.ccByClipId['clip-1'] = [
+                { id: 'cc-peer', controller: 11, value: 50, beat: 2, channel: 0 },
+            ];
+            render(<CCLane {...defaultProps} />);
+
+            // The click lands on an empty key (beat 1, controller 1).
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY: 76 });
+
+            // A merged peer delete removes the unrelated row from the store.
+            removeMidiCC('clip-1', 'cc-peer');
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // The peer's delete stands, and the clicked key held nothing pre-click.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([]);
+
+            const addedCC = vi.mocked(addMidiCC).mock.results[0]?.value;
+            expect(addedCC).toBeDefined();
+
+            redoFn!();
+            // Redo restores the gesture's own point; the unrelated row stays gone.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                {
+                    id: addedCC?.id,
+                    controller: 1,
+                    value: valueFromY(76, 80),
+                    beat: beatFromX(48, defaultProps.beatWidth),
+                    channel: 0,
+                },
+            ]);
+        });
+
+        it('restores the sibling when undoing a double-click removal on a doubly-occupied key', () => {
+            // The double-click undo re-inserts just the removed row by id; it must
+            // not re-add through the deduping add path, which would delete the
+            // sibling still sitting at the same key.
+            const preRemoval = [
+                { id: 'cc-first', controller: 1, value: 40, beat: 1, channel: 0 },
+                { id: 'cc-second', controller: 1, value: 60, beat: 1, channel: 0 },
+            ];
+            laneMocks.midiState.ccByClipId['clip-1'] = [...preRemoval];
+            const { container } = render(<CCLane {...defaultProps} />);
+            // Array order is render order: the first point is cc-first.
+            const removed = container.querySelector('[data-cc-point="true"]');
+            expect(removed).not.toBeNull();
+
+            fireEvent.doubleClick(removed!);
+
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([preRemoval[1]]);
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // The captured row re-appends after the sibling that survived the removal.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([preRemoval[1], preRemoval[0]]);
+
+            redoFn!();
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([preRemoval[1]]);
+        });
+
+        it('preserves sibling-controller rows when undoing a double-click removal', () => {
+            // The pre-double-click capture used to be the controller-FILTERED lane
+            // view; restoring it wholesale deleted every other controller's rows
+            // from the clip.
+            const modRow = { id: 'cc-mod', controller: 1, value: 40, beat: 1, channel: 0 };
+            const exprRows = [
+                { id: 'cc-expr-1', controller: 11, value: 10, beat: 0, channel: 0 },
+                { id: 'cc-expr-2', controller: 11, value: 90, beat: 3, channel: 0 },
+            ];
+            laneMocks.midiState.ccByClipId['clip-1'] = [modRow, ...exprRows];
+            const { container } = render(<CCLane {...defaultProps} />);
+            const removed = container.querySelector('[data-cc-point="true"]');
+            expect(removed).not.toBeNull();
+
+            fireEvent.doubleClick(removed!);
+
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual(exprRows);
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            expect(undoFn).toBeDefined();
+            expect(redoFn).toBeDefined();
+
+            undoFn!();
+            // Every row survives exactly once; the restored row re-appends after
+            // the rows that never left the clip.
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([...exprRows, modRow]);
         });
 
         it('should not add a point when the click target is an existing CC point', () => {
@@ -597,9 +805,13 @@ describe('CCLane', () => {
             expect(pushUndoEntry).toHaveBeenCalledWith('Remove CC point', expect.any(Function), expect.any(Function));
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
-            vi.mocked(addMidiCC).mockClear();
+            vi.mocked(restoreMidiCCPoints).mockClear();
             undoFn!();
-            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 20, 0, 0, 'cc-a');
+            // The undo re-inserts just the removed row by id — a sibling sharing
+            // the key survives, and rows other controllers hold are never touched.
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [
+                { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
+            ]);
         });
     });
 });

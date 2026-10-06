@@ -34,11 +34,13 @@ import { getCommandHandler } from '../getCommandHandler';
 /** One refusal proof: the action whose `expected*` guard diverges from the
  *  seeded live state. `title` names the row; `actionType` is the handler whose
  *  flag this row proves — several rows may prove one handler (per-field
- *  guards). */
+ *  guards). `reason` is the refusal a handler that explains its conflict
+ *  must give. */
 type DivergedFixture = {
     readonly title: string;
     readonly actionType: string;
     readonly divergedAction: AppAction;
+    readonly reason?: string;
 };
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
@@ -124,6 +126,26 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
             type: 'setClipColor',
             payload: { clipId: 'clip-live', color: '#00ff00', expectedColor: '#0000ff' },
         },
+    },
+    {
+        // The write was planned over a linear pan lane; live, the segment its range starts in has
+        // since been reshaped to exponential, which the write cannot cut without redrawing the
+        // curve outside the range, so it writes nothing.
+        title: 'automateParameterRange refuses to write over a lane reshaped since it was planned',
+        actionType: 'automateParameterRange',
+        divergedAction: {
+            type: 'automateParameterRange',
+            payload: {
+                trackId: 'track-live',
+                parameterId: 'pan',
+                range: { startBeat: 2, endBeat: 4 },
+                startBeat: 2,
+                endBeat: 4,
+                value: 0,
+                writeId: 'automation-range-diverged',
+            },
+        },
+        reason: 'The range start at beat 2 falls inside a exponential segment, and cutting it would redraw the curve outside the range.',
     },
     {
         // fadeIn guard alone: live fadeInBeats=0, the guard expects 4, and the
@@ -346,6 +368,22 @@ function seedLiveProjectState(): void {
                 minValue: 0,
                 maxValue: 1,
             },
+            {
+                id: 'automation-pan',
+                trackId: 'track-live',
+                parameterId: 'pan',
+                parameterName: 'Pan',
+                points: [
+                    { id: 'pan-start', beat: 0, value: -1, curve: 'exponential', tension: 0 },
+                    { id: 'pan-end', beat: 8, value: 1, curve: 'linear', tension: 0 },
+                ],
+                objects: [],
+                visible: true,
+                enabled: true,
+                collapsed: false,
+                minValue: -1,
+                maxValue: 1,
+            },
         ],
     });
 }
@@ -409,10 +447,12 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
         expect(flagged).toEqual(FIXTURE_PROVEN_ACTION_TYPES);
     });
 
-    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', async ({ divergedAction }) => {
+    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', async ({ divergedAction, reason }) => {
         const handler = getCommandHandler(divergedAction);
 
         expect(handler?.canReportConflict).toBe(true);
-        expect(await handler?.execute(divergedAction)).toEqual({ status: 'conflict' });
+        expect(await handler?.execute(divergedAction)).toEqual(
+            reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
+        );
     });
 });

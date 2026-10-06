@@ -66,6 +66,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn(),
     pushUndoEntry: vi.fn(),

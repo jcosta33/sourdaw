@@ -26,6 +26,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     trackStore: {
         get value() {
             return { tracks: arrangementState.tracks, selectedTrackId: null };
@@ -44,6 +45,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return null;
         },
     },
+    readMusicalRange: () => null,
     resolveEligibleDeviceWriteTarget: () => null,
 }));
 

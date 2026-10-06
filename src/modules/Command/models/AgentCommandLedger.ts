@@ -205,6 +205,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['automateSendRange', 'automation', 'Automation'],
     ['automateSendRanges', 'automation', 'Automation'],
     ['automateTrackGainRange', 'automation', 'Automation'],
+    ['automateParameterRange', 'automation', 'Automation'],
     ['scaleAutomation', 'automation', 'Automation'],
     ['stretchAutomation', 'automation', 'Automation'],
     ['invertAutomation', 'automation', 'Automation'],

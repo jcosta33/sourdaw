@@ -121,6 +121,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     return { ...actual, stopRecording };
 });
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
