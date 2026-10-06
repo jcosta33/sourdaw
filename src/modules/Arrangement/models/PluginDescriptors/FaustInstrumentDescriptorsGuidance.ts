@@ -38,7 +38,7 @@ export const ELECTRIC_PIANO_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePa
             'Multiplies with gain, which each note-on replaces with velocity/127, so the same brightness is darker on soft notes and brighter on hard ones.',
         ],
         [
-            'At brightness 1 and full velocity the body index reaches 3.5, whose Carson bandwidth of about 4.5 times the note frequency folds back past Nyquist for notes above about 4.9 kHz at a 44.1 kHz rate.',
+            'At brightness 1 and full velocity the body index reaches 3.5, whose Carson bandwidth puts the upper sideband edge at the note frequency plus 4.5 times it (5.5 times the note), which passes the 22.05 kHz Nyquist limit of a 44.1 kHz rate for notes above about 4 kHz.',
         ],
         noExternalModulation
     ),
@@ -130,13 +130,13 @@ export const SUPERSAW_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParamete
         8,
         ['Only acts when lfo_depth is above zero, and the sweep is centred on cutoff.'],
         [
-            'At the 20 Hz ceiling each voice’s cutoff completes a cycle every 50 ms, fast enough to turn the level of harmonics near a resonant cutoff into audible flutter.',
+            'The swept cutoff passes through a one-pole smoother (si.smoo, about a 22.7 ms time constant, −3 dB near 7 Hz) that passes about 0.81 of the set sweep at 5 Hz, 0.66 at 8 Hz and 0.33 at the 20 Hz ceiling, so raising lfo_rate makes the sweep shallower than lfo_depth sets.',
         ],
         noExternalModulation
     ),
     lfo_depth: parameterGuidance(
         'Cutoff-LFO depth',
-        'Sweeps the cutoff by up to plus or minus 50 percent at depth 1 (cutoff × (1 ± 0.5 × depth)), clamped to 100 Hz–20 kHz.',
+        'Sets the cutoff sweep as cutoff × (1 ± 0.5 × depth), clamped to 100 Hz–20 kHz and then smoothed by a one-pole lowpass that passes about 0.99 of it at 1 Hz, 0.81 at 5 Hz, 0.66 at 8 Hz and 0.33 at 20 Hz, so depth 1 reaches plus or minus 50 percent only at slow rates.',
         0,
         0.5,
         [
@@ -174,7 +174,9 @@ export const SUPERSAW_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParamete
         'Sets the corner of the second-order resonant lowpass the summed saws pass through; lower values remove more upper harmonics.',
         400,
         12000,
-        ['resonance sets the peak at this corner, and lfo_depth sweeps it by up to 50 percent at lfo_rate.'],
+        [
+            'resonance sets the peak at this corner, and lfo_depth sweeps it by up to 50 percent, less at faster lfo_rate settings because the swept cutoff is smoothed.',
+        ],
         [
             'A low cutoff with high resonance multiplies whichever harmonic sits at the corner by up to 8.9, so notes whose harmonic lands there jump in level.',
         ],

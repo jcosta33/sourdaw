@@ -60,9 +60,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'faust-lufs-meter': 'descriptor-v1:ba1eba2e',
     'faust-stereo-widener': 'descriptor-v1:369c6f01',
     'faust-de-esser': 'descriptor-v1:01925fec',
-    'faust-rhodes': 'descriptor-v1:a13547e4',
+    'faust-rhodes': 'descriptor-v1:419b06d4',
     'faust-fm-synth': 'descriptor-v1:a198b63c',
-    'faust-supersaw-unison': 'descriptor-v1:c94c3a04',
+    'faust-supersaw-unison': 'descriptor-v1:65c1a63b',
     'builtin-synth-mellotron': 'descriptor-v1:71cf9d31',
     'builtin-synth-strings': 'descriptor-v1:11f074db',
     'builtin-synth-808bass': 'descriptor-v1:274a35d6',
@@ -73,7 +73,7 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-drum-machine-acoustic': 'descriptor-v1:a4e0ce0f',
     fermenter: 'descriptor-v1:42afff88',
     toaster: 'descriptor-v1:4badfeb2',
-    levain: 'descriptor-v1:3eaf2dc9',
+    levain: 'descriptor-v1:c5a90e63',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
     // (#4370 AC-001), which is part of the descriptor fingerprint.
     gluten: 'descriptor-v1:7883bbc4',

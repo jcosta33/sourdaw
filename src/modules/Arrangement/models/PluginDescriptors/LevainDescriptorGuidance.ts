@@ -9,8 +9,10 @@ import { NO_SOURCE_SPECIFIC_MODULATION, instrumentGuidance } from './GuidancePro
  * `LevainEngine::set_param` (`engine.rs`) maps the descriptor ids through
  * `PARAM_MAP` (`services/levainProcessor.ts`). A note's gain is fixed at its
  * note-on as velocity/127 × the humanize level offset × the auto-divisi
- * gain; `masterGain` and the mod-wheel expression gain scale each mic
- * position's voice sum afterwards. Humanize and vibrato limits quoted below
+ * gain; `masterGain` and the expression gain (CC11 expression × CC7 volume,
+ * `expression.rs` `expression_gain`) scale each mic position's voice sum
+ * afterwards. The mod wheel (CC1) drives the dynamic-layer crossfade, not
+ * level. Humanize and vibrato limits quoted below
  * are the shipped patch defaults (`LevainPatch.ts`), which a patch can change.
  */
 
@@ -19,10 +21,10 @@ const noExternalModulation = NO_SOURCE_SPECIFIC_MODULATION;
 export const LEVAIN_GUIDANCE = instrumentGuidance(
     'Play a multi-sampled section instrument with legato transitions, per-note humanisation, vibrato and mic-position mixing; it plays a fallback sine until its samples load.',
     [
-        'legatoEnabled is on by default and turns overlapping notes within an octave into transitions of one voice, so switch it off for chordal parts.',
+        'legatoEnabled is on by default and lets an overlapping note within an octave take over the voice of the closest held note, so switch it off for chordal parts.',
     ],
     [
-        'humanize and vibratoDepth vary each new note, autoDivisi lowers each new note by the number of notes held, and masterGain scales every mic position before the realism and tone stages.',
+        'humanize varies each new note, vibratoDepth sets the vibrato of every sounding voice, autoDivisi lowers each new note by the number of notes held, and masterGain scales every mic position before the realism and tone stages.',
     ],
     ['ensembleTiming is stored but no engine stage reads it, so enabling it changes nothing audible.']
 );
@@ -30,7 +32,7 @@ export const LEVAIN_GUIDANCE = instrumentGuidance(
 export const LEVAIN_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
     masterGain: parameterGuidance(
         'Output gain per mic position',
-        'Multiplies each mic position’s summed voices, together with the mod-wheel expression gain, before the realism layer and tone macro.',
+        'Multiplies each mic position’s summed voices, together with the CC11 expression × CC7 volume gain, before the realism layer and tone macro.',
         0.4,
         1,
         [
@@ -41,20 +43,20 @@ export const LEVAIN_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterG
     ),
     humanize: parameterGuidance(
         'Per-note random variation amount',
-        'Scales the random offsets each new note receives; at 1 that is a start delay of up to 15 ms (applied only when the random offset is positive), up to 5 cents of tuning, up to 8 percent of level, up to 15 percent of vibrato rate and depth, and up to 64 samples of sample-start offset.',
+        'Scales the random offsets each new note receives; at 1 that is a start delay of up to 15 ms (applied only when the random offset is positive), a tuning offset of plus or minus 5 cents, a level offset of plus or minus 8 percent, plus or minus 15 percent of vibrato rate and depth, and up to 64 samples of sample-start offset.',
         0.2,
         0.7,
         [
             'Its vibrato offsets scale the vibrato vibratoDepth sets, and its level offset multiplies velocity before autoDivisi’s divisi gain.',
         ],
         [
-            'At 1 notes meant to land together can start up to 15 ms apart and up to 5 cents out of tune with each other, which is heard as flams on tight rhythmic parts.',
+            'At 1 notes meant to land together can start up to 15 ms apart, and because each note draws its own plus or minus 5 cents, two notes can sit up to 10 cents apart in tuning.',
         ],
         noExternalModulation
     ),
     vibratoDepth: parameterGuidance(
         'Section vibrato depth and rate macro',
-        'Moves vibrato from none to 40 cents of depth while raising its rate from 4 to 7 Hz, after a 0.2 s onset delay; the value is quantised to 128 steps.',
+        'Moves vibrato from none to a 40-cent peak depth while raising its rate from 4 to 7 Hz, on every sounding voice each block, so a change or an automation lane reaches notes already held; each note fades its vibrato in linearly over the first 0.2 s, and the value is quantised to 128 steps.',
         0,
         0.6,
         [
@@ -71,10 +73,10 @@ export const LEVAIN_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterG
         1,
         1,
         [
-            'Turn it off for chords: with it on, autoDivisi still counts each overlapping note, but the glided notes reuse the earlier voice instead of sounding beside it.',
+            'Turn it off for chords: with it on, autoDivisi still counts each overlapping note, but a note that glides reuses the earlier note’s voice instead of sounding beside it.',
         ],
         [
-            'With it on, block chords within an octave collapse: each later chord note takes over a held voice, so the earlier note stops sounding.',
+            'With it on, chord notes within an octave alternately replace and add: the glide takes over the closest held note’s voice and leaves the new note registered on an idle voice, so the next chord note finds that voice idle and starts normally. An ascending C-E-G sounds only E and G, and a four-note chord loses its first and third notes.',
         ],
         noExternalModulation
     ),
