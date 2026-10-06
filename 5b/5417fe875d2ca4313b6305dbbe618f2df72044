@@ -1,0 +1,24 @@
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_1c08b47ac3792f::t_af427547b32339 27-28
+  s_1c08b47ac3792f::t_17757cc9e36af8 112
+src/modules/WorkspaceShell/presentations/views/AgentReferenceControls.tsx
+  s_1c08b47ac3792f::t_015f2522251bc5 1-19
+src/modules/WorkspaceShell/AGENTS.md
+  s_1c08b47ac3792f::t_5a9655a3525a11 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b5417fe875d2ca4313b6305dbbe618f2df72044",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
