@@ -1,0 +1,43 @@
+src/modules/Arrangement/useCases/comping/captureTrackTakeReKeyTransitions.ts
+  s_440baeb78ec8d1::t_82bdf7580244ac 52
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_440baeb78ec8d1::t_82bdf7580244ac 23-27,30-45,67-68,139-142,193-194,199-200
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_440baeb78ec8d1::t_82bdf7580244ac 39-41,45,96-100,150-151,157-160,212-214
+  s_ed4684cddb12c5::t_286a69437bc0b0 240
+src/modules/Arrangement/useCases/comping/collectTakeReKeyWindows.ts
+  s_440baeb78ec8d1::t_82bdf7580244ac 11,15-19,24-25,28,35-36,38,40-41,47,49,58-59,89,102
+  s_440baeb78ec8d1::t_0541f2d0c152e6 29-33
+src/modules/Arrangement/useCases/comping/takeReKeyTransition.ts
+  s_440baeb78ec8d1::t_82bdf7580244ac 19-21,29
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_440baeb78ec8d1::t_dfe90f04431258 36,167,170-192,220-225,241-248,250-254,256-261,263-267
+  s_440baeb78ec8d1::t_118c4cc4d31ef7 106,121,228-229,232-233
+  s_440baeb78ec8d1::t_b4e321e2a693e6 193-194,237-240,249,268-279
+  s_440baeb78ec8d1::t_ef6e4d63ea0d68 1-35,37-105,107-120,122-166,168-169,195-219,226-227,230-231,234-236,255,262,280
+  s_440baeb78ec8d1::t_3a4e89eeaeb1a0 281-283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e34170aa07b4ba2838f00a29687ee8210bca49db",
+  "prompts": {},
+  "sessions": {
+    "s_440baeb78ec8d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a4-6293-7383-9164-1c36e1e38035",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ed4684cddb12c5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7c15b6ef-f2b0-4558-9260-55c30a78337b",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
