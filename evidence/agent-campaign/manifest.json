@@ -560,7 +560,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
-                    "digest": "e1c5c358581f844b272f95956e4da9f612fa148757c46ae795601b23b155688f"
+                    "digest": "f5c45eb9d3be0ffa908586764dc9b6bd9fc8315789aa7e802fdb2f59a19e9804"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "cfc8e0e16a736cb7ef4c31e3237907dc792e533664cc2672389f01bd2eb55949"
+                    "digest": "78a3c5082b7a9ace738aa54fa608d58f3d114938ab3f4dd7fcf1ba0b2e17c9e5"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

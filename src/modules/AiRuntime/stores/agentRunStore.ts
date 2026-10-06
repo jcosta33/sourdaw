@@ -3,7 +3,7 @@ import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
-import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
+import { AGENT_EXECUTION_MODES, AGENT_TRUST_CEILINGS } from '../models/AgentExecutionMode';
 import { AGENT_RUN_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
 import {
     AGENT_RUN_ACTIVE_PHASES,
@@ -15,6 +15,8 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBatchSchedule,
+    type AgentRunBatchScheduleSlice,
     type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
     type AgentRunDecision,
@@ -1139,6 +1141,78 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
     };
 }
 
+function readSerializedSlice(value: unknown): string | null {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_SERIALIZED_BATCH_LENGTH ? value : null;
+}
+
+function readAgentRunBatchScheduleSlice(value: unknown): AgentRunBatchScheduleSlice | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const position = readNonNegativeInteger(value.position);
+    const commandCount = readNonNegativeInteger(value.commandCount);
+    const targetIds = readStringArray(value.targetIds);
+    const serializedSlice = readSerializedSlice(value.serializedSlice);
+    return position === null ||
+        position === 0 ||
+        commandCount === null ||
+        targetIds === null ||
+        serializedSlice === null
+        ? null
+        : { position, commandCount, targetIds, serializedSlice };
+}
+
+/**
+ * A schedule is read whole or not at all: its slices must number its batches 1..total in order, and
+ * its position must name one of them, or a restored run could propose a batch out of sequence.
+ */
+function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null {
+    if (!isRecord(value) || value.schemaVersion !== 1) {
+        return null;
+    }
+    const scheduleId = readString(value.scheduleId);
+    const position = readNonNegativeInteger(value.position);
+    const total = readNonNegativeInteger(value.total);
+    const totalCommands = readNonNegativeInteger(value.totalCommands);
+    const interactionMode =
+        value.interactionMode === 'apply' || value.interactionMode === 'macro' ? value.interactionMode : null;
+    const trustCeiling =
+        value.trustCeiling === null
+            ? null
+            : (AGENT_TRUST_CEILINGS.find((ceiling) => ceiling === value.trustCeiling) ?? undefined);
+    const serializedProviderProposal =
+        value.serializedProviderProposal === null ? null : readSerializedSlice(value.serializedProviderProposal);
+    const slices = readCollection(value.slices, readAgentRunBatchScheduleSlice);
+    if (
+        scheduleId === null ||
+        position === null ||
+        total === null ||
+        totalCommands === null ||
+        interactionMode === null ||
+        trustCeiling === undefined ||
+        (value.serializedProviderProposal !== null && serializedProviderProposal === null) ||
+        slices === null ||
+        slices.length !== total ||
+        position < 1 ||
+        position > total ||
+        slices.some((slice, index) => slice.position !== index + 1) ||
+        slices.reduce((sum, slice) => sum + slice.commandCount, 0) !== totalCommands
+    ) {
+        return null;
+    }
+    return {
+        schemaVersion: 1,
+        scheduleId,
+        position,
+        total,
+        totalCommands,
+        interactionMode,
+        trustCeiling,
+        serializedProviderProposal,
+        slices,
+    };
+}
+
 function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {
     if (value === null) {
         return null;
@@ -1247,6 +1321,8 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
     });
     const validationStrategy = readStringArray(value.validationStrategy);
     const stoppingConditions = readStringArray(value.stoppingConditions);
+    const batchSchedule =
+        value.batchSchedule === undefined ? undefined : readAgentRunBatchSchedule(value.batchSchedule);
     const alternatives = readCollection(value.alternatives, (candidate) => {
         if (!isRecord(candidate)) {
             return null;
@@ -1278,6 +1354,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
         validationStrategy === null ||
         stoppingConditions === null ||
         alternatives === null ||
+        batchSchedule === null ||
         typeof value.needsUserDecision !== 'boolean'
         ? undefined
         : {
@@ -1303,6 +1380,7 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               stoppingConditions,
               alternatives,
               needsUserDecision: value.needsUserDecision,
+              ...(batchSchedule === undefined ? {} : { batchSchedule }),
           };
 }
 

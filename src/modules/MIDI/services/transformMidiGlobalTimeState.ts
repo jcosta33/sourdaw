@@ -647,38 +647,83 @@ function transformCopy(
     cursor: IdentityCursor
 ): TransformCommandResult {
     const sourceNotes = state.notesByClipId[command.sourceClipId] ?? [];
-    if (sourceNotes.length === 0) {
+    const sourceControlChanges = state.ccByClipId[command.sourceClipId] ?? [];
+    const sourcePitchBends = state.pitchBendByClipId[command.sourceClipId] ?? [];
+    if (sourceNotes.length === 0 && sourceControlChanges.length === 0 && sourcePitchBends.length === 0) {
         return { status: 'ready', hasChanges: false, state };
     }
 
-    const clones: MidiNote[] = [];
-    for (const [sourceNoteIndex, note] of sourceNotes.entries()) {
-        const request: MidiGeneratedNoteIdentityRequest = {
-            role: 'duplicate-clone',
-            sourceClipId: command.sourceClipId,
-            sourceNoteId: note.id,
-            sourceNoteIndex,
-            targetClipId: command.targetClipId,
-        };
-        const targetNoteId = takeTargetNoteId(cursor, request);
-        if (!targetNoteId) {
-            return { status: 'rejected', state };
-        }
-        clones.push(createDuplicateClone(note, targetNoteId));
-    }
+    let nextState = state;
 
-    const existingTargetNotes = state.notesByClipId[command.targetClipId] ?? [];
-    return {
-        status: 'ready',
-        hasChanges: true,
-        state: {
-            ...state,
+    if (sourceNotes.length > 0) {
+        const clones: MidiNote[] = [];
+        for (const [sourceNoteIndex, note] of sourceNotes.entries()) {
+            const request: MidiGeneratedNoteIdentityRequest = {
+                role: 'duplicate-clone',
+                sourceClipId: command.sourceClipId,
+                sourceNoteId: note.id,
+                sourceNoteIndex,
+                targetClipId: command.targetClipId,
+            };
+            const targetNoteId = takeTargetNoteId(cursor, request);
+            if (!targetNoteId) {
+                return { status: 'rejected', state };
+            }
+            clones.push(createDuplicateClone(note, targetNoteId));
+        }
+
+        const existingTargetNotes = state.notesByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
             notesByClipId: {
-                ...state.notesByClipId,
+                ...nextState.notesByClipId,
                 [command.targetClipId]: [...existingTargetNotes, ...clones],
             },
-        },
-    };
+        };
+    }
+
+    if (sourceControlChanges.length > 0) {
+        const existingTargetEvents = state.ccByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            ccByClipId: {
+                ...nextState.ccByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourceControlChanges, 'cc-dup', command.targetClipId),
+                ],
+            },
+        };
+    }
+
+    if (sourcePitchBends.length > 0) {
+        const existingTargetEvents = state.pitchBendByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            pitchBendByClipId: {
+                ...nextState.pitchBendByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourcePitchBends, 'pb-dup', command.targetClipId),
+                ],
+            },
+        };
+    }
+
+    return { status: 'ready', hasChanges: true, state: nextState };
+}
+
+/**
+ * Copies keep source row order. Ids derive from the target clip id and the
+ * source row's index, so the same command on the same state yields the same
+ * ids and an undo/redo replay needs no id plan beyond the note identities.
+ */
+function cloneControllerEvents<TRow extends SplitEventRow>(
+    events: readonly TRow[],
+    idPrefix: string,
+    targetClipId: string
+): TRow[] {
+    return events.map((event, sourceIndex) => ({ ...event, id: `${idPrefix}:${targetClipId}:${sourceIndex}` }));
 }
 
 function transformRemoval(

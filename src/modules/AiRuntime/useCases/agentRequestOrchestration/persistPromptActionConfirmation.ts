@@ -35,6 +35,8 @@ type PersistPromptActionConfirmationInput = {
     adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
     /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
     measuredPreview?: MeasuredPreview;
+    /** Which of the run's successive batches this proposal is; absent for a request that fits one batch. */
+    batchPosition?: ConfirmationProposal['batchPosition'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -46,6 +48,12 @@ type PersistPromptActionConfirmationInput = {
     supersedes?: string | null;
     onResourceOwnershipAcquired?: () => void;
 };
+
+function describeBatchPosition(batchPosition: PersistPromptActionConfirmationInput['batchPosition']): string {
+    return batchPosition === undefined
+        ? ''
+        : `Batch ${String(batchPosition.index)} of ${String(batchPosition.total)}: `;
+}
 
 /** A proposal the store refused to retain settles its run and chat message as failed; nothing stays pending. */
 function failUnretainedProposal(input: PersistPromptActionConfirmationInput): void {
@@ -116,6 +124,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             matchSelectorPredicates: input.matchSelectorPredicates,
             adoptedRecipes: input.adoptedRecipes,
             measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
+            batchPosition: input.batchPosition,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,
@@ -136,7 +145,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,
             pendingActionConfirmationStatus: 'proposed',
-            content: `${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
+            content: `${describeBatchPosition(input.batchPosition)}${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
         });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,

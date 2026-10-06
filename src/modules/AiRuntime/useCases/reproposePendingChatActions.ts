@@ -395,6 +395,8 @@ export async function reproposePendingChatActions(
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
         // Persisting binds the figures to the rebuilt batch, so a subset or changed batch drops them.
         measuredPreview: confirmation.approvalSnapshot.measuredPreview,
+        // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
+        batchPosition: confirmation.approvalSnapshot.batchPosition,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

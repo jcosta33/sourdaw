@@ -4,14 +4,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { addTrack } from '../../../useCases/addTrack';
-import { addClip } from '../../../useCases/clip/addClip';
-import { removeMarker } from '../../../useCases/marker/markerOperations/removeMarker';
-import { setMarkerColor } from '../../../useCases/marker/markerOperations/setMarkerColor';
 import { TimelineEmptyMenu } from '../TimelineEmptyMenu';
 
 // Controllable store values so individual tests can seed markers/tracks.
@@ -55,6 +51,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
 }));
 
 const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue('completed'));
@@ -96,30 +93,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
-vi.mock('../../../useCases/clipboard/pasteClip', () => ({
-    pasteClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/addTrack', () => ({
-    addTrack: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clip/addClip', () => ({
-    addClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/removeMarker', () => ({
-    removeMarker: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/setMarkerColor', () => ({
-    setMarkerColor: vi.fn(),
-}));
-
-vi.mock('../../../useCases/marker/markerOperations/addMarker', () => ({
-    addMarker: vi.fn(),
-}));
-
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
@@ -127,6 +100,34 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
+
+type BatchAction = { type: string; payload: Record<string, unknown> };
+
+// Every creation the menu now performs lands as a dispatched action: single
+// gestures through `executeUserAppAction`, the audio import through
+// `executeAppActionBatch` (#4618). These helpers read the dispatched actions
+// back instead of asserting on mocked use cases.
+const dispatchedActions = (): BatchAction[] =>
+    vi.mocked(executeUserAppAction).mock.calls.map((call) => call[0] as unknown as BatchAction);
+
+const dispatchedBatchActions = (): BatchAction[] =>
+    vi.mocked(executeAppActionBatch).mock.calls.flatMap((call) => call[0] as unknown as BatchAction[]);
+
+const dispatchedPayload = (type: string): Record<string, unknown> => {
+    const action = dispatchedActions().find((candidate) => candidate.type === type);
+    if (!action) {
+        throw new Error(`no ${type} action was dispatched`);
+    }
+    return action.payload;
+};
+
+const dispatchedBatchPayload = (type: string): Record<string, unknown> => {
+    const action = dispatchedBatchActions().find((candidate) => candidate.type === type);
+    if (!action) {
+        throw new Error(`no ${type} action was dispatched in a batch`);
+    }
+    return action.payload;
+};
 
 const renderWithTooltip = (ui: ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -139,7 +140,10 @@ describe('TimelineEmptyMenu', () => {
         vi.clearAllMocks();
         projectEpoch.reset();
         storeValues.track = { tracks: [] };
-        vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
+        vi.mocked(executeAppActionBatch).mockResolvedValue({
+            status: 'committed',
+            actions: [],
+        });
     });
 
     it('should render without crashing', () => {
@@ -175,11 +179,14 @@ describe('TimelineEmptyMenu', () => {
         expect(screen.getByText('Import MIDI…')).toBeInTheDocument();
     });
 
-    it('should call addTrack when Add Audio Track is clicked', () => {
+    it('dispatches addTrack when Add Audio Track is clicked', () => {
         renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
         const button = screen.getByText('Add Audio Track');
         fireEvent.click(button);
-        expect(addTrack).toHaveBeenCalledWith({ name: 'Audio', kind: 'audio' });
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: { name: 'Audio', kind: 'audio' },
+        });
         expect(mockOnClose).toHaveBeenCalled();
     });
 
@@ -189,7 +196,14 @@ describe('TimelineEmptyMenu', () => {
         fireEvent.click(screen.getByText('Add Bus Track'));
 
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
-        expect(addTrack).not.toHaveBeenCalledWith({ name: 'Bus', kind: 'bus' });
+        expect(dispatchedActions()).not.toContainEqual(expect.objectContaining({ type: 'addTrack' }));
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches the pasteClip app action when Paste is clicked', () => {
+        renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Paste'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'pasteClip' });
         expect(mockOnClose).toHaveBeenCalled();
     });
 
@@ -211,22 +225,22 @@ describe('TimelineEmptyMenu', () => {
         expect(menu).toHaveStyle({ left: '150px', top: '200px' });
     });
 
-    it('adds an audio clip on Add Clip Here for a non-midi track', () => {
+    it('dispatches an audio clip on Add Clip Here for a non-midi track', () => {
         storeValues.track = { tracks: [{ id: 't1', kind: 'audio' }] };
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Add Clip Here'));
-        expect(addClip).toHaveBeenCalledWith(
+        expect(dispatchedPayload('addClip')).toEqual(
             expect.objectContaining({ trackId: 't1', startBeat: 4, endBeat: 8, type: 'audio', name: 'New audio clip' })
         );
         expect(mockOnClose).toHaveBeenCalled();
         storeValues.track = { tracks: [] };
     });
 
-    it('adds a midi clip on Add Clip Here for a midi track', () => {
+    it('dispatches a midi clip on Add Clip Here for a midi track', () => {
         storeValues.track = { tracks: [{ id: 't1', kind: 'midi' }] };
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={2} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Add Clip Here'));
-        expect(addClip).toHaveBeenCalledWith(
+        expect(dispatchedPayload('addClip')).toEqual(
             expect.objectContaining({ trackId: 't1', startBeat: 2, endBeat: 6, type: 'midi', name: 'New midi clip' })
         );
         storeValues.track = { tracks: [] };
@@ -285,7 +299,11 @@ describe('TimelineEmptyMenu', () => {
         expect(screen.getByText('Marker: Verse')).toBeInTheDocument();
         // Remove marker control is present.
         fireEvent.click(screen.getByText('Remove Marker'));
-        expect(removeMarker).toHaveBeenCalledWith('mk1');
+        // Marker removal dispatches through the command path (#4617).
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeMarker',
+            payload: { markerId: 'mk1' },
+        });
         expect(mockOnClose).toHaveBeenCalled();
         storeValues.marker = { markers: [], sections: [] };
     });
@@ -298,7 +316,11 @@ describe('TimelineEmptyMenu', () => {
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={8} onClose={mockOnClose} />);
         const swatch = screen.getAllByLabelText('Set marker color')[0]!;
         fireEvent.click(swatch);
-        expect(setMarkerColor).toHaveBeenCalledWith('mk1', expect.any(String));
+        // Marker recolour dispatches through the command path (#4617).
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMarkerColor',
+            payload: { markerId: 'mk1', color: expect.any(String) },
+        });
         storeValues.marker = { markers: [], sections: [] };
     });
 
@@ -342,9 +364,9 @@ describe('TimelineEmptyMenu', () => {
         await captured!.onchange?.(new Event('change'));
         createSpy.mockRestore();
 
-        // No trackId → a new audio track is added, then the clip lands there.
-        expect(addTrack).toHaveBeenCalledWith(expect.objectContaining({ kind: 'audio', name: 'loop' }));
-        expect(addClip).toHaveBeenCalledWith(
+        // No trackId → the import batch carries a new audio track plus the clip.
+        expect(dispatchedBatchPayload('addTrack')).toEqual(expect.objectContaining({ kind: 'audio', name: 'loop' }));
+        expect(dispatchedBatchPayload('addClip')).toEqual(
             expect.objectContaining({ name: 'loop', audioBufferId: 'buf-1', startBeat: 0 })
         );
         expect(mockOnClose).toHaveBeenCalled();
@@ -377,9 +399,11 @@ describe('TimelineEmptyMenu', () => {
         await captured!.onchange?.(new Event('change'));
 
         createSpy.mockRestore();
-        // Selected track → no new track, clip goes to t1.
-        expect(addTrack).not.toHaveBeenCalled();
-        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1', audioBufferId: 'buf-2' }));
+        // Selected track → the batch carries no addTrack, the clip goes to t1.
+        expect(dispatchedBatchActions()).not.toContainEqual(expect.objectContaining({ type: 'addTrack' }));
+        expect(dispatchedBatchPayload('addClip')).toEqual(
+            expect.objectContaining({ trackId: 't1', audioBufferId: 'buf-2' })
+        );
     });
 
     it('imports a MIDI file via the import handler', async () => {
@@ -435,7 +459,7 @@ describe('TimelineEmptyMenu', () => {
         await captured!.onchange?.(new Event('change'));
 
         expect(decodeAudioFileMock).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
         expect(storeValues.track.tracks).toBe(successorTracks);
 
         decodeAudioFileMock.mockResolvedValueOnce({ id: 'audio-successor', buffer: { duration: 1 } });
@@ -447,7 +471,7 @@ describe('TimelineEmptyMenu', () => {
 
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
         expect(decodeAudioFileMock).toHaveBeenCalledWith(successorFile);
-        expect(addClip).toHaveBeenCalledWith(
+        expect(dispatchedBatchPayload('addClip')).toEqual(
             expect.objectContaining({ trackId: 'same-track', audioBufferId: 'audio-successor' })
         );
         expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
@@ -488,17 +512,14 @@ describe('TimelineEmptyMenu', () => {
         createSpy.mockRestore();
 
         expect(discardDecodedAudioFileMock).toHaveBeenCalledWith('audio-stale');
-        expect(addTrack).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
         expect(storeValues.track.tracks).toBe(successorTracks);
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('discards a decoded buffer when the target clip write fails', async () => {
+    it('discards a decoded buffer when the import batch refuses the clip write', async () => {
         decodeAudioFileMock.mockResolvedValueOnce({ id: 'audio-uncommitted', buffer: { duration: 1 } });
-        vi.mocked(addClip).mockImplementationOnce(() => {
-            throw new Error('write failed');
-        });
+        vi.mocked(executeAppActionBatch).mockRejectedValueOnce(new Error('write failed'));
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
         // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
@@ -546,7 +567,7 @@ describe('TimelineEmptyMenu', () => {
 
         // Nothing is decoded or added when no file was picked.
         expect(decodeAudioFileMock).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('aborts the MIDI import when no file is selected', async () => {
@@ -643,7 +664,7 @@ describe('TimelineEmptyMenu', () => {
         createSpy.mockRestore();
 
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Failed to import'), 'error');
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('falls back to 120 BPM when the transport tempo is unavailable', async () => {
@@ -671,7 +692,7 @@ describe('TimelineEmptyMenu', () => {
         createSpy.mockRestore();
 
         // 2s at 120 BPM → 4 beats; endBeat = 0 + 4 = 4.
-        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4 }));
+        expect(dispatchedBatchPayload('addClip')).toEqual(expect.objectContaining({ startBeat: 0, endBeat: 4 }));
         // Restore the mock's default tempo for subsequent tests.
         vi.mocked(transportStore as unknown as { value: { tempo?: number } }).value = { tempo: 120 };
     });

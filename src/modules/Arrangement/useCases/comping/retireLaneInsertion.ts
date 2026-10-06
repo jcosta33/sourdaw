@@ -9,15 +9,19 @@ import { resolveTakeLaneIndex } from './resolveTakeLaneIndex';
  *
  * The inverse of what `insertTakeLane` did for this capture. The undo put the captured
  * lane back — merged into the track's lane when a projection had given the track one —
- * and the redo takes exactly those takes away again.
+ * and the redo takes exactly what that insertion placed away again, recomputed from the
+ * entry's own captured take ids.
  *
- * Which lane that is comes from `resolveTakeLaneIndex`, and what leaves depends on what
- * the resolution found. A lane still carrying the capture's own id is the lane this
- * replay placed, so the insertion is the whole lane — liveness-filtered takes included —
- * and the redo removes it, the state the forward operation left. A lane the track
- * already owned carries the insertion instead, and only the takes the capture names and
- * the comp regions naming them leave it: that lane's own takes and comps were never this
- * replay's to retire, so they stay, and the lane goes only if nothing else lives in it.
+ * A lane the track already owned carries the insertion among its own takes: only the
+ * takes the capture names and the comp regions naming them leave it, that lane's own
+ * takes and comps were never this replay's to retire, and the lane goes only if nothing
+ * else lives in it. A lane still carrying the capture's own id is the one the undo
+ * placed, but it is not the insertion's to erase wholesale either (#4556): a take
+ * authored after the undo lands on the lane the track owns — which is this one — so the
+ * same captured ids decide what leaves, and that take survives the redo. The placed lane
+ * goes once nothing beyond the capture lives in it, the state the forward operation
+ * left, because the undo raised that vessel itself; it stands untouched when it holds
+ * only later state the capture does not name.
  *
  * Regions naming a retired take leave with it, whatever authored them. A region naming a
  * take the lane does not hold still advances the comp resolver's gap cursor over its
@@ -33,13 +37,24 @@ export function retireLaneInsertion(lane: TakeLane): void {
         return;
     }
     const landed = state.lanes[landedIndex]!;
+    const retiredTakeIds = new Set(lane.takes.map((take) => take.id));
 
     if (landed.id === lane.id) {
-        removeTakeLane(landed.id);
+        const takes = landed.takes.filter((take) => !retiredTakeIds.has(take.id));
+        const activeCompRegions = landed.activeCompRegions.filter((region) => !retiredTakeIds.has(region.takeId));
+        if (takes.length === 0 && activeCompRegions.length === 0) {
+            removeTakeLane(landed.id);
+            return;
+        }
+        if (takes.length === landed.takes.length && activeCompRegions.length === landed.activeCompRegions.length) {
+            return;
+        }
+        const lanes = [...state.lanes];
+        lanes[landedIndex] = { ...landed, takes, activeCompRegions };
+        takeLaneStore.set({ lanes });
         return;
     }
 
-    const retiredTakeIds = new Set(lane.takes.map((take) => take.id));
     const takes = landed.takes.filter((take) => !retiredTakeIds.has(take.id));
     if (takes.length === landed.takes.length) {
         return;

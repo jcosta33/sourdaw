@@ -61,14 +61,14 @@ describe('Automation Handlers', () => {
         expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain', 'lane-1');
     });
 
-    it('writes the canonical existing lane id onto a no-op replay action', () => {
+    it('keeps the authored lane id on a no-op replay action', () => {
         const action: Parameters<NonNullable<typeof handleAddAutomationLane.isNoop>>[0] = {
             type: 'addAutomationLane',
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
         };
 
         expect(handleAddAutomationLane.isNoop?.(action)).toBe(true);
-        expect(action.payload.laneId).toBe('l1');
+        expect(action.payload.laneId).toBeUndefined();
     });
 
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {

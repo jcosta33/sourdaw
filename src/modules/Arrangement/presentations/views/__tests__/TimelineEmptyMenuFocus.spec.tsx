@@ -35,8 +35,11 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     transportStore: { value: { tempo: 120 } },
 }));
 
+// The action-routed graph pulls more of the barrel in than the view itself
+// calls, so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../../useCases/importMidiFile', () => ({
