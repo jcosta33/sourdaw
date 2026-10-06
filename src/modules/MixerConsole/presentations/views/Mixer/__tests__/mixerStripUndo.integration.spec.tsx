@@ -145,6 +145,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
         projectClipControllerEvents: vi.fn(),
+        projectClipControllerRestore: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         addChordEvent: vi.fn(),
         appendMidiNotes: vi.fn(),

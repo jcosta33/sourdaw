@@ -68,6 +68,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
+    getTrackStrip: vi.fn(),
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
@@ -89,6 +90,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
     projectClipControllerEvents: vi.fn(() => []),
+    projectClipControllerRestore: vi.fn(() => ({ moves: [], held: new Set() })),
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     resolveMidiNoteArticulationId: ({ deviceType, articulation }: { deviceType: string; articulation?: string }) =>

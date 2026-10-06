@@ -32,12 +32,15 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
+import { storedControllerDeviceKey } from '../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
+import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { restoreStoredControllers, type RestoreStoredControllersInput } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
@@ -708,6 +711,13 @@ function getSourceOccurrenceOffset({
  * `fromBeat` is the scheduler's monotonic high-water mark: the transport passes
  * `schedulerSession.lastScheduledBeat`, which is exactly where the previous
  * window ended, so a note already emitted can never be emitted twice.
+ *
+ * `opensAtRelocation` marks a window whose `fromBeat` is where already-rolling
+ * playback was just relocated to (a loop wrap, a follow-action jump), not the
+ * continuation of the previous window. It additionally restores every stored
+ * controller to the value in force at `fromBeat` and lifts those left engaged
+ * that nothing is in force for there, at the frame `fromBeat` lands on. A
+ * transport start or a user seek is not a relocation in this sense.
  */
 export async function scheduleMidiNotes(
     fromBeat: number,
@@ -717,7 +727,8 @@ export async function scheduleMidiNotes(
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     currentTempo: number,
-    cancellation?: SchedulerCancellation
+    cancellation?: SchedulerCancellation,
+    opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
     const tracks = trackStore.value?.tracks;
@@ -753,6 +764,9 @@ export async function scheduleMidiNotes(
     const busTrackIds = new Set(
         tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
     );
+    // The devices a relocating window restored, so the sweep after the tracks
+    // lifts only what no track restored.
+    const restoredStoredControllerDevices = new Set<string>();
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
@@ -956,6 +970,8 @@ export async function scheduleMidiNotes(
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
         const posts = createSameFramePostQueue();
+        let relocatedStoredControllers: Omit<RestoreStoredControllersInput, 'trackId' | 'atBeat' | 'queue'> | null =
+            null;
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
@@ -1097,25 +1113,39 @@ export async function scheduleMidiNotes(
                 !drumKit &&
                 (workletSynthDevice?.type === 'grand-boule' || workletSynthDevice?.type === 'levain');
             const storedControllers = honoursStoredControllers ? midiState.ccByClipId[clip.id] : undefined;
-            if (storedControllers && workletSynthDevice && workletSynthNode) {
+            if (honoursStoredControllers && workletSynthDevice && workletSynthNode) {
                 const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
-                scheduleStoredControllers({
-                    trackId: track.id,
-                    device: workletSynthDevice,
-                    node: workletSynthNode,
-                    controlChanges: storedControllers,
-                    clip,
-                    fromBeat,
-                    toBeat,
-                    sampleFrameAtBeat: (beat) =>
-                        placeSamplesOnClock({
-                            startSamples: beatToSamples(changes, beat, transport.tempo, sr),
-                            accumulatedSamples,
-                            sampleRate: sr,
-                            compensation,
-                        }).sampleFrame,
-                    queue: posts,
-                });
+                const sampleFrameAtBeat = (beat: number) =>
+                    placeSamplesOnClock({
+                        startSamples: beatToSamples(changes, beat, transport.tempo, sr),
+                        accumulatedSamples,
+                        sampleRate: sr,
+                        compensation,
+                    }).sampleFrame;
+                if (storedControllers) {
+                    scheduleStoredControllers({
+                        trackId: track.id,
+                        device: workletSynthDevice,
+                        node: workletSynthNode,
+                        controlChanges: storedControllers,
+                        clip,
+                        fromBeat,
+                        toBeat,
+                        sampleFrameAtBeat,
+                        queue: posts,
+                    });
+                }
+                if (opensAtRelocation) {
+                    relocatedStoredControllers ??= {
+                        device: workletSynthDevice,
+                        node: workletSynthNode,
+                        clips: [],
+                        sampleFrame: sampleFrameAtBeat(fromBeat),
+                    };
+                    if (storedControllers) {
+                        relocatedStoredControllers.clips.push({ clip, controlChanges: storedControllers });
+                    }
+                }
             }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
@@ -1420,6 +1450,35 @@ export async function scheduleMidiNotes(
                 }
             }
         }
+        if (relocatedStoredControllers) {
+            restoreStoredControllers({
+                trackId: track.id,
+                device: relocatedStoredControllers.device,
+                node: relocatedStoredControllers.node,
+                clips: relocatedStoredControllers.clips,
+                atBeat: fromBeat,
+                sampleFrame: relocatedStoredControllers.sampleFrame,
+                queue: posts,
+            });
+            restoredStoredControllerDevices.add(
+                storedControllerDeviceKey(track.id, relocatedStoredControllers.device.id)
+            );
+        }
         posts.flush(isCurrent);
+    }
+    if (opensAtRelocation && isCurrent()) {
+        const { sampleRate } = getAudioContext();
+        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate);
+        const destinationSamples = beatToSamples(changes, fromBeat, transport.tempo, sampleRate);
+        releaseUnrestoredStoredControllers({
+            restored: restoredStoredControllerDevices,
+            sampleFrameOnTrack: (trackId) =>
+                placeSamplesOnClock({
+                    startSamples: destinationSamples,
+                    accumulatedSamples,
+                    sampleRate,
+                    compensation: getCompensationDelay(trackId),
+                }).sampleFrame,
+        });
     }
 }

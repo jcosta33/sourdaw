@@ -34,6 +34,7 @@ import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAut
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
+import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
@@ -428,6 +429,12 @@ export function startPlayheadScheduler(): void {
                     resetMetronomeBeat(schedulerSession.accumulatedPosition);
                     advanceSchedulerDiscontinuityEpoch();
                     rackDiscontinuity = true;
+                    // The teardown above stopped notes, not pedals, and a framed
+                    // stored move still queued behind the old position would press
+                    // a pedal at the destination: lift what stored playback holds
+                    // now (frameless supersedes the queued moves); the window
+                    // opening at `loopStart` restores the values in force there.
+                    releaseStoredControllers();
                 } else {
                     schedulerSession.accumulatedPosition = dyingPositionAtPreviousTick;
                     schedulerSession.lastScheduledBeat = dyingPositionAtPreviousTick - REEMIT_EPSILON_BEATS;
@@ -523,6 +530,8 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // Stops notes, keeps pedals: see the seam-edit wrap above.
+            releaseStoredControllers();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -615,6 +624,8 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // Stops notes, keeps pedals: see the seam-edit wrap above.
+            releaseStoredControllers();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -947,6 +958,10 @@ export function startPlayheadScheduler(): void {
             // physical instant.
             resetMetronomeBeat(current.loopStart);
             scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current);
+            // The incoming pass opens at the loop start: a relocation, so the
+            // stored controllers are restored to what is in force there. The
+            // dying window above already posted everything up to the seam, which
+            // is why this path lifts nothing frameless.
             await scheduleMidiNotes(
                 current.loopStart,
                 seam.wrappedUpTo,
@@ -955,7 +970,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                true
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -989,6 +1005,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.accumulatedPosition,
                 current
             );
+            // A late wrap and a follow-action jump open this window at their
+            // destination, so it restores the stored controllers there too.
             await scheduleMidiNotes(
                 schedulerSession.lastScheduledBeat,
                 scheduleUpTo,
@@ -997,7 +1015,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                lateWrap || jumpToPosition !== null
             );
             if (!cancellation.isCurrent()) {
                 return;

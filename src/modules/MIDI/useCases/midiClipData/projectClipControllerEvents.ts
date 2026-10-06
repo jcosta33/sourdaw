@@ -52,8 +52,12 @@ function resolveIterationRange(
  * The window is half-open like the note scheduler's, so a move is owned by one
  * window and a scheduler stepping `[a, b)`, `[b, c)` — or wrapping at a loop seam —
  * emits it once. A carried value sits on its pass head, so only the window holding
- * that head emits it: a window that opens mid-clip emits no carry, which is the
- * start-and-seek chase this projection leaves to the transport.
+ * that head emits it: a window that opens mid-clip emits no carry. That is the
+ * start-and-seek chase this projection leaves to the transport, but not the
+ * relocation of playback already rolling (a loop wrap, a follow-action jump),
+ * which the window cannot restore on its own: `projectClipControllerRestore`
+ * names what a relocation must send, and the window that opens at the
+ * destination still emits the rows sitting on it.
  */
 export function projectClipControllerEvents({
     controlChanges,

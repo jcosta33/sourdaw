@@ -125,6 +125,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
     projectClipControllerEvents: vi.fn(),
+    projectClipControllerRestore: vi.fn(),
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     resolveMidiNoteArticulationId: ({ deviceType, articulation }: { deviceType: string; articulation?: string }) =>

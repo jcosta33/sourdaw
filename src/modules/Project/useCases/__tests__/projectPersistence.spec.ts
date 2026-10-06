@@ -119,6 +119,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
     projectClipControllerEvents: vi.fn(),
+    projectClipControllerRestore: vi.fn(),
     adaptGrooveTemplateForConsumer: vi.fn(),
     appendMidiNotes: vi.fn(),
     arpeggiate: vi.fn(),

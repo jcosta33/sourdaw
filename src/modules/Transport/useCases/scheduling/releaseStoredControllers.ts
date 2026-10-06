@@ -1,7 +1,8 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-import { CC_SOSTENUTO_PEDAL, CC_SUSTAIN_PEDAL, CC_UNA_CORDA_PEDAL } from '#/utils/pianoPedalController';
 
 import { takeStoredControllerEngagements } from '../../services/storedControllerEngagement';
+
+import { releaseStoredEngagement } from './releaseStoredEngagement';
 
 /**
  * Release every pedal and controller stored playback left engaged, on exactly the
@@ -21,20 +22,10 @@ export function releaseStoredControllers(): void {
         if (!node) {
             continue;
         }
-        if (engagement.deviceType === 'grand-boule' && node.grandBouleControls) {
-            if (engagement.controllers.has(CC_SUSTAIN_PEDAL)) {
-                node.grandBouleControls.setSustain(0);
-            }
-            if (engagement.controllers.has(CC_SOSTENUTO_PEDAL)) {
-                node.grandBouleControls.setSostenuto(false);
-            }
-            if (engagement.controllers.has(CC_UNA_CORDA_PEDAL)) {
-                node.grandBouleControls.setUnaCorda(false);
-            }
-        } else if (engagement.deviceType === 'levain' && node.levainControls) {
-            if (engagement.controllers.has(CC_SUSTAIN_PEDAL)) {
-                node.levainControls.handleCc(CC_SUSTAIN_PEDAL, 0);
-            }
-        }
+        releaseStoredEngagement({
+            deviceType: engagement.deviceType,
+            node,
+            controllers: engagement.controllers,
+        });
     }
 }

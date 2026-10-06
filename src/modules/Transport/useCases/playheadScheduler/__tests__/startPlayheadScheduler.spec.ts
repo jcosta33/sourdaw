@@ -142,6 +142,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioEngineMocks.getAudioContext(),
+    getTrackStrip: vi.fn(),
     getCompensationDelay: (...args: unknown[]) =>
         (audioEngineMocks.getCompensationDelay as (...a: unknown[]) => unknown)(...args),
     audioEngine: {

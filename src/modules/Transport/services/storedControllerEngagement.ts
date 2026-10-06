@@ -24,7 +24,8 @@ type MutableEngagement = { trackId: string; deviceId: string; deviceType: string
 
 const engagementByDevice = new Map<string, MutableEngagement>();
 
-function deviceKey(trackId: string, deviceId: string): string {
+/** The identity one device's engagement is recorded under. */
+export function storedControllerDeviceKey(trackId: string, deviceId: string): string {
     return JSON.stringify([trackId, deviceId]);
 }
 
@@ -36,7 +37,7 @@ export function noteStoredControllerMove(input: {
     controller: number;
     engaged: boolean;
 }): void {
-    const key = deviceKey(input.trackId, input.deviceId);
+    const key = storedControllerDeviceKey(input.trackId, input.deviceId);
     const existing = engagementByDevice.get(key);
     if (!input.engaged) {
         existing?.controllers.delete(input.controller);
@@ -55,6 +56,19 @@ export function noteStoredControllerMove(input: {
         deviceType: input.deviceType,
         controllers: new Set([input.controller]),
     });
+}
+
+/** The controllers stored playback has left engaged on one device. */
+export function readStoredControllerEngagement(trackId: string, deviceId: string): ReadonlySet<number> {
+    return new Set(engagementByDevice.get(storedControllerDeviceKey(trackId, deviceId))?.controllers);
+}
+
+/** Every engagement recorded so far, leaving the record as it is. */
+export function listStoredControllerEngagements(): StoredControllerEngagement[] {
+    return Array.from(engagementByDevice.values(), (engagement) => ({
+        ...engagement,
+        controllers: new Set(engagement.controllers),
+    }));
 }
 
 /** Every engagement recorded so far, forgetting it: the caller is about to release each one. */
