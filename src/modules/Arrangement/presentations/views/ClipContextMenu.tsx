@@ -18,7 +18,6 @@ import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
-import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
 import { exportMidiClip } from '../../useCases/exportMidiClip';
@@ -435,7 +434,13 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     >
                         Cut
                     </DawMenuButton>
-                    <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteClip())}>
+                    <DawMenuButton
+                        role="menuitem"
+                        shortcut="⌘V"
+                        onClick={act(() => {
+                            void executeUserAppAction({ type: 'pasteClip' });
+                        })}
+                    >
                         Paste
                     </DawMenuButton>
 

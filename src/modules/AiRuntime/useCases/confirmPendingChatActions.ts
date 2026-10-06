@@ -9,6 +9,7 @@ import {
 } from './agentRequestOrchestration/confirmedBatchOutcomeSupport';
 import { executeCommittedSectionRenderRetry } from './agentRequestOrchestration/executeCommittedSectionRenderRetry';
 import { executeConfirmedCommandBatch } from './agentRequestOrchestration/executeConfirmedCommandBatch';
+import { proposeNextScheduledBatch } from './agentRequestOrchestration/proposeNextScheduledBatch';
 import { confirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
 import { settleConfirmedCommandExecution } from './agentRequestOrchestration/settleConfirmedCommandExecution';
 
@@ -63,5 +64,10 @@ export async function confirmPendingChatActions(
         priorVerifiedBatchReceipt: executionAdmission.priorVerifiedBatchReceipt,
         recoveringPendingEffects: executionAdmission.recoveringPendingEffects,
     });
-    return settleConfirmedCommandExecution({ executionAdmission, executionFlight });
+    const settled = await settleConfirmedCommandExecution({ executionAdmission, executionFlight });
+    // A batch of a larger request settles on its own; the run then owes the next batch its own approval.
+    if (settled.status === 'executed') {
+        await proposeNextScheduledBatch({ runId: executionAdmission.confirmation.runId });
+    }
+    return settled;
 }

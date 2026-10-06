@@ -16,6 +16,15 @@ export type CrdtEntityIdentity = (row: UnknownRecord) => string | null;
  */
 export type CrdtEntityIdentityByField = Readonly<Record<string, CrdtEntityIdentity>>;
 
+/**
+ * What the document itself held in this slot when a write's base was captured
+ * — the document, never the cache. `slot` is the raw slot content, or
+ * `undefined` when the snapshot read no slot at all.
+ */
+export type CrdtSlotPresence = {
+    readonly slot: unknown;
+};
+
 export type ReconcileCrdtSlotInput = {
     /** The live Automerge draft handed in by `change()`. */
     doc: MutableContainer;
@@ -31,6 +40,19 @@ export type ReconcileCrdtSlotInput = {
     /** The value the writing actor asked to store. */
     value: unknown;
     identityByField?: CrdtEntityIdentityByField;
+    /**
+     * The base-capture snapshot of this slot, deciding the one question the
+     * other inputs cannot: when the document lacks a node that `baseValue`
+     * carries unchanged, was the node ever the document's? A node the
+     * snapshot also lacked is the writer's own stranded seed — the base knows
+     * it only from the cache — and the write lands it. A node the snapshot
+     * held is a peer's newer deletion and stands. Omitting the snapshot keeps
+     * the deletion-respecting behavior for callers that cannot capture one.
+     * The storage adapter captures it in the same instant as `baseValue` and
+     * refreshes it wherever the base is re-anchored, so the two always
+     * describe the same moment.
+     */
+    documentPresence?: CrdtSlotPresence;
 };
 
 function isUnknownRecord(value: unknown): value is UnknownRecord {
@@ -42,6 +64,24 @@ function readField(source: unknown, field: string): unknown {
         return undefined;
     }
     return source[field];
+}
+
+/**
+ * Stands for "no base-capture snapshot was provided". It propagates through
+ * the recursion so an undecided caller keeps the deletion-respecting behavior
+ * at every depth, never the seed write.
+ */
+const uncapturedDocumentPresence = Symbol('uncaptured document presence');
+
+/**
+ * The snapshot's version of the node at `field`, or the undecided sentinel
+ * when there is no snapshot to read into.
+ */
+function readPresenceNode(presence: unknown, field: string): unknown {
+    if (presence === uncapturedDocumentPresence) {
+        return uncapturedDocumentPresence;
+    }
+    return readField(presence, field);
 }
 
 /**
@@ -119,6 +159,12 @@ type ReconcileChildInput = {
     base: unknown;
     desired: unknown;
     identityByField: CrdtEntityIdentityByField;
+    /**
+     * The snapshot's version of this node — a real value, `undefined` for a
+     * proven absence, or the undecided sentinel when the caller provided no
+     * snapshot.
+     */
+    presence: unknown;
 };
 
 /**
@@ -150,16 +196,76 @@ function readChild(container: MutableContainer | unknown[], field: string | numb
 }
 
 function reconcileChild(input: ReconcileChildInput): void {
-    const { container, field, fieldName, base, desired, identityByField } = input;
+    const { container, field, fieldName, base, desired, identityByField, presence } = input;
     const current = readChild(container, field);
 
+    // A desired value identical to this write's base is not this writer's
+    // edit. A deferred write flushed late (an undo's whole-state snapshot, a
+    // burst's last frame) can be stale against a document that moved since —
+    // a peer's concurrent change this writer never saw — and writing the
+    // writer's unchanged copy back would clobber that change. Only a field
+    // the writer actually changed relative to its base is its to write; the
+    // document's current value is newer truth wherever the writer owns no
+    // delta (#4858).
+    //
+    // Absence is two different facts, and only the base-capture snapshot
+    // tells them apart. A node the snapshot held but the document now lacks
+    // moved between that capture and this flush — a peer's concurrent
+    // deletion — and re-creating it would resurrect it, the map-key form of
+    // the clobber the row-membership guard in `placeRows` prevents. A node
+    // the snapshot provably lacked is the writer's own stranded seed: the
+    // base knows it only from the cache (a deferred write retained as the
+    // effective baseline, a seed flushed before the document held its slot),
+    // no document ever held it, and skipping would strand it outside the
+    // document for the next projection to erase. Without a snapshot the
+    // absence stays undecided and the deletion-respecting behavior stands.
+    if (isSameValue(base, desired)) {
+        if (current === undefined) {
+            if (desired !== undefined && presence === undefined) {
+                writeChild(container, field, desired);
+            }
+            return;
+        }
+        // The document holds this node and the writer carries no delta on it,
+        // so the node's own value is not its to write. A captured snapshot can
+        // still witness a seed deeper in — a node the base carried unchanged,
+        // the document still lacks, and no document ever held — so the walk
+        // continues below an unchanged value wherever a snapshot rides. A
+        // whole-slot write retained as a deferred baseline then seeds exactly
+        // like one whose changed sibling would have carried it down. Without a
+        // snapshot every nested absence stays undecided and the early return
+        // keeps the whole subtree untouched.
+        if (presence !== uncapturedDocumentPresence) {
+            reconcileEqualNode({
+                container,
+                field,
+                fieldName,
+                current,
+                base,
+                desired,
+                presence,
+                identityByField,
+            });
+        }
+        return;
+    }
+
     if (isUnknownRecord(desired) && isUnknownRecord(current)) {
-        reconcileRecord({ target: current, base, desired, identityByField });
+        reconcileRecord({ target: current, base, desired, presence, identityByField });
         return;
     }
 
     if (Array.isArray(desired) && Array.isArray(current)) {
-        reconcileCollection({ container, field, fieldName, current, base, desired, identityByField });
+        reconcileCollection({
+            container,
+            field,
+            fieldName,
+            current,
+            base,
+            desired,
+            presence,
+            identityByField,
+        });
         return;
     }
 
@@ -170,15 +276,70 @@ function reconcileChild(input: ReconcileChildInput): void {
     writeChild(container, field, desired);
 }
 
+type ReconcileEqualNodeInput = {
+    container: MutableContainer | unknown[];
+    field: string | number;
+    fieldName: string;
+    /** The document's live node whose children the unchanged write may still seed. */
+    current: unknown;
+    base: unknown;
+    desired: unknown;
+    /** The snapshot's version of this node — never the undecided sentinel. */
+    presence: unknown;
+    identityByField: CrdtEntityIdentityByField;
+};
+
+/**
+ * Continues an unchanged write one level down, where the ownership law leaves
+ * exactly one effect available: the seed landing.
+ *
+ * Reached only when the writer's desired node equals its base, so every
+ * descendant is equal too and no deletion, replacement, reorder, or membership
+ * change can be this writer's — `reconcileRecord` removes only fields its base
+ * carried, and an identified collection's membership loop requires a base row
+ * while its placement applies only where the writer's order moved. What the
+ * walk can still do is land stranded seeds: a record field or a base-carried
+ * row the snapshot provably lacked, which skipping would strand outside the
+ * document for the next projection to erase. A collection that is one logical
+ * value rather than identified rows gets no walk: the writer owns no delta on
+ * it, and its whole-value replace would clobber wherever the document's copy
+ * moved past the base.
+ */
+function reconcileEqualNode(input: ReconcileEqualNodeInput): void {
+    const { container, field, fieldName, current, base, desired, presence, identityByField } = input;
+    if (isUnknownRecord(desired) && isUnknownRecord(current)) {
+        reconcileRecord({ target: current, base, desired, presence, identityByField });
+        return;
+    }
+    if (Array.isArray(desired) && Array.isArray(current)) {
+        const identify = identityByField[fieldName] ?? identifyById;
+        if (identifyRows(desired, identify) === null || identifyRows(current, identify) === null) {
+            return;
+        }
+        reconcileCollection({
+            container,
+            field,
+            fieldName,
+            current,
+            base,
+            desired,
+            presence,
+            identityByField,
+        });
+    }
+}
+
 type ReconcileRecordInput = {
     target: UnknownRecord;
     base: unknown;
     desired: UnknownRecord;
+    /** The snapshot's version of `target`. */
+    presence: unknown;
     identityByField: CrdtEntityIdentityByField;
 };
 
 function reconcileRecord(input: ReconcileRecordInput): void {
-    const { target, base, desired, identityByField } = input;
+    const { target, base, desired, presence, identityByField } = input;
 
     for (const [field, desiredField] of Object.entries(desired)) {
         reconcileChild({
@@ -188,6 +349,7 @@ function reconcileRecord(input: ReconcileRecordInput): void {
             base: readField(base, field),
             desired: desiredField,
             identityByField,
+            presence: readPresenceNode(presence, field),
         });
     }
 
@@ -213,11 +375,13 @@ type ReconcileCollectionInput = {
     current: unknown[];
     base: unknown;
     desired: readonly unknown[];
+    /** The snapshot's version of this collection. */
+    presence: unknown;
     identityByField: CrdtEntityIdentityByField;
 };
 
 function reconcileCollection(input: ReconcileCollectionInput): void {
-    const { container, field, fieldName, current, base, desired, identityByField } = input;
+    const { container, field, fieldName, current, base, desired, presence, identityByField } = input;
     const identify = identityByField[fieldName] ?? identifyById;
 
     const desiredIdentities = identifyRows(desired, identify);
@@ -230,15 +394,21 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         return;
     }
 
-    const baseIdentities = Array.isArray(base) ? identifyRows(base, identify) : null;
+    const baseRows = Array.isArray(base) ? base : null;
+    const baseIdentities = baseRows ? identifyRows(baseRows, identify) : null;
     const baseIdentitySet = new Set(baseIdentities ?? []);
     const desiredIdentitySet = new Set(desiredIdentities);
-    const baseRowByIdentity = new Map<string, unknown>();
-    if (Array.isArray(base) && baseIdentities) {
-        for (const [index, identity] of baseIdentities.entries()) {
-            baseRowByIdentity.set(identity, base[index]);
-        }
-    }
+    const baseRowByIdentity = rowsByIdentity(baseRows, baseIdentities);
+
+    // The snapshot's rows, indexed the same way. A collection is a seed
+    // witness only where the snapshot could actually be read row by row; a
+    // snapshot shaped differently from the store's own wire form reads as
+    // though it held nothing, which lands the seed.
+    const presenceRows = Array.isArray(presence) ? presence : null;
+    const snapshotRowByIdentity = rowsByIdentity(
+        presenceRows,
+        presenceRows ? identifyRows(presenceRows, identify) : null
+    );
 
     // Rows this actor saw and then dropped are genuine deletions. Rows it never
     // saw are another actor's, or content its own projection rejected, and are
@@ -264,6 +434,10 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         if (currentIndex === undefined) {
             continue;
         }
+        let rowPresence: unknown = snapshotRowByIdentity.get(identity);
+        if (presence === uncapturedDocumentPresence) {
+            rowPresence = uncapturedDocumentPresence;
+        }
         reconcileChild({
             container: current,
             field: currentIndex,
@@ -271,6 +445,7 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
             base: baseRowByIdentity.get(identity),
             desired: desired[desiredIndex],
             identityByField,
+            presence: rowPresence,
         });
     }
 
@@ -279,8 +454,13 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         identify,
         desired,
         desiredIdentities,
+        baseIdentities,
         currentIndexByIdentity,
         desiredIdentitySet,
+        baseIdentitySet,
+        baseRowByIdentity,
+        presence,
+        snapshotRowByIdentity,
     });
 }
 
@@ -296,6 +476,18 @@ function indexCollection(rows: readonly unknown[], identify: CrdtEntityIdentity)
         }
     }
     return indexByIdentity;
+}
+
+/** Rows of an identifiable collection, indexed by identity in collection order. */
+function rowsByIdentity(rows: readonly unknown[] | null, identities: readonly string[] | null): Map<string, unknown> {
+    const rowByIdentity = new Map<string, unknown>();
+    if (!rows || !identities) {
+        return rowByIdentity;
+    }
+    for (const [index, identity] of identities.entries()) {
+        rowByIdentity.set(identity, rows[index]);
+    }
+    return rowByIdentity;
 }
 
 /**
@@ -340,8 +532,14 @@ type PlaceRowsInput = {
     identify: CrdtEntityIdentity;
     desired: readonly unknown[];
     desiredIdentities: readonly string[];
+    baseIdentities: readonly string[] | null;
     currentIndexByIdentity: ReadonlyMap<string, number>;
     desiredIdentitySet: ReadonlySet<string>;
+    baseIdentitySet: ReadonlySet<string>;
+    baseRowByIdentity: ReadonlyMap<string, unknown>;
+    /** The snapshot's version of this collection, or the undecided sentinel. */
+    presence: unknown;
+    snapshotRowByIdentity: ReadonlyMap<string, unknown>;
 };
 
 /**
@@ -365,9 +563,35 @@ type PlaceRowsInput = {
  * So the rows already in the writer's intended relative order are pinned, and
  * only the genuine movers are removed and re-inserted. The blast radius of a
  * reorder is then exactly the rows the user actually moved.
+ *
+ * Placement is bounded by an order delta, the same ownership law that bounds
+ * membership: when the writer's desired order equals its base order, it moved
+ * nothing, so every row the document holds keeps its position and the write
+ * degenerates to inserts — a row the writer changed or added, absent from the
+ * document, still lands. Relocation applies only where the writer's order
+ * differs from its base's, since reordering rows the writer never moved would
+ * just undo a peer's concurrent reorder.
  */
 function placeRows(input: PlaceRowsInput): void {
-    const { current, identify, desired, desiredIdentities, currentIndexByIdentity, desiredIdentitySet } = input;
+    const {
+        current,
+        identify,
+        desired,
+        desiredIdentities,
+        baseIdentities,
+        currentIndexByIdentity,
+        desiredIdentitySet,
+        baseIdentitySet,
+        baseRowByIdentity,
+        presence,
+        snapshotRowByIdentity,
+    } = input;
+
+    const writerReordered = !(
+        baseIdentities !== null &&
+        baseIdentities.length === desiredIdentities.length &&
+        baseIdentities.every((identity, index) => identity === desiredIdentities[index])
+    );
 
     const presentDesiredIndices: number[] = [];
     for (const [desiredIndex, identity] of desiredIdentities.entries()) {
@@ -378,17 +602,25 @@ function placeRows(input: PlaceRowsInput): void {
 
     // Rank each present row by where it currently sits; the longest increasing
     // run over those positions is the largest set already correctly ordered.
+    // A writer that reordered nothing pins every row it sees instead: without
+    // an order delta of its own, no row is its to relocate.
     const currentPositions = presentDesiredIndices.map(
         (desiredIndex) => currentIndexByIdentity.get(desiredIdentities[desiredIndex] ?? '') ?? 0
     );
     const pinned = new Set<string>();
-    for (const runIndex of longestIncreasingRun(currentPositions)) {
-        const desiredIndex = presentDesiredIndices[runIndex];
-        if (desiredIndex === undefined) {
-            continue;
+    if (writerReordered) {
+        for (const runIndex of longestIncreasingRun(currentPositions)) {
+            const desiredIndex = presentDesiredIndices[runIndex];
+            if (desiredIndex === undefined) {
+                continue;
+            }
+            const identity = desiredIdentities[desiredIndex];
+            if (identity !== undefined) {
+                pinned.add(identity);
+            }
         }
-        const identity = desiredIdentities[desiredIndex];
-        if (identity !== undefined) {
+    } else {
+        for (const identity of currentIndexByIdentity.keys()) {
             pinned.add(identity);
         }
     }
@@ -416,10 +648,68 @@ function placeRows(input: PlaceRowsInput): void {
             previousIndex = indexOfIdentity(current, identify, identity);
             continue;
         }
+        if (
+            isPeerDeletedUnchangedRow({
+                desiredRow: desired[desiredIndex],
+                identity,
+                currentIndexByIdentity,
+                baseIdentitySet,
+                baseRowByIdentity,
+                presence,
+                snapshotRowByIdentity,
+            })
+        ) {
+            continue;
+        }
         const insertAt = Math.min(previousIndex + 1, current.length);
         current.splice(insertAt, 0, desired[desiredIndex]);
         previousIndex = insertAt;
     }
+}
+
+type PeerDeletedUnchangedRowInput = {
+    desiredRow: unknown;
+    identity: string;
+    currentIndexByIdentity: ReadonlyMap<string, number>;
+    baseIdentitySet: ReadonlySet<string>;
+    baseRowByIdentity: ReadonlyMap<string, unknown>;
+    /** The snapshot's version of this collection, or the undecided sentinel. */
+    presence: unknown;
+    snapshotRowByIdentity: ReadonlyMap<string, unknown>;
+};
+
+/**
+ * A desired row the document lacks is this write's to place only when the
+ * writer owns a delta on it. A row its base also carried, with identical
+ * content, is not: the document's absence is a peer's concurrent deletion
+ * this write never saw, and re-inserting the unchanged copy would resurrect
+ * it — the row-membership form of the law that skips a field whose desired
+ * value equals its base. The base-capture snapshot decides which absence this
+ * is: a row the snapshot held stands, one the snapshot provably lacked is the
+ * writer's own stranded seed and is inserted. A row the base lacks is this
+ * writer's own add; a row whose content differs from its base carries this
+ * writer's change. All three insert.
+ */
+function isPeerDeletedUnchangedRow(input: PeerDeletedUnchangedRowInput): boolean {
+    const {
+        desiredRow,
+        identity,
+        currentIndexByIdentity,
+        baseIdentitySet,
+        baseRowByIdentity,
+        presence,
+        snapshotRowByIdentity,
+    } = input;
+    if (currentIndexByIdentity.has(identity)) {
+        return false;
+    }
+    if (!baseIdentitySet.has(identity)) {
+        return false;
+    }
+    if (!isSameValue(baseRowByIdentity.get(identity), desiredRow)) {
+        return false;
+    }
+    return presence === uncapturedDocumentPresence || snapshotRowByIdentity.has(identity);
 }
 
 /**
@@ -434,10 +724,31 @@ function placeRows(input: PlaceRowsInput): void {
  * distinct rows converge.
  *
  * Three inputs, not two: the document holds rows the writer may never have
- * seen — inserted concurrently by a peer, or rejected by this build's own
+ * seen — inserted concurrently by a peer, or rejected by this build's
  * projection and therefore missing from the value it wrote back. Deletion is
  * inferred from `baseValue`, the value this write was derived from, so only a
- * row the writer actually had in hand can be removed by it.
+ * row the writer actually had in hand can be removed by it. The same base also
+ * bounds what a write may overwrite: a value identical to its base carries no
+ * delta of this writer's own, so wherever the document has moved past that
+ * base — a peer's concurrent edit or deletion a deferred write never saw,
+ * including the node's absence — the document stands and the stale copy is
+ * not written (#4858). The law reaches row membership too: a desired row
+ * carried unchanged from a base that also had it is not re-inserted when the
+ * document lacks it, since that absence is a peer's newer deletion; only a
+ * row the base lacked or one the writer changed is this write's to insert.
+ * And it reaches row order: a writer whose desired order equals its base
+ * order moved nothing, so existing rows keep their document positions, and
+ * only a write whose order differs from its base applies its placement.
+ *
+ * Absence alone cannot tell a peer's newer deletion from the writer's own
+ * stranded seed, so `documentPresence` — what the document itself held when
+ * the write's base was captured — decides: an absent node the snapshot also
+ * lacked lands, one the snapshot held stands. Omitting it keeps the
+ * deletion-respecting behavior for callers that cannot capture the snapshot.
+ * The snapshot carries that decision below an unchanged value too: a write
+ * whose desired slot equals its base still walks its subtree under a captured
+ * snapshot, so a seed nested inside an unchanged slot lands exactly as one
+ * beside a changed sibling does, while a node the snapshot held stays deleted.
  *
  * Collections whose rows carry no stable identity are replaced whole. That is
  * deliberate: a tuning table, a pitch curve and a step pattern are one logical
@@ -446,7 +757,7 @@ function placeRows(input: PlaceRowsInput): void {
  * neither wrote.
  */
 export function reconcileCrdtSlot(input: ReconcileCrdtSlotInput): void {
-    const { doc, key, baseValue, value, identityByField = {} } = input;
+    const { doc, key, baseValue, value, identityByField = {}, documentPresence } = input;
     reconcileChild({
         container: doc,
         field: key,
@@ -454,5 +765,6 @@ export function reconcileCrdtSlot(input: ReconcileCrdtSlotInput): void {
         base: baseValue,
         desired: value,
         identityByField,
+        presence: documentPresence === undefined ? uncapturedDocumentPresence : documentPresence.slot,
     });
 }

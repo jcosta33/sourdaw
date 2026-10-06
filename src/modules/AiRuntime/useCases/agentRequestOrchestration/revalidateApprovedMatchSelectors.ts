@@ -1,6 +1,7 @@
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
 import { type SemanticCommandListMatchSelectorRecord } from '../../models/SemanticCommandList';
+import { replayBulkSetSlice, restoreRunWrittenFacts } from '../../services/bulkSetSliceReplay';
 import {
     collectSemanticCommandListCandidates,
     resolveSemanticCommandListSelector,
@@ -48,8 +49,34 @@ export function revalidateApprovedMatchSelectors(
         roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
     });
     for (const record of matchSelectorPredicates) {
+        // A later batch of a schedule is replayed with the facts the run's own earlier batches wrote
+        // restored, so only an outside change can move its set.
+        const replayCandidates = restoreRunWrittenFacts(candidates, record.runWrittenFacts);
+        if (record.slice !== undefined) {
+            const replayed = replayBulkSetSlice({
+                candidates: replayCandidates,
+                context,
+                itemId: record.itemId,
+                roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+                selector: {
+                    entity: record.entity,
+                    where: record.where,
+                    condition: record.condition,
+                    match: record.match,
+                    excludeIds: record.excludeIds,
+                },
+                slice: record.slice,
+            });
+            if (replayed.status === 'rejected') {
+                return {
+                    status: 'invalidated',
+                    detail: `Match selector ${record.itemId} now resolves a different target set than the approved batch carried: ${replayed.reason}`,
+                };
+            }
+            continue;
+        }
         const resolved = resolveSemanticCommandListSelector({
-            candidates,
+            candidates: replayCandidates,
             context,
             itemId: record.itemId,
             roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,

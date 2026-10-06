@@ -40,6 +40,8 @@ type AgentApprovalView = {
     status: string;
     error: string | null;
     prompt: string;
+    /** Which of the run's successive batches this is, or `null` when the request fits one batch. */
+    batchPosition: { index: number; total: number } | null;
     actionLabels: readonly string[];
     scope: {
         targetIds: readonly string[];
@@ -344,6 +346,11 @@ const ApprovalCard = ({
     return (
         <Stack gap={1} className="rounded border border-border/60 bg-surface-raised/80 p-2 text-xs">
             <p className="text-foreground">{view.prompt}</p>
+            {view.batchPosition === null ? null : (
+                <p className="text-muted-foreground">
+                    {`Batch ${String(view.batchPosition.index)} of ${String(view.batchPosition.total)}`}
+                </p>
+            )}
             <ul aria-label="Proposed actions" className="list-inside list-disc text-foreground">
                 {view.actionLabels.map((label) => (
                     <li key={label}>{label}</li>

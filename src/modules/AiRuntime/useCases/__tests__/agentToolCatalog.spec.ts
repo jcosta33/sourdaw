@@ -251,7 +251,8 @@ describe('agent tool catalog', () => {
                     additionalProperties: false,
                 },
             },
-            required: ['types'],
+            // `types` is optional since #4371: a call with no arguments lists the device catalogue.
+            required: [],
             additionalProperties: false,
         });
     });

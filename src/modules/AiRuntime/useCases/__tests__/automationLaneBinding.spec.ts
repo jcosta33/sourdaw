@@ -693,6 +693,42 @@ describe('automation lane binding in one agent batch', () => {
         expect(undoGroupIds('past')).toEqual([]);
     });
 
+    it('keeps redo and undo naming the same lane when a folded redo replays after the folding lane is deleted', async () => {
+        await executeAppAction(addLane('gain', 'Gain', LANE_ID));
+        flushAutomergeStorageWrites();
+        expect(findLane(LANE_ID)).toBeDefined();
+
+        await undo();
+        expect(findLane(LANE_ID)).toBeUndefined();
+
+        addLaneAsCollaborator(TRACK_ID, 'gain', 'Gain', COLLABORATOR_GAIN_LANE_ID);
+        flushAutomergeStorageWrites();
+        const redoEntry = undoHistoryStore.value?.future[0];
+        if (redoEntry?.kind !== 'action') {
+            throw new Error('Expected the redoable entry to be an action entry');
+        }
+
+        await redo();
+
+        expect(findLane(LANE_ID)).toBeUndefined();
+        expect(redoEntry.action.payload).toMatchObject({ laneId: LANE_ID });
+
+        removeLaneAsUser(COLLABORATOR_GAIN_LANE_ID);
+        flushAutomergeStorageWrites();
+        expect(findLane(COLLABORATOR_GAIN_LANE_ID)).toBeUndefined();
+
+        await undo();
+
+        await redo();
+
+        expect(findLane(COLLABORATOR_GAIN_LANE_ID)).toBeUndefined();
+        expect(findLane(LANE_ID)).toMatchObject({ trackId: TRACK_ID, parameterId: 'gain' });
+
+        await undo();
+
+        expect(automationStore.value?.lanes).toEqual([]);
+    });
+
     it('removes the remaining point and the lane when undoing a batch after a collaborator deleted one of its points', async () => {
         await confirmGainLaneWithPoints();
         removePointAsCollaborator(LANE_ID, 16);
