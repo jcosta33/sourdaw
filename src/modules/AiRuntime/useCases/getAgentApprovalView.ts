@@ -82,6 +82,8 @@ export type AgentApprovalView = {
     status: ChatActionConfirmationStatus;
     error: string | null;
     prompt: string;
+    /** Which of the run's successive batches this proposal is, or `null` when the request fits one batch. */
+    batchPosition: { index: number; total: number } | null;
     actionLabels: readonly string[];
     supersedes: string | null;
     supersededBy: string | null;
@@ -313,7 +315,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
     if (!confirmation) {
         return null;
     }
-    const { adoptedRecipes, agentApproval, commandBatch, measuredPreview, semanticDiff } =
+    const { adoptedRecipes, agentApproval, batchPosition, commandBatch, measuredPreview, semanticDiff } =
         confirmation.approvalSnapshot;
     const freshness = getFreshness(confirmation);
     const routeView = getProviderRouteView({ runId: confirmation.runId });
@@ -323,6 +325,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         status: confirmation.status,
         error: confirmation.error,
         prompt: confirmation.prompt,
+        batchPosition: batchPosition ?? null,
         actionLabels: confirmation.actionLabels,
         supersedes: confirmation.supersedes,
         supersededBy: confirmation.supersededBy,

@@ -1,5 +1,5 @@
 import { type AgentContextEvidence } from './AgentContext';
-import { type AgentExecutionMode } from './AgentExecutionMode';
+import { type AgentExecutionMode, type AgentTrustCeiling } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
 import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
@@ -78,7 +78,41 @@ export type AgentRunPlan = {
     stoppingConditions: string[];
     alternatives: AgentRunPlanAlternative[];
     needsUserDecision: boolean;
+    /** Present only when the request expanded past one batch and runs as successive approved batches. */
+    batchSchedule?: AgentRunBatchSchedule;
 };
+
+/** One batch of a schedule: its compiled slice, kept serialized until the run proposes it. */
+export type AgentRunBatchScheduleSlice = {
+    position: number;
+    commandCount: number;
+    targetIds: string[];
+    serializedSlice: string;
+};
+
+/**
+ * The successive batches one request expanded to, each proposed, approved, undone and receipted on
+ * its own. `position` is the 1-based batch the run most recently proposed; the run is not complete
+ * while a later position remains.
+ */
+export type AgentRunBatchSchedule = {
+    schemaVersion: 1;
+    scheduleId: string;
+    position: number;
+    total: number;
+    totalCommands: number;
+    interactionMode: Extract<AgentExecutionMode, 'apply' | 'macro'>;
+    trustCeiling: AgentTrustCeiling | null;
+    /** The provider proposal every batch is planned under, serialized; `null` when there was none. */
+    serializedProviderProposal: string | null;
+    slices: AgentRunBatchScheduleSlice[];
+};
+
+/** Whether a later batch of this run's schedule is still owed, so a committed batch does not complete it. */
+export function hasRemainingScheduledBatches(run: { plan: AgentRunPlan | null }): boolean {
+    const schedule = run.plan?.batchSchedule;
+    return schedule !== undefined && schedule.position < schedule.total;
+}
 
 export type AgentRunPlanStep = {
     order: number;
