@@ -143,6 +143,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: [...SETUP_NODE, 'Run shard', 'Report shard failure'],
+        'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
@@ -188,6 +189,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Validate PR merge diff secret scanner',
             'Scan pull request diff for secrets',
         ],
+        'validation-gate': ['Require selected validation jobs to succeed'],
     },
     'heavy-gates.yml': {
         e2e: [
@@ -323,6 +325,7 @@ const DEPLOY_CRED = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 const DEPLOY_RUN = `${DEPLOY_CRED} && steps.production.outputs.deploy == 'true'`;
 const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'`;
 const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
+const PRODUCT_SCOPE = "needs.decide.outputs.tooling != 'true'";
 
 const pin = (workflow: string, job: string, step: string, condition: string): ConditionalStepPin => ({
     workflow,
@@ -333,6 +336,7 @@ const pin = (workflow: string, job: string, step: string, condition: string): Co
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
+    pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),
     pin('heavy-gates.yml', 'heavy-gate', 'Require selected browser jobs to succeed', ALWAYS_EXPRESSION),
     ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
         (step) => pin('wasm-artifacts.yml', 'build-artifacts', step, WASM_SELECT)
@@ -344,6 +348,16 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         "steps.filter.outcome == 'failure'"
     ),
     pin('validation.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    ...[
+        'App types',
+        'Test types',
+        'End-to-end types',
+        'Desktop shell types',
+        'Command argument schemas',
+        'Test collection scope',
+        'Barrel mock coverage',
+        'Device write boundary census',
+    ].map((step) => pin('validation.yml', 'static', step, PRODUCT_SCOPE)),
     pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),

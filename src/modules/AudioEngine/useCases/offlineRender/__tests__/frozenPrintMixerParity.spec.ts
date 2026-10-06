@@ -96,7 +96,8 @@ function measureLevel({ from, destination, mono = true }: MeasureLevelInput): Si
 
         // A signal connected *into* a node is processed by that node, so the
         // entry node's own gain and pan count. Measuring from the fader node —
-        // where the mixdown attaches a frozen buffer — has to include the fader.
+        // the frozen buffer's replay path runs through it — has to include the
+        // fader.
         let next = signal;
         if (node.__gain) {
             next = { ...next, left: next.left * node.__gain.value, right: next.right * node.__gain.value };
@@ -156,8 +157,13 @@ function withParam(node: HarnessNode, name: string, backing: { value: number }):
 
 const contexts: LevelHarnessContext[] = [];
 
+/** A buffer source the harness handed out; `buffer` is what names it one. */
+type HarnessBufferSource = HarnessNode & { buffer: unknown };
+
 class LevelHarnessContext {
     readonly destination: HarnessNode = createHarnessNode();
+    /** Every buffer source the render created, in creation order. */
+    readonly bufferSources: HarnessBufferSource[] = [];
     currentTime = 0;
 
     constructor(
@@ -184,9 +190,11 @@ class LevelHarnessContext {
         return withParam(createHarnessNode(), 'delayTime', { value: 0 });
     }
 
-    createBufferSource(): HarnessNode {
+    createBufferSource(): HarnessBufferSource {
         const node = withParam(createHarnessNode(), 'playbackRate', { value: 1 });
-        return Object.assign(node, { buffer: null, start: vi.fn(), stop: vi.fn() });
+        const source = Object.assign(node, { buffer: null, start: vi.fn(), stop: vi.fn() });
+        this.bufferSources.push(source);
+        return source;
     }
 
     createOscillator(): HarnessNode {
@@ -275,42 +283,65 @@ function makeTrack(overrides: Partial<Track> = {}): Track {
     };
 }
 
-type RenderedStrip = {
+type StripNodes = {
+    inputNode: HarnessNode;
     preFaderTap: HarnessNode;
     faderNode: HarnessNode;
+};
+
+type RenderedStrip = StripNodes & {
     destination: HarnessNode;
+    /** Every buffer source the render created, in creation order. */
+    bufferSources: HarnessBufferSource[];
+    /** Every strip the render built, in `renderTracks` order. */
+    strips: StripNodes[];
 };
 
 type RunRenderInput = {
     track: Track;
     targetMixer?: 'bake' | 'keepLive';
+    /** Further tracks of the same subgraph, rendered after the target. */
+    extraTracks?: Track[];
 };
 
 /** Render one track and hand back the strip and destination the render used. */
-async function runRender({ track, targetMixer }: RunRenderInput): Promise<RenderedStrip> {
+async function runRender({ track, targetMixer, extraTracks = [] }: RunRenderInput): Promise<RenderedStrip> {
+    const renderTracks = [track, ...extraTracks];
     mocks.builtStrips.length = 0;
     contexts.length = 0;
-    trackStore.set({ tracks: [track], selectedTrackId: null });
+    trackStore.set({ tracks: renderTracks, selectedTrackId: null });
     await renderTrackSubgraphOffline({
         targetTrackId: track.id,
-        renderTracks: [track],
+        renderTracks,
         startBeat: 0,
         endBeat: 4,
         targetMixer,
     });
-    const strip = mocks.builtStrips[0] as RenderedStrip | undefined;
+    const strip = mocks.builtStrips[0] as StripNodes | undefined;
     const context = contexts[0];
     if (!strip || !context) {
         throw new Error('The render built no strip for the target track');
     }
-    return { preFaderTap: strip.preFaderTap, faderNode: strip.faderNode, destination: context.destination };
+    const strips = mocks.builtStrips.map((built) => {
+        const nodes = built as StripNodes;
+        return { inputNode: nodes.inputNode, preFaderTap: nodes.preFaderTap, faderNode: nodes.faderNode };
+    });
+    return {
+        inputNode: strip.inputNode,
+        preFaderTap: strip.preFaderTap,
+        faderNode: strip.faderNode,
+        destination: context.destination,
+        bufferSources: context.bufferSources,
+        strips,
+    };
 }
 
 /**
  * Freeze prints the target strip's output and both playback paths replay that
- * buffer through the very same fader and panner — live attaches it to
- * `preFaderTap`, the mixdown to the fader node. So whatever the print carries
- * of the fader and the pan position is applied a second time on the way out.
+ * buffer through the very same fader and panner, attached at `preFaderTap` —
+ * live and offline alike (#4591), so its pre-fader sends keep their feed. And
+ * whatever the print carries of the fader and the pan position is applied a
+ * second time on the way out.
  */
 describe('frozen print / replay mixer parity', () => {
     beforeEach(async () => {
@@ -391,5 +422,46 @@ describe('frozen print / replay mixer parity', () => {
         // Nothing about the stored pan belongs in the buffer: the panner that
         // imposes it is still in front of the buffer at replay.
         expect(gainToDb(printed.right) - gainToDb(printed.left)).toBeCloseTo(0, 4);
+    });
+
+    // #4591 — live attaches the frozen buffer to the strip's pre-fader tap
+    // (scheduleFrozenTrack), so its pre-fader sends keep feeding their buses.
+    // An offline graph that attaches the buffer downstream of the tap starves
+    // every such bus — and, the track being muted, erases it from the export
+    // while the monitor still plays the return.
+    it('feeds a bus from a frozen take at the pre-fader tap, as live replay does', async () => {
+        // The buffer a replay reads, seeded the way a completed freeze leaves it.
+        const { audioBufferCache } = await import('../../../stores/audioBufferCache');
+        const frozenBuffer = {
+            duration: 2,
+            length: 2 * SAMPLE_RATE,
+            numberOfChannels: 1,
+            sampleRate: SAMPLE_RATE,
+            getChannelData: () => new Float32Array(2 * SAMPLE_RATE),
+        } as unknown as AudioBuffer;
+        audioBufferCache.set('freeze-1', frozenBuffer);
+
+        const replay = await runRender({
+            track: makeTrack({
+                frozen: true,
+                frozenBufferId: 'freeze-1',
+                freezeState: { status: 'frozen', frozenBufferId: 'freeze-1' },
+                sends: [{ busId: 'bus-1', level: 1, preFader: true }],
+            }),
+            extraTracks: [makeTrack({ id: 'bus-1', kind: 'bus' })],
+        });
+
+        const source = replay.bufferSources.find((candidate) => candidate.buffer);
+        if (!source) {
+            throw new Error('The render scheduled no frozen buffer source');
+        }
+        // The buffer enters where its source connected; a unit signal there
+        // must reach the bus input at the send level — the level live delivers
+        // by attaching the buffer to the strip's pre-fader tap. The printed
+        // take is stereo by replay time.
+        const entry = source.__outputs[0]!;
+        const toBus = measureLevel({ from: entry, destination: replay.strips[1]!.inputNode, mono: false });
+        expect(toBus.left).toBeCloseTo(1, 4);
+        expect(toBus.right).toBeCloseTo(1, 4);
     });
 });

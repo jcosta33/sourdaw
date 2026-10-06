@@ -61,17 +61,16 @@
  * strip's automation failing to compile must not silence a session that
  * could otherwise play.
  *
- * Two or more lanes on one device parameter that genuinely overlap cannot all
- * fit the one schedule the extraction's recorder holds
- * (`projectStripAutomationWrites`), so `mergeAutomationSegmentStreams` keeps
- * only the lane latest in lane-array order and reports the rest on the
- * result's `overlaps` field, each overlap naming its withheld lane ids
- * directly — the parameter's entry itself still stands in `entries`, carrying
- * the kept lane's writes. Unlike the malformed-stream case above, an overlap
- * must not silence the rest of the strip either — the fader, pan and every
- * other device parameter still converted. This producer names each withheld
- * lane on its exclusion channel instead, so the exclusion points at the lane
- * a musician would need to fix rather than the strip.
+ * Two or more lanes on one device parameter that genuinely overlap resolve by
+ * the scope law inside `mergeAutomationSegmentStreams` (#4736): a clip-scoped
+ * lane owns every span its clip window covers, a track-level lane owns the
+ * rest, and equal scopes break to the lane latest in lane-array order. The
+ * extraction's recorder holds the one merged stream, the parameter's entry
+ * carries the splice, and nothing is withheld — so the result's `overlaps`
+ * field and this producer's per-lane exclusion channel, which exist for a
+ * lane the merge could not keep, stay silent. Unlike the malformed-stream
+ * case above, an overlap must not silence the rest of the strip either — the
+ * fader, pan and every other device parameter still converted.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';

@@ -107,6 +107,13 @@ export function createSdkProviderPort(input: { apiKey: string; model?: string })
 export const TYPESAFE_SDK_VERSION_FOR_CACHE = TYPESAFE_SDK_VERSION;
 
 /**
+ * The provider's own word for a request past its context window. The SDK builds its error message out
+ * of the response body — and truncates a long one — so the message is what carries the token here; a
+ * body shape the message drops would not match.
+ */
+const REQUEST_TOO_LARGE_PROVIDER_TOKEN = 'max_tokens_exceeded';
+
+/**
  * Normalizes a provider failure into the internal taxonomy. Transient codes may be retried by the
  * adapter; everything else is terminal, including authentication, invalid requests, and aborts.
  */
@@ -124,6 +131,14 @@ export function classifyProviderError(error: unknown): { code: SemanticFailureCo
         return { code: 'timeout', transient: true };
     }
     if (error instanceof BadRequestError || error instanceof UnprocessableEntityError) {
+        // A request past the context window is a per-request size refusal, exactly as the budget
+        // controller's own per-request branch is, and terminal: rerolling the same bytes cannot fit.
+        // This reads the provider's error message, which the SDK fills from the response body and
+        // truncates, so a body the message drops or reshapes degrades back to `invalid_response` — a
+        // less specific code for a real failure, never a wrong one.
+        if (error.message.includes(REQUEST_TOO_LARGE_PROVIDER_TOKEN)) {
+            return { code: 'request_too_large', transient: false };
+        }
         return { code: 'invalid_response', transient: false };
     }
     if (error instanceof NotFoundError) {
@@ -279,9 +294,12 @@ export function createBudgetController(profile: SemanticBudgetProfile): Semantic
                     reason: `total submitted byte budget ${String(profile.maxTotalSubmittedBytes)} exhausted`,
                 };
             }
+            // The two budgets above belong to the run and stop admission when they are spent. This one
+            // belongs to the unit: it says nothing about the bytes and attempts the rest of the plan
+            // still has, so its own code keeps the caller admitting the remaining units.
             if (bytes > profile.maxRequestBytes) {
                 return {
-                    refused: 'budget_exhausted',
+                    refused: 'request_too_large',
                     reason: `request of ${String(bytes)} bytes exceeds the ${String(profile.maxRequestBytes)}-byte request limit`,
                 };
             }
@@ -483,10 +501,13 @@ export async function assessUnit(input: {
     }
 
     const bytes = cachedBytes;
+    // A per-request size limit is a property of this unit, exactly as the controller's own
+    // per-request branch is: the refusal is recorded against the unit and the run keeps its remaining
+    // units assessable, so it must not share the whole-run budget's code.
     const stateBytes = Buffer.byteLength(canonicalBytes({ state: input.state, questions: input.questions }), 'utf8');
     if (stateBytes > input.profile.maxStatePlusQuestionBytes) {
         refuse(
-            'budget_exhausted',
+            'request_too_large',
             `state plus longest question is ${String(stateBytes)} bytes, over the ${String(input.profile.maxStatePlusQuestionBytes)}-byte limit`
         );
     }
@@ -549,7 +570,9 @@ async function attemptWithRetries(input: {
         }
         const remaining = input.deadline - input.now();
         if (remaining <= 0) {
-            refuse('timeout', 'the overall assessment deadline elapsed before the next attempt');
+            // The run's own deadline, not this request's: the caller stops admitting and names the tail
+            // under the deadline, where `timeout` stays what an attempt that overran its own budget is.
+            refuse('deadline_elapsed', 'the overall assessment deadline elapsed before the next attempt');
         }
         const reservation = input.budget.reserve(input.bytes);
         if ('refused' in reservation) {
@@ -587,6 +610,14 @@ async function attemptWithRetries(input: {
                 failureCode: classified.code,
                 bytes: input.bytes,
             });
+            // The attempt is given whatever is left of the deadline when there is less than its own
+            // timeout, so an attempt the clock ended surfaces as the abort or connection error that
+            // truncation produced. The run's clock decides here: filing that unit under `timeout` or
+            // `provider_unavailable` would name its own request as the cause of a run-level stop and hide
+            // the deadline that ended the run.
+            if (input.now() >= input.deadline) {
+                refuse('deadline_elapsed', 'the overall assessment deadline elapsed while the attempt was in flight');
+            }
             if (!classified.transient) {
                 refuse(classified.code, `TypeSafe assessment failed: ${message}`);
             }

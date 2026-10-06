@@ -1,5 +1,9 @@
 # Lesson library: project integrity
 
+## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
+
+`waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
+
 Attack every claim that a project is saved, reopenable, recoverable, or safe to leave. Trace each
 referenced asset from the exact serialized snapshot to the durable bytes and ownership record that
 a fresh runtime will consume. A document commit is insufficient when the document points outside
@@ -163,3 +167,25 @@ selection and comp change, then change canonical clip geometry and require zero-
 Prepare semantic restoration at durable replay time while retaining exact-reference guards inside one synchronous
 publication and compensation. For disappearing fragments, also start with no captured takes, add peer facets afterward,
 and prove only those fragment-owned facets retire; induce a later publication failure and require their exact recovery.
+
+### 2026-09-30 — MIDI transform inverses lacked replay authority (escaped at 64b9d77c01a)
+
+PR #939 (`90953dc23e0`) originated the shared transforms' exact-snapshot inverse and redo before a
+replay guard contract existed. Commit `64b9d77c01a` first required an inverse handler to declare safe
+reapplication during compensated-batch preflight; PR #2747 (`06fb56e3897`) then made
+`restoreMidiClipNotes` admit only guarded replay. Neither integration updated the transform producer,
+so the family could no longer pass compensated-batch preflight even though direct execution and undo
+tests stayed green. No pull-request number is recorded in Git history for `64b9d77c01a`.
+
+For every shared action family that emits a guarded restore, run the registered handler through
+`executeAppActionBatch(..., { requireCompensation: true })`, then prove exact undo and redo against
+the authoritative target. Remove the guard from both replay legs: the atomic case must fail. Initial
+missing, ambiguous, wrong-kind, locked, or frozen topology must reject atomic and direct execution
+before a write, because the direct dispatcher does not use handler validation as an execution gate.
+After commit, independently change notes or make the target missing, moved, wrong-kind, locked, or
+owned by a frozen track; replay must refuse without consuming history or replacing live notes.
+For a guarded clip restore, also duplicate the captured clip ID after commit, both within its owning
+track and on another active track. Undo must keep the original history head and transformed notes;
+after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
+notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
+matching clip in that track.

@@ -1,10 +1,12 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
-import { type AgentRunProviderProposal } from './AgentRun';
+import { type AgentRunBatchSchedule, type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
+import { type MeasuredPreview } from './MeasuredPreview';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
+import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
@@ -37,6 +39,26 @@ export type IntentResult = {
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     /** The immutable record of what this run's delegated request was admitted to mean. */
     creativeAuthority?: CreativeRequestAuthority;
+    /**
+     * The recipe expansions this batch adopted, in adoption order. Every command in the batch is an
+     * ordinary catalog command, so without this record nothing downstream could tell a musician that
+     * a chain came from a named recipe rather than from the provider's hand. Compiler evidence cannot
+     * carry it: that record exists only for a structured list, and an expansion is adopted by
+     * reference beside any form of proposal.
+     */
+    adoptedRecipes?: AdoptedRecipe[];
+    /**
+     * The `analysis.measure` preview the proposal adopted. Its figures reach approval only when the
+     * persisted batch hashes the same as the batch the preview rendered; a batch carrying anything
+     * else would be described by figures of a document other than the one it proposes.
+     */
+    measuredPreview?: MeasuredPreview;
+    /**
+     * Present when the compiled list expanded past one batch: these actions are batch `position` of
+     * the schedule, and the run proposes each later batch only after this one commits. The run's
+     * interaction mode and trust ceiling are bound to it when the plan is recorded.
+     */
+    batchSchedule?: Omit<AgentRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

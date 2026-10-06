@@ -7,15 +7,11 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/ColorPalette';
 import { type Marker } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
-import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
-import { moveMarker } from '../../useCases/marker/markerOperations/moveMarker';
-import { removeMarker } from '../../useCases/marker/markerOperations/removeMarker';
-import { renameMarker } from '../../useCases/marker/markerOperations/renameMarker';
-import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
@@ -134,7 +130,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
 
         const handleMouseUp = () => {
             if (lastBeat !== originalBeat) {
-                moveMarker(marker.id, lastBeat);
+                void executeUserAppAction({ type: 'moveMarker', payload: { markerId: marker.id, beat: lastBeat } });
             }
             dragRef.current = null;
             setDragPreview(null);
@@ -175,7 +171,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         }
 
         const beat = Math.floor(contextMenu.beat); // Snap to beat
-        addMarker(beat, 'New Marker');
+        void executeUserAppAction({ type: 'addMarker', payload: { beat, name: 'New Marker' } });
         setContextMenu({ kind: 'none' });
     };
 
@@ -183,7 +179,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         if (contextMenu.kind !== 'marker') {
             return;
         }
-        removeMarker(contextMenu.marker.id);
+        void executeUserAppAction({ type: 'removeMarker', payload: { markerId: contextMenu.marker.id } });
         setContextMenu({ kind: 'none' });
     };
 
@@ -201,7 +197,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         }
         const trimmed = editing.name.trim();
         if (trimmed) {
-            renameMarker(editing.markerId, trimmed);
+            void executeUserAppAction({ type: 'renameMarker', payload: { markerId: editing.markerId, name: trimmed } });
         }
         setEditing(null);
     };
@@ -306,7 +302,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                         key={context}
                                         color={context}
                                         onClick={() => {
-                                            setMarkerColor(contextMenu.marker.id, context);
+                                            void executeUserAppAction({
+                                                type: 'setMarkerColor',
+                                                payload: { markerId: contextMenu.marker.id, color: context },
+                                            });
                                             setContextMenu({ kind: 'none' });
                                         }}
                                         aria-label={`Set color ${context}`}

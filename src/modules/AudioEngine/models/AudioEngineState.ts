@@ -115,6 +115,15 @@ export type AudioEngineDeviceReadinessDiagnostics = {
     }>;
 };
 
+export type AudioDeviceWaitResult = Readonly<{
+    status: 'ready' | 'failed' | 'cancelled';
+    devices: readonly Readonly<{
+        deviceId: string;
+        status: 'ready' | 'failed' | 'cancelled';
+        stage: 'node' | 'graph' | 'content' | 'runtime' | null;
+    }>[];
+}>;
+
 export type AudioProcessorLifecycleState = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
 
 export type AudioEngineDiagnostics = {
@@ -204,11 +213,11 @@ export type DeviceController = {
     noteOff?(note: number, sampleFrame?: number): void;
     allNotesOff?(): void;
     reset?(): void;
-    handleCc?(cc: number, value: number): void;
+    handleCc?(cc: number, value: number, sampleFrame?: number): void;
     setPadParam?(pad: number, name: string, value: number): void;
-    setSustain?(position: number): void;
-    setUnaCorda?(engaged: boolean): void;
-    setSostenuto?(engaged: boolean): void;
+    setSustain?(position: number, sampleFrame?: number): void;
+    setUnaCorda?(engaged: boolean, sampleFrame?: number): void;
+    setSostenuto?(engaged: boolean, sampleFrame?: number): void;
     noteOnMidi2?(midiNote: number, velocity16bit: number, pitchOffsetQ24: number): void;
     setTemperament?(index: number): void;
     updateState?(clips: Record<string, unknown>): void;
@@ -318,9 +327,9 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         setParam: (name: string, value: number, sampleFrame?: number) => void;
-        setSustain: (position: number) => void;
-        setUnaCorda: (engaged: boolean) => void;
-        setSostenuto: (engaged: boolean) => void;
+        setSustain: (position: number, sampleFrame?: number) => void;
+        setUnaCorda: (engaged: boolean, sampleFrame?: number) => void;
+        setSostenuto: (engaged: boolean, sampleFrame?: number) => void;
         noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
         setTemperament: (index: number) => void;
         allNotesOff: () => void;
@@ -368,7 +377,7 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         allNotesOff: () => void;
-        handleCc: (cc: number, value: number) => void;
+        handleCc: (cc: number, value: number, sampleFrame?: number) => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
@@ -589,7 +598,7 @@ export type AudioEngine = {
     refreshSidechainAlignment(
         keyDelayFor: (route: { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }) => number
     ): void;
-    waitForDevices(): Promise<void>;
+    waitForDevices(): Promise<AudioDeviceWaitResult>;
     /**
      * Publish the playhead to the worklet readers. `positionSeconds` is the same
      * instant as `beat`, integrated through the tempo map by the caller that

@@ -56,8 +56,51 @@ carries it in addition.
   directions, because a shape it wrongly refuses is a command that cannot run and a shape it wrongly
   accepts is a check that did not happen; a case that pins the refused forms states the bound and
   hands the fix off, it does not close the defect.
+- Where a component decides whether a downstream consumer will accept its output — a reservation, a
+  quota, a fitted payload, a receipt — measure the admitted unit with the _consumer's_ own
+  expression, re-derived from the consumer's source. Two expressions of one budget stay
+  self-consistent for as long as each is tested against itself, and the divergence shows up as a
+  refusal at the consumer that the producer believes it paid for.
+- For every refusal a change adds or moves, state which units it stops and which reason each stopped
+  unit records. A failure that is a property of one unit but is read as a property of the run
+  reports every later unit under a cause that never happened, and the volume of that report hides
+  the single unit that actually failed.
 
 ## Lessons from escapes
+
+### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
+
+The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
+
+Probe: drive real decoded-file completions to every captured consumer at 39/161 just before the old deadline, then finish all 161 and require five worklet-acknowledged ready results without rollback. In the same fixture, leave one peer stalled for its own full inactivity window while another progresses, and require only the stalled peer to fail. Hold the final worklet acknowledgement to prove decoded completion alone never means ready; make a committed template report current failure without changing project identity, while obsolete cancellation stays silent.
+
+### 2026-09-28 — browser exception and validation scope disagreed (escaped via PR #4854)
+
+PR #4854 exempted known review tooling and agent documentation from browser selection, but did not
+carry that classification into the independent validation path filter. A semantic-review-only PR
+therefore selected the complete browser matrix: `scripts/**` claimed web work and an `.agents/*.md`
+lesson entered the unclassified fallback, promoting Rust, server and web checks as well.
+
+Blind spot: the review proved the browser selector in isolation and did not trace the same path list
+through the validation workflow's job conditions. Probe: feed a real mixed review-tooling and agent-doc
+diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
+cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
+
+PR #4902 exposed the same omission one level earlier: four changed delivery and review helper paths
+were absent from the explicit tooling-name set, so the browser selector classified them as product
+work even though the validation workflow correctly ran the script suite for a tooling plan. Blind
+spot: the review verified the registered names without tracing every path in a real change through
+the classifier. Probe: classify the full changed-path set, including root specs and helpers, and
+require tooling-only paths to retain CodeQL and the tooling suite while mixed, unknown, lookalike,
+and rename paths remain broad.
+
+### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
+
+PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at an upper bound of thirteen fitted regions (the overage is `22 − fittedRegions` only when the fitter left no slack, so any slack lowers the count) — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the oversized unit's own refusal began the cascade: the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported 37 unassessed, 36 as `budget-exhausted-before-admission` plus the oversized unit itself under `budget_exhausted`.
+
+Blind spot: review checked the reservation's arithmetic and each refusal's code in isolation. Nothing measured a planned unit with the sender's own expression, and nothing asked which units a refusal stops or whether the reason it records names what happened — so two self-consistent expressions, and a per-unit failure reported as run-wide exhaustion, survived every round until someone ran the command against a real pull request and read the report's own arithmetic.
+
+Probe that would have caught it: plan the change under review, then measure the deepest unit the planner admits with the provider's own expression (`JSON.stringify({state, questions})`) against the profile's own ceiling — a positive overage is the finding, and the fitted-region count that produces it is the reproduction to keep. Then drive a plan whose middle unit trips each refusal and assert which units are never attempted and what reason each records.
 
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
@@ -78,8 +121,8 @@ filer measured 4 planned units and 16 references against the merge base `9650425
 collected spec's unit as `no-admissible-evidence`. Disabling only the `specCovered` arm of
 `admissionTier` restored the merge base's units, so the promotion was the cause. The blind draw
 measured the reallocation and the approved head disclosed it as a limitation instead of reopening the
-ordering, so the defect reached `main`; at `ci` (1 MiB total) the two revisions' sets are identical,
-which is why the assessed diff never showed it.
+ordering, so the defect reached `main`; at `ci`, whose total did not bind on that fixture, the two
+revisions' sets are identical, which is why the assessed diff never showed it.
 
 Blind spot: the review's stances attacked the promotion's own direction — a spec outranking the
 source it covers — and pinned that pairwise order, but none asked what the new rank does to the
@@ -416,3 +459,29 @@ cannot be reproduced in a reference DAW is a finding unless a decision record na
 difference. Then quantize the output a second time: a destructive quantize must leave its own output
 in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
 an offset.
+
+### 2026-09-29 — Faust compiler upgrade exposed a throwing optional-effect probe (introduced by PR #4904; fixed in #4916)
+
+The FaustWasm 0.18.5 poly generator compiled `dsp_code.effect` before a voice even when the registered instrument had no effect. Libfaust threw `undefined symbol : effect`, and its generated Emscripten runtime printed an abort assertion before the generator caught the error and compiled the voice successfully. The upgrade review's runtime-instantiation stance checked node creation but missed this compiler input and its console consequence.
+
+Probe that would have caught it: for a compiler or DSP runtime upgrade, trace every factory input for one declared effect-free poly voice, one effectful voice, and one mono source. Require the effect-free route to compile its voice without a failed optional-effect factory, while the effectful route still compiles its effect and the resulting instrument still emits PCM after `keyOn`.
+
+### 2026-09-30 — a widened join tolerance admitted the simultaneous notes it was never meant to rank (introduced in 6fa76ee35e; fixed in the #4860 repair)
+
+The bulk MIDI remediation commit widened `joinNotes`' run-extension tolerance from a fixed 0.001 to `gridSize/8` to absorb humanize and partial-quantize jitter. The predicate `|previous end − next start| ≤ tolerance` never asked whether the next note starts after the previous one begins, so two same-pitch notes stacked on the same beat — durations 0.1 and 1 on the default 1-beat grid — satisfied `0.1 ≤ 0.125` and joined into one note, silently discarding the second note's scalars and curves. The old constant was small enough that only genuine continuations passed, so the widening changed which population the predicate admits, not just its margin.
+
+Blind spot: the remediation's review tested the tolerance against the cases that motivated it — jitter gaps and genuine rests — and never enumerated what the old value refused that the new one accepts.
+
+Probe that would have caught it: for any widening of a tolerance or threshold on an admission predicate, construct an input inside the newly admitted band and outside every case the change names — here two same-pitch notes sharing `startBeat` whose first duration sits under the new tolerance — and require the changed behavior for it to be stated. A band a widening adds is a behavior change in its own right.
+### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
+
+The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector
+closed each open argument object with no properties. A provider could not produce a valid `addDevice`
+proposal even though the application compiler accepted it. The earlier review checked projection
+keywords and flags without passing one real registered command through the outbound wire and back.
+
+Probe that would have caught it: take a current discovered command with nonempty arguments, inspect
+the actual provider advertisement for both primitive and semantic-list proposal forms, then return
+each through the common provider admission and canonical decoder. Verify the proposal reaches the
+normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
+and local WebLLM control so wire repair does not change their canonical arguments.

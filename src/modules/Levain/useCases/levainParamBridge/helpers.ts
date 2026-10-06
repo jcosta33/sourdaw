@@ -86,6 +86,10 @@ type LevainWriteTarget = { trackId: string; deviceId: string };
 export function createLevainBridge(deps: LevainBridgeDeps) {
     const activeDevices = new Map<string, LevainDevice>();
     const activePorts = new Map<string, MessagePort>();
+    const registrationProgress = new Map<
+        string,
+        { port: MessagePort; report: (epoch: number, progress: number) => void }
+    >();
     // Per-device load cancellation. A new instrument load for a device aborts
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
@@ -281,7 +285,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         publishLoadedMicPositions(deviceId);
 
         const controller = new AbortController();
-        const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
+        const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal, (progress) => {
+            const observer = registrationProgress.get(deviceId);
+            if (
+                observer?.port !== port ||
+                controller.signal.aborted ||
+                latestLoadState.get(deviceId)?.sequence !== sequence
+            ) {
+                return;
+            }
+            observer.report(sequence, progress);
+        });
         const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
             (micPositions) => {
                 // A resolved (non-null) bank is already committed in the
@@ -349,7 +363,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     function registerLevainDevice(
         deviceId: string,
         device: LevainDevice,
-        port?: MessagePort
+        port?: MessagePort,
+        onProgress?: (epoch: number, progress: number) => void
     ): Promise<LevainSampleLoadOutcome> {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
@@ -358,8 +373,14 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         activeDevices.set(deviceId, device);
         let contentSettlement: Promise<LevainSampleLoadOutcome> = Promise.resolve('failed');
+        const progressObserver = onProgress && port ? { port, report: onProgress } : undefined;
         if (port) {
             activePorts.set(deviceId, port);
+            if (progressObserver) {
+                registrationProgress.set(deviceId, progressObserver);
+            } else {
+                registrationProgress.delete(deviceId);
+            }
             // Seed a store entry on first registration so newly-added devices get
             // their instrument's samples loaded — without this the worklet has no
             // zones and produces silence until the user opens the panel and changes
@@ -380,12 +401,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             }
             contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
         }
-        return contentSettlement;
+        return contentSettlement.finally(() => {
+            if (registrationProgress.get(deviceId) === progressObserver) {
+                registrationProgress.delete(deviceId);
+            }
+        });
     }
 
     function unregisterLevainDevice(deviceId: string): void {
         activeDevices.delete(deviceId);
         activePorts.delete(deviceId);
+        registrationProgress.delete(deviceId);
         // Cancel any in-flight sample load so it can't write back to a store
         // entry we're about to delete (the store mutators also no-op on a
         // missing device, but cancelling avoids the wasted decode work).

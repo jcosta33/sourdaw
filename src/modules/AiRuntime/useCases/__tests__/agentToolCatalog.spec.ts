@@ -14,6 +14,7 @@ import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
 } from '../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -195,6 +196,38 @@ describe('agent tool catalog', () => {
         });
     });
 
+    it('publishes a recipe-expansion contract with a closed key set and bounded values', () => {
+        const roles = getMixRecipeCatalog().roles;
+        const expansionSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === RECIPE_EXPANSION_TOOL_NAME
+        );
+
+        expect(expansionSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                recipeId: { type: 'string', minLength: 1, maxLength: 64 },
+                targetId: { type: 'string', minLength: 1, maxLength: 256 },
+                role: { type: 'string', enum: [...roles] },
+                values: {
+                    type: 'array',
+                    maxItems: 16,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            step: { type: 'integer', minimum: 0, maximum: 15, description: expect.any(String) },
+                            paramId: { type: 'string', minLength: 1, maxLength: 64 },
+                            value: { type: 'number', description: expect.any(String) },
+                        },
+                        required: ['step', 'paramId', 'value'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            required: ['recipeId', 'targetId'],
+            additionalProperties: false,
+        });
+    });
+
     it('publishes the device-manifest read contract with the shared parameter page limit and cursor grammar', () => {
         const manifestSchema = getAgentToolCatalogSchemas().find(
             (schema) => schema.function.name === AGENT_DEVICE_MANIFEST_TOOL_NAME
@@ -218,7 +251,8 @@ describe('agent tool catalog', () => {
                     additionalProperties: false,
                 },
             },
-            required: ['types'],
+            // `types` is optional since #4371: a call with no arguments lists the device catalogue.
+            required: [],
             additionalProperties: false,
         });
     });
@@ -266,6 +300,7 @@ describe('agent tool catalog', () => {
             'agent.capabilities',
             'agent.catalog.discover',
             'agent.command-index.search',
+            'transform.compile',
             'device.factory-manifest.read',
             'command.batch.propose',
             'command.batch.decline',
@@ -273,7 +308,9 @@ describe('agent tool catalog', () => {
             'render.request',
             'analysis.request',
             'analysis.measure',
+            'analysis.compareReference',
             'recipe.discover',
+            'recipe.expand',
         ]);
 
         vi.mocked(generateToolPlanningOutcome)
@@ -312,6 +349,10 @@ describe('agent tool catalog', () => {
         expect(firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'agent.catalog.discover')).toBe(
             true
         );
+        // The reference comparison is published to the planner only while the user has loaded one.
+        expect(
+            firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'analysis.compareReference')
+        ).toBe(false);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('catalog-1');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });

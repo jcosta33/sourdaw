@@ -74,7 +74,7 @@ import {
     resolveContentRoots,
 } from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
-import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
+import { createRendererSessionLifecycle, isRendererReplacingNavigation } from './rendererSessionLifecycle.js';
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
@@ -161,6 +161,11 @@ const rendererSessionQuiescer = createRendererSessionQuiescer(
 );
 
 const createAndActivateWindow = (): BrowserWindow => {
+    // A new renderer session begins here, before anything can load into the
+    // window: every retrospective arm the previous renderer left in flight is
+    // stale from this moment, so it can never land over its successor's
+    // startup disarm (#4752).
+    nativeHost?.beginRendererSession();
     rendererSessionLifecycle.startWindow();
     closeSessionQuiescedWindow = undefined;
     const window = createWindow();
@@ -439,6 +444,24 @@ const createWindow = (): BrowserWindow => {
         });
     });
     attachWebContentsPolicy(window);
+    // A reload replaces this window's renderer without replacing the window,
+    // so the session begun at creation does not cover it. The bump belongs at
+    // the commit of the replacing navigation: module evaluation — dynamic
+    // imports included — does not hold the load event, so the incoming
+    // renderer's startup disarm can settle while the load is still in flight,
+    // and an arm the outgoing page left must already be stale when that
+    // happens (#4752). Commit is also the first evidence a vetoed navigation
+    // cannot produce: `did-start-navigation` fires before the cancellable
+    // navigation events and cannot itself be cancelled, so a navigation this
+    // shell vetoes at `will-navigate` never reaches `did-navigate` — bumping
+    // there stamped a replacement that never happened. The event is inherently
+    // main-frame and cross-document: sub-frame completions report through
+    // `did-frame-navigate`, same-document ones through `did-navigate-in-page`.
+    window.webContents.on('did-navigate', (_event, url, httpResponseCode, httpStatusText) => {
+        if (isRendererReplacingNavigation({ url, httpResponseCode, httpStatusText })) {
+            nativeHost?.beginRendererSession();
+        }
+    });
     void window.loadURL(entryUrl);
     destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(
         window,

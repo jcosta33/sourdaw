@@ -128,4 +128,9 @@ export type OfflineRenderOptions = {
     onProgress?: (fraction: number) => void;
     /** Called when a non-fatal issue is detected (e.g. missing audio buffer). */
     onWarning?: (message: string) => void;
+    /**
+     * Stops this render alone. Unlike `cancelExport`, it never raises the process-wide cancel flag,
+     * so a freeze or bounce running beside this render is not failed by it.
+     */
+    abortSignal?: AbortSignal;
 };

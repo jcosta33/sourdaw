@@ -19,12 +19,29 @@ type ApprovalDestructiveChange = {
     recovery: string;
 };
 
+type MeasuredFigure = { value: number; unit: string } | null;
+
+type MeasuredPreviewTarget = {
+    targetId: string;
+    targetKind: string;
+    targetName: string | null;
+    metrics: readonly {
+        metricId: string;
+        baseline: MeasuredFigure;
+        preview: MeasuredFigure;
+        delta: { value: number; unit: string } | null;
+        incomparableReason: string | null;
+    }[];
+};
+
 /** The approval-projection fields this section renders, as a leaf-owned structural shape. */
 type AgentApprovalView = {
     confirmationId: string;
     status: string;
     error: string | null;
     prompt: string;
+    /** Which of the run's successive batches this is, or `null` when the request fits one batch. */
+    batchPosition: { index: number; total: number } | null;
     actionLabels: readonly string[];
     scope: {
         targetIds: readonly string[];
@@ -32,6 +49,8 @@ type AgentApprovalView = {
         protectedRanges: readonly unknown[];
     };
     risk: { level: string; decision: string; reasons: readonly string[]; requiredTrustMode: string } | null;
+    recipes: readonly { recipeId: string; title: string; targetId: string; targetName: string | null }[];
+    measuredPreview: { targets: readonly MeasuredPreviewTarget[] } | null;
     intentGroups: readonly ApprovalIntentGroup[];
     destructiveChanges: readonly ApprovalDestructiveChange[];
     partialAcceptance: { available: boolean; reason: string | null };
@@ -158,6 +177,62 @@ function renderScope(scope: AgentApprovalView['scope']): ReactElement {
     );
 }
 
+function renderRecipes(recipes: AgentApprovalView['recipes']): ReactElement | null {
+    if (recipes.length === 0) {
+        return null;
+    }
+    return (
+        <ul aria-label="Adopted recipes" className="flex flex-col gap-0.5 text-foreground">
+            {recipes.map((recipe, index) => (
+                <li key={`${recipe.recipeId}-${recipe.targetId}-${index}`}>
+                    {`Recipe: ${recipe.title} on ${recipe.targetName ?? 'a track no longer in the project'}`}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+function formatFigure(figure: MeasuredFigure): string {
+    return figure === null ? 'n/a' : `${figure.value.toFixed(2)} ${figure.unit}`;
+}
+
+function formatMeasuredMetric(metric: MeasuredPreviewTarget['metrics'][number]): string {
+    if (metric.delta === null) {
+        return `${metric.metricId}: not comparable (${metric.incomparableReason ?? 'unavailable'})`;
+    }
+    const sign = metric.delta.value > 0 ? '+' : '';
+    return `${metric.metricId}: ${formatFigure(metric.baseline)} → ${formatFigure(metric.preview)} (${sign}${metric.delta.value.toFixed(2)} ${metric.delta.unit})`;
+}
+
+function measuredTargetName(target: MeasuredPreviewTarget): string {
+    if (target.targetName !== null) {
+        return target.targetName;
+    }
+    return target.targetKind === 'master' ? 'Master' : target.targetId;
+}
+
+/** Each measured target's figures before and after the proposal, with the signed change and its unit. */
+function renderMeasuredPreview(measuredPreview: AgentApprovalView['measuredPreview']): ReactElement | null {
+    if (measuredPreview === null) {
+        return null;
+    }
+    return (
+        <Stack gap={0.5} aria-label="Measured preview">
+            {measuredPreview.targets.map((target) => (
+                <ul
+                    key={target.targetId}
+                    aria-label={`Measured preview of ${measuredTargetName(target)}`}
+                    className="flex flex-col gap-0.5 text-foreground"
+                >
+                    {target.metrics.map((metric) => (
+                        <li key={metric.metricId}>{formatMeasuredMetric(metric)}</li>
+                    ))}
+                </ul>
+            ))}
+        </Stack>
+    );
+}
+
 function renderRisk(risk: AgentApprovalView['risk']): ReactElement {
     if (risk === null) {
         return <p className="text-muted-foreground">Risk: unclassified</p>;
@@ -271,11 +346,18 @@ const ApprovalCard = ({
     return (
         <Stack gap={1} className="rounded border border-border/60 bg-surface-raised/80 p-2 text-xs">
             <p className="text-foreground">{view.prompt}</p>
+            {view.batchPosition === null ? null : (
+                <p className="text-muted-foreground">
+                    {`Batch ${String(view.batchPosition.index)} of ${String(view.batchPosition.total)}`}
+                </p>
+            )}
             <ul aria-label="Proposed actions" className="list-inside list-disc text-foreground">
                 {view.actionLabels.map((label) => (
                     <li key={label}>{label}</li>
                 ))}
             </ul>
+            {renderRecipes(view.recipes)}
+            {renderMeasuredPreview(view.measuredPreview)}
             {renderScope(view.scope)}
             {renderRisk(view.risk)}
             {renderIntentGroups(view, excludedGroupIds, onToggleGroup)}

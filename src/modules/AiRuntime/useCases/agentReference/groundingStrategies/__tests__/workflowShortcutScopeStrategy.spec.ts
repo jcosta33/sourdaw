@@ -38,6 +38,11 @@ function track(overrides: Partial<ProjectContextTrack> & { id: string; name: str
     };
 }
 
+// The role the context producer derives from a track's name; the workflow scopes read it, not the name.
+function nameDerivedRole(role: string): NonNullable<ProjectContextTrack['canonicalRole']> {
+    return { role, source: 'name-tags', evidence: 'name-tokens' };
+}
+
 function context(tracks: ProjectContextTrack[]): ProjectContext {
     return {
         tempo: 120,
@@ -65,8 +70,8 @@ function context(tracks: ProjectContextTrack[]): ProjectContext {
 const drumRoutingContext = context([
     track({ id: 'bus-drum', name: 'Drum Bus', kind: 'bus' }),
     track({ id: 'bus-parallel', name: 'Parallel Compression', kind: 'bus' }),
-    track({ id: 'track-kick', name: 'Kick', outputId: 'master' }),
-    track({ id: 'track-snare', name: 'Snare', outputId: 'master' }),
+    track({ id: 'track-kick', name: 'Kick', outputId: 'master', canonicalRole: nameDerivedRole('kick') }),
+    track({ id: 'track-snare', name: 'Snare', outputId: 'master', canonicalRole: nameDerivedRole('snare') }),
 ]);
 
 const drumRoutingArguments = [

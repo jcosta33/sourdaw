@@ -93,11 +93,17 @@ function bridge(
 
 describe('compiler graph alignment', () => {
     it('rejects a same-type EX-03 canonical reorder instead of reassigning compiler dependency indexes', () => {
-        const bass = createTrack({
-            id: 'track-bass',
-            name: 'Bass',
-            devices: [{ id: 'device-bass-distortion', name: 'Bass Distortion', type: 'distortion', bypassed: false }],
-        });
+        // The role the context producer derives from the name "Bass"; the bass-copy scope reads it, not the name.
+        const bass: ProjectTrack = {
+            ...createTrack({
+                id: 'track-bass',
+                name: 'Bass',
+                devices: [
+                    { id: 'device-bass-distortion', name: 'Bass Distortion', type: 'distortion', bypassed: false },
+                ],
+            }),
+            canonicalRole: { role: 'bass', source: 'name-tags', evidence: 'name-tokens' },
+        };
         const context: ProjectContext = {
             ...projectContext,
             sections: [
@@ -2918,6 +2924,889 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(frozen.rejections).toEqual([
             { index: 0, name: 'addClip', reason: 'A bound creation must declare one typed created object' },
         ]);
+    });
+
+    it.each([
+        {
+            name: 'exact requested notes',
+            notes: [
+                [60, 0],
+                [67, 1],
+            ],
+            allowed: true,
+        },
+        {
+            name: 'changed pitch',
+            notes: [
+                [61, 0],
+                [67, 1],
+            ],
+            allowed: false,
+        },
+        {
+            name: 'changed beat',
+            notes: [
+                [60, 0],
+                [67, 2],
+            ],
+            allowed: false,
+        },
+        {
+            name: 'extra note',
+            notes: [
+                [60, 0],
+                [67, 1],
+                [72, 2],
+            ],
+            allowed: false,
+        },
+    ])('grounds a created clip note phrase by exact pitch and beat: $name', ({ notes, allowed }) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: notes.map(([pitch, startBeat]) => ({ pitch, startBeat, duration: 1, velocity: 90 })),
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0 and G4 at beat 1',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions.map((action) => action.type)).toEqual(allowed ? ['addTrack', 'addClip', 'addNotes'] : []);
+        expect(result.rejections.length === 0).toBe(allowed);
+    });
+
+    it.each([
+        {
+            name: 'quoted note-like label',
+            prompt: 'Create a MIDI track named Lead with a four-beat Melody clip, label it "add C4 at beat 0 and G4 at beat 1"',
+        },
+        {
+            name: 'requested empty clip',
+            prompt: 'Create a MIDI track named Lead with an empty MIDI clip named Melody from beat 0 to beat 4, add C4 at beat 0 and G4 at beat 1',
+        },
+    ])('refuses notes when literal content is not authorized: $name', ({ prompt }) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: [
+                            { pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+                            { pitch: 67, startBeat: 1, duration: 1, velocity: 90 },
+                        ],
+                    },
+                },
+            ],
+            prompt,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.length).toBeGreaterThan(0);
+    });
+
+    it('refuses a literal note phrase when a project clip has the same name as the new clip', () => {
+        const existingMelody = {
+            id: 'clip-existing-melody',
+            name: 'Melody',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 4,
+            noteCount: 0,
+        };
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$melody',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0',
+            {
+                ...projectContext,
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-existing', name: 'Existing', kind: 'midi' }),
+                        clips: [existingMelody],
+                        clipCount: 1,
+                    },
+                ],
+            }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'addNotes' })]);
+    });
+
+    it('refuses an ambiguous new-track anaphora after two track creations', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$lead',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on that new track from beat 0 to beat 4',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(expect.objectContaining({ index: 2, name: 'addClip' }));
+    });
+
+    it.each(['Missing', 'Lead Pad'])('refuses an explicit unresolved clip parent %s', (ownerName) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+            ],
+            `Create a MIDI track named Lead; add a MIDI clip named Melody on ${ownerName} from beat 0 to beat 4`,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 1,
+                name: 'addClip',
+                reason: 'Batch-local parent is not unambiguously grounded in the user request',
+            })
+        );
+    });
+
+    it('does not let a device on the directly preceding new track move to an earlier new track', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Reference', kind: 'audio', binding: 'reference' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+            ],
+            'Create an audio track named Lead; create an audio track named Reference and add a Filter to it',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [] }],
+            }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 2,
+                name: 'addDevice',
+                reason: expect.stringContaining('not unambiguously grounded'),
+            })
+        );
+    });
+
+    it('keeps a device on the new track directly attached to the request clause', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Reference', kind: 'audio', binding: 'reference' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$reference', deviceType: 'builtin-filter', binding: 'filter' },
+                },
+            ],
+            'Create an audio track named Lead; create an audio track named Reference and add a Filter to it',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [] }],
+            }
+        );
+        const referenceId = (result.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addTrack'
+        )[1]?.trackId;
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { trackId: referenceId } });
+    });
+
+    it('refuses to borrow an ordering anchor owner as the new device parent', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; create an audio track named Bass; add a Filter to the new Lead track; add a Compressor to the new Bass track after the Filter on the new Lead track',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [
+                    { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                    { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+                ],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 3,
+                name: 'addDevice',
+                reason: 'Batch-local parent is not unambiguously grounded in the user request',
+            })
+        );
+    });
+
+    it('keeps an ordering anchor on the same requested new track', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            {
+                ...projectContext,
+                tracks: [],
+                availableDeviceTypes: [
+                    { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                    { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+                ],
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addDevice', 'addDevice']);
+        const firstDeviceId = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addDevice'
+        )?.deviceId;
+        expect(result.actions[2]).toMatchObject({ type: 'addDevice', payload: { afterDeviceId: firstDeviceId } });
+    });
+
+    it('scopes a requested insertion anchor to the named parent across ordinary and semantic-list proposals', () => {
+        const prompt =
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track';
+        const calls = [
+            { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'lead-filter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'lead-limiter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: '$lead',
+                    deviceType: 'builtin-compressor',
+                    binding: 'lead-compressor',
+                    afterDeviceId: '$lead-filter',
+                },
+            },
+            { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-filter', binding: 'bass-filter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-limiter', binding: 'bass-limiter' },
+            },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$bass', deviceType: 'builtin-compressor', binding: 'bass-compressor' },
+            },
+        ];
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const route = (
+            items: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
+            structured: boolean,
+            request = prompt
+        ) => {
+            if (!structured) {
+                return bridge(items, request, context);
+            }
+            const compiled = compileArbitraryCommandList({
+                context,
+                revision: 'revision-two-track-order',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: request,
+                                constraints: [],
+                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: items.map((call, index) => ({
+                                    id: `item-${String(index)}`,
+                                    name: call.name,
+                                    arguments: call.arguments,
+                                    ...(index === 0 ? {} : { dependsOn: [`item-${String(index - 1)}`] }),
+                                })),
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            return bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context,
+                projectRevision: 'revision-two-track-order',
+                prompt: request,
+            });
+        };
+        for (const structured of [false, true]) {
+            const correct = route(calls, structured);
+            expect(correct.rejections).toEqual([]);
+            expect(correct.actions).toHaveLength(8);
+            const invented = route(
+                calls.map((call, index) =>
+                    index === 7 ? { ...call, arguments: { ...call.arguments, afterDeviceId: '$bass-filter' } } : call
+                ),
+                structured
+            );
+            expect(invented.actions).toEqual([]);
+            expect(invented.rejections).toContainEqual(expect.objectContaining({ index: 7, name: 'addDevice' }));
+
+            const laterAnchorRequest =
+                'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track; create an audio track named Bass; add a Filter to the new Bass track; add a Limiter to the new Bass track; add a Compressor to the new Bass track after the Filter';
+            const laterAnchorCalls = calls.map((call, index) => {
+                if (index === 3) {
+                    return {
+                        name: 'addDevice',
+                        arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'lead-compressor' },
+                    };
+                }
+                if (index === 7) {
+                    return { ...call, arguments: { ...call.arguments, afterDeviceId: '$bass-filter' } };
+                }
+                return call;
+            });
+            const correctLater = route(laterAnchorCalls, structured, laterAnchorRequest);
+            expect(correctLater.rejections).toEqual([]);
+            expect(correctLater.actions).toHaveLength(8);
+            const borrowed = route(
+                laterAnchorCalls.map((call, index) =>
+                    index === 3 ? { ...call, arguments: { ...call.arguments, afterDeviceId: '$lead-filter' } } : call
+                ),
+                structured,
+                laterAnchorRequest
+            );
+            expect(borrowed.actions).toEqual([]);
+            expect(borrowed.rejections).toContainEqual(expect.objectContaining({ index: 3, name: 'addDevice' }));
+        }
+    });
+
+    it('refuses a device that omits the requested after anchor behind another device', () => {
+        const calls = [
+            { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+            { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'limiter' } },
+            {
+                name: 'addDevice',
+                arguments: { trackId: '$lead', deviceType: 'builtin-compressor', binding: 'compressor' },
+            },
+        ];
+        const prompt =
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track';
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const ordinary = bridge(calls, prompt, context);
+        const unbound = bridge(
+            calls.map((call, index) =>
+                index === 3
+                    ? { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-compressor' } }
+                    : call
+            ),
+            prompt,
+            context
+        );
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-ordered-devices',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: prompt,
+                            constraints: [],
+                            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: calls.map((call, index) => ({
+                                id: `item-${String(index)}`,
+                                name: call.name,
+                                arguments: call.arguments,
+                                ...(index === 0 ? {} : { dependsOn: [`item-${String(index - 1)}`] }),
+                            })),
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        const structured = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: 'revision-ordered-devices',
+            prompt,
+        });
+        for (const result of [ordinary, structured, unbound]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual(expect.objectContaining({ index: 3, name: 'addDevice' }));
+        }
+    });
+
+    it('refuses a wrong or ambiguous created-device ordering anchor', () => {
+        const context = {
+            ...projectContext,
+            tracks: [],
+            availableDeviceTypes: [
+                { id: 'builtin-filter', name: 'Filter', parameters: [] },
+                { id: 'builtin-limiter', name: 'Limiter', parameters: [] },
+                { id: 'builtin-compressor', name: 'Compressor', parameters: [] },
+            ],
+        };
+        const wrongAnchor = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                { name: 'addDevice', arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-limiter', binding: 'limiter' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$limiter',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add a Limiter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            context
+        );
+        const ambiguousAnchor = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-one' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-two' },
+                },
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: '$lead',
+                        deviceType: 'builtin-compressor',
+                        afterDeviceId: '$filter-one',
+                        binding: 'compressor',
+                    },
+                },
+            ],
+            'Create an audio track named Lead; add a Filter to the new Lead track; add another Filter to the new Lead track; add a Compressor to the new Lead track after the Filter on the new Lead track',
+            context
+        );
+        for (const result of [wrongAnchor, ambiguousAnchor]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toContainEqual(
+                expect.objectContaining({
+                    index: 3,
+                    name: 'addDevice',
+                    reason: 'Requested device insertion anchor is missing or mismatched',
+                })
+            );
+        }
+    });
+
+    it.each([
+        ['Lead', 0],
+        ['Bass', 1],
+    ] as const)('keeps a clip on the explicitly named new %s track', (ownerName, ownerIndex) => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: ownerIndex === 0 ? '$lead' : '$bass',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            `Create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new ${ownerName} track from beat 0 to beat 4`,
+            { ...projectContext, tracks: [] }
+        );
+        const trackIdentities = (result.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addTrack'
+        );
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[2]).toMatchObject({
+            type: 'addClip',
+            payload: { trackId: trackIdentities[ownerIndex]?.trackId, name: 'Melody' },
+        });
+    });
+
+    it.each([
+        ['create 2 MIDI tracks', 'Lead', 'Bass'],
+        ['create 2 MIDI tracks named Lead', 'Lead', 'Lead'],
+        ['create a MIDI track named "Lead and Bass"', 'Lead and Bass', null],
+    ] as const)('preserves counted and quoted creation authority for %s', (prompt, firstName, secondName) => {
+        const names = secondName === null ? [firstName] : [firstName, secondName];
+        const result = bridge(
+            names.map((name, index) => ({
+                name: 'addTrack',
+                arguments: { name, kind: 'midi', binding: `track-${index}` },
+            })),
+            prompt,
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.rejections).toEqual([]);
+        expect(
+            result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
+        ).toEqual(names);
+    });
+
+    it('does not borrow named creation clauses across compiled and ordinary producers', () => {
+        const compiledBass = {
+            callId: 'compile-bass',
+            revision: 'revision-named-producers',
+            commands: [
+                {
+                    key: 'bass',
+                    stepId: 'bass',
+                    operation: 'addTrack',
+                    arguments: { name: 'Bass', kind: 'audio' },
+                    reason: 'review probe',
+                    expectedEffect: 'review probe',
+                    binding: 'bass',
+                    dependencyKeys: [],
+                },
+            ],
+        };
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', binding: 'bass' } },
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+            ],
+            prompt: 'create an audio track named Lead, then create a MIDI track named Bass',
+            context: { ...projectContext, tracks: [] },
+            projectRevision: 'revision-named-producers',
+            transformProof: {
+                revision: 'revision-named-producers',
+                creativeAuthorityId: null,
+                compilations: [compiledBass],
+            },
+        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it('keeps each named track kind across compiled and ordinary producers', () => {
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } },
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'audio', binding: 'lead' } },
+            ],
+            prompt: 'create an audio track named Lead, then create a MIDI track named Bass',
+            context: { ...projectContext, tracks: [] },
+            projectRevision: 'revision-named-producers',
+            transformProof: {
+                revision: 'revision-named-producers',
+                creativeAuthorityId: null,
+                compilations: [
+                    {
+                        callId: 'compile-bass',
+                        revision: 'revision-named-producers',
+                        commands: [
+                            {
+                                key: 'bass',
+                                stepId: 'bass',
+                                operation: 'addTrack',
+                                arguments: { name: 'Bass', kind: 'midi' },
+                                reason: 'test fixture',
+                                expectedEffect: 'test fixture',
+                                binding: 'bass',
+                                dependencyKeys: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addTrack']);
+        expect(result.actions[0]).toMatchObject({ payload: { name: 'Bass', kind: 'midi' } });
+        expect(result.actions[1]).toMatchObject({ payload: { name: 'Lead', kind: 'audio' } });
+    });
+
+    it('refuses a negative named creation count across transform and list producers', () => {
+        const context = { ...projectContext, tracks: [] };
+        const revision = 'revision-negative-count';
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision,
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Create the requested tracks.',
+                            constraints: [],
+                            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'list-lead',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Lead', kind: 'midi', binding: 'list-lead' },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'transform-lead' } },
+                ...compiled.compilerEvidence.commands,
+            ],
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: revision,
+            prompt: 'create -2 MIDI tracks named Lead',
+            transformProof: {
+                revision,
+                creativeAuthorityId: null,
+                compilations: [
+                    {
+                        callId: 'compile-lead',
+                        revision,
+                        commands: [
+                            {
+                                key: 'transform-lead',
+                                stepId: 'transform-lead',
+                                operation: 'addTrack',
+                                arguments: { name: 'Lead', kind: 'midi' },
+                                reason: 'test fixture',
+                                expectedEffect: 'test fixture',
+                                binding: 'transform-lead',
+                                dependencyKeys: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+    });
+
+    it.each(['create 0 MIDI tracks named Lead', 'create 2e3 MIDI tracks named Lead'])(
+        'does not infer one creation slot from a malformed count in %s',
+        (prompt) => {
+            const result = bridge(
+                [{ name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } }],
+                prompt,
+                { ...projectContext, tracks: [] }
+            );
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).not.toEqual([]);
+        }
+    );
+
+    it('does not read a quoted numeric track name as a creation count', () => {
+        const result = bridge(
+            [{ name: 'addTrack', arguments: { name: '2 MIDI tracks', kind: 'midi', binding: 'two-tracks' } }],
+            'create a MIDI track named "2 MIDI tracks"',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.rejections).toEqual([]);
+        expect(result.actions[0]).toMatchObject({ type: 'addTrack', payload: { name: '2 MIDI tracks' } });
+    });
+
+    it('keeps one requested bass track slot while allowing its new clip and notes', () => {
+        const prompt = 'create a walking bass line on a new track';
+        const track = { name: 'addTrack', arguments: { name: 'Bass', kind: 'midi', binding: 'bass' } };
+        const clip = {
+            name: 'addClip',
+            arguments: { trackId: '$bass', startBeat: 0, endBeat: 8, name: 'Walking Bass', binding: 'walking' },
+        };
+        const notes = {
+            name: 'addNotes',
+            arguments: { clipId: '$walking', notes: [{ pitch: 40, startBeat: 0, duration: 1, velocity: 90 }] },
+        };
+        const context = { ...projectContext, tracks: [] };
+        const requested = bridge([track, clip, notes], prompt, context);
+        const extraTrack = bridge(
+            [{ name: 'addTrack', arguments: { name: 'Sneaky', kind: 'midi', binding: 'sneaky' } }, track, clip, notes],
+            prompt,
+            context
+        );
+        expect(requested.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        expect(requested.rejections).toEqual([]);
+        expect(extraTrack.actions).toEqual([]);
+        expect(extraTrack.rejections).toContainEqual(expect.objectContaining({ index: 1, name: 'addTrack' }));
+    });
+
+    it('does not treat a track named Melody as a request for MIDI clip content', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Melody', kind: 'midi', binding: 'melody-track' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$melody-track',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Phrase',
+                        binding: 'phrase',
+                    },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$phrase',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'create a MIDI track named Melody',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual(expect.objectContaining({ index: 1, name: 'addClip' }));
+    });
+
+    it('refuses notes bound to a different newly created clip than the one the request names', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+                },
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$lead', startBeat: 4, endBeat: 8, name: 'Other', binding: 'other' },
+                },
+                {
+                    name: 'addNotes',
+                    arguments: {
+                        clipId: '$other',
+                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                    },
+                },
+            ],
+            'Create a MIDI track named Lead; add a MIDI clip named Melody on Lead from beat 0 to beat 4; add a MIDI clip named Other on Lead from beat 4 to beat 8; add notes to Melody',
+            { ...projectContext, tracks: [] }
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'addNotes' })]);
     });
 
     it('rejects forward and capability-incompatible references to plan-created tracks and clips', () => {

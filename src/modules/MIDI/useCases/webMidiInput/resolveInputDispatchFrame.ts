@@ -1,5 +1,7 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
+import { raiseToLiveInputDispatchFrameFloor } from '../../services/liveInputDispatchFrameFloor';
+
 /**
  * Scheduling budget for live input, in frames — one render quantum.
  *
@@ -30,10 +32,19 @@ type ResolveInputDispatchFrameInput = {
  * Never returns a frame the render position has already passed, so a note
  * whose handler ran too late to place accurately still sounds immediately
  * rather than being dropped or scheduled into the past.
+ *
+ * Never returns a frame earlier than one it already returned for the same
+ * context: the worklet orders live controllers by frame, and an event that
+ * waited out a stall resolves its arrival to "now", which would otherwise
+ * outrank a newer event with a credible arrival — a sustain release ahead of
+ * its press leaves the pedal down.
  */
 export function resolveInputDispatchFrame({ eventTime }: ResolveInputDispatchFrameInput): number {
     const context = audioEngine.context;
     const earliestFrame = Math.round(context.currentTime * context.sampleRate);
     const arrivalFrame = Math.round(eventTime * context.sampleRate);
-    return Math.max(earliestFrame, arrivalFrame + LIVE_INPUT_SCHEDULING_OFFSET_FRAMES);
+    return raiseToLiveInputDispatchFrameFloor(
+        context,
+        Math.max(earliestFrame, arrivalFrame + LIVE_INPUT_SCHEDULING_OFFSET_FRAMES)
+    );
 }

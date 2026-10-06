@@ -1,0 +1,518 @@
+import { describe, expect, it } from 'vitest';
+
+import { type PathChangedLines } from '../changeFacts.ts';
+import {
+    semanticTextDigest,
+    type EvidenceReference,
+    type EvidenceSide,
+    type SemanticRevisionBase,
+} from '../contracts.ts';
+import { collectEvidence, type PathHunks, type SemanticChangedFile, type SemanticSourcePort } from '../evidence.ts';
+import { choosePassIndexForRule } from '../passes.ts';
+import {
+    assessUnit,
+    computeResponseCacheKey,
+    createBudgetController,
+    TYPESAFE_MODEL,
+    type SemanticProviderPort,
+} from '../provider.ts';
+import { SEMANTIC_BUDGET_PROFILES, semanticRule } from '../rules.ts';
+import { planUnits, runScan } from '../run.ts';
+
+const HEAD = 'a'.repeat(40);
+const MERGE_BASE = 'b'.repeat(40);
+const TARGET_BASE = 'c'.repeat(40);
+const TRUSTED = 'd'.repeat(40);
+
+const BASE_REVISION: SemanticRevisionBase = {
+    repository: 'jcosta33/sourdaw',
+    repositoryId: '1',
+    headSha: HEAD,
+    targetBaseSha: TARGET_BASE,
+    mergeBaseSha: MERGE_BASE,
+    trustedExecutionSha: TRUSTED,
+    contractSourceSha: MERGE_BASE,
+};
+
+function changedFile(path: string, overrides: Partial<SemanticChangedFile> = {}): SemanticChangedFile {
+    return { path, kind: 'modified', binary: false, generated: false, added: 3, deleted: 1, ...overrides };
+}
+
+function fakeSource(
+    files: readonly SemanticChangedFile[],
+    blobs: Readonly<Record<string, string>>,
+    hunks?: ReadonlyMap<string, PathHunks>
+): SemanticSourcePort {
+    return {
+        changedFiles: () => files,
+        readFile: (sha, path) => blobs[`${sha}:${path}`],
+        changedHunks: () => hunks ?? new Map<string, PathHunks>(),
+        changedLines: () => new Map<string, PathChangedLines>(),
+    };
+}
+
+function fixedClock(start: number): { readonly now: () => number } {
+    return { now: () => start };
+}
+
+function constantProvider(answer: number): SemanticProviderPort {
+    return {
+        systemOne: async ({ questions }) => {
+            const answers: Record<string, unknown> = {};
+            for (const key of Object.keys(questions)) {
+                answers[key] = { type: 'noul', noul: answer };
+            }
+            return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 100, output_tokens: 0 } };
+        },
+    };
+}
+
+class MapCache {
+    readonly entries = new Map<string, unknown>();
+    read = (key: string): unknown => this.entries.get(key);
+    write = (key: string, value: unknown): void => {
+        this.entries.set(key, value);
+    };
+}
+
+function scanInput(
+    provider: SemanticProviderPort,
+    source: SemanticSourcePort,
+    clock: { readonly now: () => number }
+): Parameters<typeof runScan>[0] {
+    return {
+        ports: {
+            source,
+            provider,
+            cache: new MapCache(),
+            clock,
+            signal: new AbortController().signal,
+            log: () => undefined,
+        },
+        revision: BASE_REVISION,
+        profile: SEMANTIC_BUDGET_PROFILES.local,
+        limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        contractPaths: [],
+        runId: 'multi-pass-test',
+        dryRun: false,
+    };
+}
+
+/**
+ * The local evidence budget, but with an attempt and byte ceiling large enough for a unit split into
+ * many passes. The per-request state budget is unchanged, so pass composition still comes from the
+ * shipped numbers; only the run-level ceilings are lifted so the fixture's six-pass unit is assessed.
+ */
+const MULTI_PASS_PROFILE = {
+    ...SEMANTIC_BUDGET_PROFILES.local,
+    maxAttempts: 64,
+    maxTotalSubmittedBytes: 4 * 1024 * 1024,
+};
+
+function reference(evidenceId: string, side: EvidenceSide, path = 'src/a.ts'): EvidenceReference {
+    return {
+        evidenceId,
+        revisionSha: HEAD,
+        path,
+        side,
+        startLine: 1,
+        endLine: 1,
+        contentHash: semanticTextDigest(evidenceId),
+    };
+}
+
+/**
+ * A modified test file whose after side is `count` single-line hunks. The after side is deliberately
+ * large enough to exceed one request, so the unit's own regions split into more than one pass while
+ * every region stays under the per-region ceiling and therefore travels. An optional marker replaces
+ * one later hunk with a distinctive line, so a case can place the deciding content in a pass the
+ * any-region measure would otherwise ignore.
+ */
+function bigHunkedTestFile(
+    count: number,
+    width: number,
+    marker?: { readonly index: number; readonly text: string }
+): {
+    readonly file: SemanticChangedFile;
+    readonly before: string;
+    readonly after: string;
+    readonly hunks: PathHunks;
+} {
+    const path = 'src/modules/Project/__tests__/big.spec.ts';
+    const rows = Array.from(
+        { length: count },
+        (_unused, index) => `export const value${String(index)} = '${'x'.repeat(width)}';\n`
+    );
+    if (marker !== undefined) {
+        rows[marker.index] = `${marker.text}\n`;
+    }
+    return {
+        file: changedFile(path, { added: count, deleted: 1 }),
+        before: 'it("before", () => {});\n',
+        after: rows.join(''),
+        hunks: {
+            path,
+            before: [{ startLine: 1, endLine: 1 }],
+            after: rows.map((_row, index) => ({ startLine: index + 1, endLine: index + 1 })),
+        },
+    };
+}
+
+/** A provider that answers high when the state carries a region whose content contains `marker`. */
+function markerProvider(marker: string): SemanticProviderPort {
+    return {
+        systemOne: async ({ state, questions }) => {
+            const evidence = (state as { evidence?: Record<string, { content?: string }> }).evidence ?? {};
+            const sawMarker = Object.values(evidence).some((region) => region.content?.includes(marker));
+            const answers: Record<string, unknown> = {};
+            for (const key of Object.keys(questions)) {
+                answers[key] = { type: 'noul', noul: sawMarker ? 0.9 : 0.05 };
+            }
+            return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 100, output_tokens: 0 } };
+        },
+    };
+}
+
+describe('multi-pass evidence transport', () => {
+    it('partitions a unit that exceeds one request deterministically, carrying every region', () => {
+        const fixture = bigHunkedTestFile(80, 160);
+        const files = [fixture.file];
+        const set = collectEvidence({
+            port: fakeSource(
+                files,
+                {
+                    [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
+                    [`${HEAD}:${fixture.file.path}`]: fixture.after,
+                },
+                new Map([[fixture.file.path, fixture.hunks]])
+            ),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const own = set.references.filter((region) => region.path === fixture.file.path);
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit).toBeDefined();
+        expect(unit?.evidence.passes.length).toBeGreaterThanOrEqual(2);
+        // Every minted region is carried by exactly one pass; none is dropped for the budget.
+        const carried = new Set(
+            unit?.evidence.passes.flatMap((pass) => pass.references.map((region) => region.evidenceId))
+        );
+        expect(carried.size).toBe(own.length);
+        expect([...carried].sort()).toEqual(own.map((region) => region.evidenceId).sort());
+        // Determinism: the same unit and profile produce the same pass ids every time.
+        const again = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes).units[0];
+        expect(again?.evidence.passes.map((pass) => pass.passId)).toEqual(
+            unit?.evidence.passes.map((pass) => pass.passId)
+        );
+        // Each pass is a subset, in order, of the whole region set.
+        expect(unit?.evidence.passes.flatMap((pass) => pass.references).length).toBe(own.length);
+    });
+
+    it('carries a unit whole across passes and only certifies a rule whose required set one pass holds in full', async () => {
+        const fixture = bigHunkedTestFile(80, 160);
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [fixture.file],
+                    {
+                        [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
+                        [`${HEAD}:${fixture.file.path}`]: fixture.after,
+                    },
+                    new Map([[fixture.file.path, fixture.hunks]])
+                ),
+                fixedClock(1_000)
+            ),
+            profile: MULTI_PASS_PROFILE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        // The after side spans passes, so no single pass holds the whole required set for a rule that
+        // needs both sides. Nothing can be asked from that evidence, so the unit is recorded as missing
+        // required evidence and no request is sent — the transport used to buy answers it discarded.
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage.networkAttempts).toBe(0);
+        expect(result.report.scope.unassessed).toEqual([
+            { path: fixture.file.path, reason: 'missing-required-evidence', priorityClass: 'severe-test' },
+        ]);
+        const stored = result.storedResponses[0];
+        expect(stored).toBeDefined();
+        // The record still names every rule of the unit, so `replay` reproduces the same ledger.
+        expect(stored?.ruleIds.slice().sort()).toEqual(result.report.signals.map((signal) => signal.ruleId).sort());
+        expect(stored?.passes).toEqual([]);
+        expect(stored?.omissionReason).toBe('missing-required-evidence');
+        // Every minted region (1 before hunk + 80 after hunks) is still composed for the unit, and none
+        // of it travels: the plan carries the unit whole while no question can be answered from it.
+        expect(result.previews[0]?.evidenceIds.length).toBe(81);
+        expect(result.previews[0]?.sentEvidenceIds).toEqual([]);
+        // Nothing was truncated for want of a region: the run names no request-budget reduction.
+        expect(result.report.scope.truncated.some((entry) => entry.reason.startsWith('unit-evidence-'))).toBe(false);
+        // The coverage ledger: the rule still reports the side no pass carried.
+        expect(stored?.missingEvidence.assertion_deleted).toContain('after test source');
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'assertion_deleted');
+        expect(signal?.outcome).toBe('insufficient_context');
+    });
+
+    it('binds the response cache to the pass composition', async () => {
+        const questions = { r: { type: 'noul', instructions: 'x' } };
+        const stateA = {
+            unit: { unitId: 'p', path: 'src/a.ts', changeKind: 'modified' },
+            evidence: { a1: { path: 'src/a.ts', side: 'after', content: 'one' } },
+        };
+        const stateB = {
+            unit: { unitId: 'p', path: 'src/a.ts', changeKind: 'modified' },
+            evidence: { a2: { path: 'src/a.ts', side: 'after', content: 'two' } },
+        };
+        const keyA = computeResponseCacheKey({ state: stateA, questions, model: TYPESAFE_MODEL });
+        const keyB = computeResponseCacheKey({ state: stateB, questions, model: TYPESAFE_MODEL });
+        expect(keyA).not.toBe(keyB);
+
+        let calls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                calls += 1;
+                return { model: TYPESAFE_MODEL, answers: {}, usage: { input_tokens: 1, output_tokens: 0 } };
+            },
+        };
+        const cache = new MapCache();
+        const budget = createBudgetController(SEMANTIC_BUDGET_PROFILES.local);
+        const base = {
+            port: provider,
+            cache,
+            budget,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            deadline: Date.now() + 10_000,
+            questions,
+            requestedModel: TYPESAFE_MODEL,
+            signal: new AbortController().signal,
+        };
+        const first = await assessUnit({ ...base, state: stateA });
+        expect(first.fromCache).toBe(false);
+        // Identical composition is a cache hit.
+        const second = await assessUnit({ ...base, state: stateA });
+        expect(second.fromCache).toBe(true);
+        expect(calls).toBe(1);
+        // A different pass composition misses and calls the provider.
+        const third = await assessUnit({ ...base, state: stateB });
+        expect(third.fromCache).toBe(false);
+        expect(calls).toBe(2);
+    });
+
+    it('names a region no pass could carry and reports the unit it leaves unanswerable', async () => {
+        const path = 'crates/daw-dsp/src/big.rs';
+        // The after side is large enough to exceed one request on its own, so no pass carries it: it is
+        // dropped whole and its side recorded. The before side fits and travels in pass one.
+        const before = 'const before = 1;\n';
+        const after = 'const sample_value = 1;\n'.repeat(900);
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path, { added: 900, deleted: 1 })],
+                    { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        // Both realtime rules need the after side, which no pass carries: the unit is skipped rather
+        // than asked from its before side alone, and the region that could not travel is still named.
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage.networkAttempts).toBe(0);
+        expect(result.report.scope.unassessed).toEqual([
+            { path, reason: 'missing-required-evidence', priorityClass: 'severe-production' },
+        ]);
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'unit-evidence-reduced-below-request-budget (after)',
+        });
+    });
+
+    it('counts one network attempt for the passes that carry a question, not for every composed pass', async () => {
+        // A unit whose own sides fit one request but whose charged context does not is composed into
+        // several passes. Only a pass carrying every side a rule needs can be asked, so the transport
+        // sends one request where it used to send one per composed pass.
+        const path = 'electron/__tests__/small.spec.ts';
+        const own = 'export const value = 1;\n';
+        const contractPaths = ['docs/contract-1.md', 'docs/contract-2.md', 'docs/contract-3.md'];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${path}`]: own,
+            [`${HEAD}:${path}`]: `${own}export const added = 2;\n`,
+        };
+        for (const contractPath of contractPaths) {
+            blobs[`${MERGE_BASE}:${contractPath}`] = '# contract\n'.repeat(220);
+        }
+        const result = await runScan({
+            ...scanInput(constantProvider(0.05), fakeSource([changedFile(path)], blobs), fixedClock(1_000)),
+            contractPaths,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const preview = result.previews[0];
+        expect(result.report.scope.assessed).toBe(1);
+        // The plan composed more regions than the request carried: the unit really did travel in
+        // several passes, and only the one that could be asked was sent.
+        expect(preview?.evidenceIds.length).toBeGreaterThan(preview?.sentEvidenceIds.length ?? 0);
+        expect(result.report.usage.networkAttempts).toBe(1);
+        expect(result.storedResponses[0]?.passes.length).toBe(1);
+        // One request's bytes, not the sum of every composed pass.
+        expect(result.report.usage.submittedBytes).toBeLessThan(
+            SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes
+        );
+    });
+
+    it('leaves a unit unassessed when the pass carrying its questions is refused', async () => {
+        // All-or-nothing still holds where it can be reached: the units whose own sides fit one request
+        // send one request, and a refusal on it records the unit as unassessed rather than as answered
+        // from nothing. A later pass can no longer be the refused one — every shipped rule requires both
+        // own sides, so a split unit asks nothing and is never sent at all.
+        const path = 'crates/daw-dsp/src/small.rs';
+        const profile = { ...SEMANTIC_BUDGET_PROFILES.local, maxAttempts: 0, maxRetriesPerRequest: 0 };
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path)],
+                    { [`${MERGE_BASE}:${path}`]: 'const before = 1;\n', [`${HEAD}:${path}`]: 'const after = 2;\n' },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            profile,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.storedResponses).toHaveLength(0);
+        expect(result.report.failureCode).toBe('budget_exhausted');
+        expect(result.report.scope.unassessed).toEqual([
+            { path, reason: 'budget_exhausted', priorityClass: 'severe-production' },
+        ]);
+    });
+});
+
+describe('the merge reports the answering pass missing evidence', () => {
+    it('reports an 80-hunk after side split across passes as insufficient context, naming the side', async () => {
+        // The deciding assertion lives in a later after hunk. The any-region measure would treat pass 1
+        // (before plus the first after hunks, marker absent) as carrying the after side and score a
+        // decisive no_signal while the marker hunk travelled in a later, ignored pass. A pass supplies
+        // the after side only when it carries all 80 hunks, so the rule must name the side missing.
+        const marker = 'expect(savedState).toBeDefined(); // DECIDING_ASSERTION';
+        const fixture = bigHunkedTestFile(80, 160, { index: 60, text: marker });
+        const result = await runScan({
+            ...scanInput(
+                markerProvider(marker),
+                fakeSource(
+                    [fixture.file],
+                    {
+                        [`${MERGE_BASE}:${fixture.file.path}`]: fixture.before,
+                        [`${HEAD}:${fixture.file.path}`]: fixture.after,
+                    },
+                    new Map([[fixture.file.path, fixture.hunks]])
+                ),
+                fixedClock(1_000)
+            ),
+            profile: MULTI_PASS_PROFILE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'assertion_deleted');
+        expect(signal?.outcome).toBe('insufficient_context');
+        expect(signal?.missingEvidence).toContain('after test source');
+        const stored = result.storedResponses[0];
+        expect(stored?.missingEvidence.assertion_deleted).toContain('after test source');
+    });
+
+    it('reports a rule whose required sides are split across passes as insufficient context', async () => {
+        // `audio_thread_allocation` needs both `before source` and `after source`. Sized so the before
+        // side and the after side each fit one request but together exceed it, they land in different
+        // passes, so no single pass carries both and the rule must not be certified decisive.
+        const path = 'crates/daw-dsp/src/big.rs';
+        const before = 'const before_value = 1;\n'.repeat(500);
+        const after = 'const after_value = 2;\n'.repeat(500);
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path, { added: 500, deleted: 500 })],
+                    { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            profile: MULTI_PASS_PROFILE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'audio_thread_allocation');
+        expect(signal?.outcome).toBe('insufficient_context');
+        // Exactly the one side the answering pass lacked is named, never the empty union of both passes.
+        expect(signal?.missingEvidence).toHaveLength(1);
+        expect(['before source', 'after source']).toContain(signal?.missingEvidence[0]);
+        const stored = result.storedResponses[0];
+        expect(stored?.missingEvidence.audio_thread_allocation).toHaveLength(1);
+        // Neither pass carries both sides, so no request asked the rule and the record names no
+        // answering pass — the omission is explicit instead of an answer merged from a fragment.
+        expect(stored?.passes).toEqual([]);
+        expect(stored?.omissionReason).toBe('missing-required-evidence');
+    });
+
+    it('still emits a decisive disposition when a rule required evidence fits one pass', async () => {
+        const path = 'crates/daw-dsp/src/small.rs';
+        const result = await runScan({
+            ...scanInput(
+                constantProvider(0.05),
+                fakeSource(
+                    [changedFile(path)],
+                    { [`${MERGE_BASE}:${path}`]: 'const before = 1;\n', [`${HEAD}:${path}`]: 'const after = 2;\n' },
+                    new Map<string, PathHunks>()
+                ),
+                fixedClock(1_000)
+            ),
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const signal = result.report.signals.find((entry) => entry.ruleId === 'audio_thread_allocation');
+        expect(signal?.outcome).toBe('no_signal');
+        expect(signal?.missingEvidence).toEqual([]);
+    });
+});
+
+describe('merge rule', () => {
+    it('picks the earliest pass that carries the required evidence', () => {
+        // For an added test file, `assertion_deleted` requires only the after test source. Two passes
+        // each carrying one of the unit's two after regions are tied (neither carries the whole side),
+        // so the tie is broken by the earliest pass.
+        const rule = semanticRule('assertion_deleted');
+        const afterRegions = [reference('a1', 'after'), reference('a2', 'after')];
+        const passes = [
+            { own: [afterRegions[0]!], context: [] },
+            { own: [afterRegions[1]!], context: [] },
+        ];
+        const droppedSides = new Set<EvidenceSide>();
+        expect(
+            choosePassIndexForRule({
+                kind: 'added',
+                rule,
+                passes,
+                unitOwn: afterRegions,
+                unitContext: [],
+                ownDroppedSides: droppedSides,
+                contextDroppedSides: droppedSides,
+            })
+        ).toBe(0);
+        // A pass without the required side loses to one that has the whole side, whatever the order.
+        expect(
+            choosePassIndexForRule({
+                kind: 'added',
+                rule,
+                passes: [
+                    { own: [reference('b1', 'before')], context: [] },
+                    { own: [reference('a2', 'after')], context: [] },
+                ],
+                unitOwn: [reference('b1', 'before'), reference('a2', 'after')],
+                unitContext: [],
+                ownDroppedSides: droppedSides,
+                contextDroppedSides: droppedSides,
+            })
+        ).toBe(1);
+    });
+});

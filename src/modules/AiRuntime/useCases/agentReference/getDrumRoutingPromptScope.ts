@@ -2,10 +2,12 @@ import {
     type DrumRoutingCandidate,
     type DrumRoutingCapability,
     type DrumRoutingProtectedTrack,
+    type DrumRoutingRole,
 } from '../../models/DrumRoutingCapability';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
-import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
+import { getDrumRoutingRole } from './getDrumRoutingRole';
+import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
 type DrumRoutingPromptScope =
     | { status: 'invalid'; reason: string }
@@ -28,6 +30,54 @@ function normalizeText(value: string): string {
 
 function isLocked(track: ProjectContextTrack): boolean {
     return track.clips.some((clip) => clip.locked === true);
+}
+
+type RoutingClassification =
+    | { classification: 'drum'; role: DrumRoutingRole; evidence: string }
+    | { classification: 'non-drum'; role: string; evidence: string }
+    | { classification: 'ambiguous' };
+
+type RoutableTrack = ProjectContextTrack & { kind: 'audio' | 'midi' };
+
+// A folder or bus carries no audio or MIDI to send, whatever role it holds.
+function isRoutableTrack(track: ProjectContextTrack): track is RoutableTrack {
+    return track.kind === 'audio' || track.kind === 'midi';
+}
+
+function describeCanonicalRole(canonicalRole: ProjectContextTrack['canonicalRole']): {
+    role: string;
+    evidence: string;
+} {
+    const role = canonicalRole?.role ?? 'drums';
+    return { role, evidence: `canonical-role:${role}:${canonicalRole?.source ?? 'unknown'}` };
+}
+
+// Frozen and locked drums stay in this set on purpose: they refuse the whole scope instead of
+// silently dropping out of it.
+function resolveDrumTrackIds(context: ProjectContext): ReadonlySet<string> {
+    return new Set(resolveWorkflowTrackIds(context, 'drum-routing-drums', { all: [{ roleFamily: 'drums' }] }));
+}
+
+/**
+ * Whether a track is a drum, protected, or unclassifiable. Drum membership is the shared
+ * resolver's `roleFamily: 'drums'`, which reads the track's canonical role, so a role the user
+ * set in the inspector or the name derived decides it either way. A canonical `unknown` is
+ * ambiguous: the scope refuses rather than guess.
+ */
+function classifyRoutingTrack(track: RoutableTrack, drumTrackIds: ReadonlySet<string>): RoutingClassification {
+    const canonicalRole = track.canonicalRole;
+    if (drumTrackIds.has(track.id)) {
+        const described = describeCanonicalRole(canonicalRole);
+        return {
+            classification: 'drum',
+            role: getDrumRoutingRole(described.role) ?? 'drums',
+            evidence: described.evidence,
+        };
+    }
+    if (canonicalRole === undefined || canonicalRole.role === 'unknown') {
+        return { classification: 'ambiguous' };
+    }
+    return { classification: 'non-drum', ...describeCanonicalRole(canonicalRole) };
 }
 
 function toProtectedTrack(track: ProjectContextTrack, role: string, evidence: string): DrumRoutingProtectedTrack {
@@ -71,22 +121,24 @@ export function getDrumRoutingPromptScope(context: ProjectContext, projectRevisi
         };
     }
 
+    const drumTrackIds = resolveDrumTrackIds(context);
     const candidateDrums: DrumRoutingCandidate[] = [];
     const protectedNonDrums: DrumRoutingProtectedTrack[] = [];
     for (const track of context.tracks) {
         if (track.id === bus.id || track.id === parallelReturn.id) {
             continue;
         }
-        const projection = projectCanonicalTrackRole(track);
+        if (!isRoutableTrack(track)) {
+            protectedNonDrums.push(toProtectedTrack(track, 'structural', `track-kind:${track.kind}`));
+            continue;
+        }
+        const projection = classifyRoutingTrack(track, drumTrackIds);
         if (projection.classification === 'ambiguous') {
             return { status: 'invalid', reason: `MF-01 track role is ambiguous: ${track.id}` };
         }
         if (projection.classification === 'non-drum') {
             protectedNonDrums.push(toProtectedTrack(track, projection.role, projection.evidence));
             continue;
-        }
-        if (track.kind !== 'audio' && track.kind !== 'midi') {
-            return { status: 'invalid', reason: `MF-01 cannot route structural drum target ${track.id}` };
         }
         if (track.frozen === true || isLocked(track)) {
             return { status: 'invalid', reason: `MF-01 drum target is protected or locked: ${track.id}` };

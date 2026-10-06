@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     engine: { isReady: vi.fn() },
     createGrandBouleStore: vi.fn(),
     syncMidiCalibrationToEngine: vi.fn(),
+    syncVoicing: vi.fn(),
 }));
 
 vi.mock('../applyGrandBouleMorphState', () => ({ applyGrandBouleMorphState: mocks.apply }));
@@ -18,6 +19,9 @@ vi.mock('../../stores/grandBouleStore', () => ({ createGrandBouleStore: mocks.cr
 vi.mock('../calibrateGrandBouleMidi/syncMidiCalibrationToEngine', () => ({
     syncMidiCalibrationToEngine: mocks.syncMidiCalibrationToEngine,
 }));
+vi.mock('../syncGrandBouleVoicingToEngine', () => ({
+    syncGrandBouleVoicingToEngine: mocks.syncVoicing,
+}));
 
 import { reconcileGrandBouleDeviceStateFromProject } from '../reconcileGrandBouleDeviceStateFromProject';
 
@@ -26,7 +30,7 @@ describe('reconcileGrandBouleDeviceStateFromProject', () => {
         vi.clearAllMocks();
     });
 
-    it('syncs the store calibration onto a ready engine on load, alongside the morph', () => {
+    it('syncs the store calibration and voicing onto a ready engine on load, alongside the morph', () => {
         const store = { value: { midiCalibration: { sustainThreshold: 0.6, ccSmoothingMs: 40 } } };
         mocks.hydrate.mockReturnValue(morph);
         mocks.engine.isReady.mockReturnValue(true);
@@ -37,6 +41,8 @@ describe('reconcileGrandBouleDeviceStateFromProject', () => {
         expect(mocks.hydrate).toHaveBeenCalledWith('grand-1');
         expect(mocks.apply).toHaveBeenCalledWith(mocks.engine, morph);
         expect(mocks.createGrandBouleStore).toHaveBeenCalledWith('grand-1');
+        expect(mocks.syncVoicing).toHaveBeenCalledTimes(1);
+        expect(mocks.syncVoicing).toHaveBeenCalledWith({ engine: mocks.engine, store });
         expect(mocks.syncMidiCalibrationToEngine).toHaveBeenCalledTimes(1);
         expect(mocks.syncMidiCalibrationToEngine).toHaveBeenCalledWith({ engine: mocks.engine, store });
     });
@@ -49,26 +55,29 @@ describe('reconcileGrandBouleDeviceStateFromProject', () => {
 
         reconcileGrandBouleDeviceStateFromProject('grand-2');
 
+        expect(mocks.syncVoicing).toHaveBeenCalledWith({ engine: mocks.engine, store });
         expect(mocks.syncMidiCalibrationToEngine).toHaveBeenCalledWith({ engine: mocks.engine, store });
     });
 
-    it('does not sync calibration when the engine is not ready', () => {
+    it('does not sync calibration or voicing when the engine is not ready', () => {
         mocks.hydrate.mockReturnValue(morph);
         mocks.engine.isReady.mockReturnValue(false);
 
         reconcileGrandBouleDeviceStateFromProject('grand-3');
 
         expect(mocks.apply).not.toHaveBeenCalled();
+        expect(mocks.syncVoicing).not.toHaveBeenCalled();
         expect(mocks.syncMidiCalibrationToEngine).not.toHaveBeenCalled();
     });
 
-    it('does not sync calibration for a device that is not a Grand Boule', () => {
+    it('does not sync calibration or voicing for a device that is not a Grand Boule', () => {
         mocks.hydrate.mockReturnValue(null);
 
         reconcileGrandBouleDeviceStateFromProject('not-grand-boule');
 
         expect(mocks.apply).not.toHaveBeenCalled();
         expect(mocks.createGrandBouleStore).not.toHaveBeenCalled();
+        expect(mocks.syncVoicing).not.toHaveBeenCalled();
         expect(mocks.syncMidiCalibrationToEngine).not.toHaveBeenCalled();
     });
 });

@@ -27,6 +27,7 @@
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 5,
         "outputs": {
+          "profile": "${{ steps.plan.outputs.profile }}",
           "matrix": "${{ steps.plan.outputs.matrix }}",
           "browser": "${{ steps.plan.outputs.browser }}",
           "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
@@ -74,7 +75,8 @@
         "needs": "scope",
         "uses": "./.github/workflows/validation.yml",
         "with": {
-          "browser": "${{ needs.scope.outputs.browser == 'true' }}"
+          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
+          "profile": "${{ needs.scope.outputs.profile }}"
         }
       },
       "affected": {
@@ -375,6 +377,12 @@
             "description": "Whether the affected plan requires browser smoke.",
             "required": true,
             "type": "boolean"
+          },
+          "profile": {
+            "description": "Affected paths are documentation, known review tooling, or broad.",
+            "required": false,
+            "default": "broad",
+            "type": "string"
           }
         },
         "outputs": {
@@ -401,6 +409,10 @@
           "code": {
             "description": "Whether the head carries anything but prose.",
             "value": "${{ jobs.decide.outputs.code }}"
+          },
+          "tooling": {
+            "description": "Whether known review tooling requires the script unit suite.",
+            "value": "${{ jobs.decide.outputs.tooling }}"
           }
         }
       }
@@ -423,7 +435,8 @@
           "server": "${{ steps.scope.outputs.server }}",
           "e2e": "${{ steps.scope.outputs.e2e }}",
           "web": "${{ steps.scope.outputs.web }}",
-          "code": "${{ steps.scope.outputs.code }}"
+          "code": "${{ steps.scope.outputs.code }}",
+          "tooling": "${{ steps.scope.outputs.tooling }}"
         },
         "steps": [
           {
@@ -456,13 +469,14 @@
             "env": {
               "EVENT": "${{ github.event_name }}",
               "BROWSER": "${{ inputs.browser }}",
+              "PROFILE": "${{ inputs.profile }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },
@@ -504,10 +518,12 @@
           },
           {
             "name": "App types",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck"
           },
           {
             "name": "Test types",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck:test"
           },
           {
@@ -516,10 +532,12 @@
           },
           {
             "name": "End-to-end types",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck:e2e"
           },
           {
             "name": "Desktop shell types",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck:electron"
           },
           {
@@ -528,6 +546,7 @@
           },
           {
             "name": "Command argument schemas",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:command-schema"
           },
           {
@@ -536,14 +555,17 @@
           },
           {
             "name": "Test collection scope",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:collection-scope"
           },
           {
             "name": "Barrel mock coverage",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:barrel-mocks"
           },
           {
             "name": "Device write boundary census",
+            "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
           },
           {
@@ -698,6 +720,42 @@
           }
         ]
       },
+      "tooling-unit": {
+        "name": "Review tooling unit suite",
+        "needs": "decide",
+        "if": "needs.decide.outputs.tooling == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Run script suite",
+            "run": "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+          }
+        ]
+      },
       "smoke": {
         "name": "Offline browser smoke",
         "needs": "decide",
@@ -821,6 +879,9 @@
           },
           {
             "name": "Server and Rust workspace health gates",
+            "env": {
+              "CARGO_HTTP_MULTIPLEXING": "false"
+            },
             "run": "pnpm health:server:full"
           }
         ]
@@ -1006,6 +1067,39 @@
             "name": "Scan pull request diff for secrets",
             "working-directory": "${{ github.workspace }}",
             "run": "set -euo pipefail\n\ngitleaks git \\\n  --config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\" \\\n  --gitleaks-ignore-path \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore\" \\\n  --ignore-gitleaks-allow \\\n  --no-banner \\\n  --no-color \\\n  --redact=100 \\\n  --verbose \\\n  --exit-code=1 \\\n  --log-opts=\"$BASE_SHA..$HEAD_SHA -m\" \\\n  \"$GITHUB_WORKSPACE/scan-target/.git\"\n"
+          }
+        ]
+      },
+      "validation-gate": {
+        "name": "Validation result",
+        "if": "${{ always() }}",
+        "needs": [
+          "decide",
+          "static",
+          "lint",
+          "boundaries",
+          "unit",
+          "tooling-unit",
+          "smoke",
+          "build",
+          "rust",
+          "native-macos",
+          "native-windows",
+          "native-parity",
+          "dependency-review",
+          "pr-secrets"
+        ],
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "steps": [
+          {
+            "name": "Require selected validation jobs to succeed",
+            "if": "${{ always() }}",
+            "env": {
+              "RESULTS": "${{ toJSON(needs) }}",
+              "PULL_REQUEST": "${{ github.event.pull_request != null }}"
+            },
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == (if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"success\" else \"skipped\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == (if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"success\" else \"skipped\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }

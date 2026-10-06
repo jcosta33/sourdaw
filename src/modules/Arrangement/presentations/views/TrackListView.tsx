@@ -34,10 +34,7 @@ import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { timelineViewStore, setScrollY, setTimelineViewportHeight } from '../../stores/timelineViewStore';
-import { createFolder } from '../../useCases/folder/createFolder';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
-import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
-import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
@@ -144,7 +141,10 @@ export const TrackListView = ({
         if (dragTrackIdRef.current) {
             const globalIndex = tracks.findIndex((time) => time.id === visibleTracks[index]?.id);
             if (globalIndex >= 0) {
-                reorderTrack(dragTrackIdRef.current, globalIndex);
+                void executeUserAppAction({
+                    type: 'reorderTrack',
+                    payload: { trackId: dragTrackIdRef.current, newIndex: globalIndex },
+                });
             }
         }
         dragTrackIdRef.current = null;
@@ -296,9 +296,12 @@ export const TrackListView = ({
                                     aria-label="Add folder"
                                     data-testid="add-folder-button"
                                     onClick={() =>
-                                        createFolder(
-                                            `Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`
-                                        )
+                                        void executeUserAppAction({
+                                            type: 'createFolder',
+                                            payload: {
+                                                name: `Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`,
+                                            },
+                                        })
                                     }
                                 >
                                     <FolderPlus className="size-3" aria-hidden="true" />
@@ -434,7 +437,12 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                             {templates.map((tmpl) => (
                                 <DropdownMenuItem
                                     key={tmpl.id}
-                                    onClick={() => loadTrackTemplate(tmpl.id)}
+                                    onClick={() =>
+                                        void executeUserAppAction({
+                                            type: 'loadTrackTemplate',
+                                            payload: { templateId: tmpl.id },
+                                        })
+                                    }
                                     className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
                                 >
                                     <FileStack className="size-3 text-[var(--color-accent-lavender)]" />

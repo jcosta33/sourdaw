@@ -5,7 +5,7 @@ import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import {
     fromGrandBouleDeviceState,
-    readGrandBouleMorphState,
+    readGrandBouleDeviceState,
     toGrandBouleDeviceState,
 } from '../models/GrandBouleDeviceState';
 import { reconcileGrandBouleDeviceStateFromProject } from '../useCases/reconcileGrandBouleDeviceStateFromProject';
@@ -14,7 +14,7 @@ function currentState(deviceId: string): ReturnType<typeof toGrandBouleDeviceSta
     const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
         .find((candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.grandBoule);
-    return device === undefined ? null : toGrandBouleDeviceState(readGrandBouleMorphState(device.deviceState));
+    return device === undefined ? null : toGrandBouleDeviceState(readGrandBouleDeviceState(device.deviceState));
 }
 
 function canonicalState(state: unknown): ReturnType<typeof toGrandBouleDeviceState> | null {

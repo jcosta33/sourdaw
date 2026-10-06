@@ -42,6 +42,23 @@ export const SEMANTIC_FAILURE_CODES = [
     'model_mismatch',
     'context_collection_failed',
     'budget_exhausted',
+    /**
+     * One unit's request is larger than a per-request limit, at either of the two points the adapter
+     * checks one: the state plus its questions, before the attempt is admitted, or the whole body,
+     * including the model, when that attempt reserves its bytes. A limit of that shape is a property of
+     * the unit, not of the run: the refusal is recorded against that unit alone and the plan keeps
+     * admitting. Only a run-level stop ends a run — a spent attempt or byte budget, or an elapsed
+     * deadline — and each of those carries its own code rather than reusing this one.
+     */
+    'request_too_large',
+    /**
+     * The run's overall deadline ended an assessment, at either of the two points the adapter checks it:
+     * before the next attempt, so that unit was never attempted, or while an attempt was in flight, so
+     * that unit was attempted and the clock cut it short — an attempt gets only the time the deadline
+     * leaves it. Both sites refuse it on the unit they ended, and admission then stops: the units still
+     * queued behind it were never reached at all and carry the deadline's admission reason instead.
+     */
+    'deadline_elapsed',
     'stale_context',
     'unsupported_scope',
     'sensitive_content_excluded',
@@ -265,9 +282,29 @@ export type SemanticScopeUnit = {
     evidenceIds: readonly string[];
 };
 
+/**
+ * The admission priority class of one planned unit, most-preferred first. It lives in the shared
+ * contracts rather than beside the ordering policy because it is published: an omitted unit is
+ * explained by the class its key placed it in, and the report validator must agree with the planner
+ * about the vocabulary it accepts.
+ */
+export const SEMANTIC_UNIT_PRIORITY_CLASSES = ['severe-production', 'severe-test', 'production', 'test'] as const;
+export type UnitPriorityClass = (typeof SEMANTIC_UNIT_PRIORITY_CLASSES)[number];
+
+const UNIT_PRIORITY_CLASS_SET: ReadonlySet<string> = new Set(SEMANTIC_UNIT_PRIORITY_CLASSES);
+
+export function isUnitPriorityClass(value: unknown): value is UnitPriorityClass {
+    return typeof value === 'string' && UNIT_PRIORITY_CLASS_SET.has(value);
+}
+
 export type SemanticScopeExclusion = {
     path: string;
     reason: string;
+    /**
+     * The priority class the planner's admission key gave the unit. Only an `unassessed` entry carries
+     * one: excluded and truncated entries describe a path the plan never ordered.
+     */
+    priorityClass?: UnitPriorityClass;
 };
 
 export type SemanticScopeManifest = {

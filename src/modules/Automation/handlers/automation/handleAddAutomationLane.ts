@@ -4,6 +4,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 
 import { addAutomationLane } from '../../useCases/automation/addAutomationLane';
 import { getAutomationParameterRangeResolver } from '../../useCases/automation/getAutomationParameterRangeResolver';
+import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomationBusId';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 type AddAutomationLaneAction = {
@@ -24,31 +25,45 @@ function ensureLaneId(action: AddAutomationLaneAction): string {
     return laneId;
 }
 
+/**
+ * Whether the creation is already reflected in project truth: the payload names
+ * an existing lane, or the track already carries a track-level lane for the
+ * parameter.
+ *
+ * A pure predicate on purpose. Undo and redo replay the stored history entry's
+ * action object, so rewriting `payload.laneId` here would retarget the stored
+ * forward action away from the id its captured inverse names — the next redo
+ * would then create a lane under an id that belonged to a different lane, and
+ * the next undo would run the stale inverse as a silent no-op, leaving that lane
+ * unremovable (#4823). The fold is recorded by `describe` omitting the inverse,
+ * never by rewriting the action.
+ */
 function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
     const state = getAutomationStoreState();
     if (!state) {
         return false;
     }
-    const existingLane = state.lanes.find(
+    return state.lanes.some(
         (lane) =>
             lane.id === action.payload.laneId ||
             (!lane.clipId && lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId)
     );
-    if (!existingLane) {
-        return false;
-    }
-    action.payload.laneId = existingLane.id;
-    return true;
 }
 
 /**
- * A device parameter is a target only when the owner's resolver hands back its
- * range: the resolver already answers null for a missing track, a device the
- * track does not carry, and a parameter no curve may drive.
+ * A send level is a target only while the track sends to that bus. A device
+ * parameter is a target only when the owner's resolver hands back its range:
+ * the resolver already answers null for a missing track, a device the track
+ * does not carry, and a parameter no curve may drive.
  */
 function isAutomatableTarget({ trackId, parameterId }: AddAutomationLaneAction['payload']): boolean {
     if (TRACK_PARAMETER_IDS.has(parameterId)) {
         return true;
+    }
+    const busId = getSendAutomationBusId(parameterId);
+    if (busId !== null) {
+        const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        return track?.sends.some((send) => send.busId === busId) === true;
     }
     const resolveParameterRange = getAutomationParameterRangeResolver();
     return (

@@ -1,4 +1,4 @@
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { disarmRetrospectiveCapture, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { beginProjectSessionPluginRetirement } from '#/modules/PluginHost/useCases';
 import { repairRuntimeGraphFromProject, stopPlayback } from '#/modules/Transport/useCases';
@@ -98,6 +98,13 @@ const retire = async (
         if (cancellationRequestId === requestId) {
             return await repair();
         }
+        // The session ends committed. A punch arm this renderer set would
+        // otherwise outlive it — the engine's ring keeps retaining input audio
+        // with no window open until a successor's startup clear (#4752) — so
+        // teardown disarms. Sent through the capture request queue, after any
+        // arm this session issued, and fire-and-forget: a declined disarm
+        // leaves nothing to stop, and the quiesce must not hinge on it.
+        disarmRetrospectiveCapture();
         quiescedRequestId = requestId;
         return 'success';
     } catch {

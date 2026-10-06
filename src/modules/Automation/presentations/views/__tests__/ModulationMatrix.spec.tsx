@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { mappingAmountDragState } from '../../../useCases/modulation/mappingAmountDragState';
 import { ModulationMatrix } from '../ModulationMatrix';
 
@@ -76,7 +78,6 @@ const mocks = vi.hoisted(() => {
         // every store write so a drag gesture can be proven to write once.
         storeSet: vi.fn<(next: StoreValue) => void>(),
         pushUndoEntry: vi.fn<(label: string, undoFn: () => void, redoFn: () => void) => void>(),
-        addModulator: vi.fn<(modulator: unknown) => string>(),
     };
 });
 
@@ -108,6 +109,9 @@ vi.mock('../../../stores/modulationStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { __id: 'track' },
     defaultTrackState: { tracks: [], selectedTrackId: null },
+    // The action-routed graph reaches revertMappingsToBase, which imports this
+    // from the barrel; the mock has to supply every name the graph imports.
+    resolveEligibleDeviceWriteTarget: vi.fn(() => ({ status: 'missing' })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -124,11 +128,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock('../../../useCases/modulation/addMapping', () => ({ addMapping: vi.fn() }));
-vi.mock('../../../useCases/modulation/addModulator', () => ({ addModulator: mocks.addModulator }));
-vi.mock('../../../useCases/modulation/removeMapping', () => ({ removeMapping: vi.fn() }));
-vi.mock('../../../useCases/modulation/removeModulator', () => ({ removeModulator: vi.fn() }));
-vi.mock('../../../useCases/modulation/updateModulator', () => ({ updateModulator: vi.fn() }));
+// Add, remove, rename, enable/disable, mapping add and mapping remove dispatch
+// through the command path (#4617); the assertions below pin the dispatched
+// actions, not the bare use cases. The amount-drag gesture keeps its own
+// use cases (see the coalescing tests above).
 
 describe('ModulationMatrix', () => {
     beforeEach(() => {
@@ -231,8 +234,70 @@ describe('ModulationMatrix', () => {
         expect(screen.getByLabelText('Modulator track scope')).toHaveValue('track-1');
         fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-        expect(mocks.addModulator).toHaveBeenCalledTimes(1);
-        expect(mocks.addModulator.mock.calls[0]![0]).toMatchObject({ trackId: 'track-1', kind: 'lfo' });
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(executeUserAppAction).mock.calls[0]![0]).toEqual({
+            type: 'addModulator',
+            payload: { modulator: expect.objectContaining({ trackId: 'track-1', kind: 'lfo' }) },
+        });
+    });
+
+    it('dispatches the modulator and mapping edits through the command path', () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+
+        // Rename edits the name field.
+        fireEvent.change(screen.getByLabelText('Rename modulator mod-1'), { target: { value: 'Wobble' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'updateModulator',
+            payload: { modulatorId: 'mod-1', patch: { name: 'Wobble' } },
+        });
+
+        // The enabled checkbox patches enabled.
+        fireEvent.click(screen.getByRole('checkbox'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'updateModulator',
+            payload: { modulatorId: 'mod-1', patch: { enabled: false } },
+        });
+
+        // The mapping row's remove button targets the exact destination triple.
+        fireEvent.click(screen.getByLabelText('Remove mapping'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeMapping',
+            payload: {
+                modulatorId: 'mod-1',
+                target: { targetTrackId: 'track-1', targetDeviceId: 'device-1', targetParamId: 'cutoff' },
+            },
+        });
+
+        // The card's remove button targets the modulator id.
+        fireEvent.click(screen.getByLabelText('Remove modulator LFO 1'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'removeModulator',
+            payload: { modulatorId: 'mod-1' },
+        });
+    });
+
+    it('dispatches a mapping add from the picker with the chosen destination', () => {
+        mocks.modState = { modulators: [makeModulatorWithMapping(0.2)] };
+        mocks.trackState = { tracks: [makeTrack('track-1', 'Lead')] };
+        render(<ModulationMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add Mapping' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addMapping',
+            payload: {
+                modulatorId: 'mod-1',
+                mapping: {
+                    targetTrackId: 'track-1',
+                    targetDeviceId: 'device-1',
+                    targetParamId: 'cutoff',
+                    amount: 0.5,
+                },
+            },
+        });
     });
 
     it('should keep a second mapping drag off the first mapping’s active session', () => {

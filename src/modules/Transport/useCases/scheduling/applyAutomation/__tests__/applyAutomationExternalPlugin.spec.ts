@@ -140,15 +140,16 @@ describe('applyAutomation on an external plugin device', () => {
 
     it('lands the lane value on the plugin parameter the target names', () => {
         seedPluginLane(`${DEVICE_ID}:${DRIVE_PARAMETER_ID}`);
-        // Two ticks: the per-parameter slew only dispatches once the smoothed
-        // value has moved past SLEW_EPSILON.
+        // Two ticks: the scope-entry tick (#4741) writes the curve's opening
+        // value at once, and the per-parameter slew dispatches the moving tick
+        // once its smoothed value has moved past SLEW_EPSILON.
         vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(18);
 
         applyAutomation(0);
         applyAutomation(1);
 
-        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
-        const [trackId, deviceId, paramId, value] = vi.mocked(updateDeviceParam).mock.calls[0]!;
+        expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+        const [trackId, deviceId, paramId, value] = vi.mocked(updateDeviceParam).mock.calls[1]!;
         expect(trackId).toBe('track-1');
         expect(deviceId).toBe(DEVICE_ID);
         // The plugin's own `u32` id, spelled as the target id carries it — not

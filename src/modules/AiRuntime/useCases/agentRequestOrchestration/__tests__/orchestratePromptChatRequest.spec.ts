@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureActiveBranchReference: vi.fn(),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectIdentity: vi.fn(() => 'project-identity'),
@@ -764,5 +765,47 @@ describe('orchestratePromptChatRequest', () => {
         expect(mocks.persistPromptActionConfirmation).toHaveBeenCalledWith(
             expect.objectContaining({ matchSelectorPredicates })
         );
+    });
+
+    // Red when the chat route stops carrying the adopted recipes from the planned result to the approval.
+    it('carries the planned adopted recipes through to the persisted confirmation', async () => {
+        const adoptedRecipes = [{ recipeId: 'vocal-warm', title: 'Chest-register lift', targetId: 'track-lead' }];
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [{ type: 'setTrackColor', payload: { trackId: 'track-lead', color: '#ffffff' } }],
+                adoptedRecipes,
+                executionMode: 'apply',
+            },
+            projectRevision: 'revision-planned',
+        });
+        vi.mocked(describePendingActionConfirmation).mockReturnValueOnce({
+            actionLabels: ['Set lead color'],
+            affectedIds: ['track-lead'],
+            protectedUnchanged: [],
+            content: 'Set lead color',
+            risk: { level: 'bounded-reversible', reason: null },
+        });
+        mocks.materializePromptCommandPlan.mockReturnValue({
+            status: 'prepared',
+            commandGroup: 'command-group-fixture',
+            parsedCommandBatch: { commands: [] },
+            compiledActionExecution: {
+                commandEnvelopes: ['command-envelope-fixture'],
+                commandBatch: { commands: [] },
+                requiresConfirmation: true,
+                agentApproval: { kind: 'confirm-required' },
+            },
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'make the lead vocal warmer',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.persistPromptActionConfirmation).toHaveBeenCalledWith(expect.objectContaining({ adoptedRecipes }));
     });
 });

@@ -849,6 +849,73 @@ describe('handleAddNotes', () => {
         );
     });
 
+    it.each(['locked', 'frozen'] as const)(
+        'does not let an earlier batch-local producer override a %s live target',
+        (invalidTarget) => {
+            const track = trackStore.value!.tracks[0]!;
+            const clip = track.clips[0]!;
+            let invalidTrack = { ...track, frozen: true };
+            if (invalidTarget === 'locked') {
+                invalidTrack = { ...track, clips: [{ ...clip, locked: true }] };
+            }
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [invalidTrack],
+            });
+            const action = canonicalAddNotesAction({
+                type: 'addNotes',
+                payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+            });
+            const actions: AppAction[] = [
+                { type: 'addTrack', payload: { id: 'fabricated-track', name: 'Fabricated', kind: 'midi' } },
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: CLIP_ID,
+                        trackId: 'fabricated-track',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Fabricated clip',
+                        type: 'midi',
+                    },
+                },
+                action,
+            ];
+            const context = { actions, actionIndex: 2 };
+
+            expect(handleAddNotes.validate?.(action, context)).toBe(false);
+            expect(handleAddNotes.describe(action, context).inverseAction).toBeNull();
+        }
+    );
+
+    it('keeps live target ownership when an earlier producer claims the same clip id on another track', () => {
+        const action = canonicalAddNotesAction({
+            type: 'addNotes',
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        });
+        const actions: AppAction[] = [
+            { type: 'addTrack', payload: { id: 'fabricated-track', name: 'Fabricated', kind: 'midi' } },
+            {
+                type: 'addClip',
+                payload: {
+                    id: CLIP_ID,
+                    trackId: 'fabricated-track',
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Fabricated clip',
+                    type: 'midi',
+                },
+            },
+            action,
+        ];
+
+        const inverse = requireRestoreAction(
+            handleAddNotes.describe(action, { actions, actionIndex: 2 }).inverseAction
+        );
+
+        expect(inverse.payload.noteTransformReplayGuard?.trackId).toBe(TRACK_ID);
+    });
+
     it('conflicts rather than writing an orphan note bucket when redo reaches a removed clip', async () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         const action = {

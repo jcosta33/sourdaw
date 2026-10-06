@@ -176,6 +176,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         prepareMidiClipFanOutState: vi.fn(),
         prepareMidiClipGlueState: vi.fn(),
         prepareMidiClipSplit: vi.fn(),
+        projectMidiClipWindow: vi.fn(),
         projectClipMidiEvents: vi.fn(),
         projectCommittedGroove: vi.fn(),
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
@@ -251,6 +252,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
     // so `false` is the value with no behaviour behind it.
     nativeLiveGraphSessionOffered: vi.fn(() => false),
+    // The same census: the project session quiescer imports the disarm, and
+    // this suite never reaches a session teardown.
+    disarmRetrospectiveCapture: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
     holdWebFallbackDeviceParam: vi.fn(),

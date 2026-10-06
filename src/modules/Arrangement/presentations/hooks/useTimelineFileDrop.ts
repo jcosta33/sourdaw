@@ -2,16 +2,16 @@ import { type DragEvent, useState } from 'react';
 
 import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createTrack } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
-import { addTrack } from '../../useCases/addTrack';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { addClip } from '../../useCases/clip/addClip';
 import { type ClipAudioAssetStaging } from '../../useCases/clip/clipAudioAssetStagingState';
 import { stageClipAudioAsset } from '../../useCases/clip/stageClipAudioAsset';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
@@ -44,6 +44,38 @@ type SamplePayload = {
 };
 type PluginPayload = { name: string; id: string };
 type AudioTargetIntent = { kind: 'existing'; trackId: string } | { kind: 'create' };
+
+type CreationBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+type CreationBatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
+
+/** A resolved drop target: the clip's track id, plus the track model to land
+ *  in the same batch (as a compiled `addTrack` action) when the drop must
+ *  create its own audio track. */
+type AudioTargetPlan = { trackId: string; newTrack: ReturnType<typeof createTrack> | undefined };
+
+// The batch statuses that leave the created media in the project; everything
+// else (refusal, cancellation, rollback) releases the caller's audio assets.
+function retainedCreation(result: CreationBatchResult | null): boolean {
+    return (
+        result !== null &&
+        (result.status === 'committed' || result.status === 'committed-with-warning' || result.status === 'ambiguous')
+    );
+}
+
+/** Pins the creation inputs a batched `addTrack` would otherwise mint at
+ *  describe time onto the payload, the way the audio-import use case does. */
+function compileNewAudioTrackAction(track: ReturnType<typeof createTrack>): CreationBatchAction {
+    return {
+        type: 'addTrack',
+        payload: {
+            id: track.id,
+            name: track.name,
+            kind: track.kind,
+            color: track.color,
+            initialAlternativeId: track.activeAlternativeId,
+        },
+    };
+}
 
 function asRecord(raw: string): Record<string, unknown> {
     const parsed: unknown = JSON.parse(raw);
@@ -136,19 +168,30 @@ export const useTimelineFileDrop = ({
         const beat = Math.max(0, Math.floor(getBeatFromX(x)));
         const audioTargetIntent = captureAudioTargetIntent(trackHit);
         let createdAudioTargetId: string | undefined;
-        const resolveAudioTarget = (name: string): string | null => {
+        // Resolves the drop's write plan instead of writing directly: the
+        // caller lands track (when one must be created) and clip in one batch
+        // of registered actions, so the whole drop is one undo step (#4618).
+        const resolveAudioTarget = (name: string): AudioTargetPlan | null => {
             const targetId = audioTargetIntent.kind === 'existing' ? audioTargetIntent.trackId : createdAudioTargetId;
             if (targetId) {
                 const target = trackStore.value?.tracks.find((candidate) => candidate.id === targetId);
-                return target?.kind === 'audio' ? targetId : null;
+                return target?.kind === 'audio' ? { trackId: targetId, newTrack: undefined } : null;
             }
-            const newTrack = addTrack({ name, kind: 'audio' });
-            if (!newTrack) {
-                return null;
-            }
-            createdAudioTargetId = newTrack.id;
-            return newTrack.id;
+            const track = createTrack({ name, kind: 'audio' });
+            createdAudioTargetId = track.id;
+            return { trackId: track.id, newTrack: track };
         };
+        const runCreationBatch = (
+            actions: CreationBatchAction[],
+            groupLabel: string
+        ): Promise<CreationBatchResult | null> =>
+            executeAppActionBatch(actions, {
+                groupId: `timeline-drop-${crypto.randomUUID()}`,
+                groupLabel,
+                source: 'manual',
+                requireCompensation: true,
+                shouldExecute: () => authority.isCurrent(),
+            }).catch(() => null);
 
         // AI-rendered audio clips already have their AudioBuffer cached — just create
         // a clip pointing at the bufferId. No file decoding needed.
@@ -161,11 +204,9 @@ export const useTimelineFileDrop = ({
                 const targetTrack = targetTrackId
                     ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
                     : null;
+                let newTrack: ReturnType<typeof createTrack> | undefined;
                 if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
-                    const newTrack = addTrack({ name: render.name, kind: 'audio' });
-                    if (!newTrack) {
-                        return;
-                    }
+                    newTrack = createTrack({ name: render.name, kind: 'audio' });
                     targetTrackId = newTrack.id;
                 }
                 const model = buildTimelineRenderModel();
@@ -186,16 +227,24 @@ export const useTimelineFileDrop = ({
                         return;
                     }
                 }
-                const clip = addClip({
-                    trackId: targetTrackId,
-                    startBeat: beat,
-                    endBeat: beat + durationBeats,
-                    name: render.name,
-                    type: 'audio',
-                    audioBufferId: render.bufferId,
-                    assetHash: stagedAsset?.hash,
+                const actions: CreationBatchAction[] = [];
+                if (newTrack) {
+                    actions.push(compileNewAudioTrackAction(newTrack));
+                }
+                actions.push({
+                    type: 'addClip',
+                    payload: {
+                        trackId: targetTrackId,
+                        startBeat: beat,
+                        endBeat: beat + durationBeats,
+                        name: render.name,
+                        type: 'audio',
+                        audioBufferId: render.bufferId,
+                        assetHash: stagedAsset?.hash,
+                    },
                 });
-                if (clip) {
+                const batchResult = await runCreationBatch(actions, `Drop render: ${render.name}`);
+                if (retainedCreation(batchResult)) {
                     if (stagedAsset) {
                         getAssetTransfer()?.promoteStagedAsset(stagedAsset.leaseId);
                     }
@@ -349,22 +398,30 @@ export const useTimelineFileDrop = ({
                     return;
                 }
 
-                const targetTrackId = resolveAudioTarget(sample.name);
-                if (!targetTrackId) {
+                const targetPlan = resolveAudioTarget(sample.name);
+                if (!targetPlan) {
                     discardPreparedSampleResources();
                     return;
                 }
 
-                const clip = addClip({
-                    trackId: targetTrackId,
-                    startBeat: beat,
-                    endBeat: beat + durationBeats,
-                    name: sample.name,
-                    type: 'audio',
-                    audioBufferId,
-                    assetHash,
+                const actions: CreationBatchAction[] = [];
+                if (targetPlan.newTrack) {
+                    actions.push(compileNewAudioTrackAction(targetPlan.newTrack));
+                }
+                actions.push({
+                    type: 'addClip',
+                    payload: {
+                        trackId: targetPlan.trackId,
+                        startBeat: beat,
+                        endBeat: beat + durationBeats,
+                        name: sample.name,
+                        type: 'audio',
+                        audioBufferId,
+                        assetHash,
+                    },
                 });
-                if (!clip) {
+                const batchResult = await runCreationBatch(actions, `Drop sample: ${sample.name}`);
+                if (!retainedCreation(batchResult)) {
                     discardPreparedSampleResources();
                     return;
                 }
@@ -459,8 +516,8 @@ export const useTimelineFileDrop = ({
                         return;
                     }
 
-                    const targetTrackId = resolveAudioTarget(file.name.replace(/\.[^.]+$/, ''));
-                    if (!targetTrackId) {
+                    const targetPlan = resolveAudioTarget(file.name.replace(/\.[^.]+$/, ''));
+                    if (!targetPlan) {
                         if (stagedAsset) {
                             assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
                         }
@@ -468,17 +525,28 @@ export const useTimelineFileDrop = ({
                         return;
                     }
 
-                    const clip = addClip({
-                        trackId: targetTrackId,
-                        startBeat: currentBeat,
-                        endBeat: currentBeat + durationBeats,
-                        name: file.name.replace(/\.[^.]+$/, ''),
-                        type: 'audio',
-                        audioBufferId: bufferId,
-                        assetHash: stagedAsset?.hash,
+                    const actions: CreationBatchAction[] = [];
+                    if (targetPlan.newTrack) {
+                        actions.push(compileNewAudioTrackAction(targetPlan.newTrack));
+                    }
+                    actions.push({
+                        type: 'addClip',
+                        payload: {
+                            trackId: targetPlan.trackId,
+                            startBeat: currentBeat,
+                            endBeat: currentBeat + durationBeats,
+                            name: file.name.replace(/\.[^.]+$/, ''),
+                            type: 'audio',
+                            audioBufferId: bufferId,
+                            assetHash: stagedAsset?.hash,
+                        },
                     });
+                    const batchResult = await runCreationBatch(
+                        actions,
+                        `Import audio: ${file.name.replace(/\.[^.]+$/, '')}`
+                    );
 
-                    if (!clip) {
+                    if (!retainedCreation(batchResult)) {
                         if (stagedAsset) {
                             assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
                         }

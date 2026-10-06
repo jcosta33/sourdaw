@@ -1,5 +1,6 @@
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 
+import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 
 type AgentMeasurementMetricId = ReturnType<typeof getAgentMeasurementMetricIds>[number];
@@ -8,11 +9,19 @@ type AnalysisMeasureScope = { kind: 'master' | 'project' } | { kind: 'tracks' | 
 
 type AnalysisMeasureRange = { sectionId: string } | { startBeat: number; endBeat: number };
 
+/**
+ * What is measured: the project as it stands, or the project with a proposed semantic command list
+ * applied in isolation, beside the project itself. The list is validated by the compiler a
+ * proposal uses, not here.
+ */
+type AnalysisMeasureSubject = { kind: 'project' } | { kind: 'preview'; proposal: Readonly<Record<string, unknown>> };
+
 type AnalysisMeasureArguments = {
     scope: AnalysisMeasureScope;
     range: AnalysisMeasureRange;
     /** The requested metrics in receipt key order; every metric when the call names none. */
     metrics: AgentMeasurementMetricId[];
+    subject: AnalysisMeasureSubject;
 };
 
 type ParsedAnalysisMeasureArguments =
@@ -91,37 +100,66 @@ function parseMetrics(value: unknown): AgentMeasurementMetricId[] | null {
     return metricIds.filter((id) => requested.has(id));
 }
 
+function parseSubject(subject: unknown, proposal: unknown): AnalysisMeasureSubject | null {
+    if (subject === undefined || subject === 'project') {
+        return proposal === undefined ? { kind: 'project' } : null;
+    }
+    if (subject === 'preview' && isRecord(proposal)) {
+        return { kind: 'preview', proposal };
+    }
+    return null;
+}
+
 /**
  * The strict argument contract of one `analysis.measure` call.
  *
  * Only the argument shape is decided here. Whether a range's start precedes its
  * end, whether a section or target exists, and whether the range fits the
  * render ceilings are answered by the executor against the project.
+ *
+ * `toolName` is the tool the refusals name: `analysis.compareReference` takes the same
+ * scope, range and metrics, so it reads them through this contract.
  */
-export function parseAnalysisMeasureArguments(argumentsValue: unknown): ParsedAnalysisMeasureArguments {
-    if (!isRecord(argumentsValue) || !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics'])) {
-        return { status: 'invalid', reason: 'analysis.measure accepts only scope, range and metrics.' };
+export function parseAnalysisMeasureArguments(
+    argumentsValue: unknown,
+    toolName: string = ANALYSIS_MEASURE_TOOL_NAME
+): ParsedAnalysisMeasureArguments {
+    if (
+        !isRecord(argumentsValue) ||
+        !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics', 'subject', 'proposal'])
+    ) {
+        return {
+            status: 'invalid',
+            reason: `${toolName} accepts only scope, range, metrics, subject and proposal.`,
+        };
+    }
+    const subject = parseSubject(argumentsValue.subject, argumentsValue.proposal);
+    if (subject === null) {
+        return {
+            status: 'invalid',
+            reason: `${toolName} subject is project, which takes no proposal, or preview, which requires a proposal list.`,
+        };
     }
     const scope = parseScope(argumentsValue.scope);
     if (scope === null) {
         return {
             status: 'invalid',
-            reason: `analysis.measure scope must be master, project, or tracks or buses with 1 to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} distinct ids.`,
+            reason: `${toolName} scope must be master, project, or tracks or buses with 1 to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} distinct ids.`,
         };
     }
     const range = parseRange(argumentsValue.range);
     if (range === null) {
         return {
             status: 'invalid',
-            reason: 'analysis.measure range must be a sectionId alone, or finite non-negative startBeat and endBeat.',
+            reason: `${toolName} range must be a sectionId alone, or finite non-negative startBeat and endBeat.`,
         };
     }
     const metrics = parseMetrics(argumentsValue.metrics);
     if (metrics === null) {
         return {
             status: 'invalid',
-            reason: 'analysis.measure metrics must be a non-empty list of distinct measurement metric ids.',
+            reason: `${toolName} metrics must be a non-empty list of distinct measurement metric ids.`,
         };
     }
-    return { status: 'valid', value: { scope, range, metrics } };
+    return { status: 'valid', value: { scope, range, metrics, subject } };
 }

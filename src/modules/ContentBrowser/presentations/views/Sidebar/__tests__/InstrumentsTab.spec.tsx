@@ -66,7 +66,6 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addTrack: vi.fn(),
     getFactoryPresets: arrangementMocks.getFactoryPresets,
     getUserPresets: arrangementMocks.getUserPresets,
     saveCurrentAsPreset: arrangementMocks.saveCurrentAsPreset,
@@ -80,6 +79,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: commandMocks.executeUserAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
@@ -179,6 +179,28 @@ describe('InstrumentsTab', () => {
             />
         );
         expect(document.body).toBeTruthy();
+    });
+
+    it('dispatches the addTrack app action for the blank MIDI track shortcut', () => {
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
+        );
+        fireEvent.click(screen.getByText('+ Add blank MIDI track'));
+        // The registered creation action, not the bare addTrack use case, so
+        // the track enters undo history (#4618).
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: { name: 'MIDI', kind: 'midi' },
+        });
     });
 
     it('should render with useCase bindings', () => {

@@ -252,6 +252,17 @@ export async function submitAdmittedPromptRequest(
             notifyAiChange(`Command not executed: ${planned.result.rejectionReason}`, []);
             return { status: 'rejected', runId };
         }
+        // The prompt bar approves and executes one batch; a request that runs as successive batches,
+        // each with its own approval, belongs in the agent chat that proposes them one at a time.
+        if (planned.result.batchSchedule !== undefined) {
+            transitionTerminalRun(runId, 'failed');
+            await releasePlanOwnedStemResources();
+            notifyAiChange(
+                `Command not executed: this request runs as ${String(planned.result.batchSchedule.total)} successive batches; run it from the agent chat.`,
+                []
+            );
+            return { status: 'rejected', runId };
+        }
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
@@ -359,6 +370,8 @@ export async function submitAdmittedPromptRequest(
                 affectedIds: [...authority.scope.targetIds],
                 protectedUnchanged: authority.scope.protectedTargetIds.map((id) => ({ id, name: id })),
                 matchSelectorPredicates: planned.result.matchSelectorPredicates,
+                adoptedRecipes: planned.result.adoptedRecipes,
+                measuredPreview: planned.result.measuredPreview,
                 executionMode: planned.result.executionMode,
                 group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
                 projectRevision: planned.projectRevision,

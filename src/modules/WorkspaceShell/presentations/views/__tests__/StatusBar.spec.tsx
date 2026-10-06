@@ -164,6 +164,25 @@ describe('StatusBar', () => {
             });
         });
 
+        it('restores footer focus when an element inside the More dialog was focused before the mode change', async () => {
+            setViewportWidth(1199);
+            renderWithTooltip(<StatusBar />);
+            const more = screen.getByRole('button', { name: 'More application status' });
+            fireEvent.click(more);
+            const insideBtn = screen.getByRole('button', { name: 'Third-party licenses' });
+            insideBtn.focus();
+
+            setViewportWidth(1200);
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            expect(screen.queryByRole('dialog', { name: 'More application status' })).not.toBeInTheDocument();
+            await waitFor(() => {
+                expect(screen.getByRole('button', { name: 'Project links' })).toHaveFocus();
+            });
+        });
+
         it('keeps unrelated focus outside the footer through a mode change', () => {
             setViewportWidth(1200);
             renderWithTooltip(

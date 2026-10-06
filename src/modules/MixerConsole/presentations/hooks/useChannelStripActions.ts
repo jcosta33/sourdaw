@@ -1,16 +1,13 @@
 import { useRef, useState } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import {
     soloTrackExclusive,
     toggleInputMonitoring,
     selectTrack,
     setTrackGain,
     setTrackPan,
-    toggleVcaMembership,
-    createAndAssignVcaGroup,
-    removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
@@ -436,9 +433,24 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 }
             })();
         },
-        toggleVca: (groupId) => toggleVcaMembership(track.id, groupId),
-        createVcaAndAssign: () => createAndAssignVcaGroup(track.id),
-        removeFromVca: () => removeFromVca(track.id),
+        toggleVca: (groupId) => {
+            if (track.vcaGroupId === groupId) {
+                void executeUserAppAction({ type: 'removeFromVca', payload: { trackId: track.id } });
+                return;
+            }
+            void executeUserAppAction({ type: 'assignToVca', payload: { trackId: track.id, vcaGroupId: groupId } });
+        },
+        createVcaAndAssign: () => {
+            // Same sequential naming the bare `createAndAssignVcaGroup` use case used.
+            const groupCount = vcaGroupStore.value?.groups.length ?? 0;
+            void executeUserAppAction({
+                type: 'createVcaGroup',
+                payload: { name: `VCA ${String(groupCount + 1)}`, trackIds: [track.id] },
+            });
+        },
+        removeFromVca: () => {
+            void executeUserAppAction({ type: 'removeFromVca', payload: { trackId: track.id } });
+        },
         releaseGainAutomation: () => releaseTouch('gain'),
         releasePanAutomation: () => releaseTouch('pan'),
         displayGain,

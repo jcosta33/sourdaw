@@ -8,7 +8,8 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
+import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { gainToDb, levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
@@ -115,7 +116,14 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                             variant="outline"
                             size="xs"
                             onClick={() => {
-                                addTrack({ name: `Bus ${buses.length + 1}`, kind: 'bus' });
+                                // The registered bus-creation action, not the
+                                // bare addTrack use case, so the bus enters
+                                // undo history (#4618) — the same gesture the
+                                // empty-timeline menu's Add Bus Track takes.
+                                void executeUserAppAction({
+                                    type: 'createBus',
+                                    payload: { name: `Bus ${buses.length + 1}` },
+                                });
                             }}
                         >
                             <Plus className="size-3 mr-1" />

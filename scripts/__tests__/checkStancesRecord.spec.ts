@@ -9,7 +9,9 @@ import {
     parseStancesCheckThreshold,
     readStancesCheckAnswers,
     readStancesCheckRecord,
+    renderStancesCheckOutcome,
 } from '../checkStancesRecord.ts';
+import { TYPESAFE_MODEL } from '../semanticReview/provider.ts';
 
 import type { StanceAdmission, StancesCheckRecord } from '../checkStancesRecord.ts';
 
@@ -115,17 +117,166 @@ describe('buildStancesCheckBody', () => {
 });
 
 describe('readStancesCheckAnswers', () => {
-    it('lifts the answers member out of the response envelope', () => {
+    it('lifts the answers member and the answering model out of the response envelope', () => {
         const answers = { stance_0: { type: 'noul', noul: 0.03 } };
 
-        expect(readStancesCheckAnswers({ model: 'jev-1.13.0', answers, usage: { input_tokens: 1 } })).toEqual(answers);
+        expect(readStancesCheckAnswers({ model: TYPESAFE_STANCES_MODEL, answers, usage: { input_tokens: 1 } })).toEqual(
+            { model: TYPESAFE_STANCES_MODEL, answers }
+        );
     });
 
     it('refuses a payload without an answers object', () => {
-        expect(() => readStancesCheckAnswers({ model: 'jev-1.13.0' })).toThrow(
+        expect(() => readStancesCheckAnswers({ model: TYPESAFE_STANCES_MODEL })).toThrow(
             /TypeSafe response must carry an answers object/
         );
         expect(() => readStancesCheckAnswers(undefined)).toThrow(/TypeSafe response must carry an answers object/);
+    });
+
+    it('refuses a response whose model is not the pinned version', () => {
+        const answers = { stance_0: { type: 'noul', noul: 0.03 } };
+
+        expect(() => readStancesCheckAnswers({ model: 'jev-latest', answers })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-latest"`
+        );
+        expect(() => readStancesCheckAnswers({ model: undefined, answers })).toThrow(/TypeSafe response model must be/);
+    });
+
+    it('refuses a superseded pin rather than accepting the family, naming both models', () => {
+        const answers = { stance_0: { type: 'noul', noul: 0.03 } };
+
+        expect(() => readStancesCheckAnswers({ model: 'jev-1.12.0', answers })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-1.12.0"`
+        );
+    });
+});
+
+/**
+ * The production composition, end to end over its exported seams: validate the response against the
+ * pinned model, judge the admissions with the model that answered, then render the outcome. Every
+ * case here observes the chain rather than one link of it, so bypassing the pin read inside the
+ * validation cannot leave the rendered outcome green.
+ */
+function runStancesCheckOutcome(payload: unknown, threshold: number = DEFAULT_STANCES_THRESHOLD) {
+    const response = readStancesCheckAnswers(payload);
+    const evaluation = evaluateStancesCheck(response.answers, threshold, GENUINE_ADMISSIONS, response.model);
+    return renderStancesCheckOutcome(evaluation, threshold);
+}
+
+const PASSING_ANSWERS = { stance_0: { noul: 0.9 }, stance_1: { noul: 0.6 } };
+
+describe('renderStancesCheckOutcome', () => {
+    it('names the pinned model in the all-pass summary line, keeping the threshold text', () => {
+        const evaluation = evaluateStancesCheck(
+            PASSING_ANSWERS,
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS,
+            TYPESAFE_STANCES_MODEL
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(true);
+        expect(outcome.stderr).toEqual([]);
+        expect(outcome.stdout).toHaveLength(3);
+        expect(outcome.stdout[0]).toContain('correctness');
+        expect(outcome.stdout[0]).toContain('PASS');
+        expect(outcome.stdout[2]).toBe(
+            `stances:check: all 2 admission line(s) at or above threshold 0.5 (model ${TYPESAFE_STANCES_MODEL})`
+        );
+    });
+
+    it('names the pinned model in the below-threshold failure line, keeping the threshold text', () => {
+        const evaluation = evaluateStancesCheck(
+            { stance_0: { noul: 0.93 }, stance_1: { noul: 0.41 } },
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS,
+            TYPESAFE_STANCES_MODEL
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(false);
+        expect(outcome.stdout).toHaveLength(2);
+        expect(outcome.stderr).toEqual([
+            `stances:check: 1 of 2 admission line(s) fall below threshold 0.5 (model ${TYPESAFE_STANCES_MODEL}): test-validity (0.410)`,
+        ]);
+        expect(outcome.stderr[0]).toContain(TYPESAFE_STANCES_MODEL);
+    });
+
+    it('names the model the evaluation carries rather than the pinned request constant', () => {
+        const evaluation = evaluateStancesCheck(
+            PASSING_ANSWERS,
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS,
+            'jev-1.12.0'
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.stdout.at(-1)).toBe(
+            'stances:check: all 2 admission line(s) at or above threshold 0.5 (model jev-1.12.0)'
+        );
+        expect(outcome.stdout.at(-1)).not.toContain(TYPESAFE_STANCES_MODEL);
+    });
+
+    it('names the model the evaluation carries in the below-threshold failure line too', () => {
+        const evaluation = evaluateStancesCheck(
+            { stance_0: { noul: 0.93 }, stance_1: { noul: 0.41 } },
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS,
+            'jev-1.12.0'
+        );
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.stderr).toEqual([
+            'stances:check: 1 of 2 admission line(s) fall below threshold 0.5 (model jev-1.12.0): test-validity (0.410)',
+        ]);
+        expect(outcome.stderr[0]).not.toContain(TYPESAFE_STANCES_MODEL);
+    });
+
+    it('renders no summary line for a record with no admissions', () => {
+        const evaluation = evaluateStancesCheck({}, DEFAULT_STANCES_THRESHOLD, [], TYPESAFE_STANCES_MODEL);
+        const outcome = renderStancesCheckOutcome(evaluation, DEFAULT_STANCES_THRESHOLD);
+
+        expect(outcome.passed).toBe(true);
+        expect(outcome.stdout).toEqual([
+            `stances:check: all 0 admission line(s) at or above threshold 0.5 (model ${TYPESAFE_STANCES_MODEL})`,
+        ]);
+    });
+});
+
+describe('stance check outcome composition', () => {
+    it('chains the pin read, the evaluation and the render, naming the answering model', () => {
+        const outcome = runStancesCheckOutcome({ model: TYPESAFE_STANCES_MODEL, answers: PASSING_ANSWERS });
+
+        expect(outcome.passed).toBe(true);
+        expect(outcome.stdout.at(-1)).toBe(
+            `stances:check: all 2 admission line(s) at or above threshold 0.5 (model ${TYPESAFE_STANCES_MODEL})`
+        );
+    });
+
+    it('refuses a mismatched-model payload before any outcome can be rendered, never a PASS naming the pin', () => {
+        expect(() => runStancesCheckOutcome({ model: 'jev-latest', answers: PASSING_ANSWERS })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-latest"`
+        );
+        // The same chain over a superseded pin: the refusal is what stops the render, not the renderer.
+        expect(() => runStancesCheckOutcome({ model: 'jev-1.12.0', answers: PASSING_ANSWERS })).toThrow(
+            `TypeSafe response model must be ${TYPESAFE_STANCES_MODEL}, found "jev-1.12.0"`
+        );
+    });
+
+    it('still renders the below-threshold failure through the chain, naming the answering model', () => {
+        const outcome = runStancesCheckOutcome({
+            model: TYPESAFE_STANCES_MODEL,
+            answers: { stance_0: { noul: 0.93 }, stance_1: { noul: 0.41 } },
+        });
+
+        expect(outcome.passed).toBe(false);
+        expect(outcome.stderr[0]).toContain(`(model ${TYPESAFE_STANCES_MODEL})`);
+        expect(outcome.stderr[0]).toContain('test-validity (0.410)');
+    });
+});
+
+describe('model pin', () => {
+    it('pins the same versioned model as the scan provider', () => {
+        expect(TYPESAFE_STANCES_MODEL).toBe(TYPESAFE_MODEL);
     });
 });
 
@@ -136,15 +287,27 @@ describe('evaluateStancesCheck', () => {
         const evaluation = evaluateStancesCheck(
             { stance_0: { noul: 0.5 }, stance_1: { noul: 0.4999 } },
             0.5,
-            GENUINE_ADMISSIONS
+            GENUINE_ADMISSIONS,
+            TYPESAFE_STANCES_MODEL
         );
 
         expect(evaluation.verdicts[0]?.passes).toBe(true);
         expect(evaluation.verdicts[1]?.passes).toBe(false);
     });
 
+    it('carries the model that answered into the evaluation', () => {
+        const evaluation = evaluateStancesCheck(ANSWERS, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS, 'jev-1.12.0');
+
+        expect(evaluation.model).toBe('jev-1.12.0');
+    });
+
     it('names every failing stance with its probability', () => {
-        const evaluation = evaluateStancesCheck(ANSWERS, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS);
+        const evaluation = evaluateStancesCheck(
+            ANSWERS,
+            DEFAULT_STANCES_THRESHOLD,
+            GENUINE_ADMISSIONS,
+            TYPESAFE_STANCES_MODEL
+        );
 
         expect(evaluation.failures).toEqual([
             {
@@ -161,7 +324,8 @@ describe('evaluateStancesCheck', () => {
         const evaluation = evaluateStancesCheck(
             { stance_0: { noul: 0.9 }, stance_1: { noul: 0.6 } },
             DEFAULT_STANCES_THRESHOLD,
-            GENUINE_ADMISSIONS
+            GENUINE_ADMISSIONS,
+            TYPESAFE_STANCES_MODEL
         );
 
         expect(evaluation.failures).toEqual([]);
@@ -169,20 +333,30 @@ describe('evaluateStancesCheck', () => {
     });
 
     it('stops on a missing answer key', () => {
-        expect(() => evaluateStancesCheck({}, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS)).toThrow(
-            /answers\[stance_0\]\.noul must be a number in \[0, 1\], found undefined/
-        );
+        expect(() =>
+            evaluateStancesCheck({}, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS, TYPESAFE_STANCES_MODEL)
+        ).toThrow(/answers\[stance_0\]\.noul must be a number in \[0, 1\], found undefined/);
     });
 
     it('stops on a non-numeric noul', () => {
         expect(() =>
-            evaluateStancesCheck({ stance_0: { noul: 'high' } }, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS)
+            evaluateStancesCheck(
+                { stance_0: { noul: 'high' } },
+                DEFAULT_STANCES_THRESHOLD,
+                GENUINE_ADMISSIONS,
+                TYPESAFE_STANCES_MODEL
+            )
         ).toThrow(/answers\[stance_0\]\.noul must be a number in \[0, 1\], found "high"/);
     });
 
     it('stops on a noul outside [0, 1]', () => {
         expect(() =>
-            evaluateStancesCheck({ stance_0: { noul: 1.5 } }, DEFAULT_STANCES_THRESHOLD, GENUINE_ADMISSIONS)
+            evaluateStancesCheck(
+                { stance_0: { noul: 1.5 } },
+                DEFAULT_STANCES_THRESHOLD,
+                GENUINE_ADMISSIONS,
+                TYPESAFE_STANCES_MODEL
+            )
         ).toThrow(/answers\[stance_0\]\.noul must be a number in \[0, 1\]/);
     });
 });

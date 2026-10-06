@@ -16,8 +16,7 @@
             "sealed": true
         },
         "time-scoped-level": {
-            "sealed": false,
-            "pendingContract": "automateParameterRange over a musical range in either direction"
+            "sealed": true
         },
         "bulk-by-role": {
             "sealed": false,
@@ -1364,6 +1363,208 @@
                     "touchedIdsWithin": ["track-kick", "track-snare"],
                     "protectedIds": ["track-hi-hat", "track-drum-bus"],
                     "maxCommands": 3
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-RANGE-1",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Dip the Lead Vocal by 6 dB in the Chorus.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["dip a track level across a section"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "dip-vocal",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "gain",
+                                "range": {
+                                    "section": "Chorus"
+                                },
+                                "deltaDb": -6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Lead Vocal"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "parameterId": "gain",
+                            "range": {
+                                "section": "Chorus"
+                            },
+                            "deltaDb": -6,
+                            "startBeat": 48,
+                            "endBeat": 80
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-lead-vocal"],
+                    "protectedIds": ["track-kick", "track-guitar"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-RANGE-2",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Duck the Kick send to the Drum Bus to -12 dB over bars 5 to 8.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["duck a send level over a bar range"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "duck-kick-send",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "send:track-drum-bus",
+                                "range": {
+                                    "startBar": 5,
+                                    "endBar": 8
+                                },
+                                "valueDb": -12
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Kick"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "parameterId": "send:track-drum-bus",
+                            "range": {
+                                "startBar": 5,
+                                "endBar": 8
+                            },
+                            "valueDb": -12,
+                            "startBeat": 16,
+                            "endBeat": 32
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-drum-bus"],
+                    "protectedIds": ["track-snare", "track-lead-vocal"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-RANGE-3",
+            "promptClass": "time-scoped-level",
+            "class": "execute-exact",
+            "prompt": "Automate the Bass DI compressor threshold to -30 from beat 16 to beat 48.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["automate a device parameter over a beat range"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["automateParameterRange"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "ride-threshold",
+                            "name": "automateParameterRange",
+                            "arguments": {
+                                "parameterId": "device-bass-di-compressor:comp-threshold",
+                                "range": {
+                                    "startBeat": 16,
+                                    "endBeat": 48
+                                },
+                                "value": -30
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Bass DI"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "automateParameterRange",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "parameterId": "device-bass-di-compressor:comp-threshold",
+                            "range": {
+                                "startBeat": 16,
+                                "endBeat": 48
+                            },
+                            "value": -30,
+                            "startBeat": 16,
+                            "endBeat": 48
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-bass-di", "device-bass-di-compressor"],
+                    "protectedIds": ["track-kick"],
+                    "maxCommands": 1
                 }
             }
         }

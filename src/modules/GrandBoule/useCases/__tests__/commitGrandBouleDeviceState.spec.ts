@@ -21,11 +21,15 @@ describe('commitGrandBouleDeviceState', () => {
     it('saves before and after versioned state through the undoable action', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         commitGrandBouleDeviceState('grand-1', {
-            modelA: 'mellow-grand',
-            modelB: 'singing-grand',
-            morphPosition: 0.4,
-            layerBalance: 0.2,
-            enabled: true,
+            morph: {
+                modelA: 'mellow-grand',
+                modelB: 'singing-grand',
+                morphPosition: 0.4,
+                layerBalance: 0.2,
+                enabled: true,
+            },
+            temperament: 3,
+            parameters: { hammerHardness: 0.4, velocityCurve: 0.85, stereoWidth: 0.7, toneTilt: 0.35 },
         });
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith({
@@ -40,6 +44,11 @@ describe('commitGrandBouleDeviceState', () => {
                         morphPosition: 0,
                         layerBalance: 0,
                         enabled: false,
+                        temperament: 0,
+                        hammerHardness: 0,
+                        velocityCurve: 1,
+                        stereoWidth: 0.6,
+                        toneTilt: 0,
                     },
                 },
                 after: {
@@ -50,6 +59,11 @@ describe('commitGrandBouleDeviceState', () => {
                         morphPosition: 0.4,
                         layerBalance: 0.2,
                         enabled: true,
+                        temperament: 3,
+                        hammerHardness: 0.4,
+                        velocityCurve: 0.85,
+                        stereoWidth: 0.7,
+                        toneTilt: 0.35,
                     },
                 },
             },

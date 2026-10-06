@@ -59,8 +59,16 @@ type OfflineAutomationSegment = {
     startValue: number;
     endValue: number;
 };
+/**
+ * The schedule law shared with the worklet's own copy in
+ * `services/toasterProcessor.ts` — keep the two identical. Segments chain
+ * from the first one, whose opening frame may sit anywhere at or past 0
+ * (#4744): a clip-scoped lane on a clip that starts after the export region
+ * start compiles to a stream opening mid-render, and the parameter holds its
+ * pre-stream value until that frame — the same thing live playback does.
+ */
 function isContiguousAutomationSchedule(segments: readonly OfflineAutomationSegment[]): boolean {
-    if (segments.length === 0 || segments[0]?.startFrame !== 0) {
+    if (segments.length === 0) {
         return false;
     }
     return segments.every((segment, index) => {

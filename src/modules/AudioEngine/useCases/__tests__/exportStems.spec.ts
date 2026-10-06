@@ -931,9 +931,9 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
     it('rejects when a cancel is requested before the render pool starts', async () => {
         const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
-        // resolveRenderContext runs AFTER resetCancelFlag (line 38) clears the
-        // flag, so setting it here as a side effect of resolving the context
-        // makes the pool's isCancelRequested() guard (line 226) observe true.
+        // resolveRenderContext runs after the export began its cancellation
+        // scope, so setting the flag here as a side effect of resolving the
+        // context makes the pool's isCancelRequested() guard observe true.
         offlineRenderMocks.resolveRenderContext.mockImplementation(() => {
             exportCancellationState.cancelFlag = true;
             return createRenderContext([track]);
@@ -947,8 +947,10 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
         await expect(exportStems(4)).rejects.toThrow('Export cancelled');
 
-        // Reset for subsequent tests.
-        exportCancellationState.cancelFlag = false;
+        // A settled export lowers the flag it was cancelled under (#4782); the
+        // manual reset this used to need would hide a regression.
+        expect(exportCancellationState.cancelFlag).toBe(false);
+
         vi.unstubAllGlobals();
     });
 });

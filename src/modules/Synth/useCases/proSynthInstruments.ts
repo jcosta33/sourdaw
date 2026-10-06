@@ -78,7 +78,8 @@ export function registerProSynthInstruments(): void {
                 type: 'hslider' as const,
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // Physical Modeling — Karplus-Strong string with excitation, damping, body controls
@@ -123,7 +124,8 @@ export function registerProSynthInstruments(): void {
                 type: 'hslider' as const,
             },
         ],
-        true
+        true,
+        'none'
     );
 
     // Additive Synth — the compiled node exposes exactly rolloff, gain, freq
@@ -157,6 +159,7 @@ export function registerProSynthInstruments(): void {
             },
             { address: '/additive/gate', label: 'Gate', min: 0, max: 1, defaultValue: 0, step: 1, type: 'button' },
         ],
-        true
+        true,
+        'none'
     );
 }

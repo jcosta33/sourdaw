@@ -75,8 +75,39 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   each arm to be load-bearing by mutating that arm's condition away and confirming the assertion
   reddens — that mutation is how a dead arm is exposed, and until both arms are proven the
   disjunction can be silently narrowed to a single live arm.
+- A test whose expectation is computed with the code's own expression cannot observe a divergence
+  between that expression and its consumer's: it proves the expression is stable, never that it
+  agrees with the boundary that will refuse the value. Pin the figure at the consumer's boundary, and
+  state which source each literal came from.
+- For every assertion a change adds, mutate the input it reads and confirm it fails _alone_, with
+  its neighbours exactly as shipped. A pin placed after another assertion that already fixes the
+  same value observes nothing; a relation with slack cannot redden the constant it was written for;
+  a parse that reads the first match in a file bounds whichever entry comes first rather than the one
+  it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
+
+The trusted-write closure spec walked all 13 command graphs in one Vitest case. Each walk independently proved its command's exact closure, but the accumulated work took 5547 ms against the default 5000 ms case timeout and failed the CI shard. The failure was test granularity, not evidence that a command graph was wrong.
+
+Blind spot: independent obligations shared one per-test deadline, so their cumulative cost could fail the aggregate case without identifying a slow command by its own named result.
+
+Probe that would have caught it: when a spec repeats an independent invariant across a registered population, probe the cumulative work under the actual default deadline. Keep each population member as a named parameterized case with its own fresh inputs and deadline, preserve a mutation-discriminating assertion for every member, and do not raise the shared timeout to mask aggregate work.
+
+### 2026-09-28 — an elapsed-time readiness test omitted the real progress producer
+
+The existing timeout cases exercised stalled Crumbs loads and captured-generation isolation, but no check drove Levain's decoded-bank progress into all five live TrackNodes across the 10-second boundary. A green timeout test therefore could not distinguish a healthy cold bank from a stall. PR #3982's review explicitly scoped out progressing-load policy and caller-visible outcomes; the test gap is the missing #3318 acceptance probe, not a failed #3982 cohort oracle.
+
+Probe: use the real decoded-bank producer and sink/descriptor route, assert each captured device receives its own increasing completion callback, then cross the old deadline, finish the finite bank, and require five token-matched worklet acknowledgements. Reverting progress forwarding or the per-device renewal must redden that case. Independently hold one final acknowledgement and one stalled peer, and assert typed failure rather than treating promise settlement or decoded bytes as playable readiness.
+
+### 2026-09-28 — specs that measured a budget with the budget's own expression could not fail (escaped via PR #4491; merge `9effe3689c`)
+
+The semantic review's planner and its provider each measured one request budget differently — the planner reserved a hand-rolled wrapper, the provider measured `{state, questions}` — and the specs asserted the planner's figure with the planner's arithmetic, so the nine-byte divergence that left 37 of 42 scanned units unassessed in CI — the oversized unit under its own `budget_exhausted` refusal and 36 more under `budget-exhausted-before-admission` — was invisible to a green suite. The class of pin that cannot fail reappears whenever a repair adds pins, and each shape is checkable in the spec at head rather than in the history: an assertion reachable only after a neighbouring pin has already fixed the same value, a relation with enough slack that the constant it was written for cannot redden it, a parse that reads the first match in a file rather than the entry it names, and a ratio computed from a value its neighbour pinned.
+
+Blind spot: a suite that measures the system with the system's own arithmetic is self-consistent by construction, so it can never fail on the disagreement that matters; and a pin written beside an exact pin feels like coverage while observing nothing. The first real signal came from running the command end to end and reading its own report, not from any test.
+
+Probe that would have caught it: for each budget, take the consumer's expression as the oracle and assert the producer's admitted unit against it (`JSON.stringify` byte length against the profile's ceiling). For each pin, mutate the input it reads with its neighbours untouched and require it to fail alone; when a mutation leaves the suite green, the pin is the finding.
 
 ### 2026-09-26 — a startup bridge crossing left the desktop-runtime call list stale (escaped via PR #4568)
 
@@ -555,3 +586,47 @@ changed clip value as the rejection control; a copied object alone is not confli
 semantic preparation with the retained handle must fail the settled replay case, while weakening intra-publication
 guards must fail reentrancy or compensation controls. Include an initially empty lane with later peer fragment facets,
 and a write-then-throw after their retirement, so empty captures and rollback cannot disappear behind helper-only proof.
+
+### 2026-09-28 — disposable Git fixtures inherited asynchronous Trace2 writes (escaped via PR #4854)
+
+PR #4854 added disposable Git fixtures whose child commands inherited `GIT_TRACE2_EVENT`; its event writer could
+outlive a Git command and race `rmSync` with `ENOTEMPTY`.
+
+Blind spot: the fixture checked Git's validation result but never checked whether an external writer remained active
+while the temporary tree was removed.
+
+Probe that would have caught it: run a real Git child under a supplied inherited Trace2 target and prove the fixture
+disables tracing for that child (or that the target receives no child events); keep environment restoration in a
+`finally` that runs even when recursive cleanup throws. A parent-process environment assertion or a mocked Git child
+does not prove the external writer is isolated.
+
+### 2026-09-29 — passing status-bar cases hid a Faust compiler abort (introduced by PR #4904; fixed in #4916)
+
+The EDM status-bar E2E cases asserted rate and latency text but did not observe the console assertion emitted while the effect-free Supersaw loaded. The FaustWasm upgrade review's baseline probes covered node instantiation and passing tests, so they could not distinguish clean compilation from a caught, noisy failure followed by a successful fallback.
+
+Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
+
+When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
+
+### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
+
+PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
+exercised handlers through direct execution before a replay guard contract existed. The checks were
+not extended when commit `64b9d77c01a` added guarded compensation preflight or when PR #2747
+(`06fb56e3897`) restricted restore replay to guarded actions. They therefore preserved snapshot shape
+and ordinary undo while never entering the atomic admission that now rejected the family. No
+pull-request number is recorded in Git history for `64b9d77c01a`.
+
+Parameterize every handler registered by the shared transform map through the real atomic executor,
+with one undo entry and concrete full-note poststate, undo, and redo oracles. Include deterministic
+seed control for humanize. Delete `noteTransformReplayGuard` from the inverse and redo to prove the
+case turns red. Separate cases must show invalid initial topology rejects both atomic and direct
+execution without notes or history changing, and that stale topology or notes leaves committed undo
+pending. A helper-level payload assertion alone is not caller admission proof.
+
+Make the direct-dispatch topology oracle individually load-bearing for every registered transform:
+cross each transform with missing, wrong-kind, frozen, locked, and duplicate-ID targets through the
+real dispatcher, and assert notes plus both history stacks stay unchanged. One representative action
+cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
+track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
+blocked history entry stays on its original stack.

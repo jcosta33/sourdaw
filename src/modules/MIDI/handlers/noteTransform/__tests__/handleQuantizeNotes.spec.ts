@@ -8,6 +8,14 @@ vi.mock('../../../useCases/midiNoteTransforms/quantizeNotes', () => ({
     quantizeNotes: vi.fn(),
 }));
 
+vi.mock('../../getWritableMidiClipReplayGuard', () => ({
+    getWritableMidiClipReplayGuardForBatch: vi.fn(() => ({
+        trackId: 'track-1',
+        expectedTrackFrozen: false,
+        expectedClipLocked: false,
+    })),
+}));
+
 vi.mock('../prepareMidiNoteTransformUndo', () => ({
     prepareMidiNoteTransformUndo: vi.fn(() => ({
         description: {

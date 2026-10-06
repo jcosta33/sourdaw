@@ -18,6 +18,8 @@ type GraphInput = {
     offlineCtx: OfflineAudioContext;
     backend: WebAudioOfflineBackend;
     onWarning?: OfflineRenderOptions['onWarning'];
+    /** Stops this render alone, without the process-wide export cancel flag. */
+    abortSignal?: AbortSignal;
 };
 
 /**
@@ -85,7 +87,7 @@ async function routeOfflineStrips(
 
 /** Build on the caller-owned backend so every failure remains inside its disposal boundary. */
 export async function buildOfflineWebAudioGraph(args: GraphInput) {
-    const { input, plan, offlineCtx, backend, onWarning } = args;
+    const { input, plan, offlineCtx, backend, onWarning, abortSignal } = args;
     const {
         allRenderableTracks,
         routableSidechainTargets,
@@ -116,7 +118,7 @@ export async function buildOfflineWebAudioGraph(args: GraphInput) {
     });
 
     for (const track of allRenderableTracks) {
-        checkCancel();
+        checkCancel(abortSignal);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
         // Match live solo-in-place at the same topology point: closing the
         // strip's pre-fader tap also silences audio routed into this strip.

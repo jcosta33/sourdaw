@@ -1,13 +1,16 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
+import { getDeclarativeTransformDocumentSchema } from '#/modules/Command/useCases';
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_CATEGORIES,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -18,7 +21,9 @@ import {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import {
@@ -29,6 +34,12 @@ import {
 } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
+import {
+    RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH,
+    RECIPE_EXPANSION_MAX_STEP_INDEX,
+    RECIPE_EXPANSION_MAX_TARGET_ID_LENGTH,
+    RECIPE_EXPANSION_MAX_VALUES,
+} from '../models/RecipeExpansionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
@@ -37,16 +48,20 @@ export {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
+    MANDATORY_PLANNING_TOOL_NAMES,
     PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 
 export const AGENT_CATALOG_CURSOR_MAX_LENGTH = 2048;
@@ -57,20 +72,6 @@ export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
     maxLength: AGENT_CATALOG_CURSOR_MAX_LENGTH,
     pattern: AGENT_CATALOG_CURSOR_PATTERN,
 } as const;
-
-const EXACT_CATALOG_CATEGORIES = [
-    'query',
-    'resolve',
-    'capability',
-    'catalog',
-    'preview',
-    'command',
-    'commit',
-    'history',
-    'render',
-    'analysis',
-    'approval',
-] as const;
 
 function tool(
     name: string,
@@ -152,7 +153,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
         AGENT_CATALOG_DISCOVERY_TOOL_NAME,
         'Request exact schemas by canonical catalog names. Primitive schemas are returned only for explicitly requested operation names.',
         {
-            category: { type: 'string', enum: EXACT_CATALOG_CATEGORIES },
+            category: { type: 'string', enum: AGENT_CATALOG_CATEGORIES },
             names: {
                 type: 'array',
                 minItems: 1,
@@ -188,7 +189,7 @@ function getRecipeDiscoverySchema(): ToolSchema {
     const roles = getMixRecipeCatalog().roles;
     return tool(
         RECIPE_DISCOVERY_TOOL_NAME,
-        'Find authored mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range.',
+        "Find mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range. A candidate with an origin is a factory chain preset: its descriptor and roles are the preset author's tags, and each range is the single value the preset stores.",
         {
             descriptors: {
                 type: 'array',
@@ -204,43 +205,94 @@ function getRecipeDiscoverySchema(): ToolSchema {
     );
 }
 
-function getAnalysisMeasureSchema(): ToolSchema {
-    const metricIds = getAgentMeasurementMetricIds();
-    const boundedId = { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH };
+function getRecipeExpansionSchema(): ToolSchema {
+    const roles = getMixRecipeCatalog().roles;
     return tool(
-        ANALYSIS_MEASURE_TOOL_NAME,
-        `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat.`,
+        RECIPE_EXPANSION_TOOL_NAME,
+        "Expand one recipe found by recipe.discover against one track into the ordinary device commands the application builds for you: an addDevice for each insert step and a setDeviceParameter for each authored parameter, in the recipe's order. This is a preview: it does not mutate the project. Use the returned callId in command.batch.propose compiledCallIds to adopt its exact commands; the application grounds and validates them like any command you write. Each parameter takes the middle of its range unless values names it, and a supplied value must lie inside that parameter's range.",
         {
-            scope: {
-                type: 'object',
-                properties: {
-                    kind: { type: 'string', enum: ['master', 'project', 'tracks', 'buses'] },
-                    ids: {
-                        type: 'array',
-                        minItems: 1,
-                        maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
-                        items: { ...boundedId },
-                    },
-                },
-                required: ['kind'],
-                additionalProperties: false,
-            },
-            range: {
-                type: 'object',
-                properties: {
-                    sectionId: { ...boundedId },
-                    startBeat: { type: 'number', minimum: 0 },
-                    endBeat: { type: 'number', minimum: 0 },
-                },
-                additionalProperties: false,
-            },
-            metrics: {
+            recipeId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH },
+            targetId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_TARGET_ID_LENGTH },
+            role: { type: 'string', enum: [...roles] },
+            values: {
                 type: 'array',
-                minItems: 1,
-                maxItems: metricIds.length,
-                items: { type: 'string', enum: [...metricIds] },
+                maxItems: RECIPE_EXPANSION_MAX_VALUES,
+                items: {
+                    type: 'object',
+                    properties: {
+                        step: {
+                            type: 'integer',
+                            minimum: 0,
+                            maximum: RECIPE_EXPANSION_MAX_STEP_INDEX,
+                            description: "Zero-based position of the step in the recipe's steps list.",
+                        },
+                        paramId: { type: 'string', minLength: 1, maxLength: RECIPE_EXPANSION_MAX_IDENTIFIER_LENGTH },
+                        value: { type: 'number', description: "Value in the parameter's native unit." },
+                    },
+                    required: ['step', 'paramId', 'value'],
+                    additionalProperties: false,
+                },
             },
         },
+        ['recipeId', 'targetId']
+    );
+}
+
+/** The scope, range and metrics a project measurement reads, which `analysis.measure` and `analysis.compareReference` share. */
+function getProjectMeasurementProperties() {
+    const metricIds = getAgentMeasurementMetricIds();
+    const boundedId = { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH };
+    return {
+        scope: {
+            type: 'object',
+            properties: {
+                kind: { type: 'string', enum: ['master', 'project', 'tracks', 'buses'] },
+                ids: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
+                    items: { ...boundedId },
+                },
+            },
+            required: ['kind'],
+            additionalProperties: false,
+        },
+        range: {
+            type: 'object',
+            properties: {
+                sectionId: { ...boundedId },
+                startBeat: { type: 'number', minimum: 0 },
+                endBeat: { type: 'number', minimum: 0 },
+            },
+            additionalProperties: false,
+        },
+        metrics: {
+            type: 'array',
+            minItems: 1,
+            maxItems: metricIds.length,
+            items: { type: 'string', enum: [...metricIds] },
+        },
+    };
+}
+
+function getAnalysisMeasureSchema(): ToolSchema {
+    return tool(
+        ANALYSIS_MEASURE_TOOL_NAME,
+        `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat. With subject "preview", also pass proposal, a semantic command list in the form command.batch.propose takes as list: the application compiles it, previews it without changing the project, and measures the same scope and range before and after it, returning both figures and their deltas. To propose exactly the measured change, pass this call's callId in command.batch.propose compiledCallIds.`,
+        {
+            subject: { type: 'string', enum: ['project', 'preview'] },
+            proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
+            ...getProjectMeasurementProperties(),
+        },
+        ['scope', 'range']
+    );
+}
+
+function getAnalysisCompareReferenceSchema(): ToolSchema {
+    return tool(
+        ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+        `Compare the project to the reference the user loaded for comparison. Takes the scope and range analysis.measure takes. The application measured the reference locally over its whole duration, renders the project scope at the current project revision, and returns the reference's figures, the project's figures for each target, and per-metric deltas that read reference minus project: a positive loudness delta means the reference is louder than the project. A per-band figure has no delta. Only figures are returned, never the reference file or any audio; the reference is named by an opaque identifier. Fails with no-reference-loaded while the user has loaded none. Counts against the one measurement allowed per turn, alongside analysis.measure.`,
+        getProjectMeasurementProperties(),
         ['scope', 'range']
     );
 }
@@ -265,8 +317,14 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         getCatalogDiscoverySchema(),
         getCommandIndexSearchSchema(),
         tool(
+            TRANSFORM_COMPILE_TOOL_NAME,
+            'Compile a bounded declarative edit against the captured project snapshot. This is a preview: it does not mutate the project. Use the returned callId in command.batch.propose compiledCallIds to select its exact expanded commands.',
+            { document: getDeclarativeTransformDocumentSchema() },
+            ['document']
+        ),
+        tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
+            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. Call with no arguments to list every available device type as { id, name }; a later turn's context omits that list. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
             {
                 types: {
                     type: 'array',
@@ -282,8 +340,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     },
                     additionalProperties: false,
                 },
-            },
-            ['types']
+            }
         ),
         tool(
             COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -291,7 +348,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             {
                 commands: {
                     type: 'array',
-                    minItems: 1,
+                    minItems: 0,
                     maxItems: MAX_LLM_ACTIONS_PER_BATCH,
                     items: {
                         type: 'object',
@@ -304,6 +361,12 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     },
                 },
                 list: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
+                compiledCallIds: {
+                    type: 'array',
+                    maxItems: MAX_LLM_ACTIONS_PER_BATCH,
+                    uniqueItems: true,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
                 plan: {
                     type: 'object',
                     properties: {
@@ -401,6 +464,8 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             ['scope']
         ),
         getAnalysisMeasureSchema(),
+        getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
+        getRecipeExpansionSchema(),
     ];
 }

@@ -362,6 +362,84 @@ mod tests {
     }
 
     #[test]
+    fn a_projected_ramp_counts_beats_exactly_when_each_segment_states_its_span_mean() {
+        // What `projectEngineTransportMaps` installs for a linear 120 → 240
+        // ramp across four beats: quarter-beat segments, each placed at the
+        // second its beat is reached and stating the *mean* tempo over the
+        // span it opens (#4657). The engine integrates each segment as
+        // span × BPM, so the mean is what lands the count on the
+        // arrangement's beat at every boundary — segments stating the ramp's
+        // left endpoint left the engine at beat 3.914 where the arrangement
+        // was at 4, and it stayed 0.086 behind for the rest of the song.
+        //
+        // The ramp rises 30 BPM per beat, so the second the arrangement
+        // reaches `beat` is 60 / (120 + 30·b) integrated from zero; past the
+        // ramp the arrangement holds 240.
+        let seconds_at = |beat: f64| -> f64 {
+            if beat <= 4.0 {
+                2.0 * (1.0 + beat / 4.0).ln()
+            } else {
+                2.0 * 2.0f64.ln() + (beat - 4.0) * 60.0 / 240.0
+            }
+        };
+        let frame_at = |beat: f64| (seconds_at(beat) * RATE).round() as u64;
+
+        let mut mean_tempo_segments = Vec::new();
+        let mut beat = 0.0;
+        while beat < 4.0 {
+            let next_beat = beat + 0.25;
+            mean_tempo_segments.push(TempoSegment {
+                start_frame: frame_at(beat),
+                // The mean over the span: the tempo whose span × BPM is
+                // exactly the beats the span holds.
+                beats_per_minute: 60.0 * 0.25 / (seconds_at(next_beat) - seconds_at(beat)),
+            });
+            beat = next_beat;
+        }
+        // The last segment keeps its authored tempo: its span is the rest of
+        // the arrangement, which holds the ramp's end tempo.
+        mean_tempo_segments.push(TempoSegment {
+            start_frame: frame_at(4.0),
+            beats_per_minute: 240.0,
+        });
+        let mean_tempo_map =
+            TempoMap::new(&mean_tempo_segments, RATE).expect("a projected ramp is well formed");
+
+        // The 0.001 beat bound is the frame rounding each boundary carries
+        // through `start_beats`, not slop: the exact-tempo integral is exact.
+        let counted_at_ramp_end = mean_tempo_map.beats_at(frame_at(4.0), RATE);
+        assert!(
+            (counted_at_ramp_end - 4.0).abs() < 1e-3,
+            "the engine counted {counted_at_ramp_end} beats where the arrangement reached 4"
+        );
+        let counted_long_after = mean_tempo_map.beats_at(frame_at(64.0), RATE);
+        assert!(
+            (counted_long_after - 64.0).abs() < 1e-3,
+            "the engine counted {counted_long_after} beats where the arrangement reached 64"
+        );
+
+        // The same boundaries with the left-endpoint tempos the projection
+        // used to state: proof the fixture is the shape that drifts, so the
+        // assertions above mean the mean-tempo law and not gentle inputs.
+        let mut left_endpoint_segments = mean_tempo_segments.clone();
+        for (index, segment) in left_endpoint_segments.iter_mut().enumerate() {
+            let segment_beat = f64::from(u32::try_from(index).expect("segments fit u32")) * 0.25;
+            segment.beats_per_minute = if segment_beat < 4.0 {
+                120.0 + 30.0 * segment_beat
+            } else {
+                240.0
+            };
+        }
+        let left_endpoint_map =
+            TempoMap::new(&left_endpoint_segments, RATE).expect("a projected ramp is well formed");
+        let drifted = left_endpoint_map.beats_at(frame_at(4.0), RATE);
+        assert!(
+            (drifted - 4.0).abs() > 0.05,
+            "the left-endpoint law was expected to drift past 0.05 beats, reached {drifted}"
+        );
+    }
+
+    #[test]
     fn a_map_that_is_empty_unordered_or_late_starting_refuses() {
         assert_eq!(TempoMap::new(&[], RATE), Err(TransportMapError::Empty));
         assert_eq!(

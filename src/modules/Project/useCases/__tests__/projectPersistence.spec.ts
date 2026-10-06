@@ -104,6 +104,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: vi.fn(),
@@ -142,6 +143,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     prepareMidiClipFanOutState: vi.fn(),
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
+    projectMidiClipWindow: vi.fn(),
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(),
     projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),

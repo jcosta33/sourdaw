@@ -23,7 +23,7 @@ Electron FFmpeg source and build material.
 ## Electron FFmpeg
 
 1. Build an ABI-compatible FFmpeg library from revision
-   `ad41607c61898cf7150e0fb20fe4bbabd44922a3`, pinned in
+   `2b68d2babae73714846961fb0ee47e3b3d2e39a9`, pinned in
    [ELECTRON-SOURCES.json](./ELECTRON-SOURCES.json), or another compatible LGPL version.
 2. Replace `libffmpeg.dylib` inside the macOS Electron framework, `libffmpeg.so` on Linux, or
    `ffmpeg.dll` on Windows.

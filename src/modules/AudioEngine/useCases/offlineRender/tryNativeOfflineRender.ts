@@ -7,7 +7,7 @@ import { type OfflineRenderOptions } from './types';
 export async function tryNativeOfflineRender(
     input: ReturnType<typeof captureOfflineRenderInput>,
     plan: ReturnType<typeof resolveOfflineMixPlan>,
-    { onWarning, onProgress }: Pick<OfflineRenderOptions, 'onWarning' | 'onProgress'>
+    { onWarning, onProgress, abortSignal }: Pick<OfflineRenderOptions, 'onWarning' | 'onProgress' | 'abortSignal'>
 ): Promise<AudioBuffer | null> {
     const { sampleRate } = input;
     const {
@@ -53,6 +53,7 @@ export async function tryNativeOfflineRender(
             vcaMultiplierByTrackId,
             onWarning,
             onProgress,
+            abortSignal,
         });
         if (native.outcome === 'rendered') {
             return native.buffer;

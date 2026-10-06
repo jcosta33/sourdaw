@@ -157,7 +157,10 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 // tool catalog reads the measurement metric ids while it evaluates, for the same reason.
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
+    analyzeAgentReferenceBuffer: vi.fn(),
     analyzeCurrentMix: mocks.analyzeCurrentMix,
+    compareAgentReferenceToProject: vi.fn(),
+    compareAgentScopeMeasurements: vi.fn(),
     detectTempo: mocks.detectTempo,
     getAgentMeasurementMetricIds: () => [
         'integratedLoudness',

@@ -423,6 +423,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
+        // Count provenance: new file entry, measured 4 — the four preset
+        // parameters the load-replay sync pushes through the engine handle
+        // (#4727), so a reloaded piano is voiced like the saved project. The
+        // temperament rides `setTemperament`, which this family does not
+        // count, and the calibration sync beside it stays in its own row.
+        'src/modules/GrandBoule/useCases/syncGrandBouleVoicingToEngine.ts': 4,
         // Count provenance: measured 2 in code, was 8 — the `LevainDevice`
         // handle's own `setParam` field and the one call through it. The six
         // retired matches were the macro fan-out's direct `device.setParam`
@@ -532,6 +538,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // every `compileAgentRiskApproval` reference with it; censused below.
         // 'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': removed (0),
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        // Count provenance: import, Parameters/ReturnType projections, and call
+        // lower a validated transform into command descriptions; no device write.
+        'src/modules/AiRuntime/useCases/executeTransformCompile.ts': 4,
+        // Count provenance: new file entry, measured 7 — `compileArbitraryCommandList`
+        // and `compilePlannedActionCommandBatch` (each an import, its module path in
+        // that import line, and one call) plus the exported declaration. A preview
+        // measurement compiles its proposal into an immutable Command batch only;
+        // the batch is previewed in an isolated workspace, never written to a device.
+        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 7,
+        // Count provenance: new file entry, measured 5 — the
+        // `compilePreviewMeasurementProposal` import, its module path and its one
+        // call, plus the local `compileProposal` declaration and call. Command
+        // batch compilation for an isolated preview; no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 5,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
@@ -557,6 +577,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // projection, extracted from recordAgentRunReceiptSaga (#3052). Pure
         // receipt projection; no device hydration or write.
         'src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts': 2,
+        // Count provenance: type-only compiler import and Parameters projection
+        // shape a copied planning snapshot; no device or project write.
+        'src/modules/AiRuntime/useCases/projectDeclarativeTransformSnapshot.ts': 2,
         // Count provenance: 0 in code, was 5 — prompt plan materialization and
         // explain-response streaming were extracted to agentRequestOrchestration
         // (#2973, #2975), taking every `compileAgentActionExecution` and
@@ -583,7 +606,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
-        'src/modules/Command/useCases/index.ts': 4,
+        // Count provenance: two new matches are the pure transform compiler's
+        // function export and module path; the earlier four remain unchanged.
+        'src/modules/Command/useCases/index.ts': 6,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
@@ -617,7 +642,33 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // device specs are what observe that the ceiling gain and the rebuilt
         // `WaveShaper` clip curve are written. The file still writes no project
         // device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
+        // Count provenance: measured 8 after the export scope law (#4912) —
+        // the six below plus the two merged-group application calls the
+        // post-loop pass adds: one scheduleCurveWritePoints and one
+        // scheduleCompiledEventsOnParam, each delegating to the extracted
+        // files that own the write loops. The file still writes no project
+        // device state.
+        // Count provenance: measured 11 after the strip-scope merge (#4909) —
+        // the gain, pan, and send branches each issue their own
+        // compileAutomationEvents call when they join the merged-group
+        // collection, adding three bare family identifiers. The branches'
+        // scheduleCompiledEventsOnParam references sit inside the apply
+        // closures the post-loop pass owns; the file still writes no project
+        // device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 11,
+        // Count provenance: new with the export scope law (#4912) — the
+        // shared events-to-segments conversion compileAutomationSegments
+        // also calls; one family member for its own conversion call.
+        'src/modules/AudioEngine/repositories/offlineScheduler/compiledEventsToSegments.ts': 1,
+        // Count provenance: new with the export scope law (#4912) — resolves
+        // overlapping event streams through the segment merge; one family
+        // member for the merged-stream call it issues.
+        'src/modules/AudioEngine/repositories/offlineScheduler/mergeAutomationEventStreams.ts': 1,
+        // Count provenance: new with the export scope law (#4912) — the
+        // param write loop extracted verbatim from
+        // scheduleAutomationOnParam; one family member for the loop's own
+        // write call.
+        'src/modules/AudioEngine/repositories/offlineScheduler/scheduleCompiledEventsOnParam.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -665,7 +716,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
-        'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,
+        // Count provenance: the helper declaration and the caller's import
+        // identifier, import path, declaration, and invocation compile Faust
+        // runtime voice/mixer factories. They hydrate the runtime module cache,
+        // not the project document.
+        'src/modules/PluginHost/useCases/faustEngine/compileEffectFreeFaustPolyDsp.ts': 1,
+        'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 4,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
@@ -736,6 +792,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // same import line, one ReturnType projection, and the one call.
         // Immutable Command-envelope compilation; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts': 4,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The file only reads back a serialized compiled slice; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/readBulkSetSliceEvidence.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The file only re-fingerprints a compiled slice's preconditions; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts': 1,
         // Count provenance: new file entry, measured 2 — the
         // `compileVersionedCommandBatchEnvelope` type import and one ReturnType
         // projection in the manual-repair missing-effects branch (#2988). Agent-run
@@ -767,9 +831,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // type import from compileArbitraryCommandList. The file only projects compiler
         // evidence into match selector records; no device hydration or write.
         'src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts': 1,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // `ArbitraryCommandListEvidence` type import from compileArbitraryCommandList.
+        // The grounding extracted from parsePromptToActions builds immutable actions;
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
+        // Count provenance: new file entry, measured 1 — the module path in the
+        // compiled-evidence type import from compileArbitraryCommandList. The file
+        // splits immutable compiled evidence into slices; no device hydration or write.
+        'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
@@ -782,6 +855,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // dispatches through `executeAddDeviceAction`, which owns the compile
         // step; the hook no longer names a compiler.
         // 'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': removed (0),
+        // Count provenance: measured 4 after the creation-route conversion
+        // (#4618) — the drop path compiles its batches through
+        // `compileNewAudioTrackAction` (the family-patterned `compile[A-Z]…`
+        // identifier), whose declaration, the barrel path in its import line,
+        // the type-level `CreationBatchAction` reference, and the single call
+        // site each count one. The hook still writes no store directly: every
+        // mutation lands through `executeAppActionBatch`.
+        'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 4,
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
         'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
         'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,

@@ -129,6 +129,7 @@ import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
+import { initGrandBouleDocumentReconciliation } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
@@ -190,7 +191,14 @@ import {
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
-import { setYeastEventBus } from '#/modules/Yeast/stores';
+import {
+    holdsKeyedYeastRack,
+    holdsLegacyYeastRack,
+    readStoredYeastRack,
+    readYeastRack,
+    setYeastEventBus,
+    yeastDeviceIdsInProjectOrder,
+} from '#/modules/Yeast/stores';
 import {
     configureYeastRuntime,
     createOfflineYeastMidiProcessor,
@@ -314,7 +322,16 @@ configureOfflineDeviceParameterLaw({
     clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
-configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
+configureOfflineYeastMidiProcessing({
+    createProcessor: createOfflineYeastProcessor,
+    racks: {
+        readRack: (deviceId) => readYeastRack(deviceId).processors,
+        readStoredRack: readStoredYeastRack,
+        holdsKeyedRack: holdsKeyedYeastRack,
+        holdsLegacyRack: holdsLegacyYeastRack,
+        firstDeviceInProjectOrder: () => yeastDeviceIdsInProjectOrder()[0] ?? null,
+    },
+});
 setOfflineRenderDependencies({
     projectPpqEndpoints,
     createMidiEventProjector: createGrooveMidiEventProjector,
@@ -500,8 +517,8 @@ configureAudioDeviceRuntimeSink({
     emitDeviceRemoved: (payload) => {
         void eventBus.emit('audioDevice.removed', payload);
     },
-    registerLevainDevice: ({ deviceId, device, port }) => {
-        return registerLevainDevice(deviceId, device, port);
+    registerLevainDevice: ({ deviceId, device, port, onProgress }) => {
+        return registerLevainDevice(deviceId, device, port, onProgress);
     },
     unregisterLevainDevice,
     setLevainEngineReady: ({ deviceId, isReady }) => {
@@ -621,6 +638,11 @@ initBacteriaSubscribers({ eventBus, logger });
 // `modAssignments` is a routing table, not a number `parameterValues` can hold.
 initBacteriaModAssignmentsPersistence();
 composeGrandBoule({ eventBus, logger });
+// Beside the load subscriber it mirrors: a peer's device-state commit, an undo,
+// or a bulk load rewrites the document without re-running any app action, so the
+// per-device store needs this document-origin trigger to stay out of the
+// stale-mirror window #4894 describes.
+initGrandBouleDocumentReconciliation();
 initCrumbsDeviceStatePersistence();
 // The native Crumbs instance follows the device's presence on the project, not
 // the panel's mount: the mapper splices a Crumbs device onto its strip by the

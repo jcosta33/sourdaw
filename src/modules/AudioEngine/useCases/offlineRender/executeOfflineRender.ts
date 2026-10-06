@@ -7,6 +7,7 @@ import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { createOfflineRenderBackend } from './createOfflineRenderBackend';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
+import { endExportCancellationScope } from './endExportCancellationScope';
 import { resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { scheduleOfflineMix } from './scheduleOfflineMix';
 import { tryNativeOfflineRender } from './tryNativeOfflineRender';
@@ -15,7 +16,7 @@ import { type OfflineRenderOptions } from './types';
 /** Admission, capture and teardown share one uninterrupted lock ownership boundary. */
 export async function executeOfflineRender(
     capture: () => ReturnType<typeof captureOfflineRenderInput>,
-    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning'> = {}
+    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal'> = {}
 ): Promise<AudioBuffer> {
     const releaseLock = acquireRenderLock();
     // The backend's device map is the scheduler's read model and the sole disposal root.
@@ -25,7 +26,11 @@ export async function executeOfflineRender(
         // The scope's signal is this render's cancellation handle (#4440),
         // threaded into the backend so instrument setup aborts at the moment
         // Cancel fires rather than at the next between-track checkpoint.
-        const cancellationSignal = beginExportCancellationScope();
+        const { abortSignal } = callbacks;
+        const scopeSignal = beginExportCancellationScope();
+        // Instrument setup stops at an export cancel or at this render's own stop, whichever comes first.
+        const cancellationSignal =
+            abortSignal === undefined ? scopeSignal : AbortSignal.any([scopeSignal, abortSignal]);
         const input = capture();
         const { sampleRate, historySeconds, outputDurationSeconds } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
@@ -51,12 +56,16 @@ export async function executeOfflineRender(
                 offlineCtx,
                 backend,
                 onWarning: callbacks.onWarning,
+                abortSignal,
             });
             buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks });
         }
         callbacks.onProgress?.(1);
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } finally {
+        // The mixdown owns its scope's lifetime: a cancelled render's flag must
+        // not outlive it (#4782).
+        endExportCancellationScope();
         backend?.dispose();
         releaseLock();
     }

@@ -2,7 +2,7 @@ import { type DrumRenderComparisonCapability } from '../../models/DrumRenderComp
 import { type DrumRoutingRole } from '../../models/DrumRoutingCapability';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
-import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
+import { getDrumRoutingRole } from './getDrumRoutingRole';
 
 const DRUM_BUS_NAME = 'Drum Bus';
 const DRUM_BUS_BINDING = 'drum-bus';
@@ -35,6 +35,25 @@ function isLocked(track: ProjectContextTrack): boolean {
     return track.clips.some((clip) => clip.locked === true);
 }
 
+type RenderTrackRole =
+    | { classification: 'drum'; role: DrumRoutingRole }
+    | { classification: 'non-drum' }
+    | { classification: 'ambiguous' };
+
+// A canonical `unknown` is ambiguous, a role outside the drums family is protected, and a folder
+// or bus carries no audio or MIDI of its own.
+function classifyRenderTrack(track: ProjectContextTrack): RenderTrackRole {
+    if (track.kind !== 'audio' && track.kind !== 'midi') {
+        return { classification: 'non-drum' };
+    }
+    const canonicalRole = track.canonicalRole?.role ?? 'unknown';
+    if (canonicalRole === 'unknown') {
+        return { classification: 'ambiguous' };
+    }
+    const role = getDrumRoutingRole(canonicalRole);
+    return role ? { classification: 'drum', role } : { classification: 'non-drum' };
+}
+
 export function getDrumRenderComparisonPromptScope(
     context: ProjectContext,
     baseRevision = 'unbound'
@@ -51,7 +70,7 @@ export function getDrumRenderComparisonPromptScope(
     const roomTracks: ProjectContextTrack[] = [];
     const protectedObjects: Array<{ id: string; name: string }> = [];
     for (const track of context.tracks) {
-        const projection = projectCanonicalTrackRole(track);
+        const projection = classifyRenderTrack(track);
         if (projection.classification === 'ambiguous') {
             return { status: 'invalid', reason: `EX-11 track role is ambiguous: ${track.id}` };
         }

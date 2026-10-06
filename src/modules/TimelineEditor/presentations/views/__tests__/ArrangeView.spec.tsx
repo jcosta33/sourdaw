@@ -2,13 +2,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { setScrollX } from '#/modules/Arrangement/stores';
-import {
-    addTrack,
-    addClip,
-    importMidiFile,
-    setTimelineHorizontalScrollbarScrollX,
-} from '#/modules/Arrangement/useCases';
+import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -187,14 +183,30 @@ vi.mock('../ArrangeEmptyStateShell', () => ({
     ),
 }));
 
-// ArrangeView imports addTrack/addClip/importMidiFile from the Arrangement
+// ArrangeView imports createTrack/importMidiFile from the Arrangement
 // useCases barrel and decodeAudioFile from the AudioEngine useCases barrel —
-// mock those exact specifiers so the drop handler is fully driveable.
+// mock those exact specifiers so the drop handler is fully driveable. The
+// model factory hands out incrementing ids so each batched creation names a
+// distinct track, exactly as the real factory would.
+let createdTrackCounter = 0;
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addTrack: vi.fn(),
-    addClip: vi.fn(),
+    createTrack: vi.fn((input: { name: string; kind: string }) => {
+        createdTrackCounter += 1;
+        return {
+            id: `track-${createdTrackCounter}`,
+            name: input.name,
+            kind: input.kind,
+            color: '#000000',
+            activeAlternativeId: 'alt-1',
+        };
+    }),
     importMidiFile: vi.fn(),
     setTimelineHorizontalScrollbarScrollX: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppActionBatch: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -310,7 +322,11 @@ describe('ArrangeView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         projectEpoch.reset();
-        vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
+        createdTrackCounter = 0;
+        vi.mocked(executeAppActionBatch).mockResolvedValue({
+            status: 'committed',
+            actions: [],
+        });
         Object.defineProperty(window, 'innerWidth', {
             configurable: true,
             value: 1000,
@@ -385,8 +401,7 @@ describe('ArrangeView', () => {
         await waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('broken.wav'), 'error');
         });
-        expect(addTrack).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('creates the track and clip only after a successful decode', async () => {
@@ -394,17 +409,26 @@ describe('ArrangeView', () => {
             id: 'buf-1',
             buffer: { duration: 2 } as AudioBuffer,
         });
-        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-1' } as ReturnType<typeof addTrack>);
 
         render(<ArrangeView />);
         const goodFile = new File([new Uint8Array([1, 2, 3])], 'kick.wav', { type: 'audio/wav' });
         dropFiles([goodFile]);
 
         await waitFor(() => {
-            expect(addTrack).toHaveBeenCalledWith({ name: 'kick', kind: 'audio' });
+            expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
         });
-        expect(addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-1', audioBufferId: 'buf-1', type: 'audio' })
+        const actions = vi.mocked(executeAppActionBatch).mock.calls[0]?.[0] as Array<{
+            type: string;
+            payload: Record<string, unknown>;
+        }>;
+        const addTrackAction = actions.find((candidate) => candidate.type === 'addTrack');
+        expect(addTrackAction?.payload).toEqual(expect.objectContaining({ name: 'kick', kind: 'audio' }));
+        expect(actions.find((candidate) => candidate.type === 'addClip')?.payload).toEqual(
+            expect.objectContaining({
+                trackId: addTrackAction?.payload.id,
+                audioBufferId: 'buf-1',
+                type: 'audio',
+            })
         );
         expect(notifyUser).not.toHaveBeenCalled();
     });
@@ -418,7 +442,6 @@ describe('ArrangeView', () => {
             id: 'buf-1',
             buffer: { duration: 2 } as AudioBuffer,
         });
-        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-1' } as ReturnType<typeof addTrack>);
 
         render(<ArrangeView />);
         const badMidi = new File([new Uint8Array([1, 2, 3])], 'broken.mid', { type: 'audio/midi' });
@@ -429,8 +452,14 @@ describe('ArrangeView', () => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('broken.mid'), 'error');
         });
         // The file dropped alongside the bad one must still import.
-        expect(addTrack).toHaveBeenCalledWith({ name: 'kick', kind: 'audio' });
-        expect(addClip).toHaveBeenCalled();
+        const actions = vi.mocked(executeAppActionBatch).mock.calls[0]?.[0] as Array<{
+            type: string;
+            payload: Record<string, unknown>;
+        }>;
+        expect(actions.find((candidate) => candidate.type === 'addTrack')?.payload).toEqual(
+            expect.objectContaining({ name: 'kick', kind: 'audio' })
+        );
+        expect(actions.find((candidate) => candidate.type === 'addClip')).toBeDefined();
     });
 
     it('keeps a forwarded MIDI continuation bound to its drop epoch', async () => {
@@ -457,8 +486,7 @@ describe('ArrangeView', () => {
         const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
         expect(successorOptions?.shouldContinue()).toBe(true);
         expect(notifyUser).not.toHaveBeenCalled();
-        expect(addTrack).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('discards every uncommitted parallel decode when the initiating project is superseded', async () => {
@@ -491,21 +519,23 @@ describe('ArrangeView', () => {
             expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-first');
             expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-second');
         });
-        expect(addTrack).not.toHaveBeenCalled();
-        expect(addClip).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
 
         vi.mocked(decodeAudioFile).mockResolvedValueOnce({
             id: 'audio-successor',
             buffer: { duration: 1 } as AudioBuffer,
         });
-        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-successor' } as ReturnType<typeof addTrack>);
         const successor = new File(['successor'], 'successor.wav', { type: 'audio/wav' });
         dropFiles([successor]);
 
         await waitFor(() => {
-            expect(addClip).toHaveBeenCalledWith(
-                expect.objectContaining({ trackId: 'track-successor', audioBufferId: 'audio-successor' })
+            const actions = vi.mocked(executeAppActionBatch).mock.calls[0]?.[0] as Array<{
+                type: string;
+                payload: Record<string, unknown>;
+            }>;
+            expect(actions.find((candidate) => candidate.type === 'addClip')?.payload).toEqual(
+                expect.objectContaining({ trackId: 'track-1', audioBufferId: 'audio-successor' })
             );
         });
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
@@ -515,7 +545,6 @@ describe('ArrangeView', () => {
         vi.mocked(decodeAudioFile)
             .mockResolvedValueOnce({ id: 'audio-committed', buffer: { duration: 1 } as AudioBuffer })
             .mockResolvedValueOnce({ id: 'audio-pending', buffer: { duration: 1 } as AudioBuffer });
-        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-committed' } as ReturnType<typeof addTrack>);
         vi.mocked(importMidiFile).mockImplementationOnce(async () => {
             projectEpoch.advance();
             return 'superseded';
@@ -528,11 +557,14 @@ describe('ArrangeView', () => {
         dropFiles([first, midi, pending]);
 
         await waitFor(() => expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-pending'));
-        expect(addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-committed', audioBufferId: 'audio-committed' })
+        const committedActions = vi
+            .mocked(executeAppActionBatch)
+            .mock.calls.flatMap((call) => call[0] as Array<{ type: string; payload: Record<string, unknown> }>);
+        expect(committedActions.find((candidate) => candidate.type === 'addClip')?.payload).toEqual(
+            expect.objectContaining({ trackId: 'track-1', audioBufferId: 'audio-committed' })
         );
         expect(discardDecodedAudioFile).not.toHaveBeenCalledWith('audio-committed');
-        expect(addTrack).toHaveBeenCalledTimes(1);
+        expect(committedActions.filter((candidate) => candidate.type === 'addTrack')).toHaveLength(1);
         expect(notifyUser).not.toHaveBeenCalled();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);

@@ -41,8 +41,9 @@ function withIncoming(
 /**
  * Retains each measured render under its content address, so measuring the
  * same audio again replaces one artifact rather than adding a second. Returns
- * the content addresses of renders larger than the whole byte limit, which are
- * not retained.
+ * the content addresses of this batch's renders the store does not hold
+ * afterwards: those larger than the whole byte limit, and those a later render
+ * of the same batch evicted.
  */
 export function retainAgentMeasurementArtifacts({
     renders,
@@ -51,11 +52,9 @@ export function retainAgentMeasurementArtifacts({
 }: RetainAgentMeasurementArtifactsInput): string[] {
     pruneExpiredAgentMeasurementArtifacts(now);
     let artifacts = agentMeasurementArtifactStore.value?.artifacts ?? [];
-    const oversized: string[] = [];
     for (const { contentAddress, buffer } of renders) {
         const byteSize = buffer.length * buffer.numberOfChannels * PCM_SAMPLE_BYTE_SIZE;
         if (byteSize > AGENT_MEASUREMENT_RETENTION_POLICY.maxPcmBytes) {
-            oversized.push(contentAddress);
             continue;
         }
         artifacts = withIncoming(artifacts, {
@@ -74,5 +73,9 @@ export function retainAgentMeasurementArtifacts({
     }
     agentMeasurementArtifactStore.set({ artifacts });
     scheduleAgentMeasurementArtifactExpiry(now);
-    return oversized;
+    // A render too large to keep, or one a later render of this same batch evicted, is gone either way.
+    const kept = new Set(artifacts.map((artifact) => artifact.contentAddress));
+    return Array.from(new Set(renders.map(({ contentAddress }) => contentAddress))).filter(
+        (contentAddress) => !kept.has(contentAddress)
+    );
 }

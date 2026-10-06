@@ -26,7 +26,17 @@ export function scheduleFrozenTrack(
      * empty map those are the same number, and with a non-empty one the map
      * supplies every value and this is never consulted.
      */
-    defaultTempo: number
+    defaultTempo: number,
+    /**
+     * The scheduling window's first beat on an emission whose window opens at
+     * a boundary the playhead stands at or behind — a loop wrap's handover or
+     * a landing — or `null` on a steady-state emission, where a late join must
+     * start immediately with due content. On a floored emission the buffer
+     * holds until that beat's content is due (#4784): the fence spares the
+     * dying pass's tail past the seam, and an unfloored mid-buffer join would
+     * layer the incoming pass's pre-window content underneath it.
+     */
+    windowStartBeat: number | null
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -57,6 +67,7 @@ export function scheduleFrozenTrack(
     // changes, and nothing marks the track stale to force a re-render, so the
     // drift is permanent. Tracks frozen before the snapshot existed fall back
     // to the live lookup — the pre-existing behaviour, not a worse one.
+    const changes = tempoMapStore.value?.changes ?? [];
     const compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
     // Same beat → time contract as the live clip and MIDI paths: integrate the
     // tempo map across the offset. A flat rate here would leave a frozen track
@@ -64,31 +75,53 @@ export function scheduleFrozenTrack(
     // sat between the playhead and the track's first clip.
     const startTime =
         getCurrentTime() +
-        secondsBetweenBeats(tempoMapStore.value?.changes ?? [], accumulatedPosition, trackStartBeat, defaultTempo) +
+        secondsBetweenBeats(changes, accumulatedPosition, trackStartBeat, defaultTempo) +
         compensation;
     const now = getCurrentTime();
     const elapsed = now - startTime;
+
+    // The live clip path's window floor (#4784): on an emission whose window
+    // opens at a boundary the playhead stands at or behind, content from before
+    // that beat must not sound — the earliest content is the window's first
+    // beat, held until its due instant. A floor at or before the buffer's own
+    // start changes nothing.
+    let floorSeconds = startTime;
+    if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
+        floorSeconds =
+            now + secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) + compensation;
+    }
+    const audibleStartSeconds = Math.max(startTime, floorSeconds);
+    const skipSeconds = audibleStartSeconds - startTime;
 
     // Resolve the timing before building anything. The buffer can already have
     // played out in full by the time this tick fires, and there is then nothing
     // to start — creating the source and its fade gain first left a GainNode
     // wired into the track strip on every such call, with no source to end and
-    // release it. The track still counts as scheduled: `true` is what stops the
-    // caller from retrying it every grain.
-    if (startTime < now && elapsed >= buffer.duration) {
+    // release it. A window floor that skips past the rendered content is the
+    // same outcome. The track still counts as scheduled: `true` is what stops
+    // the caller from retrying it every grain.
+    if ((startTime < now && elapsed >= buffer.duration) || skipSeconds >= buffer.duration) {
         return true;
     }
 
     const strip = ensureTrackStrip(track.id);
     const source = createBufferSource();
     source.buffer = buffer;
+    // The whole-arrangement buffer is the source a loop seam most needs to
+    // fence sample-accurately, and its own shift is the compensation above —
+    // the same figure the seam fence spares its tail by (#4784).
+    (source as SourceWithFade).compensationSeconds = compensation;
 
     const fadeGain = getAudioContext().createGain();
     (source as SourceWithFade).fadeGainNode = fadeGain;
     fadeGain.connect(strip.preFaderTap);
     source.connect(fadeGain);
 
-    if (startTime >= now) {
+    if (skipSeconds > 0 && audibleStartSeconds >= now) {
+        // Held to the window's first beat: the sound begins at that beat's due
+        // instant, with the skipped content wound past.
+        source.start(audibleStartSeconds, skipSeconds);
+    } else if (startTime >= now) {
         source.start(startTime);
     } else {
         source.start(now, elapsed);

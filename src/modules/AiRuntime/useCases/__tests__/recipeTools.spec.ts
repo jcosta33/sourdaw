@@ -1,14 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
+import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
+import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { executeRecipeExpansion } from '../executeRecipeExpansion';
+import { executeTransformCompile } from '../executeTransformCompile';
+import { getProjectContext } from '../getProjectContext';
+import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { parsePromptToActions } from '../parsePromptToActions';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
+
+import { createTrack } from './trackFixture';
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     querySemanticProject: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return { ...original, getMixRecipeCatalog: vi.fn(original.getMixRecipeCatalog) };
+});
+
+vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),
+    generateToolPlanningOutcome: vi.fn(),
+}));
+
+vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../transformers/promptParser/parsing')>()),
+    tryPresetMatch: vi.fn(),
+    tryParameterizedPath: vi.fn(),
+    tryCompoundFastPath: vi.fn(),
 }));
 
 type CanonicalRole = ReturnType<typeof getCanonicalTrackRoleOptions>[number];
@@ -28,6 +58,8 @@ const CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE: Readonly<Record<CanonicalRole, Rec
     tom: 'drums',
     cymbal: 'drums',
     percussion: 'drums',
+    overhead: 'drums',
+    room: 'drums',
     drums: 'drums',
     'lead vocal': 'vocal',
     'backing vocal': 'vocal',
@@ -36,9 +68,12 @@ const CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE: Readonly<Record<CanonicalRole, Rec
     keys: 'keys',
     synth: 'keys',
     pad: 'keys',
+    strings: 'keys',
+    brass: 'keys',
     bus: 'bus',
     master: 'master',
     fx: null,
+    utility: null,
     unknown: null,
 };
 
@@ -55,44 +90,6 @@ function authorProductionBriefRole(trackId: string, role: CanonicalRole): void {
             trackRoles: [{ id: `role-${trackId}`, trackId, role, createdAt: 0 }],
         },
     });
-}
-
-function createTrack(overrides: Partial<Track>): Track {
-    return {
-        id: 't1',
-        name: 'Track',
-        kind: 'audio',
-        muted: false,
-        soloed: false,
-        armed: false,
-        gain: 1,
-        pan: 0,
-        color: '#ffffff',
-        clips: [],
-        devices: [],
-        sends: [],
-        midiFx: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 72,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        activeAlternativeId: '',
-        alternatives: [],
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-        ...overrides,
-    };
 }
 
 /** One `recipe.discover` call, followed by an empty turn so the loop completes. */
@@ -582,5 +579,862 @@ describe('recipe.discover', () => {
 
         expect(receipt.status).toBe('failure');
         expect(receipt.error?.code).toBe('invalid-tool-arguments');
+    });
+});
+
+const EXPANSION_REVISION = 'revision-recipe-expand';
+
+type ExpansionCall = { id: string; name: string; arguments: Record<string, unknown> };
+type ExpandedCommand = { name: string; arguments: Record<string, unknown> };
+type ExpandedValue = {
+    step: number;
+    paramId: string;
+    value: number;
+    minimum: number;
+    maximum: number;
+    source: string;
+};
+type ExpansionData = {
+    recipeId: string;
+    title: string;
+    targetId: string;
+    commands: ExpandedCommand[];
+    values: ExpandedValue[];
+};
+
+function installedDevice(id: string, type: string, bypassed = false): Track['devices'][number] {
+    return { id, name: type, type, bypassed, parameterValues: {} };
+}
+
+function setTracks(tracks: Track[]): void {
+    trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+}
+
+/** The recipe-expansion binding a run gets, reading the project the way the planner does. */
+function recipeExpansionTool(): NonNullable<Parameters<typeof runApplicationOwnedToolLoop>[0]['recipe']> {
+    return {
+        toolName: 'recipe.expand',
+        revision: EXPANSION_REVISION,
+        execute: (call: ToolCallResult, context) =>
+            executeRecipeExpansion({
+                call,
+                callId: context.callId,
+                turn: context.turn,
+                ordinal: context.ordinal,
+                context: getProjectContext(),
+                revision: EXPANSION_REVISION,
+            }),
+    };
+}
+
+/** One `recipe.expand` call, followed by an empty turn so the loop completes. */
+async function runRecipeExpansion(loopId: string, args: Record<string, unknown>): Promise<ApplicationToolReceipt> {
+    const requestTurn = vi
+        .fn()
+        .mockResolvedValueOnce({
+            status: 'complete' as const,
+            toolCalls: [{ id: 'expand-1', name: 'recipe.expand', arguments: args }],
+        })
+        .mockResolvedValueOnce({ status: 'complete' as const, toolCalls: [] });
+
+    const result = await runApplicationOwnedToolLoop({
+        loopId,
+        terminalToolNames: new Set(['setTempo']),
+        requestTurn,
+        recipe: recipeExpansionTool(),
+    });
+    if (result.status !== 'complete') {
+        throw new Error(`Expected the loop to complete, got: ${result.reason}`);
+    }
+    const receipt = result.receipts.find((entry) => entry.callId === 'expand-1');
+    if (!receipt) {
+        throw new Error('recipe.expand receipt was not recorded');
+    }
+    return receipt;
+}
+
+function readExpansion(receipt: ApplicationToolReceipt): ExpansionData {
+    expect(receipt.status).toBe('success');
+    return receipt.data as ExpansionData;
+}
+
+describe('recipe.expand', () => {
+    beforeEach(() => {
+        setTracks([]);
+    });
+
+    afterEach(() => {
+        vi.mocked(getMixRecipeCatalog).mockRestore();
+        setTracks([]);
+        projectStore.set(structuredClone(defaultProjectStoreState));
+    });
+
+    // Red when the second insert stops chaining after the first binding, the first insert stops following
+    // the chain's last device, or an omitted value stops taking the middle of its window.
+    it('expands a two-insert recipe on a vocal track into chained addDevice and midpoint setDeviceParameter items', async () => {
+        setTracks([
+            createTrack({
+                id: 'lead-vocal-1',
+                name: 'Lead Vocal',
+                devices: [installedDevice('device-existing-1', 'builtin-limiter')],
+            }),
+        ]);
+
+        const receipt = await runRecipeExpansion('loop-expand-two-inserts', {
+            recipeId: 'vocal-bright',
+            targetId: 'lead-vocal-1',
+        });
+
+        const data = readExpansion(receipt);
+        expect(data).toMatchObject({ recipeId: 'vocal-bright', targetId: 'lead-vocal-1' });
+        expect(data.title).toBe(getMixRecipeCatalog().recipes.find((recipe) => recipe.id === 'vocal-bright')?.title);
+        expect(data.commands).toEqual([
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: 'lead-vocal-1',
+                    deviceType: 'builtin-eq',
+                    afterDeviceId: 'device-existing-1',
+                    binding: 'recipe-1-0',
+                },
+            },
+            {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: '$recipe-1-0', paramId: 'eq-high-freq', value: 9500 },
+            },
+            {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: '$recipe-1-0', paramId: 'eq-high-gain', value: 3.25 },
+            },
+            {
+                name: 'addDevice',
+                arguments: {
+                    trackId: 'lead-vocal-1',
+                    deviceType: 'builtin-deesser',
+                    afterDeviceId: '$recipe-1-0',
+                    binding: 'recipe-1-1',
+                },
+            },
+            { name: 'setDeviceParameter', arguments: { deviceId: '$recipe-1-1', paramId: 'deess-freq', value: 6750 } },
+            {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: '$recipe-1-1', paramId: 'deess-threshold', value: -21 },
+            },
+            { name: 'setDeviceParameter', arguments: { deviceId: '$recipe-1-1', paramId: 'deess-range', value: -8 } },
+        ]);
+        expect(data.values).toEqual([
+            { step: 0, paramId: 'eq-high-freq', value: 9500, minimum: 8000, maximum: 11000, source: 'midpoint' },
+            { step: 0, paramId: 'eq-high-gain', value: 3.25, minimum: 2, maximum: 4.5, source: 'midpoint' },
+            { step: 1, paramId: 'deess-freq', value: 6750, minimum: 6000, maximum: 7500, source: 'midpoint' },
+            { step: 1, paramId: 'deess-threshold', value: -21, minimum: -24, maximum: -18, source: 'midpoint' },
+            { step: 1, paramId: 'deess-range', value: -8, minimum: -10, maximum: -6, source: 'midpoint' },
+        ]);
+    });
+
+    it('starts the first insert without an anchor when the chain is empty', async () => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const data = readExpansion(
+            await runRecipeExpansion('loop-expand-empty-chain', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' })
+        );
+
+        expect(data.commands[0]).toEqual({
+            name: 'addDevice',
+            arguments: { trackId: 'lead-vocal-1', deviceType: 'builtin-eq', binding: 'recipe-1-0' },
+        });
+    });
+
+    // Red when a supplied value is ignored in favour of the midpoint, or reported as a midpoint.
+    it('uses a supplied value that lies inside its window and keeps the midpoint for the rest', async () => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const data = readExpansion(
+            await runRecipeExpansion('loop-expand-supplied', {
+                recipeId: 'vocal-bright',
+                targetId: 'lead-vocal-1',
+                values: [{ step: 0, paramId: 'eq-high-gain', value: 4 }],
+            })
+        );
+
+        expect(data.values.find((entry) => entry.paramId === 'eq-high-gain')).toEqual({
+            step: 0,
+            paramId: 'eq-high-gain',
+            value: 4,
+            minimum: 2,
+            maximum: 4.5,
+            source: 'supplied',
+        });
+        expect(data.commands[2]).toEqual({
+            name: 'setDeviceParameter',
+            arguments: { deviceId: '$recipe-1-0', paramId: 'eq-high-gain', value: 4 },
+        });
+        expect(data.values.find((entry) => entry.paramId === 'eq-high-freq')).toMatchObject({
+            value: 9500,
+            source: 'midpoint',
+        });
+    });
+
+    // Red when a value outside its window is accepted, or the refusal stops naming the window.
+    it.each([
+        ['above', 9],
+        ['below', 1.99],
+    ])('refuses a supplied value %s its window and names the window', async (_side, value) => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-outside-window', {
+            recipeId: 'vocal-bright',
+            targetId: 'lead-vocal-1',
+            values: [{ step: 0, paramId: 'eq-high-gain', value }],
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.code).toBe('invalid-tool-arguments');
+        expect(receipt.error?.safeMessage).toContain('eq-high-gain');
+        expect(receipt.error?.safeMessage).toContain('2 to 4.5');
+    });
+
+    it.each([
+        ['a step the recipe lacks', { step: 2, paramId: 'eq-high-gain', value: 3 }, 'step 2'],
+        ['a parameter the step lacks', { step: 0, paramId: 'deess-freq', value: 6500 }, 'deess-freq'],
+    ])('refuses a value naming %s', async (_label, entry, mention) => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-unknown-value', {
+            recipeId: 'vocal-bright',
+            targetId: 'lead-vocal-1',
+            values: [entry],
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain(mention);
+    });
+
+    // Red when the edit step stops retuning the one existing device, or when no device or an ambiguous one
+    // is no longer refused.
+    it('retunes the one existing device an edit step names without inserting another', async () => {
+        setTracks([
+            createTrack({
+                id: 'drum-bus-1',
+                name: 'Drum Bus',
+                kind: 'bus',
+                devices: [
+                    installedDevice('device-comp-bypassed', 'builtin-compressor', true),
+                    installedDevice('device-comp-live', 'builtin-compressor'),
+                ],
+            }),
+        ]);
+
+        const data = readExpansion(
+            await runRecipeExpansion('loop-expand-edit', { recipeId: 'bus-punchy', targetId: 'drum-bus-1' })
+        );
+
+        expect(data.commands.map((command) => command.name)).toEqual([
+            'setDeviceParameter',
+            'setDeviceParameter',
+            'setDeviceParameter',
+            'setDeviceParameter',
+        ]);
+        expect(data.commands.map((command) => command.arguments.deviceId)).toEqual([
+            'device-comp-live',
+            'device-comp-live',
+            'device-comp-live',
+            'device-comp-live',
+        ]);
+        expect(data.values.find((entry) => entry.paramId === 'comp-ratio')).toMatchObject({ value: 3 });
+    });
+
+    it.each([
+        ['no device of the type', []],
+        ['only a bypassed device of the type', [installedDevice('device-comp-bypassed', 'builtin-compressor', true)]],
+    ])('refuses an edit step when the target has %s', async (_label, devices) => {
+        setTracks([createTrack({ id: 'drum-bus-1', name: 'Drum Bus', kind: 'bus', devices })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-edit-missing', {
+            recipeId: 'bus-punchy',
+            targetId: 'drum-bus-1',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.code).toBe('invalid-tool-arguments');
+        expect(receipt.error?.safeMessage).toContain('no non-bypassed builtin-compressor');
+    });
+
+    it('refuses an edit step as ambiguous and names every candidate device', async () => {
+        setTracks([
+            createTrack({
+                id: 'drum-bus-1',
+                name: 'Drum Bus',
+                kind: 'bus',
+                devices: [
+                    installedDevice('device-comp-a', 'builtin-compressor'),
+                    installedDevice('device-comp-b', 'builtin-compressor'),
+                ],
+            }),
+        ]);
+
+        const receipt = await runRecipeExpansion('loop-expand-edit-ambiguous', {
+            recipeId: 'bus-punchy',
+            targetId: 'drum-bus-1',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain('ambiguous');
+        expect(receipt.error?.safeMessage).toContain('device-comp-a');
+        expect(receipt.error?.safeMessage).toContain('device-comp-b');
+    });
+
+    // Red when a discrete parameter's midpoint stops snapping onto one of its legal settings.
+    it('snaps the midpoint of a discrete parameter onto a legal setting', async () => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const data = readExpansion(
+            await runRecipeExpansion('loop-expand-discrete', { recipeId: 'vocal-lo-fi', targetId: 'lead-vocal-1' })
+        );
+
+        const bits = data.values.find((entry) => entry.paramId === 'crush-bits');
+        expect(bits).toMatchObject({ minimum: 5, maximum: 8 });
+        expect(Number.isInteger(bits?.value)).toBe(true);
+        expect(bits?.value).toBe(7);
+        expect(data.values.find((entry) => entry.paramId === 'crush-mix')?.value).toBe(0.45);
+    });
+
+    // Red when any of these targets or recipes is accepted instead of refused.
+    it.each([
+        ['an unknown recipe id', { recipeId: 'no-such-recipe', targetId: 'lead-vocal-1' }, 'no-such-recipe'],
+        ['an unknown target', { recipeId: 'vocal-warm', targetId: 'no-such-track' }, 'no-such-track'],
+        ['a folder target', { recipeId: 'vocal-warm', targetId: 'folder-1' }, 'folder'],
+        ['a frozen target', { recipeId: 'vocal-warm', targetId: 'frozen-vocal-1' }, 'frozen'],
+        ['a target whose role the recipe was not authored for', { recipeId: 'vocal-warm', targetId: 'bass-1' }, 'bass'],
+        ['a target with no recipe role and no role argument', { recipeId: 'vocal-warm', targetId: 'fx-1' }, 'role'],
+    ])('refuses %s', async (_label, args, mention) => {
+        setTracks([
+            createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' }),
+            createTrack({ id: 'folder-1', name: 'Vocals', kind: 'folder' }),
+            createTrack({ id: 'frozen-vocal-1', name: 'Backing Vocal', frozen: true }),
+            createTrack({ id: 'bass-1', name: 'Bass' }),
+            createTrack({ id: 'fx-1', name: 'FX Return' }),
+        ]);
+
+        const receipt = await runRecipeExpansion('loop-expand-refused', args);
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.code).toBe('invalid-tool-arguments');
+        expect(receipt.error?.safeMessage).toContain(mention);
+    });
+
+    it('lets an explicit role argument stand in for the target role, as recipe.discover resolves it', async () => {
+        setTracks([createTrack({ id: 'fx-1', name: 'FX Return' }), createTrack({ id: 'bass-1', name: 'Bass' })]);
+
+        const onFx = readExpansion(
+            await runRecipeExpansion('loop-expand-role-fx', {
+                recipeId: 'vocal-warm',
+                targetId: 'fx-1',
+                role: 'vocal',
+            })
+        );
+        const onBass = readExpansion(
+            await runRecipeExpansion('loop-expand-role-bass', {
+                recipeId: 'vocal-warm',
+                targetId: 'bass-1',
+                role: 'vocal',
+            })
+        );
+
+        expect(onFx.commands[0]?.arguments).toMatchObject({ trackId: 'fx-1', deviceType: 'builtin-eq' });
+        expect(onBass.commands[0]?.arguments).toMatchObject({ trackId: 'bass-1', deviceType: 'builtin-eq' });
+    });
+
+    it('refuses a recipe whose role the explicit role argument excludes', async () => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-role-mismatch', {
+            recipeId: 'vocal-warm',
+            targetId: 'lead-vocal-1',
+            role: 'bass',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain('authored for vocal');
+    });
+
+    it.each([
+        ['an unknown key', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1', extra: true }],
+        ['a missing target', { recipeId: 'vocal-warm' }],
+        ['a role outside the catalog', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1', role: 'choir' }],
+        [
+            'a value entry with an unknown key',
+            { recipeId: 'vocal-warm', targetId: 'lead-vocal-1', values: [{ step: 0, paramId: 'a', value: 1, x: 1 }] },
+        ],
+        [
+            'a repeated step and parameter',
+            {
+                recipeId: 'vocal-warm',
+                targetId: 'lead-vocal-1',
+                values: [
+                    { step: 0, paramId: 'eq-low-gain', value: 2 },
+                    { step: 0, paramId: 'eq-low-gain', value: 2.5 },
+                ],
+            },
+        ],
+        [
+            'more values than a recipe has commands',
+            {
+                recipeId: 'vocal-warm',
+                targetId: 'lead-vocal-1',
+                values: Array.from({ length: 17 }, (_unused, index) => ({ step: 0, paramId: `p-${index}`, value: 1 })),
+            },
+        ],
+        [
+            'a non-finite value',
+            { recipeId: 'vocal-warm', targetId: 'lead-vocal-1', values: [{ step: 0, paramId: 'a', value: 'high' }] },
+        ],
+    ])('fails with invalid-tool-arguments for %s', async (_label, args) => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-invalid', args);
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.code).toBe('invalid-tool-arguments');
+    });
+
+    // Red when an expansion above the command ceiling is accepted instead of refused with its counts.
+    it('refuses an expansion above the command ceiling with the counts', async () => {
+        const catalog = getMixRecipeCatalog();
+        const oversized = {
+            ...catalog.recipes.find((recipe) => recipe.id === 'vocal-warm')!,
+            id: 'vocal-oversized',
+            steps: [
+                {
+                    kind: 'insert' as const,
+                    deviceType: 'builtin-eq',
+                    parameters: Array.from({ length: 17 }, (_unused, index) => ({
+                        paramId: `eq-low-gain-${index}`,
+                        minimum: 1,
+                        maximum: 2,
+                    })),
+                },
+            ],
+        };
+        vi.mocked(getMixRecipeCatalog).mockReturnValue({ ...catalog, recipes: [oversized] });
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-oversized', {
+            recipeId: 'vocal-oversized',
+            targetId: 'lead-vocal-1',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain('18 commands');
+        expect(receipt.error?.safeMessage).toContain('16');
+    });
+
+    // Red when a midpoint snapped outside its window is emitted instead of refused.
+    it('refuses a discrete parameter whose window holds no legal setting', async () => {
+        const catalog = getMixRecipeCatalog();
+        const base = catalog.recipes.find((recipe) => recipe.id === 'vocal-lo-fi')!;
+        const narrow = {
+            ...base,
+            id: 'vocal-narrow-bits',
+            steps: [
+                {
+                    kind: 'insert' as const,
+                    deviceType: 'builtin-bitcrusher',
+                    parameters: [{ paramId: 'crush-bits', minimum: 1.2, maximum: 1.4 }],
+                },
+            ],
+        };
+        vi.mocked(getMixRecipeCatalog).mockReturnValue({ ...catalog, recipes: [narrow] });
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const receipt = await runRecipeExpansion('loop-expand-no-legal-setting', {
+            recipeId: 'vocal-narrow-bits',
+            targetId: 'lead-vocal-1',
+        });
+
+        expect(receipt.status).toBe('failure');
+        expect(receipt.error?.safeMessage).toContain('no legal setting');
+    });
+
+    // Red when any authored recipe stops expanding inside its windows and the loop's per-call receipt budget.
+    it('expands every authored recipe inside its windows and the per-call receipt budget', async () => {
+        const failures: string[] = [];
+        // Preset recipes are not authored here; presetRecipes.spec.ts owns their expansion.
+        for (const recipe of getMixRecipeCatalog().recipes.filter((candidate) => candidate.origin === undefined)) {
+            const role = recipe.roles[0]!;
+            const editedTypes = recipe.steps.filter((step) => step.kind === 'edit').map((step) => step.deviceType);
+            setTracks([
+                createTrack({
+                    id: 'target-1',
+                    name: 'Target',
+                    devices: editedTypes.map((type, index) => installedDevice(`device-${index}`, type)),
+                }),
+            ]);
+
+            const receipt = await runRecipeExpansion(`loop-expand-${recipe.id}`, {
+                recipeId: recipe.id,
+                targetId: 'target-1',
+                role,
+            });
+
+            if (receipt.status !== 'success') {
+                failures.push(`${recipe.id}: ${receipt.summary}`);
+                continue;
+            }
+            const data = receipt.data as ExpansionData;
+            const outside = data.values.filter((entry) => entry.value < entry.minimum || entry.value > entry.maximum);
+            if (outside.length > 0) {
+                failures.push(`${recipe.id}: ${outside.map((entry) => entry.paramId).join(', ')} outside window`);
+            }
+        }
+
+        expect(failures).toEqual([]);
+    });
+
+    it('keeps recipe.expand unavailable to a run with no revision-bound read model', async () => {
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-expand-unbound',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn: vi.fn().mockResolvedValue({
+                status: 'complete' as const,
+                toolCalls: [
+                    {
+                        id: 'expand-1',
+                        name: 'recipe.expand',
+                        arguments: { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' },
+                    },
+                ],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider requested an unavailable application tool.',
+        });
+    });
+});
+
+describe('recipe.expand adoption by command.batch.propose', () => {
+    const proposalTool = new Set(['command.batch.propose', 'command.batch.decline']);
+
+    function loopWith(
+        turns: ReadonlyArray<ExpansionCall[]>,
+        overrides: { limits?: { maxReceiptBytesPerCall: number } } = {}
+    ) {
+        const requestTurn = vi.fn();
+        for (const toolCalls of turns) {
+            requestTurn.mockResolvedValueOnce({ status: 'complete' as const, toolCalls });
+        }
+        return runApplicationOwnedToolLoop({
+            loopId: 'loop-adopt',
+            terminalToolNames: proposalTool,
+            requestTurn,
+            recipe: recipeExpansionTool(),
+            ...overrides,
+        });
+    }
+
+    const expand = (id: string, args: Record<string, unknown>): ExpansionCall => ({
+        id,
+        name: 'recipe.expand',
+        arguments: args,
+    });
+
+    const propose = (compiledCallIds: string[]): ExpansionCall => ({
+        id: 'propose-1',
+        name: 'command.batch.propose',
+        arguments: { commands: [], compiledCallIds },
+    });
+
+    beforeEach(() => {
+        setTracks([
+            createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' }),
+            createTrack({ id: 'backing-vocal-1', name: 'Backing Vocal' }),
+        ]);
+    });
+
+    afterEach(() => {
+        setTracks([]);
+    });
+
+    // Red when the loop stops retaining a successful expansion by call id as a recipe.
+    it('retains two expansions in one run as recipe compilations with distinct device bindings', async () => {
+        const result = await loopWith([
+            [
+                expand('expand-1', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' }),
+                expand('expand-2', { recipeId: 'vocal-warm', targetId: 'backing-vocal-1' }),
+            ],
+            [propose(['expand-1', 'expand-2'])],
+        ]);
+
+        if (result.status !== 'complete') {
+            throw new Error(`Expected the loop to complete, got: ${result.reason}`);
+        }
+        expect(result.retainedCompilations.map((entry) => entry.kind)).toEqual(['recipe', 'recipe']);
+        const bindings = result.retainedCompilations.flatMap((entry) =>
+            entry.commands.flatMap((command) => (command.binding === null ? [] : [command.binding]))
+        );
+        expect(bindings).toEqual(['recipe-1-0', 'recipe-2-0']);
+    });
+
+    // Red when the reference list stops naming both kinds, or a kind loses its own retained shape.
+    it('adopts a transform compilation and a recipe expansion through one reference list', async () => {
+        const muteDocument = {
+            schemaVersion: 1,
+            name: 'mute-backing',
+            seed: 1,
+            variables: {},
+            selectors: {},
+            steps: [
+                {
+                    id: 'mute-backing',
+                    kind: 'emit',
+                    operation: 'muteTrack',
+                    arguments: { trackId: { literal: 'backing-vocal-1' }, muted: { literal: true } },
+                },
+            ],
+            assertions: [],
+        };
+        const snapshot = projectDeclarativeTransformSnapshot(getProjectContext(), EXPANSION_REVISION);
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete' as const,
+                toolCalls: [
+                    {
+                        id: 'compile-1',
+                        name: 'transform.compile',
+                        arguments: { document: JSON.stringify(muteDocument) },
+                    },
+                    expand('expand-1', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' }),
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete' as const, toolCalls: [propose(['expand-1', 'compile-1'])] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-adopt-both',
+            terminalToolNames: proposalTool,
+            requestTurn,
+            recipe: recipeExpansionTool(),
+            transform: {
+                toolName: 'transform.compile',
+                revision: EXPANSION_REVISION,
+                execute: (call, context) =>
+                    executeTransformCompile({ call, callId: context.callId, turn: context.turn, snapshot }),
+            },
+        });
+
+        if (result.status !== 'complete') {
+            throw new Error(`Expected the loop to complete, got: ${result.reason}`);
+        }
+        expect(result.retainedCompilations.map((entry) => `${entry.kind}:${entry.callId}`)).toEqual([
+            'transform:compile-1',
+            'recipe:expand-1',
+        ]);
+    });
+
+    it.each([
+        ['an expansion the loop never ran', ['never-ran']],
+        ['the same expansion twice', ['expand-1', 'expand-1']],
+    ])('refuses a proposal adopting %s', async (_label, ids) => {
+        const result = await loopWith([
+            [expand('expand-1', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' })],
+            [propose(ids)],
+        ]);
+
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+            expect(result.reason).toContain('unknown, duplicate, or failed transform compilation or recipe expansion');
+        }
+    });
+
+    it('refuses a proposal adopting an expansion that was refused', async () => {
+        const result = await loopWith([
+            [expand('expand-1', { recipeId: 'no-such-recipe', targetId: 'lead-vocal-1' })],
+            [propose(['expand-1'])],
+        ]);
+
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+            expect(result.reason).toContain('unknown, duplicate, or failed');
+            expect(result.receipts[0]?.status).toBe('failure');
+        }
+    });
+
+    it('does not retain an expansion whose receipt exceeded the per-call budget', async () => {
+        const result = await loopWith(
+            [[expand('expand-1', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' })], [propose(['expand-1'])]],
+            { limits: { maxReceiptBytesPerCall: 256 } }
+        );
+
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+            expect(result.reason).toContain('unknown, duplicate, or failed');
+            expect(result.receipts[0]?.status).toBe('failure');
+        }
+    });
+
+    // Red when the loop compares an expansion's revision with the transform compiler's instead of its own.
+    it('refuses an expansion bound to a revision other than the run recipe revision', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete' as const,
+                toolCalls: [expand('expand-1', { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' })],
+            })
+            .mockResolvedValueOnce({ status: 'complete' as const, toolCalls: [propose(['expand-1'])] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-adopt-stale',
+            terminalToolNames: proposalTool,
+            requestTurn,
+            recipe: { ...recipeExpansionTool(), revision: 'revision-moved-on' },
+        });
+
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+            expect(result.reason).toContain('stale transform compilation or recipe expansion');
+        }
+    });
+
+    it('keeps the combined command ceiling over expansions and proposal items together', async () => {
+        const result = await loopWith([
+            [
+                expand('expand-1', { recipeId: 'vocal-tight', targetId: 'lead-vocal-1' }),
+                expand('expand-2', { recipeId: 'vocal-tight', targetId: 'backing-vocal-1' }),
+            ],
+            [
+                {
+                    id: 'propose-1',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: Array.from({ length: 20 }, () => ({ name: 'setTempo', arguments: { bpm: 100 } })),
+                        compiledCallIds: ['expand-1', 'expand-2'],
+                    },
+                },
+            ],
+        ]);
+
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') {
+            expect(result.reason).toBe('Provider command proposal exceeds the command budget.');
+        }
+    });
+});
+
+describe('recipe.expand through provider planning', () => {
+    const REVISION = 'revision-recipe-planning';
+    const PROMPT = 'make the lead vocal warmer';
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(tryPresetMatch).mockReturnValue([]);
+        vi.mocked(tryParameterizedPath).mockReturnValue([]);
+        vi.mocked(tryCompoundFastPath).mockReturnValue(null);
+        setTracks([createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })]);
+    });
+
+    afterEach(() => {
+        setTracks([]);
+        projectStore.set(structuredClone(defaultProjectStoreState));
+    });
+
+    // Red when an adopted expansion stops carrying its commands into the batch or its recipe onto the result.
+    it('adopts an expansion by call id into the batch and records the recipe on the planned result', async () => {
+        const context = getProjectContext();
+        const catalog = prepareCreativeInterpretationCatalog({ prompt: PROMPT, context, projectRevision: REVISION });
+        const recipe = getMixRecipeCatalog().recipes.find((candidate) => candidate.id === 'vocal-warm');
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'interpretation-1',
+                        name: 'selectCreativeInterpretation',
+                        arguments: {
+                            catalogId: catalog.catalogId,
+                            modeId: 'edit',
+                            targetCandidateIds: ['target-1'],
+                            editDimensionCandidateIds: ['dimension-processing'],
+                            constraintCandidateIds: [],
+                            creationSlotIds: [
+                                catalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
+                            ],
+                            uncertainty: 'none',
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-1',
+                        name: 'recipe.discover',
+                        arguments: { descriptors: ['warmer'], targetId: 'lead-vocal-1' },
+                    },
+                    {
+                        id: 'expand-1',
+                        name: 'recipe.expand',
+                        arguments: { recipeId: 'vocal-warm', targetId: 'lead-vocal-1' },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [], compiledCallIds: ['expand-1'] },
+                    },
+                ],
+            });
+
+        const planned = await parsePromptToActions(PROMPT, context, undefined, REVISION);
+
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'lead-vocal-1', deviceType: 'builtin-eq' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'eq-low-freq', value: 160 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'eq-low-gain', value: 2.25 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'eq-high-freq', value: 10_500 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'eq-high-gain', value: -1.5 } },
+        ]);
+        expect(planned.adoptedRecipes).toEqual([
+            { recipeId: 'vocal-warm', title: recipe?.title, targetId: 'lead-vocal-1' },
+        ]);
+    });
+
+    it('records no recipe on a batch that adopted none', async () => {
+        const context = getProjectContext();
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 100 } }] },
+                    },
+                ],
+            });
+
+        const planned = await parsePromptToActions('set the tempo to 100', context, undefined, REVISION);
+
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([{ type: 'setTempo', payload: { bpm: 100 } }]);
+        expect(planned.adoptedRecipes).toBeUndefined();
     });
 });

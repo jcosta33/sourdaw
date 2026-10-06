@@ -5,7 +5,7 @@ import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
+import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
@@ -62,13 +62,32 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
-        const cc = addMidiCC(clipId, controller, value, beat);
+        const channel = 0;
+        // addMidiCC dedupes EVERY point sitting at the clicked (beat, channel,
+        // controller) key — including rows the gesture did not mean to replace —
+        // so undo removes the gesture's written point, then re-inserts the
+        // captured pre-click rows by id (#4840). The capture is key-scoped, not
+        // the whole clip: undo restores only the gesture's own displaced rows,
+        // so a row deleted elsewhere between the gesture and the undo stays
+        // deleted. It must sit before the add — the add is what removes these
+        // rows.
+        const preClickPoints = allCc.filter(
+            (context: MidiCC) =>
+                context.beat === beat && context.channel === channel && context.controller === controller
+        );
+        const cc = addMidiCC(clipId, controller, value, beat, channel);
+        // Redo must re-create the clicked point under the SAME id: a fresh id would
+        // leave the undo side removing an id the store no longer holds.
+        const redo = (): void => {
+            addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
+        };
         pushUndoEntry(
             'Add CC point',
-            () => removeMidiCC(clipId, cc.id),
-            // Redo must re-create the point under the SAME id: a fresh id would
-            // leave the undo side removing an id the store no longer holds.
-            () => addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id)
+            () => {
+                removeMidiCC(clipId, cc.id);
+                restoreMidiCCPoints(clipId, preClickPoints);
+            },
+            redo
         );
     };
 
@@ -129,13 +148,12 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         }
         const point = points.find((param) => param.id === ccId);
         if (point) {
-            const { controller: ctrl, value, beat, channel } = point;
+            // Undo re-inserts just the removed point by id: a sibling sharing its
+            // key survives, and rows other controllers hold are never overwritten.
             removeMidiCC(clipId, ccId);
             pushUndoEntry(
                 'Remove CC point',
-                // Re-add under the removed point's own id so the redo side's
-                // remove still names a point the store holds.
-                () => addMidiCC(clipId, ctrl, value, beat, channel, ccId),
+                () => restoreMidiCCPoints(clipId, [point]),
                 () => removeMidiCC(clipId, ccId)
             );
         } else {

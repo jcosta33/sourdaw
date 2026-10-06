@@ -1,11 +1,10 @@
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackById } from '../repositories/track/getTrackById';
-
-import { addClip } from './clip/addClip';
 
 type ImportAudioClipToTrackOptions = {
     shouldContinue: () => boolean;
@@ -38,6 +37,60 @@ async function stageImportAsset(
     } catch {
         return 'failed';
     }
+}
+
+type ClipImportBatchOutcome = Awaited<ReturnType<typeof executeAppActionBatch>> | null;
+
+// The clip lands through the registered addClip action so the import enters
+// undo history (#4618); the single-action batch reports the commit so the
+// staged lease is promoted only when a clip actually kept the audio. A thrown
+// batch resolves to null, leaving the caller's release path in charge — the
+// decoded buffer stays owned by this import until a clip accepts it.
+async function runClipImportBatch(input: {
+    trackId: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    bufferId: string;
+    stagedAsset: StagedImportAsset | null;
+    shouldContinue: () => boolean;
+}): Promise<ClipImportBatchOutcome> {
+    try {
+        return await executeAppActionBatch(
+            [
+                {
+                    type: 'addClip',
+                    payload: {
+                        trackId: input.trackId,
+                        startBeat: input.startBeat,
+                        endBeat: input.endBeat,
+                        name: input.name,
+                        type: 'audio',
+                        audioBufferId: input.bufferId,
+                        assetHash: input.stagedAsset?.hash,
+                    },
+                },
+            ],
+            {
+                groupId: `import-audio-${crypto.randomUUID()}`,
+                groupLabel: `Import audio: ${input.name}`,
+                source: 'manual',
+                requireCompensation: true,
+                shouldExecute: input.shouldContinue,
+            }
+        );
+    } catch {
+        return null;
+    }
+}
+
+function retainedClipImport(outcome: ClipImportBatchOutcome): boolean {
+    return (
+        outcome !== null &&
+        (outcome.status === 'committed' ||
+            outcome.status === 'committed-with-warning' ||
+            outcome.status === 'ambiguous')
+    );
 }
 
 export async function importAudioClipToTrack(
@@ -101,22 +154,16 @@ export async function importAudioClipToTrack(
         return 'superseded';
     }
 
-    let clip: ReturnType<typeof addClip> = null;
-    try {
-        clip = addClip({
-            trackId,
-            startBeat: lastClipEnd,
-            endBeat: lastClipEnd + durationBeats,
-            name,
-            type: 'audio',
-            audioBufferId: bufferId,
-            assetHash: stagedAsset?.hash,
-        });
-    } catch {
-        // The decoded buffer remains owned by this import until a clip accepts
-        // it; `clip` keeps its null initializer when addClip throws.
-    }
-    if (clip) {
+    const batchOutcome = await runClipImportBatch({
+        trackId,
+        startBeat: lastClipEnd,
+        endBeat: lastClipEnd + durationBeats,
+        name,
+        bufferId,
+        stagedAsset,
+        shouldContinue,
+    });
+    if (retainedClipImport(batchOutcome)) {
         let assetFinalizationFailed = false;
         if (stagedAsset) {
             try {

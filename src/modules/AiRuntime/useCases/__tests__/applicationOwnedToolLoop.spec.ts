@@ -364,6 +364,7 @@ describe('application-owned tool loop', () => {
             'agent.capabilities',
             'agent.catalog.discover',
             'agent.command-index.search',
+            'analysis.compareReference',
             'analysis.measure',
             'analysis.request',
             'command.batch.decline',
@@ -374,7 +375,9 @@ describe('application-owned tool loop', () => {
             'project.query',
             'project.resolve',
             'recipe.discover',
+            'recipe.expand',
             'render.request',
+            'transform.compile',
         ]);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);

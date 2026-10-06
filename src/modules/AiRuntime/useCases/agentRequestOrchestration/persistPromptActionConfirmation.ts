@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
+import { type MeasuredPreview } from '../../models/MeasuredPreview';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
     getPendingActionConfirmation,
@@ -11,6 +12,7 @@ import {
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMeasuredPreviewToBatch } from '../bindMeasuredPreviewToBatch';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 
 import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
@@ -30,6 +32,11 @@ type PersistPromptActionConfirmationInput = {
     affectedIds: NonNullable<ConfirmationProposal['affectedIds']>;
     protectedUnchanged: NonNullable<ConfirmationProposal['protectedUnchanged']>;
     matchSelectorPredicates?: ConfirmationProposal['matchSelectorPredicates'];
+    adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
+    /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
+    measuredPreview?: MeasuredPreview;
+    /** Which of the run's successive batches this proposal is; absent for a request that fits one batch. */
+    batchPosition?: ConfirmationProposal['batchPosition'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -41,6 +48,44 @@ type PersistPromptActionConfirmationInput = {
     supersedes?: string | null;
     onResourceOwnershipAcquired?: () => void;
 };
+
+function describeBatchPosition(batchPosition: PersistPromptActionConfirmationInput['batchPosition']): string {
+    return batchPosition === undefined
+        ? ''
+        : `Batch ${String(batchPosition.index)} of ${String(batchPosition.total)}: `;
+}
+
+/** A proposal the store refused to retain settles its run and chat message as failed; nothing stays pending. */
+function failUnretainedProposal(input: PersistPromptActionConfirmationInput): void {
+    const reason = 'Prepared action resources exceed the live confirmation limit.';
+    agentRunLifecycle.updateBatchStatus({
+        runId: input.runId,
+        batchId: input.parsedCommandBatch.envelope.batchId,
+        status: 'failed',
+    });
+    agentRunLifecycle.recordError({
+        runId: input.runId,
+        error: normalizeAgentFailure({
+            category: 'budget',
+            source: 'command-execution',
+            related: {
+                targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
+                commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                workIds: [input.parsedCommandBatch.envelope.batchId],
+            },
+            retry: 'never',
+            knownDomain: true,
+        }),
+        terminal: true,
+    });
+    updateChatMessage(input.assistantMessageId, {
+        isStreaming: false,
+        pendingActionConfirmationStatus: 'failed',
+        error: reason,
+        content:
+            'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
+    });
+}
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
@@ -77,6 +122,9 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             affectedIds: input.affectedIds,
             protectedUnchanged: input.protectedUnchanged,
             matchSelectorPredicates: input.matchSelectorPredicates,
+            adoptedRecipes: input.adoptedRecipes,
+            measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
+            batchPosition: input.batchPosition,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,
@@ -89,34 +137,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             resourceLease,
         });
         if (!confirmation) {
-            const reason = 'Prepared action resources exceed the live confirmation limit.';
-            agentRunLifecycle.updateBatchStatus({
-                runId: input.runId,
-                batchId: input.parsedCommandBatch.envelope.batchId,
-                status: 'failed',
-            });
-            agentRunLifecycle.recordError({
-                runId: input.runId,
-                error: normalizeAgentFailure({
-                    category: 'budget',
-                    source: 'command-execution',
-                    related: {
-                        targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
-                        commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                        workIds: [input.parsedCommandBatch.envelope.batchId],
-                    },
-                    retry: 'never',
-                    knownDomain: true,
-                }),
-                terminal: true,
-            });
-            updateChatMessage(input.assistantMessageId, {
-                isStreaming: false,
-                pendingActionConfirmationStatus: 'failed',
-                error: reason,
-                content:
-                    'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
-            });
+            failUnretainedProposal(input);
             return null;
         }
 
@@ -124,7 +145,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,
             pendingActionConfirmationStatus: 'proposed',
-            content: `${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
+            content: `${describeBatchPosition(input.batchPosition)}${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
         });
         agentRunLifecycle.transitionPhase({
             runId: input.runId,

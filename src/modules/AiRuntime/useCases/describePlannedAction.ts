@@ -47,6 +47,49 @@ function describeTrackGainRequest(
     return `Set ${target} gain by ${change} (from ${formatGainDb(currentGain, { trimTrailingZeros: true })} dB to ${landing})`;
 }
 
+type ParameterRangePayload = Extract<AppAction, { type: 'automateParameterRange' }>['payload'];
+
+function describeRangeTarget(payload: ParameterRangePayload): string {
+    if (payload.valueDb !== undefined) {
+        return `at ${formatDecibels(payload.valueDb, { trimTrailingZeros: true })} dB`;
+    }
+    if (payload.deltaDb !== undefined) {
+        const sign = payload.deltaDb > 0 ? '+' : '';
+        return `by ${sign}${formatDecibels(payload.deltaDb, { trimTrailingZeros: true })} dB`;
+    }
+    return `at ${String(payload.value)}`;
+}
+
+/** Where the range lies, in the words it was asked in and, once resolved, in beats. */
+function describeRangeSpan(payload: ParameterRangePayload): string {
+    const { range } = payload;
+    let asked = `beats ${String(range.startBeat)}–${String(range.endBeat)}`;
+    if (range.section !== undefined) {
+        asked = `"${range.section}"`;
+    } else if (range.startBar !== undefined) {
+        asked = `bars ${String(range.startBar)}–${String(range.endBar)}`;
+    }
+    if (payload.startBeat === undefined || payload.endBeat === undefined || range.startBeat !== undefined) {
+        return asked;
+    }
+    return `${asked} (beats ${String(payload.startBeat)}–${String(payload.endBeat)})`;
+}
+
+function describeRamps(payload: ParameterRangePayload): string {
+    const rampIn = payload.rampIn ?? 0;
+    const rampOut = payload.rampOut ?? 0;
+    if (rampIn === 0 && rampOut === 0) {
+        return 'with no ramps';
+    }
+    return `ramping in over ${String(rampIn)} and out over ${String(rampOut)} beats`;
+}
+
+function describeParameterRange(payload: ParameterRangePayload, context: ProjectContext): string {
+    const track = context.tracks.find((candidate) => candidate.id === payload.trackId);
+    const target = track ? `track "${track.name}" (${track.id})` : payload.trackId;
+    return `Automate ${target} ${payload.parameterId} ${describeRangeTarget(payload)} across ${describeRangeSpan(payload)}, ${describeRamps(payload)}; the curve outside the range is unchanged`;
+}
+
 export function describePlannedAction({ action, context }: DescribePlannedActionInput): string {
     if (action.type === 'setPunchEnabled') {
         const verb = action.payload.enabled ? 'Enable' : 'Disable';
@@ -111,6 +154,9 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             const verb = action.payload.muted ? 'Mute' : 'Unmute';
             return `${verb} ${target} (muted=${String(action.payload.muted)})`;
         }
+    }
+    if (action.type === 'automateParameterRange') {
+        return describeParameterRange(action.payload, context);
     }
     if (action.type === 'automateSendRange') {
         const targetDescriptions = (action.payload.expectedSends ?? []).map((send) => {

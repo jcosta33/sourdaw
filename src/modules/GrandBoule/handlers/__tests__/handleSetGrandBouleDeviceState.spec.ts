@@ -8,9 +8,14 @@ const before = {
         morphPosition: 0,
         layerBalance: 0,
         enabled: false,
+        temperament: 0,
+        hammerHardness: 0,
+        velocityCurve: 1,
+        stereoWidth: 0.6,
+        toneTilt: 0,
     },
 };
-const after = { ...before, data: { ...before.data, morphPosition: 0.75, enabled: true } };
+const after = { ...before, data: { ...before.data, temperament: 2, morphPosition: 0.75, enabled: true } };
 const mocks = vi.hoisted(() => ({
     setDeviceState: vi.fn(),
     reconcile: vi.fn(),
@@ -30,6 +35,11 @@ const mocks = vi.hoisted(() => ({
                                     morphPosition: 0,
                                     layerBalance: 0,
                                     enabled: false,
+                                    temperament: 0,
+                                    hammerHardness: 0,
+                                    velocityCurve: 1,
+                                    stereoWidth: 0.6,
+                                    toneTilt: 0,
                                 },
                             },
                         },

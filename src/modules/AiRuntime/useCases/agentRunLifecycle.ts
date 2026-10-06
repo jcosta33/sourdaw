@@ -31,6 +31,7 @@ import {
     type AgentRunState,
     type AgentRunWorkOwnerKind,
     type AgentRunWorkTerminalState,
+    hasRemainingScheduledBatches,
     trackActiveSince,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -91,6 +92,13 @@ const PROVIDER_BOUNDARY_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentRes
     'maxModelOutputTokens',
 ]);
 
+/** Limits a planner measurement reads each time it runs; a run's budgets never carry them either. */
+const MEASUREMENT_BOUND_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'measurementMeasuredSeconds',
+    'measurementRenderedSeconds',
+    'measurementWallClockMs',
+]);
+
 /**
  * A run counts toward `concurrentRuns` only while it can still reserve work. Once its current active
  * stretch exceeds `runDurationMs`, `reserveAgentRunBudgetBatch` refuses every further reservation for
@@ -108,7 +116,11 @@ function isRunHoldingCapacity(run: AgentRun, now: number, limits: AgentResourceL
 function armConfiguredAgentRunBudgets(limits: AgentResourceLimits): AgentRunBudgets {
     const armed: Record<string, number> = {};
     for (const [category, limit] of Object.entries(limits)) {
-        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) && !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category)) {
+        const armsRun =
+            !LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) &&
+            !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category) &&
+            !MEASUREMENT_BOUND_LIMIT_CATEGORIES.has(category);
+        if (armsRun) {
             armed[category] = limit;
         }
     }
@@ -438,6 +450,11 @@ function transitionAgentRunPhase(input: {
     transitionedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.transitionedAt ?? Date.now(), (run) => {
+        // A batch that settles as a no-op still leaves the later batches of its schedule owed, so it
+        // cannot complete the run they belong to.
+        if (input.phase === 'completed' && hasRemainingScheduledBatches(run)) {
+            return run;
+        }
         const phase = reduceAgentRunTransition(run.phase, { type: 'phase-requested', phase: input.phase });
         const revisions = { ...run.revisions };
         if (input.revision !== undefined) {
@@ -477,19 +494,30 @@ function recordAgentRunPlan(input: {
             scope: structuredClone(input.scope),
             grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-            plan: structuredClone(
-                input.plan ??
-                    createLegacyAgentRunPlan({
-                        summary: input.summary,
-                        commandIds: input.commandIds,
-                        serializedBatchIdentity: input.serializedBatchIdentity,
-                        applicationToolReceipts: input.applicationToolReceipts ?? [],
-                        revision: input.revision,
-                        scope: input.scope,
-                    })
+            plan: carryBatchSchedule(
+                structuredClone(
+                    input.plan ??
+                        createLegacyAgentRunPlan({
+                            summary: input.summary,
+                            commandIds: input.commandIds,
+                            serializedBatchIdentity: input.serializedBatchIdentity,
+                            applicationToolReceipts: input.applicationToolReceipts ?? [],
+                            revision: input.revision,
+                            scope: input.scope,
+                        })
+                ),
+                run.plan
             ),
         };
     });
+}
+
+/** A plan recorded for a later batch replaces the earlier one but never drops the schedule both belong to. */
+function carryBatchSchedule(next: AgentRunPlan, previous: AgentRunPlan | null): AgentRunPlan {
+    if (next.batchSchedule !== undefined || previous?.batchSchedule === undefined) {
+        return next;
+    }
+    return { ...next, batchSchedule: structuredClone(previous.batchSchedule) };
 }
 
 function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecision; recordedAt?: number }): AgentRun {
@@ -931,7 +959,7 @@ function applyAgentRunReceiptSagaProjection(
     );
     let phase = reduceAgentRunTransition(run.phase, {
         type: 'work-committed',
-        completesRun: projection.work.completesRun !== false,
+        completesRun: projection.work.completesRun !== false && !hasRemainingScheduledBatches(run),
         hasUnsettledExternalSagaStep,
     });
     phase = reduceAgentRunTransition(phase, {
@@ -1717,7 +1745,7 @@ function recordAgentRunCommittedWork(input: {
         );
         const phase = reduceAgentRunTransition(run.phase, {
             type: 'work-committed',
-            completesRun: input.completesRun !== false,
+            completesRun: input.completesRun !== false && !hasRemainingScheduledBatches(run),
             hasUnsettledExternalSagaStep,
         });
         return {
@@ -2367,12 +2395,15 @@ function settleAgentRunWorkLeaseAndTerminalize(input: {
         if (outcome.result.status !== 'settled') {
             return outcome.run;
         }
+        const holdsForLaterBatch = input.outcome === 'no-op' && hasRemainingScheduledBatches(outcome.run);
         return {
             ...outcome.run,
             batches: outcome.run.batches.map((batch) =>
                 batch.batchId === input.workId ? { ...batch, status: terminal.batchStatus } : batch
             ),
-            phase: reduceAgentRunTransition(outcome.run.phase, { type: 'phase-requested', phase: terminal.phase }),
+            phase: holdsForLaterBatch
+                ? outcome.run.phase
+                : reduceAgentRunTransition(outcome.run.phase, { type: 'phase-requested', phase: terminal.phase }),
         };
     });
     return updated === null ? { status: 'missing-run' as const } : result;

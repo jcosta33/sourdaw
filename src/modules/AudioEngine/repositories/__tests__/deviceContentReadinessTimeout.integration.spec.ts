@@ -144,7 +144,11 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const loadA = await observeContentLoad(loads, loadObservers, 0);
 
         let waitSettled = false;
-        const waitingForA = engine.waitForDevices().then(() => {
+        const waitingForA = engine.waitForDevices().then((result) => {
+            expect(result).toMatchObject({
+                status: 'cancelled',
+                devices: [{ deviceId: 'crumbs-1', status: 'cancelled' }],
+            });
             waitSettled = true;
         });
         engine.resetGraph();
@@ -176,7 +180,11 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const loadA = await observeContentLoad(loads, loadObservers, 0);
 
         let waitSettled = false;
-        const waitingForA = engine.waitForDevices().then(() => {
+        const waitingForA = engine.waitForDevices().then((result) => {
+            expect(result).toMatchObject({
+                status: 'cancelled',
+                devices: [{ deviceId: 'crumbs-1', status: 'cancelled' }],
+            });
             waitSettled = true;
         });
         engine.removeDeviceFromStrip('track-1', 'crumbs-1');
@@ -217,7 +225,10 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
 
         const waitingForA = engine.waitForDevices();
         await vi.advanceTimersByTimeAsync(10000);
-        await waitingForA;
+        await expect(waitingForA).resolves.toMatchObject({
+            status: 'cancelled',
+            devices: [{ deviceId: 'crumbs-1', status: 'cancelled' }],
+        });
         await vi.advanceTimersByTimeAsync(0);
 
         if (!generationB) {
@@ -257,7 +268,10 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const newLoad = await observeContentLoad(loads, loadObservers, 1);
 
         await vi.advanceTimersByTimeAsync(10000);
-        await waitingForOriginal;
+        await expect(waitingForOriginal).resolves.toMatchObject({
+            status: 'failed',
+            devices: [{ deviceId: 'original', status: 'failed', stage: 'content' }],
+        });
 
         expect(originalLoad.signal.aborted).toBe(true);
         expect(originalGeneration.destroy).toHaveBeenCalledOnce();
@@ -280,7 +294,10 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
 
         load.settle('ready');
 
-        await expect(waiting).resolves.toBeUndefined();
+        await expect(waiting).resolves.toMatchObject({
+            status: 'ready',
+            devices: [{ deviceId: 'crumbs-1', status: 'ready', stage: null }],
+        });
         expect(load.signal.aborted).toBe(false);
         expect(generation.destroy).not.toHaveBeenCalled();
         expect(readinessFor(engine, 'crumbs-1')).toMatchObject({ status: 'ready', failureStage: null });
@@ -295,7 +312,10 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
 
         await vi.advanceTimersByTimeAsync(10000);
 
-        await expect(waiting).resolves.toBeUndefined();
+        await expect(waiting).resolves.toMatchObject({
+            status: 'failed',
+            devices: [{ deviceId: 'crumbs-1', status: 'failed', stage: 'content' }],
+        });
         expect(load.signal.aborted).toBe(true);
         expect(generation.destroy).toHaveBeenCalledOnce();
         expect(readinessFor(engine, 'crumbs-1')).toMatchObject({

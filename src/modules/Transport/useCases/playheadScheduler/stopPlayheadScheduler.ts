@@ -48,6 +48,7 @@ export function stopPlayheadScheduler(): void {
     playheadClockRef.audioTimeSeconds = 0;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.tickInFlight = false;
+    schedulerSession.pendingSeam = null;
     resetMetronomeBeat(0);
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();

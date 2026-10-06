@@ -58,6 +58,7 @@ export { setTrackNotes } from './setTrackGainPan/setTrackNotes';
 // ── Clip ─────────────────────────────────────────────────────────────────────
 
 export { addClip } from './clip/addClip';
+export { getNextAppActionClipId } from './clip/getNextAppActionClipId';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
@@ -180,6 +181,7 @@ export { setMarkerColor } from './marker/markerOperations/setMarkerColor';
 export { addSection } from './marker/sectionOperations/addSection';
 export { removeSection } from './marker/sectionOperations/removeSection';
 export { renameSection } from './marker/sectionOperations/renameSection';
+export { resolveMusicalRange } from './marker/sectionOperations/resolveMusicalRange';
 
 export { saveMixerSnapshot } from './mixerSnapshot/operations/saveMixerSnapshot';
 export { recallMixerSnapshot } from './mixerSnapshot/operations/recallMixerSnapshot';
@@ -269,6 +271,7 @@ export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
+export { isReverbDeviceType } from './isReverbDeviceType';
 export { clampDeviceParameterValue } from './clampDeviceParameterValue';
 export { quantiseDeviceParameterValue } from './quantiseDeviceParameterValue';
 export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';

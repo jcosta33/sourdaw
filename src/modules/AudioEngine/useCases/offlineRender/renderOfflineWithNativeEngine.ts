@@ -146,6 +146,8 @@ export type NativeOfflineRenderInput = Readonly<{
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     onWarning?: (message: string) => void;
     onProgress?: (fraction: number) => void;
+    /** Stops this render alone, without the process-wide export cancel flag. */
+    abortSignal?: AbortSignal;
 }>;
 
 export type NativeOfflineRenderResult =
@@ -210,6 +212,7 @@ export async function renderOfflineWithNativeEngine(
         vcaMultiplierByTrackId,
         onWarning,
         onProgress,
+        abortSignal,
     } = input;
 
     const bufferedWarnings: string[] = [];
@@ -466,7 +469,7 @@ export async function renderOfflineWithNativeEngine(
             { commands: programmeCommands, attempt: 'schedule the programme' },
         ];
         for (const { commands, attempt } of batches) {
-            checkCancel();
+            checkCancel(abortSignal);
             if (commands.length === 0) {
                 continue;
             }
@@ -476,11 +479,11 @@ export async function renderOfflineWithNativeEngine(
                 return { outcome: 'declined', reason: `the native engine refused to ${attempt}: ${reason}` };
             }
         }
-        checkCancel();
+        checkCancel(abortSignal);
         onProgress?.(0.5);
 
         const { left, right } = await backend.render(frameCount);
-        checkCancel();
+        checkCancel(abortSignal);
         // The master level is the web path's `masterGain` node, applied here
         // in the one place the native render's output crosses back.
         if (masterGainValue !== 1) {

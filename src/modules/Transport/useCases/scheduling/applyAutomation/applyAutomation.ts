@@ -1,4 +1,4 @@
-import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
@@ -14,7 +14,6 @@ import {
     scheduleSendAutomation,
     scheduleTrackPan,
     updateDeviceParam,
-    updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
@@ -35,6 +34,7 @@ import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/util
 import { secondsBetweenBeats, samplesToBeat } from '../../../models/TempoMap';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStore';
+import { beatAtSecondsFromAnchor } from '../../playheadScheduler/beatAtSecondsFromAnchor';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
@@ -271,18 +271,50 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // edges. Bounded above by `currentBeat`: this clock only ever
             // looks backward from the playhead.
             //
-            // After any landing (play/resume, seek while playing, loop wrap,
-            // follow-action jump) `scheduleAudioClips.ts` backdates a clip
-            // spanning the landing beat P by the track's compensation D, so
-            // the audio entering the devices from that instant onward is
-            // P − D, advancing forward from there — never the landing beat
-            // itself. This read follows that backdated material rather than
-            // clamping to the landing beat, which would read ahead of what
-            // is actually sounding.
-            beat = Math.min(
-                currentBeat,
-                Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
-            );
+            // On a landing (play/resume, seek while playing, follow-action
+            // jump) the window's own first beat is what `scheduleAudioClips.ts`
+            // starts, one compensation D after the landing — so the audio
+            // entering the devices from that instant onward is the window
+            // advancing on the compensated clock, which is this read. Across a
+            // loop wrap the first D feeds the dying pass's tail instead
+            // (#4784): the fence spares it past the seam, and the mapped read
+            // below follows it back across the region rather than naming the
+            // pre-loop beats nothing plays.
+            //
+            // The region gate below reads the UNCLAMPED compensated read: the
+            // clamp's floor is beat 0, so a region that begins at the
+            // arrangement origin (loopStart 0) would never see a clamped beat
+            // below loopStart and the wrap-back could not engage (#4784
+            // review). Above zero the clamp only moves negative reads to the
+            // same side of the gate, so the unclamped comparison admits
+            // exactly the set the clamped one did, plus the origin region.
+            const unclampedBeat = samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1);
+            beat = Math.min(currentBeat, Math.max(0, unclampedBeat));
+            const region = transportStore.value;
+            const seamAudioTime = schedulerSession.lastLoopSeamAudioTime;
+            const secondsSinceSeam = seamAudioTime === null ? Infinity : now - seamAudioTime;
+            if (
+                region?.isLooping === true &&
+                seamAudioTime !== null &&
+                secondsSinceSeam >= 0 &&
+                secondsSinceSeam < compensation &&
+                currentBeat >= region.loopStart &&
+                unclampedBeat < region.loopStart
+            ) {
+                // The dying pass died on the seam at loopEnd, and the chain
+                // entry sits `compensation` behind the clock, so the material
+                // the track is fed is the tail that many seconds before
+                // loopEnd — mapped through the same integration the seam model
+                // uses (`beatAtSecondsFromAnchor` over the map), never a
+                // beat-space region-span addition, which reads the wrong beat
+                // once a tempo change sits inside the region.
+                beat = beatAtSecondsFromAnchor(
+                    changes,
+                    region.loopEnd,
+                    now - seamAudioTime - compensation,
+                    defaultTempo
+                );
+            }
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;
@@ -331,6 +363,56 @@ export function applyAutomation(currentBeat: number): Set<string> {
         }
     }
 
+    // #4736: the device parameters a clip-scoped lane owns this tick, with
+    // the owning lane per (device, parameter) — the last qualifying clip lane
+    // in store order, which is the deterministic tie-break when two clip
+    // lanes cover the same parameter. The convention the exports follow is
+    // the established DAW one: clip automation overrides track automation
+    // while the clip plays. The scan mirrors exactly the gates that let a
+    // clip lane reach its device write below, because a track lane (or a
+    // losing clip lane) must be suppressed precisely when the winner would
+    // have written — no more, no less.
+    const clipOwnedDeviceParams = new Map<string, string>();
+    for (const lane of autoState.lanes) {
+        if (!lane.clipId || lane.points.length === 0) {
+            continue;
+        }
+        const track = automationState.trackIndex.get(lane.trackId);
+        if (!track || track.automationMode === 'off' || lane.enabled === false) {
+            continue;
+        }
+        const readBeat = compensatedBeatFor(lane.trackId);
+        const clip = track.clips.find((context) => context.id === lane.clipId);
+        if (!clip || readBeat < clip.startBeat || readBeat > clip.endBeat) {
+            continue;
+        }
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
+            continue;
+        }
+        const curveValue = getAutomationValueAtBeat(lane.id, readBeat);
+        if (curveValue === null) {
+            continue;
+        }
+        const deviceIndex = resolveDeviceAutomationTargetIndex(
+            lane.parameterId,
+            track.devices,
+            deviceAcceptsAutomationParameter
+        );
+        if (deviceIndex < 0) {
+            continue;
+        }
+        const device = track.devices[deviceIndex]!;
+        const paramId = getDeviceAutomationParameterId(lane.parameterId);
+        if (!paramId) {
+            continue;
+        }
+        const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
+        if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
+            continue;
+        }
+        clipOwnedDeviceParams.set(`${device.id}::${paramId}`, lane.id);
+    }
+
     for (const lane of autoState.lanes) {
         if (lane.points.length === 0) {
             continue;
@@ -370,11 +452,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // lane. `gain`, `pan` and an existing send are the AudioParam-backed
         // families scheduled ahead at `now + compensationFor` (further down);
         // they keep reading the playhead's own `currentBeat`, unchanged.
-        // Every other lane — device parameters, MIDI-FX parameters, Fermenter
-        // runtime parameters — writes immediately rather than being scheduled
-        // ahead, so it reads `compensatedBeatFor`: the beat whose audio is
-        // entering the device chain right now, one PDC delay behind the
-        // playhead.
+        // Every other lane — device parameters and Fermenter runtime
+        // parameters — writes immediately rather than being scheduled ahead,
+        // so it reads `compensatedBeatFor`: the beat whose audio is entering
+        // the device chain right now, one PDC delay behind the playhead.
         const sendBusId = getSendAutomationBusId(lane.parameterId);
         const readsCompensatedClock = lane.parameterId !== 'gain' && lane.parameterId !== 'pan' && sendBusId === null;
         const readBeat = readsCompensatedClock ? compensatedBeatFor(lane.trackId) : currentBeat;
@@ -431,9 +512,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // getCompensationDelay(track)` — the same delayed clock scheduleAudioClips
         // places the compensated audio on — and ramps a-rate instead of stepping
         // at the tick grid; they read `currentBeat`, the playhead's own position.
-        // Device params (below), MIDI-FX params and Fermenter runtime params reach
+        // Device params (below) and Fermenter runtime params reach
         // their DSP through worklet MessagePort writes (updateDeviceParam /
-        // applyFermenterRuntimeParam / updateMidiFxParam), which apply on the next
+        // applyFermenterRuntimeParam), which apply on the next
         // render block and cannot be JS-scheduled a-rate here, so they cannot be
         // delayed the way the AudioParam families are. Instead they are read one
         // PDC delay earlier — `readBeat` above is `compensatedBeatFor(lane.trackId)`
@@ -479,13 +560,38 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
                     continue;
                 }
+                // #4736: while a clip-scoped lane's window covers this beat,
+                // it owns the device parameter — a track-level lane (and a
+                // clip lane that lost the store-order tie-break) holds its
+                // tongue. The suppressed lane drops its slew state, so the
+                // tick it comes back into scope it re-enters and writes its
+                // held value once (the #4741 entry law) instead of gliding
+                // from a stale smoothed value — exactly what the offline
+                // merge splices at the ownership boundary.
+                const clipOwner = clipOwnedDeviceParams.get(`${device.id}::${paramId}`);
+                if (clipOwner !== undefined && clipOwner !== lane.id) {
+                    automationState.drivingLanes.delete(lane.id);
+                    automationState.pluginParamSlew.delete(lane.id);
+                    continue;
+                }
                 if (!laneSlew) {
                     laneSlew = new Map<string, number>();
                     automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
 
-                const prev = laneSlew.get(device.id) ?? value;
-                const slewed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                // #4741: the first tick a lane drives this device — entering
+                // its scope on a clip-window opening, or the first tick after
+                // load — has no previous value to glide from, so seeding it
+                // from the target and gating on movement would write nothing:
+                // a flat lane would sit on the manual value for ever. The
+                // entry tick snaps to the target and writes it once, matching
+                // the offline slew, whose first sample is the compiled
+                // stream's opening value.
+                const previousSlew = laneSlew.get(device.id);
+                const enteredLaneScope = previousSlew === undefined;
+                const seed = previousSlew ?? value;
+                const slewed =
+                    isDiscontinuity || enteredLaneScope ? value : slewStep(seed, value, AUTOMATION_SLEW_ALPHA);
                 // Lane data is validated on load only for finiteness and
                 // `maxValue >= minValue` — never against what it drives — so a
                 // stored curve can ask for anything, and a linked lane applies
@@ -543,11 +649,12 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const previousDelivered = quantiseDeviceParameterValue({
                     deviceType: device.type,
                     paramId,
-                    value: prev,
+                    value: seed,
                 });
                 const moved =
                     isDiscontinuity ||
-                    (Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
+                    enteredLaneScope ||
+                    (Math.abs(smoothed - seed) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 // A device the native session carries has its parameters
                 // stamped on the audio thread from the engine's own queue,
@@ -601,60 +708,15 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 continue;
             }
 
-            // MIDI FX Automation
-            if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
-                continue;
-            }
-            for (const fx of track.midiFx) {
-                if (fx.parameterValues[lane.parameterId] === undefined) {
-                    continue;
-                }
-
-                // The owning MIDI FX is found by key presence, but whether a
-                // curve may drive that key is the descriptor's call, exactly as
-                // it is for a device param forty lines above. Note what this
-                // gate can actually decide today: `fx.type` is a Yeast
-                // `ProcessorType` and the lookup keys on `PluginDescriptor.id`,
-                // so it resolves nothing and the permissive "no declared
-                // contract" branch is the only one reachable. It stays because
-                // it is the gate a `ProcessorType`-keyed descriptor would flow
-                // through — but it is not enforcing anything right now.
-                if (!isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
-                    break;
-                }
-
-                if (!laneSlew) {
-                    laneSlew = new Map<string, number>();
-                    automationState.pluginParamSlew.set(lane.id, laneSlew);
-                }
-                const prev = laneSlew.get(fx.id) ?? value;
-                const slewedFxValue = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
-                const smoothed = clampDeviceParameterValue({
-                    deviceType: fx.type,
-                    paramId: lane.parameterId,
-                    value: slewedFxValue,
-                });
-                laneSlew.set(fx.id, smoothed);
-                // MIDI FX parameters are delivered UNQUANTISED, and that is a
-                // statement of fact rather than a policy: `fx.type` is a Yeast
-                // `ProcessorType` ('arpeggiator', 'euclidean', …), and the
-                // quantiser keys on `PluginDescriptor.id`. The two name spaces
-                // are disjoint (asserted in Yeast's `ProcessorCatalog.spec.ts`),
-                // so `getPluginById(fx.type)` is `undefined` for every processor
-                // that exists and a quantise call here could never do anything.
-                // Writing one anyway would read as coverage this branch does not
-                // have.
-                //
-                // Some of these parameters really are stepped —
-                // `EuclideanGenerator` uses `steps`/`hits` as loop bounds and a
-                // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
-                // 13 wide. Closing that needs descriptors keyed by
-                // `ProcessorType`, which is its own change; it is not closed here.
-                if (isDiscontinuity || Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON) {
-                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
-                }
-                break;
-            }
+            // MIDI-FX parameters are not automation targets (#4789): nothing
+            // consumes their values — the engine-side write only fills
+            // `strip.midiFxNodes`, which nothing reads, and no note-transform
+            // code reads `track.midiFx`, live or offline — so a curve driving
+            // one has never been audible. No picker offers these lanes and the
+            // add-lane action refuses them; a lane that still arrives from a
+            // persisted project writes nothing. When a processor consumes
+            // MIDI-FX parameter values, a branch that delivers to it belongs
+            // here.
         }
     }
 

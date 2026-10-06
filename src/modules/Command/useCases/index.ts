@@ -45,6 +45,9 @@ export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolS
 export { getMidiTransformToolSchemas } from './getMidiTransformToolSchemas';
 export { getMidiTransformContract } from './getMidiTransformContract';
 export { expandMidiTransform } from './expandMidiTransform';
+export { compileDeclarativeTransform } from './compileDeclarativeTransform';
+export { parseDeclarativeTransformDocument } from './parseDeclarativeTransformDocument';
+export { getDeclarativeTransformDocumentSchema } from './getDeclarativeTransformDocumentSchema';
 export { getExecutableAppActionProviderSchema } from './getExecutableAppActionProviderSchema';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';

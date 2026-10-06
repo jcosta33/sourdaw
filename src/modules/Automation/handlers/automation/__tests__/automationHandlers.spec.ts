@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 import { addAutomationLane } from '../../../useCases/automation/addAutomationLane';
 import { addAutomationPoint } from '../../../useCases/automation/addAutomationPoint';
 import { quantizeAutomationBeats } from '../../../useCases/automation/quantizeAutomationBeats';
@@ -61,14 +63,14 @@ describe('Automation Handlers', () => {
         expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain', 'lane-1');
     });
 
-    it('writes the canonical existing lane id onto a no-op replay action', () => {
+    it('keeps the authored lane id on a no-op replay action', () => {
         const action: Parameters<NonNullable<typeof handleAddAutomationLane.isNoop>>[0] = {
             type: 'addAutomationLane',
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
         };
 
         expect(handleAddAutomationLane.isNoop?.(action)).toBe(true);
-        expect(action.payload.laneId).toBe('l1');
+        expect(action.payload.laneId).toBeUndefined();
     });
 
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {
@@ -80,6 +82,41 @@ describe('Automation Handlers', () => {
             id: 'point-1',
             beat: 4,
             value: 0.5,
+            curve: 'linear',
+            tension: 0,
+        });
+    });
+
+    it('admits the +6 dB fader ceiling as a point value on a lane bounded at the fader maximum', () => {
+        // #4964: the law derived the ceiling by round-tripping FADER_MAX_GAIN through gainToDb,
+        // which reads 5.999999999999998 and refused the top of the fader's own travel.
+        vi.mocked(getAutomationStoreState).mockReturnValue({
+            lanes: [
+                {
+                    id: 'l1',
+                    trackId: 't1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    minValue: 0,
+                    maxValue: FADER_MAX_GAIN,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                },
+            ],
+        });
+
+        void handleAddAutomationPoint.execute({
+            type: 'addAutomationPoint',
+            payload: { laneId: 'l1', pointId: 'point-1', beat: 4, valueDb: 6 },
+        });
+
+        expect(addAutomationPoint).toHaveBeenCalledWith('l1', {
+            id: 'point-1',
+            beat: 4,
+            value: FADER_MAX_GAIN,
             curve: 'linear',
             tension: 0,
         });

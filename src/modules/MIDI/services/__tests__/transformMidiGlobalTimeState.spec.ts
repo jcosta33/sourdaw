@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { transformMidiGlobalTimeState } from '../transformMidiGlobalTimeState';
+import { transformMidiGlobalTimeState, type MidiGlobalTimeCommand } from '../transformMidiGlobalTimeState';
 
 import type { MidiStoreState } from '../../stores/midiStore';
 
@@ -213,7 +213,7 @@ describe('transformMidiGlobalTimeState', () => {
         }
     });
 
-    it('duplicates notes after the insert shift without copying CC or pitch bend', () => {
+    it('duplicates notes with their CC and pitch bend lanes, appending after what the target holds', () => {
         const sourceNote = {
             id: 'source-note',
             pitch: 200.4,
@@ -253,8 +253,14 @@ describe('transformMidiGlobalTimeState', () => {
                 channel: 12,
             },
         ]);
-        expect(result.state.ccByClipId).toBe(prepared.ccByClipId);
-        expect(result.state.pitchBendByClipId).toBe(prepared.pitchBendByClipId);
+        expect(result.state.ccByClipId).toEqual({
+            source: [sourceCc],
+            target: [{ ...sourceCc, id: 'cc-dup:target:0' }],
+        });
+        expect(result.state.pitchBendByClipId).toEqual({
+            source: [sourcePitchBend],
+            target: [{ ...sourcePitchBend, id: 'pb-dup:target:0' }],
+        });
     });
 
     it('keeps a note’s recorded expression on its duplicate', () => {
@@ -879,5 +885,257 @@ describe('transformMidiGlobalTimeState targetNoteId resolution', () => {
         });
         expect(result.status).toBe('ready');
         expect(result.state.notesByClipId.target?.[0]?.id).toBe('planned-midi-note-0');
+    });
+});
+
+describe('transformMidiGlobalTimeState split controllers and pitch bends', () => {
+    function cc(id: string, beat: number, value: number, controller = 64, channel = 0) {
+        return { id, controller, value, beat, channel };
+    }
+
+    function pitchBend(id: string, beat: number, value: number, channel: number) {
+        return { id, value, beat, channel };
+    }
+
+    function split(prepared: MidiStoreState, splitBeat: number, discardBeforeBeat?: number) {
+        const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
+            type: 'split-notes',
+            sourceClipId: 'source',
+            targetClipId: 'right',
+            splitBeat,
+        };
+        if (discardBeforeBeat !== undefined) {
+            command.discardBeforeBeat = discardBeforeBeat;
+        }
+        return transformMidiGlobalTimeState({ state: prepared, commands: [command], targetNoteIds: [] });
+    }
+
+    it('partitions a sustain lane at the cut and starts the right clip from the pedal state in force', () => {
+        const prepared = state({
+            notesByClipId: { source: [{ id: 'n', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 127), cc('b', 3, 0)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 0), cc('cc-split:right:2', 1, 127)]);
+    });
+
+    it('splits the controllers of a clip that holds no notes', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.notesByClipId).toBe(prepared.notesByClipId);
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 127), cc('b', 3, 0)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 0), cc('cc-split:right:2', 1, 127)]);
+    });
+
+    it('carries and rebases each pitch bend channel independently', () => {
+        const prepared = state({
+            pitchBendByClipId: {
+                source: [
+                    pitchBend('p0', 1, 0.2, 0),
+                    pitchBend('p1', 6, 0.8, 0),
+                    pitchBend('p2', 3, -0.5, 1),
+                    pitchBend('p3', 7, 0.1, 1),
+                ],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.pitchBendByClipId.source).toEqual([
+            pitchBend('p0', 1, 0.2, 0),
+            pitchBend('p2', 3, -0.5, 1),
+        ]);
+        expect(result.state.pitchBendByClipId.right).toEqual([
+            pitchBend('pb-split:right:0', 0, 0.2, 0),
+            pitchBend('pb-split:right:2', 0, -0.5, 1),
+            pitchBend('pb-split:right:1', 2, 0.8, 0),
+            pitchBend('pb-split:right:3', 3, 0.1, 1),
+        ]);
+    });
+
+    it('keeps controller lanes on different controllers and channels apart when carrying', () => {
+        const prepared = state({
+            ccByClipId: {
+                source: [cc('mod', 1, 10, 1, 0), cc('pedal', 2, 127, 64, 0), cc('modOtherChannel', 3, 33, 1, 1)],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.right).toEqual([
+            cc('cc-split:right:0', 0, 10, 1, 0),
+            cc('cc-split:right:1', 0, 127, 64, 0),
+            cc('cc-split:right:2', 0, 33, 1, 1),
+        ]);
+    });
+
+    it('drops controllers inside the deleted window and carries the value in force at the cut', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 10, 1), cc('b', 3, 50, 1), cc('c', 7, 90, 1)] },
+        });
+
+        const result = split(prepared, 6, 2);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 10, 1)]);
+        expect(result.state.ccByClipId.right).toEqual([
+            cc('cc-split:right:1', 0, 50, 1),
+            cc('cc-split:right:2', 1, 90, 1),
+        ]);
+    });
+
+    it('moves an event exactly at the cut to the right clip origin without a second carried event', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 2, 10), cc('b', 4, 99), cc('other', 1, 5, 1)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 2, 10), cc('other', 1, 5, 1)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:2', 0, 5, 1), cc('cc-split:right:1', 0, 99)]);
+    });
+
+    it('produces the same right clip event ids every time the command is applied to the same state', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 127), cc('b', 3, 0), cc('c', 5, 127)] },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.2, 0), pitchBend('p1', 6, 0.8, 0)] },
+        });
+
+        const first = split(prepared, 4);
+        const second = split(prepared, 4);
+
+        expect(second.state.ccByClipId.right?.map((event) => event.id)).toEqual(
+            first.state.ccByClipId.right?.map((event) => event.id)
+        );
+        expect(second.state.pitchBendByClipId.right?.map((event) => event.id)).toEqual(
+            first.state.pitchBendByClipId.right?.map((event) => event.id)
+        );
+        expect(first.state.ccByClipId.right).toHaveLength(2);
+        expect(first.state.pitchBendByClipId.right).toHaveLength(2);
+    });
+
+    it('rejects a split whose controller beat is not finite', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', Number.NaN, 127)] } });
+
+        expect(split(prepared, 4).status).toBe('rejected');
+    });
+
+    it('starts the right clip from the last value when every controller event precedes the cut', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 10), cc('b', 2, 20)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('a', 1, 10), cc('b', 2, 20)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 20)]);
+    });
+
+    it('carries the later row of two controller events on the same beat as the value in force at the cut', () => {
+        const prepared = state({ ccByClipId: { source: [cc('up', 2, 0), cc('down', 2, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:1', 0, 127)]);
+    });
+
+    it('carries the latest-beat controller value when the source rows are not in beat order', () => {
+        const prepared = state({ ccByClipId: { source: [cc('late', 3, 0), cc('early', 1, 127)] } });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.ccByClipId.source).toEqual([cc('late', 3, 0), cc('early', 1, 127)]);
+        expect(result.state.ccByClipId.right).toEqual([cc('cc-split:right:0', 0, 0)]);
+    });
+
+    it('carries the latest-beat pitch bend of each channel when the source rows are not in beat order', () => {
+        const prepared = state({
+            pitchBendByClipId: {
+                source: [pitchBend('late', 3, 0.6, 0), pitchBend('early', 1, 0.3, 0), pitchBend('other', 2, -0.4, 1)],
+            },
+        });
+
+        const result = split(prepared, 4);
+
+        expect(result.state.pitchBendByClipId.right).toEqual([
+            pitchBend('pb-split:right:0', 0, 0.6, 0),
+            pitchBend('pb-split:right:2', 0, -0.4, 1),
+        ]);
+    });
+});
+
+describe('transformMidiGlobalTimeState copy controllers and pitch bends', () => {
+    function cc(id: string, beat: number, value: number, controller: number, channel: number) {
+        return { id, controller, value, beat, channel };
+    }
+
+    function pitchBend(id: string, beat: number, value: number, channel: number) {
+        return { id, value, beat, channel };
+    }
+
+    const copy: MidiGlobalTimeCommand[] = [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }];
+
+    function createSource() {
+        return state({
+            notesByClipId: { source: [{ id: 'n', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: {
+                source: [cc('a', 1, 127, 64, 0), cc('b', 1, 0, 64, 0), cc('c', 2, 90, 64, 3), cc('d', 2, 10, 1, 0)],
+            },
+            pitchBendByClipId: { source: [pitchBend('p0', 1, 0.5, 0), pitchBend('p1', 3, -0.25, 2)] },
+        });
+    }
+
+    it('copies the controller and pitch bend lanes with deterministic ids and leaves the source alone', () => {
+        const prepared = createSource();
+        const sourceCc = structuredClone(prepared.ccByClipId.source);
+        const sourcePitchBend = structuredClone(prepared.pitchBendByClipId.source);
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy, targetNoteIds: ['clone'] });
+        const replay = transformMidiGlobalTimeState({ state: prepared, commands: copy, targetNoteIds: ['clone'] });
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.state.ccByClipId.target).toEqual([
+            cc('cc-dup:target:0', 1, 127, 64, 0),
+            cc('cc-dup:target:1', 1, 0, 64, 0),
+            cc('cc-dup:target:2', 2, 90, 64, 3),
+            cc('cc-dup:target:3', 2, 10, 1, 0),
+        ]);
+        expect(result.state.pitchBendByClipId.target).toEqual([
+            pitchBend('pb-dup:target:0', 1, 0.5, 0),
+            pitchBend('pb-dup:target:1', 3, -0.25, 2),
+        ]);
+        expect(replay.state.ccByClipId.target).toEqual(result.state.ccByClipId.target);
+        expect(replay.state.pitchBendByClipId.target).toEqual(result.state.pitchBendByClipId.target);
+        expect(result.state.ccByClipId.source).toEqual(sourceCc);
+        expect(result.state.pitchBendByClipId.source).toEqual(sourcePitchBend);
+        expect(prepared.ccByClipId.source).toEqual(sourceCc);
+    });
+
+    it('copies the controllers of a clip that holds no notes without requesting note identities', () => {
+        const prepared = state({ ccByClipId: { source: [cc('a', 1, 127, 64, 0)] } });
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy });
+
+        expect(result.status).toBe('ready');
+        expect(result.hasChanges).toBe(true);
+        expect(result.identityRequests).toEqual([]);
+        expect(result.state.notesByClipId).toBe(prepared.notesByClipId);
+        expect(result.state.ccByClipId.target).toEqual([cc('cc-dup:target:0', 1, 127, 64, 0)]);
+    });
+
+    it('appends the copied lanes after rows the target already holds', () => {
+        const prepared = state({
+            ccByClipId: { source: [cc('a', 1, 127, 64, 0)], target: [cc('keep', 0, 5, 1, 0)] },
+        });
+
+        const result = transformMidiGlobalTimeState({ state: prepared, commands: copy });
+
+        expect(result.state.ccByClipId.target).toEqual([cc('keep', 0, 5, 1, 0), cc('cc-dup:target:0', 1, 127, 64, 0)]);
+        expect(result.state.pitchBendByClipId).toBe(prepared.pitchBendByClipId);
     });
 });

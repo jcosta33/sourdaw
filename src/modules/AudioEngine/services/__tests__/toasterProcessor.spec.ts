@@ -696,6 +696,58 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(paramByIdCalls).toEqual([]);
     });
 
+    // #4744: a clip-scoped lane on a clip that starts after the region start
+    // compiles to a stream opening at the clip's first frame. The processor
+    // used to refuse every such stream at its own copy of the contiguity
+    // check, so relaxing only the node would not have fixed the bounce.
+    it('applies a schedule that opens after frame 0, holding the pre-stream value until it does (#4744)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        paramByIdCalls.length = 0;
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 1,
+            segments: [
+                { startFrame: 480, endFrame: 608, startValue: 0.2, endValue: 0.8 },
+                { startFrame: 608, endFrame: 608, startValue: 0.8, endValue: 0.8 },
+            ],
+        });
+
+        // Before the stream opens the parameter keeps its pre-stream value:
+        // the processor writes nothing.
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([]);
+
+        // The stream opens at frame 480 and follows the schedule from there.
+        vi.stubGlobal('currentFrame', 480);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([[1, 0.2]]);
+
+        vi.stubGlobal('currentFrame', 512);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toHaveLength(2);
+        expect(paramByIdCalls[1]).toEqual([1, expect.closeTo(0.35, 12)]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('still rejects a late-opening schedule whose segments do not chain (#4744)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 1,
+            segments: [
+                { startFrame: 480, endFrame: 608, startValue: 0.2, endValue: 0.8 },
+                { startFrame: 610, endFrame: 700, startValue: 0.8, endValue: 1 },
+            ],
+        });
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 480);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('drainQueue stops at a future sampleFrame and resets the head when drained', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });

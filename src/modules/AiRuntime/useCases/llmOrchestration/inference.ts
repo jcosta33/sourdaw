@@ -8,8 +8,7 @@ import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
+import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -37,6 +36,7 @@ import {
     type HostedToolPlan,
 } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
+import { usesStrictCloudToolSchemas } from '../../repositories/cloudLlm/usesStrictCloudToolSchemas';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
@@ -48,20 +48,32 @@ import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformer
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
-    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-    RECIPE_DISCOVERY_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
+import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategories';
+import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
+import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// The mandatory planning contract (workflow selector, six application tools, the workflow action
-// tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
-export const WEBLLM_TOOL_BUDGET = 31;
+// What WebLLM advertises on every request: the eight mandatory planning tools, the command-index
+// search, catalog discovery and the creative interpretation tool.
+const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
+    ...MANDATORY_PLANNING_TOOL_NAMES,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    CREATIVE_INTERPRETATION_TOOL_NAME,
+]);
+
+// The mandatory planning contract (workflow selector, eleven application tools, the 23 workflow
+// action tools: 35) plus one prompt-selected slot; the budget bounds browser prompt size, not a
+// provider limit. Raise it with the mandatory set, never below it plus one free slot.
+export const WEBLLM_TOOL_BUDGET = 36;
 
 /** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
 type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
@@ -150,11 +162,12 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
         const requiredProperties = new Set(Array.isArray(schema.required) ? schema.required : []);
         const admissible: Record<string, unknown> = {};
         for (const [key, item] of Object.entries(value)) {
-            if (item === null && !requiredProperties.has(key)) {
+            const propertyIsDeclared = Object.hasOwn(schema.properties, key);
+            if (item === null && propertyIsDeclared && !requiredProperties.has(key)) {
                 continue;
             }
             const propertySchema = schema.properties[key];
-            admissible[key] = propertySchema === undefined ? item : admissibleSchemaValue(item, propertySchema);
+            admissible[key] = propertyIsDeclared ? admissibleSchemaValue(item, propertySchema) : item;
         }
         return admissible;
     }
@@ -424,35 +437,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let providerTools = toolSchemas;
+                const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
+                let providerTools = strictHostedProposalWire
+                    ? toolSchemas.map(getHostedProposalWireToolSchema)
+                    : toolSchemas;
                 if (backend === 'webllm') {
                     const workflowSelectionTools = toolSchemas.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
-                    const applicationTools = toolSchemas.filter(
-                        (tool) =>
-                            tool.function.name === PROJECT_QUERY_TOOL_NAME ||
-                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME ||
-                            tool.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME ||
-                            tool.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME ||
-                            tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
-                            tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
+                    const applicationTools = toolSchemas.filter((tool) =>
+                        WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
                     );
-                    // Recipe discovery and measurement are dropped from the WebLLM pool rather than made
-                    // mandatory or left eligible for the single prompt-selected slot: either place would
-                    // cost the local tier a planning tool (usually project.discover) it already had.
-                    // Hosted backends never take this branch, so they keep both unchanged.
+                    // The reference comparison is not mandatory and is never offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
-                            tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
-                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
-                            tool.function.name !== COMMAND_BATCH_DECLINE_TOOL_NAME &&
-                            tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
-                            tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
-                            tool.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME &&
-                            tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME &&
-                            tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME
+                            !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
+                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -486,10 +487,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
+                const declaredDataCategories = declareHostedTurnDataCategories(hostedTurn?.history);
                 const remoteDisclosure =
                     backend === 'cloud'
                         ? remoteTransmissionDisclosure.prepare({
-                              categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                              categories: declaredDataCategories,
                               correlationId,
                               requestId,
                           })
@@ -530,7 +532,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ...(remoteDisclosure === undefined
                         ? {}
                         : {
-                              dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                              dataCategories: declaredDataCategories,
                               remoteDisclosure,
                           }),
                 });
@@ -692,6 +694,26 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         name: call.name,
                         arguments: call.arguments,
                     }));
+                    if (strictHostedProposalWire) {
+                        for (const [index, call] of normalizedToolCalls.entries()) {
+                            if (
+                                call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                call.name !== ANALYSIS_MEASURE_TOOL_NAME
+                            ) {
+                                continue;
+                            }
+                            const canonicalSchema = toolSchemas.find((tool) => tool.function.name === call.name);
+                            const decoded =
+                                canonicalSchema === undefined
+                                    ? null
+                                    : decodeHostedProposalWireCall(call, canonicalSchema);
+                            if (decoded === null) {
+                                llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                                return { status: 'rejected', reason: 'Hosted proposal arguments are invalid.' };
+                            }
+                            normalizedToolCalls[index] = decoded;
+                        }
+                    }
                     const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
                     // Every hosted turn is reported, so the run's evidence survives in the history
                     // whatever the provider named its calls. The items themselves are replayed

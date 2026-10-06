@@ -753,7 +753,12 @@ immutable base/head revisions, including both rename paths. It publishes `pr-val
 with the selected files and reasons. Product changes run the offline smoke set and complete browser
 suite with hardware admission, including presentation files, shared application code, test helpers,
 dependencies, deleted tests and unknown paths. Changed E2E specs run directly. Documentation and
-known review tooling avoid browser execution. An AI judgment cannot waive deterministic coverage.
+known review tooling avoid browser execution. The same affected profile reaches validation: a
+documentation-only pull request runs the standing static and security jobs; explicitly known review
+tooling also runs script types, lint, the script unit suite and review contracts. Application builds,
+application unit shards, browser jobs and native checks require a product or unclassified change.
+Unknown scripts, build configuration and mixed product changes keep broad coverage. A forced full
+validation run and the nightly retain their full scope. An AI judgment cannot waive deterministic coverage.
 Missing selected files and malformed plans fail.
 CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
 the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.

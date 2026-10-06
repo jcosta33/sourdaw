@@ -17,6 +17,7 @@
  * of the set so a wording or evidence change invalidates the responses it shaped.
  */
 
+import { isPersistedProjectStatePath, SAVED_PROJECT_STATE_DIGEST_ENTRIES } from '../savedProjectStatePaths.ts';
 import { isNodeTestCollected, isPlaywrightCollected, isVitestCollected } from '../vitestCollectionPatterns.ts';
 
 import { semanticDigest } from './contracts.ts';
@@ -71,7 +72,11 @@ export type SemanticRule = {
     readonly version: string;
     /** The plain statement of what the question is for, so a reader can audit the wording. */
     readonly purpose: string;
-    /** Path prefixes a change must touch for the rule to be applicable; part of the rules digest. */
+    /**
+     * The digest-facing encoding of the applicability surface; part of the rules digest. For the
+     * project-state rules this is the lossless matcher encodings from `savedProjectStatePaths.ts`,
+     * not a rendered glob, so a matcher edit that changes what the rule matches changes the digest.
+     */
     readonly applicabilityPaths: readonly string[];
     readonly appliesTo: (path: string) => boolean;
     readonly requiredEvidence: readonly string[];
@@ -97,7 +102,6 @@ export const SEVERITY_DISPOSITION_TIMELINE: readonly RuleInvestigationCategory[]
 ];
 
 const TEST_PATHS = ['**/__tests__/', '**/*.spec.*', '**/*.test.*'] as const;
-const PROJECT_PATHS = ['src/modules/Project/', 'src/modules/Crdt/', 'src/modules/History/', 'src/app/'] as const;
 const REALTIME_PATHS = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
 const BOUNDARY_PATHS = ['src/modules/', 'src/infra/', 'src/helpers/', 'src/utils/', 'scripts/', 'electron/'] as const;
 const GATE_PATHS = ['.github/', 'scripts/healthGate', 'scripts/semanticReview', 'package.json'] as const;
@@ -109,8 +113,7 @@ const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
  * drift apart; this set remains because applicability also admits an assertion-carrying code file
  * without a runner suffix.
  */
-const CODE_EXTENSION_SET = '(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)';
-const CODE_EXTENSIONS = new RegExp(`\\.${CODE_EXTENSION_SET}$`, 'u');
+const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
 
 /**
  * Whether some runner executes this path as a test.
@@ -179,6 +182,13 @@ const TEST_RULE = {
     investigationCategory: 'test-validity',
 } as const;
 
+/**
+ * The change facts are named in the two rules below rather than declared as a `requiredEvidence` token:
+ * required evidence is a claim about the source regions a question must be given, and the block is derived
+ * from the same diff those regions came from and reports itself `unavailable` when the source could not
+ * read the lines. Naming it in `instructions` changes `rulesDigest`, which is deliberate.
+ */
+
 export const SEMANTIC_RULES: readonly SemanticRule[] = [
     {
         ...TEST_RULE,
@@ -186,15 +196,15 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         version: '1',
         purpose: 'Whether the change removes an assertion the test previously made.',
         instructions:
-            'Does `before` contain an assertion that no assertion in `after` replaces? An assertion moved to another supplied region is replaced; an assertion whose expectation changed is not deleted.',
+            'Does `before` contain an assertion that no assertion in `after` replaces? An assertion moved to another supplied region is replaced; an assertion whose expectation changed is not deleted. `state.unit.changedLines` carries line-level facts about this edit: `before.removedAssertions` names the removed lines whose text carries an assertion call, and `after.addedAssertions` names the added ones, each with a count and line numbers. Those are facts about which lines the diff added and removed, never proof about behaviour: a removed line says the diff removed that line and nothing about whether a check survives, and its count cannot show what an `after` region it does not carry contains. When `state.unit.changedLines.basis` is `unavailable` the edit was not read line by line: answer from the supplied sides alone, and never read a missing fact as absence.',
         criteria: {
             true: 'An assertion present in `before` has no counterpart in `after`, and nothing in `after` checks the same thing.',
             false: 'Every assertion in `before` is still made in `after`, possibly reworded, moved, or strengthened.',
         },
         counterexamples: [
-            'An assertion reworded or split across two assertions that together check the same thing',
-            'An assertion moved to another supplied region',
-            'An assertion replaced by a stronger assertion of the same behaviour',
+            'An assertion reworded, split across two assertions that together check the same thing, moved to another supplied region, or replaced by a stronger assertion of the same behaviour',
+            'A removed line the edit retargeted — an updated descriptor hash, label, or fixture value no assertion read — or a removed assertion line whose replacement sits outside the regions this request carries',
+            'A `changedLines` block reporting `basis` `unavailable`, which records that the edit was not read line by line rather than that it removed nothing',
         ],
     },
     {
@@ -318,7 +328,7 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         version: '1',
         purpose: 'Whether a new branch in the case asserts nothing.',
         instructions:
-            'Does `after` add a branch whose body contains no assertion and does not fail — an early return, a `catch` that swallows, or an alternative path that simply ends?',
+            'Does `after` add a branch whose body contains no assertion and does not fail — an early return, a `catch` that swallows, or an alternative path that simply ends? `state.unit.changedLines.after.addedControlFlow` names the added lines whose text introduces control flow — `if (`, `else`, `catch`, `switch`, `throw`, and a bare `return` — with a count and line numbers. Those are facts about which lines the edit added, never proof about behaviour: the text of an added line cannot show what its branch body does, whether a `catch` rethrows, or whether an assertion outside the regions this request carries covers the path a branch skips. When `state.unit.changedLines.basis` is `unavailable` the edit was not read line by line: answer from the supplied sides alone, and never read a missing fact as absence.',
         criteria: {
             true: 'At least one new branch can complete without asserting and without failing the case.',
             false: 'Every branch asserts, fails, or throws.',
@@ -342,8 +352,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'persisted_shape_changed_without_migration',
         version: '1',
         purpose: 'Whether a persisted shape changed without a migration.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source', 'migration or version contract'],
         instructions:
             'Does the change alter the shape of persisted project data — a field added, removed, renamed, or reinterpreted — without a migration, version bump, or reader that accepts both shapes?',
@@ -362,8 +372,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'mutation_outside_undo_path',
         version: '1',
         purpose: 'Whether project state can now change without an undo record.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source', 'undo contract'],
         instructions:
             'Does the change write project state through a path that does not record an undo entry — a direct store write, a mutation in a view, or an action that bypasses the recorded command path?',
@@ -382,8 +392,8 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
         id: 'silent_data_loss_possible',
         version: '1',
         purpose: 'Whether user data can be lost without surfacing anything.',
-        applicabilityPaths: PROJECT_PATHS,
-        appliesTo: (path) => matchesAny(path, PROJECT_PATHS),
+        applicabilityPaths: SAVED_PROJECT_STATE_DIGEST_ENTRIES,
+        appliesTo: isPersistedProjectStatePath,
         requiredEvidence: ['before source', 'after source'],
         instructions:
             'Can the change drop, overwrite, or fail to persist user data while reporting success — a swallowed error, a truncation, a default that replaces a stored value, or a write that discards its failure?',
@@ -700,18 +710,48 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
     ci: {
         name: 'ci',
         concurrentRequests: 4,
-        maxAttempts: 40,
+        // The attempt count is a backstop above both real guards, sized above what the deadline can carry
+        // at the fastest retained rate — report fef405f0's 8 attempts in 2.53 s, 0.316 s each, about 1,897
+        // attempts in 600 s. It would take 0.098 s an attempt to fit this cap inside the deadline, faster
+        // than any retained call, and the total's own floor is 4,096 maximal requests.
+        maxAttempts: 6144,
         maxRetriesPerRequest: 1,
-        attemptTimeoutMs: 5_000,
-        overallDeadlineMs: 120_000,
-        maxRequestBytes: 48 * 1024,
-        maxStatePlusQuestionBytes: 24 * 1024,
-        maxTotalSubmittedBytes: 1024 * 1024,
+        // One attempt may spend the whole state budget.
+        attemptTimeoutMs: 20_000,
+        // Ten minutes, comfortably inside the semantic-review job's 30-minute timeout.
+        overallDeadlineMs: 600_000,
+        // The provider's context window, not spend, is what binds the state budget. That boundary was
+        // measured from a dry-run plan export of the run that hit it — the request bodies that plan would
+        // have sent, read while reviewing it and not kept in the retained sidecar set: requests of 130,104
+        // and 130,895 bytes were both answered `400 max_tokens_exceeded` while a 130,723-byte request was
+        // answered. 96 KiB is 24,576 estimated tokens by the `bytes / 4`
+        // proxy, which runs slightly under the provider's own count — that run reported 930,965
+        // estimated against 941,550 actual input tokens, about 1.1% — so the cap sits about 8,100
+        // estimated tokens, or about 8,200 at that run's ratio, below the largest request the provider
+        // answered.
+        maxRequestBytes: 128 * 1024,
+        maxStatePlusQuestionBytes: 96 * 1024,
+        // Measured against the retained scans, the deadline is the guard that ends a real run, and it is
+        // first for every request size this profile admits. Rates are duration over network attempts: the
+        // retained ci reports run 0.316-0.974 s per attempt — fastest fef405f0's 8 attempts in 2.53 s,
+        // slowest ci call 364ccd54's 4 in 3.895 s — and the retained corpus reaches 1.13 s on 9f33b0a0's
+        // single local attempt, so 0.974 is the ci slow end and not a corpus bound. The retained report
+        // 784380a1 submitted 1,863,741 bytes over 19 attempts, 98,092
+        // bytes a request. Its assessed units are not the denominator: 23 of its 42 were cache hits, and a
+        // cache hit submits nothing. At the fastest retained rate the deadline carries about 1,897
+        // attempts, or 177 MiB at that request size and 237 MiB at the 128 KiB request ceiling, so this
+        // total can only take over where attempts run faster than any retained call — which is what a
+        // runaway guard is for. Its worst case is about $5.52 a run, from the retained cost range of
+        // 1.04-1.44 cents per MiB (lowest a79a12b8's 3.98 MB run, highest 1e3b55b7's 141 KB one), and it
+        // never rations an ordinary run: those cost cents.
+        maxTotalSubmittedBytes: 384 * 1024 * 1024,
         contextExpansionPasses: 1,
         verify: {
             maxRegionBytes: 96 * 1024,
-            maxStatePlusQuestionBytes: 128 * 1024,
-            maxRequestBytes: 160 * 1024,
+            // The same window bound as the scan budgets: a verify request must not be able to send a
+            // state the provider refuses, whatever the scan profile permits.
+            maxStatePlusQuestionBytes: 96 * 1024,
+            maxRequestBytes: 128 * 1024,
             maxTotalSubmittedBytes: 2 * 1024 * 1024,
         },
     },
@@ -755,8 +795,11 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
     if (!Number.isSafeInteger(profile.contextExpansionPasses) || profile.contextExpansionPasses < 0) {
         throw new Error(`budget profile ${profile.name} contextExpansionPasses must be zero or more`);
     }
-    // A region the collector admits must fit one request's state budget, and one request the run's
-    // total, or the profile configures a collection that can never be sent.
+    // The chain of ceilings is what this enforces: a request fits the run's total, a verify region fits
+    // the verify state ceiling, and that state ceiling fits the verify request, which fits its total. It
+    // says nothing about the question reserve, so a region at the verify region ceiling can still be
+    // withheld by the request fit, which names it with its own reason — the limitation, not this check,
+    // reports that.
     if (
         profile.maxRequestBytes > profile.maxTotalSubmittedBytes ||
         profile.verify.maxRegionBytes > profile.verify.maxStatePlusQuestionBytes ||

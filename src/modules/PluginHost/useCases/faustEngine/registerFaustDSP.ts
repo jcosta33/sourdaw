@@ -38,7 +38,8 @@ export function registerFaustDSP(
     name: string,
     dspCode: string,
     params: FaustParamDescriptor[] = [],
-    isInstrument = false
+    isInstrument = false,
+    polyEffectMode: 'auto' | 'none' = 'auto'
 ): FaustModule {
     validateParamDescriptors(name, params);
     const module: FaustModule = {
@@ -48,6 +49,7 @@ export function registerFaustDSP(
         paramDescriptors: params,
         compiled: false,
         isInstrument,
+        polyEffectMode,
         generator: null,
     };
     faustEngineState.modules.set(module.id, module);

@@ -52,6 +52,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     revertAiActionGroup: revertAiActionGroupMock,
     agentChangeComparison: agentChangeComparisonMock,
     getAgentChangeComparisonView: getAgentChangeComparisonViewMock,
+    loadAgentReference: vi.fn(),
+    clearAgentReference: vi.fn(),
 }));
 
 // Real `createStore` instances so `useStore` subscribes for real: the focus
@@ -65,6 +67,7 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
         aiActionHistoryStore: createStore({ initialData: { groups: [], panelOpen: false } }),
         pendingActionConfirmationStore: createStore({ initialData: { confirmations: [] } }),
         agentChangeComparisonStore: createStore({ initialData: { active: null, lastEnded: null } }),
+        agentReferenceStore: createStore({ initialData: { reference: null, loadEpoch: 0 } }),
     };
 });
 
@@ -227,6 +230,7 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
     status: 'proposed',
     error: null,
     prompt: 'Add a bassline',
+    batchPosition: null,
     actionLabels: ['Create track Bass'],
     scope: { targetIds: ['track-9'], protectedTargetIds: ['track-1'], protectedRanges: [{ startBeat: 0, endBeat: 4 }] },
     risk: {
@@ -235,6 +239,8 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
         reasons: ['Adds one track'],
         requiredTrustMode: 'guarded',
     },
+    recipes: [],
+    measuredPreview: null,
     intentGroups: [],
     destructiveChanges: [],
     partialAcceptance: { available: true, reason: null },
@@ -718,6 +724,125 @@ describe('AgentWorkspace', () => {
         expect(screen.getByText('Valid while project revision revision-7')).toBeInTheDocument();
         expect(screen.getByText('stale')).toHaveAttribute('data-freshness', 'stale');
         expect(screen.getByText('The project moved on.')).toBeInTheDocument();
+    });
+
+    // Red when the section stops rendering each adopted recipe's title beside the name of its target track.
+    it('renders each adopted recipe by title beside the name of its target track', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                recipes: [
+                    {
+                        recipeId: 'vocal-warm',
+                        title: 'Chest-register lift with a softened upper shelf',
+                        targetId: 'track-lead',
+                        targetName: 'Lead Vocal',
+                    },
+                    { recipeId: 'drums-punchy', title: 'Transient lift', targetId: 'track-gone', targetName: null },
+                ],
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const recipes = within(screen.getByRole('list', { name: 'Adopted recipes' })).getAllByRole('listitem');
+        expect(recipes).toHaveLength(2);
+        expect(recipes[0]).toHaveTextContent('Recipe: Chest-register lift with a softened upper shelf on Lead Vocal');
+        expect(recipes[1]).toHaveTextContent('Recipe: Transient lift on a track no longer in the project');
+    });
+
+    it('says which batch of a larger request a proposal is, and says nothing for a single batch', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView({ batchPosition: { index: 2, total: 4 } }));
+
+        const { unmount } = render(<AgentWorkspace />);
+
+        expect(screen.getByText('Batch 2 of 4')).toBeInTheDocument();
+        unmount();
+        getAgentApprovalViewMock.mockReturnValue(approvalView());
+        render(<AgentWorkspace />);
+        expect(screen.queryByText(/^Batch \d+ of \d+$/u)).toBeNull();
+    });
+
+    it('renders no recipe list for a proposal that adopted none', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView());
+
+        render(<AgentWorkspace />);
+
+        expect(screen.queryByRole('list', { name: 'Adopted recipes' })).not.toBeInTheDocument();
+    });
+
+    // Red when the approval section stops rendering a measured preview's figures beside the change.
+    it('renders each measured metric as baseline to preview with its signed delta and unit', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                measuredPreview: {
+                    targets: [
+                        {
+                            targetId: 'track-drums',
+                            targetKind: 'track',
+                            targetName: 'Drums',
+                            metrics: [
+                                {
+                                    metricId: 'integratedLoudness',
+                                    baseline: { value: -14.2, unit: 'LUFS' },
+                                    preview: { value: -12.1, unit: 'LUFS' },
+                                    delta: { value: 2.1, unit: 'LU' },
+                                    incomparableReason: null,
+                                },
+                                {
+                                    metricId: 'rms',
+                                    baseline: { value: -18, unit: 'dBFS' },
+                                    preview: { value: -19.5, unit: 'dBFS' },
+                                    delta: { value: -1.5, unit: 'dB' },
+                                    incomparableReason: null,
+                                },
+                                {
+                                    metricId: 'truePeak',
+                                    baseline: { value: -1, unit: 'dBTP' },
+                                    preview: { value: -1, unit: 'dBTP' },
+                                    delta: { value: 0, unit: 'dB' },
+                                    incomparableReason: null,
+                                },
+                                {
+                                    metricId: 'crestFactor',
+                                    baseline: { value: 9.5, unit: 'dB' },
+                                    preview: null,
+                                    delta: null,
+                                    incomparableReason: 'preview not measured',
+                                },
+                            ],
+                        },
+                    ],
+                },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const metrics = within(screen.getByRole('list', { name: 'Measured preview of Drums' })).getAllByRole(
+            'listitem'
+        );
+        expect(metrics.map((metric) => metric.textContent)).toEqual([
+            'integratedLoudness: -14.20 LUFS → -12.10 LUFS (+2.10 LU)',
+            'rms: -18.00 dBFS → -19.50 dBFS (-1.50 dB)',
+            'truePeak: -1.00 dBTP → -1.00 dBTP (0.00 dB)',
+            'crestFactor: not comparable (preview not measured)',
+        ]);
     });
 
     it('carries dependents out of a deselected group and re-previews the remaining subset', () => {

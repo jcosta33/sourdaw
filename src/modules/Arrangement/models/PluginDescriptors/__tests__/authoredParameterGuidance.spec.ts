@@ -85,47 +85,59 @@ const SYNTH_FAMILY_IDS_UNDER_CENSUS = [
 ] as const;
 
 /**
- * Standalone effect descriptor ids authored directly in their own descriptor
- * file (`CrustDescriptor.ts`, `KneadDescriptor.ts`, `ProofDescriptor.ts`,
- * `YeastDescriptor.ts`) rather than through the shared `declaredControl`
- * fallback. Pinned rather than derived, matching `SYNTH_FAMILY_IDS_UNDER_CENSUS`.
+ * Standalone effect descriptor ids authored in their own descriptor files
+ * (`BacteriaDescriptor.ts`, `CrustDescriptor.ts`, `GlutenDescriptor.ts`,
+ * `GrinderDescriptor.ts`, `KneadDescriptor.ts`, `ProofDescriptor.ts`,
+ * `YeastDescriptor.ts`, plus their `*Guidance*.ts` companions) rather than
+ * through the shared `declaredControl` fallback. Pinned rather than derived,
+ * matching `SYNTH_FAMILY_IDS_UNDER_CENSUS`.
  */
-const STANDALONE_EFFECT_IDS_UNDER_CENSUS = ['crust', 'knead', 'proof', 'yeast'] as const;
+const STANDALONE_EFFECT_IDS_UNDER_CENSUS = [
+    'bacteria',
+    'crust',
+    'gluten',
+    'grinder',
+    'knead',
+    'proof',
+    'yeast',
+] as const;
+
+/**
+ * Instrument descriptor ids authored outside the synth family: the drum kit
+ * (`BuiltinInstrumentDescriptorsGuidance.ts`) and the four drum-machine
+ * variants `createDrumVariant` builds by spreading it, so they carry the kit's
+ * guidance with only the `kit` default changed; the Faust instruments
+ * (`FaustInstrumentDescriptorsGuidance*.ts`); and the standalone instruments
+ * with their own `*DescriptorGuidance.ts` companions. Pinned rather than
+ * derived, matching the lists above.
+ */
+const INSTRUMENT_IDS_UNDER_CENSUS = [
+    'builtin-drum-kit',
+    'builtin-drum-machine-808',
+    'builtin-drum-machine-analog',
+    'builtin-drum-machine-electronic',
+    'builtin-drum-machine-acoustic',
+    'faust-rhodes',
+    'faust-fm-synth',
+    'faust-supersaw-unison',
+    'builtin-crumbs',
+    'grand-boule',
+    'levain',
+    'toaster',
+] as const;
 
 const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
     ...EFFECT_IDS_UNDER_CENSUS,
     ...SYNTH_FAMILY_IDS_UNDER_CENSUS,
     ...STANDALONE_EFFECT_IDS_UNDER_CENSUS,
+    ...INSTRUMENT_IDS_UNDER_CENSUS,
 ] as const;
 
 /**
  * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
- * joined this census. This includes three standalone effects as well as the
- * remaining instrument families; all still use shared fallback guidance.
+ * joined this census; it still uses shared fallback guidance.
  */
-const DESCRIPTOR_IDS_EXCLUDED = [
-    // BuiltinInstrumentDescriptors.ts
-    'builtin-drum-kit',
-    // FaustInstrumentDescriptors.ts
-    'faust-rhodes',
-    'faust-fm-synth',
-    'faust-supersaw-unison',
-    // Standalone effect descriptor files
-    'bacteria',
-    'gluten',
-    'grinder',
-    // Standalone instrument descriptor files
-    'builtin-crumbs',
-    'fermenter',
-    'grand-boule',
-    'levain',
-    'toaster',
-    // Drum variants generated in DeviceParameter.ts from builtin-drum-kit.
-    'builtin-drum-machine-808',
-    'builtin-drum-machine-analog',
-    'builtin-drum-machine-electronic',
-    'builtin-drum-machine-acoustic',
-] as const;
+const DESCRIPTOR_IDS_EXCLUDED = ['fermenter'] as const;
 
 /** Devices with too few parameters to name a sibling in their interactions. */
 const DEVICES_WITHOUT_A_SIBLING_PARAMETER = new Set(['builtin-gain']);
@@ -224,6 +236,10 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
         'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
     ],
     [
+        'bacteria/convolutionMix',
+        'The 0.3 default blends in a peak-normalised body impulse response that gains 20 to 23 dB on broadband material, so the blend a mix can actually use sits far below it.',
+    ],
+    [
         'crust/release',
         'The 0 ms default selects the program-dependent auto branch — apply_envelope forces auto whenever release is zero regardless of releaseAuto — so 50–400 ms describes the manual release window dialed in once a real value is set.',
     ],
@@ -243,10 +259,15 @@ const STANDALONE_EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGI
     (STANDALONE_EFFECT_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
 );
 
+const INSTRUMENT_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGINS.filter((descriptor) =>
+    (INSTRUMENT_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
+);
+
 const AUTHORED_DESCRIPTORS: readonly PluginDescriptor[] = [
     ...EFFECT_DESCRIPTORS,
     ...SYNTH_FAMILY_DESCRIPTORS,
     ...STANDALONE_EFFECT_DESCRIPTORS,
+    ...INSTRUMENT_DESCRIPTORS,
 ];
 
 function requireGuidance(descriptor: PluginDescriptor): PluginDescriptorGuidance {

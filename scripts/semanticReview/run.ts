@@ -11,9 +11,9 @@
  * clean-review claim either.
  */
 
+import { changedLineFacts, type UnitChangedLineFacts } from './changeFacts.ts';
 import {
     buildRevisionContext,
-    NO_EVIDENCE_ID,
     refuse,
     SEMANTIC_POLICY_VERSION,
     SEMANTIC_REPORT_FORMAT,
@@ -27,27 +27,34 @@ import {
     collectEvidence,
     compareByPath,
     exclusionReason,
+    nothingSentReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from './evidence.ts';
-import { fitUnitEvidence, serializedRegion, unitReductionReason } from './fit.ts';
-import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
+import { unitReductionReason } from './fit.ts';
+import { type ScanAssessment } from './interpret.ts';
+import {
+    assertAnswersMatchQuestions,
+    composeUnitPasses,
+    passRequestPayload,
+    requestedPasses,
+    type SemanticUnitPass,
+} from './passes.ts';
 import {
     assessUnit,
     createBudgetController,
-    estimateCost,
     estimateInputTokens,
     TYPESAFE_MODEL,
     TYPESAFE_SDK_VERSION_FOR_CACHE,
     type SemanticBudgetController,
     type SemanticCachePort,
     type SemanticProviderPort,
-    type SemanticUsageTotals,
 } from './provider.ts';
-import { type SemanticScanReport, type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
-import { missingRequiredEvidence } from './requiredEvidence.ts';
+import { type SemanticScanReport } from './report.ts';
+import { scopeReport, usageReport } from './reporting.ts';
+import { unitReservationBytes, unitStatePlusQuestionBytes } from './requestPayload.ts';
 import {
     applicableRules,
     computePolicyDigest,
@@ -58,8 +65,34 @@ import {
     type SemanticRule,
     type SemanticRuleId,
 } from './rules.ts';
+import {
+    buildScopeStates,
+    BUDGET_STOPPED_REASON,
+    DEADLINE_STOPPED_REASON,
+    DRY_RUN_REASON,
+    isMissedAssessmentExclusion,
+    MISSING_REQUIRED_EVIDENCE_REASON,
+} from './scopeAccounting.ts';
+import {
+    mergeUnitAnswers,
+    type AssessedPass,
+    type MergedUnitAssessment,
+    type StoredUnitResponse,
+} from './unitAssessment.ts';
+import { orderPlannedUnits, plannedRequest, unitOmission } from './unitPriority.ts';
+
+export type { StoredUnitResponse } from './unitAssessment.ts';
+/** Re-exported here because the run's own completion decision reads it and callers import it from the plan. */
+export { isMissedAssessmentExclusion } from './scopeAccounting.ts';
 
 export type SemanticClock = { readonly now: () => number };
+
+/**
+ * The exact request payload bytes the provider measures for one unit, re-exported here because this
+ * module owns the plan whose reservation has to agree with that measurement.
+ */
+export { unitStatePlusQuestionBytes };
+export { usageReport } from './reporting.ts';
 
 export type SemanticPorts = {
     readonly source: SemanticSourcePort;
@@ -70,21 +103,19 @@ export type SemanticPorts = {
     readonly log: (message: string) => void;
 };
 
-export type SemanticRequestPreview = {
-    readonly unitId: string;
-    readonly path: string;
-    readonly ruleIds: readonly SemanticRuleId[];
-    readonly evidenceIds: readonly string[];
-    readonly bodyBytes: number;
-    readonly estimatedInputTokens: number;
-};
-
 export type SemanticUnitPlan = {
     readonly unitId: string;
     readonly path: string;
     readonly file: SemanticChangedFile;
     readonly rules: readonly SemanticRule[];
     readonly evidence: SemanticUnitEvidence;
+    /**
+     * The deterministic facts about this unit's own added and removed lines. They travel in the unit's
+     * request so the two test-validity rules the audit found false-alarming read the edit itself rather
+     * than inferring it from surrounding source, and they are computed once here so the reservation and
+     * the payload cannot disagree about their size.
+     */
+    readonly changedLineFacts: UnitChangedLineFacts;
 };
 
 /**
@@ -99,6 +130,13 @@ export type SemanticUnitEvidence = {
     /** The union of own and context, in send order: the payload the provider receives. */
     readonly references: readonly EvidenceReference[];
     readonly contents: ReadonlyMap<string, string>;
+    /**
+     * The ordered passes this unit's evidence travels in. Exactly one when everything fits one
+     * request; several when the unit exceeded the per-request budget and the region set was
+     * partitioned. A unit whose every region individually exceeds the budget has no passes and is
+     * excluded before assessment.
+     */
+    readonly passes: readonly SemanticUnitPass[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
     /**
@@ -111,28 +149,6 @@ export type SemanticUnitEvidence = {
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
 };
-
-/**
- * The exclusion reasons that mean nothing was owed for this path: no rule applies to it, or the
- * collector decided it needs no reading at all — generated, a lockfile, binary, or unchanged text.
- *
- * The complement is what turns an empty scope into "an assessment was never produced". A lockfile-only
- * change is the same class as a documentation-only one and must stay a skip; reading every
- * non-`no-applicable-rule` reason as a missed assessment turned it into a red check claiming a
- * coverage gap that does not exist.
- */
-const NOTHING_OWED_EXCLUSION_REASONS: ReadonlySet<string> = new Set([
-    'no-applicable-rule',
-    'generated',
-    'dependency-lockfile',
-    'binary',
-    'no-text-change',
-]);
-
-/** Whether an exclusion means an assessment was owed for that path and not produced. */
-export function isMissedAssessmentExclusion(reason: string): boolean {
-    return !NOTHING_OWED_EXCLUSION_REASONS.has(reason);
-}
 
 /** Whether a region was minted for the given changed file, by post-change path. */
 function isAttributedTo(set: SemanticEvidenceSet, reference: EvidenceReference, changedPath: string): boolean {
@@ -200,6 +216,26 @@ function withheldContextSides(
 }
 
 /**
+ * Whether a rule of this unit declares it needs the changed implementation's source. A rule that does is
+ * asking about a path that is usually not the one under assessment, so the planner supplies the changed
+ * implementation's after side as context: without this the declaration was unsatisfiable and the rule
+ * silently scored anyway, and with it a change whose implementation is unchanged reports the evidence as
+ * missing.
+ */
+function unitNeedsImplementationSource(rules: readonly SemanticRule[]): boolean {
+    return rules.some((rule) => rule.requiredEvidence.some((token) => /implementation/iu.test(token)));
+}
+
+/**
+ * The deterministic facts about one unit's own changed lines. The map is keyed by each change's own
+ * post-change path, so a unit never carries another file's lines, and a path the source could not read
+ * leaves the facts unavailable rather than reporting an empty edit.
+ */
+function unitChangeFacts(set: SemanticEvidenceSet, file: SemanticChangedFile): UnitChangedLineFacts {
+    return changedLineFacts(set.changedLines.get(file.path));
+}
+
+/**
  * Plans one unit per eligible changed file. A unit carries the rules whose applicability predicate
  * admits that path, and the context regions those rules require.
  */
@@ -239,20 +275,22 @@ export function planUnits(
         if (own.length === 0) {
             // Context regions alone would otherwise make a wholly-withheld file count as assessed.
             // One exclusion per path: collection may already have excluded it, and a second entry
-            // would break the manifest's own arithmetic.
+            // would break the manifest's own arithmetic. The reason comes from why the collector
+            // withheld the file's sides — the size gate or inadmissibility — and a side's region is
+            // keyed to the path it was read from, which for a before side is the previous path.
             if (!excludedPaths.has(file.path)) {
-                excluded.push({ path: file.path, reason: 'no-admissible-evidence' });
+                excluded.push({
+                    path: file.path,
+                    reason: nothingSentReason(
+                        set.truncated.filter((entry) => entry.path === file.path || entry.path === file.previousPath)
+                    ),
+                });
             }
             continue;
         }
         const needsContract = unitNeedsContractContext(rules);
-        // A rule that declares it needs the implementation is asking about a path that is usually not
-        // the one under assessment, so the planner supplies the changed implementation's after side as
-        // context. Without this the declaration was unsatisfiable and the rule silently scored anyway;
-        // with it, a change whose implementation is unchanged reports the evidence as missing.
-        const needsImplementation = rules.some((rule) =>
-            rule.requiredEvidence.some((token) => /implementation/iu.test(token))
-        );
+        const unitChangedLineFacts = unitChangeFacts(set, file);
+        const needsImplementation = unitNeedsImplementationSource(rules);
         let context: EvidenceReference[] = [];
         if (needsContract) {
             context = set.references.filter((reference) => reference.side === 'context');
@@ -268,145 +306,124 @@ export function planUnits(
             );
         }
         // The request carries the state plus every question, so the evidence budget is what remains
-        // after the questions and the state's own wrapper are paid for.
-        const wrapperBytes = Buffer.byteLength(
-            JSON.stringify({ unit: { unitId: file.path, path: file.path, changeKind: file.kind }, evidence: {} }),
-            'utf8'
-        );
-        const reserve = wrapperBytes + Buffer.byteLength(JSON.stringify(unitQuestions(rules)), 'utf8');
-        const evidenceBudget = maxStatePlusQuestionBytes - reserve;
+        // after the questions and the state's own envelope are paid for — measured by the same builder
+        // the provider refuses over, with the evidence map still empty because no region is chosen yet.
+        const evidenceBudget = maxStatePlusQuestionBytes - unitReservationBytes(file, rules, unitChangedLineFacts);
         if (evidenceBudget <= 0) {
             excluded.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
             incomplete.push({ path: file.path, reason: 'unit-overhead-exceeds-request-budget' });
             continue;
         }
-        const fitted = fitUnitEvidence(set, own, context, evidenceBudget);
-        const references = [...fitted.own.references, ...fitted.context.references];
-        if (references.length === 0) {
+        const unitId = `${file.path}`;
+        const composed = composeUnitPasses(set, own, context, unitId, evidenceBudget);
+        if (composed.references.length === 0) {
             excluded.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             incomplete.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             continue;
         }
-        const contents = new Map<string, string>([...fitted.own.contents, ...fitted.context.contents]);
         const unitTruncated = set.truncated.filter((entry) => entry.path === file.path);
         // Only reduction-specific text belongs here: the report already carries every collector-level
         // limitation, and filtering the same array by path printed each one twice.
         const unitLimitations: string[] = [];
-        if (fitted.dropped > 0) {
-            // The dropped regions were not sent at all, so the questions needing them report the
-            // evidence as not supplied rather than answering from a fragment of it.
+        if (composed.dropped > 0) {
+            // A region dropped because no pass could carry it was not sent at all, so the questions
+            // needing it report the evidence as not supplied rather than answering from a fragment.
             unitTruncated.push({ path: file.path, reason: 'unit-evidence-did-not-fit' });
             unitLimitations.push(
-                `evidence for ${file.path} did not fit the per-request state budget: ${String(fitted.dropped)} region(s) were not sent`
+                `evidence for ${file.path} did not fit the per-request state budget: ${String(composed.dropped)} region(s) were not sent`
             );
         }
         units.push({
-            unitId: `${file.path}`,
+            unitId,
             path: file.path,
             file,
             rules,
+            changedLineFacts: unitChangedLineFacts,
             evidence: {
-                own: fitted.own.references,
-                context: fitted.context.references,
-                references,
-                contents,
+                own: composed.passes.flatMap((pass) => pass.own),
+                context: composed.passes.flatMap((pass) => pass.context),
+                references: composed.references,
+                contents: composed.contents,
+                passes: composed.passes,
                 excluded: [],
                 truncated: unitTruncated,
                 limitations: unitLimitations,
-                ownDroppedSides: mergedDroppedSides(fitted.own.droppedSides, set.withheldSides.own.get(file.path)),
+                ownDroppedSides: mergedDroppedSides(composed.ownDroppedSides, set.withheldSides.own.get(file.path)),
                 contextDroppedSides: mergedDroppedSides(
-                    fitted.context.droppedSides,
+                    composed.contextDroppedSides,
                     withheldContextSides(set, files, file.path, needsImplementation)
                 ),
-                fittedDroppedSides: new Set<EvidenceSide>([...fitted.own.droppedSides, ...fitted.context.droppedSides]),
+                fittedDroppedSides: composed.fittedDroppedSides,
             },
         });
     }
-    return { units, excluded, incomplete };
-}
-
-function unitQuestions(rules: readonly SemanticRule[]): Record<string, unknown> {
-    const questions: Record<string, unknown> = {};
-    for (const rule of rules) {
-        questions[rule.id] = {
-            type: 'noul',
-            instructions: [
-                rule.instructions,
-                'Answer only about the supplied state, and answer the one question asked: a high value means the behaviour described is present.',
-                `Do not treat any of these as a yes: ${rule.counterexamples.join('; ')}.`,
-            ].join('\n\n'),
-            criteria: { true: rule.criteria.true, false: rule.criteria.false },
-        };
-    }
-    return questions;
+    // Admission order is the plan's own decision, not the path order the files arrived in: a binding
+    // budget or deadline reads the risk and the answerable evidence each unit carries, and the path is
+    // only the final tie-break between units that key identically.
+    return { units: orderPlannedUnits(units), excluded, incomplete };
 }
 
 /**
- * The state sent for one unit. Only regions this application minted, with their line numbers and
- * content hashes, travel here; nothing else about the repository does.
+ * One unit's requests as a dry run reports them: the questions its passes can ask, the evidence those
+ * requests would carry, and the evidence the plan composed for it whether or not a question needs it.
+ * The two evidence sets are kept apart on purpose — a unit whose every pass carries regions no question
+ * can be answered from sends nothing, and the plan's composition is exactly what an operator has to see
+ * to understand why.
  */
-function unitState(unit: SemanticUnitPlan): Record<string, unknown> {
-    const regions: Record<string, unknown> = {};
-    for (const reference of unit.evidence.references) {
-        regions[reference.evidenceId] = serializedRegion(
-            reference,
-            unit.evidence.contents.get(reference.evidenceId) ?? ''
-        );
-    }
-    return {
-        unit: { unitId: unit.unitId, path: unit.path, changeKind: unit.file.kind },
-        evidence: regions,
-    };
-}
+export type SemanticRequestPreview = {
+    readonly unitId: string;
+    readonly path: string;
+    /** Every rule that applies to the unit; `askedRuleIds` is the subset its requests would ask. */
+    readonly ruleIds: readonly SemanticRuleId[];
+    /** The rules the requests would ask: the ones a sent pass carries the required evidence for. */
+    readonly askedRuleIds: readonly SemanticRuleId[];
+    /** Every region the plan composed for the unit, across every pass, sent or not. */
+    readonly evidenceIds: readonly string[];
+    /** The regions the requests would carry. */
+    readonly sentEvidenceIds: readonly string[];
+    /** The bytes those requests would submit; 0 when no pass can ask anything. */
+    readonly bodyBytes: number;
+    readonly estimatedInputTokens: number;
+    /** Why no request would be sent, when no pass carries the evidence any question requires. */
+    readonly omissionReason?: string;
+};
 
+/**
+ * What one unit's requests would carry and measure. Body bytes are read from the passes the requests
+ * would actually send, so a dry run's export agrees with what a live run does instead of pricing
+ * questions that would never be asked. It lives here with the run's own request accounting: the byte and
+ * token measures are the provider's, and a preview built beside the pass composition would drag the
+ * adapter into every closure that reads a report.
+ */
 function requestPreview(unit: SemanticUnitPlan, model: string): SemanticRequestPreview {
-    const body = JSON.stringify({ state: unitState(unit), questions: unitQuestions(unit.rules), model });
-    const bytes = Buffer.byteLength(body, 'utf8');
-    return {
+    const sent = requestedPasses({
+        rules: unit.rules,
+        kind: unit.file.kind,
+        evidence: unit.evidence,
+    });
+    let bodyBytes = 0;
+    for (const entry of sent) {
+        const payload = passRequestPayload({
+            unitId: unit.unitId,
+            path: unit.path,
+            file: unit.file,
+            rules: entry.rules,
+            pass: entry.pass,
+            changedLineFacts: unit.changedLineFacts,
+        });
+        bodyBytes += Buffer.byteLength(JSON.stringify({ ...payload, model }), 'utf8');
+    }
+    const preview: SemanticRequestPreview = {
         unitId: unit.unitId,
         path: unit.path,
         ruleIds: unit.rules.map((rule) => rule.id),
-        evidenceIds: unit.evidence.references.map((reference) => reference.evidenceId),
-        bodyBytes: bytes,
-        estimatedInputTokens: estimateInputTokens(bytes),
+        askedRuleIds: sent.flatMap((entry) => entry.rules.map((rule) => rule.id)),
+        evidenceIds: unit.evidence.passes.flatMap((pass) => pass.references.map((reference) => reference.evidenceId)),
+        sentEvidenceIds: sent.flatMap((entry) => entry.pass.references.map((reference) => reference.evidenceId)),
+        bodyBytes,
+        estimatedInputTokens: estimateInputTokens(bodyBytes),
     };
-}
-
-function scopeReport(input: {
-    units: readonly SemanticUnitPlan[];
-    excluded: readonly SemanticScopeExclusion[];
-    truncated: readonly SemanticScopeExclusion[];
-    assessed: number;
-    cacheHits: number;
-    unassessed: readonly SemanticScopeExclusion[];
-}): SemanticScopeReport {
-    const discovered = new Set<string>([
-        ...input.units.map((unit) => unit.path),
-        ...input.excluded.map((entry) => entry.path),
-    ]).size;
-    return {
-        discovered,
-        eligible: input.units.length,
-        assessed: input.assessed,
-        cacheHits: input.cacheHits,
-        excluded: [...input.excluded],
-        unassessed: [...input.unassessed],
-        truncated: [...input.truncated],
-    };
-}
-
-export function usageReport(usage: SemanticUsageTotals): SemanticUsageReport {
-    return {
-        networkAttempts: usage.networkAttempts,
-        logicalRequests: usage.logicalRequests,
-        retries: usage.retries,
-        submittedBytes: usage.submittedBytes,
-        actualInputTokens: usage.actualInputTokens,
-        estimatedInputTokens: usage.estimatedInputTokens,
-        attemptsWithUnknownUsage: usage.attemptsWithUnknownUsage,
-        estimatedCostUsd: estimateCost(usage.actualInputTokens).usd,
-        pricingConfigurationVersion: estimateCost(usage.actualInputTokens).pricingVersion,
-    };
+    return sent.length === 0 ? { ...preview, omissionReason: MISSING_REQUIRED_EVIDENCE_REASON } : preview;
 }
 
 /**
@@ -444,14 +461,6 @@ export type RunScanResult = {
     readonly storedResponses: readonly StoredUnitResponse[];
 };
 
-export type StoredUnitResponse = {
-    readonly unitId: string;
-    readonly path: string;
-    readonly ruleIds: readonly SemanticRuleId[];
-    readonly answers: Readonly<Record<string, unknown>>;
-    readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
-};
-
 type ScanAccumulation = {
     signals: ScanAssessment[];
     storedResponses: StoredUnitResponse[];
@@ -462,14 +471,20 @@ type ScanAccumulation = {
     failureCode: string | undefined;
 };
 
-/** One unit's validated answers, kept with the deterministic inputs their interpretation depended on. */
-type UnitAssessment = {
-    readonly signals: readonly ScanAssessment[];
-    readonly stored: StoredUnitResponse;
-    readonly returnedModel: string;
-    readonly fromCache: boolean;
+/** One unit's merged answers, with the number of requests it actually sent. */
+type UnitAssessment = MergedUnitAssessment & {
+    /**
+     * The requests this unit sent. Zero means no pass could ask any of its questions: the unit is
+     * recorded as an omission, and its rules still report the evidence every request would have lacked.
+     */
+    readonly providerCalls: number;
 };
 
+/**
+ * Asks one unit everything it can answer. Each pass sends only the questions it carries the required
+ * evidence for, and a pass with no question left is not sent at all; the merge then reads each rule's
+ * answer from the pass that best carries it.
+ */
 async function assessOneUnit(input: {
     readonly ports: SemanticPorts;
     readonly unit: SemanticUnitPlan;
@@ -477,64 +492,55 @@ async function assessOneUnit(input: {
     readonly budget: SemanticBudgetController;
     readonly deadline: number;
 }): Promise<UnitAssessment> {
-    const references = input.unit.evidence.references;
-    const missing = new Map<SemanticRuleId, string[]>(
-        input.unit.rules.map((rule) => [
-            rule.id,
-            missingRequiredEvidence(
-                rule,
-                input.unit.evidence.own,
-                input.unit.evidence.context,
-                input.unit.file.kind,
-                input.unit.evidence.ownDroppedSides,
-                input.unit.evidence.contextDroppedSides
-            ),
-        ])
-    );
-    const present = new Set(references.map((reference) => reference.evidenceId));
-    const result = await assessUnit({
-        port: input.ports.provider,
-        cache: input.ports.cache,
-        budget: input.budget,
-        profile: input.profile,
-        deadline: input.deadline,
-        state: unitState(input.unit),
-        questions: unitQuestions(input.unit.rules),
-        requestedModel: TYPESAFE_MODEL,
-        signal: input.ports.signal,
-        now: input.ports.clock.now,
-    });
-    const signals = input.unit.rules.map((rule) => {
-        const answer = result.response.answers[rule.id];
-        if (answer === undefined) {
-            refuse('invalid_response', `TypeSafe response is missing the required answer ${rule.id}`);
-        }
-        return interpretScanOutcome({
-            answer: assertEvidenceIdsPresent(answer, present),
-            rule,
-            unitId: input.unit.unitId,
-            path: input.unit.path,
-            missingEvidence: missing.get(rule.id) ?? [],
+    const unit = input.unit;
+    const assessedPasses: AssessedPass[] = [];
+
+    for (const { pass, rules } of requestedPasses({
+        rules: unit.rules,
+        kind: unit.file.kind,
+        evidence: unit.evidence,
+    })) {
+        const payload = passRequestPayload({
+            unitId: unit.unitId,
+            path: unit.path,
+            file: unit.file,
+            rules,
+            pass,
+            changedLineFacts: unit.changedLineFacts,
         });
-    });
-    return {
-        signals,
-        stored: {
-            unitId: input.unit.unitId,
-            path: input.unit.path,
-            ruleIds: input.unit.rules.map((rule) => rule.id),
-            answers: result.response.answers,
-            missingEvidence: Object.fromEntries(missing),
-        },
-        returnedModel: result.response.model,
-        fromCache: result.fromCache,
-    };
+        const result = await assessUnit({
+            port: input.ports.provider,
+            cache: input.ports.cache,
+            budget: input.budget,
+            profile: input.profile,
+            deadline: input.deadline,
+            ...payload,
+            requestedModel: TYPESAFE_MODEL,
+            signal: input.ports.signal,
+            now: input.ports.clock.now,
+        });
+        const askedRuleIds = rules.map((rule) => rule.id);
+        assertAnswersMatchQuestions({ unitId: unit.unitId, answers: result.response.answers, askedRuleIds });
+        assessedPasses.push({ pass, askedRuleIds, result });
+    }
+
+    return { ...mergeUnitAnswers({ unit, assessedPasses }), providerCalls: assessedPasses.length };
 }
 
 /**
- * Assesses every planned unit under one shared budget. A budget exhaustion stops admitting new
- * requests, preserves what completed, and records each unassessed unit with its reason; completed
- * assessments are never discarded to make the report look uniform.
+ * The reason recorded for every unit a stopped run never admitted, keyed by the failure that stopped
+ * admission. A per-request refusal is absent on purpose: it is a property of that unit's request, so
+ * the units after it keep their bytes and attempts and must stay assessable.
+ */
+const STOPPED_ADMISSION_REASONS: Readonly<Record<string, string>> = {
+    budget_exhausted: BUDGET_STOPPED_REASON,
+    deadline_elapsed: DEADLINE_STOPPED_REASON,
+};
+
+/**
+ * Assesses every planned unit under one shared budget. A budget exhaustion or an elapsed deadline stops
+ * admitting new requests, preserves what completed, and records each unassessed unit with its reason;
+ * completed assessments are never discarded to make the report look uniform.
  */
 async function assessPlannedUnits(input: {
     readonly ports: SemanticPorts;
@@ -555,14 +561,14 @@ async function assessPlannedUnits(input: {
     };
     if (input.dryRun) {
         for (const unit of input.units) {
-            accumulation.unassessed.push({ path: unit.path, reason: 'dry-run' });
+            accumulation.unassessed.push(unitOmission(unit, DRY_RUN_REASON));
         }
         return accumulation;
     }
-    let admissionStopped = false;
+    let stoppedReason: string | undefined;
     for (const unit of input.units) {
-        if (admissionStopped) {
-            accumulation.unassessed.push({ path: unit.path, reason: 'budget-exhausted-before-admission' });
+        if (stoppedReason !== undefined) {
+            accumulation.unassessed.push(unitOmission(unit, stoppedReason));
             continue;
         }
         try {
@@ -573,19 +579,31 @@ async function assessPlannedUnits(input: {
                 budget: input.budget,
                 deadline: input.deadline,
             });
-            accumulation.assessed += 1;
             accumulation.signals.push(...outcome.signals);
             accumulation.storedResponses.push(outcome.stored);
+            // A unit no pass could ask sent nothing. It is not an assessment — no answer exists — so it
+            // is recorded as an omission under its own reason, while its stored record keeps every rule
+            // reporting the evidence no request could have carried.
+            if (outcome.providerCalls === 0) {
+                accumulation.unassessed.push(unitOmission(unit, MISSING_REQUIRED_EVIDENCE_REASON));
+                input.ports.log(
+                    `semantic scan: unit ${unit.path} was not asked (no pass carries its required evidence)`
+                );
+                continue;
+            }
+            accumulation.assessed += 1;
             if (outcome.fromCache) {
                 accumulation.cacheHits += 1;
             } else {
-                accumulation.returnedModels.add(outcome.returnedModel);
+                for (const model of outcome.returnedModels) {
+                    accumulation.returnedModels.add(model);
+                }
             }
         } catch (error) {
             const failure = asFailure(error);
             accumulation.failureCode = failure.code;
-            accumulation.unassessed.push({ path: unit.path, reason: failure.code });
-            admissionStopped = failure.code === 'budget_exhausted';
+            accumulation.unassessed.push(unitOmission(unit, failure.code));
+            stoppedReason = STOPPED_ADMISSION_REASONS[failure.code];
             input.ports.log(`semantic scan: unit ${unit.path} was not assessed (${failure.code}): ${failure.message}`);
         }
     }
@@ -645,13 +663,6 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
 
     const usage = budget.totals();
     const completedAt = new Date(input.ports.clock.now()).toISOString();
-    // A dry run assesses nothing, so every eligible unit is unassessed. Reporting an empty list with
-    // a non-zero eligible count fails the report's own arithmetic, which no caller saw only because
-    // the dry-run path returns before validation.
-    let reportedUnassessed = unassessed;
-    if (input.dryRun) {
-        reportedUnassessed = units.map((unit) => ({ path: unit.path, reason: 'dry-run-made-no-request' }));
-    }
     const execution = executionState({
         dryRun: input.dryRun,
         assessed,
@@ -676,12 +687,14 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
         completedAt,
         execution,
         scope: scopeReport({
-            units,
+            unitPaths: units.map((unit) => unit.path),
             excluded,
             truncated: [...evidenceSet.truncated, ...unitReductions],
             assessed,
             cacheHits,
-            unassessed: reportedUnassessed,
+            unassessed,
+            requestOrder: units.map((unit) => plannedRequest(unit)),
+            states: buildScopeStates({ excluded, unassessed }),
         }),
         signals,
         limitations: [...evidenceSet.limitations, ...unitReductionLimitations],
@@ -690,21 +703,6 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
         failureCode,
     };
     return { report, previews, storedResponses };
-}
-
-function assertEvidenceIdsPresent(answer: unknown, supplied: ReadonlySet<string>): unknown {
-    if (typeof answer !== 'object' || answer === null) {
-        return answer;
-    }
-    const record = answer as Record<string, unknown>;
-    const selected = record.selectedEvidenceId;
-    if (selected === undefined) {
-        return answer;
-    }
-    if (typeof selected !== 'string' || (selected !== NO_EVIDENCE_ID && !supplied.has(selected))) {
-        refuse('invalid_response', `answer selected unknown evidence id ${JSON.stringify(selected)}`);
-    }
-    return answer;
 }
 
 type FailureLike = { code: string; message: string };

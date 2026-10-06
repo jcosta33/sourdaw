@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
+import { type ToolSchema } from '../../../../models/ToolDefinitions';
+import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
+import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
@@ -45,7 +48,8 @@ function generateToolCalls(directive: HostedToolChoiceDirective = AUTO_TOOL_CHOI
 
 async function requestBodyFor(
     targetRuntime: OpenAiCompatibleCloudRuntime,
-    directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+    directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE,
+    providedTools: readonly ToolSchema[] = tools
 ): Promise<Record<string, unknown>> {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
@@ -58,7 +62,7 @@ async function requestBodyFor(
         runtime: targetRuntime,
         systemPrompt: 'system',
         userMessage: 'mute drums',
-        toolSchemas: tools,
+        toolSchemas: providedTools,
         maxOutputTokens: 8192,
         directive,
     });
@@ -324,6 +328,48 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             cacheWriteInputTokens: null,
             reasoningTokens: null,
         });
+    });
+
+    it('advertises encoded proposal leaves only for strict-compatible endpoints', async () => {
+        const canonical = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(canonical).toBeDefined();
+        const strictBody = (await requestBodyFor({ ...runtime, strict_tool_schemas: true }, AUTO_TOOL_CHOICE, [
+            getHostedProposalWireToolSchema(canonical!),
+        ])) as { tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }> };
+        const strictTool = strictBody.tools[0]?.function;
+        expect(strictTool?.strict).toBe(true);
+        expect(strictTool?.parameters).toHaveProperty(
+            ['properties', 'commands', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(strictTool?.parameters).toHaveProperty(
+            ['properties', 'list', 'properties', 'items', 'items', 'properties', 'argumentsJson', 'type'],
+            'string'
+        );
+        expect(strictTool?.parameters).toHaveProperty(
+            ['properties', 'plan', 'properties', 'objective', 'type'],
+            'string'
+        );
+        expect(strictTool?.parameters).toHaveProperty(['properties', 'compiledCallIds', 'items', 'type'], 'string');
+
+        const compatibleBody = (await requestBodyFor(runtime, AUTO_TOOL_CHOICE, [canonical!])) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        const compatibleTool = compatibleBody.tools[0]?.function;
+        expect(compatibleTool?.strict).toBeUndefined();
+        expect(compatibleTool?.parameters).toHaveProperty(
+            ['properties', 'commands', 'items', 'properties', 'arguments', 'type'],
+            'object'
+        );
+        expect(compatibleTool?.parameters).not.toHaveProperty([
+            'properties',
+            'commands',
+            'items',
+            'properties',
+            'argumentsJson',
+        ]);
     });
 
     it('sends an unprojected schema and no strict flag for a non-strict runtime', async () => {

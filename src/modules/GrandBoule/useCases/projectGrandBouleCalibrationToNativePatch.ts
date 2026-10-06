@@ -1,9 +1,23 @@
 import { GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES } from '../models/GrandBouleCalibrationDspParamNames';
-import { peekGrandBouleStore } from '../stores/grandBouleStore';
+import { createDefaultGrandBouleState, peekGrandBouleStore } from '../stores/grandBouleStore';
 
 export type ProjectGrandBouleCalibrationToNativePatchInput = {
     deviceId: string;
+    /**
+     * Answer for a device the way a freshly loaded project would: a device
+     * with no store yet gets the calibration a fresh store starts with,
+     * rather than `null`.
+     */
+    projectOnly?: boolean;
 };
+
+function readCalibration({ deviceId, projectOnly = false }: ProjectGrandBouleCalibrationToNativePatchInput) {
+    const stored = peekGrandBouleStore(deviceId)?.value?.midiCalibration;
+    if (stored !== undefined || !projectOnly) {
+        return stored;
+    }
+    return createDefaultGrandBouleState().midiCalibration;
+}
 
 /**
  * A Grand Boule device's engine-consumed MIDI calibration as the numeric
@@ -32,12 +46,13 @@ export type ProjectGrandBouleCalibrationToNativePatchInput = {
  * gives every fresh store) and this projects them like any other. `null`
  * answers only the one case where no store exists at all — the same
  * "nothing to project" answer Toaster and Levain give for a state-free
- * chunk.
+ * chunk — unless the caller renders a supplied document (`projectOnly`),
+ * where a device no store backs yet is one that load has not reached.
  */
 export function projectGrandBouleCalibrationToNativePatch(
     input: ProjectGrandBouleCalibrationToNativePatchInput
 ): Readonly<Record<string, number>> | null {
-    const calibration = peekGrandBouleStore(input.deviceId)?.value?.midiCalibration;
+    const calibration = readCalibration(input);
     if (calibration === undefined) {
         return null;
     }

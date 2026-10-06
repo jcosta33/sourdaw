@@ -118,6 +118,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 // `actionMocks.executeUserAppAction`, which the assertions below configure and
 // read back through the real import. Keep exactly one registration.
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     executeUserAppAction: actionMocks.executeUserAppAction,

@@ -434,11 +434,11 @@ describe('acceptance corpora sealing', () => {
 
     it('blocks release once per unsealed scored class per corpus, naming the contract it waits for', () => {
         const { root } = fixture();
-        writeCorpora(root, { 'time-scoped-level': 'automateParameterRange over a musical range in either direction' });
+        writeCorpora(root, { 'bulk-by-role': 'canonical track roles and selector predicates in transform.compile' });
 
         expect(acceptanceCorpusReleaseBlockers(root)).toEqual([
-            'corpus development class time-scoped-level: unsealed (pending automateParameterRange over a musical range in either direction)',
-            'corpus held-out class time-scoped-level: unsealed (pending automateParameterRange over a musical range in either direction)',
+            'corpus development class bulk-by-role: unsealed (pending canonical track roles and selector predicates in transform.compile)',
+            'corpus held-out class bulk-by-role: unsealed (pending canonical track roles and selector predicates in transform.compile)',
         ]);
     });
 

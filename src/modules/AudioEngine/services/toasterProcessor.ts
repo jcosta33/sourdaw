@@ -93,14 +93,26 @@ function isParamAutomationSegment(value: unknown): value is ParamAutomationSegme
     );
 }
 
+/**
+ * The schedule law shared with the main-thread copy in
+ * `engine/ToasterNode.ts` — keep the two identical. Segments chain from the
+ * first one, whose opening frame may sit anywhere at or past 0 (#4744): a
+ * clip-scoped lane on a clip that starts after the region start compiles to
+ * a stream opening mid-render. Before that frame the parameter holds its
+ * pre-stream value — `_applyParamAutomation` skips the schedule until the
+ * opening frame arrives, which is what keeps the hold.
+ */
 function isContiguousAutomationSchedule(value: unknown): value is ParamAutomationSegment[] {
     if (!Array.isArray(value) || value.length === 0) {
         return false;
     }
     const candidates: unknown[] = value;
-    let previousEndFrame = 0;
+    let previousEndFrame: number | null = null;
     for (const candidate of candidates) {
-        if (!isParamAutomationSegment(candidate) || candidate.startFrame !== previousEndFrame) {
+        if (
+            !isParamAutomationSegment(candidate) ||
+            (previousEndFrame !== null && candidate.startFrame !== previousEndFrame)
+        ) {
             return false;
         }
         previousEndFrame = candidate.endFrame;
@@ -410,6 +422,11 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
         for (let scheduleIndex = 0; scheduleIndex < this._paramAutomation.length; scheduleIndex++) {
             const schedule = this._paramAutomation[scheduleIndex]!;
+            // A schedule that opens mid-render (#4744) holds the parameter's
+            // pre-stream value until its first frame: nothing is written.
+            if (frame < schedule.segments[0]!.startFrame) {
+                continue;
+            }
             while (
                 schedule.segmentIndex < schedule.segments.length - 1 &&
                 frame >= schedule.segments[schedule.segmentIndex]!.endFrame

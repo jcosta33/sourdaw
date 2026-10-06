@@ -17,7 +17,9 @@ import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue 
 import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
+import { defaultTransportState } from '../../../../models/TransportState';
 import { tempoMapStore } from '../../../../stores/tempoMapStore';
+import { transportStore } from '../../../../stores/transportStore';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
 import { deviceReadBeatByTrack } from '../deviceReadBeatByTrack';
@@ -213,6 +215,11 @@ describe('applyAutomation', () => {
         // every case in this file; reset it so a case that mutates it cannot
         // leak into the next regardless of run order.
         tempoMapStore.set({ changes: [] });
+        // The same is true of the transport region and the scheduler's last
+        // seam instant: a case that leaves either standing would map-back the
+        // next case's compensated reads (#4784).
+        transportStore.set(null);
+        schedulerSession.lastLoopSeamAudioTime = null;
     });
 
     it('should export applyAutomation', () => {
@@ -287,7 +294,9 @@ describe('applyAutomation', () => {
         applyAutomation(0);
         applyAutomation(1);
 
-        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        // Two writes: the scope-entry tick (#4741) writes the opening value,
+        // the moving tick writes the glide — both through the stripped id.
+        expect(updateDeviceParam).toHaveBeenCalledTimes(2);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
@@ -603,6 +612,138 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
         });
 
+        // #4784 — across a live loop wrap the dying pass's tail is what a
+        // compensated track is fed for the first `compensation` seconds: the
+        // fence now spares it (schedulerSession) and the wrap-floor in
+        // scheduleAudioClips holds the incoming pass until it is done. The read
+        // must follow that material — mapped back across the region — rather
+        // than the wrapped-domain beat, which sits before loopStart in that
+        // window and names material nothing plays.
+        it('maps the compensated read back across a fresh loop wrap onto the dying pass for the first compensation window', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7 ? 0 : 1));
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            // The seam the scheduler just crossed: the published beat is 0.1 s
+            // (0.2 beats at 120 BPM) past loopStart, and the dying tail is fed
+            // for another 0.15 s of the 0.25 s compensation window.
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 500;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 501;
+            applyAutomation(4.2);
+
+            // Wrapped-domain read: 4.2 beats = 2.1 s − 0.25 s = 1.85 s → 3.7,
+            // before loopStart — exactly the window in which the dying tail is
+            // what the track is fed. Mapped back across the 4-beat region: 7.7.
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', expect.closeTo(7.7, 9));
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        it('keeps the wrapped-domain read once the compensation window has carried the pass boundary', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            // 0.4 s after the seam: past the 0.25 s window, so the incoming
+            // pass is what the track is fed and the plain wrapped-domain read
+            // stands.
+            vi.mocked(getCurrentTime).mockReturnValue(10.4);
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 510;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 511;
+            applyAutomation(4.8);
+
+            // 4.8 beats = 2.4 s − 0.25 s = 2.15 s → 4.3, already at or past
+            // loopStart — no map-back in either the window or out of it.
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', expect.closeTo(4.3, 9));
+        });
+
+        // #4784 review — the wrap-back must follow the dying tail through the
+        // tempo map, not add the region's beat span: with a tempo change inside
+        // the region, the beat-space addition names a beat half a compensation
+        // window away from the material the track is actually fed.
+        it('maps the wrap-back through the tempo map in seconds when a tempo change sits inside the region', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            // The two mappings disagree: the beat-space region-span addition
+            // lands on 7.2, the seconds-mapped read on 7.6 — the boundary below
+            // separates them.
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7.4 ? 0 : 1));
+
+            // 120 BPM to beat 6, 60 after — the change sits inside [4, 8].
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-change-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-change-1', beat: 6, tempo: 60, curve: 'instant' },
+                ],
+            });
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 600;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 601;
+            applyAutomation(4.2);
+
+            // Wrapped-domain read: 4.2 beats = 2.1 s − 0.5 s = 1.6 s → 3.2,
+            // before loopStart — inside the compensation window. The chain entry
+            // sits 0.5 s behind the clock: 0.4 s before the seam at 60 BPM is
+            // 0.4 beats, so the dying tail the track is fed is beat 7.6 — not
+            // 7.2, the beat-space span addition.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.6, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        // #4784 review — a region that begins at the arrangement origin made
+        // the wrap-back gate dead: the compensated read is clamped with
+        // Math.max(0, …) upstream, so at loopStart 0 the clamped beat could
+        // never sit below loopStart and the gate never fired. The gate reads
+        // the UNCLAMPED compensated read instead, so a region at [0, 8] maps
+        // back onto the dying pass exactly as a region at [4, 8] does.
+        it('maps the wrap-back across a region starting at beat 0, whose clamped read can never sit below loopStart', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7 ? 0 : 1));
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 0, loopEnd: 8 });
+            // The seam the scheduler just crossed: the published beat is 0.1 s
+            // (0.2 beats at 120 BPM) past loopStart 0, and the dying tail is
+            // fed for another 0.15 s of the 0.25 s compensation window.
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 700;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 701;
+            applyAutomation(0.2);
+
+            // Wrapped-domain read: 0.2 beats = 0.1 s − 0.25 s = −0.15 s, which
+            // the clamp pins to beat 0 — indistinguishable from loopStart for a
+            // gate comparing the clamped value. The unclamped read is what
+            // crosses the gate, and the mapped read follows the dying tail:
+            // 0.15 s before the seam at 120 BPM is 0.3 beats → 7.7.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.7, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
         it('gates a clip-owned device lane on the compensated beat, not the playhead beat, so it does not fire before the clip audio has reached the device', () => {
             seedDeviceLane({
                 devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
@@ -863,22 +1004,6 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).not.toHaveBeenCalled();
         });
 
-        it('skips device-param dispatch for a track kind that does not accept device updates', () => {
-            // A MIDI track kind whose eligibility rejects device updates, with a
-            // parameter that does not resolve to any device and no matching midiFx.
-            seedDeviceLane({
-                devices: [],
-                laneParameterId: 'eq-low-gain',
-                trackKind: 'return',
-            });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
-        });
-
         // The native session stamps a carried device's parameters from the
         // engine's own queue, block-accurately and ahead of the playhead
         // (#3568). The tick-grid IPC write is then a second, later writer on one
@@ -886,7 +1011,9 @@ describe('applyAutomation', () => {
         // back to where the curve was a tick ago.
         it.each([
             [true, 0],
-            [false, 1],
+            // Two: the scope-entry tick (#4741) and the moving tick both
+            // reach the uncarried full door.
+            [false, 2],
         ])(
             'writes a moving device parameter over IPC only while the native session is not carrying it (carried: %s)',
             (carried, expectedWrites) => {
@@ -1027,8 +1154,12 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+            // Two fallback holds: the scope-entry tick (#4741) at the curve's
+            // own opening value, then the moving tick one glide later.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'shift_semitones', 0);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
+                2,
                 'track-1',
                 'device-k1',
                 'shift_semitones',
@@ -1052,7 +1183,11 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
-            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+            // The release went through the full door. The only fallback hold
+            // is the pre-release scope-entry tick (#4741) at 0.2, on the node
+            // the engine is not driving.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.2);
         });
 
         it('writes an uncarried built-in through the full door and holds nothing', () => {
@@ -1095,8 +1230,12 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(applyFermenterRuntimeParam).not.toHaveBeenCalled();
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+            // Two fallback holds: the scope-entry tick (#4741) resting at the
+            // curve's own 5_000, then the moving tick one glide later.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-f2', 'cutoff', 5_000);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
+                2,
                 'track-1',
                 'device-f2',
                 'cutoff',
@@ -1124,78 +1263,11 @@ describe('applyAutomation', () => {
             expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
                 expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff', value: 5_000 })
             );
-            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('MIDI-FX automation slew', () => {
-        it('dispatches a midiFx param when the smoothed value crosses the epsilon threshold', () => {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
-                    },
-                ],
-            };
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: 'lane-fx',
-                        trackId: 'track-1',
-                        parameterId: 'fx-param',
-                        minValue: 0,
-                        points: [{ beat: 0, value: 0.9 }],
-                    },
-                ],
-            };
-            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.9);
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', expect.any(Number));
-        });
-
-        it('does not dispatch on a fresh lane when the target already equals the seeded previous (within epsilon)', () => {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
-                    },
-                ],
-            };
-            // Distinct lane id so the module-level slew Map is fresh for this
-            // test (the shared automationState.pluginParamSlew is not reset
-            // between tests, only the mock call records are).
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: 'lane-fx-steady',
-                        trackId: 'track-1',
-                        parameterId: 'fx-param',
-                        minValue: 0,
-                        points: [{ beat: 0, value: 0.5 }],
-                    },
-                ],
-            };
-            // First tick: laneSlew is empty so prev = `?? value` = value, and
-            // slewStep(value, value) === value → |smoothed - prev| == 0 <= epsilon,
-            // so the dispatch branch is skipped (the device path's symmetric guard).
-            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5);
-
-            applyAutomation(0);
-
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
+            // The release went through the runtime use case. The only
+            // fallback hold is the pre-release scope-entry tick (#4741) at
+            // 1_000, on the node the engine is not driving.
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-f1', 'cutoff', 1_000);
         });
     });
 
@@ -1331,7 +1403,8 @@ describe('applyAutomation', () => {
             seedRestorableDeviceLane('lane-restore-off');
             applyAutomation(0);
             applyAutomation(1);
-            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            // The scope-entry tick (#4741) and the moving tick.
+            expect(updateDeviceParam).toHaveBeenCalledTimes(2);
 
             setAutomationMode('off');
             applyAutomation(2);
@@ -1656,66 +1729,6 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-low', 'mix', 0);
-        });
-
-        // The MIDI-FX branch reaches its DSP through updateMidiFxParam, not the
-        // device write surface, so it carries its own copy of the acceptance
-        // predicate. No shipped MIDI FX type declares a descriptor yet, so
-        // `dutch-oven` stands in for the day one does — the branch reads
-        // `fx.type` generically, and these lock it to the same law rather than
-        // to the absence of data.
-        function seedMidiFxLane(options: { laneId: string; paramId: string; curveValue: number }): void {
-            mutableTrackStore.value = {
-                tracks: [
-                    {
-                        id: 'track-1',
-                        kind: 'midi',
-                        automationMode: 'read',
-                        clips: [],
-                        devices: [],
-                        midiFx: [
-                            {
-                                id: 'fx-descriptor',
-                                type: 'dutch-oven',
-                                parameterValues: { [options.paramId]: 0.2 },
-                            },
-                        ],
-                        gain: 0.5,
-                        pan: 0,
-                    },
-                ],
-            };
-            mutableAutomationStore.value = {
-                lanes: [
-                    {
-                        id: options.laneId,
-                        trackId: 'track-1',
-                        parameterId: options.paramId,
-                        minValue: 0,
-                        points: [{ beat: 0, value: options.curveValue }],
-                    },
-                ],
-            };
-            vi.mocked(getAutomationValueAtBeat).mockReset();
-            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(options.curveValue);
-        }
-
-        it('refuses to drive a non-automatable MIDI-FX parameter', () => {
-            seedMidiFxLane({ laneId: 'lane-fx-non-automatable', paramId: 'shimmer_pitch', curveValue: 0.75 });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
-        });
-
-        it('holds an out-of-range MIDI-FX curve value to the declared maximum', () => {
-            seedMidiFxLane({ laneId: 'lane-fx-overshoot', paramId: 'mix', curveValue: 4.2 });
-
-            applyAutomation(0);
-            applyAutomation(1);
-
-            expect(updateMidiFxParam).toHaveBeenLastCalledWith('track-1', 'fx-descriptor', 'mix', 1);
         });
     });
 });

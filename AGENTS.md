@@ -87,7 +87,11 @@ that admits it — the input or state that breaks — never the path the diff to
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
 substance before publication. `pnpm stances:check <bundle>` tests each admission line with a typed
-judgment and fails lines that name touched paths instead of failure modes. Run it before dispatch
+judgment and fails lines that name touched paths instead of failure modes. The checker pins a
+versioned model rather than a moving alias — environment and provider defaults cannot silently select
+another, its run names the model that answered, validated against that pin, in its summary line, and
+changing the pin is a deliberate,
+reviewable change. Run it before dispatch
 when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
 its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
 is a disclosed limitation, never a stop, and the orchestrator's substance duty stands either way.
@@ -156,7 +160,8 @@ a disclosed limitation rather than a stop, and neither may count as a completed 
 deterministic check, or publish anything. One duty survives the advisory status: a fired signal the
 bundle's `semantic-ci.json` records (a scan signal whose disposition is `recommend_investigation`)
 must be disposed of by name — its token `semantic-signal <ruleId> <path>` in a stance's `admittedBy`,
-a discarded finding, or a dossier limitation — before `review:publish` will make a fresh publication;
+a discarded finding, a dossier limitation, or a dossier `signalDispositions` entry naming that
+signal — before `review:publish` will make a fresh publication;
 the duty forces the round to name what fired, never to act on it. Their sidecars live outside the review bundle, in gitignored
 `.agents/semantic-review/`, so a blind reviewer is never handed a proposed verdict. They never
 substitute for the reproduction and baseline-probe duties below, and no semantic result may approve,
@@ -201,6 +206,26 @@ record for the head may omit it — that is the shape every pre-field dossier on
 re-published bundle keeps working; a persisted record that claims a publication is not trusted on
 that claim alone, because its self-asserted `review-published` event is the caller's, so the named
 review must stand live and exact or the publication is refused for that failure.
+
+A round may answer a fired signal with a typed outcome instead of the literal citation token: the
+optional `signalDispositions` list carries one entry per fired signal, each naming the signal's
+`ruleId` and `path`, a `disposition` of `confirmed-and-fixed`, `confirmed-existing`, `false-positive`,
+`insufficient-evidence`, or `not-investigated`, and an optional bounded single-line `artifact`
+reference — an issue number or URL, a reviewer finding, a repair commit, or a regression test path —
+carrying the same evidence-value safety rules as every other recorded value. A typed entry disposes
+of the signal it names whatever disposition it records, and the literal token keeps working, so a
+round is never forced to agree with the model or to write prose to dismiss a false alarm. Entries match
+a fired signal by its exact `ruleId` and `path` pair, never by their space-joined citation text, and a
+free-text citation disposes wherever it names that signal — prose after it, punctuation included,
+never blocks it — unless another fired signal's longer citation contains that occurrence, wherever
+inside that longer citation the token sits, where the token names that longer signal instead. Validation
+is structural only: an unknown disposition token, an entry naming a signal the delivered assessment
+did not fire, two entries for one signal, or any entry when the record delivered nothing
+(`no-assessment`) is refused, and no disposition requires a posted comment or an issue — a
+`confirmed-*` outcome records what the round found, never agreement, and confers no verdict,
+approval, or merge authority. The list is folded into the canonical record beside
+`assessmentImpact` and covered by `dossierDigest`, so a record persisted before it existed keeps
+verifying byte-identically.
 
 When the bundle's `semantic-ci.json` records a delivered assessment that withheld any scope entry or
 left any question unresolved, `review:publish` refuses a fresh publication unless the dossier either
@@ -340,6 +365,9 @@ clean. Infrastructure retries discharge nothing: a retry-dependent pass is a fla
 same duty as failure. Without relevant change, a vanished failure is a defect (race, ordering,
 isolation, leaked state, or environment); fix it, open a lane, or file it. Green-by-retry launders
 failure like weakened tests. DAW concurrency and scheduling make flakes likely real timing defects.
+For a pull request blocked by a filed failure, use the
+[failed-Gate recovery procedure](./.agents/skills/delivery-orchestration/SKILL.md#recovering-a-blocked-gate);
+a retry never authorizes delivery.
 
 ## Map
 
@@ -639,9 +667,15 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small, live lanes few, and merges prompt. If reviewers cannot attack a diff whole,
-reassess its scope under Delegation before review. Drain before filling: open no lane while a
-finished head waits only on review or merge.
+Keep batches small and merges prompt. Hold at most four live lanes at once. Lanes that do not
+stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
+file or pinned digest when it feeds that file's generator or digest: an app action feeds the
+command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a
+tracked-set path feeds the release inventory, and a crate's dependency closure feeds the wasm
+manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
+only when it depends on that lane's change. A head waiting on CI or review does not block opening
+a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
+whole, reassess its scope under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety

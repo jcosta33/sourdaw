@@ -8,6 +8,7 @@ import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
+import { captureOfflineSubgraphInput } from './captureOfflineSubgraphInput';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
@@ -15,6 +16,7 @@ import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
+import { type OfflineRenderProjectSource, type OfflineRenderRuntimeSource } from './OfflineRenderSource';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { renderInSegments } from './renderInSegments';
@@ -134,6 +136,14 @@ type RenderTrackSubgraphOfflineInput = {
      */
     onScheduled?: (tally: OfflineScheduleTally) => void;
     abortSignal?: AbortSignal;
+    /**
+     * The document to render in place of the live project — an isolated
+     * command preview, for one. Every project read this render makes then
+     * comes from it, all taken before the render first yields; `renderTracks`
+     * must be that document's tracks. Absent, the render reads the live
+     * project exactly as it always has.
+     */
+    source?: { project: OfflineRenderProjectSource; runtime?: OfflineRenderRuntimeSource };
 };
 
 /**
@@ -163,6 +173,7 @@ export async function renderTrackSubgraphOffline({
     onWarning,
     onScheduled,
     abortSignal,
+    source,
 }: RenderTrackSubgraphOfflineInput): Promise<AudioBuffer | null> {
     const durationBeats = endBeat - startBeat;
     if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
@@ -170,12 +181,11 @@ export async function renderTrackSubgraphOffline({
     }
 
     const sampleRate = getAudioContext().sampleRate;
-    const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext({
-        durationBeats,
-        startBeat,
-        tailSeconds,
-        sampleRate,
-    });
+    const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext(
+        { durationBeats, startBeat, tailSeconds, sampleRate },
+        source?.project
+    );
+    const captured = source === undefined ? null : captureOfflineSubgraphInput({ source, renderTracks, sampleRate });
     const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
     const {
         projectMidiEvents,
@@ -208,7 +218,7 @@ export async function renderTrackSubgraphOffline({
     // devices share it rather than racing a second suspend for the same frame.
     const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
 
-    const sidechainRoutes = sidechainStore.value?.routes ?? [];
+    const sidechainRoutes = captured?.scheduling.latency.routes ?? sidechainStore.value?.routes ?? [];
 
     // Before any strip exists. Both out-of-band devices build their worklet node
     // synchronously inside `createOfflineTrackStrip`, so a module registered
@@ -250,7 +260,7 @@ export async function renderTrackSubgraphOffline({
 
     // Snapshot once: every strip and every gain lane in this render must see the
     // same group levels, however long the render takes.
-    const vcaGroups = getVcaGroupsState();
+    const vcaGroups = captured?.vcaGroups ?? getVcaGroupsState();
 
     const trackStripsById = new Map<string, OfflineTrackStrip>();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
@@ -299,6 +309,8 @@ export async function renderTrackSubgraphOffline({
                     }),
                     contributesAudio: contributingTrackIds.has(track.id),
                     onWarning,
+                    instruments: captured?.instruments,
+                    loadedExternalInstanceIds: captured?.loadedExternalInstanceIds,
                 }
             );
             trackStripsById.set(track.id, strip);
@@ -312,7 +324,7 @@ export async function renderTrackSubgraphOffline({
             routes: sidechainRoutes,
             trackStripsById,
             deviceEntriesByTrack,
-            keyDelaySecFor: getSidechainKeyDelay,
+            keyDelaySecFor: (route) => getSidechainKeyDelay(route, captured?.scheduling.latency),
         });
 
         for (const track of renderTracks) {
@@ -359,11 +371,13 @@ export async function renderTrackSubgraphOffline({
             }
 
             await scheduleTrackClips({
+                captured: captured?.scheduling,
                 offlineCtx,
                 track,
                 midi: midiState,
                 trackInputNode: strip.inputNode,
                 trackGainNode: strip.faderNode,
+                trackPreFaderTap: strip.preFaderTap,
                 trackPanNode: strip.panNode,
                 destination: offlineCtx.destination,
                 durationSeconds,

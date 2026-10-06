@@ -70,4 +70,21 @@ describe('renderAgentMeasurementTarget', () => {
         expect(result).toBe(buffer);
         expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0]).toMatchObject({ abortSignal: undefined });
     });
+
+    it('renders the document the subgraph was selected from when the caller supplies one', async () => {
+        const graph = subgraph();
+        const source = { project: { tracks: { tracks: graph.renderTracks, selectedTrackId: null } } };
+
+        await renderAgentMeasurementTarget({
+            targetId: 'track-1',
+            subgraph: graph,
+            startBeat: 0,
+            endBeat: 4,
+            onWarning: vi.fn(),
+            source: source as unknown as Parameters<typeof renderAgentMeasurementTarget>[0]['source'],
+        });
+
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0]).toMatchObject({ renderTracks: graph.renderTracks });
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].source).toBe(source);
+    });
 });

@@ -3,6 +3,7 @@ import { type HostedProviderTurn } from '../models/HostedTurnHistory';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { extractAgentPlanProposal } from './normalizeAgentPlanProposal';
+import { parseUniqueKeyJson } from './parseUniqueKeyJson';
 
 // Re-exported so every existing import keeps resolving `ToolCallResult` from this module;
 // the type itself lives in `models/` because `models/HostedTurnHistory.ts` carries it too,
@@ -38,7 +39,7 @@ export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
         toolCalls = parseJsonBatch(trimmed);
         if (toolCalls === null && trimmed.includes('\n')) {
             const lines = trimmed.split('\n').filter((line) => line.trim().length > 0);
-            toolCalls = lines.length > 1 ? parseCalls(lines.map(tryParseJson)) : null;
+            toolCalls = lines.length > 1 ? parseCalls(lines.map(parseUniqueKeyJson)) : null;
         }
     } else if (/<\/?(?:tool_call|function)>/.test(trimmed)) {
         toolCalls = parseXmlSequence(trimmed);
@@ -51,7 +52,7 @@ export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
     return { status: 'rejected', reason: hasToolSyntax ? MALFORMED_REASON : NON_TOOL_REASON };
 }
 function parseJsonBatch(content: string): ToolCallResult[] | null {
-    const parsed = tryParseJson(content);
+    const parsed = parseUniqueKeyJson(content);
     if (Array.isArray(parsed)) {
         return parseCalls(parsed);
     }
@@ -75,7 +76,7 @@ function parseXmlSequence(content: string): ToolCallResult[] | null {
         if (content.slice(cursor, match.index).trim().length > 0) {
             return null;
         }
-        const toolCall = parseCall(tryParseJson(match[2]));
+        const toolCall = parseCall(parseUniqueKeyJson(match[2]));
         if (toolCall === null) {
             return null;
         }
@@ -116,47 +117,6 @@ function parseCall(value: unknown): ToolCallResult | null {
               arguments: argumentsValue,
           }
         : null;
-}
-function tryParseJson(content = ''): unknown {
-    try {
-        if (hasDuplicateObjectKeys(content)) {
-            return undefined;
-        }
-        return JSON.parse(content);
-    } catch {
-        return undefined;
-    }
-}
-function hasDuplicateObjectKeys(content: string): boolean {
-    const keyScopes: Array<Set<string> | null> = [];
-    let previousToken = '';
-    for (let index = 0; index < content.length; index += 1) {
-        const token = content[index];
-        if (token === '"') {
-            let end = index + 1;
-            while (end < content.length && content[end] !== '"') {
-                end += content[end] === '\\' ? 2 : 1;
-            }
-            const keys = keyScopes.at(-1);
-            if (keys && (previousToken === '{' || previousToken === ',')) {
-                const key = JSON.parse(content.slice(index, end + 1)) as unknown;
-                if (typeof key !== 'string' || keys.has(key)) {
-                    return true;
-                }
-                keys.add(key);
-            }
-            index = end;
-            previousToken = '"';
-        } else if (token === '{' || token === '[') {
-            keyScopes.push(token === '{' ? new Set() : null);
-        } else if (token === '}' || token === ']') {
-            keyScopes.pop();
-        }
-        if (token !== undefined && token.trim().length > 0) {
-            previousToken = token;
-        }
-    }
-    return false;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

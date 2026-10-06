@@ -42,7 +42,10 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-deesser': 'descriptor-v1:07639674',
     'builtin-lufs-meter': 'descriptor-v1:76e76f72',
     'builtin-synth': 'descriptor-v1:614f201f',
-    'builtin-drum-kit': 'descriptor-v1:15e97237',
+    // The drum kit, its four machine variants, the Faust instruments, Toaster,
+    // Levain, Crumbs and Grand Boule carry owner-authored parameter guidance
+    // (#4370 AC-001), which is part of the descriptor fingerprint.
+    'builtin-drum-kit': 'descriptor-v1:4fa87745',
     'dutch-oven': 'descriptor-v1:697d31a3',
     'native-scoring': 'descriptor-v1:6236c1eb',
     'faust-zita-rev1-reverb': 'descriptor-v1:8fe5016c',
@@ -57,23 +60,25 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'faust-lufs-meter': 'descriptor-v1:ba1eba2e',
     'faust-stereo-widener': 'descriptor-v1:369c6f01',
     'faust-de-esser': 'descriptor-v1:01925fec',
-    'faust-rhodes': 'descriptor-v1:8bdddff9',
-    'faust-fm-synth': 'descriptor-v1:884cb08a',
-    'faust-supersaw-unison': 'descriptor-v1:cb811bb7',
+    'faust-rhodes': 'descriptor-v1:419b06d4',
+    'faust-fm-synth': 'descriptor-v1:a198b63c',
+    'faust-supersaw-unison': 'descriptor-v1:65c1a63b',
     'builtin-synth-mellotron': 'descriptor-v1:71cf9d31',
     'builtin-synth-strings': 'descriptor-v1:11f074db',
     'builtin-synth-808bass': 'descriptor-v1:274a35d6',
     'builtin-synth-brass': 'descriptor-v1:5dbc0228',
-    'builtin-drum-machine-808': 'descriptor-v1:3157334a',
-    'builtin-drum-machine-analog': 'descriptor-v1:b497a2ee',
-    'builtin-drum-machine-electronic': 'descriptor-v1:c681efac',
-    'builtin-drum-machine-acoustic': 'descriptor-v1:8ac879ad',
+    'builtin-drum-machine-808': 'descriptor-v1:1af2e278',
+    'builtin-drum-machine-analog': 'descriptor-v1:b6106b4c',
+    'builtin-drum-machine-electronic': 'descriptor-v1:406d7f6a',
+    'builtin-drum-machine-acoustic': 'descriptor-v1:a4e0ce0f',
     fermenter: 'descriptor-v1:42afff88',
-    toaster: 'descriptor-v1:ef8943ce',
-    levain: 'descriptor-v1:7b9657aa',
-    gluten: 'descriptor-v1:868d9641',
-    bacteria: 'descriptor-v1:14838614',
-    grinder: 'descriptor-v1:fe7c1d7a',
+    toaster: 'descriptor-v1:4badfeb2',
+    levain: 'descriptor-v1:c5a90e63',
+    // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
+    // (#4370 AC-001), which is part of the descriptor fingerprint.
+    gluten: 'descriptor-v1:7883bbc4',
+    bacteria: 'descriptor-v1:2bd0e175',
+    grinder: 'descriptor-v1:2fc23570',
     proof: 'descriptor-v1:0f484ceb',
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's
     // arpeggiator never read them, so they move to per-processor commands.
@@ -82,8 +87,8 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // (#4742): link_transient carries the catch of a one-sided peak,
     // link_release the recovery.
     crust: 'descriptor-v1:51804822',
-    'builtin-crumbs': 'descriptor-v1:b99d022e',
-    'grand-boule': 'descriptor-v1:93d1562a',
+    'builtin-crumbs': 'descriptor-v1:8b634140',
+    'grand-boule': 'descriptor-v1:893a5e52',
     knead: 'descriptor-v1:f8e350da',
 };
 
@@ -210,6 +215,23 @@ describe('getDeviceContractVersionForCommand', () => {
             expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(before);
         } finally {
             descriptor.characterTags = originalCharacterTags;
+        }
+    });
+
+    it('keeps command replay stable when only the descriptor effect family changes', () => {
+        const descriptor = getPluginById('builtin-distortion');
+        if (!descriptor) {
+            throw new Error('Expected the distortion descriptor');
+        }
+        const originalEffectFamily = descriptor.effectFamily;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.effectFamily = 'reverb';
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(before);
+        } finally {
+            descriptor.effectFamily = originalEffectFamily;
         }
     });
 

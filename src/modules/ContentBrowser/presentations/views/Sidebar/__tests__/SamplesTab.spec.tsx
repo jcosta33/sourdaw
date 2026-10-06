@@ -4,8 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type SampleItem } from '../../../components/Sidebar/sidebarConstants';
@@ -26,9 +26,31 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addTrack: vi.fn(() => ({ id: 'new-track-id', name: 'New Track', kind: 'audio' })),
-    addClip: vi.fn(),
+    createTrack: vi.fn((input: { name: string; kind: string }) => ({
+        id: 'new-track-id',
+        name: input.name,
+        kind: input.kind,
+        color: '#000000',
+        activeAlternativeId: 'alt-1',
+    })),
 }));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppActionBatch: vi.fn(),
+}));
+
+// #4618 — a clicked sample lands as a batch of registered creation actions;
+// the specs read the dispatched actions back instead of asserting on use cases.
+type BatchAction = { type: string; payload: Record<string, unknown> };
+
+const dispatchedBatchPayload = (type: string): Record<string, unknown> => {
+    const actions = vi.mocked(executeAppActionBatch).mock.calls.flatMap((call) => call[0] as BatchAction[]);
+    const action = actions.find((candidate) => candidate.type === type);
+    if (!action) {
+        throw new Error(`no ${type} action was dispatched in the sample batch`);
+    }
+    return action.payload;
+};
 
 // Preview assertions spy through `getCachedAudioBuffer`; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
@@ -156,9 +178,11 @@ describe('SamplesTab', () => {
     beforeEach(() => {
         vi.mocked(getCachedAudioBuffer).mockReset();
         vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        vi.mocked(addTrack).mockReset();
-        vi.mocked(addTrack).mockReturnValue({ id: 'new-track-id', name: 'New Track', kind: 'audio' });
-        vi.mocked(addClip).mockReset();
+        vi.mocked(executeAppActionBatch).mockReset();
+        vi.mocked(executeAppActionBatch).mockResolvedValue({
+            status: 'committed',
+            actions: [],
+        });
         stagingMocks.stageAudioBufferAsset.mockReset();
         // Default: no staged identity — clips are placed without an assetHash,
         // exactly as an insertion outside any shareable context would be.
@@ -242,7 +266,7 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Ambient Pad'));
 
-        expect(addClip).toHaveBeenCalledWith({
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 't1',
             startBeat: 0,
             endBeat: 4,
@@ -268,7 +292,7 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Ambient Pad'));
 
-        expect(addClip).toHaveBeenCalledWith({
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 't1',
             startBeat: 0,
             endBeat: 8,
@@ -294,7 +318,7 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Ambient Pad'));
 
-        expect(addClip).toHaveBeenCalledWith({
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 't1',
             startBeat: 0,
             endBeat: 16,
@@ -320,7 +344,7 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Guitar Riff'));
 
-        expect(addClip).toHaveBeenCalledWith({
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 't1',
             startBeat: 0,
             endBeat: 7,
@@ -345,7 +369,7 @@ describe('SamplesTab', () => {
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b-cached' });
         await waitFor(() => {
-            expect(addClip).toHaveBeenCalledWith({
+            expect(dispatchedBatchPayload('addClip')).toEqual({
                 trackId: 't1',
                 startBeat: 0,
                 endBeat: 6,
@@ -363,7 +387,6 @@ describe('SamplesTab', () => {
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         vi.mocked(getCachedAudioBuffer).mockReturnValue({ ...cachedBuffer, duration: 3.0 });
         stagingMocks.stageAudioBufferAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
-        vi.mocked(addClip).mockReturnValue({ id: 'clip-staged' } as ReturnType<typeof addClip>);
         const promoteStagedAsset = vi.fn();
         stagingMocks.getAssetTransfer.mockReturnValue({
             stageLocalAsset: vi.fn(),
@@ -378,7 +401,7 @@ describe('SamplesTab', () => {
         fireEvent.click(screen.getByText('Vocal Chop'));
 
         await waitFor(() => {
-            expect(addClip).toHaveBeenCalledWith(
+            expect(dispatchedBatchPayload('addClip')).toEqual(
                 expect.objectContaining({ trackId: 't1', name: 'Vocal Chop', assetHash: 'staged-hash' })
             );
         });
@@ -399,7 +422,7 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Mystery Sample'));
 
-        expect(addClip).toHaveBeenCalledWith({
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 't1',
             startBeat: 0,
             endBeat: 8,
@@ -418,8 +441,10 @@ describe('SamplesTab', () => {
 
         fireEvent.click(screen.getByText('Kick'));
 
-        expect(addTrack).toHaveBeenCalledWith({ name: 'Kick', kind: 'audio' });
-        expect(addClip).toHaveBeenCalledWith({
+        const actions = vi.mocked(executeAppActionBatch).mock.calls.flatMap((call) => call[0] as BatchAction[]);
+        const addTrackAction = actions.find((candidate) => candidate.type === 'addTrack');
+        expect(addTrackAction?.payload).toEqual(expect.objectContaining({ name: 'Kick', kind: 'audio' }));
+        expect(dispatchedBatchPayload('addClip')).toEqual({
             trackId: 'new-track-id',
             startBeat: 0,
             endBeat: 2,

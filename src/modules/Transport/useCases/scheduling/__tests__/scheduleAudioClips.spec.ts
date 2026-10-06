@@ -20,6 +20,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
@@ -168,6 +169,10 @@ describe('scheduleAudioClips', () => {
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
         vi.mocked(getAssetTransfer).mockReturnValue(null);
         mockResolveClips.mockReturnValue([]);
+        // The seam records are scheduler-session singletons: a case that leaves
+        // either standing would floor the next case's emissions as handovers.
+        schedulerSession.pendingSeam = null;
+        schedulerSession.lastLoopSeamAudioTime = null;
         disposeAudioClipScheduling();
     });
 
@@ -271,6 +276,35 @@ describe('scheduleAudioClips', () => {
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
+    // #4784 review — nothing observed the frozen path's fifth argument, so the
+    // wiring `floorsToWindowStart ? fromBeat : null` could silently collapse to
+    // either side: a wrap emission must pass the window's first beat (the floor
+    // holds the whole-arrangement buffer until it is due), and a steady-state
+    // emission must pass null (a late join starts immediately with due
+    // content).
+    it('passes the window start to the frozen path on a wrap emission and null on a steady-state one', () => {
+        const frozenTrack = {
+            ...(makeAudioTrack([]) as Record<string, unknown>),
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        };
+        trackStoreState.value = { tracks: [frozenTrack] };
+
+        // Wrap emission: the window opens at loopStart while the playhead
+        // stands negative-phase before it — the seam handover shape.
+        scheduleAudioClips(4, 12, 3.8, new Set(), new Set(), [], {
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+        });
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4);
+
+        // Steady-state emission: the window opens one look-ahead ahead of the
+        // playhead, so the frozen buffer must not be floored.
+        scheduleAudioClips(7.9, 8, 6, new Set(), new Set(), [], defaultTransportState);
+        expect(vi.mocked(scheduleFrozenTrack).mock.calls[1]?.[4]).toBeNull();
     });
 
     // ── Clip filtering & dedup ──────────────────────────────────────────────
@@ -1362,5 +1396,176 @@ describe('scheduleAudioClips', () => {
 
         // iterStartTime = currentTime(0) + 8/2 + compensation(0.05) = 4.05.
         expect(fakeSource.start.mock.calls[0]![0]).toBeCloseTo(4.05, 6);
+    });
+
+    // ── #4784 — the mid-buffer continuation must never reach past the window ─
+    //
+    // A loop wrap re-anchors the window at loopStart while the beat→time anchor
+    // carries the wrapped playhead (loopStart + overshoot on the late wrap, a
+    // negative-phase beat before loopStart on the scheduled seam). A clip
+    // spanning loopStart therefore maps its head deep into the past, and the
+    // `soundStartTime < now` branch answered that with a mid-buffer start at
+    // content `accumulatedPosition − D` — material from before the loop when
+    // the compensation outruns the overshoot. The fix: the continuation may
+    // only start from content at or after the window's own first beat; content
+    // before it is skipped by starting at the instant the window's first beat
+    // is due instead.
+
+    // The issue's unit repro, verbatim: clip spanning beats 0–16,
+    // accumulatedPosition 4.25 (loopStart 4, overshoot 0.25), compensation
+    // 0.25 s at 120 BPM, getCurrentTime() = 10.
+    it('starts the window at the loop start instead of pre-loop content when the compensation outruns the overshoot', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        scheduleAudioClips(4, 16, 4.25, new Set(), new Set(), [], defaultTransportState);
+
+        // Unfixed, this is start(10, 1.875, …) — buffer content at beat 3.75,
+        // before a loop starting at beat 4. The window's first beat (4) is due
+        // at 10 + secondsBetweenBeats(4.25 → 4) + 0.25 = 10.125, holding beat
+        // 4's content (2 s into the buffer at 120 BPM).
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.125, 9);
+        expect(offset).toBeCloseTo(2, 9);
+        // The source still ends where the iteration ends (16.125); starting
+        // later shortens the sound, it never moves the tail.
+        expect(duration).toBeCloseTo(6, 9);
+        expect(when + duration).toBeCloseTo(16.125, 9);
+    });
+
+    it('starts the window at the loop start for the scheduled seam, whose anchor sits before it', () => {
+        // The seam tick's incoming-pass emission: accumulatedPosition is the
+        // negative-phase beat the incoming pass will have been at at `now`
+        // (3.8, a fifth of a second before loopStart 4), and the window opens
+        // at loopStart. Same clip spanning beats 0–16.
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        // The seam emission always runs with the loop region live; the floor's
+        // wrap anchor reads loopStart to recognise the handover window.
+        scheduleAudioClips(4, 12, 3.8, new Set(), new Set(), [], {
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+        });
+
+        // iterStartTime = 10 − 1.9 + 0.25 = 8.35, deep in the past. The window's
+        // first beat is due at 10 + 0.1 + 0.25 = 10.35 — the seam instant plus
+        // the compensation — with beat 4's content. Unfixed, this is
+        // start(10, 1.65, …): content at beat 3.3, before the loop.
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.35, 9);
+        expect(offset).toBeCloseTo(2, 9);
+        expect(duration).toBeCloseTo(6, 9);
+    });
+
+    // #4784 review — the floor names a boundary the playhead stands at or
+    // behind (a wrap handover or a landing). A steady-state window opens one
+    // look-ahead AHEAD of the playhead, and flooring to it held a fresh
+    // mid-pass join silent for look-ahead + compensation while skipping the
+    // material in between. A late join (unmute, clip unmute, collab arrival)
+    // must start now with due content.
+    it('starts a late join at now with due content instead of flooring it to the steady-state window ahead of the playhead', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        // Steady-state emission: the window [7.9, 8] opens one look-ahead ahead
+        // of the playhead at 6, and the clip spanning it is scheduled for the
+        // first time mid-pass.
+        scheduleAudioClips(7.9, 8, 6, new Set(), new Set(), [], defaultTransportState);
+
+        // Unfixed, the floor binds: the window's first beat is due at
+        // 10 + seconds(6 → 7.9) + 0.25 = 11.2, so the join sat silent for 1.2 s
+        // and skipped everything up to beat 7.9. The mid-buffer continuation is
+        // the correct join: start now at the content that is due — beat 5.5,
+        // the beat the compensated chain is consuming (2.75 s into the buffer).
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10, 9);
+        expect(offset).toBeCloseTo(2.75, 9);
+        expect(duration).toBeCloseTo(5.25, 9);
+    });
+
+    // #4784 review — the handover ticks between the scheduled seam and its
+    // instant emit with fromBeat = wrappedUpTo: AHEAD of the negative-phase
+    // playhead and not equal to loopStart, so neither of the two wrap clauses
+    // above floored them. A clip that first becomes schedulable there (a
+    // decode finishing, an unmute mid-handover) joined at `now` with pre-loop
+    // content. While the playhead itself sits in the wrap handover — below
+    // loopStart while a seam is pending — the join floors to the window start.
+    it('floors a join first scheduled on a handover tick instead of starting pre-loop content at now', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 16, regionStartBeat: 0, regionEndBeat: 16 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+        // The handover state startPlayheadScheduler holds between the scheduled
+        // seam and its instant: the wrap record and the pending seam whose
+        // instant (10.1) is still ahead of the clock (10).
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            anchorAudioTime: 9.9,
+            anchorPosition: 11.8,
+        };
+        schedulerSession.lastLoopSeamAudioTime = 10.1;
+
+        // A handover tick's emission: the window opens at the incoming pass's
+        // high-water mark (4.05, where the seam tick's incoming window ended),
+        // while the playhead is still negative-phase at 3.9 — below loopStart 4.
+        scheduleAudioClips(4.05, 4.1, 3.9, new Set(), new Set(), [], {
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+        });
+
+        // Unfixed, the unfloored join starts at now with buffer content at
+        // 1.7 s = beat 3.4 — before the loop. Floored, the earliest content is
+        // the window's first beat: due at 10 + seconds(3.9 → 4.05) + 0.25 =
+        // 10.325, carrying beat 4.05's content (2.025 s into the buffer).
+        const [when, offset] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(10.325, 9);
+        expect(offset).toBeCloseTo(2.025, 9);
+    });
+
+    it('carries its track compensation on the source so a wrap fence can spare its tail', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip()] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // The loop-end material a compensated source carries is still due for
+        // `compensationSeconds` past the seam; the fence reads the figure off
+        // the source (schedulerSession's stopActiveSources).
+        expect((fakeSource as { compensationSeconds?: number }).compensationSeconds).toBe(0.25);
     });
 });

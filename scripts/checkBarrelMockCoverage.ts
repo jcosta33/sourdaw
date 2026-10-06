@@ -236,6 +236,60 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: 'Yeast offset harness; the omitted Arrangement keys are never read by its tests (verified passing).',
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
+        barrel: '#/modules/AudioEngine/useCases',
+        missingKeys: ['audioEngine', 'startFaustNote'],
+        reason: 'Yeast offset harness; the real MIDI graph reaches the barrel but the tests stub the engine doors directly and never call audioEngine or startFaustNote.',
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        reason: 'Yeast groove-admission harness; the omitted Arrangement keys are never read by its tests (verified passing).',
+    },
+    {
+        spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
+        barrel: '#/modules/AudioEngine/useCases',
+        missingKeys: ['audioEngine', 'startFaustNote'],
+        reason: 'Yeast groove-admission harness; the tests stub the engine doors directly and never call audioEngine or startFaustNote.',
+    },
 ];
 
 export type MockedBarrel = {

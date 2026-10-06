@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
@@ -197,6 +198,29 @@ describe('targeted take-lane undo entries (#4081)', () => {
         lastEntry().redo();
         expect(laneOrder()).toEqual(['t1', 't3']);
         expect(getLane('t1').takes[0]!.name).toBe('Renamed later');
+    });
+
+    it('flattenComp redo keeps a take authored after the undo on the lane it placed (#4556)', () => {
+        seedLanes([makeLane('t1')]);
+
+        expect(flattenComp('t1')).toBe(true);
+        expect(laneOrder()).toEqual([]);
+
+        const flattenEntry = lastEntry();
+        flattenEntry.undo();
+        expect(getLane('t1').takes.map((take) => take.name)).toEqual(['t1 take']);
+
+        // The projection shape the replay specs model: a take for another live clip,
+        // written onto the lane the track owns — the one the undo just placed.
+        addTake('t1', 'clip-new', 'New take', 4, 8);
+        expect(getLane('t1').takes).toHaveLength(2);
+
+        flattenEntry.redo();
+
+        // The redo retires the captured take again, not the lane: the later take was
+        // never anything this flatten retired, so the lane survives carrying it.
+        expect(laneOrder()).toEqual(['t1']);
+        expect(getLane('t1').takes.map((take) => take.name)).toEqual(['New take']);
     });
 
     it('removeCompRegion undo and redo rewrite only that lane and preserve later edits elsewhere', () => {

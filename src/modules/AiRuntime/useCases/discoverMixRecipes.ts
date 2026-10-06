@@ -1,8 +1,16 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE, type CanonicalRole } from './canonicalRoleFamilies';
-import { getProjectContext, type ProjectContextTrack } from './getProjectContext';
+import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
+
+import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
+import { getProjectContext } from './getProjectContext';
 import { type RecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
+import {
+    FOLDER_TARGET_WARNING,
+    type ResolvedRole,
+    type ResolvedTarget,
+    resolveRecipeTarget,
+} from './resolveRecipeTarget';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -10,29 +18,6 @@ type MixRecipeStep = MixRecipe['steps'][number];
 type RecipeDescriptor = MixRecipeCatalog['descriptors'][number];
 type RecipeRole = MixRecipeCatalog['roles'][number];
 type RecipeDescriptorEffect = MixRecipeCatalog['descriptorEffects'][RecipeDescriptor];
-
-type ResolvedTarget = {
-    id: string;
-    kind: string;
-    deviceTypes: readonly string[];
-    devices: readonly { id: string; type: string; bypassed: boolean }[];
-    canonicalRole: CanonicalRole;
-    frozen: boolean;
-};
-
-/**
- * A folder only changes the view; its devices sit outside its child tracks' signal path
- * (docs/manual/02-concepts.md:42), so recipe discovery refuses a folder target instead of
- * returning device recipes the planner could never apply there.
- */
-const FOLDER_TARGET_WARNING =
-    "This target is a folder; it only changes the view and does not process its child tracks' audio. Target those tracks or a bus instead.";
-
-type ResolvedRole = {
-    recipeRole: RecipeRole | null;
-    source: 'argument' | 'target' | 'none';
-    canonicalRole?: CanonicalRole;
-};
 
 type RecipeDiscoveryTermResolution = {
     term: string;
@@ -57,6 +42,8 @@ type RecipeDiscoveryCandidate = {
     prerequisites: readonly string[];
     contraindications: readonly string[];
     metrics: MixRecipe['metrics'];
+    /** Present only on a recipe published from a factory preset; an authored recipe carries none. */
+    origin?: MixRecipe['origin'];
 };
 
 export type RecipeDiscoveryReceiptData = {
@@ -96,54 +83,6 @@ function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDesc
     return ordered;
 }
 
-type ResolveTargetResult =
-    { status: 'none' } | { status: 'not-found'; targetId: string } | { status: 'found'; target: ResolvedTarget };
-
-/** Narrows the context's structural-copy role string to the live catalog, falling back to `unknown`. */
-function resolveCanonicalRole(raw: string | undefined): CanonicalRole {
-    return CANONICAL_ROLE_OPTIONS.find((role) => role === raw) ?? 'unknown';
-}
-
-function resolveTarget(targetId: string | null, tracks: readonly ProjectContextTrack[]): ResolveTargetResult {
-    if (targetId === null) {
-        return { status: 'none' };
-    }
-    const track = tracks.find((candidate) => candidate.id === targetId);
-    if (!track) {
-        return { status: 'not-found', targetId };
-    }
-    return {
-        status: 'found',
-        target: {
-            id: track.id,
-            kind: track.kind,
-            deviceTypes: track.devices.map((device) => device.type),
-            devices: track.devices.map((device) => ({ id: device.id, type: device.type, bypassed: device.bypassed })),
-            canonicalRole: resolveCanonicalRole(track.canonicalRole?.role),
-            frozen: track.frozen ?? false,
-        },
-    };
-}
-
-function resolveRole(
-    catalog: MixRecipeCatalog,
-    roleArgument: string | null,
-    target: ResolvedTarget | null
-): ResolvedRole {
-    if (roleArgument !== null) {
-        const recipeRole = catalog.roles.find((role) => role === roleArgument) ?? null;
-        return { recipeRole, source: 'argument' };
-    }
-    if (target !== null) {
-        return {
-            recipeRole: CANONICAL_ROLE_TO_RECIPE_ROLE[target.canonicalRole],
-            source: 'target',
-            canonicalRole: target.canonicalRole,
-        };
-    }
-    return { recipeRole: null, source: 'none' };
-}
-
 function matchesRole(recipe: MixRecipe, role: ResolvedRole): boolean {
     if (role.recipeRole === null) {
         return true;
@@ -179,7 +118,7 @@ function buildCandidate(
     target: ResolvedTarget | null,
     effect: RecipeDescriptorEffect
 ): RecipeDiscoveryCandidate {
-    return {
+    const candidate: RecipeDiscoveryCandidate = {
         id: recipe.id,
         descriptor: recipe.descriptor,
         effect,
@@ -190,6 +129,10 @@ function buildCandidate(
         contraindications: recipe.contraindications,
         metrics: recipe.metrics,
     };
+    if (recipe.origin === undefined) {
+        return candidate;
+    }
+    return { ...candidate, origin: recipe.origin };
 }
 
 /** The fault noun each corrective descriptor's recipe removes, for the unresolved-term warning. */
@@ -238,31 +181,31 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
     );
     const unresolvedTerms = terms.filter((entry) => entry.descriptor === null).map((entry) => entry.term);
 
-    const targetResolution = resolveTarget(input.targetId, getProjectContext().tracks);
-    if (targetResolution.status === 'not-found') {
-        return { status: 'invalid-target', targetId: targetResolution.targetId };
+    const resolution = resolveRecipeTarget({
+        catalog,
+        tracks: getProjectContext().tracks,
+        targetId: input.targetId,
+        roleArgument: input.role,
+    });
+    if (resolution.status === 'not-found') {
+        return { status: 'invalid-target', targetId: resolution.targetId };
     }
-    const target = targetResolution.status === 'found' ? targetResolution.target : null;
-
-    const role = resolveRole(catalog, input.role, target);
+    const { target, role } = resolution;
     const receiptTarget = target === null ? null : { id: target.id, deviceTypes: target.deviceTypes };
+    const noCandidates: RecipeDiscoveryReceiptData = {
+        schema: 'sourdaw.recipe-discovery',
+        schemaVersion: 1,
+        catalogVersion: catalog.version,
+        terms,
+        role,
+        target: receiptTarget,
+        total: 0,
+        excludedForChain: 0,
+        candidates: [],
+    };
 
     if (target !== null && target.kind === 'folder') {
-        return {
-            status: 'ok',
-            warnings: [FOLDER_TARGET_WARNING],
-            data: {
-                schema: 'sourdaw.recipe-discovery',
-                schemaVersion: 1,
-                catalogVersion: catalog.version,
-                terms,
-                role,
-                target: receiptTarget,
-                total: 0,
-                excludedForChain: 0,
-                candidates: [],
-            },
-        };
+        return { status: 'ok', warnings: [FOLDER_TARGET_WARNING], data: noCandidates };
     }
 
     const warnings: string[] = [];
@@ -278,29 +221,24 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
         warnings.push(
             `This target's canonical role, ${role.canonicalRole ?? 'unknown'}, has no recipe role; pass a role argument to select one.`
         );
-        return {
-            status: 'ok',
-            warnings,
-            data: {
-                schema: 'sourdaw.recipe-discovery',
-                schemaVersion: 1,
-                catalogVersion: catalog.version,
-                terms,
-                role,
-                target: receiptTarget,
-                total: 0,
-                excludedForChain: 0,
-                candidates: [],
-            },
-        };
+        return { status: 'ok', warnings, data: noCandidates };
     }
 
     const roleMatches = catalog.recipes.filter(
         (recipe) => resolvedDescriptors.includes(recipe.descriptor) && matchesRole(recipe, role)
     );
+    const expandable = roleMatches.filter(
+        (recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS
+    );
+    const withheldForSize = roleMatches.length - expandable.length;
+    if (withheldForSize > 0) {
+        warnings.push(
+            `${String(withheldForSize)} matching recipe(s) withheld: each expands to more than the ${String(RECIPE_EXPANSION_MAX_COMMANDS)} commands one expansion may add to a batch.`
+        );
+    }
 
     let excludedForChain = 0;
-    const matches = roleMatches.filter((recipe) => {
+    const matches = expandable.filter((recipe) => {
         if (target === null) {
             return true;
         }

@@ -20,18 +20,15 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../../models/Modulator';
 import { modulationStore, type ModulationStoreState } from '../../stores/modulationStore';
-import { addMapping } from '../../useCases/modulation/addMapping';
-import { addModulator } from '../../useCases/modulation/addModulator';
 import { beginMappingAmountDrag } from '../../useCases/modulation/beginMappingAmountDrag';
 import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmountDrag';
 import { isMappingAmountDragActive } from '../../useCases/modulation/isMappingAmountDragActive';
 import { paintMappingAmountDrag } from '../../useCases/modulation/paintMappingAmountDrag';
-import { type MappingTarget, removeMapping } from '../../useCases/modulation/removeMapping';
-import { removeModulator } from '../../useCases/modulation/removeModulator';
-import { updateModulator } from '../../useCases/modulation/updateModulator';
+import { type MappingTarget } from '../../useCases/modulation/removeMapping';
 
 type DeviceRef = {
     id: string;
@@ -198,7 +195,7 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
         if (!built) {
             return;
         }
-        addModulator(built);
+        void executeUserAppAction({ type: 'addModulator', payload: { modulator: built } });
         onClose();
     };
 
@@ -351,11 +348,17 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
         if (!canAdd) {
             return;
         }
-        addMapping(modulatorId, {
-            targetTrackId: trackId,
-            targetDeviceId: deviceId,
-            targetParamId: paramId,
-            amount: 0.5,
+        void executeUserAppAction({
+            type: 'addMapping',
+            payload: {
+                modulatorId,
+                mapping: {
+                    targetTrackId: trackId,
+                    targetDeviceId: deviceId,
+                    targetParamId: paramId,
+                    amount: 0.5,
+                },
+            },
         });
         onClose();
     };
@@ -532,10 +535,16 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                     variant="ghost"
                     size="icon-xs"
                     onClick={() =>
-                        removeMapping(modulator.id, {
-                            targetTrackId: mapping.targetTrackId,
-                            targetDeviceId: mapping.targetDeviceId,
-                            targetParamId: mapping.targetParamId,
+                        void executeUserAppAction({
+                            type: 'removeMapping',
+                            payload: {
+                                modulatorId: modulator.id,
+                                target: {
+                                    targetTrackId: mapping.targetTrackId,
+                                    targetDeviceId: mapping.targetDeviceId,
+                                    targetParamId: mapping.targetParamId,
+                                },
+                            },
                         })
                     }
                     aria-label="Remove mapping"
@@ -560,7 +569,12 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
             <Row gap={2}>
                 <DawCompactInput
                     value={modulator.name}
-                    onChange={(event) => updateModulator(modulator.id, { name: event.target.value })}
+                    onChange={(event) =>
+                        void executeUserAppAction({
+                            type: 'updateModulator',
+                            payload: { modulatorId: modulator.id, patch: { name: event.target.value } },
+                        })
+                    }
                     aria-label={`Rename modulator ${modulator.id}`}
                     className="max-w-[160px]"
                 />
@@ -571,7 +585,12 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                     <DawCompactCheckbox
                         type="checkbox"
                         checked={modulator.enabled}
-                        onChange={(event) => updateModulator(modulator.id, { enabled: event.target.checked })}
+                        onChange={(event) =>
+                            void executeUserAppAction({
+                                type: 'updateModulator',
+                                payload: { modulatorId: modulator.id, patch: { enabled: event.target.checked } },
+                            })
+                        }
                     />
                     Enabled
                 </Row>
@@ -583,7 +602,9 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={() => removeModulator(modulator.id)}
+                    onClick={() =>
+                        void executeUserAppAction({ type: 'removeModulator', payload: { modulatorId: modulator.id } })
+                    }
                     aria-label={`Remove modulator ${modulator.name}`}
                 >
                     <Trash2 className="size-3.5" />

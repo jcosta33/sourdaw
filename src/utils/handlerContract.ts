@@ -1633,6 +1633,42 @@ export type AppAction =
       }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
+    | { type: 'renameMarker'; payload: { markerId: string; name: string } }
+    | { type: 'moveMarker'; payload: { markerId: string; beat: number } }
+    | { type: 'moveSection'; payload: { sectionId: string; startBeat: number } }
+    | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
+    | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
+    | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | {
+          /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
+           *  sections' exact pre-reorder beat spans and list positions, the gap
+           *  between them included. Emitted only by the reorder handler's
+           *  `describe()` — never invoked directly. */
+          type: 'restoreSectionBeats';
+          payload: { sections: Array<{ sectionId: string; startBeat: number; endBeat: number; index: number }> };
+      }
+    | { type: 'setClipGainEnvelope'; payload: { clipId: string; envelope: ClipSatelliteGainEnvelopeSnapshot | null } }
+    | { type: 'toggleClipGainEnvelope'; payload: { clipId: string; expectedEnabled?: boolean } }
+    | {
+          type: 'addGainEnvelopePoint';
+          payload: { clipId: string; beatOffset: number; gainDb: number; pointId?: string };
+      }
+    | { type: 'removeGainEnvelopePoint'; payload: { clipId: string; pointId: string } }
+    | { type: 'resetClipGainEnvelope'; payload: { clipId: string } }
+    | { type: 'addModulator'; payload: { modulator: Omit<ModulatorSnapshot, 'id'>; modulatorId?: string } }
+    | { type: 'removeModulator'; payload: { modulatorId: string } }
+    | {
+          type: 'updateModulator';
+          payload: { modulatorId: string; patch: { name?: string; enabled?: boolean; trackId?: string } };
+      }
+    | { type: 'addMapping'; payload: { modulatorId: string; mapping: ModulatorMappingSnapshot } }
+    | {
+          type: 'removeMapping';
+          payload: {
+              modulatorId: string;
+              target: Pick<ModulatorMappingSnapshot, 'targetTrackId' | 'targetDeviceId' | 'targetParamId'>;
+          };
+      }
     | {
           type: 'addAutomationLane';
           payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
@@ -1730,6 +1766,52 @@ export type AppAction =
           };
       }
     | {
+          /**
+           * Hold one track parameter at a target across a musical range, ramping in
+           * from and back out to the value its lane already draws there, and leaving
+           * the lane's curve outside the range unchanged.
+           *
+           * `range` is what the caller asked for and stays as asked. `startBeat` and
+           * `endBeat` are the half-open interval it resolves to, materialized by the
+           * owning handler when the command is admitted, so scope and lock checks read
+           * the beats the write will actually cover.
+           */
+          type: 'automateParameterRange';
+          payload: {
+              trackId: string;
+              /** `gain`, `pan`, `send:<busId>`, or `<deviceId>:<paramId>`. */
+              parameterId: string;
+              /** Exactly one form: `section`, `startBar` with `endBar`, or `startBeat` with `endBeat`. */
+              range: {
+                  /** A section name, optionally with an ordinal: "Chorus 2", "the second chorus". */
+                  section?: string;
+                  /** First bar, 1-based. */
+                  startBar?: number;
+                  /** Last bar, inclusive. */
+                  endBar?: number;
+                  startBeat?: number;
+                  /** Exclusive. */
+                  endBeat?: number;
+              };
+              /** Absolute level in decibels, gain and send targets only. Exactly one of `valueDb`, `deltaDb`, `value`. */
+              valueDb?: number;
+              /** Change in decibels from the level the lane draws at the range start, gain and send targets only. */
+              deltaDb?: number;
+              /** The target in the lane's own units. */
+              value?: number;
+              /** Length of the ramp into the target, in beats, from the range start. */
+              rampIn?: number;
+              /** Length of the ramp back out, in beats, ending at the range end. */
+              rampOut?: number;
+              /** Resolved range start, materialized at admission. Command-owned. */
+              startBeat?: number;
+              /** Resolved range end, exclusive, materialized at admission. Command-owned. */
+              endBeat?: number;
+              /** Command-owned identity of this write's lane and points, for exact undo and redo. AiRuntime rejects provider input. */
+              writeId?: string;
+          };
+      }
+    | {
           /** Internal guarded inverse for `automateTrackGainRange`. */
           type: 'removeTrackGainAutomationRange';
           payload: {
@@ -1766,9 +1848,11 @@ export type AppAction =
           };
       }
     | {
-          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute. */
+          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute.
+           *  `expectedPoints` is set by an inverse that created the lane together with
+           *  its points: the lane is removed only while it holds exactly those points. */
           type: 'removeAutomationLane';
-          payload: { laneId: string };
+          payload: { laneId: string; expectedPoints?: readonly AutomationPointSnapshot[] };
       }
     | { type: 'setAutomationLaneEnabled'; payload: { laneId: string; enabled: boolean } }
     | {

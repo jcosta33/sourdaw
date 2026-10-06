@@ -14,9 +14,12 @@ import {
 import {
     ASSESSMENT_IMPACT_MEMBERSHIP,
     ASSESSMENT_IMPACTS,
+    SIGNAL_DISPOSITIONS,
+    SIGNAL_DISPOSITION_MEMBERSHIP,
     buildDossier,
     readAssessmentIgnoredReason,
     readAssessmentImpact,
+    readSignalDisposition,
 } from '../reviewDossierChain.ts';
 import {
     acceptedFindings,
@@ -33,6 +36,7 @@ import type {
     ReviewDossier,
     ReviewDossierEvent,
     ReviewDossierEventRecord,
+    ReviewDossierSignalDisposition,
 } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -401,6 +405,171 @@ describe('assessment ignored reason', () => {
 
     it('should read a reason through the shared reader unchanged', () => {
         expect(readAssessmentIgnoredReason('a reason')).toBe('a reason');
+    });
+});
+
+describe('signal dispositions', () => {
+    const FIRED = {
+        ruleId: 'admission_branch_completes_without_asserting',
+        path: 'src/modules/audio/take.test.ts',
+    };
+    const ENTRY: ReviewDossierSignalDisposition = { ...FIRED, disposition: 'confirmed-and-fixed', artifact: '#4441' };
+
+    /** Raw caller-authored entries, so an invalid shape reaches the reader instead of the type checker. */
+    function rawDispositions(entries: unknown): ReviewDossierSignalDisposition[] {
+        return entries as ReviewDossierSignalDisposition[];
+    }
+
+    it('should pin exactly the five dispositions through the admission path', () => {
+        expect([...SIGNAL_DISPOSITIONS]).toEqual([
+            'confirmed-and-fixed',
+            'confirmed-existing',
+            'false-positive',
+            'insufficient-evidence',
+            'not-investigated',
+        ]);
+        // The gate's own live key set is observed, not just the array beside it: a run-time widening
+        // an `Object.assign` performs reddens this assertion rather than passing.
+        expect(Object.keys(SIGNAL_DISPOSITION_MEMBERSHIP).sort()).toEqual([...SIGNAL_DISPOSITIONS].sort());
+        for (const token of SIGNAL_DISPOSITIONS) {
+            expect(readSignalDisposition(token, 'signalDispositions[0].disposition')).toBe(token);
+        }
+        for (const outside of ['fixed', 'false_positive', 'CONFIRMED-AND-FIXED', 'ignored']) {
+            expect(() => readSignalDisposition(outside, 'signalDispositions[0].disposition')).toThrow(
+                /signalDispositions\[0\]\.disposition must be confirmed-and-fixed, confirmed-existing, false-positive, insufficient-evidence or not-investigated/
+            );
+        }
+    });
+
+    it.each(SIGNAL_DISPOSITIONS)('should round-trip a %s outcome through assembly, serialize and parse', (token) => {
+        const dossier = assembleWith({ signalDispositions: [{ ...FIRED, disposition: token }] });
+
+        expect(dossier.signalDispositions).toEqual([{ ...FIRED, disposition: token }]);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(reparsed.signalDispositions).toEqual([{ ...FIRED, disposition: token }]);
+        expect(serializeReviewDossier(reparsed)).toBe(serializeReviewDossier(dossier));
+    });
+
+    it('should carry the optional artifact reference and drop it when the caller records none', () => {
+        const withArtifact = assembleWith({ signalDispositions: [ENTRY] });
+        const withoutArtifact = assembleWith({
+            signalDispositions: [{ ...FIRED, disposition: 'not-investigated' }],
+        });
+
+        expect(withArtifact.signalDispositions).toEqual([ENTRY]);
+        expect(withoutArtifact.signalDispositions).toEqual([{ ...FIRED, disposition: 'not-investigated' }]);
+        expect(withArtifact.dossierDigest).not.toBe(withoutArtifact.dossierDigest);
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(serializeReviewDossier(withArtifact))))).toBe(
+            serializeReviewDossier(withArtifact)
+        );
+    });
+
+    it('should cover the list in dossierDigest, including an explicitly empty one', () => {
+        const absent = assembleWith({});
+        const empty = assembleWith({ signalDispositions: [] });
+        const recorded = assembleWith({ signalDispositions: [ENTRY] });
+
+        expect(absent.signalDispositions).toBeUndefined();
+        expect(empty.signalDispositions).toEqual([]);
+        expect(new Set([absent.dossierDigest, empty.dossierDigest, recorded.dossierDigest]).size).toBe(3);
+        // The list never enters the event chain, so the head digest is unchanged.
+        expect(recorded.headDigest).toBe(absent.headDigest);
+    });
+
+    /**
+     * The historical tolerance: a record persisted before the field existed carries no key at all,
+     * so the canonical bytes keep the field out and every pre-field dossier keeps verifying.
+     */
+    it('should omit the key entirely from a record that carries no dispositions', () => {
+        expect(serializeReviewDossier(validDossier())).not.toContain('signalDispositions');
+    });
+
+    it('should refuse a persisted record whose disposition is not one of the five tokens', () => {
+        const mutated = cloneDossier();
+        mutated.signalDispositions = rawDispositions([{ ...FIRED, disposition: 'fixed' }]);
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /signalDispositions\[0\]\.disposition must be confirmed-and-fixed, confirmed-existing, false-positive, insufficient-evidence or not-investigated, found "fixed"/
+        );
+    });
+
+    const DISPOSITION_REFUSALS: { label: string; entries: unknown; message: RegExp }[] = [
+        {
+            label: 'a non-array list',
+            entries: 'none',
+            message: /review dossier signalDispositions must be an array, found "none"/,
+        },
+        {
+            label: 'a non-object entry',
+            entries: ['fixed'],
+            message: /review dossier signalDispositions\[0\] must be an object, found "fixed"/,
+        },
+        {
+            label: 'an unknown disposition token',
+            entries: [{ ...FIRED, disposition: 'fixed' }],
+            message:
+                /review dossier signalDispositions\[0\]\.disposition must be confirmed-and-fixed, confirmed-existing, false-positive, insufficient-evidence or not-investigated, found "fixed"/,
+        },
+        {
+            label: 'a missing ruleId member',
+            entries: [{ path: FIRED.path, disposition: 'false-positive' }],
+            message:
+                /review dossier signalDispositions\[0\] fields must be disposition,path,ruleId, found disposition,path/,
+        },
+        {
+            label: 'a non-string ruleId',
+            entries: [{ ruleId: 7, path: FIRED.path, disposition: 'false-positive' }],
+            message: /review dossier signalDispositions\[0\]\.ruleId must be a non-blank string, found 7/,
+        },
+        {
+            label: 'a blank path',
+            entries: [{ ruleId: FIRED.ruleId, path: ' ', disposition: 'false-positive' }],
+            message: /review dossier signalDispositions\[0\]\.path must be a non-blank string, found " "/,
+        },
+        {
+            label: 'a credential-shaped artifact',
+            entries: [{ ...FIRED, disposition: 'confirmed-and-fixed', artifact: `ghp_${'A'.repeat(24)}` }],
+            message: /review dossier signalDispositions\[0\]\.artifact value at index 0 contains a GitHub token/,
+        },
+        {
+            label: 'a multiline artifact',
+            entries: [{ ...FIRED, disposition: 'confirmed-and-fixed', artifact: 'first line\nsecond line' }],
+            message: /review dossier signalDispositions\[0\]\.artifact value at index 0 contains a line separator/,
+        },
+        {
+            label: 'a blank artifact',
+            entries: [{ ...FIRED, disposition: 'confirmed-and-fixed', artifact: '' }],
+            message: /review dossier signalDispositions\[0\]\.artifact must be a non-blank string, found ""/,
+        },
+        {
+            label: 'an unknown entry member',
+            entries: [{ ...FIRED, disposition: 'false-positive', note: 'extra' }],
+            message:
+                /review dossier signalDispositions\[0\] fields must be disposition,path,ruleId, found disposition,note,path,ruleId/,
+        },
+        {
+            label: 'two entries for one signal',
+            entries: [
+                { ...FIRED, disposition: 'false-positive' },
+                { ...FIRED, disposition: 'confirmed-existing' },
+            ],
+            message:
+                /review dossier signalDispositions\[1\] repeats the signal already recorded at index 0: admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts/,
+        },
+    ];
+
+    it.each(DISPOSITION_REFUSALS)('should refuse $label when assembling', ({ entries, message }) => {
+        expect(() => assembleWith({ signalDispositions: rawDispositions(entries) })).toThrow(message);
+    });
+
+    it('should refuse a duplicate that differs only in its disposition on the read path too', () => {
+        const mutated = cloneDossier();
+        mutated.signalDispositions = rawDispositions([
+            { ...FIRED, disposition: 'false-positive' },
+            { ...FIRED, disposition: 'not-investigated' },
+        ]);
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/repeats the signal already recorded at index 0/);
     });
 });
 
@@ -1050,6 +1219,9 @@ describe('historical dossier records', () => {
         expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_UNPUBLISHED_RECORD);
         expect(assessmentImpact(parseReviewDossier(historical))).toBeUndefined();
         expect(assessmentIgnoredReason(parseReviewDossier(historical))).toBeUndefined();
+        // The typed-disposition field postdates every fixture here, so the pinned bytes are also the
+        // proof that its absence is tolerated and stays out of the digest preimage.
+        expect(parseReviewDossier(historical).signalDispositions).toBeUndefined();
         expect(publishedReviewId(parseReviewDossier(historical))).toBeUndefined();
     });
 

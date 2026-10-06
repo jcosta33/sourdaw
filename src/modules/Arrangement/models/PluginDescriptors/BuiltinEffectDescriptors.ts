@@ -228,6 +228,7 @@ const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
+        effectFamily: 'reverb',
         hasCustomUI: false,
         platform: 'both',
         // The audible tail is the impulse response, which `applyReverbParams`
@@ -1021,6 +1022,7 @@ const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
+        effectFamily: 'reverb',
         hasCustomUI: false,
         // The impulse response sets the tail and no exposed parameter reports its
         // length, so reserve a constant that covers the bundled IRs.

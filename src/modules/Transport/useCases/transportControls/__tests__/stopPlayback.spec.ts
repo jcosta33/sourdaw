@@ -9,6 +9,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { stopPlayback } from '../stopPlayback';
@@ -60,6 +61,7 @@ describe('stopPlayback', () => {
         vi.mocked(stopNativeLiveGraphSession).mockClear();
         vi.mocked(audioEngine.setTransportInfo).mockClear();
         playheadPositionRef.current = 0;
+        playheadWrapCountRef.current = 0;
     });
 
     it('publishes isPlaying: false and resting position to audioEngine.setTransportInfo on stop', async () => {
@@ -306,5 +308,29 @@ describe('stopPlayback', () => {
         void stopPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 4 });
+    });
+
+    it('drops the dead roll wrap count beside the resting epoch write', () => {
+        // The resting epoch ends the roll whose wraps the count holds. A parked
+        // capture reads the store, never the count — the zero keeps the dead
+        // count from standing beside the freshly written position until the
+        // next play resets it beside its own epoch write.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            loopStart: 0,
+            loopEnd: 0,
+            playheadPosition: 5,
+        });
+        playheadWrapCountRef.current = 2;
+
+        void stopPlayback();
+
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 0,
+        });
+        expect(playheadWrapCountRef.current).toBe(0);
     });
 });

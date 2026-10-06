@@ -20,13 +20,16 @@ import {
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
+import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
@@ -42,6 +45,7 @@ const mocks = vi.hoisted(() => ({
     generateCloudToolCalls: vi.fn(),
     generateWebLlmToolCalls: vi.fn(),
     getCloudProviderInfo: vi.fn(),
+    usesStrictCloudToolSchemas: vi.fn(),
     initWebLlmEngine: vi.fn(),
     isWebLlmLoaded: vi.fn(),
     llmStatus: { value: { state: 'idle' } },
@@ -62,6 +66,10 @@ vi.mock('../../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', 
 
 vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({
     getCloudProviderInfo: mocks.getCloudProviderInfo,
+}));
+
+vi.mock('../../../repositories/cloudLlm/usesStrictCloudToolSchemas', () => ({
+    usesStrictCloudToolSchemas: mocks.usesStrictCloudToolSchemas,
 }));
 
 vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({
@@ -181,6 +189,7 @@ describe('generateToolPlanningOutcome', () => {
             baseUrl: 'https://api.openai.com/v1',
             authentication: 'api-key',
         });
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(false);
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.providerStartFailure.value = null;
     });
@@ -226,6 +235,364 @@ describe('generateToolPlanningOutcome', () => {
             state: 'ready',
             backend: 'cloud',
             modelId: 'hosted-model',
+        });
+    });
+
+    it('admits a hosted proposal with nonempty command arguments through the wire schema', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        const assistantItems = [{ type: 'function_call', call_id: 'proposal-1' }];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'proposal-1',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            { name: 'addDevice', argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}' },
+                        ],
+                        list: null,
+                        plan: null,
+                        compiledCallIds: null,
+                    },
+                },
+            ],
+            assistantItems,
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!]);
+
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            { name: 'addDevice', arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } },
+                        ],
+                    },
+                },
+            ],
+            providerTurn: { provider: 'openai', assistantItems },
+        });
+    });
+
+    it('decodes semantic-list arguments while retaining the structured plan and provider replay', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        const plan = {
+            semantic: { classification: 'simple', uncertainty: [] },
+            objective: 'Add EQ to Kick',
+            constraints: [],
+            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            capabilityIds: [],
+            assetIds: [],
+            alternatives: [],
+            validationStrategy: [],
+            stoppingConditions: [],
+        };
+        const assistantItems = [{ type: 'tool_use', id: 'proposal-2' }];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'proposal-2',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: null,
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'eq',
+                                    name: 'addDevice',
+                                    argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                                },
+                            ],
+                        },
+                        plan,
+                        compiledCallIds: null,
+                    },
+                },
+            ],
+            assistantItems,
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!]);
+
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    arguments: {
+                        list: { items: [{ arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } }] },
+                        plan,
+                    },
+                },
+            ],
+            proposal: expect.objectContaining({ objective: 'Add EQ to Kick' }),
+            providerTurn: { assistantItems },
+        });
+    });
+
+    it.each([
+        ['malformed JSON', '{'],
+        ['a non-object value', '[]'],
+        ['duplicate keys', '{"trackId":"track-kick","trackId":"other"}'],
+    ])('rejects hosted proposal leaves containing %s', async (_reason, argumentsJson) => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'invalid-proposal',
+                    name: 'command.batch.propose',
+                    arguments: { commands: [{ name: 'addDevice', argumentsJson }] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!])).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Hosted proposal arguments are invalid.',
+        });
+    });
+
+    it.each([
+        ['a missing argument leaf', { name: 'addDevice' }],
+        ['mixed encoded and object leaves', { name: 'addDevice', argumentsJson: '{}', arguments: {} }],
+        [
+            'mixed encoded and null object leaves',
+            {
+                name: 'addDevice',
+                argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                arguments: null,
+            },
+        ],
+    ])('rejects hosted proposal items with %s', async (_reason, item) => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'invalid-proposal', name: 'command.batch.propose', arguments: { commands: [item] } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!])).rejects.toThrow(
+            'The model provider request failed.'
+        );
+    });
+
+    it('rejects a hosted semantic-list item carrying encoded and null object leaves', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'invalid-proposal',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'eq',
+                                    name: 'addDevice',
+                                    argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                                    arguments: null,
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!])).rejects.toThrow(
+            'The model provider request failed.'
+        );
+    });
+
+    it('retains compiled-only selection with an empty hosted commands array', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'compiled-only',
+                    name: 'command.batch.propose',
+                    arguments: { commands: [], compiledCallIds: ['compile-1'] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'use the compiled transform', [proposalSchema!]);
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [{ arguments: { commands: [], compiledCallIds: ['compile-1'] } }],
+        });
+    });
+
+    // Red when a strict host is shown the open arguments object of a measured proposal, or the
+    // encoded leaves of a preview measurement are not restored before the loop reads them.
+    it('encodes a preview measurement’s proposal leaves for a strict host and decodes the reply', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const measureSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'analysis.measure'
+        );
+        expect(measureSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'measure-1',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: { kind: 'tracks', ids: ['track-kick'] },
+                        range: { startBeat: 0, endBeat: 8 },
+                        subject: 'preview',
+                        proposal: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'eq',
+                                    name: 'addDevice',
+                                    argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}',
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'make the kick punchier', [measureSchema!]);
+
+        const advertised: unknown = mocks.generateCloudToolCalls.mock.calls[0]?.[2];
+        const proposalItem = [0, 'function', 'parameters', 'properties', 'proposal', 'properties', 'items', 'items'];
+        expect(advertised).toHaveProperty([...proposalItem, 'properties', 'argumentsJson', 'type'], 'string');
+        expect(advertised).not.toHaveProperty([...proposalItem, 'properties', 'arguments']);
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    name: 'analysis.measure',
+                    arguments: {
+                        subject: 'preview',
+                        proposal: {
+                            items: [{ id: 'eq', arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } }],
+                        },
+                    },
+                },
+            ],
+        });
+    });
+
+    it('keeps non-strict compatible proposals in the canonical object format', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai-compatible', model: 'compatible-model' });
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(false);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'compatible-proposal',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            { name: 'addDevice', arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } },
+                        ],
+                    },
+                },
+            ],
+            strictToolSchemas: false,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!]);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[2]).toEqual([proposalSchema]);
+        expect(outcome.status === 'complete' ? outcome.toolCalls[0]?.arguments : null).toEqual({
+            commands: [{ name: 'addDevice', arguments: { trackId: 'track-kick', deviceType: 'builtin-eq' } }],
+        });
+    });
+
+    it('rejects a hosted proposal carrying both ordinary forms before the application loop', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'conflicting-proposal',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [
+                            { name: 'addDevice', argumentsJson: '{"trackId":"track-kick","deviceType":"builtin-eq"}' },
+                        ],
+                        list: { schemaVersion: 1, items: [{ id: 'eq', name: 'addDevice', argumentsJson: '{}' }] },
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add EQ to Kick', [proposalSchema!])).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Hosted proposal arguments are invalid.',
         });
     });
 
@@ -1168,7 +1535,10 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
+        // The budget now exceeds the five mandatory tools plus the 30 tools the prompt selector
+        // hands over (#4371 raised it from 31 to 36), so the selector's cap binds here.
+        expect(advertisedTools).toHaveLength(5 + 30);
+        expect(advertisedTools.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
             expect.arrayContaining([
                 'project.query',
@@ -1218,8 +1588,14 @@ describe('generateToolPlanningOutcome', () => {
         const schemas = getPlanningProviderToolSchemas();
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
+        // The reference comparison is the one contract tool offered only while the user has a reference loaded, and none is loaded here.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
-            new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
+            new Set([
+                ...planningContract
+                    .map((tool) => tool.function.name)
+                    .filter((name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME),
+                ...WORKFLOW_ACTION_TOOL_NAMES,
+            ])
         );
 
         // Production appends the creative interpretation schema to that list on every run.
@@ -1233,10 +1609,15 @@ describe('generateToolPlanningOutcome', () => {
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+        const webProposal = advertisedTools.find((tool: ToolSchema) => tool.function.name === 'command.batch.propose');
+        expect(webProposal?.function.parameters).toHaveProperty(
+            ['properties', 'commands', 'items', 'properties', 'arguments', 'type'],
+            'object'
+        );
 
-        // The mandatory set (workflow selector, the application tools, every workflow action tool)
-        // leaves one free slot under the WebLLM budget, and it goes to the first non-mandatory
-        // catalog tool.
+        // The mandatory set (workflow selector, the application tools including the five planning
+        // tools #4371 made mandatory, every workflow action tool) leaves one free slot under the
+        // WebLLM budget, and it goes to the first non-mandatory catalog tool.
         expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
@@ -1246,6 +1627,11 @@ describe('generateToolPlanningOutcome', () => {
                 'agent.command-index.search',
                 'command.batch.propose',
                 'command.batch.decline',
+                'analysis.measure',
+                'recipe.discover',
+                'recipe.expand',
+                'device.factory-manifest.read',
+                'transform.compile',
                 'removeTrack',
                 'muteTrack',
                 'soloTrack',
@@ -1304,29 +1690,83 @@ describe('generateToolPlanningOutcome', () => {
         'find a warm reverb preset for the vocal and load it',
         'show the command history',
         'the bass is muddy, clean it up',
-    ])('never advertises recipe.discover or analysis.measure to WebLLM for "%s"', async (prompt) => {
-        mocks.backendChain.value = ['webllm'];
-        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+        'compile a transform for each selected MIDI clip',
+    ])(
+        'always advertises recipe.discover, recipe.expand, analysis.measure and transform.compile to WebLLM for "%s"',
+        async (prompt) => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-        const schemas = getPlanningProviderToolSchemas();
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+            const schemas = getPlanningProviderToolSchemas();
+            const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
 
-        await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
-            status: 'complete',
+            await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
+                status: 'complete',
+            });
+
+            const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+            const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+
+            // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
+            // the one prompt-selected slot, which keeps project.discover for these prompts.
+            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+            expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
+            expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+            expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
+            expect(advertisedNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
+            expect(advertisedNames).toContain(AGENT_DEVICE_MANIFEST_TOOL_NAME);
+            expect(advertisedNames).toContain('transform.compile');
+        }
+    );
+
+    // Red when the WebLLM list stops excluding the reference comparison, or the hosted list stops carrying it while loaded.
+    it('never advertises analysis.compareReference to WebLLM with a reference loaded, and advertises it to a hosted backend', async () => {
+        agentReferenceStore.set({
+            reference: {
+                referenceId: 'reference-test',
+                name: 'reference.wav',
+                contentAddress: 'content-address',
+                measurements: {},
+                sampleRate: 48_000,
+                frameCount: 48_000,
+                channelCount: 2,
+                durationSeconds: 1,
+            },
+            loadEpoch: 1,
         });
+        try {
+            const prompt = 'compare my mix to the reference track I loaded';
+            const productionSchemas = [
+                ...getPlanningProviderToolSchemas(),
+                createCreativeInterpretationToolSchema(creativeCatalog),
+            ];
 
-        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+            await generateToolPlanningOutcome('system', prompt, productionSchemas);
+            const localNames = (mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []).map(
+                (tool: ToolSchema) => tool.function.name
+            );
+            expect(localNames).not.toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
 
-        // recipe.discover must never cost the local tier the planning tools it had before it existed:
-        // the advertised list stays identical to the pre-recipe.discover contract for every prompt.
-        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
-        expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
-        expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
-        expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [],
+                strictToolSchemas: false,
+                usage: null,
+            });
+            await generateToolPlanningOutcome('system', prompt, productionSchemas);
+            const hostedNames = (mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? []).map(
+                (tool: ToolSchema) => tool.function.name
+            );
+            expect(hostedNames).toContain(ANALYSIS_COMPARE_REFERENCE_TOOL_NAME);
+        } finally {
+            agentReferenceStore.set({ reference: null, loadEpoch: 0 });
+        }
     });
 
-    it('still advertises recipe.discover and analysis.measure to a hosted cloud backend', async () => {
+    it('still advertises recipe.discover, recipe.expand and analysis.measure to a hosted cloud backend', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
@@ -1349,7 +1789,16 @@ describe('generateToolPlanningOutcome', () => {
         const sentTools = mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? [];
         const sentNames = sentTools.map((tool: ToolSchema) => tool.function.name);
         expect(sentNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(sentNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
         expect(sentNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
+        expect(sentNames).toContain('transform.compile');
+        expect(
+            sentTools.find((tool: ToolSchema) => tool.function.name === 'transform.compile')?.function.parameters
+        ).toMatchObject({
+            properties: {
+                document: { type: 'string', description: expect.stringContaining('Valid complete document JSON text') },
+            },
+        });
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(

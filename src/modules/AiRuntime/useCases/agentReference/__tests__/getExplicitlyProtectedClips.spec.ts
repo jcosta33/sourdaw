@@ -211,6 +211,113 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    it('carries exclusion clauses across later instructions and resolves each list member', () => {
+        const prompt = 'excluding Lead and Bass Verse, set another clip velocity; set Verse to 100';
+        expect(getProtectedClips(prompt)).toEqual(
+            expect.arrayContaining([
+                { id: lead.id, name: lead.name },
+                { id: bassVerse.id, name: bassVerse.name },
+            ])
+        );
+        expect(getProtectedClips('set Verse to 90, excluding Lead; set Bass Verse to 100')).toContainEqual({
+            id: lead.id,
+            name: lead.name,
+        });
+        expect(getProtectedClips('set Verse to 90 except Lead; set Bass Verse to 100')).toContainEqual({
+            id: lead.id,
+            name: lead.name,
+        });
+        expect(
+            getExplicitClipProtection('set Verse to 90, excluding Lead and Missing; set Bass Verse to 100', context)
+                .complete
+        ).toBe(false);
+    });
+
+    it.each([
+        'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
+        'set note velocities in Bass Verse to 90, excluding Lead and then rename Bass Verse to "set 100"',
+        'set note velocities in Bass Verse to 90, excluding Lead; rename Bass Verse to "set 100"',
+    ])('ends an exclusion at a following rename instruction for %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context)).toEqual({
+            clips: [{ id: lead.id, name: lead.name }],
+            complete: true,
+        });
+    });
+
+    it('keeps whole-name protection and unresolved list members together', () => {
+        const chorus = createClip('clip-chorus', 'Chorus');
+        const wholeName = createClip('clip-chorus-and-missing', 'Chorus and Missing');
+        const chorusContext = {
+            ...context,
+            tracks: [createTrack('track-chorus', 'Chorus', [chorus, wholeName])],
+        };
+        expect(getExplicitClipProtection('set Chorus to 90, excluding Chorus and Missing', chorusContext)).toEqual({
+            clips: [
+                { id: chorus.id, name: chorus.name },
+                { id: wholeName.id, name: wholeName.name },
+            ],
+            complete: false,
+        });
+        expect(getExplicitClipProtection('set Chorus to 90, excluding "Chorus and Missing"', chorusContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: true,
+        });
+    });
+
+    it('marks an unquoted whole-name collision incomplete when every list member is unresolved', () => {
+        const wholeName = createClip('clip-alpha-and-omega', 'Alpha and Omega');
+        const collisionContext = {
+            ...context,
+            tracks: [createTrack('track-collision', 'Collision', [wholeName])],
+        };
+
+        expect(getExplicitClipProtection('set Verse to 90, excluding Alpha and Omega', collisionContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: false,
+        });
+        expect(getExplicitClipProtection('set Verse to 90, excluding "Alpha and Omega"', collisionContext)).toEqual({
+            clips: [{ id: wholeName.id, name: wholeName.name }],
+            complete: true,
+        });
+    });
+
+    it('treats quoted exclusion words as names and keeps quoted excluded names literal', () => {
+        expect(getProtectedClips('rename Lead to "excluding Bass Verse"')).toEqual([]);
+        expect(getProtectedClips('set Verse to 90, excluding "Rock and Roll"')).toContainEqual({
+            id: rockAndRoll.id,
+            name: rockAndRoll.name,
+        });
+    });
+
+    it('leaves track-only restrictions to their owning protection scope', () => {
+        expect(
+            getExplicitClipProtection(
+                'insert a compressor on bass tracks, excluding frozen tracks, and keep Guitar unchanged',
+                {
+                    ...context,
+                    tracks: [...context.tracks, createTrack('track-guitar-only', 'Guitar', [])],
+                }
+            )
+        ).toEqual({ clips: [], complete: true });
+        expect(getExplicitClipProtection('set Verse to 90, excluding Missing clip', context).complete).toBe(false);
+        expect(
+            getExplicitClipProtection('set Verse to 90, excluding frozen tracks and Missing clip', context).complete
+        ).toBe(false);
+        expect(
+            getExplicitClipProtection('keep Lead unchanged', {
+                ...context,
+                tracks: [...context.tracks, createTrack('track-lead', 'Lead', [])],
+            }).clips
+        ).toContainEqual({ id: lead.id, name: lead.name });
+    });
+
+    it.each(['set Verse to 90, excluding', 'set Verse to 90, excluding; set Lead to 100'])(
+        'marks an unfinished exclusion incomplete for %s',
+        (prompt) => {
+            expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
+        }
+    );
+
     it.each([
         ['leave Verse.1 unchanged', dottedName],
         ['leave "Verse.1" unchanged', dottedName],

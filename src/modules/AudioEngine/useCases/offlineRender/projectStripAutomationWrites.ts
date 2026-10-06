@@ -33,13 +33,15 @@
  *
  * Two lanes driving one device parameter (a track lane plus a clip lane, or
  * two clip lanes) reach this recorder as one `scheduleTrackAutomation` group,
- * which applies exactly once per group with whatever
- * `mergeAutomationSegmentStreams` kept — every disjoint lane, plus the one
- * lane latest in lane-array order out of any genuinely overlapping cluster.
- * The parameter's entry always carries that merged stream; the lanes a
- * cluster did not keep are reported on the result's `overlaps` field
- * (via `onWithheldDeviceLanes`) for a caller that must account for them,
- * never by omitting the entry.
+ * which applies exactly once per group with the stream
+ * `mergeAutomationSegmentStreams` resolves under the scope law (#4736): a
+ * clip-scoped lane owns every span its clip window covers, a track-level lane
+ * owns the rest, equal scopes break to the lane latest in array order. Every
+ * lane's material survives on the spans it owns, so nothing is withheld and
+ * the result's `overlaps` field (via `onWithheldDeviceLanes`) — which exists
+ * for a caller that must account for lanes a cluster did not keep — stays
+ * empty. The parameter's entry always carries that merged stream, never an
+ * omitted one.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
