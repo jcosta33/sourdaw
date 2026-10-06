@@ -1,0 +1,29 @@
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_e06aa82aeba075 98-107
+  s_2bfd55a4393d7c::t_40ef8047b9a027 77-78
+  s_2bfd55a4393d7c::t_919e171040fc8c 62-64
+  s_2bfd55a4393d7c::t_823af59ee60fe4 350
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_18e5cca6740a65 3289-3314
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_7ce37bdca2c239 149-150,336-346,348-366
+  s_2bfd55a4393d7c::t_2539479317b1b1 347
+  s_2bfd55a4393d7c::t_748983bfb49043 143
+  s_2bfd55a4393d7c::t_b4b6bf6dc8e20e 144-148,151-152,197-198,313,367-369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18f7c6ca0648c4e77747addd113f5acf513eda89",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
