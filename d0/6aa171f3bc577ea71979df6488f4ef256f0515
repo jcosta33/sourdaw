@@ -1,0 +1,62 @@
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_1c08b47ac3792f::t_cb43b84925e271 115-124
+  s_1c08b47ac3792f::t_a9752897a7c46b 146-147,155-156
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_1c08b47ac3792f::t_644dba3b19b2dd 7
+  s_1c08b47ac3792f::t_7941c733afbf93 180-181
+  s_1c08b47ac3792f::t_1e93c6b08153a2 182
+  s_1c08b47ac3792f::t_1a8e8cd1de97a7 219,225
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revalidateApprovedMatchSelectors.ts
+  s_1c08b47ac3792f::t_91fc8a5633354e 52-53,57
+  s_1c08b47ac3792f::t_00bab9bf09529b 54
+  s_1c08b47ac3792f::t_edef8693c1c6c9 4
+  s_1c08b47ac3792f::t_6c9ec91208f67f 79
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_75d5bf18b08968 1288-1311
+  s_1c08b47ac3792f::t_2acce7722247cd 1188,1192
+  s_1c08b47ac3792f::t_a7caaf58c45586 936-962
+  s_1c08b47ac3792f::t_91d4c9b03cd149 784
+  s_1c08b47ac3792f::t_e59c041950e94b 523-553
+  s_1c08b47ac3792f::t_613f49099b5ade 1103-1110
+  s_1c08b47ac3792f::t_40cc552f5c6e89 836-837
+  s_1c08b47ac3792f::t_f1f8367ae93c8b 914-918,920
+  s_1c08b47ac3792f::t_3135920b512057 964-965,973
+  s_1c08b47ac3792f::t_fd26b8086b678e 854-913,919,921-935,963,966-972,974-976
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_64ab021eb1e07b 45
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_1c08b47ac3792f::t_8145990c8d89e0 13
+  s_1c08b47ac3792f::t_3183042ea34575 119-123
+src/modules/AiRuntime/services/bulkSetSliceReplay.ts
+  s_1c08b47ac3792f::t_36e7d390527b0d 3,13-52
+  s_1c08b47ac3792f::t_af2d6e90496944 53
+src/modules/AiRuntime/useCases/agentRequestOrchestration/rebaseBulkSetSliceEvidence.ts
+  s_1c08b47ac3792f::t_699c6150e8161e 2-7,16-116,118,122,125-135,140-144,150-153,155-159,166-182,184-186
+  s_1c08b47ac3792f::t_06d5062af0790a 120
+  s_1c08b47ac3792f::t_2b09625f050eab 119,187
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_1c08b47ac3792f::t_f9b5c8e67ed9d6 64-65,67,76-83
+  s_1c08b47ac3792f::t_cb78cd05130069 84-85
+src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts
+  s_1c08b47ac3792f::t_eb320acf3d3700 26-27,39-44,56,61-68,72-74,76-81
+  s_1c08b47ac3792f::t_5d93a31adf9049 53-55
+  s_1c08b47ac3792f::t_8eb8a83c9f859b 69-71
+  s_1c08b47ac3792f::t_ceeeecf35fb1cb 75
+  s_1c08b47ac3792f::t_f0b23c288f6922 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d06aa171f3bc577ea71979df6488f4ef256f0515",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
