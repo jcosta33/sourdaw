@@ -1,0 +1,46 @@
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_e0ca9d6e175893 672-688
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_3ce5759c7d453b 40-46
+  s_2bfd55a4393d7c::t_bcbd4543b72fcb 66-74,77
+  s_2bfd55a4393d7c::t_259ac83a2f4040 115-118
+  s_2bfd55a4393d7c::t_894888bbba3bcc 349-355
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_2bfd55a4393d7c::t_49d40db7aa93d1 273,277,281
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_5e4eadf77dbcbe 3289-3318
+  s_2bfd55a4393d7c::t_db0c77fb3e01dc 1230-1258
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_43a29967b12bc6 313-337
+  s_2bfd55a4393d7c::t_16b73c5eb149a2 269-272
+  s_2bfd55a4393d7c::t_051752e49ceb0e 284-290
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_22547f44517622 1046-1082
+  s_2bfd55a4393d7c::t_e1458b14dd0de9 37
+  s_2bfd55a4393d7c::t_5d477f293e62a4 616-626
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/workflowShortcutScopeStrategy.spec.ts
+  s_2bfd55a4393d7c::t_3f48f926e0f6cf 41-45
+  s_2bfd55a4393d7c::t_d44d1c46e73a77 73-74
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_2bfd55a4393d7c::t_0c9dfe441f72f2 96-106
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_2bfd55a4393d7c::t_b64fd6df5d6eb7 204,227-230,232
+  s_2bfd55a4393d7c::t_181a45d496cb48 205,209
+  s_2bfd55a4393d7c::t_ae810794b59552 231,233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea83dc382e913884711d3403e3479d90e13b9677",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
