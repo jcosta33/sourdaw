@@ -1,0 +1,19 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_1c08b47ac3792f::t_cdd7021dc095c8 236-244,1225-1236,1747,1802,1924,1968-1972,2007,2014,2501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4233b97eaf7da7ab6115065ee8a58baaf17789d1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
