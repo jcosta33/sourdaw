@@ -68,6 +68,10 @@ function resolveDrumTrackIds(context: ProjectContext): ReadonlySet<string> {
 function classifyRoutingTrack(track: ProjectContextTrack, drumTrackIds: ReadonlySet<string>): RoutingClassification {
     const named = projectCanonicalTrackRole(track);
     const canonicalRole = track.canonicalRole;
+    // A folder or bus carries no audio or MIDI to send, whatever role it holds: it stays protected.
+    if (track.kind !== 'audio' && track.kind !== 'midi') {
+        return named;
+    }
     if (drumTrackIds.has(track.id)) {
         if (named.classification === 'drum' && canonicalRole?.source !== 'authored') {
             return named;

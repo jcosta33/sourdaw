@@ -164,6 +164,63 @@ describe('drum routing scope', () => {
         expect(resolvedSelectorsMatching('track', { all: [{ roleFamily: 'drums' }] })).toHaveLength(1);
     });
 
+    it('protects a Drums folder above the kit and still routes the kit', () => {
+        const scope = getDrumRoutingPromptScope(
+            createDrumContext([
+                createTrack('folder-drums', 'Drums', { kind: 'folder', canonicalRole: nameDerived('drums') }),
+                createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
+                createTrack('track-snare', 'Snare', { canonicalRole: nameDerived('snare') }),
+                createTrack('track-oh', 'OH', { canonicalRole: nameDerived('unknown') }),
+            ]),
+            'rev-1'
+        );
+
+        if (scope.status !== 'request') {
+            throw new Error(`Expected a drum routing request, got ${scope.status}`);
+        }
+        expect(scope.targetIds).toEqual(['track-kick', 'track-snare', 'track-oh']);
+        expect(scope.capability?.protectedNonDrums).toContainEqual(
+            expect.objectContaining({ id: 'folder-drums', role: 'structural' })
+        );
+    });
+
+    it('protects a bus carrying an authored kick role and still routes the kit', () => {
+        const scope = getDrumRoutingPromptScope(
+            createDrumContext([
+                createTrack('bus-aux', 'Aux 1', { kind: 'bus', canonicalRole: userSet('kick') }),
+                createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') }),
+                createTrack('track-snare', 'Snare', { canonicalRole: nameDerived('snare') }),
+            ]),
+            'rev-1'
+        );
+
+        if (scope.status !== 'request') {
+            throw new Error(`Expected a drum routing request, got ${scope.status}`);
+        }
+        expect(scope.targetIds).toEqual(['track-kick', 'track-snare']);
+        expect(scope.capability?.protectedNonDrums).toContainEqual(
+            expect.objectContaining({ id: 'bus-aux', role: 'structural' })
+        );
+    });
+
+    it('labels a drum-named track by the drum role the user authored for it', () => {
+        const scope = getDrumRoutingPromptScope(
+            createDrumContext([createTrack('track-kick', 'Kick', { canonicalRole: userSet('snare') })]),
+            'rev-1'
+        );
+
+        if (scope.status !== 'request') {
+            throw new Error(`Expected a drum routing request, got ${scope.status}`);
+        }
+        expect(scope.capability?.candidateDrums).toContainEqual(
+            expect.objectContaining({
+                id: 'track-kick',
+                role: 'snare',
+                roleEvidence: 'canonical-role:snare:authored',
+            })
+        );
+    });
+
     it('classifies a track whose canonical role is unknown by its name', () => {
         const scope = getDrumRoutingPromptScope(
             createDrumContext([
