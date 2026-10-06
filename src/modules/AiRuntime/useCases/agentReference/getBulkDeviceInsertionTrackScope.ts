@@ -1,6 +1,7 @@
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
 type BulkDeviceInsertionTrackScope = {
     targetIds: string[];
@@ -27,11 +28,20 @@ function getRequestedFamilyScope(
     normalizedRequest: string,
     context: ProjectContext
 ): BulkDeviceInsertionTrackScope | null {
+    // The shared resolver's `nameIncludes` is a substring read; a family names a whole word of the
+    // track name, so "bass" never reaches "Bassoon", and a VCA group owns no insertion chain.
     const familyPattern = new RegExp(`\\b${family.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
-    const matchingTracks = context.tracks.filter(
-        (track) => track.kind !== 'vca' && familyPattern.test(normalizePromptText(track.name))
-    );
-    const targetTracks = matchingTracks.filter((track) => track.frozen !== true);
+    const isFamilyTrack = (track: ProjectContextTrack) =>
+        track.kind !== 'vca' && familyPattern.test(normalizePromptText(track.name));
+    const resolveFamilyTracks = (isFrozen: boolean) => {
+        const resolvedIds = new Set(
+            resolveWorkflowTrackIds(context, 'bulk-device-insertion-family', {
+                all: [{ nameIncludes: family }, { isFrozen }],
+            })
+        );
+        return context.tracks.filter((track) => resolvedIds.has(track.id) && isFamilyTrack(track));
+    };
+    const targetTracks = resolveFamilyTracks(false);
     const targetIds = targetTracks.map((track) => track.id);
     if (targetIds.length === 0) {
         return null;
@@ -39,7 +49,7 @@ function getRequestedFamilyScope(
     // Frozen exclusion is scope-derived, not phrase-derived: a frozen track in the matched
     // family is never an insertion target, so it must reach the protection paths no matter
     // how the prompt words the request (#2844).
-    const excludedFrozenTrackIds = matchingTracks.filter((track) => track.frozen === true).map((track) => track.id);
+    const excludedFrozenTrackIds = resolveFamilyTracks(true).map((track) => track.id);
     const afterDeviceName = /\bafter ([\p{L}\p{N}]+)\b/iu.exec(normalizedRequest)?.[1];
     if (afterDeviceName === undefined) {
         // A request with no insertion anchor carries no ordering constraint: the scope grounds
