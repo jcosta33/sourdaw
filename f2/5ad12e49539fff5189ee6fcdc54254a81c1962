@@ -1,0 +1,21 @@
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_2bfd55a4393d7c::t_dbd5f79011726e 590-602
+  s_2bfd55a4393d7c::t_839c6ec2578802 1
+  s_2bfd55a4393d7c::t_928d4cc40e7e37 605
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f25ad12e49539fff5189ee6fcdc54254a81c1962",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
