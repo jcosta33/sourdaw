@@ -198,6 +198,38 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(hex).toContain('8360803c0000903e64');
     });
 
+    it('orders one tick as note-off, controller, note-on whatever order the rows were given in', () => {
+        // Note A ends and note B starts on tick 480, the same pitch, with a sustain
+        // pedal press on that tick. The release must not be caught by the pedal and
+        // the new note must sound under it: 80 3C 00, B0 40 7F, 90 3C 64.
+        downloadMidiFile({
+            clipName: 'C',
+            clipStartBeat: 0,
+            notes: [
+                { id: 'b', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                { id: 'a', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+            ],
+            ccs: [{ id: 'pedal', controller: 64, value: 127, beat: 1, channel: 0 }],
+        });
+
+        // Delta 480 (83 60) reaches the tick; the three events then share it with delta 0.
+        expect(toHex(lastDownloadedBytes())).toContain('8360803c0000b0407f00903c64');
+    });
+
+    it('does not write a note of no length, which would sort its release ahead of its own start', () => {
+        downloadMidiFile({
+            clipName: 'C',
+            clipStartBeat: 0,
+            notes: [{ id: 'zero', pitch: 60, startBeat: 1, duration: 0, velocity: 100 }],
+            ccs: [{ id: 'cc', controller: 7, value: 80, beat: 0, channel: 0 }],
+        });
+
+        const hex = toHex(lastDownloadedBytes());
+        expect(hex).not.toContain('903c');
+        expect(hex).not.toContain('803c');
+        expect(hex).toContain('00b00750');
+    });
+
     it('warns and truncates a variable-length quantity exceeding the 28-bit SMF limit', () => {
         const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 

@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clampMidiData7, clampVelocity } from '#/utils/midiData';
+import { SAME_FRAME_EVENT_ORDER, type SameFrameEventKind } from '#/utils/sameFrameEventOrder';
 
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 import {
@@ -51,41 +52,55 @@ function write16(value: number): number[] {
 
 type MidiEvent = {
     tick: number;
+    kind: SameFrameEventKind;
     data: number[];
 };
 
 function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: number, trackName: string): number[] {
     const events: MidiEvent[] = [];
 
-    const nameBytes = writeString(trackName);
-    events.push({
-        tick: 0,
-        data: [SMF_META_EVENT, SMF_META_TRACK_NAME, ...writeVarLen(nameBytes.length), ...nameBytes],
-    });
-
     for (const note of notes) {
         const startTick = Math.round((clipStartBeat + note.startBeat) * TICKS_PER_BEAT);
         const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
+        // A note of no ticks is not played. Written, its release would sort ahead
+        // of its own start on the shared tick and leave the note held.
+        if (endTick <= startTick) {
+            continue;
+        }
         const vel = clampVelocity(Math.round(note.velocity));
         const pitch = clampMidiData7(note.pitch);
         const channel = (note.channel ?? 0) & 0x0f;
 
-        events.push({ tick: startTick, data: [SMF_NOTE_ON_STATUS | channel, pitch, vel] });
-        events.push({ tick: endTick, data: [SMF_NOTE_OFF_STATUS | channel, pitch, 0] });
+        events.push({ tick: startTick, kind: 'on', data: [SMF_NOTE_ON_STATUS | channel, pitch, vel] });
+        events.push({ tick: endTick, kind: 'off', data: [SMF_NOTE_OFF_STATUS | channel, pitch, 0] });
     }
 
     for (const cc of ccs) {
         const tick = Math.round((clipStartBeat + cc.beat) * TICKS_PER_BEAT);
         const controller = clampMidiData7(cc.controller);
         const value = clampMidiData7(Math.round(cc.value));
-        events.push({ tick, data: [SMF_CONTROL_CHANGE_STATUS | ((cc.channel ?? 0) & 0x0f), controller, value] });
+        events.push({
+            tick,
+            kind: 'control',
+            data: [SMF_CONTROL_CHANGE_STATUS | ((cc.channel ?? 0) & 0x0f), controller, value],
+        });
     }
 
-    events.sort((alpha, b) => alpha.tick - b.tick);
+    // The order playback posts a frame's events in: release, controller, note-on.
+    events.sort(
+        (left, right) =>
+            left.tick - right.tick || SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind]
+    );
+
+    const nameBytes = writeString(trackName);
+    const trackNameEvent = {
+        tick: 0,
+        data: [SMF_META_EVENT, SMF_META_TRACK_NAME, ...writeVarLen(nameBytes.length), ...nameBytes],
+    };
 
     const trackBytes: number[] = [];
     let lastTick = 0;
-    for (const event of events) {
+    for (const event of [trackNameEvent, ...events]) {
         const delta = Math.max(0, event.tick - lastTick);
         const deltaBytes = writeVarLen(delta);
         for (let index = 0; index < deltaBytes.length; index++) {
