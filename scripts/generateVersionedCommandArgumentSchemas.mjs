@@ -222,6 +222,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Array.prototype.every skips missing slots, so a sparse hole would slip past
+// element validation; every position is checked for presence instead.
+function isDenseArray(value: unknown[]): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function isJsonSafe(value: unknown): boolean {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') {
         return true;
@@ -230,7 +241,7 @@ function isJsonSafe(value: unknown): boolean {
         return Number.isFinite(value);
     }
     if (Array.isArray(value)) {
-        return value.every(isJsonSafe);
+        return isDenseArray(value) && value.every(isJsonSafe);
     }
     return (
         isRecord(value) &&
@@ -272,11 +283,12 @@ function matchesSchema(value: unknown, schemaId: number): boolean {
         return false;
     }
     if (schema.type === 'array') {
-        return Array.isArray(value) && value.every((item) => matchesSchema(item, schema.items));
+        return Array.isArray(value) && isDenseArray(value) && value.every((item) => matchesSchema(item, schema.items));
     }
     if (schema.type === 'tuple') {
         return (
             Array.isArray(value) &&
+            isDenseArray(value) &&
             value.length === schema.items.length &&
             schema.items.every((item, index) => matchesSchema(value[index], item))
         );
