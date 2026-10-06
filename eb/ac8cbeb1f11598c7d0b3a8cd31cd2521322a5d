@@ -1,0 +1,43 @@
+src/utils/deviceTypeMatching.ts
+  s_1c08b47ac3792f::t_056c5a504f97c8 33
+  s_1c08b47ac3792f::t_327be6b4872a9a 34-54
+src/modules/Transport/useCases/scheduling/resolveDrumKit.ts
+  s_1c08b47ac3792f::t_299ec99946369e 2,13
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_1c08b47ac3792f::t_920c23d43803d5 487
+  s_1c08b47ac3792f::t_9be504e903ff01 6
+  s_1c08b47ac3792f::t_5aa1c4328b83a7 468,472-476
+src/modules/Transport/useCases/scheduling/resolveDrumKitDef.ts
+  s_1c08b47ac3792f::t_90197f46adc02e 2,9
+src/modules/AudioEngine/useCases/offlineRender/__tests__/drumKitRenderParity.spec.ts
+  s_1c08b47ac3792f::t_cbd453cd1e2529 246-247
+  s_1c08b47ac3792f::t_7302408a8d8117 1-109,113-228,233-245,248-275,278,281-304
+  s_1c08b47ac3792f::t_5071a8057e1430 110-112,229-232,276-277,279-280
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_1c08b47ac3792f::t_a5ba6c545e2ed6 2
+  s_1c08b47ac3792f::t_f02df1516a2e84 11
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1c08b47ac3792f::t_a04aba8c8b0531 463-465
+  s_1c08b47ac3792f::t_582f889592f3b9 466-467
+  s_1c08b47ac3792f::t_f27832860727aa 16
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_1c08b47ac3792f::t_94853fbb86b859 792-857
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_1c08b47ac3792f::t_1d608bf5f125ca 3-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebac8cbeb1f11598c7d0b3a8cd31cd2521322a5d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
