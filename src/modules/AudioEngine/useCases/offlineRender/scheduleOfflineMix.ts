@@ -5,6 +5,7 @@ import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
+import { createRenderCancelSource } from './createRenderCancelSource';
 import { renderInSegments } from './renderInSegments';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
@@ -19,7 +20,7 @@ type ScheduleInput = {
     offlineCtx: OfflineAudioContext;
     masterGain: GainNode;
     scheduleFrame: ScheduleCall;
-    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning'>;
+    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal'>;
 };
 
 function renderScheduledMix({ plan, graph, offlineCtx, callbacks }: ScheduleInput): Promise<AudioBuffer> {
@@ -47,12 +48,13 @@ function renderScheduledMix({ plan, graph, offlineCtx, callbacks }: ScheduleInpu
         timeoutMs: renderTimeoutMs,
         ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
         onRenderProgress,
+        cancelSource: createRenderCancelSource(callbacks.abortSignal),
     });
 }
 
 export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuffer> {
     const { input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks } = args;
-    const { onWarning, onProgress } = callbacks;
+    const { onWarning, onProgress, abortSignal } = callbacks;
     const { scheduledTracks, sourceTracks, vcaMultiplierByTrackId, renderContext } = plan;
     const {
         tracks,
@@ -76,7 +78,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
     // cue-send-only ones above — while keeping the full routing graph alive so
     // buses, targets, and the master strip behave like live playback.
     for (const track of scheduledTracks) {
-        checkCancel();
+        checkCancel(abortSignal);
 
         const strip = trackStripsById.get(track.id);
         if (!strip) {
@@ -118,6 +120,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
             // Same multiplier the strip was seeded with, so a gain lane on a
             // VCA-member track rides its group instead of nullifying it.
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
+            abortSignal,
         });
 
         scheduled++;
@@ -128,7 +131,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
     // This prevents duplicate suspend() calls when multiple tracks target the same frame.
     schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
 
-    checkCancel();
+    checkCancel(abortSignal);
 
     // Yield so the UI can paint the scheduling-complete mark before startRendering() blocks.
     await yieldToMain();

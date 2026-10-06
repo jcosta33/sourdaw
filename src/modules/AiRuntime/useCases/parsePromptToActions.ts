@@ -15,6 +15,7 @@ import {
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
+import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
@@ -352,7 +353,8 @@ const planPromptIntent = inject({ logger })(
                 creativeAuthority: CreativeRequestAuthority | null;
                 rejectionEvidence?: PlanningRejectionEvidence;
             },
-            providerPlanning: 'enabled' | 'disabled' = 'enabled'
+            providerPlanning: 'enabled' | 'disabled' = 'enabled',
+            onMeasurementAttempt?: MeasurementAdmitter
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
@@ -604,6 +606,7 @@ const planPromptIntent = inject({ logger })(
                                           projectRevision,
                                           sections: context.sections ?? [],
                                           signal: loopSignal,
+                                          admit: onMeasurementAttempt,
                                           // A preview is compiled and grounded against what an adopting
                                           // proposal is: this run's read model, request and authority.
                                           preview: {
@@ -1156,7 +1159,8 @@ export async function parsePromptToActions(
         creativeAuthority: CreativeRequestAuthority | null;
         rejectionEvidence?: PlanningRejectionEvidence;
     },
-    providerPlanning: 'enabled' | 'disabled' = 'enabled'
+    providerPlanning: 'enabled' | 'disabled' = 'enabled',
+    onMeasurementAttempt?: MeasurementAdmitter
 ): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(
         prompt,
@@ -1168,7 +1172,8 @@ export async function parsePromptToActions(
         streamIdentity,
         onProviderAttempt,
         correction,
-        providerPlanning
+        providerPlanning,
+        onMeasurementAttempt
     );
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }

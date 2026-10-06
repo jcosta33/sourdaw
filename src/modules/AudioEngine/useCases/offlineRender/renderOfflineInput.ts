@@ -5,7 +5,7 @@ import { type OfflineRenderOptions } from './types';
 /** Render one explicitly captured full-mix request under the shared export admission lock. */
 export function renderOfflineInput(
     input: ReturnType<typeof captureOfflineRenderInput>,
-    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning'> = {}
+    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal'> = {}
 ): Promise<AudioBuffer> {
     return executeOfflineRender(() => input, callbacks);
 }

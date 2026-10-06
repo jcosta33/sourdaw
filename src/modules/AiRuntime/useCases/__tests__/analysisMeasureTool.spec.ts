@@ -596,12 +596,14 @@ describe('analysis.measure', () => {
         });
     });
 
-    it('cancels the export and the loop when the run is aborted during the render', async () => {
+    it('stops the render and the loop when the run is aborted during the render, without raising the export flag', async () => {
         const controller = new AbortController();
         engine.renderOffline.mockImplementation(
-            () =>
+            (options: { abortSignal?: AbortSignal }) =>
                 new Promise((_resolve, reject) => {
-                    engine.cancelExport.mockImplementation(() => reject(new Error('Export cancelled')));
+                    options.abortSignal?.addEventListener('abort', () => {
+                        reject(new Error('Export cancelled'));
+                    });
                     controller.abort();
                 })
         );
@@ -610,7 +612,7 @@ describe('analysis.measure', () => {
             signal: controller.signal,
         });
 
-        expect(engine.cancelExport).toHaveBeenCalledTimes(1);
+        expect(engine.cancelExport).not.toHaveBeenCalled();
         expect(result).toMatchObject({ status: 'rejected', reason: 'Application-owned tool loop was cancelled.' });
         expect(requestTurn).toHaveBeenCalledTimes(1);
         expect(getAgentMeasurementArtifacts()).toEqual([]);

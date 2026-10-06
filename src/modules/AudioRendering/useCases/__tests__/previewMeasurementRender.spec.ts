@@ -447,7 +447,8 @@ describe('renderAgentPreviewMeasurementScope', () => {
         expectReleased(preview);
     });
 
-    it('retains both documents’ renders against the base revision', async () => {
+    // Retention is the caller's, once it has reported; a render that stops it first must find the store untouched.
+    it('hands back both documents’ renders without retaining them', async () => {
         const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
         engine.renderTrackSubgraphOffline.mockImplementation((request: SubgraphRequest) =>
             Promise.resolve(sineBuffer(trackIn(request.renderTracks, request.targetTrackId).gain))
@@ -458,14 +459,10 @@ describe('renderAgentPreviewMeasurementScope', () => {
         if (result.status !== 'rendered') {
             throw new Error(`Expected a rendered comparison, got ${JSON.stringify(result)}`);
         }
-        const retained = getAgentMeasurementArtifacts().map((artifact) => [
-            artifact.contentAddress,
-            artifact.sourceRevision,
-        ]);
-        expect(retained).toEqual([
-            [result.baseline.targets[0]?.artifact.contentAddress, preview.sourceRevision],
-            [result.preview.targets[0]?.artifact.contentAddress, preview.sourceRevision],
-        ]);
+        expect(result.baseline.targets[0]?.artifact.contentAddress).not.toBe(
+            result.preview.targets[0]?.artifact.contentAddress
+        );
+        expect(getAgentMeasurementArtifacts()).toEqual([]);
     });
 
     // The jsdom `OfflineAudioContext` is a stub that renders no samples, so a

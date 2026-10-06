@@ -14,6 +14,8 @@ export const AGENT_DATA_CATEGORIES = [
     'reference-audio',
     'generated-media',
     'bounce-listening-audio',
+    /** Objective figures the application measured locally from a render: scalars and per-band numbers, never samples. */
+    'measurement',
 ] as const;
 
 export type AgentDataCategory = (typeof AGENT_DATA_CATEGORIES)[number];
@@ -40,6 +42,12 @@ export const REMOTE_TEXT_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = [
     'filename',
     'preset',
 ];
+
+/**
+ * Evidence a request declares only while it carries it. A measurement is local numeric evidence
+ * about audio, admitted for provider transmission where the audio itself never is.
+ */
+export const REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = ['measurement'];
 
 const REMOTE_BLOCKED_CATEGORIES = new Set<AgentDataCategory>([
     'microphone-audio',

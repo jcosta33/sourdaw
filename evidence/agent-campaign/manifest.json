@@ -785,7 +785,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts",
-                    "digest": "9bae7763ee68412614c12b10ffa1a612ac2d4dab94b29494229e939a22e6442e"
+                    "digest": "edb49b3bf3c910a20246f103fda5b748ad961b648f5c2ac7372bed2135627b74"
                 }
             ]
         },

@@ -1,10 +1,8 @@
 import { renderAgentMeasurementTarget, type resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
 import {
-    cancelExport,
     captureOfflineRenderInput,
     renderOffline,
     renderOfflineInput,
-    resetCancelFlag,
     type captureOfflineRenderProjectSource,
 } from '#/modules/AudioEngine/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
@@ -32,6 +30,8 @@ type RenderAgentMeasurementTargetsInput = {
     /** The document the targets were resolved from; absent, the live project renders. */
     project?: ProjectSource;
     onWarning: (message: string) => void;
+    /** Called as each target's render begins, so a caller counts the renders that actually ran. */
+    onRenderStart?: () => void;
 };
 
 type RenderedMeasurementTarget = {
@@ -77,41 +77,23 @@ function renderMixdownBuffer(
     return renderOfflineInput(captureOfflineRenderInput(options, { project }), options);
 }
 
-async function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<AudioBuffer> {
-    // Distinguishes "this abort raised the flag" from "the flag was already
-    // raised by something else" — the second must survive this render untouched.
-    let raisedCancelFlag = false;
-    const cancelActiveRender = () => {
-        raisedCancelFlag = true;
-        cancelExport();
-    };
-    input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
-    try {
-        return await renderMixdownBuffer(
-            {
-                startBeat: input.startBeat,
-                durationBeats: input.endBeat - input.startBeat,
-                sampleRate: ANALYSIS_MEASURE_MIXDOWN_SAMPLE_RATE,
-                tailSeconds: 0,
-                onWarning: input.onWarning,
-            },
-            input.project
-        );
-    } finally {
-        input.signal?.removeEventListener('abort', cancelActiveRender);
-        // The shared render lock (acquired and released inside
-        // `executeOfflineRender`) is already released by the time this render
-        // has settled either way. Nothing else lowers the process-wide cancel
-        // flag until the next mixdown or stem export begins its own scope
-        // (`beginExportCancellationScope`) — without this, a run stopped mid
-        // measurement leaves every later freeze or bounce reading a flag this
-        // measurement raised and failing with "Export cancelled" (scheduleTrackClips's
-        // `checkCancel`). Lower it here, before this render reports its outcome,
-        // and only when this abort is the one that raised it.
-        if (raisedCancelFlag) {
-            resetCancelFlag();
-        }
-    }
+/**
+ * The measurement's own stop reaches the render as its `abortSignal`, never as `cancelExport`: the
+ * export cancel flag is process-wide and a freeze or bounce running beside this render reads it, so
+ * raising it would fail them with "Export cancelled" for a stop nobody asked them to take.
+ */
+function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<AudioBuffer> {
+    return renderMixdownBuffer(
+        {
+            startBeat: input.startBeat,
+            durationBeats: input.endBeat - input.startBeat,
+            sampleRate: ANALYSIS_MEASURE_MIXDOWN_SAMPLE_RATE,
+            tailSeconds: 0,
+            onWarning: input.onWarning,
+            abortSignal: input.signal,
+        },
+        input.project
+    );
 }
 
 async function renderTarget(
@@ -148,6 +130,7 @@ async function renderMeasurementTarget(
     if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
         return refused('stale-revision', target.targetId);
     }
+    input.onRenderStart?.();
     const outcome = await renderTarget(target, input);
     if (outcome.status === 'cancelled' || input.signal?.aborted) {
         return { status: 'cancelled' };
