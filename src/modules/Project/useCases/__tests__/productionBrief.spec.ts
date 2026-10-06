@@ -800,6 +800,43 @@ describe('production brief', () => {
         ).toBe(true);
     });
 
+    it('rejects a range write whose materialized beats overlap a locked range, whatever range form it was asked in', () => {
+        const current = projectStore.value!;
+        projectStore.set({
+            ...current,
+            productionBrief: {
+                ...current.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-chorus',
+                        scope: { kind: 'range', startBeat: 32, endBeat: 48 },
+                        statement: 'Keep Chorus One arrangement fixed',
+                        createdAt: 111,
+                    },
+                ],
+            },
+        });
+        const rangeWrite = (
+            range: { section: string } | { startBeat: number; endBeat: number },
+            resolved: { startBeat: number; endBeat: number }
+        ): AppAction => ({
+            type: 'automateParameterRange',
+            payload: { trackId: 'track-guitar', parameterId: 'gain', range, deltaDb: -6, ...resolved },
+        });
+
+        expect(
+            doesProductionBriefAllowActionBatch([rangeWrite({ section: 'Chorus' }, { startBeat: 40, endBeat: 56 })])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                rangeWrite({ startBeat: 40, endBeat: 56 }, { startBeat: 40, endBeat: 56 }),
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([rangeWrite({ section: 'Verse' }, { startBeat: 48, endBeat: 64 })])
+        ).toBe(true);
+    });
+
     it('rejects indirect time shifts of track- and object-locked content', () => {
         const current = projectStore.value!;
         projectStore.set({

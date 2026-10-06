@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 // this spec never exercises (Automation, ElasticAudio); the barrel-mock
 // coverage check needs it named here even though no test calls it.
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: mocks.executeAppAction,
     pushUndoEntry: mocks.pushUndoEntry,
 }));

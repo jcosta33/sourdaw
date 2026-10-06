@@ -9,6 +9,7 @@ import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
 const dispatched: { type: string; payload: unknown }[] = [];
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     executeUserAppAction: (action: { type: string; payload: unknown }) => {

@@ -23,6 +23,7 @@ const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.ho
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,

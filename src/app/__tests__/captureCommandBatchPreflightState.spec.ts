@@ -30,6 +30,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
+    readMusicalRange: vi.fn(),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },

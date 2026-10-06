@@ -40,6 +40,7 @@ export const CREATE_OPERATIONS = new Set([
     'automateSendRange',
     'automateSendRanges',
     'automateTrackGainRange',
+    'automateParameterRange',
     'renderProjectSections',
     'addMarker',
     'addSection',
@@ -57,6 +58,7 @@ export const DELETE_OPERATIONS = new Set([
     'arpeggiate',
     'thinAutomation',
     'quantizeAutomation',
+    'automateParameterRange',
 ]);
 export const ROUTING_OPERATIONS = new Set([
     'createBus',
@@ -123,6 +125,11 @@ function getAutomationPointCount(command: VersionedCommandEnvelope): number {
     }
     if (command.operation === 'automateSendRanges') {
         return arrayLength(command.arguments.trackIds) * arrayLength(command.arguments.sectionIds) * 2;
+    }
+    if (command.operation === 'automateParameterRange') {
+        // At most: the opening point, the start value a ramp leaves from, the two ends of the held
+        // target, and the closing point.
+        return 5;
     }
     return 0;
 }

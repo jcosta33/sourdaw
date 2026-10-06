@@ -167,6 +167,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRangeInputs: vi.fn(() => []),
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
@@ -177,6 +178,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // reachable import as required, even one only read inside a function body
     // this spec's tests never call.
     persistDeviceParam: vi.fn(),
+    readMusicalRange: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
     getTrackEligibility: vi.fn(),
     gainEnvelopeStore: { value: null },

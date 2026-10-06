@@ -1,12 +1,24 @@
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type AutomationLane } from '../../models/Automation';
 import { removeAutomationLane } from '../../useCases/automation/removeAutomationLane';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { automationPointSnapshotsMatch } from './automationPointSnapshotsMatch';
+
+type RemoveAutomationLanePayload = Extract<AppAction, { type: 'removeAutomationLane' }>['payload'];
+
 function findLane(laneId: string): AutomationLane | undefined {
     return getAutomationStoreState()?.lanes.find((lane) => lane.id === laneId);
+}
+
+/**
+ * Whether the lane holds exactly what the inverse that created it says it wrote. A lane created
+ * with its points is removed with them, and only while no other edit has touched them.
+ */
+function holdsOnlyItsCreatedPoints(lane: AutomationLane, payload: RemoveAutomationLanePayload): boolean {
+    return payload.expectedPoints !== undefined && automationPointSnapshotsMatch(lane.points, payload.expectedPoints);
 }
 
 function getPointIdsRemovedEarlierInBatch(laneId: string, context: HandlerValidationContext | undefined): Set<string> {
@@ -37,14 +49,19 @@ function holdsOnlyPointsRemovedEarlierInBatch(
 }
 
 /** Whether the removal may run: the lane is already gone, or it holds nothing the batch leaves behind. */
-function canRemoveLane(laneId: string, context: HandlerValidationContext | undefined): boolean {
-    const lane = findLane(laneId);
-    return lane === undefined || holdsOnlyPointsRemovedEarlierInBatch(lane, context);
+function canRemoveLane(payload: RemoveAutomationLanePayload, context: HandlerValidationContext | undefined): boolean {
+    const lane = findLane(payload.laneId);
+    return (
+        lane === undefined ||
+        holdsOnlyItsCreatedPoints(lane, payload) ||
+        holdsOnlyPointsRemovedEarlierInBatch(lane, context)
+    );
 }
 
 /**
- * Inverse-action handler for `addAutomationLane`. Removes the lane created under
- * the exact id allocated before the original action executes.
+ * Inverse-action handler for `addAutomationLane`, and for a range write that
+ * created its lane. Removes the lane created under the exact id allocated before
+ * the original action executes.
  *
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  *
@@ -53,7 +70,8 @@ function canRemoveLane(laneId: string, context: HandlerValidationContext | undef
  * is already gone leaves nothing to undo: the removal is a no-op, so undo
  * consumes it instead of wedging history on it. A lane still holding a point
  * someone else added is a conflict: the removal writes nothing and the undo is
- * reported, because removing it would take that edit with it.
+ * reported, because removing it would take that edit with it. A lane its creator
+ * wrote points into is removed with exactly those points, and with nothing else.
  */
 export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>({
     execute: (action) => {
@@ -62,7 +80,7 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
         if (!lane) {
             return { status: 'no-write' };
         }
-        if (lane.points.length > 0) {
+        if (lane.points.length > 0 && !holdsOnlyItsCreatedPoints(lane, action.payload)) {
             return { status: 'conflict' };
         }
         removeAutomationLane(lane.id);
@@ -70,8 +88,8 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
     },
     isNoop: (action) => findLane(action.payload.laneId) === undefined,
     canReportConflict: true,
-    validate: (action, context) => canRemoveLane(action.payload.laneId, context),
-    canReapplyAfterDivergence: (action, context) => canRemoveLane(action.payload.laneId, context),
+    validate: (action, context) => canRemoveLane(action.payload, context),
+    canReapplyAfterDivergence: (action, context) => canRemoveLane(action.payload, context),
     describe: () => ({ label: 'Remove automation lane' }),
     undoable: false,
 });

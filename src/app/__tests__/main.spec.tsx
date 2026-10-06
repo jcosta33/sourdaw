@@ -143,6 +143,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     isAppActionConflictError: vi.fn(() => false),
     setCommandEventBus: mocks.setCommandEventBus,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

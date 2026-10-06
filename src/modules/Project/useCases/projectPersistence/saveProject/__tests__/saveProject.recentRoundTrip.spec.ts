@@ -163,6 +163,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    getExecutableAppActionEffect: vi.fn(() => null),
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
