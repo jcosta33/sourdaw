@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { startCrdtAutoSave } from '../startCrdtAutoSave';
+import { autoSaveHealth, startCrdtAutoSave } from '../startCrdtAutoSave';
 
 const { compactProject, logger, onChange, persistCrdtProject, unsubscribe } = vi.hoisted(() => ({
     compactProject: vi.fn<() => Promise<void>>(),
@@ -26,6 +26,7 @@ describe('startCrdtAutoSave', () => {
         unsubscribe.mockClear();
         logger.error.mockClear();
         logger.warn.mockClear();
+        autoSaveHealth.consecutiveFailures = 0;
     });
 
     afterEach(() => {
@@ -209,6 +210,105 @@ describe('startCrdtAutoSave', () => {
         window.dispatchEvent(new Event('pagehide'));
         await vi.advanceTimersByTimeAsync(5_000);
         expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('retries a failed incremental persist while the document is idle', async () => {
+        persistCrdtProject.mockRejectedValueOnce(new Error('transient persist failure'));
+
+        const stop = startCrdtAutoSave();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(compactProject).toHaveBeenCalledOnce();
+
+        const listener = onChange.mock.calls[0]?.[0];
+        if (!listener) {
+            throw new Error('Expected a repository change listener');
+        }
+        listener();
+        await vi.advanceTimersByTimeAsync(2_000);
+        const failedPersist = persistCrdtProject.mock.results[0]?.value;
+        if (!failedPersist) {
+            throw new Error('Expected the incremental persist');
+        }
+        await failedPersist.catch(() => undefined);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        expect(autoSaveHealth.consecutiveFailures).toBe(1);
+        expect(logger.warn).toHaveBeenCalledOnce();
+        expect(logger.error).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(249);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        const retriedPersist = persistCrdtProject.mock.results[1]?.value;
+        if (!retriedPersist) {
+            throw new Error('Expected the idle retry persist');
+        }
+        await retriedPersist;
+        expect(autoSaveHealth.consecutiveFailures).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+
+        stop();
+    });
+
+    it('does not run a pending incremental retry after the auto-save lifecycle stops', async () => {
+        persistCrdtProject.mockRejectedValue(new Error('persist failed'));
+
+        const stop = startCrdtAutoSave();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(compactProject).toHaveBeenCalledOnce();
+
+        const listener = onChange.mock.calls[0]?.[0];
+        if (!listener) {
+            throw new Error('Expected a repository change listener');
+        }
+        listener();
+        await vi.advanceTimersByTimeAsync(2_000);
+        const failedPersist = persistCrdtProject.mock.results[0]?.value;
+        if (!failedPersist) {
+            throw new Error('Expected the incremental persist');
+        }
+        await failedPersist.catch(() => undefined);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+        stop();
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('coalesces a pending incremental retry with a newer edit into one persist', async () => {
+        persistCrdtProject.mockRejectedValueOnce(new Error('transient persist failure'));
+
+        const stop = startCrdtAutoSave();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(compactProject).toHaveBeenCalledOnce();
+
+        const listener = onChange.mock.calls[0]?.[0];
+        if (!listener) {
+            throw new Error('Expected a repository change listener');
+        }
+        listener();
+        await vi.advanceTimersByTimeAsync(2_000);
+        const failedPersist = persistCrdtProject.mock.results[0]?.value;
+        if (!failedPersist) {
+            throw new Error('Expected the incremental persist');
+        }
+        await failedPersist.catch(() => undefined);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+        listener();
+        await vi.advanceTimersByTimeAsync(250);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(1_750);
+        expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+        const coalescedPersist = persistCrdtProject.mock.results[1]?.value;
+        if (!coalescedPersist) {
+            throw new Error('Expected the coalesced persist');
+        }
+        await coalescedPersist;
+
+        stop();
         expect(vi.getTimerCount()).toBe(0);
     });
 });

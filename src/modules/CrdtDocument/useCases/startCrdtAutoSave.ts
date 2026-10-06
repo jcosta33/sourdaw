@@ -13,6 +13,8 @@ import { persistCrdtProject } from './persistCrdtProject';
 const DEBOUNCE_MS = 2_000;
 const INITIAL_DURABILITY_RETRY_MS = 250;
 const MAX_DURABILITY_RETRY_MS = 30_000;
+const INITIAL_INCREMENTAL_RETRY_MS = 250;
+const MAX_INCREMENTAL_RETRY_MS = 30_000;
 /**
  * Upper bound on persistence lag while edits keep arriving. The plain
  * debounce re-arms on every change, so a continuous edit gesture (long
@@ -23,10 +25,14 @@ const MAX_DURABILITY_RETRY_MS = 30_000;
  */
 const MAX_WAIT_MS = 10_000;
 
-const autoSaveHealth = { consecutiveFailures: 0 };
+export const autoSaveHealth = { consecutiveFailures: 0 };
 
 export function startCrdtAutoSave(): () => void {
     let incrementalTimer: ReturnType<typeof setTimeout> | null = null;
+    let incrementalRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let incrementalPersistRunning = false;
+    let incrementalPersistQueued = false;
+    let incrementalRetryMs = INITIAL_INCREMENTAL_RETRY_MS;
     let durabilityTimer: ReturnType<typeof setTimeout> | null = null;
     let durabilityAttemptRunning = false;
     let durabilityRetryMs = INITIAL_DURABILITY_RETRY_MS;
@@ -102,10 +108,39 @@ export function startCrdtAutoSave(): () => void {
         }
     }
 
+    function cancelIncrementalRetry(): void {
+        if (incrementalRetryTimer !== null) {
+            clearTimeout(incrementalRetryTimer);
+            incrementalRetryTimer = null;
+        }
+    }
+
+    function scheduleIncrementalRetry(): void {
+        if (isStopped() || incrementalRetryTimer !== null || incrementalTimer !== null) {
+            return;
+        }
+        const delay = incrementalRetryMs;
+        incrementalRetryMs = Math.min(incrementalRetryMs * 2, MAX_INCREMENTAL_RETRY_MS);
+        incrementalRetryTimer = setTimeout(() => {
+            incrementalRetryTimer = null;
+            runIncrementalPersist();
+        }, delay);
+    }
+
     function runIncrementalPersist(): void {
+        if (isStopped()) {
+            return;
+        }
+        if (incrementalPersistRunning) {
+            incrementalPersistQueued = true;
+            return;
+        }
+        incrementalPersistRunning = true;
         persistCrdtProject()
             .then(() => {
                 autoSaveHealth.consecutiveFailures = 0;
+                incrementalRetryMs = INITIAL_INCREMENTAL_RETRY_MS;
+                cancelIncrementalRetry();
                 return null;
             })
             .catch((error) => {
@@ -121,7 +156,25 @@ export function startCrdtAutoSave(): () => void {
                         )
                     );
                 }
+                if (!incrementalPersistQueued) {
+                    scheduleIncrementalRetry();
+                }
                 return null;
+            })
+            .finally(() => {
+                incrementalPersistRunning = false;
+                if (isStopped()) {
+                    incrementalPersistQueued = false;
+                    return;
+                }
+                if (!incrementalPersistQueued) {
+                    return;
+                }
+                incrementalPersistQueued = false;
+                if (incrementalTimer !== null || incrementalRetryTimer !== null) {
+                    return;
+                }
+                runIncrementalPersist();
             });
     }
 
@@ -129,6 +182,7 @@ export function startCrdtAutoSave(): () => void {
         if (isStopped()) {
             return;
         }
+        cancelIncrementalRetry();
         const now = Date.now();
         if (burstStartMs === null) {
             burstStartMs = now;
@@ -166,6 +220,7 @@ export function startCrdtAutoSave(): () => void {
         clearTimeout(incrementalTimer);
         incrementalTimer = null;
         burstStartMs = null;
+        cancelIncrementalRetry();
         runIncrementalPersist();
     }
 
@@ -196,6 +251,7 @@ export function startCrdtAutoSave(): () => void {
 
     return () => {
         stopped = true;
+        incrementalPersistQueued = false;
         try {
             unsubscribe();
         } finally {
@@ -209,6 +265,7 @@ export function startCrdtAutoSave(): () => void {
                 clearTimeout(incrementalTimer);
                 incrementalTimer = null;
             }
+            cancelIncrementalRetry();
             if (durabilityTimer !== null) {
                 clearTimeout(durabilityTimer);
                 durabilityTimer = null;
