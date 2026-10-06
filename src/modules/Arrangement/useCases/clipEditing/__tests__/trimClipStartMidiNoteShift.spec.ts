@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { getNotesForClip } from '#/modules/MIDI/useCases';
 
 import { createTrack } from '../../../models/Track';
 import { trimClipStart } from '../trimClipStart';
@@ -100,6 +102,7 @@ describe('trimClipStart keeps a looped MIDI clip inside its loop', () => {
 
     afterEach(() => {
         trackStore.set(structuredClone(defaultTrackState));
+        midiStore.set(structuredClone(defaultMidiStoreState));
     });
 
     it('control: trimming within the loop keeps the media origin like an unlooped clip', () => {
@@ -135,5 +138,29 @@ describe('trimClipStart keeps a looped MIDI clip inside its loop', () => {
         // loop's head notes (relative `>= loopLength`) at every iteration; the wrapped
         // figure carries the same phase without the drop.
         expect(trimmed.midiOffsetBeats).toBe(6);
+    });
+
+    it('moving the offset with the wrap shifts the stored notes by the same distance', () => {
+        seed([loopedClip('c-keys', 't-keys', 4, 12)]);
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: { 'c-keys': [{ id: 'n-beat-8', pitch: 60, startBeat: 4, duration: 0.25, velocity: 100 }] },
+        });
+
+        expect(trimClipStart('c-keys', 2)).toBe(true);
+
+        // The wrap moved the offset up by one loop, so the note's media figure moves
+        // up with it: `note.startBeat - midiOffsetBeats` stays the raw advance's
+        // relative (4 - (-2) = 6) instead of drifting to the wrapped -2.
+        expect(readClip('c-keys').midiOffsetBeats).toBe(6);
+        expect(getNotesForClip('c-keys').map((note) => note.startBeat)).toEqual([12]);
+
+        expect(trimClipStart('c-keys', 6)).toBe(true);
+
+        // The raw advance is 10, which wraps down by one loop; the note comes back
+        // to media 4 and its raw relative stays 2 instead of the wrapped 10 that
+        // every scheduler drop gate would discard.
+        expect(readClip('c-keys').midiOffsetBeats).toBe(2);
+        expect(getNotesForClip('c-keys').map((note) => note.startBeat)).toEqual([4]);
     });
 });
