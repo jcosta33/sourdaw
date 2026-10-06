@@ -1,6 +1,7 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import {
     captureGestureBeat,
+    MAX_PROJECTION_SECONDS,
     playheadWrapCountRef,
     readSecondsAtBeat,
     transportStore,
@@ -96,7 +97,8 @@ function invertTravelToSeam(elapsedSeconds: number, loopStart: number, loopEnd: 
  * keeps the now-beat. Backwards travel is bounded by the roll's ACTUAL
  * traversal — the integrated distance the transport has covered since the
  * rolling epoch (the store position the playing transition wrote) to the
- * cursor, taken around the loop when looping: the scheduler publishes the
+ * cursor, taken around the loop whenever the roll has been wrapping, a loop
+ * disabled mid-roll included: the scheduler publishes the
  * wrap count beside the cursor, so a roll that has not wrapped bounds at the
  * direct epoch-to-cursor distance (no seam re-entry exists to charge), and a
  * wrapped roll bounds at the epoch-to-seam span plus every completed pass
@@ -129,8 +131,15 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
     }
 
     const loopLengthBeats = transport.loopEnd - transport.loopStart;
-    const insideLoopRegion =
-        transport.isLooping && loopLengthBeats > 0 && beatNow >= transport.loopStart && beatNow < transport.loopEnd;
+    // The pass-aware branches key on the cursor riding the region geometry,
+    // not on the loop still being enabled. A loop disabled mid-roll leaves the
+    // roll's completed passes in the count, and the wrapped cursor below the
+    // epoch is on a pass that began at loopStart — the direct epoch bound
+    // would read a negative span and clamp every event to the epoch (#4668).
+    // A roll whose loop was already off at the epoch carries a zero count, so
+    // its `wrapsSinceEpoch <= 0` branch answers the same straight
+    // epoch-to-cursor line the direct bound does.
+    const ridesRegionGeometry = loopLengthBeats > 0 && beatNow >= transport.loopStart && beatNow < transport.loopEnd;
 
     // The rolling epoch's own origin: the playing transition (a start, or a
     // seek's scheduler restart) writes the store position exactly at the epoch
@@ -156,14 +165,24 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
     // The seam window: between the seam instant and the arrival tick that
     // increments the count, the publisher clamps the dying-pass pair at
     // `loopEnd` (`startPlayheadScheduler`'s pending-seam publish) but the
-    // projection above integrates past it, so `insideLoopRegion` reads false
-    // and the direct bound below would charge a multi-wrap roll zero of its
-    // completed passes — the same event answering the epoch before the grain
-    // and its own dying-pass beat after it. A counted wrap beside a cursor at
-    // or past `loopEnd` is that window, never a play-through: a roll past the
-    // region end plays straight and the scheduler never counts it a wrap.
+    // projection above integrates past it, so `ridesRegionGeometry` reads
+    // false and the direct bound below would charge a multi-wrap roll zero of
+    // its completed passes — the same event answering the epoch before the
+    // grain and its own dying-pass beat after it. What dates the window is
+    // the overshoot: the clamp pins the published pair at the seam and the
+    // projection covers at most one `MAX_PROJECTION_SECONDS` grain of travel
+    // past it before the arrival tick moves the count and drops the cursor
+    // back inside the region. A counted wrap beside a cursor further than
+    // that grain past `loopEnd` is a straight play-through instead — a region
+    // shrunk below a wrapped cursor mid-roll (the ruler drag writes no epoch
+    // and zeroes no count) leaves stale wraps beside a cursor that never
+    // hands over (#4935 review) — and keeps the direct bound.
     const inSeamWindow =
-        transport.isLooping && loopLengthBeats > 0 && wrapsSinceEpoch >= 1 && beatNow >= transport.loopEnd;
+        transport.isLooping &&
+        loopLengthBeats > 0 &&
+        wrapsSinceEpoch >= 1 &&
+        beatNow >= transport.loopEnd &&
+        travelSeconds(transport.loopEnd, beatNow) <= MAX_PROJECTION_SECONDS;
     if (inSeamWindow) {
         // The overshoot past the seam stands in for the incoming pass's
         // distance — the same quantity the post-arrival branch reads off the
@@ -190,7 +209,7 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
         return invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd);
     }
 
-    if (!insideLoopRegion) {
+    if (!ridesRegionGeometry) {
         return travelBackBounded(elapsedSeconds, epochStartBeat);
     }
 

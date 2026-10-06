@@ -13,8 +13,11 @@ import { updateTransportState } from '../../../repositories/transport/updateTran
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
-// Real, not mocked: `generation` is the identity the hold compares, so bumping
-// the live holder is the only way to test the relation it actually reads.
+// Real by default: `generation` is the identity the hold compares, so bumping
+// the live holder is the only way to test the relation it actually reads. The
+// `vi.fn` wrapper exists so one case can stand the claim's own wrap-count zero
+// down and isolate the epoch write's; `mockReset` hands the real one back.
+import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
@@ -57,6 +60,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
+vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
+    return { claimSchedulerSession: vi.fn(actual.claimSchedulerSession) };
+});
 vi.mock('../../ensureTrackStrips', () => ({
     ensureTrackStrips: vi.fn(),
 }));
@@ -86,6 +93,8 @@ describe('startPlayback', () => {
         vi.mocked(notifyUser).mockClear();
         vi.mocked(startPlayheadScheduler).mockClear();
         vi.mocked(ensureTrackStrips).mockClear();
+        // Back to the real retirement: only the one isolation case overrides it.
+        vi.mocked(claimSchedulerSession).mockReset();
     });
 
     it('should resume engine and mark playing when state exists', () => {
@@ -505,16 +514,27 @@ describe('startPlayback', () => {
             // session and writes a fresh epoch before the hold opens. The
             // scheduler that resets the count beside its own clock anchor only
             // starts after the hold, so a capture in the hold would otherwise
-            // bound old events by the dead roll's wraps.
-            playheadWrapCountRef.current = 2;
+            // bound old events by the dead roll's wraps. The claim zeroes the
+            // count too, so its zero is stood down here — the retirement kept —
+            // or this case could not tell the epoch write's zero from the
+            // claim's. `claimSchedulerSession.spec.ts` pins the claim's zero.
+            vi.mocked(claimSchedulerSession).mockImplementation(() => {
+                schedulerSession.generation += 1;
+                return schedulerSession.generation;
+            });
+            try {
+                playheadWrapCountRef.current = 2;
 
-            startPlayback();
+                startPlayback();
 
-            // The epoch write and the reset are synchronous, and the session
-            // has not answered, so the zero below can only have come from the
-            // epoch write.
-            expect(startPlayheadScheduler).not.toHaveBeenCalled();
-            expect(playheadWrapCountRef.current).toBe(0);
+                // The epoch write and the reset are synchronous, and the session
+                // has not answered, so the zero below can only have come from
+                // the epoch write beside it.
+                expect(startPlayheadScheduler).not.toHaveBeenCalled();
+                expect(playheadWrapCountRef.current).toBe(0);
+            } finally {
+                vi.mocked(claimSchedulerSession).mockReset();
+            }
         });
 
         it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {

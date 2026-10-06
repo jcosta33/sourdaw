@@ -6,7 +6,7 @@ export { playheadClockRef } from './playheadClockRef';
 export { playheadWrapCountRef } from './playheadWrapCountRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
-export { captureGestureBeat } from './captureGestureBeat';
+export { captureGestureBeat, MAX_PROJECTION_SECONDS } from './captureGestureBeat';
 export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
 
 export type { TempoMapStoreState } from './tempoMapStore';

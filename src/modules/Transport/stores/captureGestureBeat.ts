@@ -43,7 +43,7 @@ import { transportStore } from './transportStore';
  * claim beats the scheduler deliberately declines to advance through, so the
  * capture stays bounded to the same grain window the next tick will admit.
  */
-const MAX_PROJECTION_SECONDS = 0.1;
+export const MAX_PROJECTION_SECONDS = 0.1;
 
 export function captureGestureBeat(): number {
     const transport = transportStore.value;

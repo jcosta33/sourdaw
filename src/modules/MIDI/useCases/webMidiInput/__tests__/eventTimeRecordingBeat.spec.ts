@@ -284,6 +284,99 @@ describe('event-time recording beat (#4875)', () => {
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7, 9);
     });
 
+    // #4935 review — the seam-window fingerprint is bounded by one projection
+    // grain. A cursor playing STRAIGHT past a region shrunk below it mid-roll
+    // (the ruler drag writes no epoch and zeroes no count) carries stale wraps
+    // and stands arbitrarily far past loopEnd: that is a play-through, not a
+    // seam handover, and keeps the direct epoch bound.
+    it('keeps a straight pass past a region shrunk below it on the direct bound', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 4, playheadPosition: 7 });
+        // The roll wrapped the old [0, 8) region three times before the ruler
+        // drag; the dragged region leaves the straight cursor (9) five beats
+        // past the new loop end, and the note is 100 ms old.
+        cursorAt(9);
+        wrapsSinceEpochStart(3);
+
+        await dispatch([0x91, 60, 100], 1000);
+
+        // The unbounded fingerprint answered 0, loopStart; the note belongs
+        // 0.2 beats back from the straight cursor.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(8.8, 9);
+    });
+
+    // #4935 review — a loop disabled mid-roll leaves the roll's completed
+    // passes in the count: the wrapped cursor below the epoch rides a pass
+    // that began at loopStart, so the direct epoch bound reads a negative
+    // span and clamps every event to the epoch.
+    it('inverts on the current pass when the loop is disabled below the epoch', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The roll ran epoch 7 to the seam, wrapped twice, and the loop was
+        // turned off on the third pass; the cursor stands at 3 and the note
+        // is 25 ms old — 0.05 beats at 120 BPM.
+        cursorAt(3);
+        wrapsSinceEpochStart(2);
+
+        await dispatch([0x91, 60, 100], 1075);
+
+        // The negative direct span answered 7, the epoch.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(2.95, 9);
+    });
+
+    // The disabled roll's earlier passes stay invertible too: a stamp older
+    // than the current pass but within the roll's traversal sits on a pass
+    // the transport DID cover while the loop was still on.
+    it('inverts a disabled-loop stamp onto an earlier pass it traversed', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // The cursor re-entered at loopStart 0.15 s ago; the stamp is 0.5 s
+        // old — 0.35 s before the last wrap, on the pass before it.
+        cursorAt(0.3);
+        wrapsSinceEpochStart(2);
+
+        await dispatch([0x91, 60, 100], 600);
+
+        // The negative direct span answered 7, the epoch.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.3, 9);
+    });
+
+    // The disabled roll's bound is its actual traversal — epoch to the first
+    // seam, every completed pass, and the current pass's distance — so a
+    // stamp older than all of it still predates the roll.
+    it('answers a disabled-loop stamp older than the whole traversal with the epoch', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 0.4, playheadPosition: 0.3 });
+        // The roll has travelled 0.3 s — the 0.05 s to the seam, one full
+        // 0.2 s pass, and 0.05 s of the current one; the stamp is 0.8 s old.
+        cursorAt(0.1);
+        wrapsSinceEpochStart(2);
+
+        await dispatch([0x91, 60, 100], 300);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.3, 9);
+    });
+
+    // Control — a roll whose loop was already off at the epoch carries a zero
+    // count beside it: the region geometry alone must not engage the
+    // pass-aware bound, and the plain non-looping answers stand.
+    it('keeps a plain non-looping roll on the direct epoch answers', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        cursorAt(7.5);
+        // wrapsSinceEpochStart stays 0: the loop was off before the roll began.
+
+        await dispatch([0x91, 60, 100], 1050);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.4, 9);
+    });
+
+    it('answers a plain non-looping stamp older than the roll with the epoch', async () => {
+        playTransport({ isLooping: false, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        // 0.25 s of travel since the epoch; the stamp is 0.9 s old.
+        cursorAt(7.5);
+        // wrapsSinceEpochStart stays 0.
+
+        await dispatch([0x91, 60, 100], 200);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7, 9);
+    });
+
     // #4668 review — the same-pass floor compared the epoch beat against the
     // cursor beat, which on a later pass reads the epoch (7) as "in this
     // pass": young events clamped to it instead of inverting within the pass.
