@@ -2,9 +2,11 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { playheadPositionRef } from './playheadPositionRef';
+export { playheadClockRef } from './playheadClockRef';
+export { playheadWrapCountRef } from './playheadWrapCountRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
-export { captureGestureBeat } from './captureGestureBeat';
+export { captureGestureBeat, MAX_PROJECTION_SECONDS } from './captureGestureBeat';
 export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
 
 export type { TempoMapStoreState } from './tempoMapStore';

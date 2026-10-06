@@ -26,6 +26,7 @@ import { type TransportState } from '../../models/TransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
@@ -262,6 +263,10 @@ export function startPlayheadScheduler(): void {
     playheadClockRef.beat = state.playheadPosition;
     playheadClockRef.audioTimeSeconds = ctx.currentTime;
     playheadPositionRef.current = state.playheadPosition;
+    // A new roll begins at this store position, so its wrap history starts
+    // here too: the count must describe the same epoch the store position
+    // does, or a backwards capture bounds at the wrong traversal.
+    playheadWrapCountRef.current = 0;
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
     schedulerSession.lastLoopSignature = loopSignatureOf(state);
@@ -642,6 +647,12 @@ export function startPlayheadScheduler(): void {
         // material *this* scheduler emitted, against its own clock (ADR 0039).
         if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
             schedulerSession.pendingSeam = null;
+            // The seam instant has passed: the pass the published clock has
+            // shown until now ended, and `publishedBeat` below is the first
+            // wrapped one. Counting here — not at the look-ahead seam
+            // detection — keeps the count on the same page as the cursor a
+            // reader sees beside it.
+            playheadWrapCountRef.current += 1;
         }
         let publishedBeat = newPosition;
         if (seam) {
@@ -668,6 +679,13 @@ export function startPlayheadScheduler(): void {
         // scheduling clock; the rest of the time there is no engine reading and
         // the two are the same number.
         playheadPositionRef.current = readNativeEngineCursorBeats() ?? publishedBeat;
+        // A late wrap (or the seam-edit re-anchor) commits its wrapped position
+        // this tick, so the published beat above is the first wrapped one and
+        // the wrap count moves with it. The scheduled seam counts where its
+        // instant arrives instead — see the pendingSeam clear above.
+        if (lateWrap) {
+            playheadWrapCountRef.current += 1;
+        }
 
         // Sync to AudioEngine for real-time DSP (SAB-backed).
         //

@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+import { type RealtimeMidiInput } from '../../../repositories/webMidi/realtimeMidiProcessorState';
 
 const target_track_id = vi.hoisted<{ value: string | null }>(() => ({ value: 'track-1' }));
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
@@ -16,6 +17,8 @@ const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
 type TestMidiEvent = {
     timeSamples: number;
+    noteInstanceId?: string;
+    durationSamples?: number;
     kind:
         | { type: 'noteOn'; channel: number; note: number; velocity: number }
         | { type: 'noteOff'; channel: number; note: number };
@@ -333,6 +336,62 @@ describe('handleWebMidiNoteOn', () => {
             2,
             expect.objectContaining({ isNoteOn: false, noteInstanceId })
         );
+    });
+
+    // The instance-keyed guard in the drained stream: a note-off whose
+    // instance id resolves nowhere in the shared registry — a repeat, or an
+    // unknown identity — must stop there, not fall through to the source-pitch
+    // step release the batch's own captured voice holds at that pitch.
+    it('keeps the captured step voice when a drained instance-keyed note-off resolves nowhere', async () => {
+        const fermenter_note_on =
+            vi.fn<(note: number, velocity: number, sampleFrame?: number, channel?: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    // The source pitch's step voice: a generated note-on
+                    // without an instance id captures into the note's own
+                    // release map.
+                    { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                    // A stale or unknown generated identity: the registry
+                    // holds no such voice on this route.
+                    {
+                        timeSamples: 96_480,
+                        noteInstanceId: 'arp-1:ghost:1',
+                        kind: { type: 'noteOff', channel: 0, note: 67 },
+                    },
+                ],
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'ferm-1',
+                    fermenterControls: { noteOn: fermenter_note_on, noteOff: fermenter_note_off },
+                },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        expect(fermenter_note_on).toHaveBeenCalledWith(67, 100, 96_240, 0);
+        // The unresolved instance note-off is consumed by the guard; the step
+        // voice captured above survives it.
+        expect(fermenter_note_off).not.toHaveBeenCalled();
     });
 
     it('dispatches a missed Yeast deadline at the current AudioContext frame', async () => {
@@ -862,6 +921,152 @@ describe('handleWebMidiNoteOn', () => {
             expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.osc).toBe(oscillator);
             expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.faustRelease).toBeUndefined();
         });
+    });
+
+    it('voices a drained generated note-off through the voice its note-on captured (#4870)', async () => {
+        let drainEvents: ((events: TestMidiEvent[]) => boolean | void) | undefined;
+        const grand_boule_note_on = vi.fn<(note: number, velocity: number, sampleFrame?: number) => void>();
+        const grand_boule_note_off =
+            vi.fn<(note: number, sampleFrame?: number, velocity?: number, channel?: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (input: RealtimeMidiInput) => {
+                    drainEvents = input.onDrainedEvents;
+                    return [
+                        {
+                            timeSamples: 96_240,
+                            noteInstanceId: 'arp-1:generated:1',
+                            durationSamples: 33_600,
+                            kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                        },
+                    ];
+                },
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: { noteOn: grand_boule_note_on, noteOff: grand_boule_note_off },
+                },
+            ],
+        });
+
+        await fn(0, 60, 100);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240, 0);
+        expect(drainEvents).toBeTypeOf('function');
+
+        // Later, the idle drain hands back the note-off the arpeggiator queued
+        // for a block no transport scheduler will ever process (transport
+        // stopped, no active clip).
+        drainEvents?.([
+            {
+                timeSamples: 129_840,
+                noteInstanceId: 'arp-1:generated:1',
+                kind: { type: 'noteOff', channel: 0, note: 67 },
+            },
+        ]);
+
+        expect(grand_boule_note_off).toHaveBeenCalledWith(67, 129_840, undefined, 0);
+    });
+
+    it('stops voicing drained events after the input was reset (#4870)', async () => {
+        let drainEvents: ((events: TestMidiEvent[]) => boolean | void) | undefined;
+        const grand_boule_note_off = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (input: RealtimeMidiInput) => {
+                    drainEvents = input.onDrainedEvents;
+                    return [
+                        {
+                            timeSamples: 96_240,
+                            noteInstanceId: 'arp-1:generated:1',
+                            kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                        },
+                    ];
+                },
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: { noteOn: vi.fn(), noteOff: grand_boule_note_off },
+                },
+            ],
+        });
+
+        await fn(0, 60, 100);
+        resetChannelControllerState();
+
+        // A stale pump's batch after the reset voices nothing and cancels the
+        // drain that produced it.
+        expect(drainEvents?.([{ timeSamples: 129_840, kind: { type: 'noteOff', channel: 0, note: 67 } }])).toBe(false);
+        expect(grand_boule_note_off).not.toHaveBeenCalled();
+    });
+
+    it('honors a generated note lifetime on the builtin fallback voice instead of 0.5 s (#4870)', async () => {
+        const schedule_note = vi.fn(() => null);
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'yeast-1', type: 'yeast' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                scheduleNote: schedule_note,
+                processRealtimeMidiInput: async () => [
+                    {
+                        timeSamples: 96_240,
+                        noteInstanceId: 'arp-1:generated:1',
+                        durationSamples: 33_600,
+                        kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+                    },
+                ],
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 60, 100);
+
+        // 33600 samples at 48 kHz — the arpeggiator's held lifetime — not the
+        // fixed half-second the fallback used to clamp it to.
+        expect(schedule_note).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            67,
+            96_240 / 48_000,
+            33_600 / 48_000,
+            100,
+            expect.anything()
+        );
     });
 
     describe('native-carried instrument', () => {

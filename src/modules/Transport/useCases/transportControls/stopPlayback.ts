@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
@@ -77,5 +78,8 @@ export function stopPlayback(): Promise<void> {
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;
+    // Same law as pause: the resting epoch above ends the counted roll, and a
+    // parked capture reads the store, never the count.
+    playheadWrapCountRef.current = 0;
     return Promise.all([recordingFlush, yeastTeardown]).then(() => undefined);
 }

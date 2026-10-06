@@ -6,6 +6,7 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { advanceSchedulerDiscontinuityEpoch } from '../playheadScheduler/advanceSchedulerDiscontinuityEpoch';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
@@ -76,6 +77,12 @@ export function executePlayheadSeek(beat: number): Promise<void> {
 
         updateTransportState({ playheadPosition: targetBeat });
         playheadPositionRef.current = targetBeat;
+        // The store position above is a fresh epoch — the new roll's origin if
+        // playback resumes below, the parked position otherwise — so the dead
+        // roll's wrap count dies with it. The restart branch re-zeros beside
+        // its own clock anchor; the parked branch leaves the count matching
+        // the epoch it just wrote.
+        playheadWrapCountRef.current = 0;
 
         // Resume only playback after a seek. We deliberately do not re-arm
         // recording here: `stopPlayheadScheduler` already flushed the recorded

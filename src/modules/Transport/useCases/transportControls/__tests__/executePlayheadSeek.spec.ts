@@ -54,6 +54,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mockResetMidiState }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
 
@@ -61,6 +62,7 @@ describe('executePlayheadSeek', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(audioEngine.setTransportInfo).mockClear();
+        playheadWrapCountRef.current = 0;
     });
 
     it('publishes isPlaying: false and target position to audioEngine.setTransportInfo when seeking while stopped', async () => {
@@ -199,6 +201,32 @@ describe('executePlayheadSeek', () => {
 
         expect(mockReposition).toHaveBeenCalledExactlyOnceWith({ positionSeconds: 21 });
         expect(mockStopScheduler).not.toHaveBeenCalled();
+    });
+
+    it('drops the dead roll wrap count beside the parked seek epoch', async () => {
+        // The parked epoch is the position the next capture inverts from; the
+        // dead roll's wraps must not survive beside it, and no scheduler
+        // restart exists here to reset them.
+        mockGetTransportState.mockReturnValue({ isPlaying: false, isRecording: false });
+        playheadWrapCountRef.current = 2;
+
+        await executePlayheadSeek(16);
+
+        expect(mockUpdateTransportState).toHaveBeenCalledExactlyOnceWith({ playheadPosition: 16 });
+        expect(mockStartScheduler).not.toHaveBeenCalled();
+        expect(playheadWrapCountRef.current).toBe(0);
+    });
+
+    it('drops the count beside the seek epoch when the playing seek restarts the scheduler', async () => {
+        // The restart re-zeros beside its own clock anchor; the epoch write
+        // leaves nothing stale in the synchronous stretch between the two.
+        mockGetTransportState.mockReturnValue({ isPlaying: true, isRecording: false });
+        playheadWrapCountRef.current = 2;
+
+        await executePlayheadSeek(16);
+
+        expect(mockStartScheduler).toHaveBeenCalledTimes(1);
+        expect(playheadWrapCountRef.current).toBe(0);
     });
 
     it('seeks the transport whatever the native engine answers, because it is not the audible path', async () => {
