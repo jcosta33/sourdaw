@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/agentReference/resolveWorkflowTrackIds.ts
+  s_1c08b47ac3792f::t_12047ea8491063 1-36
+src/modules/AiRuntime/useCases/agentReference/getWholeProjectVibeMixScope.ts
+  s_1c08b47ac3792f::t_06ffc7d8b4e399 6-7
+  s_1c08b47ac3792f::t_5512f178da95f9 36-42
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_1c08b47ac3792f::t_d2d8820994cb8d 31-32,34-44,52
+  s_1c08b47ac3792f::t_16f21769c0d692 1,4
+src/modules/AiRuntime/models/DrumRoutingCapability.ts
+  s_1c08b47ac3792f::t_60b22ddb7071e4 1-2
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_1c08b47ac3792f::t_5cb60cd91b9181 10
+  s_1c08b47ac3792f::t_6afaf4c082f398 5
+  s_1c08b47ac3792f::t_edb05d0da72822 46,50-51,64-66,75,78-79,85-88
+  s_1c08b47ac3792f::t_53c468d0a7b8c3 35-45,47-49,52-53,60-63,67-74,76-77,80-84,89-90
+  s_1c08b47ac3792f::t_cd13869c473892 132
+  s_1c08b47ac3792f::t_cdcb6783c2cfd5 139
+  s_1c08b47ac3792f::t_e6a345a9fc6ba6 54-59
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_1c08b47ac3792f::t_cee50f3264d63a 1-246
+  s_1c08b47ac3792f::t_3d736df2772d14 247-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "faff0f8435481dd4dd101dda36c3dfc95c61a842",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
