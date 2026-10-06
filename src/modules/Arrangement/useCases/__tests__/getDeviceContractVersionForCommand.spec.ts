@@ -75,7 +75,7 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // (#4370 AC-001), which is part of the descriptor fingerprint.
     gluten: 'descriptor-v1:7883bbc4',
     bacteria: 'descriptor-v1:2bd0e175',
-    grinder: 'descriptor-v1:c65dfbfd',
+    grinder: 'descriptor-v1:bf8859c6',
     proof: 'descriptor-v1:0f484ceb',
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's
     // arpeggiator never read them, so they move to per-processor commands.
