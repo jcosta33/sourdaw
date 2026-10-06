@@ -10,6 +10,7 @@ import { stopAutomationRecording } from '#/modules/Automation/useCases';
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 
@@ -55,6 +56,10 @@ export function stopPlayheadScheduler(): void {
     const ctx = getAudioContext();
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
     stopAllScheduled();
+    // A pedal stored playback pressed is held state the engine keeps through the
+    // stop and the all-notes-off above, so it is released here for the stop, the
+    // pause and the locate that all tear the scheduler down through this one door.
+    releaseStoredControllers();
     // RT-5: hold each track's fader gain/pan and drop pending automation ramps
     // so a ramp scheduled toward a compensated future time cannot land after
     // playback has stopped (the AudioParam analog of stopActiveSources).

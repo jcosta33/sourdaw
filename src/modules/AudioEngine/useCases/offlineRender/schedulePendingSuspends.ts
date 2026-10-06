@@ -23,7 +23,8 @@ type MutableNoteOffRequest = { -readonly [K in keyof DeviceNoteOffRequest]: Devi
  * This uses the sample-accurate `sampleFrame` parameter instead of main-thread
  * OfflineAudioContext.suspend() polling, preventing timing drift. Per-note MPE
  * expression is frame-addressed the same way, so it lands with its note rather
- * than at scheduling time.
+ * than at scheduling time, and so is a stored controller move, which sorts ahead
+ * of the notes on its frame.
  *
  * The note surface is addressed by name (`DeviceNoteOnRequest`). It used to be
  * positional, and the two branches below disagreed about what slot three meant:
@@ -51,6 +52,11 @@ export function schedulePendingSuspends(
         }
 
         const sampleFrame = Math.max(0, Math.floor(evt.time * offlineCtx.sampleRate));
+
+        if (evt.type === 'control') {
+            evt.dispatch({ controller: evt.controller, value: evt.value, sampleFrame });
+            continue;
+        }
 
         if (evt.type === 'expression') {
             evt.dispatch({
