@@ -62,6 +62,9 @@ const engine = createEngineModel();
 const callLog: string[] = [];
 
 const transportStoreState: { value: typeof defaultTransportState | null } = { value: null };
+const tempoMapStoreState: { value: { changes: unknown[] } } = { value: { changes: [] } };
+/** Every framed Levain controller move, with the frame it was posted at. */
+const levainFramed: { cc: number; value: number; frame: number }[] = [];
 const trackStoreState: { value: { tracks: unknown[] } | null } = { value: { tracks: [] } };
 const midiStoreState: {
     value: {
@@ -105,6 +108,9 @@ const levainControls = {
     noteExpression: vi.fn(),
     handleCc: (cc: number, value: number, frame?: number, stored?: boolean) => {
         callLog.push(`cc${cc} ${value} ${frame === undefined ? 'now' : 'framed'}${stored === true ? ' stored' : ''}`);
+        if (frame !== undefined) {
+            levainFramed.push({ cc, value, frame });
+        }
         engine.post(`cc${cc}`, value, frame, stored === true);
     },
     discardStoredCc: () => {
@@ -158,7 +164,13 @@ vi.mock('../../../stores/transportStore', () => ({
         },
     },
 }));
-vi.mock('../../../stores/tempoMapStore', () => ({ tempoMapStore: { value: { changes: [] } } }));
+vi.mock('../../../stores/tempoMapStore', () => ({
+    tempoMapStore: {
+        get value() {
+            return tempoMapStoreState.value;
+        },
+    },
+}));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore: { value: { changes: [] } } }));
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: null } }));
@@ -264,7 +276,7 @@ function row(id: string, controller: number, value: number, beat: number) {
 }
 
 /** One 8-beat clip on a track whose instrument is the given device, carrying the given controller lane and no notes. */
-function loadClip(device: DeviceKind, lane: ReturnType<typeof row>[]): void {
+function loadClip(device: DeviceKind, lane: ReturnType<typeof row>[], clipEndBeat = 8): void {
     const nodes: Record<DeviceKind, unknown> = {
         'grand-boule': { type: 'grand-boule', deviceId: 'dev-1', grandBouleControls },
         levain: { type: 'levain', deviceId: 'dev-1', levainControls },
@@ -288,7 +300,7 @@ function loadClip(device: DeviceKind, lane: ReturnType<typeof row>[]): void {
                         type: 'midi',
                         muted: false,
                         startBeat: 0,
-                        endBeat: 8,
+                        endBeat: clipEndBeat,
                         gain: 1,
                         loopEnabled: false,
                         midiOffsetBeats: 0,
@@ -358,6 +370,8 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
     beforeEach(() => {
         vi.clearAllMocks();
         callLog.length = 0;
+        levainFramed.length = 0;
+        tempoMapStoreState.value = { changes: [] };
         engine.reset();
         forgetStoredControllerEngagements();
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
@@ -576,6 +590,127 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
             engine.drainAll();
 
             expect(engine.value('cc1')).toBe(77);
+        });
+    });
+
+    describe('loop-region and tempo-map edits during playback', () => {
+        const LANE_END = 3.6;
+
+        it('leaves a Levain CC11 at the value in force in the new pass when a loop edit cuts the look-ahead', async () => {
+            loadClip('levain', [row('high', 11, 100, 0), row('low', 11, 20, LANE_END)]);
+            transportStoreState.value = playingState({ playheadPosition: 3.0 });
+            startPlayheadScheduler();
+            await playUntilQueued('cc11 20');
+            engine.advanceTo(frameNow());
+
+            transportStoreState.value = playingState({
+                playheadPosition: 3.0,
+                isLooping: true,
+                loopStart: 0,
+                loopEnd: 3.58,
+            });
+            for (let tick = 0; tick < 4; tick++) {
+                await runTick();
+            }
+            engine.drainAll();
+
+            expect(engine.value('cc11')).toBe(100);
+        });
+
+        it('leaves a Grand Boule sustain down in the new pass when a loop edit cuts the look-ahead', async () => {
+            loadClip('grand-boule', [row('down', 64, 127, 0), row('up', 64, 0, LANE_END)]);
+            transportStoreState.value = playingState({ playheadPosition: 3.0 });
+            startPlayheadScheduler();
+            await playUntilQueued('sustain 0');
+            engine.advanceTo(frameNow());
+
+            transportStoreState.value = playingState({
+                playheadPosition: 3.0,
+                isLooping: true,
+                loopStart: 0,
+                loopEnd: 3.58,
+            });
+            for (let tick = 0; tick < 4; tick++) {
+                await runTick();
+            }
+            engine.drainAll();
+
+            expect(engine.value('sustain')).toBe(1);
+        });
+
+        it('leaves a Levain CC11 at the value in force under the new map when a tempo edit cuts the look-ahead', async () => {
+            loadClip('levain', [row('high', 11, 100, 0), row('low', 11, 20, LANE_END)]);
+            transportStoreState.value = playingState({ playheadPosition: 3.0 });
+            startPlayheadScheduler();
+            await playUntilQueued('cc11 20');
+            engine.advanceTo(frameNow());
+
+            // Half the tempo: the re-emitted window now reaches 3.59, short of the move.
+            tempoMapStoreState.value = { changes: [{ id: 'slow', beat: 0, tempo: 60, curve: 'instant' }] };
+            await runTick();
+            engine.drainAll();
+
+            expect(engine.value('cc11')).toBe(100);
+        });
+
+        it('keeps a pedal the lane holds down at the playhead down across an edit that does not move the playhead', async () => {
+            loadClip('grand-boule', [row('down', 64, 127, 1)]);
+            transportStoreState.value = playingState({ playheadPosition: 0.5 });
+            startPlayheadScheduler();
+            for (let tick = 0; tick < 6; tick++) {
+                await runTick();
+            }
+            engine.advanceTo(frameNow());
+            expect(engine.value('sustain')).toBe(1);
+            callLog.length = 0;
+
+            tempoMapStoreState.value = { changes: [{ id: 'slow', beat: 0, tempo: 60, curve: 'instant' }] };
+            await runTick();
+
+            // Lifted and pressed again in the same breath: the press is at or before now, so
+            // it applies in the very block the lift does and no gap is audible.
+            expect(callLog).toEqual(['discard', 'sustain 0 now stored', 'sustain 1 framed stored']);
+            engine.advanceTo(frameNow());
+            expect(engine.value('sustain')).toBe(1);
+        });
+    });
+
+    describe('scheduled loop seam on a Levain', () => {
+        function pendingSeamFrame(): number {
+            const seam = schedulerSession.pendingSeam;
+            if (seam === null) {
+                throw new Error('no seam is pending');
+            }
+            return Math.round(seam.seamAudioTime * SAMPLE_RATE);
+        }
+
+        it('lifts a CC64 the dying pass left down when no row of the lane is in force at the loop start', async () => {
+            loadClip('levain', [row('down', 64, 127, 3.5)]);
+            transportStoreState.value = playingState({ isLooping: true, loopStart: 2, loopEnd: 4 });
+            startPlayheadScheduler();
+
+            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+
+            expect(levainFramed.map((move) => [move.cc, move.value])).toEqual([
+                [64, 127],
+                [64, 0],
+            ]);
+            expect(Math.abs(levainFramed[1]!.frame - pendingSeamFrame())).toBeLessThanOrEqual(1);
+            expect(callLog.filter((entry) => entry.includes(' now'))).toEqual([]);
+        });
+
+        it('lifts a CC64 left down on a track that has no clip at the loop start', async () => {
+            loadClip('levain', [row('down', 64, 127, 3.5)], 4);
+            transportStoreState.value = playingState({ isLooping: true, loopStart: 6, loopEnd: 8 });
+            startPlayheadScheduler();
+
+            await runTicksUntil(() => schedulerSession.pendingSeam !== null);
+
+            expect(levainFramed.map((move) => [move.cc, move.value])).toEqual([
+                [64, 127],
+                [64, 0],
+            ]);
+            expect(Math.abs(levainFramed[1]!.frame - pendingSeamFrame())).toBeLessThanOrEqual(1);
         });
     });
 });

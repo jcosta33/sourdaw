@@ -359,10 +359,22 @@ export function startPlayheadScheduler(): void {
         // and the wrap replaced the scanned position before the punch checks
         // below.
         let lateWrap = false;
+        // Set when an edit's teardown cuts the look-ahead: the window that
+        // re-emits it opens where playback stands (or at the loop start), and
+        // like a jump's it must restore the stored controllers in force there.
+        let reemitAfterEdit = false;
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
             stopAllScheduled();
+            // The teardown stops notes, not pedals or controllers (a controller
+            // is state), so the stored moves still queued for the cut look-ahead
+            // would apply at their old frames after the re-emitted window: drop
+            // them on every device stored playback posted to and lift the pedals
+            // it moved. The re-emitted window restores the values in force where
+            // it opens, so a pedal the lane holds down stays down.
+            releaseStoredControllers();
+            reemitAfterEdit = true;
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -429,12 +441,6 @@ export function startPlayheadScheduler(): void {
                     resetMetronomeBeat(schedulerSession.accumulatedPosition);
                     advanceSchedulerDiscontinuityEpoch();
                     rackDiscontinuity = true;
-                    // The teardown above stopped notes, not pedals, and a framed
-                    // stored move still queued behind the old position would press
-                    // a pedal at the destination: lift what stored playback holds
-                    // now (frameless supersedes the queued moves); the window
-                    // opening at `loopStart` restores the values in force there.
-                    releaseStoredControllers();
                 } else {
                     schedulerSession.accumulatedPosition = dyingPositionAtPreviousTick;
                     schedulerSession.lastScheduledBeat = dyingPositionAtPreviousTick - REEMIT_EPSILON_BEATS;
@@ -530,7 +536,9 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            // Stops notes, keeps pedals: see the seam-edit wrap above.
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position (a no-op after an edit's teardown, which
+            // already did), as the edit teardown above does.
             releaseStoredControllers();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
@@ -624,7 +632,8 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            // Stops notes, keeps pedals: see the seam-edit wrap above.
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position, as the edit teardown above does.
             releaseStoredControllers();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
@@ -908,7 +917,10 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                // Only an edit's re-emit makes this window a relocation (it opens
+                // where the cut look-ahead began); an ordinary seam tick continues.
+                reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -1005,8 +1017,9 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.accumulatedPosition,
                 current
             );
-            // A late wrap and a follow-action jump open this window at their
-            // destination, so it restores the stored controllers there too.
+            // A late wrap, a follow-action jump and an edit's re-emit open this
+            // window at their destination, so it restores the stored controllers
+            // there too.
             await scheduleMidiNotes(
                 schedulerSession.lastScheduledBeat,
                 scheduleUpTo,
@@ -1016,7 +1029,7 @@ export function startPlayheadScheduler(): void {
                 current,
                 currentTempo,
                 cancellation,
-                lateWrap || jumpToPosition !== null
+                lateWrap || jumpToPosition !== null || reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;

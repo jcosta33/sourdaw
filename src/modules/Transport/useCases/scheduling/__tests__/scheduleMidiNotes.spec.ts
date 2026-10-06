@@ -5,10 +5,8 @@ import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arran
 import {
     applyNoteExpression,
     ensureTrackStrip,
-    getAudioContext,
     getCurrentTime,
     getDrumKitByIndex,
-    getTrackStrip,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -51,6 +49,11 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
+/** What the engine double answers with: the context's sample rate and each track strip's device nodes. */
+const engineStub = vi.hoisted(() => ({
+    sampleRate: 48_000,
+    nodesFor: (_trackId: string): unknown[] => [],
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -95,7 +98,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
-    getTrackStrip: vi.fn(),
+    getTrackStrip: vi.fn((trackId: string) => ({ deviceNodes: engineStub.nodesFor(trackId) })),
     // Read at module scope by the MIDI barrel's live-input wiring, which the tests
     // that load the real projections past the barrel double evaluate.
     startFaustNote: vi.fn(),
@@ -107,7 +110,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
-        sampleRate: 48000,
+        sampleRate: engineStub.sampleRate,
         createGain: vi.fn(() => ({ connect: vi.fn() })),
     })),
     scheduleFaustNote: vi.fn(),
@@ -219,20 +222,18 @@ describe('scheduleMidiNotes', () => {
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
         vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        engineStub.sampleRate = 48_000;
+        engineStub.nodesFor = () => [];
         vi.mocked(ensureTrackStrip).mockImplementation(
-            () =>
+            (trackId) =>
                 ({
                     gainNode: {},
                     preFaderTap: { connect: vi.fn() },
-                    deviceNodes: [],
+                    deviceNodes: engineStub.nodesFor(trackId),
                 }) as never
         );
         shouldPlayProbability.mockImplementation(() => true);
         vi.mocked(getCurrentTime).mockReturnValue(0);
-        vi.mocked(getAudioContext).mockReturnValue({
-            sampleRate: 48000,
-            createGain: vi.fn(() => ({ connect: vi.fn() })),
-        } as never);
     });
 
     it('schedules a frozen MIDI track once per playback session, not on every tick', async () => {
@@ -2300,14 +2301,7 @@ describe('scheduleMidiNotes', () => {
         }
 
         function stripWith(deviceNode: Record<string, unknown>) {
-            vi.mocked(ensureTrackStrip).mockImplementation(
-                () =>
-                    ({
-                        gainNode: {},
-                        preFaderTap: { connect: vi.fn() },
-                        deviceNodes: [deviceNode],
-                    }) as never
-            );
+            engineStub.nodesFor = () => [deviceNode];
         }
 
         /** Route the projections to the real ones the composition root injects (loaded once, at the top of the file). */
@@ -2718,10 +2712,7 @@ describe('scheduleMidiNotes', () => {
                 // start frame plus a length rounds one frame away from placing the
                 // controller at its beat.
                 const posted: string[] = [];
-                vi.mocked(getAudioContext).mockReturnValue({
-                    sampleRate: 44_100,
-                    createGain: vi.fn(() => ({ connect: vi.fn() })),
-                } as never);
+                engineStub.sampleRate = 44_100;
                 vi.mocked(getCurrentTime).mockReturnValue(26.5 / 44_100);
                 stripWith({ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: recordingGrandBoule(posted) });
                 loadTrack('grand-boule', 'gb-1', {
@@ -2754,10 +2745,7 @@ describe('scheduleMidiNotes', () => {
                     'levain-track': { type: 'levain', deviceId: 'levain-1', levainControls: levain },
                     'gb-track': { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: grandBoule },
                 };
-                const stripOf = (trackId: string) =>
-                    ({ gainNode: {}, preFaderTap: { connect: vi.fn() }, deviceNodes: [nodes[trackId]] }) as never;
-                vi.mocked(ensureTrackStrip).mockImplementation(stripOf);
-                vi.mocked(getTrackStrip).mockImplementation(stripOf);
+                engineStub.nodesFor = (trackId) => [nodes[trackId]];
                 (trackStore as { value: unknown }).value = {
                     tracks: [
                         midiTrack({

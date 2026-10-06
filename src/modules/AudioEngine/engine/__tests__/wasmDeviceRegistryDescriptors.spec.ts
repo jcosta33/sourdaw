@@ -452,6 +452,19 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(setLevainEngineReady).not.toHaveBeenCalled();
         });
 
+        it("hands the loaded node the engine result's own discardStoredCc, so stored moves can be dropped", async () => {
+            const result = makeLevainResult();
+            factoryMocks.createLevainNode.mockResolvedValue(result);
+            setAudioDeviceRuntimeSink({
+                registerLevainDevice: vi.fn(() => Promise.resolve<DeviceContentLoadOutcome>('ready')),
+            });
+            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-discard' });
+
+            await requireDescriptor('levain').create(deps).loadPromise;
+
+            expect(lastLoadedNode(deps.onLoaded).levainControls?.discardStoredCc).toBe(result.discardStoredCc);
+        });
+
         it('settles live content readiness from the generation sample-bank commit', async () => {
             const result = makeLevainResult();
             factoryMocks.createLevainNode.mockResolvedValue(result);
@@ -1590,6 +1603,18 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
             expect(loaded.workerInstances).toBe(1);
+        });
+
+        it("hands the loaded node the engine result's own discardStoredPedals, so stored moves can be dropped", async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-discard' });
+
+            await requireDescriptor('grand-boule').create(deps).loadPromise;
+
+            expect(lastLoadedNode(deps.onLoaded).grandBouleControls?.discardStoredPedals).toBe(
+                result.discardStoredPedals
+            );
         });
 
         it('demotes a loaded device when its engine worker fails', async () => {
