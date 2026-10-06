@@ -38,8 +38,12 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
     it('lifts a pedal stored playback left down on that device only, never one the user holds live', () => {
         const playedBack = grandBouleControls();
         const heldLive = grandBouleControls();
+        const heldLiveOnSameTrack = grandBouleControls();
         const stripsByTrack = {
-            'played-back-track': stripOf([{ deviceId: 'gb-played-back', grandBouleControls: playedBack }]),
+            'played-back-track': stripOf([
+                { deviceId: 'gb-played-back', grandBouleControls: playedBack },
+                { deviceId: 'gb-held-live-same-track', grandBouleControls: heldLiveOnSameTrack },
+            ]),
             'held-live-track': stripOf([{ deviceId: 'gb-held-live', grandBouleControls: heldLive }]),
         };
         vi.mocked(getTrackStrip).mockImplementation((trackId) => stripsByTrack[trackId as keyof typeof stripsByTrack]);
@@ -61,6 +65,9 @@ describe('stopPlayheadScheduler releasing stored pedals', () => {
         expect(heldLive.setSustain).not.toHaveBeenCalled();
         expect(heldLive.setSostenuto).not.toHaveBeenCalled();
         expect(heldLive.setUnaCorda).not.toHaveBeenCalled();
+        expect(heldLiveOnSameTrack.setSustain).not.toHaveBeenCalled();
+        expect(heldLiveOnSameTrack.setSostenuto).not.toHaveBeenCalled();
+        expect(heldLiveOnSameTrack.setUnaCorda).not.toHaveBeenCalled();
     });
 
     it('releases exactly the pedals left engaged, each through its own control', () => {
