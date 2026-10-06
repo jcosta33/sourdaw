@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  s_2bfd55a4393d7c::t_1959490b694fc4 107,110-117
+  s_2bfd55a4393d7c::t_cab0e304a00392 49-57
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_2bfd55a4393d7c::t_2bdec20d1987ff 348-353
+  s_2bfd55a4393d7c::t_3635418b573ace 404-405,412-438
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_60d052c90a705a 1255-1264
+  s_2bfd55a4393d7c::t_45265b5099ad61 60,63
+  s_2bfd55a4393d7c::t_1b66f814dd89e9 1253-1254
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_4ae26ad199384e 48,50
+  s_2bfd55a4393d7c::t_1a597b1a80f5f7 1048-1082
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_2bfd55a4393d7c::t_c2033dab0eed40 66-70,74
+  s_2bfd55a4393d7c::t_7a1a1272fb12a1 61
+  s_2bfd55a4393d7c::t_613b913bc9d1c7 92
+  s_2bfd55a4393d7c::t_c2b97251bf9eaf 113-140,142-144,146-178,182-183
+  s_2bfd55a4393d7c::t_1c60f45bd7f367 184
+  s_2bfd55a4393d7c::t_c012c5623a2759 436-437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73aed3bcccf7ffadc526ada73bd6605e40213676",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
