@@ -83,7 +83,7 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
             'Sets the detector release at 0.6 times this value, so the hold-open time is the fixed 20 ms plus 0.6 x release x ln(envelope / close threshold) and grows with how far the note sat above gateThreshold; for an abrupt stop at -60 dB the onset is about 110 ms at 60 and 398 ms at 250 for a note 20 dB above the threshold (-40 dBFS), 168 and 640 ms at -26 dBFS, and 232 and 908 ms at -10.5 dBFS; the closing fade itself runs at the gateAttack time, and it only matters once the gate is on.',
         ],
         [
-            'On a decaying note, values of 60 or less can start closing 60 to 92 ms before the tail reaches the threshold and clip the decay (0.1 amplitude, 300 ms decay), whereas at 250 the gate starts closing about 21 ms after; very long values keep the gate open so audible noise stays in the gaps between phrases, and it does not change how fast the closing fade is.',
+            'On a decaying note at a gateAttack of 2 ms or shorter, the gate starts closing after the tail drops below the threshold, and the delay grows with this value: about 70 to 85 ms at 60 and about 150 to 160 ms at 250 (0.1 amplitude, 300 ms decay), so short values do not clip the decay; a long gateAttack combined with a short release is what closes early, because the slow detector attack keeps the envelope under the tail peaks, and at gateAttack 10 with release 5 closing starts about 40 to 56 ms before the tail reaches the threshold; very long values keep the gate open so audible noise stays in the gaps between phrases, and it does not change how fast the closing fade is.',
         ],
         noExternalModulation
     ),
@@ -270,7 +270,7 @@ export const GRINDER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameter
             'Below 0.01 the transformer is bypassed entirely and transformerHysteresis and transformerLfSaturation do nothing; above it drive scales the input boost (1 + 3 x drive) and the flux ceiling (0.5 + 1.5 x drive), subtracts drive times the low band and cuts the high band by 30 percent of drive, and the sum is divided by 1 + drive; outputGain is the level trim.',
         ],
         [
-            'The level change depends on input level: on a 220 Hz tone below about 0.2 input amplitude, raising drive from 0.15 to 0.5 makes the output louder by about 6 dB, while from about 0.3 input (about -10 dBFS) upward it is flat or slightly quieter, so the same setting can add or take away level, and at 0.05 input the soft limiter engages between drive 0.5 and 0.75.',
+            'The level change depends on the level the transformer sees, which is the input after inputGain: on a 220 Hz tone below about 0.2 amplitude at that point, raising drive from 0.15 to 0.5 makes the output louder by about 6 dB, while from about 0.3 (about -10 dBFS) upward it is flat or slightly quieter, so the same setting can add or take away level; these levels move down about 6 dB for each +6 dB of inputGain, so at +6 dB a 0.15 input gains only about 1.4 dB and a 0.2 input loses about 0.6 dB; the soft limiter engages from about drive 0.4 for a 0.1-peak DI at 220 Hz with inputGain at 0 dB, and that drive falls as the level after inputGain rises.',
         ],
         noExternalModulation
     ),
