@@ -73,10 +73,12 @@ function noteKey(note: Pick<TickedNote, 'pitch' | 'channel'>): string {
  * played; a note shorter than a tick still is, so it keeps one tick of length.
  *
  * Its one-tick release would cut a note of the same pitch and channel that is
- * sounding or struck within that tick, as the sliver a looped pass leaves before
- * its wrapped tail does at the pass head. The sliver is dropped there: it is
+ * sounding at its start tick or struck on it, as the sliver a looped pass leaves
+ * before its wrapped tail does at the pass head. The sliver is dropped there: it is
  * shorter than a tick, the other note sounds that pitch at that tick, and writing
- * it could only cut that note or strike it twice.
+ * it could only cut that note or strike it twice. A note struck on the sliver's
+ * release tick does not conflict: the release sorts ahead of that strike, so the
+ * two never overlap and the sliver is written.
  */
 function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
     const sounded: TickedNote[] = [];
@@ -108,7 +110,7 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
     }
     const survivingSubTick = subTick.filter((sliver) => {
         const sameKey = soundedByKey.get(noteKey(sliver)) ?? [];
-        return !sameKey.some((other) => other.startTick <= sliver.endTick && other.endTick > sliver.startTick);
+        return !sameKey.some((other) => other.startTick < sliver.endTick && other.endTick > sliver.startTick);
     });
     return [...sounded, ...survivingSubTick];
 }

@@ -312,14 +312,17 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
-    it('drops a sub-tick note whose release tick a same-pitch note is struck on', () => {
+    it('keeps a sub-tick note whose release tick a same-pitch note is struck on', () => {
         const events = exportClip(
             { startBeat: 0, endBeat: 4 },
             [note('sliver', 2, 0.0004, 62), note('struck-on-release-tick', 961 / TICKS_PER_BEAT, 0.5, 62)],
             []
         );
 
+        // The sliver's release sorts ahead of the strike on tick 961, so they never overlap.
         expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['on', 960],
+            ['off', 961],
             ['on', 961],
             ['off', 1201],
         ]);
