@@ -1,0 +1,161 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspaceReference.spec.tsx
+  s_1c08b47ac3792f::t_c56e6db2894710 1-139
+src/modules/AiRuntime/useCases/agentReferenceMeasurement/loadAgentReference.ts
+  s_1c08b47ac3792f::t_ce91da9d698059 13
+  s_1c08b47ac3792f::t_be3872ea181de0 19,21-24
+  s_1c08b47ac3792f::t_17961513c7636b 80-81,89
+  s_1c08b47ac3792f::t_976b265560caf7 1,3-12,14-18,20,25-55,57-79,82-88,90-93
+  s_1c08b47ac3792f::t_ace8e7c4fe38a5 56
+  s_1c08b47ac3792f::t_13e08d0069062f 2
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_0e3249a2b3f48a 480
+  s_1c08b47ac3792f::t_1d5afcf7085f7a 12
+  s_1c08b47ac3792f::t_79a8392f2c0096 50
+  s_1c08b47ac3792f::t_4738ef79b53d7b 253-254,257-290,297,303-307,310
+  s_1c08b47ac3792f::t_98c21a557c168d 308-309
+  s_1c08b47ac3792f::t_20128bf0b841b4 311
+src/modules/WorkspaceShell/AGENTS.md
+  s_1c08b47ac3792f::t_3179fe8e9f47dc 23
+src/modules/AiRuntime/useCases/agentReferenceMeasurement/clearAgentReference.ts
+  s_1c08b47ac3792f::t_d2f0c0c6695de0 1,3,5
+  s_1c08b47ac3792f::t_817c2525e230b1 2,4,6
+src/modules/AudioAnalysis/AGENTS.md
+  s_1c08b47ac3792f::t_11b7293e9be4c1 29
+  s_1c08b47ac3792f::t_37efcf2f6f6d10 11
+src/modules/AiRuntime/useCases/parseAnalysisMeasureArguments.ts
+  s_1c08b47ac3792f::t_7c92ddfebb6756 119-121,123-126,133,140,147,154,161
+  s_1c08b47ac3792f::t_669b5f1ab2f15c 3
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e191299d26f8d6 12
+  s_1c08b47ac3792f::t_06c0422d127227 15
+  s_1c08b47ac3792f::t_c76ab7d64d3878 41
+src/modules/AiRuntime/stores/index.ts
+  s_1c08b47ac3792f::t_a7c5a6891ea9f1 32-33
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_cef04d8134a862 602-604,607-617
+  s_1c08b47ac3792f::t_0314e0a3ee18cb 77
+  s_1c08b47ac3792f::t_816c0a39d779f6 62
+  s_1c08b47ac3792f::t_07b4110c807a3d 618-633
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_3c157b39537ada 367
+src/modules/AiRuntime/models/ApplicationToolReceiptData.ts
+  s_1c08b47ac3792f::t_40ba45eb745c15 8
+  s_1c08b47ac3792f::t_db277210d4d184 9,12-14,18-23
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_0d327a792ba207 466
+  s_1c08b47ac3792f::t_549595d6c95636 51
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1c08b47ac3792f::t_f501218ab9f45b 310
+  s_1c08b47ac3792f::t_13dce289592a61 351
+  s_1c08b47ac3792f::t_cc848151ab41be 352-354
+src/modules/AudioAnalysis/useCases/index.ts
+  s_1c08b47ac3792f::t_a40196a44183ad 17-18
+src/modules/AiRuntime/useCases/index.ts
+  s_1c08b47ac3792f::t_bbb77a7fcd6c66 97-98
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  s_1c08b47ac3792f::t_3945a9a8e2718a 18-21
+  s_1c08b47ac3792f::t_dba21d60188f35 3,6
+  s_1c08b47ac3792f::t_f200e10955281b 34
+  s_1c08b47ac3792f::t_502541daf0b992 32-33,35
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1c08b47ac3792f::t_24794e46936cf8 20
+src/modules/AiRuntime/useCases/executeReferenceMeasurement.ts
+  s_1c08b47ac3792f::t_8d73d4eccf5904 28
+  s_1c08b47ac3792f::t_ff71acf5c73ede 64-78,80-81,86,90
+  s_1c08b47ac3792f::t_bae1934aaa24a9 104
+  s_1c08b47ac3792f::t_b69d80c385b145 110
+  s_1c08b47ac3792f::t_3a79e21756a803 149-157
+  s_1c08b47ac3792f::t_d6802b2d51498e 139
+  s_1c08b47ac3792f::t_fd6f36a9676526 1-27,29-63,79,82-85,87-89,91-103,105-109,111-112,114-138,140-147,158-166
+  s_1c08b47ac3792f::t_4bbd988e5d57c8 148
+  s_1c08b47ac3792f::t_a16fad11408987 113
+  s_1c08b47ac3792f::t_5ad05ee37c6794 167
+src/modules/AudioAnalysis/useCases/analyzeAgentReferenceBuffer.ts
+  s_1c08b47ac3792f::t_9ceda601fe8eb8 1-30
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1c08b47ac3792f::t_c0c33bdb9b5afe 55-56
+  s_1c08b47ac3792f::t_5a2381c9d639ba 70
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_1c08b47ac3792f::t_161b9c683fb422 160,162
+src/modules/AiRuntime/useCases/measureProjectScope.ts
+  s_1c08b47ac3792f::t_880c0687e97375 1-211
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_1c08b47ac3792f::t_0b95159877f990 18
+  s_1c08b47ac3792f::t_c26d0df0849f2f 25
+  s_1c08b47ac3792f::t_a41f20576d881f 74-75
+  s_1c08b47ac3792f::t_d4f9d507ded315 114-120
+src/modules/AiRuntime/stores/agentReferenceStore.ts
+  s_1c08b47ac3792f::t_f5d16dcfb7df9e 52
+  s_1c08b47ac3792f::t_e3f31e6f0ae7cd 10,24-26,28-30,32-34,38-51,53-61
+  s_1c08b47ac3792f::t_f8daad17622909 12-23
+  s_1c08b47ac3792f::t_e4eeb336202d10 1-9,11,27,31,35-37,62
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  s_1c08b47ac3792f::t_9a646bbcfa6b9c 141
+  s_1c08b47ac3792f::t_54955bc5fa1692 105-113
+  s_1c08b47ac3792f::t_14053d3b6508ec 8,13
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_1c08b47ac3792f::t_5c3b8630e1aff9 6,11,31,50,52,71,113-115,117
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_b71c52c3def5f3 220
+  s_1c08b47ac3792f::t_de564d15f53f39 1182
+  s_1c08b47ac3792f::t_253210e7982164 1901
+  s_1c08b47ac3792f::t_ae1ae88842befa 1145-1146
+  s_1c08b47ac3792f::t_58f89df9cdc902 218-219,221-222
+  s_1c08b47ac3792f::t_aed8a5525905e8 190-191,195
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentReferenceSection.tsx
+  s_1c08b47ac3792f::t_2f2736dc25119a 1-32,42-43,51-61
+  s_1c08b47ac3792f::t_41bf016f6fe6b7 41
+  s_1c08b47ac3792f::t_53172ccfcbb886 33-40
+  s_1c08b47ac3792f::t_1e2c51c723c029 44-50
+src/modules/AiRuntime/models/AgentReferenceLimits.ts
+  s_1c08b47ac3792f::t_c32280b56796ce 1-5
+src/modules/AudioAnalysis/useCases/__tests__/referenceMeasurementForAgent.spec.ts
+  s_1c08b47ac3792f::t_06dbcd8235f767 96-98
+  s_1c08b47ac3792f::t_2fe8057d32e557 264-268
+  s_1c08b47ac3792f::t_1f4b1f3851f150 199-243
+  s_1c08b47ac3792f::t_a7636ae48b3c12 1-95,99-198,244-263,269-304
+src/modules/AiRuntime/useCases/__tests__/referenceMeasurementTool.spec.ts
+  s_1c08b47ac3792f::t_e85fab730cfd37 351,353,357,359-363,365
+  s_1c08b47ac3792f::t_4e4c562c8e6e0b 95-100
+  s_1c08b47ac3792f::t_5b35649863ac66 679
+  s_1c08b47ac3792f::t_3e4370c9c9241f 179-182
+  s_1c08b47ac3792f::t_2ba7dbf00b3d5d 706-720
+  s_1c08b47ac3792f::t_656c76f17e31e8 743-748
+  s_1c08b47ac3792f::t_46d11533ecd1e5 1-33,35-94,101-160,162-178,183-258,260-264,266,268-305,307-350,352,354-356,358,364,366-375,377-447,449-678,680-705,721-742,749-755
+  s_1c08b47ac3792f::t_8f064051753b92 259,267
+  s_1c08b47ac3792f::t_06e4531a35fd20 265
+  s_1c08b47ac3792f::t_6bca5926549d78 34
+  s_1c08b47ac3792f::t_c9b240a207ecb7 306
+  s_1c08b47ac3792f::t_3b35c3df6f93c1 161
+  s_1c08b47ac3792f::t_0cbcc44bca50b0 376,448,756-757
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_08d056350f3c94 1710-1755
+  s_1c08b47ac3792f::t_bcae47a40a0b10 1588,1590-1595
+  s_1c08b47ac3792f::t_8405991cf619d1 23,28
+  s_1c08b47ac3792f::t_57aef9a2d67ec3 1709
+src/modules/AudioAnalysis/useCases/compareAgentReferenceToProject.ts
+  s_1c08b47ac3792f::t_20d868d988794f 1-19,21
+  s_1c08b47ac3792f::t_ded8dd40afd2d2 20
+src/modules/WorkspaceShell/presentations/hooks/useAgentReferenceController.ts
+  s_1c08b47ac3792f::t_f0d3c6005bee10 1-12,14-66
+  s_1c08b47ac3792f::t_52f88023e4b4b6 13
+  s_1c08b47ac3792f::t_e4a4dcd9b55117 67-68
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_984fb192a17ecd 374,527,748
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83ea0d195fbab94363009852101463231448250c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
