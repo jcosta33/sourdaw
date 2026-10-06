@@ -460,6 +460,19 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._queueHead = 0;
     }
 
+    _discardQueuedController(cc: number): void {
+        let retained = 0;
+        for (let index = this._queueHead; index < this._queue.length; index++) {
+            const queued = this._queue[index];
+            if (queued && !(queued.type === 'cc' && queued.cc === cc)) {
+                this._queue[retained] = queued;
+                retained++;
+            }
+        }
+        this._queue.length = retained;
+        this._queueHead = 0;
+    }
+
     _handleMessage(msg: LevainMsg): void {
         if (
             (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'cc') &&
@@ -471,6 +484,11 @@ class LevainProcessor extends AudioWorkletProcessor {
             // next `process()` drains it before rendering, so it sounds no later.
             this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
             return;
+        }
+        if (msg.type === 'cc') {
+            // A controller applying now is the newer move of that controller:
+            // an older framed one still queued would drain after it and win.
+            this._discardQueuedController(msg.cc);
         }
         this._dispatch(msg);
     }

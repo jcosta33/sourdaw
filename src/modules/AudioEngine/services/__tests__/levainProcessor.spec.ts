@@ -911,6 +911,41 @@ describe('LevainProcessor message handling', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
+    it('lets a frameless controller replace a queued move of the same controller number', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+        vi.stubGlobal('currentFrame', 1_000);
+
+        send(proc, { type: 'cc', cc: 11, value: 30, sampleFrame: 1_064 });
+        send(proc, { type: 'cc', cc: 11, value: 100 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.filter((c) => c.method === 'handle_cc')).toEqual([{ method: 'handle_cc', args: [11, 100] }]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('keeps queued notes and other controller numbers when a frameless controller replaces its own', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+        vi.stubGlobal('currentFrame', 1_000);
+
+        send(proc, { type: 'cc', cc: 1, value: 40, sampleFrame: 1_064 });
+        send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 1_064 });
+        send(proc, { type: 'cc', cc: 11, value: 100 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(calls.filter((c) => c.method !== 'process')).toEqual([
+            { method: 'handle_cc', args: [11, 100] },
+            { method: 'handle_cc', args: [1, 40] },
+            { method: 'note_on', args: [60, 90] },
+        ]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('keeps controller order through bypass: a framed controller due while bypassed lands before a later one', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
