@@ -66,19 +66,26 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
         );
     }
 
+    // A pass head carry is placed at `(head - offset) + offset`, which for a slip
+    // can round just below the clip start. A window opening at the start would drop
+    // the value in force at the head, so the window is open on the left: every pass
+    // projects only rows from its own span, so nothing placed before the head is a
+    // row genuinely before the clip. Such a carry sits on the clip's first tick.
+    const controllers = projectClipControllerEvents({
+        controlChanges,
+        clip: {
+            startBeat: clip.startBeat,
+            endBeat: clip.endBeat,
+            midiOffsetBeats,
+            loopEnabled,
+            loopLength: clip.loopLength,
+        },
+        fromBeat: Number.NEGATIVE_INFINITY,
+        toBeat: clip.endBeat,
+    });
+
     return {
         notes: playedNotes,
-        controlChanges: projectClipControllerEvents({
-            controlChanges,
-            clip: {
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-                midiOffsetBeats,
-                loopEnabled,
-                loopLength: clip.loopLength,
-            },
-            fromBeat: clip.startBeat,
-            toBeat: clip.endBeat,
-        }),
+        controlChanges: controllers.map((row) => (row.beat < clip.startBeat ? { ...row, beat: clip.startBeat } : row)),
     };
 }
