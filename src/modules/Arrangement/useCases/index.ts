@@ -201,6 +201,7 @@ export { saveUserPreset } from './preset/presetStorage/saveUserPreset';
 export { armTrack } from './recording/armTrack';
 export { commitRecording } from './recording/commitRecording';
 export { discardRecording } from './recording/discardRecording';
+export { rebaseRecordingTakes } from './recording/rebaseRecordingTakes';
 export { stageRecordingTake } from './recording/stageRecordingTake';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';

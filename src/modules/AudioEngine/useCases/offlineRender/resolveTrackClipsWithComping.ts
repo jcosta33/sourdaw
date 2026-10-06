@@ -1,6 +1,7 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 
 type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
+type TrackClip = Track['clips'][number];
 
 export type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
@@ -9,53 +10,55 @@ export type ResolvedClip = Track['clips'][number] & {
 };
 
 /**
- * A fragment's own media-entry offset.
- *
- * Every consumer — `projectOfflineAudioClipPlaybacks`, the Web Audio clip
- * scheduler, and the MIDI note projections — enters the material at the
- * fragment's own `startBeat` using the offset field alone; none of them adds a
- * displacement term of its own, and `sourceStartBeat` only carries the
- * loop-occurrence count for probability rolls. So a fragment that begins
- * partway into its source must carry that whole displacement here, or it sounds
- * the material from the clip's origin, late by the span it was displaced.
- *
- * `displacement` is measured from the media origin, which loop recording moves
- * behind the clip's own start: every pass lands in one continuous clip, and the
- * take — not the shared clip — names how deep its pass sits in that buffer.
- *
- * A fragment sitting exactly on the media origin leaves the clip's fields
- * untouched, so an unshifted region stays byte-identical to its source.
- * Mirrors the web resolver (`Arrangement/useCases/resolveComping.ts`) so both
- * renderers read the same material for the same fragment (#2225).
+ * Mirrors `Arrangement/useCases/resolveComping.ts` (`resolveTakeMedia`,
+ * `clipMediaOriginBeat`, `withMediaOffsetBeats`) so both renderers read the same
+ * material for the same fragment (#2225). The law is kept as a copy because the
+ * Arrangement `useCases` barrel pulls the whole Arrangement graph, which cycles
+ * back through AudioEngine, into this pure resolver.
  */
-function withFragmentOffset(clip: Track['clips'][number], displacement: number): Track['clips'][number] {
-    if (displacement === 0) {
-        return clip;
-    }
+function clipMediaOriginBeat(clip: TrackClip): number {
     if (clip.type === 'audio') {
-        return { ...clip, audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement };
+        return clip.startBeat - (clip.audioOffsetBeats ?? 0);
     }
-    return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
+    return clip.startBeat - (clip.midiOffsetBeats ?? 0);
 }
 
 /**
- * The beat at which a take's source media begins playing, were it extended
- * back to its own first sample.
- *
- * A loop-recorded pass names how deep its material starts in the one continuous
- * recording (`sourceOffsetBeats`, run-up included) and places that material at
- * its own `startBeat`, so the origin is measured from the take, not from the
- * clip: the clip's start is the record point, which the offset already counts.
- * A take with no offset, or a zero one, is the recording's first material and
- * its origin is the clip's own start — which, for a recording that began inside
- * the loop, lies after the take's start.
+ * A take naming `sourceOffsetBeats` places the material that deep into the
+ * recording's media at its own `startBeat`, so its origin is measured from the
+ * take. A take without one plays the clip's media as the clip places it.
  */
-function takeMediaOriginBeat(take: Take, sourceClip: Track['clips'][number]): number {
-    const passOffsetBeats = take.sourceOffsetBeats ?? 0;
-    if (passOffsetBeats === 0) {
-        return sourceClip.startBeat;
+function resolveTakeMedia(
+    take: Take,
+    clip: TrackClip
+): { originBeat: number; earliestBeat: number; sourceStartBeat: number } {
+    if (take.sourceOffsetBeats === undefined) {
+        return {
+            originBeat: clipMediaOriginBeat(clip),
+            earliestBeat: clip.startBeat,
+            sourceStartBeat: clip.startBeat,
+        };
     }
-    return take.startBeat - passOffsetBeats;
+    const originBeat = take.startBeat - take.sourceOffsetBeats;
+    return { originBeat, earliestBeat: originBeat, sourceStartBeat: originBeat };
+}
+
+/**
+ * Every consumer enters a fragment's material using the offset field alone, so
+ * the fragment carries its whole distance from the media origin. A fragment
+ * already on the clip's own offset leaves the clip untouched.
+ */
+function withMediaOffsetBeats(clip: TrackClip, offsetBeats: number): TrackClip {
+    if (clip.type === 'audio') {
+        if (offsetBeats === (clip.audioOffsetBeats ?? 0)) {
+            return clip;
+        }
+        return { ...clip, audioOffsetBeats: offsetBeats };
+    }
+    if (offsetBeats === (clip.midiOffsetBeats ?? 0)) {
+        return clip;
+    }
+    return { ...clip, midiOffsetBeats: offsetBeats };
 }
 
 /**
@@ -105,20 +108,20 @@ export function resolveTrackClipsWithComping(
             continue;
         }
 
-        const mediaOriginBeat = takeMediaOriginBeat(take, sourceClip);
-        const overlapStart = Math.max(region.startBeat, mediaOriginBeat);
+        const media = resolveTakeMedia(take, sourceClip);
+        const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
         if (overlapStart >= overlapEnd) {
             continue;
         }
 
         resolvedClips.push({
-            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat),
+            ...withMediaOffsetBeats(sourceClip, overlapStart - media.originBeat),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
-            sourceStartBeat: mediaOriginBeat,
+            sourceStartBeat: media.sourceStartBeat,
         });
     }
 
@@ -144,7 +147,7 @@ export function resolveTrackClipsWithComping(
 
         for (const gap of gaps) {
             resolvedClips.push({
-                ...withFragmentOffset(clip, gap.start - clip.startBeat),
+                ...withMediaOffsetBeats(clip, gap.start - clipMediaOriginBeat(clip)),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,

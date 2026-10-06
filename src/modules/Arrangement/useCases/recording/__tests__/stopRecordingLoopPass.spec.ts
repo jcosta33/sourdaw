@@ -147,4 +147,29 @@ describe('stopRecording during a loop recording', () => {
         expect(writtenClipEnd()).toBe(9);
         expect(writtenTakeSpans()).toEqual([['pass-1', 0, 4]]);
     });
+
+    it('starts a MIDI first pass where its media does when it began before the record point', () => {
+        seedRecording({ type: 'midi', startBeat: 12, endBeat: 12 }, [
+            loopPassTake('pass-1', 8, 16, 0),
+            loopPassTake('pass-2', 8, 16, 4),
+        ]);
+
+        void stopRecording(14);
+
+        expect(writtenTakeSpans()).toEqual([
+            ['pass-1', 12, 16],
+            ['pass-2', 8, 16],
+        ]);
+        const offsets = mocks.takeLaneStoreSet.mock.calls[0]![0].lanes[0]!.takes.map((take) => take.sourceOffsetBeats);
+        expect(offsets).toEqual([0, 4]);
+    });
+
+    it('does not rebase the takes of an audio recording, which its capture terminal owns', () => {
+        seedRecording({ type: 'audio', startBeat: 12, endBeat: 12 }, [loopPassTake('pass-1', 8, 16, 0)]);
+
+        void stopRecording(14);
+
+        const offsets = mocks.takeLaneStoreSet.mock.calls[0]![0].lanes[0]!.takes.map((take) => take.sourceOffsetBeats);
+        expect(offsets).toEqual([0]);
+    });
 });

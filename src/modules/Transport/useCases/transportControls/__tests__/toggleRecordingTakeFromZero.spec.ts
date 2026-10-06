@@ -44,6 +44,8 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+        rebaseRecordingTakes:
+            vi.fn<(input: { clipId: string; provisionalStartBeat: number; shiftBeats: number }) => void>(),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
@@ -93,6 +95,7 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
+    rebaseRecordingTakes: mocks.rebaseRecordingTakes,
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
 }));

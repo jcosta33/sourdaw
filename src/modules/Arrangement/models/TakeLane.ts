@@ -53,6 +53,39 @@ export function createTake(
     return take;
 }
 
+/**
+ * Re-measure a recording take's `sourceOffsetBeats` from the media's first
+ * sample.
+ *
+ * The recorder mints offsets against the provisional anchor, the beat the clip
+ * opened on. The capture's first sample sits `shiftBeats` before that anchor
+ * (hardware latency and the wait for the transport to roll), and the committed
+ * clip places the media there, so a pass resolved from its take must too. The
+ * take opened when recording began carries no offset and sits at the anchor, so
+ * it takes the shift as its whole offset. A zero offset on a take that starts
+ * before the anchor is the first pass of a recording that began inside the
+ * loop: the scheduler clamps its depth, and an offset cannot be negative, so the
+ * take starts where its media does, at the anchor.
+ *
+ * Idempotent for a zero shift, which is the whole story of a MIDI recording: its
+ * clip never moves, so only that clamped start is restored.
+ */
+export function rebaseTakeOntoMedia(take: Take, provisionalStartBeat: number, shiftBeats: number): Take {
+    const mintedOffsetBeats = take.sourceOffsetBeats ?? 0;
+    if (mintedOffsetBeats !== 0) {
+        if (shiftBeats === 0) {
+            return take;
+        }
+        return { ...take, sourceOffsetBeats: mintedOffsetBeats + shiftBeats };
+    }
+    const mediaStartsInsideTake = take.startBeat < provisionalStartBeat && provisionalStartBeat < take.endBeat;
+    const startBeat = mediaStartsInsideTake ? provisionalStartBeat : take.startBeat;
+    if (startBeat === take.startBeat && shiftBeats === 0) {
+        return take;
+    }
+    return { ...take, startBeat, sourceOffsetBeats: shiftBeats };
+}
+
 export function createTakeLane(trackId: string): TakeLane {
     return {
         id: `take-lane-${crypto.randomUUID()}`,

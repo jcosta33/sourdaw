@@ -17,8 +17,8 @@ vi.mock('../../stores/takeLaneStore', () => ({
     },
 }));
 
-function recording(startBeat: number, endBeat: number): Clip {
-    return {
+function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number): Clip {
+    const clip: Clip = {
         id: 'rec',
         trackId: 't1',
         name: 'Recording',
@@ -33,6 +33,10 @@ function recording(startBeat: number, endBeat: number): Clip {
         locked: false,
         muted: false,
     };
+    if (audioOffsetBeats !== undefined) {
+        clip.audioOffsetBeats = audioOffsetBeats;
+    }
+    return clip;
 }
 
 function passTake(id: string, loopStart: number, loopEnd: number, sourceOffsetBeats: number) {
@@ -92,7 +96,9 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
     });
 
     it('keeps pass 1 silent until the record point when recording started inside the loop', () => {
-        compPass([passTake('pass-1', 8, 16, 0)], 'pass-1', 8, 16);
+        // Commit starts that first pass where its media does, at the record
+        // point, so its media origin is the record point.
+        compPass([passTake('pass-1', 12, 16, 0)], 'pass-1', 8, 16);
 
         const out = resolveClipsWithComping('t1', [recording(12, 24)]);
 
@@ -109,5 +115,51 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
 
         expect(bufferBeatAt(out, 0)).toBe(4);
         expect(bufferBeatAt(out, 3)).toBe(7);
+    });
+
+    it('plays pass 2 from the media captured in that pass when the capture began before the record point', () => {
+        // Loop [2,6), provisional anchor 1, capture latency 0.5 beat: the media
+        // origin is 0.5 and the committed clip starts there. Commit rebased
+        // pass 2's offset from 5 to 5.5. Pass 2 spans media beats [5.5, 9.5), so
+        // the fragment enters the media at the unwrapped pass start (6) less the
+        // origin.
+        const takes = [passTake('pass-1', 2, 6, 1.5), passTake('pass-2', 2, 6, 5.5)];
+        compPass(takes, 'pass-2', 2, 6);
+
+        const out = resolveClipsWithComping('t1', [recording(0.5, 10)]);
+
+        expect(out.find((clip) => clip.startBeat === 2)?.audioOffsetBeats).toBe(5.5);
+        expect(bufferBeatAt(out, 5)).toBe(8.5);
+    });
+
+    it('plays pass 2 from the media captured in that pass when the capture began before beat 0', () => {
+        // Recording from the loop start at beat 0 with 0.5 beat of latency: the
+        // origin is -0.5, so the clip is clamped to 0 and skips 0.5 of media.
+        // Pass 2 starts 4.5 beats into the media.
+        const takes = [passTake('pass-1', 0, 4, 0.5), passTake('pass-2', 0, 4, 4.5)];
+        compPass(takes, 'pass-2', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(0, 12, 0.5)]);
+
+        expect(bufferBeatAt(out, 0)).toBe(4.5);
+        expect(bufferBeatAt(out, 3)).toBe(7.5);
+    });
+
+    it('leaves a take that was never loop-recorded on its clip’s own media origin', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'rec', name: 'Take 1', startBeat: 0, endBeat: 8, selected: false }],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'take-1' }],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [recording(0, 8, 0.5)]);
+
+        expect(bufferBeatAt(out, 2)).toBe(2.5);
+        expect(bufferBeatAt(out, 0)).toBe(0.5);
     });
 });

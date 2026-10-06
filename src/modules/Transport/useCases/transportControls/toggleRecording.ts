@@ -1,6 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
-import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
+import {
+    getTrackStoreState,
+    startRecording,
+    discardRecording,
+    commitRecording,
+    rebaseRecordingTakes,
+} from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -142,6 +148,15 @@ async function beginActualRecording(
                     if (audioOffsetBeats > 0) {
                         recordedClip.audioOffsetBeats = audioOffsetBeats;
                     }
+                    // The recorder minted every take's source offset against the
+                    // provisional anchor; the media actually begins this much
+                    // before it. Rebasing before the dispatch keeps the takes in
+                    // the one entry, which captures the live lane state.
+                    rebaseRecordingTakes({
+                        clipId: recClip.id,
+                        provisionalStartBeat: recClip.startBeat,
+                        shiftBeats: recClip.startBeat - originBeat,
+                    });
                     // The provisional clip and take the recorder opened are
                     // committed as ONE history entry here, once the capture has
                     // completed. A capture that never reaches this branch never

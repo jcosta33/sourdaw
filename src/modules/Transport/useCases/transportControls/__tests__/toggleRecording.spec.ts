@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+        rebaseRecordingTakes:
+            vi.fn<(input: { clipId: string; provisionalStartBeat: number; shiftBeats: number }) => void>(),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
@@ -97,6 +99,7 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
+    rebaseRecordingTakes: mocks.rebaseRecordingTakes,
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
 }));
@@ -432,6 +435,47 @@ describe('toggleRecording', () => {
             throw new Error('Expected the recording clip to be committed');
         }
         expect(clipUpdate.startBeat).toBeCloseTo(3.8, 9);
+    });
+
+    it('rebases the recording takes onto the latency-corrected media origin before the one commit', async () => {
+        // The recorder minted every take's offset against the provisional anchor
+        // (beat 4); the first sample sits 0.1 s earlier, which at 120 BPM is
+        // 0.2 beats. The takes must carry that shift in the same gesture the
+        // clip commits in, so a comped pass reads the media it was recorded on.
+        const recordingClip = { id: 'clip-recording', trackId: 'track-audio', startBeat: 4, endBeat: 4 };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.1;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ kind: 'completed', buffer: { duration: 2 } });
+        await Promise.resolve();
+
+        expect(mocks.rebaseRecordingTakes).toHaveBeenCalledOnce();
+        const rebase = mocks.rebaseRecordingTakes.mock.calls[0]?.[0];
+        expect(rebase?.clipId).toBe('clip-recording');
+        expect(rebase?.provisionalStartBeat).toBe(4);
+        expect(rebase?.shiftBeats).toBeCloseTo(0.2, 9);
+        expect(mocks.rebaseRecordingTakes.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.commitRecording.mock.invocationCallOrder[0]!
+        );
     });
 
     it('places a take stopped inside the hold against the clock at its stop', async () => {

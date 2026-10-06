@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type Take, type TakeLane } from '../../models/TakeLane';
+import { rebaseTakeOntoMedia, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
@@ -107,12 +107,23 @@ export async function stopRecording(atBeat?: number): Promise<void> {
         })),
     });
 
+    const midiAnchorBeats = new Map(finalizedMidiClips.map((clip) => [clip.id, clip.startBeat]));
     const tlState = takeLaneStore.value;
     if (tlState) {
         takeLaneStore.set({
             lanes: tlState.lanes.map((lane) => ({
                 ...lane,
-                takes: lane.takes.map((take) => (clipIdSet.has(take.clipId) ? closeTakeAt(take, endBeat) : take)),
+                takes: lane.takes.map((take) => {
+                    if (!clipIdSet.has(take.clipId)) {
+                        return take;
+                    }
+                    const closed = closeTakeAt(take, endBeat);
+                    const anchorBeat = midiAnchorBeats.get(take.clipId);
+                    if (anchorBeat === undefined) {
+                        return closed;
+                    }
+                    return rebaseTakeOntoMedia(closed, anchorBeat, 0);
+                }),
             })),
         });
     }

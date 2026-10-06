@@ -28,6 +28,7 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { commitRecording } from '../../../useCases/recording/commitRecording';
+import { rebaseRecordingTakes } from '../../../useCases/recording/rebaseRecordingTakes';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -502,5 +503,38 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(clipIds().filter((id) => id === provisional.id)).toHaveLength(1);
+    });
+
+    it('commits the rebased take offsets in the one entry and replays them on redo', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const recordedOffsets = (): (number | undefined)[] =>
+            (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.sourceOffsetBeats));
+
+        rebaseRecordingTakes({ clipId: provisional.id, provisionalStartBeat: 4, shiftBeats: 0.5 });
+        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 });
+        flushAutomergeStorageWrites();
+
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+        expect(recordedOffsets()).toEqual([0.5, 0.5]);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(recordedOffsets()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(recordedOffsets()).toEqual([0.5, 0.5]);
     });
 });
