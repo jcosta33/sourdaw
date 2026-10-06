@@ -59,6 +59,7 @@ export { setTrackNotes } from './setTrackGainPan/setTrackNotes';
 // ── Clip ─────────────────────────────────────────────────────────────────────
 
 export { addClip } from './clip/addClip';
+export { getNextAppActionClipId } from './clip/getNextAppActionClipId';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';

@@ -1204,10 +1204,10 @@
             "digests": [
                 "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
+                "tracked-set-sha256:8dd94abbd5cbc15361a46731b9493581658049baea4216474c653199ac78d82b:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:43b5a4bf3cb1690d15733718e1c48355001aaa1b00afa9cade17e1adb9824f33:grand-boule-live-runtime",
-                "tracked-set-sha256:d2910693016a982ac65003540da045b42c7672b031c11b35a7c651844ab1c017:grand-boule-project-state",
+                "tracked-set-sha256:a74f6b94edff64d5ca321b9cc037b5e1108b1c683b34d3b877b1e5d13b742576:grand-boule-project-state",
                 "tracked-set-sha256:67166eae730be899f2ae574e09d0b97074cd60b893c7d2c7c0ce5d835a8c127c:grand-boule-offline-composition",
                 "tracked-set-sha256:e1e45cff41937f8593ab18d6d5fd20ee7d5bfe0e335eeba75dd46c25fd970531:grand-boule-release-proof"
             ],

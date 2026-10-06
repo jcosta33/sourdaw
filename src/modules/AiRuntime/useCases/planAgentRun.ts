@@ -52,6 +52,12 @@ type PlanAgentRunInput = {
     requireProviderProposal?: boolean;
     readyAssetIds?: readonly string[];
     semanticEvidence?: AgentRunSemanticEvidence;
+    /**
+     * The commands this batch and every later batch of its schedule still owe, present only for a
+     * request that runs as successive batches. The whole remainder must fit the run's command budget
+     * before the first of them is proposed, so a schedule never stops halfway for want of budget.
+     */
+    scheduledCommandCount?: number;
 };
 
 type PlanAgentRunResult =
@@ -191,7 +197,23 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
     return capabilities;
 }
 
+/** The scheduled remainder against what the run's `maxCommands` budget has left, or `null` when it fits. */
+function refuseOverScheduledBudget(input: PlanAgentRunInput): string | null {
+    const limit = input.budgets.limits.maxCommands;
+    if (input.scheduledCommandCount === undefined || limit === undefined) {
+        return null;
+    }
+    const remaining = Math.max(0, limit - (input.budgets.consumed.maxCommands ?? 0));
+    return input.scheduledCommandCount > remaining
+        ? `The scheduled batches need ${String(input.scheduledCommandCount)} commands, more than the ${String(remaining)} this run's maxCommands budget has left.`
+        : null;
+}
+
 export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
+    const scheduledBudgetRefusal = refuseOverScheduledBudget(input);
+    if (scheduledBudgetRefusal !== null) {
+        return { status: 'rejected', reason: scheduledBudgetRefusal };
+    }
     if (input.requireProviderProposal && input.providerProposal === undefined) {
         return {
             status: 'rejected',

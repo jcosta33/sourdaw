@@ -230,6 +230,7 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
     status: 'proposed',
     error: null,
     prompt: 'Add a bassline',
+    batchPosition: null,
     actionLabels: ['Create track Bass'],
     scope: { targetIds: ['track-9'], protectedTargetIds: ['track-1'], protectedRanges: [{ startBeat: 0, endBeat: 4 }] },
     risk: {
@@ -751,6 +752,22 @@ describe('AgentWorkspace', () => {
         expect(recipes).toHaveLength(2);
         expect(recipes[0]).toHaveTextContent('Recipe: Chest-register lift with a softened upper shelf on Lead Vocal');
         expect(recipes[1]).toHaveTextContent('Recipe: Transient lift on a track no longer in the project');
+    });
+
+    it('says which batch of a larger request a proposal is, and says nothing for a single batch', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView({ batchPosition: { index: 2, total: 4 } }));
+
+        const { unmount } = render(<AgentWorkspace />);
+
+        expect(screen.getByText('Batch 2 of 4')).toBeInTheDocument();
+        unmount();
+        getAgentApprovalViewMock.mockReturnValue(approvalView());
+        render(<AgentWorkspace />);
+        expect(screen.queryByText(/^Batch \d+ of \d+$/u)).toBeNull();
     });
 
     it('renders no recipe list for a proposal that adopted none', () => {

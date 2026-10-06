@@ -6,19 +6,13 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { SECTION_COLORS } from '../../models/ColorPalette';
 import { type ArrangementSection } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
-import { addSection } from '../../useCases/marker/sectionOperations/addSection';
-import { moveSection } from '../../useCases/marker/sectionOperations/moveSection';
-import { removeSection } from '../../useCases/marker/sectionOperations/removeSection';
-import { renameSection } from '../../useCases/marker/sectionOperations/renameSection';
-import { reorderSection } from '../../useCases/marker/sectionOperations/reorderSection';
-import { resizeSection } from '../../useCases/marker/sectionOperations/resizeSection';
-import { setSectionColor } from '../../useCases/marker/sectionOperations/setSectionColor';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
@@ -185,12 +179,18 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
         const handleMouseUp = () => {
             if (mode === 'move' && lastStart !== origStart) {
-                moveSection(section.id, lastStart);
+                void executeUserAppAction({
+                    type: 'moveSection',
+                    payload: { sectionId: section.id, startBeat: lastStart },
+                });
             } else if (
                 (mode === 'resize-left' || mode === 'resize-right') &&
                 (lastStart !== origStart || lastEnd !== origEnd)
             ) {
-                resizeSection(section.id, lastStart, lastEnd);
+                void executeUserAppAction({
+                    type: 'resizeSection',
+                    payload: { sectionId: section.id, startBeat: lastStart, endBeat: lastEnd },
+                });
             }
             dragRef.current = null;
             setDragPreview(null);
@@ -250,7 +250,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         const name = 'New Section';
         const startBeat = Math.floor(contextMenu.beat);
         const endBeat = startBeat + 16;
-        addSection(startBeat, endBeat, name);
+        void executeUserAppAction({ type: 'addSection', payload: { startBeat, endBeat, name } });
         setContextMenu({ kind: 'none' });
     };
 
@@ -258,7 +258,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         if (contextMenu.kind !== 'section') {
             return;
         }
-        removeSection(contextMenu.section.id);
+        void executeUserAppAction({ type: 'removeSection', payload: { sectionId: contextMenu.section.id } });
         setContextMenu({ kind: 'none' });
     };
 
@@ -276,7 +276,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         }
         const trimmed = editing.name.trim();
         if (trimmed) {
-            renameSection(editing.sectionId, trimmed);
+            void executeUserAppAction({
+                type: 'renameSection',
+                payload: { sectionId: editing.sectionId, name: trimmed },
+            });
         }
         setEditing(null);
     };
@@ -412,7 +415,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                         key={context}
                                         color={context}
                                         onClick={() => {
-                                            setSectionColor(contextMenu.section.id, context);
+                                            void executeUserAppAction({
+                                                type: 'setSectionColor',
+                                                payload: { sectionId: contextMenu.section.id, color: context },
+                                            });
                                             setContextMenu({ kind: 'none' });
                                         }}
                                         aria-label={`Set color ${context}`}
@@ -423,7 +429,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             <DawMenuButton
                                 disabled={sections.indexOf(contextMenu.section) === 0}
                                 onClick={() => {
-                                    reorderSection(contextMenu.section.id, 'left');
+                                    void executeUserAppAction({
+                                        type: 'reorderSection',
+                                        payload: { sectionId: contextMenu.section.id, direction: 'left' },
+                                    });
                                     setContextMenu({ kind: 'none' });
                                 }}
                             >
@@ -432,7 +441,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             <DawMenuButton
                                 disabled={sections.indexOf(contextMenu.section) === sections.length - 1}
                                 onClick={() => {
-                                    reorderSection(contextMenu.section.id, 'right');
+                                    void executeUserAppAction({
+                                        type: 'reorderSection',
+                                        payload: { sectionId: contextMenu.section.id, direction: 'right' },
+                                    });
                                     setContextMenu({ kind: 'none' });
                                 }}
                             >

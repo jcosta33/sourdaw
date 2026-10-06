@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
         discardDecodedAudioFile: vi.fn(),
         notifyUser: vi.fn(),
         getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
-        addClip: vi.fn(),
+        executeAppActionBatch: vi.fn(),
         transport,
         stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         releaseStagedAsset: vi.fn<(leaseId: string) => void>(),
@@ -54,9 +54,23 @@ vi.mock('../../repositories/track/getTrackById', () => ({
     getTrackById: (id: string) => mocks.getTrackById(id),
 }));
 
-vi.mock('../clip/addClip', () => ({
-    addClip: mocks.addClip,
+// #4618 — the import lands through the registered addClip action inside a
+// single-action batch; the mock returns a committed batch by default and the
+// refused-clip test flips the status.
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppActionBatch: mocks.executeAppActionBatch,
 }));
+
+type BatchAction = { type: string; payload: Record<string, unknown> };
+
+const dispatchedBatchAction = (type: string): Record<string, unknown> => {
+    const call = mocks.executeAppActionBatch.mock.calls[0]?.[0] as BatchAction[] | undefined;
+    const action = call?.find((candidate) => candidate.type === type);
+    if (!action) {
+        throw new Error(`no ${type} action was dispatched in the import batch`);
+    }
+    return action.payload;
+};
 
 function fakeBuffer(duration: number): AudioBuffer {
     return { duration } as unknown as AudioBuffer;
@@ -66,7 +80,10 @@ describe('importAudioClipToTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.transport.value = { tempo: 120 };
-        mocks.addClip.mockReturnValue({ id: 'clip-imported' });
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'committed',
+            actions: [],
+        });
         mocks.stageLocalAsset.mockResolvedValue({ hash: 'asset-hash', leaseId: 'asset-lease' });
     });
 
@@ -81,8 +98,8 @@ describe('importAudioClipToTrack', () => {
 
         await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
 
-        expect(mocks.addClip).toHaveBeenCalledTimes(1);
-        const input = mocks.addClip.mock.calls[0]?.[0] as {
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
+        const input = dispatchedBatchAction('addClip') as {
             trackId: string;
             startBeat: number;
             endBeat: number;
@@ -110,16 +127,20 @@ describe('importAudioClipToTrack', () => {
         await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
 
         expect(mocks.stageLocalAsset).toHaveBeenCalledTimes(1);
-        const input = mocks.addClip.mock.calls[0]?.[0] as { assetHash?: string };
+        const input = dispatchedBatchAction('addClip') as { assetHash?: string };
         expect(input.assetHash).toBe('asset-hash');
         expect(mocks.promoteStagedAsset).toHaveBeenCalledWith('asset-lease');
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
-    it('releases the staged lease when no clip accepts the import', async () => {
+    it('releases the staged lease when the addClip action refuses the import', async () => {
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(2) });
         mocks.getTrackById.mockReturnValue({ clips: [] });
-        mocks.addClip.mockReturnValue(null);
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'the clip write was refused',
+            actions: [],
+        });
 
         await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
 
@@ -135,7 +156,7 @@ describe('importAudioClipToTrack', () => {
 
         await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('asset registration failed'), 'error');
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
     });
@@ -146,7 +167,7 @@ describe('importAudioClipToTrack', () => {
 
         await subject.importAudioClipToTrack('t1', new File([], 'kick.mp3'), { shouldContinue: () => true });
 
-        const input = mocks.addClip.mock.calls[0]?.[0] as { startBeat: number; endBeat: number; name: string };
+        const input = dispatchedBatchAction('addClip') as { startBeat: number; endBeat: number; name: string };
         // 2s at 120 BPM => ceil(4) = 4 beats.
         expect(input.startBeat).toBe(0);
         expect(input.endBeat).toBe(4);
@@ -162,7 +183,7 @@ describe('importAudioClipToTrack', () => {
         await subject.importAudioClipToTrack('t1', new File([], 'a.wav'), { shouldContinue: () => true });
 
         // 4s at 60 BPM => ceil(4) = 4 beats.
-        const input = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
+        const input = dispatchedBatchAction('addClip') as { endBeat: number };
         expect(input.endBeat).toBe(4);
     });
 
@@ -172,7 +193,7 @@ describe('importAudioClipToTrack', () => {
         await subject.importAudioClipToTrack('t1', new File([], 'corrupt.wav'), { shouldContinue: () => true });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('corrupt.wav'), 'error');
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('aborts when the target track does not exist', async () => {
@@ -181,7 +202,7 @@ describe('importAudioClipToTrack', () => {
 
         await subject.importAudioClipToTrack('ghost', new File([], 'a.wav'), { shouldContinue: () => true });
 
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
     });
 
@@ -192,7 +213,7 @@ describe('importAudioClipToTrack', () => {
 
         await subject.importAudioClipToTrack('t1', new File([], 'a.wav'), { shouldContinue: () => true });
 
-        const input = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
+        const input = dispatchedBatchAction('addClip') as { endBeat: number };
         // 4s at default 120 BPM => 8 beats.
         expect(input.endBeat).toBe(8);
     });
@@ -215,7 +236,7 @@ describe('importAudioClipToTrack', () => {
 
         await expect(importPromise).resolves.toBe('superseded');
         expect(mocks.getTrackById).not.toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale');
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });

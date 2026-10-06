@@ -1,4 +1,4 @@
-import { copySelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
+import { copySelectedClip } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
 
 import { deselectAllClips } from '../deselectAllClips';
@@ -57,7 +57,10 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘V',
         action: () => {
-            pasteClip();
+            // Dispatch the app action so the paste lands in undo history
+            // (#4618); calling pasteClip() directly writes with nothing to
+            // undo, exactly as the cut above once did.
+            void executeUserAppAction({ type: 'pasteClip' });
         },
     },
     {

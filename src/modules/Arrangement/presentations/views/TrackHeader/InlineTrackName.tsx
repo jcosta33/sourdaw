@@ -1,9 +1,9 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/Track';
-import { renameTrack } from '../../../useCases/renameTrack';
 
 type InlineTrackNameProps = {
     track: Track;
@@ -23,7 +23,7 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
     const commit = () => {
         const trimmed = value.trim();
         if (trimmed && trimmed !== track.name) {
-            renameTrack(track.id, trimmed);
+            void executeUserAppAction({ type: 'renameTrack', payload: { trackId: track.id, name: trimmed } });
         }
         setEditing(false);
     };

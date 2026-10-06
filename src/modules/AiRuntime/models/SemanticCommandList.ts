@@ -1,8 +1,21 @@
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from './AgentResourceLimits';
 import { MAX_LLM_ACTIONS_PER_BATCH } from './LlmActionLimits';
 
 export const SEMANTIC_COMMAND_LIST_SCHEMA_VERSION = 1 as const;
 export const SEMANTIC_COMMAND_LIST_MAX_ITEMS = 16;
+/** The most commands one approved batch carries; a larger expansion runs as successive batches. */
 export const SEMANTIC_COMMAND_LIST_MAX_COMMANDS = MAX_LLM_ACTIONS_PER_BATCH;
+/**
+ * The most targets one selector may resolve, and the most ids it may exclude. A set is the unit a
+ * musician names ("every vocal track"), so it is bounded by what one request can reasonably name,
+ * not by the per-batch command cap its expansion is later split under.
+ */
+export const SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS = 128;
+/**
+ * The most commands one list may expand to across all of its successive batches. It is the default
+ * run `maxCommands` budget, so a list the compiler admits is never one the run could not afford.
+ */
+export const SEMANTIC_COMMAND_LIST_MAX_EXPANDED_COMMANDS = DEFAULT_AGENT_RESOURCE_LIMITS.maxCommands;
 export const SEMANTIC_COMMAND_LIST_MAX_REPEAT = 8;
 /**
  * A creative request compiles into new tracks and clips, and every creation is an object the user
@@ -92,6 +105,33 @@ export type SemanticCommandListSelector = {
 };
 
 /**
+ * Where one batch's targets sit inside the whole set a selector resolved, when that set expanded past
+ * one batch. `setStableIds` is the whole set in resolution order and `offset` counts the members
+ * earlier batches of the same run carried, so a replay can tell the members those batches changed
+ * from members the project gained or lost since.
+ */
+export type BulkSetSlice = { setStableIds: string[]; offset: number };
+
+/**
+ * One fact of one candidate that an earlier batch of the same run wrote, with the value the
+ * candidate held when the list was compiled and exactly what the run wrote to it: the value a
+ * boolean fact was set to, or the entries an array fact gained. A later batch accepts the live fact
+ * only while it is exactly the compiled value plus the run's own write, and then reads the candidate
+ * with the compiled value restored; any other live value is an outside change and is read as it is.
+ */
+export type BulkSetRunWrittenFact =
+    | {
+          candidateId: string;
+          field: 'muted' | 'locked' | 'bypassed' | 'ownerMuted';
+          value: boolean | null;
+          written: boolean;
+      }
+    | { candidateId: string; field: 'ownerDeviceTypes' | 'ownerTags'; value: string[] | null; added: string[] };
+
+/** The selector fields a set slice re-resolves against the live project; its quantity is relaxed at replay. */
+export type BulkSetReplaySelector = Omit<SemanticCommandListSelector, 'targetArgument' | 'quantity'>;
+
+/**
  * One `match` selector a compiled batch carried, recording the exact selector fields
  * `ArbitraryCommandListSelectorEvidence.predicate` compiled plus the stable ids it resolved to at
  * that moment. Carried on the pending confirmation's approval snapshot so an approval-time project
@@ -109,12 +149,17 @@ export type SemanticCommandListMatchSelectorRecord = {
     itemId: string;
     entity: SemanticCommandListEntity;
     where?: SemanticCommandListSelector['where'];
-    match: SemanticCommandListMatch;
+    /** Absent only for a `where`-only selector carried as one slice of a set larger than one batch. */
+    match?: SemanticCommandListMatch;
     condition?: SemanticCommandListSelector['condition'];
     excludeIds?: string[];
     quantity: SemanticCommandListQuantity;
     stableIds: string[];
     actionPositions: number[];
+    /** Present only when this batch carries one slice of a set larger than one batch. */
+    slice?: BulkSetSlice;
+    /** Facts the run's own earlier batches wrote, restored to their compiled values before replay. */
+    runWrittenFacts?: BulkSetRunWrittenFact[];
 };
 
 export type SemanticCommandListItem = {
@@ -191,7 +236,7 @@ export const SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA = {
                             },
                             excludeIds: {
                                 type: 'array',
-                                maxItems: SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+                                maxItems: SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS,
                                 uniqueItems: true,
                                 items: boundedStringSchema,
                             },
@@ -229,12 +274,12 @@ export const SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA = {
                                     exactly: {
                                         type: 'integer',
                                         minimum: 1,
-                                        maximum: SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+                                        maximum: SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS,
                                     },
                                     maximum: {
                                         type: 'integer',
                                         minimum: 1,
-                                        maximum: SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+                                        maximum: SEMANTIC_COMMAND_LIST_MAX_SET_TARGETS,
                                     },
                                 },
                                 required: ['unit'],

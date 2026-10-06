@@ -26,6 +26,7 @@ import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
 import { executePromptCommandPreview } from './executePromptCommandPreview';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
+import { proposeNextScheduledBatch } from './proposeNextScheduledBatch';
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 
 type PromptChatRequestOptions = {
@@ -48,6 +49,8 @@ type PromptChatRequestInput = {
 };
 
 type AgentApplyReceipt = NonNullable<Awaited<ReturnType<typeof executeImmediatePromptCommand>>>;
+
+type PromptPlanResult = Awaited<ReturnType<typeof planPromptActions>>['result'];
 
 type PromptRequestAdmission = {
     runId: string;
@@ -239,6 +242,50 @@ function settleCompletedPlanning(input: PromptRequestAdmission, userText: string
     return false;
 }
 
+function getBatchPosition(
+    batchSchedule: PromptPlanResult['batchSchedule']
+): { index: number; total: number } | undefined {
+    if (batchSchedule === undefined) {
+        return undefined;
+    }
+    return { index: batchSchedule.position, total: batchSchedule.total };
+}
+
+/** Successive batches each commit before the next is proposed, so only committing modes can run them. */
+function runsScheduledBatches(request: PromptChatRequestInput): boolean {
+    return request.interactionMode === 'apply' || request.interactionMode === 'macro';
+}
+
+/**
+ * A preview or plan of a request that spans several batches could show only its first batch, which
+ * would read as the whole change, so the run refuses it instead.
+ */
+function refuseScheduledPlanInMode(
+    request: PromptChatRequestInput,
+    admission: PromptRequestAdmission,
+    batchCount: number
+): void {
+    const reason = `This request runs as ${String(batchCount)} successive batches, which only apply mode can run one approval at a time.`;
+    tryRecordTerminalFailure({
+        runId: admission.runId,
+        error: normalizeAgentFailure({ category: 'authorization', source: 'provider-planning', knownDomain: true }),
+        terminal: true,
+    });
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'user',
+        content: request.userText,
+        timestamp: Date.now(),
+    });
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'assistant',
+        content: `Command not executed: ${reason}`,
+        timestamp: Date.now(),
+        error: reason,
+    });
+}
+
 async function dispatchPromptPlan(input: {
     request: PromptChatRequestInput;
     admission: PromptRequestAdmission;
@@ -264,6 +311,10 @@ async function dispatchPromptPlan(input: {
             runId: admission.runId,
             reason: 'User cancelled the run before planning completed.',
         });
+        return undefined;
+    }
+    if (result.actions.length > 0 && result.batchSchedule !== undefined && !runsScheduledBatches(request)) {
+        refuseScheduledPlanInMode(request, admission, result.batchSchedule.total);
         return undefined;
     }
     if (result.actions.length > 0) {
@@ -341,6 +392,7 @@ async function dispatchPromptPlan(input: {
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
+                batchPosition: getBatchPosition(result.batchSchedule),
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,
@@ -349,7 +401,7 @@ async function dispatchPromptPlan(input: {
             });
             return undefined;
         }
-        return executeImmediatePromptCommand({
+        const receipt = await executeImmediatePromptCommand({
             runId: admission.runId,
             prompt: request.userText,
             actions: result.actions,
@@ -365,6 +417,10 @@ async function dispatchPromptPlan(input: {
                 state.commandExecutionSettlementWarning = warning;
             },
         });
+        if (result.batchSchedule !== undefined) {
+            await proposeNextScheduledBatch({ runId: admission.runId });
+        }
+        return receipt;
     }
     if (result.rejectionReason) {
         tryRecordTerminalFailure({

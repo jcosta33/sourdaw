@@ -156,8 +156,12 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
         });
         transaction.commit();
 
+        // The settlement is the scoped write's own preparation, so its
+        // mutation is attributed to the demanding transaction — never to a
+        // foreign or unowned actor that an authority observer would read as a
+        // concurrent project change.
         expect(mutations).toEqual([
-            { message: 'Create A', owner: undefined, snapshotTransaction: undefined },
+            { message: 'Create A', owner: scopedOwner, snapshotTransaction: undefined },
             { message: 'Select A', owner: scopedOwner, snapshotTransaction },
         ]);
         expect(doc.state).toEqual({ items: ['peer-b', 'a'], selected: 'a' });
@@ -246,14 +250,18 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
             storage.set({ items: ['foreign-a', 'unscoped-b'], selected: 'unscoped-b' });
         });
 
-        expect(mutationOwners).toEqual([undefined]);
+        // The unscoped predecessor settles inside `current`'s window, so its
+        // mutation is attributed to `current` — the transaction whose write
+        // demanded the settlement. The foreign transaction's pending was
+        // never touched and stays unflushed.
+        expect(mutationOwners).toEqual([currentOwner]);
         expect(countPendingAutomergeStorageWrites()).toBe(2);
         current.commit();
-        expect(mutationOwners).toEqual([undefined, currentOwner]);
+        expect(mutationOwners).toEqual([currentOwner, currentOwner]);
         expect(doc.state).toEqual({ items: ['unscoped-b'], selected: 'unscoped-b' });
 
         foreign.commit();
-        expect(mutationOwners).toEqual([undefined, currentOwner, foreignOwner]);
+        expect(mutationOwners).toEqual([currentOwner, currentOwner, foreignOwner]);
         expect(doc.state).toEqual({ items: ['unscoped-b', 'foreign-a'], selected: 'unscoped-b' });
 
         const successorTransaction = runWithAutomergeStorageTransaction(undefined, () => {

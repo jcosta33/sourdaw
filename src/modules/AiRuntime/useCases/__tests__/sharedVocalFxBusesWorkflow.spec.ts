@@ -1316,7 +1316,20 @@ describe('shared vocal FX buses workflow', () => {
     });
 
     it('rejects serial inline delay into reverb because parallel shared buses cannot preserve that balance', async () => {
-        const { lead } = installSharedVocalFxFixture();
+        installSharedVocalFxFixture();
+        // The serial reverb must be written as a fresh immutable store state.
+        // Mutating the committed fixture track in place makes the follow-up
+        // `trackStore.set` carry a desired value identical to its base, and the
+        // CRDT reconciler's ownership law (#4858) then treats the write as
+        // carrying no delta of this writer's own: the document never receives
+        // the device, the document projection erases the alias-made local edit,
+        // and the workflow plans against a project without the serial chain —
+        // confirming instead of rejecting.
+        const tracks = structuredClone(trackStore.value?.tracks ?? []);
+        const lead = tracks.find((track) => track.id === 'track-lead-vocal');
+        if (!lead) {
+            throw new Error('Expected EX-08 fixture tracks');
+        }
         addConfiguredDevice({
             track: lead,
             id: 'device-lead-reverb',
@@ -1331,11 +1344,7 @@ describe('shared vocal FX buses workflow', () => {
                 'rev-mix': 0.25,
             },
         });
-        trackStore.set({
-            tracks: structuredClone(trackStore.value?.tracks ?? []),
-            selectedTrackId: null,
-            ghostClips: [],
-        });
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
         useWebSharedVocalFxFixture();
 
         await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
