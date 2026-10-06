@@ -1,0 +1,31 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipSplit.spec.ts
+  s_2bfd55a4393d7c::t_586c6f4e387373 1-100,111-136
+  s_2bfd55a4393d7c::t_48bcc9a1d71bc4 101-110
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_2bfd55a4393d7c::t_0b16d3ff85331a 715-745,747-757
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_2bfd55a4393d7c::t_d8db8d37c26c3e 884-894,905-1030,1063
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_2bfd55a4393d7c::t_201dad6e16bb6b 325-328,331,338,349,355,366,377,385,396,412,421,433,438-443,445-510,526-556,558-560,562-578,580-596,598-601
+  s_2bfd55a4393d7c::t_69990f53f5019d 444,511
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipSplit.ts
+  s_2bfd55a4393d7c::t_9e837abf9550da 3,24,49-50,77-78
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_2bfd55a4393d7c::t_9b47d6145e4f10 214-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "324706f13f226a3f73e023ef9c62c1b26d8b9690",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
