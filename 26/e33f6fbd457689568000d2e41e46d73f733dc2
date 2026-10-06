@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_3315851506ba77::t_3a4c815470bf33 1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26e33f6fbd457689568000d2e41e46d73f733dc2",
+  "prompts": {},
+  "sessions": {
+    "s_3315851506ba77": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8d60a94a-8f7f-4367-b5b7-fc62336c5c7c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
