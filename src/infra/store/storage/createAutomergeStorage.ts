@@ -2,7 +2,7 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { reconcileCrdtSlot, type CrdtEntityIdentityByField } from './reconcileCrdtSlot';
+import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter } from './types';
 
 type AutomergeStorageDocId = string;
@@ -232,6 +232,14 @@ type PendingAutomergeStorageWrite = {
     readonly commitOwner: object;
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
+    /**
+     * The storage backend was swapped underneath this write. Its base and
+     * presence describe the outgoing backend's document, so they are
+     * re-anchored — the next flush writes the full value and decides no
+     * absence against a document it never saw. Writes buffered before any
+     * port existed keep the deferred-baseline contract (#4109) instead.
+     */
+    readonly notePortChange?: () => void;
     readonly scoped: boolean;
     readonly snapshotTransaction: object | undefined;
     readonly claim: () => ClaimedAutomergeStorageWrite | null;
@@ -1102,7 +1110,19 @@ export function countPendingAutomergeStorageWrites(): number {
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
+    const previousPort = automergeStoragePort;
+    if (previousPort === port) {
+        return;
+    }
     automergeStoragePort = port;
+    if (previousPort === null) {
+        // Writes buffered before any port existed never belonged to an
+        // outgoing backend; they keep the deferred-baseline contract (#4109).
+        return;
+    }
+    for (const pending of [...pendingAutomergeStorageWrites]) {
+        pending.notePortChange?.();
+    }
 }
 
 /**
@@ -1188,6 +1208,15 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
     type AdapterPendingWrite = {
+        /**
+         * The base-capture snapshot of the document slot — `getDoc`, never
+         * the cache. The reconcile's absence law reads it: a node the
+         * document lacks that this snapshot also lacked is the writer's own
+         * stranded seed and lands; a node the snapshot held is a peer's newer
+         * deletion and stands. Refreshed at every re-anchor of `baseValue`
+         * below, so the two always describe the same moment.
+         */
+        baseDocumentPresence: CrdtSlotPresence | undefined;
         baseValue: TData | null;
         metadata: TWriteMetadata | null;
         message: string | undefined;
@@ -1319,6 +1348,23 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
+    /**
+     * What the document itself holds in this slot right now, detached from the
+     * live Automerge proxies — or `undefined` when there is no document to
+     * read, which leaves every absence undecided. Captured in the same
+     * instant as a pending's `baseValue`: a later read would describe a
+     * document the base never saw, and the reconcile's absence law needs the
+     * two to agree.
+     */
+    const captureBaseDocumentPresence = (): CrdtSlotPresence | undefined => {
+        const document = getAutomergeStoragePort()?.getDoc(docId);
+        if (!document) {
+            return undefined;
+        }
+        const rawValue = document[key];
+        return { slot: rawValue === undefined ? undefined : toDocSafe(rawValue) };
+    };
+
     const freezeMetadata = (metadata: TWriteMetadata): TWriteMetadata => {
         const cloned = toDocSafe(metadata);
         const freeze = (value: unknown): void => {
@@ -1368,7 +1414,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         message?: string,
         snapshotTransaction?: object,
         execution?: ClaimedAutomergeStorageWrite,
-        metadata: TWriteMetadata | null = null
+        metadata: TWriteMetadata | null = null,
+        baseDocumentPresence?: CrdtSlotPresence
     ): AutomergeStorageMutationInput | null => {
         const port = getAutomergeStoragePort();
         if (!port) {
@@ -1410,6 +1457,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                                 baseValue: nextBaseValue,
                                 value: toDocSafe(nextCrdtValue),
                                 identityByField: crdtEntityIdentity,
+                                documentPresence: baseDocumentPresence,
                             });
                         },
                     });
@@ -1434,6 +1482,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     baseValue: crdtBaseValue,
                     value: toDocSafe(crdtValue),
                     identityByField: crdtEntityIdentity,
+                    documentPresence: baseDocumentPresence,
                 });
             },
             message,
@@ -1527,7 +1576,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const preparePendingWrite = (
         pending: AdapterPendingWrite,
         execution: ClaimedAutomergeStorageWrite,
-        frozen: Pick<AdapterPendingWrite, 'baseValue' | 'message' | 'metadata' | 'revision' | 'value'>
+        frozen: Pick<
+            AdapterPendingWrite,
+            'baseDocumentPresence' | 'baseValue' | 'message' | 'metadata' | 'revision' | 'value'
+        >
     ): PendingWritePreparation => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending || pending.claimedExecution !== execution) {
             // A newer pending already owns this slot; this one is inert and
@@ -1579,7 +1631,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             frozen.message,
             pending.write.snapshotTransaction,
             execution,
-            frozen.metadata
+            frozen.metadata,
+            frozen.baseDocumentPresence
         );
         if (!mutation) {
             return { status: 'defer' };
@@ -1671,8 +1724,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         const visibleBefore = cachedValue;
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         committedSetRevision = Math.max(committedSetRevision, claimRevision);
+        const baseDocumentPresence = captureBaseDocumentPresence();
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = committedCacheValue;
+            remaining.baseDocumentPresence = baseDocumentPresence;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1726,6 +1781,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             }
             if (rebasePending) {
                 successor.baseValue = projectedValue;
+                successor.baseDocumentPresence = captureBaseDocumentPresence();
             }
             successor.value = acceptedValue;
             projectedValue = acceptedValue;
@@ -1843,8 +1899,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             absencePresentation = 'default';
         }
         acceptedAuthorityEpoch += 1;
+        const baseDocumentPresence = captureBaseDocumentPresence();
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = projected;
+            remaining.baseDocumentPresence = baseDocumentPresence;
         }
         recomputeCachedValue();
         if (!Object.is(visibleBefore, cachedValue)) {
@@ -1887,6 +1945,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     return null;
                 }
                 const frozen = {
+                    baseDocumentPresence: current.baseDocumentPresence,
                     baseValue: current.baseValue,
                     message: current.message,
                     metadata: current.metadata === null ? null : freezeMetadata(current.metadata),
@@ -1916,9 +1975,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 return execution;
             },
             scoped: context.scoped,
+            notePortChange: () => {
+                const current = getPending();
+                if (pendingWritesByOwner.get(current.write.commitOwner) !== current) {
+                    return;
+                }
+                current.baseValue = null;
+                current.baseDocumentPresence = undefined;
+            },
             snapshotTransaction: context.snapshotTransaction,
         };
         pending = {
+            baseDocumentPresence: captureBaseDocumentPresence(),
             baseValue: cachedValue,
             metadata: initialMetadata,
             message: getSemanticMessage(),
@@ -2405,6 +2473,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         // pending delta purely local without granting a stale
                         // callback authority over a replacement pending.
                         visiblePending.baseValue = crdtData;
+                        visiblePending.baseDocumentPresence = captureBaseDocumentPresence();
                     }
                     cachedValue = acceptedVisible;
                     cachedRevision = ++nextRevision;
