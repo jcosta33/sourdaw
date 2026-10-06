@@ -46,6 +46,15 @@ function isBassTrack(track: ProjectContextTrack): boolean {
     return track.canonicalRole?.role === 'bass';
 }
 
+// A routable track whose role no classifier could name: the scope refuses rather than guess that a
+// layer on it is not bass processing.
+function isAmbiguousRoleTrack(track: ProjectContextTrack | undefined): boolean {
+    if (!track || (track.kind !== 'audio' && track.kind !== 'midi')) {
+        return false;
+    }
+    return track.canonicalRole === undefined || track.canonicalRole.role === 'unknown';
+}
+
 function regionsOverlap(
     left: Pick<ProjectContextAdjustmentRegion, 'startBeat' | 'endBeat'>,
     right: Pick<ProjectContextAdjustmentRegion, 'startBeat' | 'endBeat'>
@@ -95,8 +104,17 @@ export function getBassProcessingCopyPromptScope(
     const entries: BassProcessingCopyPlanEntry[] = [];
     const protectedLayers: Array<{ id: string; name: string }> = [];
 
+    const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
     for (const layer of context.adjustmentLayers ?? []) {
         const sourceRegions = layer.regions.filter((region) => regionsOverlap(region, sourceBounds));
+        const touchesSections =
+            sourceRegions.length > 0 || layer.regions.some((region) => regionsOverlap(region, targetBounds));
+        const ambiguousTrackId = layer.affectedTrackIds.find((trackId) =>
+            isAmbiguousRoleTrack(tracksById.get(trackId))
+        );
+        if (touchesSections && ambiguousTrackId !== undefined) {
+            return { status: 'invalid', reason: `EX-03 track role is ambiguous: ${ambiguousTrackId}` };
+        }
         if (sourceRegions.length === 0) {
             protectedLayers.push({ id: layer.id, name: layer.name });
             continue;

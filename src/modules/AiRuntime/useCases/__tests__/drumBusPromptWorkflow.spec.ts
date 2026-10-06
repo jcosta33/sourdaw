@@ -57,8 +57,10 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
+import { getDrumRenderComparisonPromptScope } from '../agentReference/getDrumRenderComparisonPromptScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
@@ -1247,6 +1249,18 @@ describe('drum bus prompt workflow', () => {
         expect(confirmation?.actions[0]).toMatchObject({
             type: 'createBus',
             payload: { expectedTrackOutputs: [{ trackId: 'track-room', outputId: 'master' }] },
+        });
+    });
+
+    it('refuses the EX-11 scope for a routable track whose role no classifier could name', () => {
+        setEx11Project();
+        const tracks = [...(trackStore.value?.tracks ?? []), createTrack('track-audio-7', 'Audio 7')];
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        flushFixtureStorageOwner('tracks');
+
+        expect(getDrumRenderComparisonPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-11 track role is ambiguous: track-audio-7',
         });
     });
 

@@ -58,19 +58,20 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['percussion', /\b(?:percussion|perc|clap|claps|rim|rimshot|shaker|tambourine|cowbell|conga|bongo)\b/],
     ['overhead', new RegExp(String.raw`\boverheads?\b|${wholeNameWithQualifiers('oh', 'left|right|l|r|mono|stereo')}`)],
     // A room needs a drum word beside it: room tone and "Room" alone name non-drum tracks.
-    ['room', /\brooms?(?=\s+drums?\b)|(?<=\bdrums?\s+)rooms?\b/],
+    ['room', /\broom(?=\s+drums?\b)|(?<=\bdrums?\s+)rooms?\b/],
     ['drums', /\bdrums?\b/],
     ['bass', /\bbass\b/],
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
     ['backing vocal', /\b(?:backing vocals?|background vocals?|bgv)\b/],
-    // A guitar named by its string count or material ("12 String", "Nylon String") is a guitar, not
-    // an orchestral strings section. The clause yields when another instrument is named beside it
-    // ("6 String Bass", "8 String Ukulele"), and counts that name other instruments (a 5 string
-    // banjo) are not guitar counts.
+    // A guitar named by its string count before the singular ("12 String") or its material
+    // ("Nylon String", "Nylon Strings") is a guitar, not an orchestral strings section; "12 Strings"
+    // is a section. The clause yields when another instrument is named beside it ("6 String Bass",
+    // "8 String Ukulele"), and counts that name other instruments (a 5 string banjo) are not guitar
+    // counts.
     [
         'guitar',
         new RegExp(
-            String.raw`\b(?:guitars?|gtrs?)\b|(?<!\b(?:${STRING_COUNT_OTHER_INSTRUMENTS})\s+)\b(?:6|7|8|12|nylon|steel)\s+strings?\b(?!\s+(?:${STRING_COUNT_OTHER_INSTRUMENTS})\b)`
+            String.raw`\b(?:guitars?|gtrs?)\b|(?<!\b(?:${STRING_COUNT_OTHER_INSTRUMENTS})\s+)\b(?:(?:6|7|8|12)\s+string|(?:nylon|steel)\s+strings?)\b(?!\s+(?:${STRING_COUNT_OTHER_INSTRUMENTS})\b)`
         ),
     ],
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
@@ -88,7 +89,7 @@ const MODIFIER_NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     // A string count or material before the word names an instrument's strings, not a section. The
     // material words are reachable here when the guitar clause above yields to another instrument
     // ("Nylon String Ukulele"), which must not fall through to an orchestral strings track.
-    ['strings', /(?<!\b(?:\d+|nylon|steel)\s+)\bstrings?\b/],
+    ['strings', /(?<!\b(?:nylon|steel)\s+)\bstrings\b|(?<!\b(?:\d+|nylon|steel)\s+)\bstring\b/],
     ['brass', /\bbrass\b/],
     // Session furniture that carries no part of the song.
     ['utility', /\b(?:click|metronome|reference|ref|guide|cue|hat trick)\b/],
@@ -105,26 +106,82 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
     'room',
 ]);
 
-// The kit-mic roles a generic drum word may qualify when it comes first ("Drum Overheads").
-const KIT_MIC_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['overhead', 'room']);
-
 const BASS_QUALIFIED_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['keys', 'pad']);
 
 const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_DRUM_ROLES, 'drums']);
 
+// Separators that only label a name ("Drums (Room)", "Drums - Kick In", "Drums_Snare"). Anything
+// else between two words ("&", "+", ",") joins separate things.
+const LABELLING_SEPARATOR = /^[\s()[\]{}:./\\_–—-]*$/u;
+
+// A word before a drum piece that adds or removes it ("Drums No Overheads", "w/ Room").
+const CONJUNCTION_OR_NEGATION_WORDS: ReadonlySet<string> = new Set(['and', 'with', 'no', 'without', 'w', 'o', 'minus']);
+
+function splitNameWords(name: string): { words: string[]; separators: string[] } {
+    const lowered = name.normalize('NFKD').toLowerCase();
+    return {
+        words: lowered.match(/[a-z0-9]+/g) ?? [],
+        separators: lowered.split(/[a-z0-9]+/).slice(1, -1),
+    };
+}
+
+function countSpaces(text: string): number {
+    return (text.match(/ /g) ?? []).length;
+}
+
+function wordSpanOfRole(tokens: string, role: CanonicalTrackRole): { first: number; last: number } | null {
+    const spans = roleSpans(tokens, role);
+    const span = spans[0];
+    if (spans.length !== 1 || !span) {
+        return null;
+    }
+    return { first: countSpaces(tokens.slice(0, span.start)), last: countSpaces(tokens.slice(0, span.end - 1)) };
+}
+
 /**
- * Names that carry only drum-family evidence ("Kick & Snare", "Drums (Room)") still say the track
- * is drums, even when no adjacency rule picks one role. A mixed-family conflict stays a conflict.
+ * Whether a generic drums word and one specific drum piece are written as one label: directly
+ * adjacent, or joined only by a labelling separator, in either order, with nothing before the
+ * piece that adds or removes it.
  */
-function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[]): CanonicalTrackRole | null {
+function labelsDrumPiece(name: string, piece: CanonicalTrackRole): boolean {
+    // A truncated imported name could hide contradictory evidence after the cut.
+    if (name.length > 256) {
+        return false;
+    }
+    const { words, separators } = splitNameWords(name);
+    const tokens = words.join(' ');
+    const drums = wordSpanOfRole(tokens, 'drums');
+    const pieceSpan = wordSpanOfRole(tokens, piece);
+    if (!drums || !pieceSpan) {
+        return false;
+    }
+    const [first, second] = drums.first < pieceSpan.first ? [drums, pieceSpan] : [pieceSpan, drums];
+    if (second.first !== first.last + 1 || !LABELLING_SEPARATOR.test(separators[first.last] ?? '')) {
+        return false;
+    }
+    if (pieceSpan.first === 0) {
+        return true;
+    }
+    const wordBefore = words[pieceSpan.first - 1] ?? '';
+    return (
+        !CONJUNCTION_OR_NEGATION_WORDS.has(wordBefore) &&
+        LABELLING_SEPARATOR.test(separators[pieceSpan.first - 1] ?? '')
+    );
+}
+
+/**
+ * Names that carry only drum-family evidence ("Kick & Snare", "Drums & Room") still say the track
+ * is drums. A generic drums word with exactly one specific piece names that piece only when the
+ * two are written as one label ("Drums (Room)", "Kick Drum"). A mixed-family conflict stays a
+ * conflict, and null leaves the name to the other rules.
+ */
+function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[], name: string): CanonicalTrackRole | null {
     if (!roles.every((role) => DRUM_FAMILY_ROLES.has(role))) {
         return null;
     }
-    // A generic drums word paired with exactly one kit-mic word names that kit mic, whatever
-    // punctuation separates them ("Drums (Room)", "Room (Drums)").
-    const kitMic = roles.find((role) => role !== 'drums');
-    if (roles.length === 2 && roles.includes('drums') && kitMic !== undefined && KIT_MIC_ROLES.has(kitMic)) {
-        return kitMic;
+    const piece = roles.find((role) => role !== 'drums');
+    if (roles.length === 2 && roles.includes('drums') && piece !== undefined && labelsDrumPiece(name, piece)) {
+        return piece;
     }
     return 'drums';
 }
@@ -234,13 +291,6 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     const secondSpan = aIsFirst ? spanB : spanA;
     if (!/^\s+$/.test(tokens.slice(firstSpan.end, secondSpan.start))) {
         return null;
-    }
-    // A specific drum role named directly before the generic "drums" is the specific role.
-    if (secondRole === 'drums' && SPECIFIC_DRUM_ROLES.has(firstRole)) {
-        return firstRole;
-    }
-    if (firstRole === 'drums' && KIT_MIC_ROLES.has(secondRole)) {
-        return secondRole;
     }
     if (firstRole === 'bass') {
         return resolveBassQualifiedRole(secondRole);
@@ -383,7 +433,8 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length > 1) {
-        const resolved = resolveNamedRoleConflict(roles, input.track.name) ?? resolveDrumFamilyConflict(roles);
+        const resolved =
+            resolveDrumFamilyConflict(roles, input.track.name) ?? resolveNamedRoleConflict(roles, input.track.name);
         if (resolved) {
             return { role: resolved, source: 'name-tags', evidence: 'resolved-name-tags' };
         }

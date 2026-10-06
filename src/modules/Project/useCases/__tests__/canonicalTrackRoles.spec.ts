@@ -345,6 +345,12 @@ describe('canonical track roles', () => {
         { name: '12-String', role: 'guitar' },
         { name: '12 String Gtr', role: 'guitar' },
         { name: 'Nylon String', role: 'guitar' },
+        { name: 'Nylon Strings', role: 'guitar' },
+        // A count names a guitar only before the singular; "12 Strings" is an orchestral section.
+        { name: '8 Strings', role: 'strings' },
+        { name: '12 Strings', role: 'strings' },
+        { name: 'Gtrs', role: 'guitar' },
+        { name: 'Acoustic Gtrs', role: 'guitar' },
         { name: 'Nylon String Gtr', role: 'guitar' },
         { name: 'Steel String Gtr', role: 'guitar' },
         { name: 'Acoustic 12 String', role: 'guitar' },
@@ -395,13 +401,41 @@ describe('canonical track roles', () => {
     // Evidence from the drums family alone still names drums when no adjacency rule picks one role;
     // a conflict that crosses families stays unknown.
     it.each([
-        // A generic drums word with exactly one kit-mic word names that kit mic, however separated.
+        // A generic drums word with exactly one specific piece names that piece when the two are
+        // adjacent or joined by a labelling separator (brackets, colon, dot, slash, dash, underscore).
         { name: 'Drums (Room)', role: 'room' },
         { name: 'Room (Drums)', role: 'room' },
         { name: 'Drums/Room', role: 'room' },
         { name: 'Drums: Room', role: 'room' },
         { name: 'Drums (Overheads)', role: 'overhead' },
         { name: 'Drums.Overheads', role: 'overhead' },
+        { name: 'Drums - Overheads', role: 'overhead' },
+        { name: 'Drums - Kick In', role: 'kick' },
+        { name: 'Drums_Kick', role: 'kick' },
+        { name: 'DRUMS_KICK', role: 'kick' },
+        { name: 'Drums: Kick', role: 'kick' },
+        { name: 'Kick (Drums)', role: 'kick' },
+        { name: 'Drums - Snare Top', role: 'snare' },
+        { name: 'Drums_Snare', role: 'snare' },
+        { name: 'Drums - Hi-Hat', role: 'hi-hat' },
+        { name: 'Drums_HiHat', role: 'hi-hat' },
+        { name: 'Drums - Tom 1', role: 'tom' },
+        { name: 'Drums - Ride', role: 'cymbal' },
+        // A conjunction or negation between them or before the piece keeps the generic role, and so
+        // do two specific pieces.
+        { name: 'Drums & Room', role: 'drums' },
+        { name: 'Drums + Overheads', role: 'drums' },
+        { name: 'Drums and Overheads', role: 'drums' },
+        { name: 'Drums (No Overheads)', role: 'drums' },
+        { name: 'Drums No Overheads', role: 'drums' },
+        { name: 'Drums Without Overheads', role: 'drums' },
+        { name: 'Drums w/o Overheads', role: 'drums' },
+        { name: 'Drums w/ Overheads', role: 'drums' },
+        { name: 'No Overheads (Drums)', role: 'drums' },
+        { name: 'Drums & Rooms', role: 'drums' },
+        { name: 'Rooms (Drums)', role: 'drums' },
+        { name: 'Drum Room Overheads', role: 'drums' },
+        { name: 'Drums Room + Overheads', role: 'drums' },
         { name: 'Snare Overhead', role: 'drums' },
         { name: 'Kick & Snare', role: 'drums' },
         { name: 'Drums & Perc', role: 'drums' },

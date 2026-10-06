@@ -45,7 +45,9 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { getBassProcessingCopyPromptScope } from '../agentReference/getBassProcessingCopyPromptScope';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
@@ -1041,6 +1043,41 @@ describe('bass-processing section copy workflow', () => {
                 { id: 'layer-bass-drum-eq', name: 'Bass Drum Chorus EQ' },
             ])
         );
+    });
+
+    it('refuses the scope when a layer on a Chorus One section touches a track whose role is unknown', async () => {
+        const trackState = trackStore.value;
+        const layerState = adjustmentLayerStore.value;
+        if (!trackState || !layerState) {
+            throw new TypeError('Expected project state');
+        }
+        trackStore.set({ ...trackState, tracks: [...trackState.tracks, createTrack('track-bass-fx', 'Bass FX')] });
+        adjustmentLayerStore.set({
+            layers: [
+                ...layerState.layers,
+                createLayer({
+                    id: 'layer-bass-fx-reverb',
+                    name: 'Bass FX Chorus Reverb',
+                    effectType: 'reverb',
+                    affectedTrackIds: ['track-bass-fx'],
+                    region: {
+                        id: 'region-bass-fx-chorus-one',
+                        startBeat: 16,
+                        endBeat: 32,
+                        blend: 1,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                    },
+                }),
+            ],
+        });
+
+        expect(getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-03 track role is ambiguous: track-bass-fx',
+        });
+        await sendChatMessage(PROMPT);
+        expect(getConfirmationId()).toBe('');
     });
 
     it('targets a bass named String Bass, which a strings word must not turn into an unknown role', async () => {
