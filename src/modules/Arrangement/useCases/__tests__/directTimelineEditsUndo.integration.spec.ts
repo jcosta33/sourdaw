@@ -152,6 +152,46 @@ describe('direct timeline and mixer edits and Undo', () => {
         expect.soft(trackColor()).toBe('#222222');
     });
 
+    it('undoes a gapped section reorder instead of the edit beneath it (#4962)', async () => {
+        markerStore.set({
+            markers: [{ id: 'm1', beat: 20, name: 'Chorus', color: '#f00' }],
+            sections: [
+                { id: 's1', startBeat: 0, endBeat: 16, name: 'Intro', color: '#111' },
+                { id: 's2', startBeat: 24, endBeat: 40, name: 'Verse', color: '#222' },
+            ],
+        });
+        await colourTrackThenEdit(async () => {
+            await executeAppAction({ type: 'renameMarker', payload: { markerId: 'm1', name: 'Bridge' } });
+            await executeAppAction({ type: 'reorderSection', payload: { sectionId: 's1', direction: 'right' } });
+        });
+        // One undo reverts the reorder exactly — both spans and the gap — while
+        // the marker rename beneath it stays put.
+        expect.soft(markerStore.value?.sections).toEqual([
+            { id: 's1', startBeat: 0, endBeat: 16, name: 'Intro', color: '#111' },
+            { id: 's2', startBeat: 24, endBeat: 40, name: 'Verse', color: '#222' },
+        ]);
+        expect.soft(markerStore.value?.markers[0]?.name).toBe('Bridge');
+        expect.soft(trackColor()).toBe('#222222');
+    });
+
+    it('undoes a fractional-beat section reorder to the exact beats', async () => {
+        markerStore.set({
+            markers: [],
+            sections: [
+                { id: 's1', startBeat: 0.1, endBeat: 16.3, name: 'Intro', color: '#111' },
+                { id: 's2', startBeat: 16.3, endBeat: 32.5, name: 'Verse', color: '#222' },
+            ],
+        });
+        await colourTrackThenEdit(() =>
+            executeAppAction({ type: 'reorderSection', payload: { sectionId: 's1', direction: 'right' } })
+        );
+        expect.soft(markerStore.value?.sections).toEqual([
+            { id: 's1', startBeat: 0.1, endBeat: 16.3, name: 'Intro', color: '#111' },
+            { id: 's2', startBeat: 16.3, endBeat: 32.5, name: 'Verse', color: '#222' },
+        ]);
+        expect.soft(trackColor()).toBe('#222222');
+    });
+
     it('undoes a track renamed in its header', async () => {
         await colourTrackThenEdit(() =>
             executeAppAction({ type: 'renameTrack', payload: { trackId: 't-bass', name: 'Sub' } })

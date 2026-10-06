@@ -1639,6 +1639,14 @@ export type AppAction =
     | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
     | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
     | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | {
+          /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
+           *  sections' exact pre-reorder beat spans and list positions, the gap
+           *  between them included. Emitted only by the reorder handler's
+           *  `describe()` — never invoked directly. */
+          type: 'restoreSectionBeats';
+          payload: { sections: Array<{ sectionId: string; startBeat: number; endBeat: number; index: number }> };
+      }
     | { type: 'setClipGainEnvelope'; payload: { clipId: string; envelope: ClipSatelliteGainEnvelopeSnapshot | null } }
     | { type: 'toggleClipGainEnvelope'; payload: { clipId: string; expectedEnabled?: boolean } }
     | {

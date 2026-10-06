@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationLane } from '#/modules/Automation/useCases';
+
 import { type Macro } from '../../../models/Macro';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
@@ -27,6 +30,7 @@ describe('playMacro', () => {
     beforeEach(() => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
+        automationStore.set({ lanes: [] });
         // Reset implementations too: a row's dispatch simulation (resolving a
         // generated id onto the dispatched action) must never leak into later
         // rows. Every row starts from the production surface — resolve, record
@@ -37,6 +41,7 @@ describe('playMacro', () => {
 
     afterEach(() => {
         localStorage.removeItem(STORAGE_KEY);
+        automationStore.set({ lanes: [] });
     });
 
     it('should execute each action with a shared undo group', async () => {
@@ -316,7 +321,14 @@ describe('playMacro', () => {
         });
     });
 
-    it('remaps later actions to the canonical lane returned by a no-op add', async () => {
+    it('maps a folded no-op lane add onto the track-level lane the store already owns', async () => {
+        // Production fold: the replayed add is dropped by the handler's noop
+        // gate — the dispatch writes nothing and the pre-minted id names no
+        // lane — while the track-level lane the track already owns stays in the
+        // automation store. The default passive mock models that dispatch
+        // exactly (no write-back); the seeded store is the resolution source
+        // the recorded id must map onto.
+        addAutomationLane('track-1', 'gain', 'Gain', 'existing-lane');
         const noOpLaneMacro: Macro = {
             id: 'automation-existing-lane',
             name: 'Existing automation lane',
@@ -338,33 +350,16 @@ describe('playMacro', () => {
             createdAt: 0,
         };
         macroStore.set({ macros: [noOpLaneMacro], recording: false, currentRecording: [] });
-        executeAppActionMock.mockImplementation((action) => {
-            if (action.type === 'addAutomationLane') {
-                action.payload.laneId = 'existing-lane';
-            }
-            if (action.type === 'addAutomationPoint') {
-                action.payload.pointId = 'replayed-point';
-            }
-            return Promise.resolve();
-        });
 
         await playMacro(noOpLaneMacro.id);
 
-        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
-            {
-                type: 'addAutomationLane',
-                payload: {
-                    trackId: 'track-1',
-                    parameterId: 'gain',
-                    parameterName: 'Gain',
-                    laneId: 'existing-lane',
-                },
-            },
-            {
-                type: 'addAutomationPoint',
-                payload: { laneId: 'existing-lane', pointId: 'replayed-point', beat: 4, value: 0.5 },
-            },
-        ]);
+        const laneAction = executeAppActionMock.mock.calls[0]?.[0];
+        const mintedLaneId = laneAction?.type === 'addAutomationLane' ? laneAction.payload.laneId : undefined;
+        expect(mintedLaneId).toMatch(/^automation-command-/);
+        expect(executeAppActionMock.mock.calls[1]?.[0]).toMatchObject({
+            type: 'addAutomationPoint',
+            payload: { laneId: 'existing-lane' },
+        });
     });
 
     it('should regenerate adjustment IDs and remap later references without mutating the macro', async () => {

@@ -166,22 +166,90 @@ describe('handleReorderSection', () => {
         expect(reorderSection).toHaveBeenCalledWith('s1', 'right');
     });
 
-    it('inverts a contiguous swap with the opposite-direction reorder', () => {
+    it('inverts a contiguous swap onto both sections’ exact pre-reorder beats', () => {
         mockedGetMarkerState.mockReturnValue({ markers: [], sections: contiguousSections });
         const { inverseAction } = handleReorderSection.describe({
             type: 'reorderSection',
             payload: { sectionId: 's1', direction: 'right' },
         });
-        expect(inverseAction).toEqual({ type: 'reorderSection', payload: { sectionId: 's1', direction: 'left' } });
+        expect(inverseAction).toEqual({
+            type: 'restoreSectionBeats',
+            payload: {
+                sections: [
+                    { sectionId: 's1', startBeat: 0, endBeat: 16, index: 0 },
+                    { sectionId: 's2', startBeat: 16, endBeat: 32, index: 1 },
+                ],
+            },
+        });
     });
 
-    it('refuses the inverse when the pair is not contiguous — the opposite reorder would lose the gap', () => {
+    it('inverts a gap reorder onto both sections’ exact pre-reorder beats — the gap survives undo', () => {
         mockedGetMarkerState.mockReturnValue({
             markers: [],
             sections: [
                 { id: 's1', startBeat: 0, endBeat: 16, name: 'Intro', color: '#111' },
                 { id: 's2', startBeat: 24, endBeat: 40, name: 'Verse', color: '#222' },
             ],
+        });
+        const { inverseAction } = handleReorderSection.describe({
+            type: 'reorderSection',
+            payload: { sectionId: 's1', direction: 'right' },
+        });
+        expect(inverseAction).toEqual({
+            type: 'restoreSectionBeats',
+            payload: {
+                sections: [
+                    { sectionId: 's1', startBeat: 0, endBeat: 16, index: 0 },
+                    { sectionId: 's2', startBeat: 24, endBeat: 40, index: 1 },
+                ],
+            },
+        });
+    });
+
+    it('inverts a float-inexact adjacent pair onto exact fractional beats', () => {
+        mockedGetMarkerState.mockReturnValue({
+            markers: [],
+            sections: [
+                { id: 's1', startBeat: 0.1, endBeat: 16.3, name: 'Intro', color: '#111' },
+                { id: 's2', startBeat: 16.3, endBeat: 32.5, name: 'Verse', color: '#222' },
+            ],
+        });
+        const { inverseAction } = handleReorderSection.describe({
+            type: 'reorderSection',
+            payload: { sectionId: 's1', direction: 'right' },
+        });
+        expect(inverseAction).toEqual({
+            type: 'restoreSectionBeats',
+            payload: {
+                sections: [
+                    { sectionId: 's1', startBeat: 0.1, endBeat: 16.3, index: 0 },
+                    { sectionId: 's2', startBeat: 16.3, endBeat: 32.5, index: 1 },
+                ],
+            },
+        });
+    });
+
+    it('inverts a left reorder onto each section’s pre-reorder slot, neighbor first in the list', () => {
+        mockedGetMarkerState.mockReturnValue({ markers: [], sections: contiguousSections });
+        const { inverseAction } = handleReorderSection.describe({
+            type: 'reorderSection',
+            payload: { sectionId: 's2', direction: 'left' },
+        });
+        expect(inverseAction).toEqual({
+            type: 'restoreSectionBeats',
+            payload: {
+                sections: [
+                    { sectionId: 's2', startBeat: 16, endBeat: 32, index: 1 },
+                    { sectionId: 's1', startBeat: 0, endBeat: 16, index: 0 },
+                ],
+            },
+        });
+    });
+
+    it('carries no inverse when either section is gone', () => {
+        mockedGetMarkerState.mockReturnValue({
+            markers: [],
+            sections: [{ id: 's1', startBeat: 0, endBeat: 16, name: 'Intro', color: '#111' }],
         });
         const { inverseAction } = handleReorderSection.describe({
             type: 'reorderSection',

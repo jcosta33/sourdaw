@@ -1,3 +1,4 @@
+import { automationStore } from '#/modules/Automation/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
@@ -179,6 +180,26 @@ function getGeneratedAutomationPointId(action: AppAction): string | undefined {
     return action.type === 'addAutomationPoint' ? action.payload.pointId : undefined;
 }
 
+/**
+ * The lane id a replayed addAutomationLane actually produced. When the track
+ * already owns a track-level lane for the parameter, the handler's noop gate
+ * drops the dispatch and no lane carries the pre-minted id, so the recorded id
+ * must map onto the lane the fold folded into — the same track-level resolution
+ * `isAddAutomationLaneNoop` folds on. A materialized minted id, or no matching
+ * lane at all, leaves the minted id standing.
+ */
+function resolveMaterializedLaneId(generatedLaneId: string, target: { trackId: string; parameterId: string }): string {
+    const lanes = automationStore.value?.lanes;
+    if (lanes?.some((lane) => lane.id === generatedLaneId)) {
+        return generatedLaneId;
+    }
+    return (
+        lanes?.find(
+            (lane) => !lane.clipId && lane.trackId === target.trackId && lane.parameterId === target.parameterId
+        )?.id ?? generatedLaneId
+    );
+}
+
 function getGeneratedSidechainRouteId(action: AppAction): string | undefined {
     return action.type === 'addSidechainRoute' ? action.payload.routeId : undefined;
 }
@@ -220,7 +241,11 @@ async function executeMacroAction(
         delete replayAction.payload.laneId;
         const generatedLaneId = await executeGeneratedCreate(replayAction, options, getGeneratedAutomationLaneId);
         if (recordedLaneId && generatedLaneId) {
-            mappings.automationLaneIds.set(recordedLaneId, generatedLaneId);
+            const materializedLaneId = resolveMaterializedLaneId(generatedLaneId, {
+                trackId: replayAction.payload.trackId,
+                parameterId: replayAction.payload.parameterId,
+            });
+            mappings.automationLaneIds.set(recordedLaneId, materializedLaneId);
         }
         return;
     }

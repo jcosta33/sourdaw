@@ -40,6 +40,7 @@ import { handleRenameMarker } from '../handlers/marker/handleRenameMarker';
 import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleReorderSection } from '../handlers/marker/handleReorderSection';
 import { handleResizeSection } from '../handlers/marker/handleResizeSection';
+import { handleRestoreSectionBeats } from '../handlers/marker/handleRestoreSectionBeats';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleSetSectionColor } from '../handlers/marker/handleSetSectionColor';
 import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
@@ -190,6 +191,7 @@ export function getArrangementHandlers() {
         resizeSection: handleResizeSection,
         setSectionColor: handleSetSectionColor,
         reorderSection: handleReorderSection,
+        restoreSectionBeats: handleRestoreSectionBeats,
         setClipGainEnvelope: handleSetClipGainEnvelope,
         toggleClipGainEnvelope: handleToggleClipGainEnvelope,
         addGainEnvelopePoint: handleAddGainEnvelopePoint,

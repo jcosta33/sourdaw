@@ -393,6 +393,147 @@ describe('reconcileCrdtSlot', () => {
         expect(ids.indexOf('b')).toBeLessThan(ids.indexOf('a'));
     });
 
+    it('does not re-create a map key the document dropped while the writer carries it unchanged', () => {
+        const doc: Doc = {
+            slot: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n' }],
+                },
+            },
+        };
+
+        // The writer's whole-state write edits `clip-kept` and carries
+        // `clip-peer-deleted` exactly as its base had it. The key's absence
+        // from the document is a peer's concurrent deletion of the map entry —
+        // a change this write never saw and owns no delta on — so the flush
+        // must not resurrect the deleted clip's notes one container up from
+        // the row-membership law.
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n' }],
+                    'clip-peer-deleted': [{ id: 'n2', name: 'n' }],
+                },
+            },
+            value: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n-edited' }],
+                    'clip-peer-deleted': [{ id: 'n2', name: 'n' }],
+                },
+            },
+        });
+
+        const notes = (doc.slot as { notesByClipId: Record<string, unknown> }).notesByClipId;
+        expect(Object.keys(notes)).toStrictEqual(['clip-kept']);
+        expect(notes['clip-kept']).toStrictEqual([{ id: 'n1', name: 'n-edited' }]);
+    });
+
+    it('still inserts a genuinely new map key the base never carried', () => {
+        const doc: Doc = {
+            slot: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n' }],
+                },
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n' }],
+                },
+            },
+            value: {
+                notesByClipId: {
+                    'clip-kept': [{ id: 'n1', name: 'n' }],
+                    'clip-added': [{ id: 'n2', name: 'n' }],
+                },
+            },
+        });
+
+        expect(Object.keys((doc.slot as { notesByClipId: Record<string, unknown> }).notesByClipId)).toStrictEqual([
+            'clip-kept',
+            'clip-added',
+        ]);
+    });
+
+    it('keeps the document order when the writer owns no order delta', () => {
+        // The writer edited `a` in place; its base order equals its desired
+        // order. A peer has since dragged `c` to the front, so the document
+        // holds [c, a, b] — an order this write never saw and must not undo.
+        const doc: Doc = {
+            slot: {
+                rows: [
+                    { id: 'c', name: 'c0' },
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'a', name: 'a1' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['c', 'a', 'b']);
+        expect(slotOf(doc).rows.find((row) => row.id === 'a')?.name).toBe('a1');
+    });
+
+    it('applies the writers ordering when it differs from the base order even against a peer reorder', () => {
+        // Base [a, b, c]; the writer reordered to [b, c, a]; a peer
+        // concurrently dragged `c` to the front. The writer owns a genuine
+        // order delta, so its full placement applies.
+        const doc: Doc = {
+            slot: {
+                rows: [
+                    { id: 'c', name: 'c0' },
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                    { id: 'a', name: 'a0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['b', 'c', 'a']);
+    });
+
     it('removes a record field the writer saw and dropped, and keeps one it never saw', () => {
         const doc: Doc = {
             slot: {

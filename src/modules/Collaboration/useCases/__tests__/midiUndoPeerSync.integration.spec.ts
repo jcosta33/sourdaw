@@ -295,4 +295,58 @@ describe('MIDI callback undo against a concurrent peer note edit (#4858)', () =>
             midiStore.value?.notesByClipId[CLIP_ID]?.some((candidate) => candidate.id === PEER_NOTE_ID) ?? false
         ).toBe(false);
     });
+
+    it('leaves a clip a peer deleted gone when the deferred undo write never touched it', async () => {
+        const PEER_CLIP_ID = 'clip-peer-deleted';
+        setNotesForClip(CLIP_ID, seedNotes());
+        setNotesForClip(PEER_CLIP_ID, [{ id: 'note-doomed', pitch: 72, startBeat: 0, duration: 4, velocity: 80 }]);
+        drain_frame();
+        expect(document_note(EDITED_NOTE_ID).velocity).toBe(100);
+        expect(live_document().midi?.notesByClipId?.[PEER_CLIP_ID]).toBeDefined();
+
+        const before_notes = structuredClone(getNotesForClip(CLIP_ID));
+        resizeMidiNote(CLIP_ID, EDITED_NOTE_ID, undefined, 1);
+        drain_frame();
+        expect(document_note(EDITED_NOTE_ID).duration).toBe(1);
+
+        const after_note = getNotesForClip(CLIP_ID).find((note) => note.id === EDITED_NOTE_ID);
+        const before_note = before_notes.find((note) => note.id === EDITED_NOTE_ID);
+        if (!after_note || !before_note) {
+            throw new Error('Expected the edited note before and after the resize');
+        }
+        pushUndoEntry(
+            'Resize MIDI note',
+            () => replaceMidiNotesIfUnchanged(CLIP_ID, [{ expected: after_note, replacement: before_note }]),
+            () => replaceMidiNotesIfUnchanged(CLIP_ID, [{ expected: before_note, replacement: after_note }])
+        );
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(countPendingAutomergeStorageWrites()).toBeGreaterThan(0);
+
+        // A real peer deletes the OTHER clip's whole map key — the entry the
+        // pending whole-state snapshot still carries, unchanged — while the
+        // undo write is still deferred.
+        const peer = change(peer_fork(), (draft) => {
+            const notes_by_clip = draft.midi?.notesByClipId;
+            if (!notes_by_clip || !(PEER_CLIP_ID in notes_by_clip)) {
+                throw new Error(`Expected clip ${PEER_CLIP_ID} in the forked document`);
+            }
+            delete notes_by_clip[PEER_CLIP_ID];
+        });
+        const sync = deliver_peer_sync(peer);
+        expect(live_document().midi?.notesByClipId?.[PEER_CLIP_ID]).toBeUndefined();
+        await sync.flushPersistence();
+
+        flushAutomergeStorageWrites();
+
+        // The undo still restores the edited note…
+        expect(document_note(EDITED_NOTE_ID).duration).toBe(3);
+        // …and the peer's map-key deletion stands in the document — the
+        // deferred write carried the deleted clip unchanged from its base, so
+        // the flush must not resurrect it one container up from the
+        // row-membership law…
+        expect(live_document().midi?.notesByClipId?.[PEER_CLIP_ID]).toBeUndefined();
+        // …and in the projected store.
+        expect(store_note(EDITED_NOTE_ID).duration).toBe(3);
+        expect(midiStore.value?.notesByClipId[PEER_CLIP_ID]).toBeUndefined();
+    });
 });

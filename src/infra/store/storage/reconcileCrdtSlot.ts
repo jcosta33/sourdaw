@@ -160,21 +160,23 @@ function reconcileChild(input: ReconcileChildInput): void {
     // writer's unchanged copy back would clobber that change. Only a field
     // the writer actually changed relative to its base is its to write; the
     // document's current value is newer truth wherever the writer owns no
-    // delta.
+    // delta (#4858).
     //
-    // The one exception is a node the document lacks entirely. There the base
-    // itself never landed: the writer's copy — a seed write still pending, an
-    // unflushed frame — is the only copy in existence, and skipping would
-    // strand it outside the document for the next projection to erase. An
-    // absent node holds no newer truth to clobber, so the value lands; a node
-    // the document *has*, with any content, stands (#4858). This is the line
-    // between "the writer did not change this" and "the document is behind
-    // the base this write was derived from": both show base == desired, but
-    // only the first means the write owns no delta.
+    // That holds even where the document lacks the node entirely. Base and
+    // desired being equal says only that *this writer* did not touch the node
+    // since its base; the document's absence is then a peer's concurrent
+    // deletion, and re-creating the node would resurrect it — the map-key
+    // form of the clobber the row-membership guard in `placeRows` prevents.
+    // The inputs cannot distinguish that deletion from a stranded seed (a
+    // node the document never had, base-equals-desired only because the
+    // writer's own unflushed change sits in its cached base), but the flush
+    // machinery can: an unscoped seed is a genuine base-to-desired delta of
+    // the pending write that created it, and a scoped write settles its
+    // adapter's unscoped predecessor before reconciling, so a seed is already
+    // in the document — or still owned by a pending write that carries it as
+    // a delta — before any base-equals-desired reconcile runs. No write
+    // therefore ever lands through an absence it does not own.
     if (isSameValue(base, desired)) {
-        if (current === undefined && desired !== undefined) {
-            writeChild(container, field, desired);
-        }
         return;
     }
 
@@ -304,6 +306,7 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         identify,
         desired,
         desiredIdentities,
+        baseIdentities,
         currentIndexByIdentity,
         desiredIdentitySet,
         baseIdentitySet,
@@ -367,6 +370,7 @@ type PlaceRowsInput = {
     identify: CrdtEntityIdentity;
     desired: readonly unknown[];
     desiredIdentities: readonly string[];
+    baseIdentities: readonly string[] | null;
     currentIndexByIdentity: ReadonlyMap<string, number>;
     desiredIdentitySet: ReadonlySet<string>;
     baseIdentitySet: ReadonlySet<string>;
@@ -394,6 +398,14 @@ type PlaceRowsInput = {
  * So the rows already in the writer's intended relative order are pinned, and
  * only the genuine movers are removed and re-inserted. The blast radius of a
  * reorder is then exactly the rows the user actually moved.
+ *
+ * Placement is bounded by an order delta, the same ownership law that bounds
+ * membership: when the writer's desired order equals its base order, it moved
+ * nothing, so every row the document holds keeps its position and the write
+ * degenerates to inserts — a row the writer changed or added, absent from the
+ * document, still lands. Relocation applies only where the writer's order
+ * differs from its base's, since reordering rows the writer never moved would
+ * just undo a peer's concurrent reorder.
  */
 function placeRows(input: PlaceRowsInput): void {
     const {
@@ -401,11 +413,18 @@ function placeRows(input: PlaceRowsInput): void {
         identify,
         desired,
         desiredIdentities,
+        baseIdentities,
         currentIndexByIdentity,
         desiredIdentitySet,
         baseIdentitySet,
         baseRowByIdentity,
     } = input;
+
+    const writerReordered = !(
+        baseIdentities !== null &&
+        baseIdentities.length === desiredIdentities.length &&
+        baseIdentities.every((identity, index) => identity === desiredIdentities[index])
+    );
 
     const presentDesiredIndices: number[] = [];
     for (const [desiredIndex, identity] of desiredIdentities.entries()) {
@@ -416,17 +435,25 @@ function placeRows(input: PlaceRowsInput): void {
 
     // Rank each present row by where it currently sits; the longest increasing
     // run over those positions is the largest set already correctly ordered.
+    // A writer that reordered nothing pins every row it sees instead: without
+    // an order delta of its own, no row is its to relocate.
     const currentPositions = presentDesiredIndices.map(
         (desiredIndex) => currentIndexByIdentity.get(desiredIdentities[desiredIndex] ?? '') ?? 0
     );
     const pinned = new Set<string>();
-    for (const runIndex of longestIncreasingRun(currentPositions)) {
-        const desiredIndex = presentDesiredIndices[runIndex];
-        if (desiredIndex === undefined) {
-            continue;
+    if (writerReordered) {
+        for (const runIndex of longestIncreasingRun(currentPositions)) {
+            const desiredIndex = presentDesiredIndices[runIndex];
+            if (desiredIndex === undefined) {
+                continue;
+            }
+            const identity = desiredIdentities[desiredIndex];
+            if (identity !== undefined) {
+                pinned.add(identity);
+            }
         }
-        const identity = desiredIdentities[desiredIndex];
-        if (identity !== undefined) {
+    } else {
+        for (const identity of currentIndexByIdentity.keys()) {
             pinned.add(identity);
         }
     }
@@ -487,18 +514,21 @@ function placeRows(input: PlaceRowsInput): void {
  * distinct rows converge.
  *
  * Three inputs, not two: the document holds rows the writer may never have
- * seen — inserted concurrently by a peer, or rejected by this build's own
+ * seen — inserted concurrently by a peer, or rejected by this build's
  * projection and therefore missing from the value it wrote back. Deletion is
  * inferred from `baseValue`, the value this write was derived from, so only a
  * row the writer actually had in hand can be removed by it. The same base also
  * bounds what a write may overwrite: a value identical to its base carries no
  * delta of this writer's own, so wherever the document has moved past that
- * base — a peer's concurrent edit a deferred write never saw — the document
- * stands and the stale copy is not written (#4858). The law reaches row
- * membership too: a desired row carried unchanged from a base that also had it
- * is not re-inserted when the document lacks it, since that absence is a
- * peer's newer deletion; only a row the base lacked or one the writer changed
- * is this write's to insert.
+ * base — a peer's concurrent edit or deletion a deferred write never saw,
+ * including the node's absence — the document stands and the stale copy is
+ * not written (#4858). The law reaches row membership too: a desired row
+ * carried unchanged from a base that also had it is not re-inserted when the
+ * document lacks it, since that absence is a peer's newer deletion; only a
+ * row the base lacked or one the writer changed is this write's to insert.
+ * And it reaches row order: a writer whose desired order equals its base
+ * order moved nothing, so existing rows keep their document positions, and
+ * only a write whose order differs from its base applies its placement.
  *
  * Collections whose rows carry no stable identity are replaced whole. That is
  * deliberate: a tuning table, a pitch curve and a step pattern are one logical
