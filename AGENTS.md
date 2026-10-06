@@ -667,9 +667,15 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small, live lanes few, and merges prompt. If reviewers cannot attack a diff whole,
-reassess its scope under Delegation before review. Drain before filling: open no lane while a
-finished head waits only on review or merge.
+Keep batches small and merges prompt. Hold at most four live lanes at once. Lanes that do not
+stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
+file or pinned digest when it feeds that file's generator or digest: an app action feeds the
+command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a
+tracked-set path feeds the release inventory, and a crate's dependency closure feeds the wasm
+manifest. Work that shares any of these with a live lane waits for it to merge, or stacks on it
+only when it depends on that lane's change. A head waiting on CI or review does not block opening
+a new lane; merge each as soon as its Gate and approval allow. If reviewers cannot attack a diff
+whole, reassess its scope under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
