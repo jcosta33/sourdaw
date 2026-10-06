@@ -1,0 +1,67 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_501551c1845ca9 1722-1727,1732
+  s_2bfd55a4393d7c::t_15a0f6a7b5041a 1764
+  s_2bfd55a4393d7c::t_4b8625326da8d4 1812,1818-1819,1821,1825-1832,1838-1906
+  s_2bfd55a4393d7c::t_4c01b3d18b56e3 1907-1910
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_7cd1e86c6f1d7a 1347-1360
+  s_2bfd55a4393d7c::t_50c0d2e3ca26ca 1117
+  s_2bfd55a4393d7c::t_98afabcb6ec7c2 1316-1319,1321-1329,1332-1334
+  s_2bfd55a4393d7c::t_4e7f738efda292 1261-1271
+  s_2bfd55a4393d7c::t_8cc7d41972d716 1086-1091
+  s_2bfd55a4393d7c::t_6868c67c7fee51 1423
+  s_2bfd55a4393d7c::t_d494121fefacf2 41
+  s_2bfd55a4393d7c::t_0ce11403b1c826 956-958
+  s_2bfd55a4393d7c::t_d83afcc5ba92af 1371-1378,1380-1382,1385
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_d94b7438b49eaa 25
+src/modules/AudioEngine/useCases/offlineRender/comparePendingWorkletEvents.ts
+  s_2bfd55a4393d7c::t_a6e28067db1cc8 1-2,6-11,18
+src/modules/AudioEngine/useCases/offlineRender/__tests__/comparePendingWorkletEvents.spec.ts
+  s_2bfd55a4393d7c::t_821e5f53137c8e 42-55
+src/modules/Transport/useCases/scheduling/postStoredControllerMove.ts
+  s_2bfd55a4393d7c::t_8519f0e49f4763 1-69
+src/modules/Transport/useCases/scheduling/sameFramePostQueue.ts
+  s_2bfd55a4393d7c::t_655aee24780a13 1-5
+  s_2bfd55a4393d7c::t_7950775ea3fcb8 6-37,39-53
+  s_2bfd55a4393d7c::t_8cc414f714f993 38
+src/utils/sameFrameEventOrder.ts
+  s_2bfd55a4393d7c::t_5968f83a853f94 1-33
+src/utils/__tests__/pianoPedalController.spec.ts
+  s_2bfd55a4393d7c::t_ec9593e9aa8dfa 24-33
+src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts
+  s_2bfd55a4393d7c::t_2118dff62fe772 26-27
+src/modules/Transport/useCases/scheduling/scheduleStoredControllers.ts
+  s_2bfd55a4393d7c::t_9cd2e45daf0801 3,5-6,8,21-22,26,29-33,44,49-50,52-53,55-58
+src/modules/Transport/models/StoredControllerNode.ts
+  s_2bfd55a4393d7c::t_78adda1141df2a 1-15
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_a6e6e26c0b2a6f 57-60
+  s_2bfd55a4393d7c::t_65e39fca2bba12 2618
+  s_2bfd55a4393d7c::t_6f0dfcdf2945b7 2754
+  s_2bfd55a4393d7c::t_3a2b2fcca6b2eb 36
+  s_2bfd55a4393d7c::t_317f1a3e7fa6aa 2305-2311
+  s_2bfd55a4393d7c::t_d83ce684c48eaf 2478-2617,2619-2631,2634-2636,2638-2648,2650-2732,2734-2753,2755-2819
+  s_2bfd55a4393d7c::t_370c0a5ca204e6 223-227
+  s_2bfd55a4393d7c::t_2979b00d09cc97 2632-2633,2637
+  s_2bfd55a4393d7c::t_c40181ded6c67f 8-9,11
+  s_2bfd55a4393d7c::t_401b6d46cffe81 98
+  s_2bfd55a4393d7c::t_8cd9e2bf142e43 99-106
+  s_2bfd55a4393d7c::t_408328e3b69116 2649,2733
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9c9d3824c257e8ffa6554baf60a396ab9e18f3a",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
