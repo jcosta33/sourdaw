@@ -59,6 +59,16 @@ describe('trimClipStart', () => {
         expect(result.audioOffsetBeats).toBe(3);
     });
 
+    it('leaves midiOffsetBeats unset when trimming an audio clip start', () => {
+        trimClipStart('c1', 2);
+        const updater = mocks.updateClip.mock.calls[0]![1];
+        const mockClip = { startBeat: 0, endBeat: 8, type: 'audio', audioOffsetBeats: 0 } as unknown as Clip;
+        const result = updater(mockClip);
+
+        expect(result.startBeat).toBe(2);
+        expect(result.midiOffsetBeats).toBeUndefined();
+    });
+
     it('advances midiOffsetBeats when trimming a MIDI clip start later', () => {
         trimClipStart('c1', 2);
         const updater = mocks.updateClip.mock.calls[0]![1];
