@@ -865,7 +865,7 @@ describe('default budgets', () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['test:run', 'src/x.spec.ts'],
-            expected: 4 * 1024 ** 3,
+            expected: 6 * 1024 ** 3,
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },

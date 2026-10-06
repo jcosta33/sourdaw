@@ -27,7 +27,7 @@ import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
+import { type SourceWithFade, schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
@@ -92,6 +92,34 @@ export function scheduleAudioClips(
         tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
     );
 
+    // The window floor below (#4784) names a boundary the playhead stands at or
+    // behind: a wrap handover — the window opening at loopStart while the
+    // playhead is wrapped onto it or still negative-phase before it — or a
+    // landing, where the window opens at the landing beat itself. A
+    // steady-state window instead opens one look-ahead ahead of the playhead,
+    // and flooring a fresh mid-pass join to it held the source silent for
+    // look-ahead + compensation while skipping the material in between; there
+    // the unfloored mid-buffer continuation is the correct join.
+    //
+    // The seam handover has a second window shape those clauses miss: on the
+    // ticks between the scheduled seam and its instant, the emission opens at
+    // the incoming pass's high-water mark (`wrappedUpTo`, ahead of loopStart)
+    // while the playhead is still negative-phase below it, and a clip that
+    // first becomes schedulable there — a decode finishing, an unmute — joined
+    // at `now` with content from before loopStart. When the playhead itself
+    // sits in the wrap handover (below loopStart while a seam is pending or
+    // just recorded), the join floors to the window start: the earlier windows
+    // already emitted everything before it, and nothing pre-loop may sound in
+    // the incoming pass.
+    const playheadInWrapHandover =
+        transport.isLooping === true &&
+        accumulatedPosition < transport.loopStart &&
+        (schedulerSession.pendingSeam !== null || schedulerSession.lastLoopSeamAudioTime !== null);
+    const floorsToWindowStart =
+        fromBeat <= accumulatedPosition ||
+        (transport.isLooping === true && fromBeat === transport.loopStart) ||
+        playheadInWrapHandover;
+
     for (const track of tracks) {
         if (track.kind !== 'audio') {
             continue;
@@ -107,7 +135,13 @@ export function scheduleAudioClips(
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, transport.tempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    transport.tempo,
+                    floorsToWindowStart ? fromBeat : null
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -238,6 +272,10 @@ export function scheduleAudioClips(
                 if (stretchRatio !== 1) {
                     source.playbackRate.value = stretchRatio;
                 }
+                // The figure a loop-seam fence spares this source's tail by
+                // (#4784): the material it carries is scheduled this late, so
+                // it is still due this long past the seam.
+                (source as SourceWithFade).compensationSeconds = compensation;
 
                 const isFirstIter = iter === 0;
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
@@ -298,6 +336,21 @@ export function scheduleAudioClips(
                     (buffer.duration - sourceOffsetSeconds) / stretchRatio
                 );
 
+                // #4784 — a loop wrap opens the window at loopStart while the
+                // beat→time anchor carries the wrapped playhead past it (or, on
+                // the scheduled seam, a negative-phase beat before it), so a
+                // clip spanning the wrap maps its head deep into the past. The
+                // mid-buffer continuation below answered that with content at
+                // `accumulatedPosition − compensation` — material from before
+                // the loop when the compensation outruns the distance already
+                // travelled into the pass. The window's own first beat is the
+                // earliest content this emission may sound; when its due
+                // instant is still ahead of the source's own start, the source
+                // begins there instead, holding the window's content.
+                const floorStartTime =
+                    floorsToWindowStart && fromBeat > iterStartBeat ? beatToAudioTime(fromBeat) : iterStartTime;
+                const audibleStartTime = Math.max(soundStartTime, floorStartTime);
+
                 // Nothing audible remains: the pre-roll swallowed the iteration,
                 // or the offset already sits past the end of the material.
                 // Starting a zero-length source would only burn a node.
@@ -309,8 +362,18 @@ export function scheduleAudioClips(
                     continue;
                 }
 
-                if (soundStartTime >= now) {
-                    source.start(soundStartTime, sourceOffsetSeconds, playDuration * stretchRatio);
+                if (audibleStartTime >= now) {
+                    const startBufferOffset = sourceOffsetSeconds + (audibleStartTime - soundStartTime) * stretchRatio;
+                    const startDuration = (soundStartTime + playDuration - audibleStartTime) * stretchRatio;
+                    if (startBufferOffset < buffer.duration && startDuration > 0) {
+                        source.start(audibleStartTime, startBufferOffset, startDuration);
+                    } else {
+                        releaseGainNode(fadeGain, ctx);
+                        if (envGainNode) {
+                            releaseGainNode(envGainNode, ctx);
+                        }
+                        continue;
+                    }
                 } else {
                     const elapsed = now - soundStartTime;
                     const bufferOffset = elapsed * stretchRatio + sourceOffsetSeconds;
@@ -337,10 +400,12 @@ export function scheduleAudioClips(
                     // Anchored to where sound begins, not to the clip's head:
                     // with no pre-roll the two are the same instant, and with
                     // one there is nothing to ramp until the source reaches
-                    // sample 0. Offline clamps the fade remaining after that
-                    // sound start (`userEndSec - startSec`); live feeds the
-                    // same quantity so a pre-roll cannot shift the plateau.
-                    const effectiveStart = Math.max(soundStartTime, now);
+                    // sample 0. A wrap floor (#4784) holds the sound start
+                    // later still, and the ramp follows it. Offline clamps the
+                    // fade remaining after that sound start
+                    // (`userEndSec - startSec`); live feeds the same quantity
+                    // so a pre-roll cannot shift the plateau.
+                    const effectiveStart = Math.max(audibleStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
                         // A fade length is a span of the timeline, so it is measured
@@ -439,7 +504,7 @@ export function scheduleAudioClips(
                             time: beatToAudioTime(clip.startBeat + point.beatOffset),
                             gain: envelopeGainDbToLinear(point.gainDb),
                         })),
-                        Math.max(soundStartTime, now)
+                        Math.max(audibleStartTime, now)
                     );
                     applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
                 }

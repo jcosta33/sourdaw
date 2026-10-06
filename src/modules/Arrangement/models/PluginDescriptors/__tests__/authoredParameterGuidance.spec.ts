@@ -102,36 +102,42 @@ const STANDALONE_EFFECT_IDS_UNDER_CENSUS = [
     'yeast',
 ] as const;
 
-const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
-    ...EFFECT_IDS_UNDER_CENSUS,
-    ...SYNTH_FAMILY_IDS_UNDER_CENSUS,
-    ...STANDALONE_EFFECT_IDS_UNDER_CENSUS,
-] as const;
-
 /**
- * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
- * joined this census. These are the remaining instrument families; all still
- * use shared fallback guidance.
+ * Instrument descriptor ids authored outside the synth family: the drum kit
+ * (`BuiltinInstrumentDescriptorsGuidance.ts`) and the four drum-machine
+ * variants `createDrumVariant` builds by spreading it, so they carry the kit's
+ * guidance with only the `kit` default changed; the Faust instruments
+ * (`FaustInstrumentDescriptorsGuidance*.ts`); and the standalone instruments
+ * with their own `*DescriptorGuidance.ts` companions. Pinned rather than
+ * derived, matching the lists above.
  */
-const DESCRIPTOR_IDS_EXCLUDED = [
-    // BuiltinInstrumentDescriptors.ts
+const INSTRUMENT_IDS_UNDER_CENSUS = [
     'builtin-drum-kit',
-    // FaustInstrumentDescriptors.ts
-    'faust-rhodes',
-    'faust-fm-synth',
-    'faust-supersaw-unison',
-    // Standalone instrument descriptor files
-    'builtin-crumbs',
-    'fermenter',
-    'grand-boule',
-    'levain',
-    'toaster',
-    // Drum variants generated in DeviceParameter.ts from builtin-drum-kit.
     'builtin-drum-machine-808',
     'builtin-drum-machine-analog',
     'builtin-drum-machine-electronic',
     'builtin-drum-machine-acoustic',
+    'faust-rhodes',
+    'faust-fm-synth',
+    'faust-supersaw-unison',
+    'builtin-crumbs',
+    'grand-boule',
+    'levain',
+    'toaster',
 ] as const;
+
+const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
+    ...EFFECT_IDS_UNDER_CENSUS,
+    ...SYNTH_FAMILY_IDS_UNDER_CENSUS,
+    ...STANDALONE_EFFECT_IDS_UNDER_CENSUS,
+    ...INSTRUMENT_IDS_UNDER_CENSUS,
+] as const;
+
+/**
+ * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
+ * joined this census; it still uses shared fallback guidance.
+ */
+const DESCRIPTOR_IDS_EXCLUDED = ['fermenter'] as const;
 
 /** Devices with too few parameters to name a sibling in their interactions. */
 const DEVICES_WITHOUT_A_SIBLING_PARAMETER = new Set(['builtin-gain']);
@@ -253,10 +259,15 @@ const STANDALONE_EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGI
     (STANDALONE_EFFECT_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
 );
 
+const INSTRUMENT_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGINS.filter((descriptor) =>
+    (INSTRUMENT_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
+);
+
 const AUTHORED_DESCRIPTORS: readonly PluginDescriptor[] = [
     ...EFFECT_DESCRIPTORS,
     ...SYNTH_FAMILY_DESCRIPTORS,
     ...STANDALONE_EFFECT_DESCRIPTORS,
+    ...INSTRUMENT_DESCRIPTORS,
 ];
 
 function requireGuidance(descriptor: PluginDescriptor): PluginDescriptorGuidance {

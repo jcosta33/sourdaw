@@ -171,10 +171,24 @@ describe('compileAutomationEvents — deduplication', () => {
 });
 
 describe('compileAutomationEvents — point normalization', () => {
-    it('deduplicates points at the same beat, keeping the last', () => {
+    // #4654: two points on one beat are a hard jump, not a duplicate — the
+    // array-earlier point is the value held approaching the jump, the
+    // array-later one takes over at and after it. Ties are kept, and the held
+    // value resolves to the array-later point exactly as the live lookup's
+    // last-point-at-or-before search does.
+    it('resolves a tied pair to the array-later point as the held value', () => {
         const events = compileAutomationEvents([point(0, 0.1), point(0, 0.2), point(2, 0.8)], 1, DEFAULT_TEMPO, []);
-        // Initial value is from the last point at beat 0 (0.2, not 0.1).
+        // Initial value is from the array-later point at beat 0 (0.2, not 0.1).
         expect(events[0]!.value).toBeCloseTo(0.2, 3);
+    });
+
+    it('emits a trailing jump to the array-later tied point after the ramp reaches the earlier one', () => {
+        // Ramp 0 → 1 over beats 0–2 (1s), jump to 0.2 at beat 2: a lane that
+        // ends on a jump must still land on the later value, and the ramp
+        // into the jump must play.
+        const events = compileAutomationEvents([point(0, 0), point(2, 1), point(2, 0.2)], 1, DEFAULT_TEMPO, []);
+        expect(events.some((event) => event.value > 0.9)).toBe(true);
+        expect(events.at(-1)!.value).toBeCloseTo(0.2, 6);
     });
 
     it('sorts unsorted input points by beat', () => {

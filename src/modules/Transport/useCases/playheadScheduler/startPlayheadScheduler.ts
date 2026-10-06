@@ -256,6 +256,7 @@ export function startPlayheadScheduler(): void {
     // full teardown (stop/dispose already cleared these) this is a no-op.
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();
+    schedulerSession.lastLoopSeamAudioTime = null;
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
 
     schedulerSession.lastTickTime = ctx.currentTime;
@@ -361,6 +362,10 @@ export function startPlayheadScheduler(): void {
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
+            // A wrap tail the fence was sparing is gone with the teardown, and
+            // the region the seam pivoted on may be the one this edit replaced:
+            // the device read must not map back across it (#4784).
+            schedulerSession.lastLoopSeamAudioTime = null;
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
@@ -507,6 +512,10 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             const seamAudioTime = now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            // #4784 — the wrap the device read maps back across for one
+            // compensation window: for that long the audio a compensated track
+            // is fed is still this dying pass's tail.
+            schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
             const wrappedPastSeam = beatAtSecondsFromAnchor(
                 changes,
                 current.loopStart,
@@ -523,7 +532,11 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            stopActiveSources(schedulerSession.activeAudioSources, ctx);
+            // Fenced at the seam, each source by its own compensation: the
+            // loop-end tail a compensated source is still due outlives the seam
+            // instant (#4784). An uncompensated source is cut at the seam
+            // unchanged.
+            stopActiveSources(schedulerSession.activeAudioSources, ctx, seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             schedulerSession.pendingSeam = null;
@@ -577,6 +590,11 @@ export function startPlayheadScheduler(): void {
                 anchorAudioTime: now,
                 anchorPosition: newPosition,
             };
+            // #4784 — recorded at detection, not when the instant arrives, so
+            // the device read maps back across the region for exactly the
+            // compensation window (the reader ignores it while the seam is
+            // still ahead). A jump that supersedes this seam clears it below.
+            schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
             seam = {
                 seamAudioTime,
                 passPosition: newPosition,
@@ -608,6 +626,10 @@ export function startPlayheadScheduler(): void {
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
             schedulerSession.pendingSeam = null;
+            // And the wrap it was to pivot on never happened — the fence below
+            // is the teardown semantic, so the device read must not map back
+            // across a region on the strength of this record (#4784).
+            schedulerSession.lastLoopSeamAudioTime = null;
             newPosition = jumpToPosition;
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
@@ -932,7 +954,10 @@ export function startPlayheadScheduler(): void {
             // immediate mid-buffer duplicate layered over its own fenced
             // source, whose key then blocks the incoming pass from ever
             // re-anchoring them. Sources sounding across the seam are cut at
-            // the seam instant itself, not one grain late.
+            // the seam instant itself, not one grain late — each by its own
+            // compensation (#4784): a compensated source's loop-end tail is
+            // still due for that long past the seam, and the incoming pass's
+            // window holds until it is done.
             stopActiveSources(schedulerSession.activeAudioSources, ctx, seam.seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();

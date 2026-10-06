@@ -1,4 +1,8 @@
-import { getAgentBuiltinDeviceFactoryManifest, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import {
+    getAgentBuiltinDeviceFactoryManifest,
+    getMixRecipeCatalog,
+    getPlatformPlugins,
+} from '#/modules/Arrangement/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
@@ -731,7 +735,31 @@ function executeDeviceManifestPage(input: {
     });
 }
 
+/**
+ * The device catalogue a full context carries as `availableDeviceTypes`, as identity only. A delta
+ * turn omits that list, so a call with no arguments is how the planner asks for it again; the
+ * parameters of one type stay behind the typed, paged manifest read, which keeps this receipt far
+ * under the per-call receipt budget however many devices are installed.
+ */
+function executeDeviceCatalogue(callId: string, turn: number): ApplicationToolReceipt {
+    const availableDeviceTypes = getPlatformPlugins().map((plugin) => ({ id: plugin.id, name: plugin.name }));
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: {
+            schema: 'sourdaw.agent-device-catalogue',
+            schemaVersion: 1,
+            availableDeviceTypes,
+        },
+        summary: `${String(availableDeviceTypes.length)} available device type(s)`,
+        warnings: [],
+    });
+}
+
 function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    if (Object.keys(call.arguments).length === 0) {
+        return executeDeviceCatalogue(callId, turn);
+    }
     const typeValues = call.arguments.types;
     if (
         Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page') ||

@@ -34,6 +34,7 @@ export function disposePlayheadScheduler(): void {
     } catch {
         // AudioContext may already be gone on teardown; still drop the references.
         schedulerSession.activeAudioSources.length = 0;
+        schedulerSession.pendingFences.length = 0;
     }
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
