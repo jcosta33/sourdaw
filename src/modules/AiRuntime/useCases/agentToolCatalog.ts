@@ -9,6 +9,7 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -46,6 +47,7 @@ export {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -248,45 +250,61 @@ function getRecipeExpansionSchema(): ToolSchema {
     );
 }
 
-function getAnalysisMeasureSchema(): ToolSchema {
+/** The scope, range and metrics a project measurement reads, which `analysis.measure` and `analysis.compareReference` share. */
+function getProjectMeasurementProperties() {
     const metricIds = getAgentMeasurementMetricIds();
     const boundedId = { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH };
+    return {
+        scope: {
+            type: 'object',
+            properties: {
+                kind: { type: 'string', enum: ['master', 'project', 'tracks', 'buses'] },
+                ids: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
+                    items: { ...boundedId },
+                },
+            },
+            required: ['kind'],
+            additionalProperties: false,
+        },
+        range: {
+            type: 'object',
+            properties: {
+                sectionId: { ...boundedId },
+                startBeat: { type: 'number', minimum: 0 },
+                endBeat: { type: 'number', minimum: 0 },
+            },
+            additionalProperties: false,
+        },
+        metrics: {
+            type: 'array',
+            minItems: 1,
+            maxItems: metricIds.length,
+            items: { type: 'string', enum: [...metricIds] },
+        },
+    };
+}
+
+function getAnalysisMeasureSchema(): ToolSchema {
     return tool(
         ANALYSIS_MEASURE_TOOL_NAME,
         `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat. With subject "preview", also pass proposal, a semantic command list in the form command.batch.propose takes as list: the application compiles it, previews it without changing the project, and measures the same scope and range before and after it, returning both figures and their deltas. To propose exactly the measured change, pass this call's callId in command.batch.propose compiledCallIds.`,
         {
             subject: { type: 'string', enum: ['project', 'preview'] },
             proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
-            scope: {
-                type: 'object',
-                properties: {
-                    kind: { type: 'string', enum: ['master', 'project', 'tracks', 'buses'] },
-                    ids: {
-                        type: 'array',
-                        minItems: 1,
-                        maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
-                        items: { ...boundedId },
-                    },
-                },
-                required: ['kind'],
-                additionalProperties: false,
-            },
-            range: {
-                type: 'object',
-                properties: {
-                    sectionId: { ...boundedId },
-                    startBeat: { type: 'number', minimum: 0 },
-                    endBeat: { type: 'number', minimum: 0 },
-                },
-                additionalProperties: false,
-            },
-            metrics: {
-                type: 'array',
-                minItems: 1,
-                maxItems: metricIds.length,
-                items: { type: 'string', enum: [...metricIds] },
-            },
+            ...getProjectMeasurementProperties(),
         },
+        ['scope', 'range']
+    );
+}
+
+function getAnalysisCompareReferenceSchema(): ToolSchema {
+    return tool(
+        ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+        `Compare the project to the reference the user loaded for comparison. Takes the scope and range analysis.measure takes. The application measured the reference locally over its whole duration, renders the project scope at the current project revision, and returns the reference's figures, the project's figures for each target, and per-metric deltas that read reference minus project: a positive loudness delta means the reference is louder than the project. A per-band figure has no delta. Only figures are returned, never the reference file or any audio; the reference is named by an opaque identifier. Fails with no-reference-loaded while the user has loaded none. Counts against the one measurement allowed per turn, alongside analysis.measure.`,
+        getProjectMeasurementProperties(),
         ['scope', 'range']
     );
 }
@@ -459,6 +477,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             ['scope']
         ),
         getAnalysisMeasureSchema(),
+        getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
         getRecipeExpansionSchema(),
     ];

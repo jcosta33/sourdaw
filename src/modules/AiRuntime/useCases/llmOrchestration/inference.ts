@@ -48,6 +48,7 @@ import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformer
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -462,6 +463,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME &&
                             tool.function.name !== RECIPE_EXPANSION_TOOL_NAME &&
                             tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME &&
+                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
                             tool.function.name !== TRANSFORM_COMPILE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({

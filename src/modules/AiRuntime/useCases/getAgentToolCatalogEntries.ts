@@ -5,10 +5,12 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type ToolSchema } from '../models/ToolDefinitions';
+import { readAgentReference } from '../stores/agentReferenceStore';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -100,6 +102,15 @@ const lifecycleAvailability: readonly LifecycleAvailability[] = [
     },
 ] as const;
 
+/** The reference comparison is published only while the user has a reference loaded. */
+function getAnalysisToolNames(): readonly string[] {
+    const names = [ANALYSIS_REQUEST_TOOL_NAME, ANALYSIS_MEASURE_TOOL_NAME];
+    if (readAgentReference() === null) {
+        return names;
+    }
+    return [...names, ANALYSIS_COMPARE_REFERENCE_TOOL_NAME];
+}
+
 function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>): readonly CatalogEntry[] {
     if (category === 'command') {
         return [...getExecutableAppActionToolSchemas(), ...getMidiTransformToolSchemas()];
@@ -127,7 +138,7 @@ function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>)
         catalog: [AGENT_CATALOG_DISCOVERY_TOOL_NAME],
         history: [COMMAND_HISTORY_TOOL_NAME],
         render: [RENDER_REQUEST_TOOL_NAME],
-        analysis: [ANALYSIS_REQUEST_TOOL_NAME, ANALYSIS_MEASURE_TOOL_NAME],
+        analysis: getAnalysisToolNames(),
     };
     const names = namesByCategory[category];
     return getAgentToolCatalogSchemas().filter((schema) => names.includes(schema.function.name));

@@ -15,12 +15,14 @@ import { AgentApprovalSection } from '../components/agentWorkspace/AgentApproval
 import { AgentComparisonSection } from '../components/agentWorkspace/AgentComparisonSection';
 import { AgentPlanSection } from '../components/agentWorkspace/AgentPlanSection';
 import { AgentProgressSection } from '../components/agentWorkspace/AgentProgressSection';
+import { AgentReferenceSection } from '../components/agentWorkspace/AgentReferenceSection';
 import { AgentRouteSection } from '../components/agentWorkspace/AgentRouteSection';
 import { AgentRunControlsSection } from '../components/agentWorkspace/AgentRunControlsSection';
 import { AgentRunHistorySection } from '../components/agentWorkspace/AgentRunHistorySection';
 import { AgentRunList } from '../components/agentWorkspace/AgentRunList';
 import { AgentRunSummary } from '../components/agentWorkspace/AgentRunSummary';
 import { useAgentChangeComparisonController } from '../hooks/useAgentChangeComparisonController';
+import { useAgentReferenceController } from '../hooks/useAgentReferenceController';
 import { useAgentWorkspaceFocusDispatch } from '../hooks/useAgentWorkspaceFocusDispatch';
 import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSelection';
 
@@ -69,6 +71,8 @@ export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId
         handleToggleSide,
     } = useAgentChangeComparisonController(historyGroups, () => setFocusRequest('comparison'));
 
+    const reference = useAgentReferenceController();
+
     useAgentWorkspaceFocusDispatch(
         focusRequest,
         setFocusRequest,
@@ -106,6 +110,13 @@ export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId
                         onRePreview={(confirmationId, selectedIntentGroupIds) => {
                             void reproposePendingChatActions({ confirmationId, selectedIntentGroupIds });
                         }}
+                    />
+                    <AgentReferenceSection
+                        reference={reference.reference}
+                        loading={reference.loading}
+                        error={reference.error}
+                        onLoad={reference.handleLoad}
+                        onClear={reference.handleClear}
                     />
                     <AgentRouteSection route={route} />
                     <AgentRunControlsSection
