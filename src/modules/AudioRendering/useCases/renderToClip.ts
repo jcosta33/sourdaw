@@ -4,10 +4,12 @@ import {
     captureRetiredTakeLanes,
     removeClip,
     removeTrack,
+    resolveBouncedClipEndBeat,
     restoreTakesForClip,
 } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { readBeatAtSamples, readSecondsAtBeat } from '#/modules/Transport/stores';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 export type RenderToClipInput = {
@@ -41,10 +43,18 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
         trackId = input.targetTrackId;
     }
 
+    const endBeat = resolveBouncedClipEndBeat({
+        startBeat: input.startBeat,
+        musicalEndBeat: input.endBeat,
+        renderedBuffer: input.buffer,
+        timelineSecondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+        projectSampleToBeat: readBeatAtSamples,
+    });
+
     const clip = addClip({
         trackId,
         startBeat: input.startBeat,
-        endBeat: input.endBeat,
+        endBeat,
         name: input.name,
         type: 'audio',
         audioBufferId,
@@ -79,7 +89,7 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
                 id: clip.id,
                 trackId,
                 startBeat: input.startBeat,
-                endBeat: input.endBeat,
+                endBeat,
                 name: input.name,
                 type: 'audio',
                 audioBufferId,

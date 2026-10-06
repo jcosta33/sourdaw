@@ -25,6 +25,21 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     removeTrack: vi.fn(),
     captureRetiredTakeLanes: vi.fn(() => []),
     restoreTakesForClip: vi.fn(),
+    resolveBouncedClipEndBeat: (input: {
+        startBeat: number;
+        musicalEndBeat: number;
+        renderedBuffer: AudioBuffer;
+        timelineSecondsAtBeat: (beat: number) => number;
+        projectSampleToBeat: (position: { samples: number; sampleRate: number }) => number;
+    }) => {
+        const sampleRate = input.renderedBuffer.sampleRate;
+        const startSamples = Math.round(input.timelineSecondsAtBeat(input.startBeat) * sampleRate);
+        const bufferEndBeat = input.projectSampleToBeat({
+            samples: startSamples + input.renderedBuffer.length,
+            sampleRate,
+        });
+        return Math.max(input.musicalEndBeat, bufferEndBeat);
+    },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -98,4 +113,51 @@ describe('renderToClip', () => {
             expect.objectContaining({ trackId: 'track-fresh', startBeat: 0, endBeat: 8 })
         );
     });
+
+    it('places the clip through the end of a buffer that outlasts the musical selection', async () => {
+        const { renderToClip } = await import('../renderToClip');
+
+        // Beats 0–8 at the 120 BPM fallback are 4 seconds. Six seconds of audio
+        // keeps two seconds of decay, which lands at beat 12.
+        const sampleRate = 48_000;
+        const buffer = createRenderedBuffer(6 * sampleRate, sampleRate);
+        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+
+        renderToClip({
+            targetTrackId: 'track-1',
+            startBeat: 0,
+            endBeat: 8,
+            buffer,
+            name: 'Rendered Tail',
+        });
+
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-1', startBeat: 0, endBeat: expect.closeTo(12, 5) })
+        );
+
+        const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
+        if (!recordedUndo) {
+            throw new Error('expected a render-to-clip undo entry');
+        }
+        const redo: () => void = recordedUndo[2];
+        mocks.addClip.mockClear();
+        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+        redo();
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-1', startBeat: 0, endBeat: expect.closeTo(12, 5) })
+        );
+    });
 });
+
+function createRenderedBuffer(lengthSamples: number, sampleRate: number): AudioBuffer {
+    const channel = new Float32Array(lengthSamples);
+    return {
+        duration: lengthSamples / sampleRate,
+        length: lengthSamples,
+        numberOfChannels: 1,
+        sampleRate,
+        getChannelData: () => channel,
+        copyFromChannel: () => undefined,
+        copyToChannel: () => undefined,
+    };
+}

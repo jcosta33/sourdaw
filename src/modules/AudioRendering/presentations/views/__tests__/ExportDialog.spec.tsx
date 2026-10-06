@@ -790,4 +790,19 @@ describe('ExportDialog', () => {
 
         expect(screen.queryByText(/has a sequencer pattern that is not in the arrangement/i)).not.toBeInTheDocument();
     });
+
+    it('stops before rendering and surfaces an error when native destination selection fails', async () => {
+        mocks.selectNativeAudioExportFile.mockRejectedValue(new Error('Permission denied'));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('Permission denied')).toBeInTheDocument();
+        });
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Permission denied', 'error');
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+    });
 });
