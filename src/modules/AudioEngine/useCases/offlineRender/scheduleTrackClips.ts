@@ -13,6 +13,7 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
@@ -459,13 +460,11 @@ export async function scheduleTrackClips({
         return mpe;
     }
 
-    const drumKit = resolveDrumKit(track.devices);
-    const drumKitDevice = track.devices.find(
-        (device) => device.type === 'builtin-drum-kit' || device.type === 'drum-kit'
-    );
-    const kitDef = drumKitDevice
-        ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
-        : null;
+    // Live playback's resolution, step for step (`scheduleMidiNotes`): the
+    // dedicated drum-voice definition wins for every drum device type, and the
+    // factory kit voices only a device no definition covers.
+    const kitDef = resolveDrumKitBy(track.devices, getDrumKitDefByIndex);
+    const drumKit = kitDef ? null : resolveDrumKit(track.devices);
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,

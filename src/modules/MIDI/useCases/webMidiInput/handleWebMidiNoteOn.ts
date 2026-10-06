@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
+import { isDrumDevice, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -464,16 +465,15 @@ export const handleWebMidiNoteOn = inject({
 
             let oscillator: (OscillatorNode & { _env?: GainNode }) | null = null;
             const synthDevice = instrumentTrack?.devices.find(
-                (device) =>
-                    device.type === 'builtin-drum-kit' ||
-                    device.type.startsWith('builtin-drum-machine') ||
-                    device.type.startsWith('builtin-synth')
+                (device) => isDrumDevice(device.type) || device.type.startsWith('builtin-synth')
             );
 
             if (synthDevice) {
-                if (synthDevice.type === 'builtin-drum-kit' || synthDevice.type.startsWith('builtin-drum-machine')) {
-                    const kitIndex = synthDevice.parameterValues.kit ?? 0;
-                    const kitDefinition = deps.getDrumKitDefByIndex(kitIndex);
+                if (isDrumDevice(synthDevice.type)) {
+                    // The same drum device and kit index sequenced playback, audition and
+                    // export resolve; only the kit lookups differ.
+                    const trackDevices = instrumentTrack?.devices ?? [];
+                    const kitDefinition = resolveDrumKitBy(trackDevices, deps.getDrumKitDefByIndex);
                     if (kitDefinition) {
                         deps.scheduleDrumKitNote(
                             engine.context,
@@ -484,7 +484,7 @@ export const handleWebMidiNoteOn = inject({
                             velocity
                         );
                     } else {
-                        const kit = deps.getDrumKitByIndex(kitIndex);
+                        const kit = resolveDrumKitBy(trackDevices, deps.getDrumKitByIndex);
                         if (kit) {
                             oscillator = deps.scheduleKitNote(
                                 engine.context,

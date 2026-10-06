@@ -1,6 +1,5 @@
 import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases';
-
-import { isDrumDevice } from './isDrumDevice';
+import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 type SynthParams = NonNullable<ReturnType<typeof getDrumKitByIndex>>['voices'][number]['params'];
 
@@ -11,10 +10,5 @@ type DrumKit = {
 };
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((device) => isDrumDevice(device.type));
-    if (!kitDevice) {
-        return null;
-    }
-    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
-    return getDrumKitByIndex(kitIndex);
+    return resolveDrumKitBy(devices, getDrumKitByIndex);
 }
