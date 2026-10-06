@@ -40,6 +40,7 @@ import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers, type RestoreStoredControllersInput } from './restoreStoredControllers';
 import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
@@ -972,7 +973,7 @@ export async function scheduleMidiNotes(
         const posts = createSameFramePostQueue();
         let relocatedStoredControllers: Omit<
             RestoreStoredControllersInput,
-            'trackId' | 'atBeat' | 'windowToBeat' | 'queue'
+            'trackId' | 'clips' | 'atBeat' | 'windowToBeat' | 'queue'
         > | null = null;
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
@@ -1141,12 +1142,8 @@ export async function scheduleMidiNotes(
                     relocatedStoredControllers ??= {
                         device: workletSynthDevice,
                         node: workletSynthNode,
-                        clips: [],
                         sampleFrameAtBeat,
                     };
-                    if (storedControllers) {
-                        relocatedStoredControllers.clips.push({ clip, controlChanges: storedControllers });
-                    }
                 }
             }
 
@@ -1462,7 +1459,12 @@ export async function scheduleMidiNotes(
                 trackId: track.id,
                 device: relocatedStoredControllers.device,
                 node: relocatedStoredControllers.node,
-                clips: relocatedStoredControllers.clips,
+                clips: resolveStoredControllerClips({
+                    trackId: track.id,
+                    clips: track.clips,
+                    notesByClipId: midiState.notesByClipId,
+                    ccByClipId: midiState.ccByClipId,
+                }),
                 atBeat: fromBeat,
                 windowToBeat: toBeat,
                 sampleFrameAtBeat: relocatedStoredControllers.sampleFrameAtBeat,

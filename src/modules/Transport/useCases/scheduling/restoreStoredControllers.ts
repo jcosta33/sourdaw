@@ -15,11 +15,8 @@ export type RestoreStoredControllersInput = {
     trackId: string;
     device: { id: string; type: string };
     node: StoredControllerNode;
-    /** Every clip of the track that plays on this device and carries stored controllers. */
-    clips: {
-        clip: Parameters<typeof projectClipControllerRestore>[0]['clip'];
-        controlChanges: Parameters<typeof projectClipControllerRestore>[0]['controlChanges'];
-    }[];
+    /** Every clip of the track that plays on this device and carries stored controllers, wherever it sits against the destination. */
+    clips: Parameters<typeof projectClipControllerRestore>[0]['clips'];
     /** The beat playback was relocated to, where the window `[atBeat, windowToBeat)` this track schedules opens. */
     atBeat: number;
     windowToBeat: number;
@@ -56,34 +53,27 @@ export function restoreStoredControllers({
 }: RestoreStoredControllersInput): void {
     const moved = readStoredControllerPostedPedals(trackId, device.id);
     const sampleFrame = sampleFrameAtBeat(atBeat);
-    const held = new Set<number>();
-    for (const { clip, controlChanges } of clips) {
-        const restore = projectClipControllerRestore({
-            controlChanges,
-            clip,
-            atBeat,
-            windowToBeat,
-            onDestinationFrame: (beat) => sampleFrameAtBeat(beat) === sampleFrame,
-        });
-        for (const controller of restore.held) {
-            held.add(controller);
-        }
-        for (const move of restore.moves) {
-            queue.add('control', sampleFrame, () =>
-                postStoredControllerMove({
-                    trackId,
-                    device,
-                    node,
-                    controller: move.controller,
-                    value: move.value,
-                    sampleFrame,
-                })
-            );
-        }
+    const restore = projectClipControllerRestore({
+        clips,
+        atBeat,
+        windowToBeat,
+        onDestinationFrame: (beat) => sampleFrameAtBeat(beat) === sampleFrame,
+    });
+    for (const move of restore.moves) {
+        queue.add('control', sampleFrame, () =>
+            postStoredControllerMove({
+                trackId,
+                device,
+                node,
+                controller: move.controller,
+                value: move.value,
+                sampleFrame,
+            })
+        );
     }
     const stale = new Set<number>();
     for (const controller of moved) {
-        if (!held.has(controller)) {
+        if (!restore.held.has(controller)) {
             stale.add(controller);
         }
     }

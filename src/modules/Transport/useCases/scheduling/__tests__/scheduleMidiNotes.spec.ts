@@ -2298,8 +2298,8 @@ describe('scheduleMidiNotes', () => {
     describe('stored clip controllers', () => {
         const BEAT_FRAMES = 24_000;
 
-        function storedController(id: string, controller: number, value: number, beat: number) {
-            return { id, controller, value, beat, channel: 0 };
+        function storedController(id: string, controller: number, value: number, beat: number, channel = 0) {
+            return { id, controller, value, beat, channel };
         }
 
         function stripWith(deviceNode: Record<string, unknown>) {
@@ -2866,6 +2866,14 @@ describe('scheduleMidiNotes', () => {
                 lane: ReturnType<typeof storedController>[],
                 clip: Record<string, unknown>
             ): Promise<string[]> {
+                return relocateTrackTo(destination, [{ lane, clip }]);
+            }
+
+            /** A relocation of a track whose clips (each with its stored controller lane) are listed in track order. */
+            async function relocateTrackTo(
+                destination: number,
+                clips: { lane: ReturnType<typeof storedController>[]; clip: Record<string, unknown> }[]
+            ): Promise<string[]> {
                 const posted: string[] = [];
                 vi.mocked(projectClipControllerEvents).mockImplementation(realMidiUseCases.projectClipControllerEvents);
                 vi.mocked(projectClipControllerRestore).mockImplementation(
@@ -2895,14 +2903,14 @@ describe('scheduleMidiNotes', () => {
                 (trackStore as { value: unknown }).value = {
                     tracks: [
                         midiTrack({
-                            clips: [midiClip(clip)],
+                            clips: clips.map(({ clip }, index) => midiClip({ id: `clip-${index + 1}`, ...clip })),
                             devices: [{ id: 'gb-1', type: 'grand-boule' }],
                         }),
                     ],
                 };
                 (midiStore as { value: unknown }).value = {
-                    notesByClipId: { 'clip-1': [] },
-                    ccByClipId: { 'clip-1': lane },
+                    notesByClipId: Object.fromEntries(clips.map((_, index) => [`clip-${index + 1}`, []])),
+                    ccByClipId: Object.fromEntries(clips.map(({ lane }, index) => [`clip-${index + 1}`, lane])),
                 };
 
                 await scheduleMidiNotes(
@@ -2958,6 +2966,98 @@ describe('scheduleMidiNotes', () => {
                 );
 
                 expect(posted).toEqual(['sustain 1 @0', 'sustain 0 @2']);
+            });
+
+            describe('where a controller is one value across the channels', () => {
+                it('leaves the pedal to the row another channel puts on the destination frame', async () => {
+                    const posted = await relocateTo(
+                        2,
+                        [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2, 1)],
+                        { startBeat: 0, endBeat: 8 }
+                    );
+
+                    expect(posted.at(-1)).toBe('sustain 0 @0');
+                    expect(posted).toEqual(['sustain 0 @0']);
+                });
+
+                it('ends on the last row of the pedal across the channels', async () => {
+                    const posted = await relocateTo(
+                        2,
+                        [
+                            storedController('early', 64, 0, 0.25),
+                            storedController('other-channel', 64, 0, 0.5, 1),
+                            storedController('down', 64, 127, 1),
+                        ],
+                        { startBeat: 0, endBeat: 8 }
+                    );
+
+                    expect(posted).toEqual(['sustain 1 @0']);
+                });
+            });
+
+            describe('across the clips of a track', () => {
+                const clipA = { startBeat: 0, endBeat: 4 };
+                const clipB = { startBeat: 4, endBeat: 8 };
+
+                it('keeps a pedal the earlier clip left down in a later clip that has no row for it', async () => {
+                    const posted = await relocateTrackTo(5, [
+                        { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                        { clip: clipB, lane: [storedController('other', 11, 90, 0.5)] },
+                    ]);
+
+                    expect(posted).toEqual(['sustain 1 @0']);
+                });
+
+                it('takes the later clip row between the earlier clip row and the destination', async () => {
+                    const posted = await relocateTrackTo(5, [
+                        { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                        { clip: clipB, lane: [storedController('up', 64, 0, 0.5)] },
+                    ]);
+
+                    expect(posted).toEqual(['sustain 0 @0']);
+                });
+
+                it('takes the row that is later on the timeline when the clips are listed the other way round', async () => {
+                    const posted = await relocateTrackTo(5, [
+                        { clip: clipB, lane: [storedController('up', 64, 0, 0.5)] },
+                        { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                    ]);
+
+                    expect(posted).toEqual(['sustain 0 @0']);
+                });
+
+                it('plays only the fragment of a clip the comp resolution leaves, as the window does', async () => {
+                    // A comp region replaces the clip from 1.5 on, so its lift at 2 is never played.
+                    vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, trackClips) =>
+                        trackClips.map((clip) => {
+                            const endBeat = clip.id === 'clip-1' ? 1.5 : clip.endBeat;
+                            return {
+                                ...clip,
+                                endBeat,
+                                regionStartBeat: clip.startBeat,
+                                regionEndBeat: endBeat,
+                                sourceStartBeat: clip.startBeat,
+                            };
+                        })
+                    );
+
+                    const posted = await relocateTrackTo(5, [
+                        { clip: clipA, lane: [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2)] },
+                        { clip: clipB, lane: [] },
+                    ]);
+
+                    expect(posted).toEqual(['sustain 1 @0']);
+                });
+
+                it('does not play the controllers of a muted clip', async () => {
+                    const posted = await relocateTrackTo(5, [
+                        { clip: clipA, lane: [storedController('down', 64, 127, 1)] },
+                        { clip: { ...clipA, muted: true }, lane: [storedController('up', 64, 0, 2)] },
+                        { clip: clipB, lane: [] },
+                    ]);
+
+                    expect(posted).toEqual(['sustain 1 @0']);
+                });
             });
         });
     });

@@ -14,31 +14,43 @@ const frameOf = (beat: number) => Math.round(beat * FRAMES_PER_BEAT);
 
 type Clip = Parameters<typeof projectClipControllerEvents>[0]['clip'];
 
-/** The restore for a relocation to `atBeat` whose window runs one beat on. */
-function restoreAt(lane: readonly MidiCC[], clip: Clip, atBeat: number) {
+type TrackClip = { clip: Clip; controlChanges: readonly MidiCC[] };
+
+/** The restore for a relocation to `atBeat` whose window runs one beat on, over every clip of a track. */
+function restoreTrackAt(clips: readonly TrackClip[], atBeat: number) {
     return projectClipControllerRestore({
-        controlChanges: lane,
-        clip,
+        clips,
         atBeat,
         windowToBeat: atBeat + 1,
         onDestinationFrame: (beat) => frameOf(beat) === frameOf(atBeat),
     });
 }
 
-/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there, then the restore's moves. */
-function sentAtDestination(lane: readonly MidiCC[], clip: Clip, atBeat: number): MidiCC[] {
-    const restore = restoreAt(lane, clip, atBeat);
-    const window = projectClipControllerEvents({
-        controlChanges: lane,
-        clip,
-        fromBeat: atBeat,
-        toBeat: atBeat + 1,
-    }).filter((event) => frameOf(event.beat) === frameOf(atBeat));
+function restoreAt(lane: readonly MidiCC[], clip: Clip, atBeat: number) {
+    return restoreTrackAt([{ clip, controlChanges: lane }], atBeat);
+}
+
+/** Everything the instrument is told at the destination frame, in the order it is posted: the window's own events there (clip by clip), then the restore's moves. */
+function sentTrackAtDestination(clips: readonly TrackClip[], atBeat: number): MidiCC[] {
+    const restore = restoreTrackAt(clips, atBeat);
+    const window = clips.flatMap(({ clip, controlChanges }) =>
+        projectClipControllerEvents({
+            controlChanges,
+            clip,
+            fromBeat: atBeat,
+            toBeat: atBeat + 1,
+        }).filter((event) => frameOf(event.beat) === frameOf(atBeat))
+    );
     return [...window, ...restore.moves];
 }
 
+function sentAtDestination(lane: readonly MidiCC[], clip: Clip, atBeat: number): MidiCC[] {
+    return sentTrackAtDestination([{ clip, controlChanges: lane }], atBeat);
+}
+
+/** The instruments hold one value per controller number: the channel a row names is dropped. */
 function laneOf(row: MidiCC): string {
-    return `${row.channel}:${row.controller}`;
+    return String(row.controller);
 }
 
 /**
@@ -95,7 +107,7 @@ describe('projectClipControllerRestore', () => {
         expect(placed(restoreAt(lane, eightBeatClip, 2).moves)).toEqual([{ controller: 64, beat: 2, value: 0 }]);
     });
 
-    it('keeps each controller and channel a lane of its own', () => {
+    it('keeps each controller number a lane of its own, whatever its channel', () => {
         const lane = [
             controller('sustain', 0, 127),
             controller('sostenuto', 1, 64, 66),
@@ -106,12 +118,11 @@ describe('projectClipControllerRestore', () => {
 
         expect(placed(restore.moves)).toEqual(
             expect.arrayContaining([
-                { controller: 64, beat: 2, value: 127 },
-                { controller: 66, beat: 2, value: 64 },
                 { controller: 64, beat: 2, value: 90 },
+                { controller: 66, beat: 2, value: 64 },
             ])
         );
-        expect(restore.moves).toHaveLength(3);
+        expect(restore.moves).toHaveLength(2);
         expect(restore.held).toEqual(new Set([64, 66]));
     });
 
@@ -152,9 +163,97 @@ describe('projectClipControllerRestore', () => {
         expect(onSecondHead.held).toEqual(new Set([64]));
     });
 
-    it('sends nothing for a destination outside the clip', () => {
+    it('sends nothing from a clip that starts after the destination', () => {
         expect(restoreAt(pedalLane, { startBeat: 4, endBeat: 8 }, 2)).toEqual({ moves: [], held: new Set() });
-        expect(restoreAt(pedalLane, eightBeatClip, 8)).toEqual({ moves: [], held: new Set() });
+    });
+
+    it('carries what a clip that ended before the destination left', () => {
+        expect(placed(restoreAt(pedalLane, eightBeatClip, 8).moves)).toEqual([{ controller: 64, beat: 8, value: 0 }]);
+    });
+
+    describe('across the clips of a track', () => {
+        const clipA = { startBeat: 0, endBeat: 4 };
+        const clipB = { startBeat: 4, endBeat: 8 };
+
+        it('keeps a pedal a clip left down through a later clip that has no row for it', () => {
+            const clips = [
+                { clip: clipA, controlChanges: [controller('down', 1, 127)] },
+                { clip: clipB, controlChanges: [controller('other', 0.5, 90, 11)] },
+            ];
+
+            const restore = restoreTrackAt(clips, 5);
+
+            expect(placed(restore.moves)).toEqual(
+                expect.arrayContaining([
+                    { controller: 64, beat: 5, value: 127 },
+                    { controller: 11, beat: 5, value: 90 },
+                ])
+            );
+            expect(restore.held).toEqual(new Set([64, 11]));
+        });
+
+        it('takes the later clip row when it falls between the earlier clip row and the destination', () => {
+            const clips = [
+                { clip: clipA, controlChanges: [controller('down', 1, 127)] },
+                { clip: clipB, controlChanges: [controller('up', 0.5, 0)] },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 5).moves)).toEqual([{ controller: 64, beat: 5, value: 0 }]);
+        });
+
+        it('keeps the later row by beat, however the clips are ordered', () => {
+            // The row of the clip that is listed later sits earlier on the timeline.
+            const clips = [
+                { clip: clipB, controlChanges: [controller('up', 0.5, 0)] },
+                { clip: clipA, controlChanges: [controller('down', 1, 127)] },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 5).moves)).toEqual([{ controller: 64, beat: 5, value: 0 }]);
+        });
+
+        it('takes the later clip when two rows are placed on one beat', () => {
+            const overlapping = { startBeat: 0, endBeat: 4 };
+            const clips = [
+                { clip: clipA, controlChanges: [controller('first', 2, 127)] },
+                { clip: overlapping, controlChanges: [controller('second', 2, 0)] },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 3).moves)).toEqual([{ controller: 64, beat: 3, value: 0 }]);
+        });
+
+        it('leaves a controller a later clip emits on the destination frame to the window', () => {
+            const clips = [
+                { clip: clipA, controlChanges: [controller('down', 1, 127)] },
+                { clip: clipB, controlChanges: [controller('up-on-destination', 1, 0)] },
+            ];
+
+            const restore = restoreTrackAt(clips, 5);
+
+            expect(restore.moves).toEqual([]);
+            expect(restore.held).toEqual(new Set([64]));
+        });
+    });
+
+    describe('where a controller is one value across the channels', () => {
+        it('leaves a controller to the window when a row on another channel sits on the destination frame', () => {
+            const lane = [controller('down', 1, 127), controller('up-on-destination', 2, 0, 64, 1)];
+
+            const restore = restoreAt(lane, eightBeatClip, 2);
+
+            expect(restore.moves).toEqual([]);
+            expect(restore.held).toEqual(new Set([64]));
+            expect(sentAtDestination(lane, eightBeatClip, 2).map((move) => move.value)).toEqual([0]);
+        });
+
+        it('carries the last row of a controller across the channels', () => {
+            const lane = [
+                controller('ch0-early', 0.25, 0),
+                controller('ch1', 0.5, 0, 64, 1),
+                controller('ch0-late', 1, 127),
+            ];
+
+            expect(placed(restoreAt(lane, eightBeatClip, 2).moves)).toEqual([{ controller: 64, beat: 2, value: 127 }]);
+        });
     });
 
     describe('where the clip beats are not dyadic fractions', () => {
@@ -217,13 +316,17 @@ describe('projectClipControllerRestore', () => {
         ];
         const loopUnits = [84, 168, 112];
         const offsetUnits = [0, 14, 28];
-        /** Sustain on channel 0 and a CC11 on channel 2: two lanes in one clip, each a row list. */
+        /**
+         * Sustain on channel 0, a CC11 on channel 2, and more sustain rows on channel 1: the sustain
+         * is one controller whichever channel a row names, so the two sustain lists are one value.
+         */
         const laneSets = [
             {
                 sustainRows: [
                     { content: 0, value: 127 },
                     { content: 63, value: 0 },
                 ],
+                otherChannelSustainRows: [{ content: 30, value: 5 }],
                 dynamicsRows: [
                     { content: 20, value: 33 },
                     { content: 70, value: 99 },
@@ -236,6 +339,10 @@ describe('projectClipControllerRestore', () => {
                     { content: 83, value: 0 },
                     { content: 150, value: 64 },
                 ],
+                otherChannelSustainRows: [
+                    { content: 60, value: 7 },
+                    { content: 100, value: 3 },
+                ],
                 dynamicsRows: [{ content: 5, value: 12 }],
             },
         ];
@@ -247,10 +354,13 @@ describe('projectClipControllerRestore', () => {
             for (const startUnits of startNumerators) {
                 for (const length of loopUnits) {
                     for (const offset of offsetUnits) {
-                        for (const { sustainRows, dynamicsRows } of laneSets) {
+                        for (const { sustainRows, otherChannelSustainRows, dynamicsRows } of laneSets) {
                             const lanes = [
                                 ...sustainRows.map((row, index) =>
                                     controller(`sustain-${index}`, toBeat(row.content), row.value)
+                                ),
+                                ...otherChannelSustainRows.map((row, index) =>
+                                    controller(`sustain-ch1-${index}`, toBeat(row.content), row.value, 64, 1)
                                 ),
                                 ...dynamicsRows.map((row, index) =>
                                     controller(`dynamics-${index}`, toBeat(row.content), row.value, 11, 2)
@@ -265,7 +375,9 @@ describe('projectClipControllerRestore', () => {
                             };
                             const contents = [
                                 offset,
-                                ...[...sustainRows, ...dynamicsRows].map((row) => row.content),
+                                ...[...sustainRows, ...otherChannelSustainRows, ...dynamicsRows].map(
+                                    (row) => row.content
+                                ),
                                 offset + 5,
                                 offset + 11,
                             ].filter((content) => content >= offset && content < offset + length);
