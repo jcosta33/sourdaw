@@ -6,6 +6,7 @@ import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_CATEGORIES,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -70,20 +71,6 @@ export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
     maxLength: AGENT_CATALOG_CURSOR_MAX_LENGTH,
     pattern: AGENT_CATALOG_CURSOR_PATTERN,
 } as const;
-
-const EXACT_CATALOG_CATEGORIES = [
-    'query',
-    'resolve',
-    'capability',
-    'catalog',
-    'preview',
-    'command',
-    'commit',
-    'history',
-    'render',
-    'analysis',
-    'approval',
-] as const;
 
 function tool(
     name: string,
@@ -165,7 +152,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
         AGENT_CATALOG_DISCOVERY_TOOL_NAME,
         'Request exact schemas by canonical catalog names. Primitive schemas are returned only for explicitly requested operation names.',
         {
-            category: { type: 'string', enum: EXACT_CATALOG_CATEGORIES },
+            category: { type: 'string', enum: AGENT_CATALOG_CATEGORIES },
             names: {
                 type: 'array',
                 minItems: 1,

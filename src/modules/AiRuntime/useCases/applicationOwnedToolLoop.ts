@@ -14,6 +14,7 @@ import {
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
+import { AGENT_CATALOG_CATEGORIES, type AgentCatalogCategory } from '../models/AgentToolCatalogNames';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -788,24 +789,8 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     });
 }
 
-const catalogCategories = [
-    'query',
-    'resolve',
-    'capability',
-    'catalog',
-    'preview',
-    'command',
-    'commit',
-    'history',
-    'render',
-    'analysis',
-    'approval',
-] as const;
-
-type CatalogCategory = (typeof catalogCategories)[number];
-
-function isCatalogCategory(value: unknown): value is CatalogCategory {
-    return typeof value === 'string' && catalogCategories.some((category) => category === value);
+function isCatalogCategory(value: unknown): value is AgentCatalogCategory {
+    return typeof value === 'string' && AGENT_CATALOG_CATEGORIES.some((category) => category === value);
 }
 
 function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>):

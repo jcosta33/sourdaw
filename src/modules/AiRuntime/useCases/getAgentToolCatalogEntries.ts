@@ -4,6 +4,7 @@ import {
     getMidiTransformToolSchemas,
 } from '#/modules/Command/useCases';
 
+import { type AgentCatalogCategory } from '../models/AgentToolCatalogNames';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { readAgentReference } from '../stores/agentReferenceStore';
 
@@ -21,19 +22,7 @@ import {
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 
-type CatalogCategory =
-    | 'query'
-    | 'resolve'
-    | 'capability'
-    | 'catalog'
-    | 'preview'
-    | 'command-index'
-    | 'command'
-    | 'commit'
-    | 'history'
-    | 'render'
-    | 'analysis'
-    | 'approval';
+type CatalogCategory = AgentCatalogCategory | 'command-index';
 
 type CatalogPage = { cursor?: string; limit?: number };
 
