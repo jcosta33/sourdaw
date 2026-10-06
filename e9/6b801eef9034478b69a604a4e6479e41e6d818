@@ -1,0 +1,29 @@
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_01851d03ba0b20::t_97423e3985fb33 51
+  s_01851d03ba0b20::t_c1967409af4a40 14
+src/modules/Transport/useCases/transportControls/resolveRollStartBeat.ts
+  s_01851d03ba0b20::t_e640a11b262710 1-34
+  s_01851d03ba0b20::t_fb1da10e3aca41 35-37
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_01851d03ba0b20::t_f92958a3f9dc60 1-139
+  s_01851d03ba0b20::t_a4863a0033b8d0 140-142
+  s_01851d03ba0b20::t_744fff04a3411b 143-167
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_01851d03ba0b20::t_521cb7b8d01371 26,32-37,39-43,101-107,109-112,121-127,218-222,230-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e96b801eef9034478b69a604a4e6479e41e6d818",
+  "prompts": {},
+  "sessions": {
+    "s_01851d03ba0b20": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "bb772074-c676-4983-9e25-b5f4ca7f25c2",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
