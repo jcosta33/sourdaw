@@ -266,6 +266,17 @@ describe('exportMidiClip writes what the clip plays', () => {
             ]);
         });
 
+        it('keeps a septuplet legato of two pitches in time order, release first', () => {
+            const events = exportClip(clip, [note('a', 0, 1 / 7, 60), note('b', 1 / 7, 1 / 7, 62)], []);
+
+            expect(events.map((event) => [event.kind, event.data1, event.tick])).toEqual([
+                ['on', 60, 0],
+                ['off', 60, 69],
+                ['on', 62, 69],
+                ['off', 62, 137],
+            ]);
+        });
+
         it('releases a note split at an off-grid boundary before its successor is struck', () => {
             const events = exportClip(clip, [note('a', 0, 1.0011), note('b', 1.0011, 0.5)], []);
 
