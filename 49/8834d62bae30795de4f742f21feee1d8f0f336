@@ -1,0 +1,242 @@
+scripts/generateVersionedCommandArgumentSchemas.mjs
+  s_1c08b47ac3792f::t_7edc3a4f4c62c1 225-235,244,286,291
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1c08b47ac3792f::t_d7687226fcd9ec 112-147,173-196
+  s_1c08b47ac3792f::t_db275c49c8ed31 148-172
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1c08b47ac3792f::t_efbd874d97163a 6012-6022,6031,6071,6076
+  h_beb54bf43b47b7 2362-2391,2448,2487,2495,2556,2574,2580,2628,2636,2645,2654-2655,2660-2665,2700,2707,2723,2731,2791-2792,2916,2922,2972,2987,2992,3010-3011,3031,3045-3046,3055,3057,3069-3070,3078-3079,3148-3149,3225-3226,3393-3400,3449,3455,3459-3460,3485,3496,3577-3578,3605-3606,3628,3642,3651,3673,3687,3694,3701-3703,3744-3747,3769,3774,3786,3793,3798,3800,3806,3811,3813-3814,3833,3840,3848-3849,3855,3858,3902-3903,3912-3913,3976,3982-3983,3996-3997,4019-4020,4054,4061,4066-4067,4083,4088-4089,4101,4111,4118,4124,4129,4138-4139,4161,4166-4167,4204-4205,4225,4239-4240,4248-4249,4338,4345,4351-4352,4359,4373,4388,4402,4407-4410,4439,4445,4459,4465,4510,4512,4527,4536-4537,4539,4552-4553,4556,4563,4568,4595,4600,4695,4702,4730,4738,4744,4752-4753,4793,4804,4812,4818,4825,4830,4838-4839,5050,5066,5083,5090-5091,5094,5125,5138-5141,5151-5152,5197,5211,5216,5218,5266,5271,5289,5294,5326,5331,5398,5407,5419,5431,5452,5464,5470,5476-5477,5502,5508-5509,5573,5579,5589,5594,5596,5605,5607,5616,5753-5767,5770-5775,5779,5781-5800,5803,5805-5815,5817-5818,5826-5859,5865-5866,5869-5873,5875-5876,5878,5880-5890,5894-5896,5898-5902,5904-5905,5907-5909,5912-5923,5925,5927-5929,5934,5937-5940,5944-5949,5954,5956-5957,5959-5960,5963-5975,5979-5980,5983,5985-5988,5992-5993,5995-6003,6005
+evidence/agent-campaign/corpora/development.json
+  h_beb54bf43b47b7 19,1368-1569
+evidence/agent-campaign/corpora/held-out.json
+  h_beb54bf43b47b7 19,1314-1519
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,13,129,800,808,910
+scripts/__tests__/runEvidenceGate.spec.ts
+  h_beb54bf43b47b7 437,440-441
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 33-34
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  h_beb54bf43b47b7 89
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 146
+src/modules/AiRuntime/models/ProjectContext.ts
+  h_beb54bf43b47b7 40,174-180
+src/modules/AiRuntime/models/RuntimeAction.ts
+  h_beb54bf43b47b7 80,317,394
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  h_beb54bf43b47b7 21,26,28
+src/modules/AiRuntime/transformers/llmActionStrategies/automationRangeStrategy.ts
+  h_beb54bf43b47b7 7,25,28-100,280-334
+src/modules/AiRuntime/transformers/resolveAutomationLaneTarget.ts
+  h_beb54bf43b47b7 22-41,43-48,66-68
+src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts
+  h_beb54bf43b47b7 372-392
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  h_beb54bf43b47b7 1-257
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  h_beb54bf43b47b7 13,27
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  h_beb54bf43b47b7 22-27,344,714-732
+src/modules/AiRuntime/useCases/__tests__/musicalRangeResolution.spec.ts
+  h_beb54bf43b47b7 1-451
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  h_beb54bf43b47b7 29,48
+src/modules/AiRuntime/useCases/agentDomainPreview/previewAutomationCurve.ts
+  h_beb54bf43b47b7 26-36,39-40,46-72,94,101
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  h_beb54bf43b47b7 42
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  h_beb54bf43b47b7 50-92,158-160
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  h_beb54bf43b47b7 49-58
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  h_beb54bf43b47b7 221-225
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  h_beb54bf43b47b7 1,3,17-21,23-67,655-662
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 976-991
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  h_beb54bf43b47b7 139-162,564-580
+src/modules/Arrangement/AGENTS.md
+  h_beb54bf43b47b7 7-8,27
+src/modules/Arrangement/models/ArrangementEnd.ts
+  h_beb54bf43b47b7 1-18
+src/modules/Arrangement/models/MusicalRange.ts
+  h_beb54bf43b47b7 1-416
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_beb54bf43b47b7 118
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 32
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 8-9
+src/modules/Arrangement/stores/readMusicalRange.ts
+  h_beb54bf43b47b7 1-30
+src/modules/Arrangement/stores/readMusicalRangeInputs.ts
+  h_beb54bf43b47b7 1-23
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  h_beb54bf43b47b7 26
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  h_beb54bf43b47b7 21
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrackTransactionScope.spec.ts
+  h_beb54bf43b47b7 41
+src/modules/Arrangement/useCases/getLastClipEndBeat.ts
+  h_beb54bf43b47b7 1,5
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 183
+src/modules/Arrangement/useCases/marker/sectionOperations/resolveMusicalRange.ts
+  h_beb54bf43b47b7 1-26
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 170,181
+src/modules/Automation/AGENTS.md
+  h_beb54bf43b47b7 26
+src/modules/Automation/handlers/automation/automationPointSnapshotsMatch.ts
+  h_beb54bf43b47b7 1-45
+src/modules/Automation/handlers/automation/handleAddAutomationLane.ts
+  h_beb54bf43b47b7 7,46-49,55-59
+src/modules/Automation/handlers/automation/handleAutomateParameterRange.ts
+  h_beb54bf43b47b7 1-213
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  h_beb54bf43b47b7 2,8-11,16-23,52-58,62-64,73-74,83,91-92
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  h_beb54bf43b47b7 9
+src/modules/Automation/services/buildParameterRangePoints.ts
+  h_beb54bf43b47b7 1-245
+src/modules/Automation/services/sampleStoredLaneCurve.ts
+  h_beb54bf43b47b7 1-32
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  h_beb54bf43b47b7 1-848
+src/modules/Automation/useCases/automateParameterRange.ts
+  h_beb54bf43b47b7 1-33
+src/modules/Automation/useCases/automation/planParameterRangeWrite.ts
+  h_beb54bf43b47b7 1-351
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  h_beb54bf43b47b7 5,32,62
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  h_beb54bf43b47b7 41,44
+src/modules/Bacteria/useCases/__tests__/initBacteriaModAssignmentsPersistence.spec.ts
+  h_beb54bf43b47b7 16
+src/modules/Command/models/AgentCommandLedger.ts
+  h_beb54bf43b47b7 208
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  h_beb54bf43b47b7 37-38,43,130-149,371-386,450,454-456
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  h_beb54bf43b47b7 1255-1313,2756-2761
+src/modules/Command/useCases/actionLabels.ts
+  h_beb54bf43b47b7 79
+src/modules/Command/useCases/executableAppActionEffects.ts
+  h_beb54bf43b47b7 514-521
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  h_beb54bf43b47b7 2435-2497,3185,3301
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  h_beb54bf43b47b7 43,61,129-133
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  h_beb54bf43b47b7 38
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  h_beb54bf43b47b7 59,62
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  h_beb54bf43b47b7 83
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 103,107
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 37,40
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  h_beb54bf43b47b7 31
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 135
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  h_beb54bf43b47b7 801-837
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 107
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 124
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 173
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 132
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 166
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 104
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  h_beb54bf43b47b7 25
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  h_beb54bf43b47b7 47
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberDampingDefaultGrid.spec.tsx
+  h_beb54bf43b47b7 42
+src/modules/SessionLauncher/presentations/views/__tests__/LoopStationPanel.spec.tsx
+  h_beb54bf43b47b7 70
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDragClickAddUndo.spec.tsx
+  h_beb54bf43b47b7 16
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  h_beb54bf43b47b7 52
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  h_beb54bf43b47b7 52
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  h_beb54bf43b47b7 45
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  h_beb54bf43b47b7 20
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 69,72
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  h_beb54bf43b47b7 121
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  h_beb54bf43b47b7 111
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  h_beb54bf43b47b7 69
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_beb54bf43b47b7 211
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  h_beb54bf43b47b7 83
+src/modules/Transport/AGENTS.md
+  h_beb54bf43b47b7 9,11,25
+src/modules/Transport/models/TimeSignatureMap.ts
+  h_beb54bf43b47b7 213-259
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  h_beb54bf43b47b7 6,70-111
+src/modules/Transport/stores/index.ts
+  h_beb54bf43b47b7 22
+src/modules/Transport/stores/readBarStartBeat.ts
+  h_beb54bf43b47b7 1-26
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_beb54bf43b47b7 36-37
+src/modules/Transport/useCases/index.ts
+  h_beb54bf43b47b7 72
+src/modules/Transport/useCases/transportQueries/getBarStartBeat.ts
+  h_beb54bf43b47b7 1-9
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 1732-1777,1815-1817,1819
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "498834d62bae30795de4f742f21feee1d8f0f336",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
