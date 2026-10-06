@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_2bfd55a4393d7c::t_a07b0e7aeeae95 5,7,186,188-191,193-202,207-211,325-329,404,418,420-431,455-462,489,522,533-538,560-564,567
+src/utils/handlerContract.ts
+  s_2bfd55a4393d7c::t_4559be222eaf44 1636-1671
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "635074672018b24e3f6335ef1ab28e055098fd90",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
