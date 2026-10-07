@@ -31,7 +31,7 @@ export const FERMENTER_SHAPING_PARAMETER_GUIDANCE: Readonly<Record<string, Devic
     ),
     filterCutoff: parameterGuidance(
         'Filter cutoff frequency',
-        'Sets the base cutoff every modulation multiplies, clamped to 20 Hz–20 kHz; the default envelope peak triples it, reaching the clamp above about 6.6 kHz.',
+        'Base cutoff every modulation multiplies, clamped to 20 Hz–20 kHz; the default envelope peak triples it, hitting the clamp above about 6.6 kHz.',
         100,
         6500,
         ['filterEnvAmount, lfoFilterAmount, msegToFilter, filterKeytrack and chaosAmount scale it.'],
@@ -44,12 +44,12 @@ export const FERMENTER_SHAPING_PARAMETER_GUIDANCE: Readonly<Record<string, Devic
         0.7,
         4,
         ['filterModel decides which scale applies.'],
-        ['Model 1 ignores values above 4; model 2 is at maximum feedback from 1 up; model 5 has no damping from 2 up.'],
+        ['Model 2 is at full feedback from 1 up; model 5 has no damping from 2 up.'],
         noExternalModulation
     ),
     filterMode: parameterGuidance(
         'Filter response',
-        'Selects 0 low-pass, 1 high-pass, 2 band-pass or 3 notch on model 0; model 5 morphs from low-pass at 0 to high-pass at 3.',
+        'Selects 0 low-pass, 1 high-pass, 2 band-pass or 3 notch on model 0; model 5 morphs instead.',
         0,
         2,
         ['Read only when filterModel is 0 or 5.'],
@@ -76,7 +76,7 @@ export const FERMENTER_SHAPING_PARAMETER_GUIDANCE: Readonly<Record<string, Devic
     ),
     filterEnvAmount: parameterGuidance(
         'Filter envelope amount',
-        'Multiplies the cutoff by 1 + 4 × envelope × amount: 0.5 triples it at the peak, and −0.25 brings the peak to exactly zero.',
+        'Multiplies the cutoff by 1 + 4 × envelope × amount: 0.5 triples the peak, −0.25 brings it to zero.',
         -0.25,
         0.5,
         ['It scales the envelope filterAttack to filterRelease shape.'],
@@ -114,11 +114,11 @@ export const FERMENTER_SHAPING_PARAMETER_GUIDANCE: Readonly<Record<string, Devic
     ),
     ampRelease: parameterGuidance(
         'Amplitude release time constant',
-        'Falls after note-off with ampRelease as time constant; the voice stays allocated until below 1e−8, about 18 × ampRelease.',
+        'Falls from the note-off level with ampRelease as time constant; the voice stays allocated until below 1e−8, about 18 × ampRelease from full level.',
         0.02,
         1.5,
         ['Ends the voice on every engine, cutting a longer filterRelease; it is also the tail length.'],
-        ['At 1.5 s a voice stays allocated about 28 s, so fast passages start stealing voices.'],
+        ['From full level at 1.5 s a voice stays allocated about 28 s, so fast passages start stealing voices.'],
         noExternalModulation
     ),
 

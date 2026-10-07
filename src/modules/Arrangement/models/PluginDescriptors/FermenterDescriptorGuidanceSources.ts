@@ -36,9 +36,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         'Selects 0 sine, 1 saw, 2 square or 3 triangle on engines 0 and 1; saw and square harmonics fall as 1/n, triangle’s as 1/n².',
         1,
         2,
-        [
-            'Engine 1’s square reads pulseWidth; other engines ignore the waveform, and grains always read the saw table.',
-        ],
+        ['Engine 1’s square reads pulseWidth; FM, string, granular (always saw), additive and sampler ignore it.'],
         ['It rewrites sounding notes on the next block, so automating it switches timbre abruptly.'],
         noExternalModulation
     ),
@@ -47,13 +45,13 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         'Scales the engine output (tables peak at 1) before noise and the filter; 0.5 to 1 is −6 dB to full scale.',
         0.5,
         1,
-        ['noiseLevel is added after it, and it sets how hard filterDrive and voiceDrive are driven.'],
+        ['noiseLevel is added after it; it sets how hard filterDrive and voiceDrive are driven.'],
         ['At 0 only noise reaches the filter.'],
         noExternalModulation
     ),
     oscCoarse: parameterGuidance(
         'Coarse transpose in semitones',
-        'Transposes every engine in semitones; the window reaches two octaves down but one up because the tables halve their harmonics per octave and partials past Nyquist drop.',
+        'Transposes every engine in semitones; the window spans two octaves down but one up, as tables halve their harmonics per octave and partials past Nyquist drop.',
         -24,
         12,
         ['Adds to oscFine and every pitch modulation.'],
@@ -82,7 +80,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     // ── Unison ─────────────────────────────────────────────────────────────
     unisonVoices: parameterGuidance(
         'Unison copies per note',
-        'Stacks up to 16 detuned wavetable copies per note at gain 1/√count, each computed per sounding note.',
+        'Stacks up to 16 detuned wavetable copies per note at gain 1/√count.',
         1,
         8,
         ['unisonDetune and unisonSpread act only above 1; FM and engines 3 to 6 ignore it.'],
@@ -111,7 +109,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     // ── Noise and drift ────────────────────────────────────────────────────
     noiseLevel: parameterGuidance(
         'Noise level',
-        'Adds noise peaking at ±level after oscLevel, before the filter; 0.3 is about 10 dB under a full-scale oscillator.',
+        'Adds noise peaking at ±level after oscLevel, before the filter; at 0.3 white-noise peaks sit about 10 dB under a full-scale oscillator.',
         0,
         0.3,
         ['noiseColor sets its colour; oscLevel does not scale it.'],
@@ -129,44 +127,44 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     ),
     oscDrift: parameterGuidance(
         'Pitch drift',
-        'Wanders pitch up to ±5 cents × amount at 0.18 and 0.51 Hz; 0.5 stays within ±2.5 cents.',
+        'Wanders pitch up to ±5 cents × amount at 0.18 and 0.51 Hz.',
         0,
         0.5,
         ['Multiplies the pitch set by oscCoarse, oscFine and the modulators.'],
-        ['Written into existing voices, not stored, so a voice swapped in from the steal-fade pool lacks it.'],
+        ['Written into existing voices only, so a voice swapped in from the steal-fade pool lacks it.'],
         noExternalModulation
     ),
 
     // ── Time-domain warp ──────────────────────────────────────────────────
     warpMode: parameterGuidance(
         'Warp algorithm',
-        'Selects 0 off, 1 sync, 2 reduction, 3 squeeze, 4 bend, 5 formant or 6 fold; the window stops at 4: fold reaches 3.4 × full scale, and formant’s phase moves only on engine 0 and on engine 1 with unisonVoices at 1.',
+        'Selects 0 off, 1 sync, 2 reduction, 3 squeeze, 4 bend, 5 formant, 6 fold; stops at 4 as fold reaches 3.4 × full scale and formant’s phase moves only on engine 0 and engine 1 with unisonVoices 1.',
         0,
         4,
         [
-            'Needs warpAmount above 0.001; sync and formant read a phase frozen on oscEngine 2–6 and on engine 1 with unisonVoices above 1, where they only change gain or offset.',
+            'Needs warpAmount above 0.001; sync and formant’s phase is frozen on oscEngine 2–6 and engine 1 with unisonVoices above 1, so they only alter gain or offset.',
         ],
-        ['Squeeze adds a DC bias of 2 × amount − 1, offsetting low amounts toward −1.'],
+        ['Squeeze adds a 2 × amount − 1 DC bias, toward −1 at low amounts.'],
         noExternalModulation
     ),
     warpAmount: parameterGuidance(
         'Warp intensity',
-        'At 0.5 reduction keeps 9 bits and holds each value about 8.5 samples (16 at 1; left and right share one counter), and squeeze is unbiased.',
+        'At 0.5 reduction keeps 9 bits and holds each value about 8.5 samples (16 at 1; left and right share one counter); squeeze is unbiased.',
         0,
         0.5,
-        ['Acts only through warpMode; 0 passes the oscillator unchanged.'],
-        ['Above about 0.71 fold outgrows its four folds, so at 1 a full-scale input leaves at up to 3.4.'],
+        ['Acts through warpMode; 0 is a bypass.'],
+        ['Above about 0.71 fold outgrows its four folds; at 1 full scale leaves at up to 3.4.'],
         noExternalModulation
     ),
 
     // ── Audio-rate modulation ─────────────────────────────────────────────
     audioModRate: parameterGuidance(
         'Audio-rate modulator rate',
-        'Sets a fixed-Hz sine modulator, 0–5000 Hz, independent of the note; 0 outputs nothing.',
+        'A fixed-Hz sine modulator, 0–5000 Hz, independent of the note; 0 outputs nothing.',
         0,
         1000,
         ['Needs audioModDepth above 0.001 and a non-zero audioModTarget; restarts each note-on.'],
-        ['Fixed in Hz, one rate gives harmonic sidebands on some notes and inharmonic ones on others.'],
+        ['Fixed in Hz, one rate is harmonic on some notes and inharmonic on others.'],
         noExternalModulation
     ),
     audioModDepth: parameterGuidance(
@@ -175,29 +173,27 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0,
         0.5,
         ['audioModTarget picks the destination.'],
-        ['At 1 the amplitude target swings gain 0 to 2; from 0.5 the filter trough reaches 20 Hz.'],
+        ['At 1 amplitude gain swings 0 to 2; from 0.5 the filter trough hits 20 Hz.'],
         noExternalModulation
     ),
     audioModTarget: parameterGuidance(
         'Audio-rate modulation destination',
-        'Selects 0 off, 1 pitch, 2 amplitude modulation (a 1 ± depth gain between 0 and 2) or 3 cutoff; the window stops at 2 because the filter route adds ±2 × depth to the cutoff multiplier.',
+        'Selects 0 off, 1 pitch, 2 amplitude modulation (a 1 ± depth gain, 0 to 2) or 3 cutoff; the window stops at 2 since route 3 adds ±2 × depth to the cutoff multiplier.',
         0,
         2,
         ['audioModDepth and audioModRate do nothing while it is 0.'],
-        ['The filter route can pull the cutoff to 20 Hz on every modulator trough.'],
+        ['Route 3 can pin the cutoff at 20 Hz on each trough.'],
         noExternalModulation
     ),
 
     // ── Additive ───────────────────────────────────────────────────────────
     additivePartials: parameterGuidance(
         'Additive partial count',
-        'Sums up to 64 sines of a 1/n series divided by √count, so fewer are louder: 8 peak near 0.59, 32 near 0.32.',
+        'Sums up to 64 sines of a 1/n series over √count, so fewer are louder: 8 peak near 0.59, 32 near 0.32.',
         8,
         32,
-        ['Engine 5 only; additiveTilt, additiveOdd and additiveInharm reshape the same partials.'],
-        [
-            'Above 32, partials add content only to fundamentals under about 727 Hz at 48 kHz, while √count lowers every note.',
-        ],
+        ['Engine 5; additiveTilt, additiveOdd and additiveInharm reshape them.'],
+        ['Past 32, partials reach only fundamentals under about 727 Hz at 48 kHz, yet √count lowers every note.'],
         noExternalModulation
     ),
     additiveTilt: parameterGuidance(
@@ -205,8 +201,8 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         'Multiplies partial n by (n − 1)^(tilt/6), about tilt dB per doubling; +6 lifts the peak from about 0.32 to 3.9.',
         -6,
         2,
-        ['Combines with additiveOdd on the partials additivePartials enables.'],
-        ['A sweep toward +6 can add over 20 dB at the engine output.'],
+        ['Combines with additiveOdd.'],
+        ['Toward +6 the engine output rises over 20 dB.'],
         noExternalModulation
     ),
     additiveOdd: parameterGuidance(
@@ -215,7 +211,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0,
         0.9,
         ['Combines with additiveTilt on the same partials.'],
-        ['Removing even partials also lowers level, since half the series drops out.'],
+        ['Removing even partials also lowers level.'],
         noExternalModulation
     ),
     additiveInharm: parameterGuidance(
@@ -349,7 +345,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     // ── FM ─────────────────────────────────────────────────────────────────
     fmAlgorithm: parameterGuidance(
         'FM operator routing',
-        'Selects 0 stack 4→3→2→1, 1 pairs 2→1 and 4→3, 2 Y, 3 all carriers, 4 fork, 5–6 with fixed operator-4 feedback, or 7 one pair plus two carriers; 0 to 2 have at most two carriers and no fixed feedback.',
+        'Selects 0 stack 4→3→2→1, 1 pairs, 2 Y, 3 all carriers, 4 fork, 5–6 with fixed operator-4 feedback, 7 a pair plus two carriers; 0–2 have at most two carriers and no fixed feedback.',
         0,
         2,
         ['Decides which of fmLevel1 to fmLevel4 are volumes or depths, and rebuilds the routing fmModAmount scales.'],
@@ -403,7 +399,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     ),
     fmLevel2: parameterGuidance(
         'Operator 2 level (mostly modulation depth)',
-        'Scales operator 2; as a modulator its depth is level × fmModAmount × 2π rad, so 0.1 to 0.8 is about 0.6 to 5 rad.',
+        'Scales operator 2; as a modulator its depth is level × fmModAmount × 2π rad, so at fmModAmount 1, 0.1 to 0.8 is about 0.6 to 5 rad.',
         0.1,
         0.8,
         ['fmModAmount multiplies its depth; in algorithm 3 it is a volume.'],
