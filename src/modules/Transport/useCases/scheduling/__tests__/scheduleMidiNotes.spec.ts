@@ -33,6 +33,7 @@ import {
 } from '../../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
@@ -3455,11 +3456,95 @@ describe('scheduleMidiNotes', () => {
                 ]);
             });
 
-            it('owes nothing to the next playback once a stop ends the muted one', async () => {
+            describe('beside a sibling clip that stays muted', () => {
+                const siblingNotes = notesOnEveryBeat.map((note) => ({ ...note, id: `sibling-${note.id}`, pitch: 72 }));
+
+                /** Track `track-1` with `clip-1` (the sustain lane) and `clip-2` over the same span, each list fresh. */
+                function loadWithSibling({ trackMuted, siblingMuted }: { trackMuted: boolean; siblingMuted: boolean }) {
+                    (trackStore as { value: unknown }).value = {
+                        tracks: [
+                            midiTrack({
+                                muted: trackMuted,
+                                clips: [
+                                    midiClip({ id: 'clip-1', startBeat: 0, endBeat: 8 }),
+                                    midiClip({ id: 'clip-2', startBeat: 0, endBeat: 8, muted: siblingMuted }),
+                                ],
+                                devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                            }),
+                        ],
+                    };
+                }
+
+                it('lifts at the track-mute resume though a muted sibling with a lane overlaps it', async () => {
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-1': notesOnEveryBeat, 'clip-2': siblingNotes },
+                        ccByClipId: { 'clip-1': sustainLane, 'clip-2': [storedController('wheel', 1, 64, 0)] },
+                    };
+                    const posted = recordGrandBoule();
+                    loadWithSibling({ trackMuted: false, siblingMuted: true });
+                    await playBeats(0, 2);
+                    loadWithSibling({ trackMuted: true, siblingMuted: true });
+                    await playBeats(2, 4);
+                    loadWithSibling({ trackMuted: false, siblingMuted: true });
+                    await playBeats(4, 6);
+
+                    expect(posted).toEqual([
+                        'on 60 @0',
+                        `sustain 1 @${BEAT_FRAMES}`,
+                        `on 60 @${BEAT_FRAMES}`,
+                        `sustain 0 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${5 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('still chases the sibling when it is unmuted after the track-mute resume', async () => {
+                    // The track-mute restore at 4 leaves the muted sibling out; its press at 5 is never played,
+                    // so its unmute at 6 owes the press still in force there.
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-1': notesOnEveryBeat, 'clip-2': [] },
+                        ccByClipId: { 'clip-1': sustainLane, 'clip-2': [storedController('late', 64, 127, 5)] },
+                    };
+                    const posted = recordGrandBoule();
+                    loadWithSibling({ trackMuted: false, siblingMuted: true });
+                    await playBeats(0, 2);
+                    loadWithSibling({ trackMuted: true, siblingMuted: true });
+                    await playBeats(2, 4);
+                    loadWithSibling({ trackMuted: false, siblingMuted: true });
+                    await playBeats(4, 6);
+                    loadWithSibling({ trackMuted: false, siblingMuted: false });
+                    await playBeats(6, 8);
+
+                    expect(posted).toEqual([
+                        'on 60 @0',
+                        `sustain 1 @${BEAT_FRAMES}`,
+                        `on 60 @${BEAT_FRAMES}`,
+                        `sustain 0 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${5 * BEAT_FRAMES}`,
+                        `sustain 1 @${6 * BEAT_FRAMES}`,
+                        `on 60 @${6 * BEAT_FRAMES}`,
+                        `on 60 @${7 * BEAT_FRAMES}`,
+                    ]);
+                });
+            });
+
+            // Playback restarts at 2 under the held press: a start does not chase, so the new playback posts
+            // only its own windows, never a stale resume restore of the press at 2.
+            const restartedAtTwo = [
+                `on 60 @${2 * BEAT_FRAMES}`,
+                `sustain 0 @${3 * BEAT_FRAMES}`,
+                `on 60 @${3 * BEAT_FRAMES}`,
+            ];
+
+            it.each([
+                { mute: 'track', muted: { trackMuted: true } },
+                { mute: 'clip', muted: { clipMuted: true } },
+            ])('owes nothing to the next playback once a stop ends a $mute mute', async ({ muted }) => {
                 const posted = recordGrandBoule();
                 loadMutedState({});
                 await playBeats(0, 2);
-                loadMutedState({ trackMuted: true });
+                loadMutedState(muted);
                 await playBeats(2, 3);
 
                 releaseStoredControllers();
@@ -3467,14 +3552,29 @@ describe('scheduleMidiNotes', () => {
                 posted.length = 0;
                 await playBeats(2, 4);
 
-                // Playback restarted at 2 under the held press: a start does not chase, so the new playback
-                // posts only its own windows, never a stale resume restore of the press at 2.
-                expect(posted).toEqual([
-                    `on 60 @${2 * BEAT_FRAMES}`,
-                    `sustain 0 @${3 * BEAT_FRAMES}`,
-                    `on 60 @${3 * BEAT_FRAMES}`,
-                ]);
+                expect(posted).toEqual(restartedAtTwo);
             });
+
+            it.each([
+                { mute: 'track', muted: { trackMuted: true } },
+                { mute: 'clip', muted: { clipMuted: true } },
+            ])(
+                'owes nothing to the next session once the scheduler is disposed during a $mute mute',
+                async ({ muted }) => {
+                    const posted = recordGrandBoule();
+                    loadMutedState({});
+                    await playBeats(0, 2);
+                    loadMutedState(muted);
+                    await playBeats(2, 3);
+
+                    disposePlayheadScheduler();
+                    loadMutedState({});
+                    posted.length = 0;
+                    await playBeats(2, 4);
+
+                    expect(posted).toEqual(restartedAtTwo);
+                }
+            );
         });
     });
 });

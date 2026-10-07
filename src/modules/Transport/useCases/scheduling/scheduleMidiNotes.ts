@@ -908,21 +908,30 @@ export async function scheduleMidiNotes(
     };
     // Whether this window is the one a track schedules again in after a mute kept its stored controllers
     // from earlier windows of this playback: the device still holds what it last received, so the window
-    // restores the value in force at its start, the chase a relocation runs. A muted clip with stored
-    // controllers in this window still withholds them, so the resume waits for a window without one. The
-    // record is forgotten as the window decides, because the restore it queues is the chase the mute owed.
+    // restores the value in force at its start, the chase a relocation runs. A track mute ends here
+    // whatever muted clips overlap the window, because the restore leaves muted clips out. A muted clip
+    // with stored controllers in this window still withholds them, so a clip mute's resume waits for a
+    // window without one, and a track-mute restore run before then does not discharge it. A record is
+    // forgotten as the window decides, because the restore it queues is the chase that mute owed.
     const takeResumeAfterMute = (track: SchedulerTrack): boolean => {
-        if (
-            mutesStoredControllersInWindow({ clips: track.clips, fromBeat, toBeat, ccByClipId: midiState.ccByClipId })
-        ) {
-            noteStoredControllersWithheld(track.id);
-            return false;
+        const clipMuteWithholds = mutesStoredControllersInWindow({
+            clips: track.clips,
+            fromBeat,
+            toBeat,
+            ccByClipId: midiState.ccByClipId,
+        });
+        if (clipMuteWithholds) {
+            noteStoredControllersWithheld(track.id, 'clip-mute');
         }
-        if (!hasStoredControllersWithheld(track.id)) {
-            return false;
+        const resumesFromTrackMute = hasStoredControllersWithheld(track.id, 'track-mute');
+        const resumesFromClipMute = !clipMuteWithholds && hasStoredControllersWithheld(track.id, 'clip-mute');
+        if (resumesFromTrackMute) {
+            forgetStoredControllersWithheld(track.id, 'track-mute');
         }
-        forgetStoredControllersWithheld(track.id);
-        return true;
+        if (resumesFromClipMute) {
+            forgetStoredControllersWithheld(track.id, 'clip-mute');
+        }
+        return resumesFromTrackMute || resumesFromClipMute;
     };
     for (const track of tracks) {
         if (!isCurrent()) {
@@ -932,7 +941,7 @@ export async function scheduleMidiNotes(
             continue;
         }
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
-            noteStoredControllersWithheld(track.id);
+            noteStoredControllersWithheld(track.id, 'track-mute');
             continue;
         }
 
