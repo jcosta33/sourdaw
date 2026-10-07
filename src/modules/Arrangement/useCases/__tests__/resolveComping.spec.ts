@@ -250,9 +250,7 @@ describe('resolveClipsWithComping', () => {
                     trackId: 't1',
                     takes: [
                         // The take `startRecording` mints: no offset field, and
-                        // the wrap take of pass 1 carrying the explicit origin,
-                        // which commit measures from the media origin — the clip's
-                        // 0.5 slip below is the capture latency it was rebased by.
+                        // the wrap take of pass 1 carrying the explicit origin.
                         { id: 'take-1', clipId: 'rec', name: 'Take 1', startBeat: 0, endBeat: 8, selected: false },
                         {
                             id: 'take-2',
@@ -261,7 +259,7 @@ describe('resolveClipsWithComping', () => {
                             startBeat: 0,
                             endBeat: 4,
                             selected: false,
-                            sourceOffsetBeats: 0.5,
+                            sourceOffsetBeats: 0,
                         },
                     ],
                     activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
@@ -285,7 +283,7 @@ describe('resolveClipsWithComping', () => {
         // to that same slip offset — it used to keep 0.5 and replay the first
         // four beats of the pass a second time.
         expect(out.map((clip) => [clip.startBeat, clip.endBeat, clip.sourceStartBeat, clip.audioOffsetBeats])).toEqual([
-            [0, 4, -0.5, 0.5],
+            [0, 4, 0, 0.5],
             [4, 8, 0, 4.5],
         ]);
     });

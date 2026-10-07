@@ -172,6 +172,8 @@ describe('stopRecording during a loop recording', () => {
         ]);
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0, 4]);
+        const placements = writtenTakes().map((take) => take.passStartBeats);
+        expect(placements).toEqual([0, -4]);
     });
 
     it('does not rebase the takes of an audio recording, which its capture terminal owns', () => {
@@ -181,5 +183,6 @@ describe('stopRecording during a loop recording', () => {
 
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0]);
+        expect(writtenTakes()[0]?.passStartBeats).toBeUndefined();
     });
 });

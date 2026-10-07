@@ -467,6 +467,38 @@ describe('sanitize_take_lane_store_state', () => {
             ],
         });
     });
+
+    it('should preserve a pass placement, negative included, and drop takes carrying a malformed one', () => {
+        const pass = (id: string, passStartBeats: unknown) => ({
+            id,
+            clipId: 'clip-1',
+            name: id,
+            startBeat: 8,
+            endBeat: 16,
+            selected: false,
+            sourceOffsetBeats: 4,
+            passStartBeats,
+        });
+
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            pass('ahead-of-media', -4),
+                            pass('non-numeric', '-4'),
+                            pass('infinite', Number.NEGATIVE_INFINITY),
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            })
+        ).toEqual({
+            lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [pass('ahead-of-media', -4)], activeCompRegions: [] }],
+        });
+    });
 });
 
 describe('takeLaneStore', () => {

@@ -24,23 +24,38 @@ function clipMediaOriginBeat(clip: TrackClip): number {
 }
 
 /**
- * A take naming `sourceOffsetBeats` places the material that deep into the
- * recording's media at its own `startBeat`, so its origin is measured from the
- * take. A take without one plays the clip's media as the clip places it.
+ * A take naming `sourceOffsetBeats` sounds that material `passStartBeats` after
+ * the clip's media origin, so it follows every edit that moves the clip's
+ * media. It never sounds before its own material, and a clip starting inside its
+ * media bounds it by that start. A take without an offset plays the clip's media
+ * as the clip places it.
  */
 function resolveTakeMedia(
     take: Take,
     clip: TrackClip
 ): { originBeat: number; earliestBeat: number; sourceStartBeat: number } {
+    const clipOriginBeat = clipMediaOriginBeat(clip);
     if (take.sourceOffsetBeats === undefined) {
-        return {
-            originBeat: clipMediaOriginBeat(clip),
-            earliestBeat: clip.startBeat,
-            sourceStartBeat: clip.startBeat,
-        };
+        return { originBeat: clipOriginBeat, earliestBeat: clip.startBeat, sourceStartBeat: clip.startBeat };
     }
-    const originBeat = take.startBeat - take.sourceOffsetBeats;
-    return { originBeat, earliestBeat: Math.max(originBeat, take.startBeat), sourceStartBeat: originBeat };
+    const passStartBeats = take.passStartBeats ?? 0;
+    const passShiftBeats = take.sourceOffsetBeats - passStartBeats;
+    return {
+        originBeat: clipOriginBeat - passShiftBeats,
+        earliestBeat: passEarliestBeat(take.passStartBeats, clipOriginBeat, clip.startBeat),
+        sourceStartBeat: clip.startBeat - passShiftBeats,
+    };
+}
+
+function passEarliestBeat(passStartBeats: number | undefined, clipOriginBeat: number, clipStartBeat: number): number {
+    if (passStartBeats === undefined) {
+        return clipStartBeat;
+    }
+    const passStartBeat = clipOriginBeat + passStartBeats;
+    if (clipStartBeat > clipOriginBeat) {
+        return Math.max(passStartBeat, clipStartBeat);
+    }
+    return passStartBeat;
 }
 
 /**

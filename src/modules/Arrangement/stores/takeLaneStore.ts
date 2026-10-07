@@ -25,7 +25,7 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats'] as const;
+const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats', 'passStartBeats'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 
 type HasExactKeysInput = {
@@ -43,6 +43,10 @@ function has_exact_keys({ value, required_keys, optional_keys = [] }: HasExactKe
 
 function is_finite_non_negative_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function is_finite_number(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
 }
 
 function is_unknown_array(value: unknown): value is unknown[] {
@@ -84,7 +88,10 @@ function is_valid_take(value: unknown): value is Take {
         typeof value.selected === 'boolean' &&
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
-        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats))
+        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
+        // A pass recorded ahead of its media sounds before the media origin, so
+        // its placement may be negative.
+        (!('passStartBeats' in value) || is_finite_number(value.passStartBeats))
     );
 }
 
@@ -105,6 +112,9 @@ function normalize_take(take: Take): Take {
     };
     if (take.sourceOffsetBeats !== undefined) {
         sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
+    }
+    if (take.passStartBeats !== undefined) {
+        sanitized.passStartBeats = take.passStartBeats;
     }
     return sanitized;
 }

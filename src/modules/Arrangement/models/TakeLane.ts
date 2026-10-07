@@ -7,13 +7,25 @@ export type Take = {
     selected: boolean;
     /**
      * Where this take's material begins inside its source clip's recorded
-     * media, in beats from the clip's start. Loop recording writes every pass
-     * into one continuous clip, so each wrap take names its own pass's offset
-     * and comp resolution reads that pass's material instead of the first
-     * pass again. Absent means the clip's own origin — flat recordings,
-     * manual takes, and takes predating the field.
+     * media, in beats from the media's first sample. Loop recording writes every
+     * pass into one continuous clip, so each wrap take names its own pass's
+     * offset and comp resolution reads that pass's material instead of the first
+     * pass again. Absent means the clip's own origin — flat recordings, manual
+     * takes, and takes predating the field.
      */
     sourceOffsetBeats?: number;
+    /**
+     * Where a pass begins sounding, in beats from its clip's media origin (the
+     * beat the clip's first recorded sample sounds on): the material at
+     * `sourceOffsetBeats` plays there. It is measured against the clip's media,
+     * never the timeline, so moving, nudging, slipping or trimming the clip
+     * carries the pass with it. Negative when the pass sounds before the media
+     * begins, which a recording started inside the loop gives every pass after
+     * the first. Only meaningful beside `sourceOffsetBeats`; absent means a pass
+     * recorded before the field existed, which sounds from the media origin and
+     * is bounded by its clip alone.
+     */
+    passStartBeats?: number;
 };
 
 export type TakeLane = {
@@ -54,9 +66,6 @@ export function createTake(
 }
 
 /**
- * Re-measure a recording take's `sourceOffsetBeats` from the media's first
- * sample.
- *
  * The recorder mints offsets against the provisional anchor, the beat the clip
  * opened on. The capture's first sample sits `shiftBeats` before that anchor
  * (hardware latency and the wait for the transport to roll), and the committed
@@ -66,11 +75,8 @@ export function createTake(
  * before the anchor is the first pass of a recording that began inside the
  * loop: the scheduler clamps its depth, and an offset cannot be negative, so the
  * take starts where its media does, at the anchor.
- *
- * Idempotent for a zero shift, which is the whole story of a MIDI recording: its
- * clip never moves, so only that clamped start is restored.
  */
-export function rebaseTakeOntoMedia(take: Take, provisionalStartBeat: number, shiftBeats: number): Take {
+function measureTakeFromMedia(take: Take, provisionalStartBeat: number, shiftBeats: number): Take {
     const mintedOffsetBeats = take.sourceOffsetBeats ?? 0;
     if (mintedOffsetBeats !== 0) {
         if (shiftBeats === 0) {
@@ -87,22 +93,33 @@ export function rebaseTakeOntoMedia(take: Take, provisionalStartBeat: number, sh
 }
 
 /**
- * Hide a loop pass's material before `startBeat`, as trimming the start of the
- * clip that holds it does. The pass begins at `startBeat` instead, and its
- * offset deepens by the same distance, so the media it plays at every later
- * beat is unchanged. A take without an offset plays the clip's own media, which
- * the clip's start already bounds, so it is returned as it is.
+ * Record where a pass sounds against its clip's media origin while the take's
+ * timeline start still describes the clip as recorded. Nothing later keeps the
+ * take's timeline position in step with its clip, so this is the only moment it
+ * can be read as a placement.
  */
-export function trimTakeStart(take: Take, startBeat: number): Take {
-    if (take.sourceOffsetBeats === undefined || take.startBeat >= startBeat) {
+function placeTakeOnMedia(take: Take, mediaOriginBeat: number): Take {
+    if (take.sourceOffsetBeats === undefined) {
         return take;
     }
-    const trimmedStartBeat = Math.min(startBeat, take.endBeat);
-    return {
-        ...take,
-        startBeat: trimmedStartBeat,
-        sourceOffsetBeats: take.sourceOffsetBeats + (trimmedStartBeat - take.startBeat),
-    };
+    const passStartBeats = take.startBeat - mediaOriginBeat;
+    if (take.passStartBeats === passStartBeats) {
+        return take;
+    }
+    return { ...take, passStartBeats };
+}
+
+/**
+ * Re-measure a recording take against the media's first sample, which sits
+ * `shiftBeats` before the provisional anchor: its `sourceOffsetBeats` from that
+ * sample, and its `passStartBeats` from the beat the committed clip places it on.
+ *
+ * Idempotent once applied, which matters for a MIDI recording: its clip never
+ * moves, so a zero shift only restores the clamped start and places each pass.
+ */
+export function rebaseTakeOntoMedia(take: Take, provisionalStartBeat: number, shiftBeats: number): Take {
+    const measured = measureTakeFromMedia(take, provisionalStartBeat, shiftBeats);
+    return placeTakeOnMedia(measured, provisionalStartBeat - shiftBeats);
 }
 
 export function createTakeLane(trackId: string): TakeLane {

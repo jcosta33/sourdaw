@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
     redo,
+    registerProductionCommandHandlers,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -21,10 +22,14 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type Take } from '../../../models/TakeLane';
+import { resolveClipsWithComping } from '../../../useCases/resolveComping';
+
+const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -34,50 +39,87 @@ const noActionHistoryMetadataPort = {
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
-type TakeStart = Pick<Take, 'id' | 'startBeat' | 'sourceOffsetBeats'>;
-
-function passTake(id: string, clipId: string, startBeat: number, endBeat: number, offsetBeats: number): Take {
-    return { ...createTake(clipId, id, startBeat, endBeat, offsetBeats), id };
+/** The production boot sequence; re-running it is exactly what a reload does. */
+function registerAndHydrateProductionHandlers(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
 }
 
-function seedLoopRecording(takes: Take[], clipStartBeat = 0): void {
-    const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: clipStartBeat, endBeat: 24 });
+/** A loop pass as commit leaves it, placed against its clip's media origin. */
+function passTake(id: string, startBeat: number, endBeat: number, sourceOffsetBeats: number, passStartBeats: number) {
+    return { ...createTake('clip-1', id, startBeat, endBeat, sourceOffsetBeats), id, passStartBeats };
+}
+
+/** Loop [0,4) recorded from beat 0 for three passes, the first four beats comped to pass 2. */
+function seedCompedLoopRecording(): void {
+    const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 12 });
     const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
-    takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes }] });
+    const takes: Take[] = [
+        passTake('pass-1', 0, 4, 0, 0),
+        passTake('pass-2', 0, 4, 4, 0),
+        { ...createTake('clip-1', 'manual', 0, 12), id: 'manual' },
+    ];
+    takeLaneStore.set({
+        lanes: [
+            {
+                ...createTakeLane('track-1'),
+                takes,
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-2' }],
+            },
+        ],
+    });
     flushAutomergeStorageWrites();
 }
 
-function readTakeStarts(): TakeStart[] {
-    const takes = takeLaneStore.value?.lanes.flatMap((lane) => lane.takes) ?? [];
-    return takes.map(({ id, startBeat, sourceOffsetBeats }) => ({ id, startBeat, sourceOffsetBeats }));
+async function dispatch(action: AppAction): Promise<void> {
+    await executeAppAction(action);
+    flushAutomergeStorageWrites();
 }
 
-function readClipStart(): { startBeat: number | undefined; audioOffsetBeats: number | undefined } {
-    const clip = trackStore.value?.tracks[0]?.clips[0];
-    return { startBeat: clip?.startBeat, audioOffsetBeats: clip?.audioOffsetBeats };
+function readTakes(): Take[] {
+    return structuredClone(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes) ?? []);
 }
 
-const loopPassesAsRecorded = (): Take[] => [
-    passTake('pass-1', 'clip-1', 0, 4, 0),
-    passTake('pass-2', 'clip-1', 0, 4, 4),
-    { ...createTake('clip-1', 'manual', 0, 12), id: 'manual' },
+/** What the track sounds: each fragment's span and the media beat it enters at. */
+function resolvedComp(): { startBeat: number; endBeat: number; mediaBeat: number }[] {
+    const clips = trackStore.value?.tracks[0]?.clips ?? [];
+    return resolveClipsWithComping('track-1', clips).map((fragment) => ({
+        startBeat: fragment.startBeat,
+        endBeat: fragment.endBeat,
+        mediaBeat: fragment.audioOffsetBeats ?? 0,
+    }));
+}
+
+function mirroredPast(): { action: AppAction; inverseAction: AppAction | null }[] {
+    const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
+    if (raw === null) {
+        return [];
+    }
+    const parsed = JSON.parse(raw) as { past?: { action: AppAction; inverseAction: AppAction | null }[] };
+    return parsed.past ?? [];
+}
+
+const asRecorded = [
+    { startBeat: 0, endBeat: 4, mediaBeat: 4 },
+    { startBeat: 4, endBeat: 12, mediaBeat: 4 },
 ];
 
-describe('trimClipStart on a loop-recorded clip', () => {
+describe('clip edits on a comped loop recording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('trim clip start takes integration');
+        resetCrdtProjectAuthority('comped loop recording clip edits integration');
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+        registerAndHydrateProductionHandlers();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        seedCompedLoopRecording();
     });
 
     afterEach(() => {
@@ -87,61 +129,108 @@ describe('trimClipStart on a loop-recorded clip', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
 
-    it('starts each pass at the new clip start and keeps the media it plays unchanged', async () => {
-        seedLoopRecording(loopPassesAsRecorded());
+    it('sounds the comp as recorded', () => {
+        expect(resolvedComp()).toEqual(asRecorded);
+    });
 
-        await executeAppAction({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } });
+    it.each([
+        {
+            name: 'moved',
+            action: { type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-1', startBeat: 8 } },
+        },
+        { name: 'nudged', action: { type: 'nudgeClip', payload: { clipId: 'clip-1', beats: 8 } } },
+    ] satisfies { name: string; action: AppAction }[])(
+        'sounds nothing outside the clip once it is $name off the comped span, without touching a take',
+        async ({ action }) => {
+            const takes = readTakes();
 
-        expect(readClipStart()).toEqual({ startBeat: 1, audioOffsetBeats: 1 });
-        expect(readTakeStarts()).toEqual([
-            { id: 'pass-1', startBeat: 1, sourceOffsetBeats: 1 },
-            { id: 'pass-2', startBeat: 1, sourceOffsetBeats: 5 },
-            { id: 'manual', startBeat: 0, sourceOffsetBeats: undefined },
+            await dispatch(action);
+
+            expect(resolvedComp()).toEqual([{ startBeat: 8, endBeat: 20, mediaBeat: 0 }]);
+            expect(readTakes()).toEqual(takes);
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(resolvedComp()).toEqual(asRecorded);
+        }
+    );
+
+    it('keeps the comped pass on its clip when the clip moves under the comp', async () => {
+        await dispatch({ type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-1', startBeat: 2 } });
+
+        expect(resolvedComp()).toEqual([
+            { startBeat: 2, endBeat: 4, mediaBeat: 4 },
+            { startBeat: 4, endBeat: 14, mediaBeat: 2 },
         ]);
     });
 
-    it('leaves a pass that began before the clip alone when the start is trimmed earlier', async () => {
-        // Recording began at beat 12 inside loop [8,16), so pass 2 starts at the loop start.
-        seedLoopRecording([passTake('pass-2', 'clip-1', 8, 16, 4)], 12);
+    it('shifts the comped pass with content slipped inside the clip', async () => {
+        await dispatch({ type: 'slipClipContent', payload: { clipId: 'clip-1', clipType: 'audio', offset: 1 } });
 
-        await executeAppAction({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 10 } });
-
-        expect(readClipStart().startBeat).toBe(10);
-        expect(readTakeStarts()).toEqual([{ id: 'pass-2', startBeat: 8, sourceOffsetBeats: 4 }]);
+        expect(resolvedComp()).toEqual([
+            { startBeat: 0, endBeat: 4, mediaBeat: 5 },
+            { startBeat: 4, endBeat: 12, mediaBeat: 5 },
+        ]);
     });
 
-    it('hides a pass that began before the clip up to a start trimmed later', async () => {
-        seedLoopRecording([passTake('pass-2', 'clip-1', 8, 16, 4)], 12);
+    it('restores the comp exactly when the start is trimmed later and back, and through undo and redo', async () => {
+        const takes = readTakes();
+        const trimmed = [
+            { startBeat: 2, endBeat: 4, mediaBeat: 6 },
+            { startBeat: 4, endBeat: 12, mediaBeat: 4 },
+        ];
 
-        await executeAppAction({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 14 } });
+        await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } });
+        expect(resolvedComp()).toEqual(trimmed);
 
-        expect(readTakeStarts()).toEqual([{ id: 'pass-2', startBeat: 14, sourceOffsetBeats: 10 }]);
-    });
-
-    it('restores the clip and every pass in one undo, and trims them again on redo', async () => {
-        seedLoopRecording(loopPassesAsRecorded());
-        await executeAppAction({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } });
+        await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0 } });
+        expect(resolvedComp()).toEqual(asRecorded);
+        expect(readTakes()).toEqual(takes);
 
         await undo();
-
-        expect(readClipStart()).toEqual({ startBeat: 0, audioOffsetBeats: 0 });
-        expect(readTakeStarts()).toEqual([
-            { id: 'pass-1', startBeat: 0, sourceOffsetBeats: 0 },
-            { id: 'pass-2', startBeat: 0, sourceOffsetBeats: 4 },
-            { id: 'manual', startBeat: 0, sourceOffsetBeats: undefined },
-        ]);
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual(trimmed);
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual(asRecorded);
 
         await redo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual(trimmed);
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual(asRecorded);
+        expect(readTakes()).toEqual(takes);
+    });
 
-        expect(readClipStart()).toEqual({ startBeat: 1, audioOffsetBeats: 1 });
-        expect(readTakeStarts()).toEqual([
-            { id: 'pass-1', startBeat: 1, sourceOffsetBeats: 1 },
-            { id: 'pass-2', startBeat: 1, sourceOffsetBeats: 5 },
-            { id: 'manual', startBeat: 0, sourceOffsetBeats: undefined },
+    it('keeps every trim of a comped clip in the session mirror and undoes it after a reload', async () => {
+        await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } });
+        await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } });
+        await vi.waitFor(() => expect(mirroredPast()).toHaveLength(2));
+
+        expect(mirroredPast().map((entry) => [entry.action, entry.inverseAction])).toEqual([
+            [
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0 } },
+            ],
+            [
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
+            ],
         ]);
+
+        registerAndHydrateProductionHandlers();
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(2);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(resolvedComp()).toEqual(asRecorded);
     });
 });

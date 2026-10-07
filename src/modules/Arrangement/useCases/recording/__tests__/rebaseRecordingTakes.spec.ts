@@ -37,7 +37,7 @@ describe('rebaseTakeOntoMedia', () => {
 
     it('starts a first pass that began before the record point where its media does', () => {
         const rebased = rebaseTakeOntoMedia({ ...take('pass-1', 'rec', 8, 0), endBeat: 16 }, 12, 0.5);
-        expect([rebased.startBeat, rebased.sourceOffsetBeats]).toEqual([12, 0.5]);
+        expect([rebased.startBeat, rebased.sourceOffsetBeats, rebased.passStartBeats]).toEqual([12, 0.5, 0.5]);
     });
 
     it('leaves a first pass whose span does not contain the record point where it is', () => {
@@ -45,17 +45,25 @@ describe('rebaseTakeOntoMedia', () => {
         expect([rebased.startBeat, rebased.sourceOffsetBeats]).toEqual([0, 0]);
     });
 
-    it('leaves a take untouched when nothing moves', () => {
-        const unmoved = take('first', 'rec', 1);
-        expect(rebaseTakeOntoMedia(unmoved, 1, 0)).toBe(unmoved);
-        const pass = take('pass', 'rec', 2, 5);
-        expect(rebaseTakeOntoMedia(pass, 1, 0)).toBe(pass);
+    it('places each pass against the media origin rather than the timeline', () => {
+        // Loop [2,6) recorded from beat 1 with 0.5 beat of latency: the media
+        // begins at 0.5, so the loop start sounds 1.5 beats into it.
+        expect(rebaseTakeOntoMedia(take('pass-2', 'rec', 2, 5), 1, 0.5).passStartBeats).toBe(1.5);
+        // Loop [8,16) recorded from beat 12: pass 2 sounds 4 beats before its media.
+        expect(rebaseTakeOntoMedia({ ...take('pass-2', 'rec', 8, 4), endBeat: 16 }, 12, 0).passStartBeats).toBe(-4);
     });
 
-    it('is idempotent for a zero shift', () => {
+    it('places no take that plays its clip’s own media', () => {
+        const unmoved = take('first', 'rec', 1);
+        expect(rebaseTakeOntoMedia(unmoved, 1, 0)).toBe(unmoved);
+    });
+
+    it('is idempotent once applied', () => {
         const once = rebaseTakeOntoMedia({ ...take('pass-1', 'rec', 8, 0), endBeat: 16 }, 12, 0);
-        expect(once.startBeat).toBe(12);
+        expect([once.startBeat, once.passStartBeats]).toEqual([12, 0]);
         expect(rebaseTakeOntoMedia(once, 12, 0)).toBe(once);
+        const pass = rebaseTakeOntoMedia(take('pass', 'rec', 2, 5), 1, 0);
+        expect(rebaseTakeOntoMedia(pass, 1, 0)).toBe(pass);
     });
 });
 
@@ -79,10 +87,10 @@ describe('rebaseRecordingTakes', () => {
         rebaseRecordingTakes({ clipId: 'rec', provisionalStartBeat: 1, shiftBeats: 0.5 });
 
         const written = mocks.set.mock.calls[0]![0].lanes[0]!.takes;
-        expect(written.map((entry) => [entry.id, entry.sourceOffsetBeats])).toEqual([
-            ['first', 0.5],
-            ['pass-1', 1.5],
-            ['other', 3],
+        expect(written.map((entry) => [entry.id, entry.sourceOffsetBeats, entry.passStartBeats])).toEqual([
+            ['first', 0.5, 0.5],
+            ['pass-1', 1.5, 1.5],
+            ['other', 3, undefined],
         ]);
     });
 });

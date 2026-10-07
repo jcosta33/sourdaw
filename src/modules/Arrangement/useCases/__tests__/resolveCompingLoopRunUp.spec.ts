@@ -39,8 +39,18 @@ function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number
     return clip;
 }
 
-function passTake(id: string, loopStart: number, loopEnd: number, sourceOffsetBeats: number) {
-    return { id, clipId: 'rec', name: id, startBeat: loopStart, endBeat: loopEnd, selected: false, sourceOffsetBeats };
+/** A pass as commit leaves it: its media depth, and where it sounds from the clip's media origin. */
+function passTake(id: string, loopStart: number, loopEnd: number, sourceOffsetBeats: number, passStartBeats: number) {
+    return {
+        id,
+        clipId: 'rec',
+        name: id,
+        startBeat: loopStart,
+        endBeat: loopEnd,
+        selected: false,
+        sourceOffsetBeats,
+        passStartBeats,
+    };
 }
 
 function compPass(takes: ReturnType<typeof passTake>[], takeId: string, startBeat: number, endBeat: number) {
@@ -67,7 +77,7 @@ function bufferBeatAt(clips: readonly Clip[], beat: number): number | null {
 
 describe('resolveClipsWithComping — loop takes of a recording that did not start at the loop start', () => {
     it('plays pass 1 from its own media when recording started one beat before the loop', () => {
-        const takes = [passTake('pass-1', 2, 6, 1), passTake('pass-2', 2, 6, 5)];
+        const takes = [passTake('pass-1', 2, 6, 1, 1), passTake('pass-2', 2, 6, 5, 1)];
         compPass(takes, 'pass-1', 2, 6);
 
         const out = resolveClipsWithComping('t1', [recording(1, 10)]);
@@ -77,7 +87,7 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
     });
 
     it('plays pass 2 from the media recorded in that pass when recording started before the loop', () => {
-        const takes = [passTake('pass-1', 2, 6, 1), passTake('pass-2', 2, 6, 5)];
+        const takes = [passTake('pass-1', 2, 6, 1, 1), passTake('pass-2', 2, 6, 5, 1)];
         compPass(takes, 'pass-2', 2, 6);
 
         const out = resolveClipsWithComping('t1', [recording(1, 10)]);
@@ -87,7 +97,7 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
     });
 
     it('plays pass 2 across the whole loop when recording started inside it', () => {
-        compPass([passTake('pass-2', 8, 16, 4)], 'pass-2', 8, 16);
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
 
         const out = resolveClipsWithComping('t1', [recording(12, 24)]);
 
@@ -97,8 +107,8 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
 
     it('keeps pass 1 silent until the record point when recording started inside the loop', () => {
         // Commit starts that first pass where its media does, at the record
-        // point, so its media origin is the record point.
-        compPass([passTake('pass-1', 12, 16, 0)], 'pass-1', 8, 16);
+        // point, so it sounds from the media origin.
+        compPass([passTake('pass-1', 12, 16, 0, 0)], 'pass-1', 8, 16);
 
         const out = resolveClipsWithComping('t1', [recording(12, 24)]);
 
@@ -107,10 +117,9 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
         expect(bufferBeatAt(out, 15)).toBe(3);
     });
 
-    it('stays silent before the clip start for a pass whose start a trim moved later', () => {
-        // Loop [0,4) recorded from beat 0, then the clip start trimmed to beat 1:
-        // the trim left pass 1 starting at beat 1 with the media origin still at 0.
-        compPass([passTake('pass-1', 1, 4, 1)], 'pass-1', 0, 4);
+    it('stays silent before a clip start trimmed into the media', () => {
+        // Loop [0,4) recorded from beat 0, then the clip start trimmed to beat 1.
+        compPass([passTake('pass-1', 0, 4, 0, 0)], 'pass-1', 0, 4);
 
         const out = resolveClipsWithComping('t1', [recording(1, 12, 1)]);
 
@@ -120,7 +129,7 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
     });
 
     it('is unchanged when recording started exactly at the loop start', () => {
-        const takes = [passTake('pass-1', 0, 4, 0), passTake('pass-2', 0, 4, 4)];
+        const takes = [passTake('pass-1', 0, 4, 0, 0), passTake('pass-2', 0, 4, 4, 0)];
         compPass(takes, 'pass-2', 0, 4);
 
         const out = resolveClipsWithComping('t1', [recording(0, 12)]);
@@ -132,10 +141,8 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
     it('plays pass 2 from the media captured in that pass when the capture began before the record point', () => {
         // Loop [2,6), provisional anchor 1, capture latency 0.5 beat: the media
         // origin is 0.5 and the committed clip starts there. Commit rebased
-        // pass 2's offset from 5 to 5.5. Pass 2 spans media beats [5.5, 9.5), so
-        // the fragment enters the media at the unwrapped pass start (6) less the
-        // origin.
-        const takes = [passTake('pass-1', 2, 6, 1.5), passTake('pass-2', 2, 6, 5.5)];
+        // pass 2's offset from 5 to 5.5 and placed it 1.5 beats after the origin.
+        const takes = [passTake('pass-1', 2, 6, 1.5, 1.5), passTake('pass-2', 2, 6, 5.5, 1.5)];
         compPass(takes, 'pass-2', 2, 6);
 
         const out = resolveClipsWithComping('t1', [recording(0.5, 10)]);
@@ -148,7 +155,7 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
         // Recording from the loop start at beat 0 with 0.5 beat of latency: the
         // origin is -0.5, so the clip is clamped to 0 and skips 0.5 of media.
         // Pass 2 starts 4.5 beats into the media.
-        const takes = [passTake('pass-1', 0, 4, 0.5), passTake('pass-2', 0, 4, 4.5)];
+        const takes = [passTake('pass-1', 0, 4, 0.5, 0.5), passTake('pass-2', 0, 4, 4.5, 0.5)];
         compPass(takes, 'pass-2', 0, 4);
 
         const out = resolveClipsWithComping('t1', [recording(0, 12, 0.5)]);
@@ -173,5 +180,58 @@ describe('resolveClipsWithComping — loop takes of a recording that did not sta
 
         expect(bufferBeatAt(out, 2)).toBe(2.5);
         expect(bufferBeatAt(out, 0)).toBe(0.5);
+    });
+});
+
+describe('resolveClipsWithComping — a comped pass follows edits to its clip', () => {
+    const loopPasses = () => [passTake('pass-1', 0, 4, 0, 0), passTake('pass-2', 0, 4, 4, 0)];
+
+    it('sounds nothing outside a clip moved away from the comped span', () => {
+        compPass(loopPasses(), 'pass-2', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(8, 20)]);
+
+        expect(out.every((clip) => clip.startBeat >= 8 && clip.endBeat <= 20)).toBe(true);
+        expect(bufferBeatAt(out, 2)).toBeNull();
+        expect(bufferBeatAt(out, 8)).toBe(0);
+    });
+
+    it('plays the pass where the moved clip now holds it', () => {
+        compPass(loopPasses(), 'pass-2', 8, 12);
+
+        const out = resolveClipsWithComping('t1', [recording(8, 20)]);
+
+        expect(bufferBeatAt(out, 8)).toBe(4);
+        expect(bufferBeatAt(out, 11)).toBe(7);
+        expect(bufferBeatAt(out, 12)).toBe(4);
+    });
+
+    it('carries a pass recorded ahead of its media with the clip', () => {
+        // Recorded inside loop [8,16) from beat 12, then the clip moved 8 beats later.
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 16, 24);
+
+        const out = resolveClipsWithComping('t1', [recording(20, 32)]);
+
+        expect(bufferBeatAt(out, 16)).toBe(4);
+        expect(bufferBeatAt(out, 20)).toBe(8);
+    });
+
+    it('shifts the comped pass with content slipped inside the clip', () => {
+        compPass(loopPasses(), 'pass-2', 0, 4);
+
+        const out = resolveClipsWithComping('t1', [recording(0, 12, 1)]);
+
+        expect(bufferBeatAt(out, 0)).toBe(5);
+        expect(bufferBeatAt(out, 3)).toBe(8);
+        expect(bufferBeatAt(out, 4)).toBe(5);
+    });
+
+    it('hides a pass recorded ahead of its media once the clip start is trimmed into the media', () => {
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
+
+        const out = resolveClipsWithComping('t1', [recording(14, 24, 2)]);
+
+        expect(bufferBeatAt(out, 12)).toBeNull();
+        expect(bufferBeatAt(out, 14)).toBe(10);
     });
 });

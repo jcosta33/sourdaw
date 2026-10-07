@@ -17,6 +17,8 @@ type OptionalStringValue = { readonly present: false } | { readonly present: tru
 
 type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
 
+type OptionalTakeNumberField = 'sourceOffsetBeats' | 'passStartBeats';
+
 type TakeFieldOperation =
     | {
           readonly kind: 'take-string-field';
@@ -42,9 +44,10 @@ type TakeFieldOperation =
           readonly replacement: boolean;
       }
     | {
-          readonly kind: 'take-source-offset-field';
+          readonly kind: 'take-optional-number-field';
           readonly laneId: string;
           readonly takeId: string;
+          readonly field: OptionalTakeNumberField;
           readonly expected: OptionalNumberValue;
           readonly replacement: OptionalNumberValue;
       };
@@ -137,7 +140,7 @@ function optionalString(source: TakeLane, field: 'automationLaneId'): OptionalSt
     return { present: false };
 }
 
-function optionalNumber(source: Take, field: 'sourceOffsetBeats'): OptionalNumberValue {
+function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalNumberValue {
     if (Object.hasOwn(source, field) && source[field] !== undefined) {
         return { present: true, value: source[field] };
     }
@@ -183,16 +186,19 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
             replacement: next.selected,
         });
     }
-    const beforeOffset = optionalNumber(before, 'sourceOffsetBeats');
-    const nextOffset = optionalNumber(next, 'sourceOffsetBeats');
-    if (!valuesEqual(beforeOffset, nextOffset)) {
-        operations.push({
-            kind: 'take-source-offset-field',
-            laneId,
-            takeId: before.id,
-            expected: beforeOffset,
-            replacement: nextOffset,
-        });
+    for (const field of ['sourceOffsetBeats', 'passStartBeats'] as const) {
+        const beforeValue = optionalNumber(before, field);
+        const nextValue = optionalNumber(next, field);
+        if (!valuesEqual(beforeValue, nextValue)) {
+            operations.push({
+                kind: 'take-optional-number-field',
+                laneId,
+                takeId: before.id,
+                field,
+                expected: beforeValue,
+                replacement: nextValue,
+            });
+        }
     }
     return operations;
 }
@@ -421,15 +427,15 @@ function applyTakeFieldOperation(
         return undefined;
     }
     let replacementTake: Take;
-    if (operation.kind === 'take-source-offset-field') {
-        if (!valuesEqual(optionalNumber(take, 'sourceOffsetBeats'), operation.expected)) {
+    if (operation.kind === 'take-optional-number-field') {
+        if (!valuesEqual(optionalNumber(take, operation.field), operation.expected)) {
             return undefined;
         }
         replacementTake = cloneValue(take);
         if (operation.replacement.present) {
-            replacementTake.sourceOffsetBeats = operation.replacement.value;
+            replacementTake[operation.field] = operation.replacement.value;
         } else {
-            delete replacementTake.sourceOffsetBeats;
+            delete replacementTake[operation.field];
         }
     } else if (operation.kind === 'take-selected-field') {
         if (take.selected !== operation.expected) {

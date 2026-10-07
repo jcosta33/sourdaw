@@ -521,6 +521,8 @@ describe('recording gesture commit (issue #4439)', () => {
         flushAutomergeStorageWrites();
         const recordedOffsets = (): (number | undefined)[] =>
             (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.sourceOffsetBeats));
+        const recordedPlacements = (): (number | undefined)[] =>
+            (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.passStartBeats));
 
         rebaseRecordingTakes({ clipId: provisional.id, provisionalStartBeat: 4, shiftBeats: 0.5 });
         await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 });
@@ -528,6 +530,7 @@ describe('recording gesture commit (issue #4439)', () => {
 
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
         expect(recordedOffsets()).toEqual([0.5, 0.5]);
+        expect(recordedPlacements()).toEqual([0.5, 0.5]);
 
         await undo();
         flushAutomergeStorageWrites();
@@ -536,5 +539,6 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(recordedOffsets()).toEqual([0.5, 0.5]);
+        expect(recordedPlacements()).toEqual([0.5, 0.5]);
     });
 });
