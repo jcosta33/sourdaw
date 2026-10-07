@@ -276,24 +276,32 @@ describe('global time operations retire take-lane state (#4520)', () => {
         expect(slot.retiredLanes[0]?.lane.id).toBe(lane.id);
     });
 
-    it('neither retires nor records a slot when no take names the removed clip', () => {
+    it("shifts a surviving clip's take geometry even when no take names the removed clip", () => {
         setTracks([
             createClip({ id: 'comped', startBeat: 2, endBeat: 6 }),
             createClip({ id: 'keeper', startBeat: 6, endBeat: 10 }),
         ]);
+        const keeperTake = createTake('keeper', 'Keeper take', 6, 10);
         takeLaneStore.set({
-            lanes: [{ ...createTakeLane('track-1'), takes: [createTake('keeper', 'Keeper take', 6, 10)] }],
+            lanes: [{ ...createTakeLane('track-1'), takes: [keeperTake] }],
         });
-        const laneStateBefore = takeLaneStore.value;
         registerIdleDependencies();
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
         const applied = requireApplied(result);
 
-        // No take named the deleted clip: the store is not even rewritten, and
-        // the plan records that there is nothing to restore.
-        expect(takeLaneStore.value).toBe(laneStateBefore);
-        expect(applied.inversePlan).toMatchObject({ takeLanes: null });
+        // No take named the deleted clip, so nothing retires — but the
+        // keeper's take follows its clip to [2,6]: left at [6,10] it would
+        // resolve against the clip's old span (#4841).
+        const lanes = takeLaneStore.value?.lanes ?? [];
+        expect(lanes[0]?.takes).toEqual([{ ...keeperTake, startBeat: 2, endBeat: 6 }]);
+        expect(applied.inversePlan).toMatchObject({
+            takeLanes: {
+                removedClipIds: ['comped'],
+                retiredLanes: [],
+                reKeyedLanes: [{ trackId: 'track-1' }],
+            },
+        });
     });
 
     it('inserts and duplicates leave take lanes untouched', () => {
