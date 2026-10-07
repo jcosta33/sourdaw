@@ -481,7 +481,7 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
 
 /**
  * List punctuation starts another list item — a comma, a semicolon, or a dash set off by spaces —
- * while name punctuation continues one name ("Master-Vox", "Master's Choir", "Master/Vox").
+ * while name punctuation continues one name ("Master-Take", "Master's Choir", "Master/Take").
  */
 function joinerCarriesListPunctuation(joiner: string): boolean {
     return /[,;]|\s[-–—]|[-–—]\s/u.test(joiner);
@@ -511,7 +511,7 @@ function nameMatchConsumesIdOccurrence(
 
 /**
  * A literal id read from a word that every occurrence sits inside a longer exact-name match was the
- * name being typed, not the id ("Master" inside "Master Vox"), so it yields to the name. A match that
+ * name being typed, not the id ("Master" inside "Master Take"), so it yields to the name. A match that
  * only reached past the id word on sentence material ("turn the master down 2 dB" beside a "Master
  * Down" track) is not the name being typed, so the id stands and the prompt stays ambiguous. A span
  * that only equals the id's own text stays ambiguous too: that prompt names both objects equally.
