@@ -1,0 +1,67 @@
+src/modules/MIDI/stores/__tests__/grooveTemplateCollaboration.spec.ts
+  s_2bfd55a4393d7c::t_db487b55ac18f2 462-515
+  s_2bfd55a4393d7c::t_fbed102dacd73d 1,7
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_2bfd55a4393d7c::t_4df84f8daef2da 6
+  s_1c08b47ac3792f::t_ce5f9477c7363f 621-628
+  s_2bfd55a4393d7c::t_dbd5f79011726e 590-602
+  s_2bfd55a4393d7c::t_839c6ec2578802 1
+  s_2bfd55a4393d7c::t_fe773a385f35f6 556-589,603-604,606-620
+  s_2bfd55a4393d7c::t_928d4cc40e7e37 605
+src/modules/Yeast/stores/yeastAutomergeStorage.ts
+  s_2bfd55a4393d7c::t_d44af94fbbd381 468-474
+  s_2bfd55a4393d7c::t_800fe65c29a2e9 695-703
+src/modules/CrdtDocument/AGENTS.md
+  s_2bfd55a4393d7c::t_b7f5f7371a1a0e 33
+src/infra/store/storage/createAutomergeStorage.ts
+  s_2bfd55a4393d7c::t_116256dfa28dad 621-649
+  s_2bfd55a4393d7c::t_ee6441ca67a98f 96-111,113-120
+  s_2bfd55a4393d7c::t_1ff60fb741c057 2625-2627
+  s_2bfd55a4393d7c::t_aecf63d34fa1ff 685,687-693,696-698
+src/modules/Yeast/stores/__tests__/yeastStore.spec.ts
+  s_2bfd55a4393d7c::t_51211cbb216ea1 21-27
+  s_2bfd55a4393d7c::t_108ac3565ad698 7
+  s_2bfd55a4393d7c::t_77b489c1cb23a0 220-229,231-232,235-239
+  s_2bfd55a4393d7c::t_5e7bdf60503d88 219,244-253,255-263,305-312,318-320,322-324
+  s_2bfd55a4393d7c::t_c26b7a74630712 304,313-317
+  s_2bfd55a4393d7c::t_0dac5c650dbf20 321
+  s_2bfd55a4393d7c::t_51563566924bea 254
+  s_2bfd55a4393d7c::t_83bfb9ab72fea6 230,233-234,240-243
+  s_2bfd55a4393d7c::t_0868e53b825683 1
+  s_2bfd55a4393d7c::t_01e333ad02e9a4 264-303
+src/modules/MIDI/stores/grooveTemplateAutomergeStorage.ts
+  s_2bfd55a4393d7c::t_6867eddb24b665 313-318
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_2bfd55a4393d7c::t_9ef496c3d8a77e 360-366
+  s_2bfd55a4393d7c::t_fa22c95ae5687d 339-344
+src/infra/store/storage/__tests__/createAutomergeStorage.previewDecoderState.spec.ts
+  s_2bfd55a4393d7c::t_62d20cb5cc775d 2-11,13,18-20,24-101,103-105,112-113,115-118,123,125-126,130,133-135,138,140-141
+  s_2bfd55a4393d7c::t_12793f07245187 102,106-111,114
+  s_2bfd55a4393d7c::t_4783311ce0a1cf 1
+  s_2bfd55a4393d7c::t_550d847faba1bf 119-122,124,127-129,131-132,136-137,139
+  s_2bfd55a4393d7c::t_4a6005cdc3b0a7 12,14-17,21-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ac320d16a4dcf8a49de17266cd96ab7423af426",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
