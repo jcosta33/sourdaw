@@ -4,15 +4,7 @@ import { handleTrimClipStart } from '../handleTrimClipStart';
 
 const mocks = vi.hoisted(() => ({
     trimClipStart: vi.fn(),
-    getTrackStoreState:
-        vi.fn<() => { tracks: { id: string; clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null>(),
-    planTrimmedTakeStarts: vi.fn<
-        typeof import('../../../useCases/comping/planTrimmedTakeStarts').planTrimmedTakeStarts
-    >(() => ({ before: [], after: [] })),
-}));
-
-vi.mock('../../../useCases/comping/planTrimmedTakeStarts', () => ({
-    planTrimmedTakeStarts: mocks.planTrimmedTakeStarts,
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; clips: { id: string; startBeat: number }[] }[] } | null>(),
 }));
 
 vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({
@@ -27,7 +19,6 @@ describe('handleTrimClipStart', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue(null);
-        mocks.planTrimmedTakeStarts.mockReturnValue({ before: [], after: [] });
     });
 
     it('executes trimClipStart with the provided payload', () => {
@@ -50,7 +41,7 @@ describe('handleTrimClipStart', () => {
 
     it('describes an inverse back to the pre-trim start beat', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1, endBeat: 8 }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1 }] }],
         });
 
         const desc = handleTrimClipStart.describe({
@@ -62,45 +53,6 @@ describe('handleTrimClipStart', () => {
             type: 'trimClipStart',
             payload: { clipId: 'c1', newStartBeat: 1 },
         });
-    });
-
-    it('describes the clip and the moved loop passes as one inverse', () => {
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1, endBeat: 8 }] }],
-        });
-        mocks.planTrimmedTakeStarts.mockReturnValue({
-            before: [{ takeId: 'pass-1', startBeat: 1, sourceOffsetBeats: 0 }],
-            after: [{ takeId: 'pass-1', startBeat: 2, sourceOffsetBeats: 1 }],
-        });
-
-        const desc = handleTrimClipStart.describe({
-            type: 'trimClipStart',
-            payload: { clipId: 'c1', newStartBeat: 2 },
-        });
-
-        expect(mocks.planTrimmedTakeStarts).toHaveBeenCalledWith({
-            clipId: 'c1',
-            previousStartBeat: 1,
-            newStartBeat: 2,
-        });
-        expect(desc.inverseAction).toEqual({
-            type: 'restoreClipStartTrim',
-            payload: {
-                clipId: 'c1',
-                newStartBeat: 1,
-                takes: [{ takeId: 'pass-1', startBeat: 1, sourceOffsetBeats: 0 }],
-            },
-        });
-    });
-
-    it('plans no take moves for a trim that does not apply', () => {
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 1, endBeat: 8 }] }],
-        });
-
-        handleTrimClipStart.describe({ type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 9 } });
-
-        expect(mocks.planTrimmedTakeStarts).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

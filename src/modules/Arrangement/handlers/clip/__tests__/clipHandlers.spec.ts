@@ -36,7 +36,6 @@ describe('clipHandlers', () => {
             'restoreClipMoves',
             'moveClip',
             'restoreClipPlacement',
-            'restoreClipStartTrim',
             'discardDuplicatedClip',
             'duplicateClip',
             'duplicateClipToNextBar',
