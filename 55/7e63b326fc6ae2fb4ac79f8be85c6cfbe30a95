@@ -1,0 +1,38 @@
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_01851d03ba0b20::t_97423e3985fb33 51
+  s_01851d03ba0b20::t_c1967409af4a40 14
+src/modules/Transport/useCases/transportControls/resolveRollStartBeat.ts
+  s_01851d03ba0b20::t_e640a11b262710 1-34
+  s_01851d03ba0b20::t_fb1da10e3aca41 35-37
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_01851d03ba0b20::t_f92958a3f9dc60 1-2,4-5,7-8,10-25,35-38,40-43,46-47,51-57,59-61,63-66,82,86-88,90-93,104,106-108,125-128,134-159,165-187,189-196,198-204,207-216
+  s_01851d03ba0b20::t_a4863a0033b8d0 217-219
+  s_01851d03ba0b20::t_744fff04a3411b 220-231,235-246,342
+  s_c8cd826339a8fa::t_a7062092c6c11c 44-45,62,105
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_01851d03ba0b20::t_521cb7b8d01371 26,32-37,39-43,146-152,154-157,254-258,266-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "557e63b326fc6ae2fb4ac79f8be85c6cfbe30a95",
+  "prompts": {},
+  "sessions": {
+    "s_01851d03ba0b20": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "bb772074-c676-4983-9e25-b5f4ca7f25c2",
+        "model": "claude-sonnet-5-5-high"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c8cd826339a8fa": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_c8cd826339a8fa",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
