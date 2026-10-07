@@ -74,9 +74,12 @@ export type GrandBouleNodeResult = {
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     acceptsScheduledParam?: (name: string) => boolean;
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
-    setSustain: (position: number, sampleFrame?: number) => void;
-    setUnaCorda: (engaged: boolean, sampleFrame?: number) => void;
-    setSostenuto: (engaged: boolean, sampleFrame?: number) => void;
+    /** `stored` marks a move stored clip playback posts, so `discardStoredPedals` can drop it while it is queued. */
+    setSustain: (position: number, sampleFrame?: number, stored?: boolean) => void;
+    setUnaCorda: (engaged: boolean, sampleFrame?: number, stored?: boolean) => void;
+    setSostenuto: (engaged: boolean, sampleFrame?: number, stored?: boolean) => void;
+    /** Drop every queued pedal move stored playback posted; a performer's queued moves stay. */
+    discardStoredPedals: () => void;
     noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
     setTemperament: (index: number) => void;
     allNotesOff: () => void;
@@ -658,14 +661,17 @@ export async function createGrandBouleNode(
                 post({ type: 'paramAutomation', name, segments });
             }
         },
-        setSustain(position: number, sampleFrame?: number) {
-            post({ type: 'sustain', position, sampleFrame });
+        setSustain(position: number, sampleFrame?: number, stored?: boolean) {
+            post({ type: 'sustain', position, sampleFrame, stored });
         },
-        setUnaCorda(engaged: boolean, sampleFrame?: number) {
-            post({ type: 'unaCorda', engaged, sampleFrame });
+        setUnaCorda(engaged: boolean, sampleFrame?: number, stored?: boolean) {
+            post({ type: 'unaCorda', engaged, sampleFrame, stored });
         },
-        setSostenuto(engaged: boolean, sampleFrame?: number) {
-            post({ type: 'sostenuto', engaged, sampleFrame });
+        setSostenuto(engaged: boolean, sampleFrame?: number, stored?: boolean) {
+            post({ type: 'sostenuto', engaged, sampleFrame, stored });
+        },
+        discardStoredPedals() {
+            post({ type: 'discardStoredPedals' });
         },
         noteOnMidi2(midiNote: number, velocity16bit: number, pitchOffsetQ24: number) {
             if (!bypassed) {

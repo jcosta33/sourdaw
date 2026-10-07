@@ -6,6 +6,7 @@ import { type OfflineDeviceNode } from '../devices/types';
 
 import {
     type AudioDeviceStrategy,
+    type DeviceControllerRequest,
     type DeviceNoteExpressionRequest,
     type DeviceNoteOffRequest,
     type DeviceNoteOnRequest,
@@ -51,6 +52,8 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
      * method defined on the prototype would claim one for Crumbs and Toaster.
      */
     public readonly noteExpression?: (request: DeviceNoteExpressionRequest) => void;
+    /** Assigned only when the factory built a node that honours stored controllers, for the same reason. */
+    public readonly controlChange?: (request: DeviceControllerRequest) => void;
 
     constructor(private readonly dspNode: NativeDspNode) {
         this.runtimeFailure = dspNode.runtimeFailure;
@@ -66,6 +69,10 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
         if (scheduleParam && acceptsScheduledParam) {
             this.acceptsScheduledParam = (name) => acceptsScheduledParam(name);
             this.scheduleParam = (name, segments) => scheduleParam(name, segments);
+        }
+        const controlChange = dspNode.controlChange;
+        if (controlChange) {
+            this.controlChange = (request) => controlChange(request);
         }
         if (hasNoteExpressionSurface(dspNode)) {
             const expressionNode = dspNode;

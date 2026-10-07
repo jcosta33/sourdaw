@@ -4,6 +4,7 @@ import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording, stageRecordingTake } from '#/modules/Arrangement/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
@@ -22,7 +23,11 @@ const transportStoreState: { value: typeof defaultTransportState | null } = { va
 const tempoMapStoreState: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
 const trackStoreState: { value: { tracks: unknown[] } | null } = { value: { tracks: [] } };
 const midiStoreState: {
-    value: { notesByClipId: Record<string, unknown[]>; probabilitySeed: number } | null;
+    value: {
+        notesByClipId: Record<string, unknown[]>;
+        ccByClipId?: Record<string, unknown[]>;
+        probabilitySeed: number;
+    } | null;
 } = { value: null };
 const ctxTime = { now: 0 };
 
@@ -131,6 +136,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
+    getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
@@ -569,5 +575,125 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
             await runTick(worker, 0.01);
         }
         expect(punchOutsAtBeat(PUNCH_OUT_BEAT)).toHaveLength(1);
+    });
+});
+
+/**
+ * The seam-edit wrap sub-case relocates playback to the edited loop start, so it
+ * must lift what stored playback left engaged and drop the stored moves still
+ * queued for the old timeline, exactly as the late wrap and a jump do, before the
+ * window opening there restores the value in force.
+ */
+describe('startPlayheadScheduler stored controllers at the seam-edit wrap', () => {
+    const EDITED_BPM = 210;
+    const EDITED_LOOP_START = 3.9;
+    const EDITED_LOOP_END = 4;
+    const stored: string[] = [];
+
+    const grandBouleControls = {
+        noteOn: vi.fn(),
+        noteOff: vi.fn(),
+        noteExpression: vi.fn(),
+        setSustain: (position: number, frame?: number, isStored?: boolean) => {
+            stored.push(`sustain ${position} ${frame === undefined ? 'now' : 'framed'}${isStored ? ' stored' : ''}`);
+        },
+        setSostenuto: vi.fn(),
+        setUnaCorda: vi.fn(),
+        discardStoredPedals: () => {
+            stored.push('discard');
+        },
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        stored.length = 0;
+        forgetStoredControllerEngagements();
+        evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
+        tempoMapStoreState.value = { changes: [] };
+        metronomeSchedulingState.lastBeat = -1;
+        metronomeSchedulingState.firedClickTimes.clear();
+        ctxTime.now = 0;
+        schedulerTickSequence = 0;
+        disposePlayheadScheduler();
+        vi.stubGlobal(
+            'Worker',
+            class {
+                onmessage: ((event: { data: unknown }) => void) | null = null;
+                postMessage = vi.fn();
+                terminate = vi.fn();
+                addEventListener = vi.fn();
+                removeEventListener = vi.fn();
+            }
+        );
+        trackStripStub.deviceNodes = [{ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls }];
+        trackStoreState.value = {
+            tracks: [
+                {
+                    ...(midiTrack([midiClip('clip-pedal', 0, 8)]) as object),
+                    devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                    sends: [],
+                },
+            ],
+        };
+        // Pedal down at 3.5, up at 3.7 and down again at 3.8: the dying pass leaves it down, and the
+        // value in force at the edited loop start 3.9 is down.
+        midiStoreState.value = {
+            notesByClipId: { 'clip-pedal': [] },
+            ccByClipId: {
+                'clip-pedal': [
+                    { id: 'down', controller: 64, value: 127, beat: 3.5, channel: 0 },
+                    { id: 'up', controller: 64, value: 0, beat: 3.7, channel: 0 },
+                    { id: 'down-again', controller: 64, value: 127, beat: 3.8, channel: 0 },
+                ],
+            },
+            probabilitySeed: 1,
+        };
+    });
+
+    afterEach(() => {
+        trackStripStub.deviceNodes = [];
+        disposePlayheadScheduler();
+        vi.unstubAllGlobals();
+    });
+
+    it('drops the stored moves queued for the old timeline and restores the loop start without lifting the pedal', async () => {
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+        });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+
+        // To the scheduled-seam tick, as the sibling cases do; the dying pass has by
+        // now posted the whole lane and left the pedal down.
+        let ticks = 0;
+        while (panicYeastRuntimeSpy.mock.calls.length === 0 && ticks < 200) {
+            ticks++;
+            await runTick(worker);
+        }
+        expect(panicYeastRuntimeSpy).toHaveBeenCalled();
+        await runTick(worker, 0.01);
+        await runTick(worker, 0.01);
+        await runTick(worker, 0.01);
+        expect(stored.filter((entry) => entry.startsWith('sustain 1'))).not.toEqual([]);
+        stored.length = 0;
+
+        // The edit: a 210 BPM map and a loop of 0.1 beats the dying pass had already carried
+        // the end of, so the seam-edit arm takes its wrap sub-case this tick.
+        tempoMapStoreState.value = {
+            changes: [{ id: 'tempo-edit', beat: 0, tempo: EDITED_BPM, curve: 'instant' }],
+        };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: EDITED_LOOP_START,
+            loopEnd: EDITED_LOOP_END,
+        });
+        await runTick(worker, 0.01);
+
+        // Dropped first, then the value in force at 3.9 (down) restored at its frame, with no lift between.
+        expect(stored.slice(0, 2)).toEqual(['discard', 'sustain 1 framed stored']);
     });
 });

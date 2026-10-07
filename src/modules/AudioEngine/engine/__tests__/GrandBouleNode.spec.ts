@@ -918,6 +918,38 @@ describe('createGrandBouleNode', () => {
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'sostenuto', engaged: false, sampleFrame: 4_098 });
     });
 
+    it('should mark a pedal move stored playback posts, and only that one, and post the discard of the stored ones', async () => {
+        const node = await createGrandBouleNode(ctx);
+        workerPostMessage.mockClear();
+
+        node.setSustain(1, 4_096, true);
+        node.setUnaCorda(true, 4_097, true);
+        node.setSostenuto(false, 4_098, true);
+        node.setSustain(0.5, 4_099);
+        node.discardStoredPedals();
+
+        expect(workerPostMessage).toHaveBeenCalledWith({
+            type: 'sustain',
+            position: 1,
+            sampleFrame: 4_096,
+            stored: true,
+        });
+        expect(workerPostMessage).toHaveBeenCalledWith({
+            type: 'unaCorda',
+            engaged: true,
+            sampleFrame: 4_097,
+            stored: true,
+        });
+        expect(workerPostMessage).toHaveBeenCalledWith({
+            type: 'sostenuto',
+            engaged: false,
+            sampleFrame: 4_098,
+            stored: true,
+        });
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'sustain', position: 0.5, sampleFrame: 4_099 });
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'discardStoredPedals' });
+    });
+
     it('should post noteOnMidi2 to the engine worker unless bypassed', async () => {
         const node = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();

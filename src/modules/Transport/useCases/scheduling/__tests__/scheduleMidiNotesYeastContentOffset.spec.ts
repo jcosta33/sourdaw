@@ -104,6 +104,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
+    getTrackStrip: vi.fn(),
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
