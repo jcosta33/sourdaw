@@ -1,0 +1,19 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_440baeb78ec8d1::t_8738bb83357681 28,118-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc5a2ae9e2e538e779edbb628168f05e65c5c75a",
+  "prompts": {},
+  "sessions": {
+    "s_440baeb78ec8d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a4-6293-7383-9164-1c36e1e38035",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
