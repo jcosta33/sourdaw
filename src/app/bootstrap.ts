@@ -11,6 +11,7 @@ import {
     getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
+    cancelActiveAgentRuns,
     recoverInterruptedAgentRuns,
     recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
@@ -45,6 +46,7 @@ import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases
 import {
     updateDeviceParam,
     updateDevicePatch,
+    ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
     commitPitchEdit,
@@ -61,7 +63,11 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { clearAgentMeasurementArtifacts, stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import {
+    clearAgentMeasurementArtifacts,
+    clearAgentSectionRenderArtifacts,
+    stageAudioBufferAsset,
+} from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -120,6 +126,7 @@ import {
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
+import { setCrumbsEventBus } from '#/modules/Crumbs/stores';
 import {
     initCrumbsDeviceStatePersistence,
     prepareCrumbsEngine,
@@ -164,6 +171,8 @@ import {
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
     setAgentMeasurementArtifactsClearer,
+    setAgentSectionRenderArtifactsClearer,
+    setActiveAgentRunsCanceller,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -216,6 +225,7 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -354,6 +364,13 @@ setClipAudioAssetStager(stageAudioBufferAsset);
 // imports Project's use cases, so Project cannot import AudioRendering's
 // barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
 setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
+// Two more seams of the same shape: the retained section renders and the
+// in-flight agent runs both belong to the project being torn down, and each
+// implementation's module imports Project's barrel, so Project cannot import
+// either back. See agentSectionRenderArtifactsClearingState.ts and
+// activeAgentRunCancellationState.ts.
+setAgentSectionRenderArtifactsClearer(clearAgentSectionRenderArtifacts);
+setActiveAgentRunsCanceller(cancelActiveAgentRuns);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -373,6 +390,7 @@ setMixAnalysisDisplayLifecycle({
 });
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
+setCrumbsEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
@@ -646,6 +664,41 @@ composeGrandBoule({ eventBus, logger });
 // stale-mirror window #4894 describes.
 initGrandBouleDocumentReconciliation();
 initCrumbsDeviceStatePersistence();
+// The same document-origin trigger the Grand Boule sweep uses, one home over:
+// a peer's Toaster kit, Levain instrument or Crumbs sample/mode commit, an
+// undo, or a bulk load rewrites the document without re-running any app
+// action, so a loaded device would keep its stale deviceState until reload
+// and its next local edit would commit that stale store over the peer's
+// change (#4764). Registered after the persistence subscribers so a device's
+// first appearance is already carrying what the document held.
+initDeviceStateReconciliation();
+// The strip half of every Crumbs mode change, panel and peer alike. This used
+// to live in the Crumbs module (`sendCrumbsModeToEngine`): the mode reached the
+// session store and the native `CrumbsInstance` and stopped there, because the
+// `crumbs-processor` worklet — the thing summed into the track strip — learned
+// its mode exactly once, at device build time, so a mid-session Quick→Slice
+// changed the panel, the persisted document and an engine nobody was listening
+// to. It cannot live behind the Crumbs barrel any more: AudioEngine imports
+// that barrel, so a barrel-reachable path back into the strip's owner closes a
+// `no-circular` cycle the boundary gate refuses. The module signals and this
+// seam, which may reach both barrels, tells the node that is actually
+// rendering. Silent when the device has no strip, no node, or a node that is
+// not ready — each of them ordinary, and the store write that precedes the
+// signal is what the panel reads.
+eventBus.on('crumbs.modeChanged', ({ deviceId, mode }) => {
+    const track = getAllTracks().find((candidate) => candidate.devices.some((device) => device.id === deviceId));
+    if (!track) {
+        return;
+    }
+    const strip = ensureTrackStrip(track.id);
+    const deviceNode = strip.deviceNodes.find(
+        (candidate) => candidate.deviceId === deviceId && candidate.crumbsControls?.ready === true
+    );
+    if (!deviceNode?.crumbsControls) {
+        return;
+    }
+    deviceNode.crumbsControls.setMode(mode);
+});
 // The native Crumbs instance follows the device's presence on the project, not
 // the panel's mount: the mapper splices a Crumbs device onto its strip by the
 // instance the engine holds, so a sampler whose window is shut would otherwise

@@ -170,6 +170,10 @@ const {
     collectDurableOwnedAudioBufferIdsMock,
     clearAgentMeasurementArtifactsMock,
     setAgentMeasurementArtifactsClearerMock,
+    clearAgentSectionRenderArtifactsMock,
+    setAgentSectionRenderArtifactsClearerMock,
+    cancelActiveAgentRunsMock,
+    setActiveAgentRunsCancellerMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -247,6 +251,10 @@ const {
         // exact reference, so rewiring or dropping the registration fails here.
         clearAgentMeasurementArtifactsMock: vi.fn(),
         setAgentMeasurementArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
+        clearAgentSectionRenderArtifactsMock: vi.fn(),
+        setAgentSectionRenderArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
+        cancelActiveAgentRunsMock: vi.fn(),
+        setActiveAgentRunsCancellerMock: vi.fn<(canceller: () => void) => void>(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -305,6 +313,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     failMixAnalysis: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffects: recoverRetainedSectionRenderEffectsMock,
+    cancelActiveAgentRuns: cancelActiveAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     initializeVoiceInputAvailability: noop,
@@ -360,6 +369,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
     getToasterDeviceControls: noop,
+    ensureTrackStrip: noop,
+    getTrackStrip: noop,
+    writeNativeBuiltinParameters: noop,
     updateDevicePatch: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
@@ -387,6 +399,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
     clearAgentMeasurementArtifacts: clearAgentMeasurementArtifactsMock,
+    clearAgentSectionRenderArtifacts: clearAgentSectionRenderArtifactsMock,
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -483,6 +496,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
+    // The real Crumbs barrel is not mocked, so its new reconciliation
+    // subscription loads and registers against this seam. A noop unsubscribe
+    // is all it needs: no document change fires under this fixture.
+    subscribeToCrdtChanges: () => noop,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -522,6 +539,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     initLevainDeviceStatePersistence: () => noop,
+    reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
@@ -570,6 +588,8 @@ vi.mock('#/modules/Project/useCases', () => ({
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
     setAgentMeasurementArtifactsClearer: setAgentMeasurementArtifactsClearerMock,
+    setAgentSectionRenderArtifactsClearer: setAgentSectionRenderArtifactsClearerMock,
+    setActiveAgentRunsCanceller: setActiveAgentRunsCancellerMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
@@ -620,6 +640,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     return {
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
+        reconcileToasterKitsFromProject: noop,
         setToasterEventBus: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
         prepareOfflineToaster: noop,
@@ -1015,6 +1036,30 @@ describe('bootstrap', () => {
         expect(setAgentMeasurementArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
             clearAgentMeasurementArtifactsMock
         );
+    });
+
+    /**
+     * Same seam, same pinning: `resetModuleStoresToDefault` calls Project's
+     * stored section-render clearer at every project boundary, and the
+     * composition root is the only place that binds it to AudioRendering's use
+     * case. Dropping the registration leaves a closed project's section renders
+     * (and their expiry timer) retained with nothing reporting it.
+     */
+    it('wires the agent section render artifact clearer to the AudioRendering use case', () => {
+        expect(setAgentSectionRenderArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
+            clearAgentSectionRenderArtifactsMock
+        );
+    });
+
+    /**
+     * The canceller seam binds AiRuntime's run cancellation to the same
+     * boundary: without the registration an agent run in flight survives a
+     * project switch and its render holds the process-wide render lock, keeping
+     * Export disabled in the incoming project. Pinned by reference like the
+     * clearer registrations above.
+     */
+    it('wires the active agent run canceller to the AiRuntime use case', () => {
+        expect(setActiveAgentRunsCancellerMock).toHaveBeenCalledExactlyOnceWith(cancelActiveAgentRunsMock);
     });
 
     /**

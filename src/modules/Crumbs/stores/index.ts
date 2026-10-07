@@ -7,3 +7,4 @@
 // mutators.
 
 export { crumbsEngineAttachmentStore, readAttachedCrumbsInstanceIds } from './crumbsEngineAttachmentStore';
+export { setCrumbsEventBus } from './crumbsEventBus';
