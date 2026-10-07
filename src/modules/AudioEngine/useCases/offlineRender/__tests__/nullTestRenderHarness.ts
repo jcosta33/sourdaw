@@ -30,7 +30,8 @@
  * differently* is implemented for real:
  *
  *   - `GainNode`               multiplies.
- *   - `StereoPannerNode`       the spec's stereo equal-power law.
+ *   - `StereoPannerNode`       the spec's equal-power laws, chosen by input
+ *                              channel count (mono and stereo).
  *   - `BiquadFilterNode`       the spec's transfer functions, running
  *                              direct-form-1 with per-node state across quanta.
  *   - `WaveShaperNode`         the spec's curve lookup with linear interpolation.
@@ -351,6 +352,22 @@ class HarnessAudioNode {
         left: new Float32Array(QUANTUM_FRAMES),
         right: new Float32Array(QUANTUM_FRAMES),
     };
+    /**
+     * The spec's channel-count model, which decides how many channels a node
+     * mixes its inputs down or up to. A node whose own mode is left at `max`
+     * carries a mono input as mono, which is what makes a bare
+     * `StereoPannerNode` choose its one-channel law.
+     */
+    channelCount = 2;
+    channelCountMode: 'max' | 'clamped-max' | 'explicit' = 'max';
+    channelInterpretation: 'speakers' | 'discrete' = 'speakers';
+    /**
+     * Channels the block in `out` carries: 1 or 2. A mono block keeps
+     * `right === left`, so a node that treats the pair independently stays
+     * correct, and a mono-to-stereo up-mix under `speakers` is just reading
+     * both.
+     */
+    outputChannels = 2;
     /** The quantum `out` currently holds, and the one `transform()` is shaping. */
     protected renderedQuantum = -1;
 
@@ -415,15 +432,45 @@ class HarnessAudioNode {
         this.renderedQuantum = quantum;
         this.out.left.fill(0);
         this.out.right.fill(0);
-        for (const source of this.inputs) {
-            const block = source.render(quantum);
+        const blocks = this.inputs.map((source) => ({
+            block: source.render(quantum),
+            channels: source.outputChannels,
+        }));
+        // A source keeps the channel count it declares; every other node
+        // computes its own from what feeds it.
+        if (this.numberOfInputs > 0) {
+            this.outputChannels = this.computeChannels(blocks.map((entry) => entry.channels));
+        }
+        const mixToMono = this.outputChannels === 1;
+        for (const { block, channels } of blocks) {
             for (let index = 0; index < QUANTUM_FRAMES; index++) {
+                if (mixToMono) {
+                    // `speakers` stereo-to-mono down-mix: (L + R) / 2.
+                    const sample = channels === 1 ? block.left[index]! : (block.left[index]! + block.right[index]!) / 2;
+                    this.out.left[index] = this.out.left[index]! + sample;
+                    continue;
+                }
                 this.out.left[index] = this.out.left[index]! + block.left[index]!;
                 this.out.right[index] = this.out.right[index]! + block.right[index]!;
             }
         }
+        if (mixToMono) {
+            this.out.right.set(this.out.left);
+        }
         this.transform();
         return this.out;
+    }
+
+    /** The spec's computed number of channels for this node's input. */
+    private computeChannels(connected: number[]): number {
+        if (this.channelInterpretation !== 'speakers') {
+            throw new Error('nullTestRenderHarness models only the `speakers` channel interpretation');
+        }
+        if (this.channelCountMode === 'explicit') {
+            return Math.min(2, this.channelCount);
+        }
+        const widest = connected.length === 0 ? 1 : Math.max(...connected);
+        return this.channelCountMode === 'clamped-max' ? Math.min(widest, this.channelCount) : widest;
     }
 
     protected transform(): void {}
@@ -466,7 +513,8 @@ class HarnessGainNode extends HarnessAudioNode {
 }
 
 /**
- * The spec's `StereoPannerNode` panning algorithm, the stereo-input branch.
+ * The spec's `StereoPannerNode` panning algorithm: the stereo-input law for a
+ * two-channel input, the equal-power mono law for a one-channel one.
  *
  * A-rate, as the spec defines `pan`: the position is read once per frame, not
  * once per quantum. An earlier revision read it per quantum on the reasoning
@@ -482,12 +530,24 @@ class HarnessStereoPannerNode extends HarnessAudioNode {
         private readonly sampleRate: number
     ) {
         super();
+        this.channelCountMode = 'clamped-max';
     }
 
     protected override transform(): void {
         const startFrame = this.renderedQuantum * QUANTUM_FRAMES;
+        const monoInput = this.outputChannels === 1;
+        this.outputChannels = 2;
         for (let index = 0; index < QUANTUM_FRAMES; index++) {
             const position = Math.max(-1, Math.min(1, this.pan.sample((startFrame + index) / this.sampleRate)));
+            if (monoInput) {
+                // The spec's one-channel branch: x = (pan + 1) / 2, so a
+                // centred mono source lands 3.01 dB down in each ear.
+                const x = (position + 1) / 2;
+                const sample = this.out.left[index]!;
+                this.out.left[index] = sample * Math.cos((x * Math.PI) / 2);
+                this.out.right[index] = sample * Math.sin((x * Math.PI) / 2);
+                continue;
+            }
             const x = position <= 0 ? position + 1 : position;
             const gainLeft = Math.cos((x * Math.PI) / 2);
             const gainRight = Math.sin((x * Math.PI) / 2);
@@ -882,7 +942,13 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
 
         protected override transform(): void {
             const { buffer, startFrame } = this;
-            if (!buffer || startFrame === null) {
+            if (!buffer) {
+                return;
+            }
+            // A source's output carries the buffer's own channel count: a mono
+            // buffer is one channel to whatever it feeds, not a stereo pair.
+            this.outputChannels = Math.min(2, buffer.numberOfChannels);
+            if (startFrame === null) {
                 return;
             }
             // The buffer's rate against the context's is the resampling half
@@ -936,6 +1002,8 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
             options: HarnessContextOptions = {}
         ) {
             this.automation = options.automation ?? 'settled';
+            this.destination.channelCount = Math.min(2, numberOfChannels);
+            this.destination.channelCountMode = 'explicit';
         }
 
         private param(value: number): HarnessAudioParam {

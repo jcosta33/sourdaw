@@ -78,6 +78,18 @@ describe('TrackNode', () => {
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.preFaderSendGate);
     });
 
+    it('up-mixes to dual-mono at the node that feeds the panner, so a mono source takes the stereo pan law like native', () => {
+        const track = new TrackNode('track-1', deps);
+
+        // `postFaderGain` is the panner's direct input (asserted above); a
+        // one-channel signal reaching a bare StereoPannerNode takes the mono
+        // law and renders 3.01 dB under the native engine at centre.
+        expect(track.strip.postFaderGain.connect).toHaveBeenCalledWith(track.strip.panNode);
+        expect(track.strip.postFaderGain.channelCount).toBe(2);
+        expect(track.strip.postFaderGain.channelCountMode).toBe('explicit');
+        expect(track.strip.postFaderGain.channelInterpretation).toBe('speakers');
+    });
+
     describe('native-carrier gates', () => {
         it('closes both exits when the native engine takes the track and reopens them when it gives it back', () => {
             const track = new TrackNode('track-1', deps);
