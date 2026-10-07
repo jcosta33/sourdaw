@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_2bfd55a4393d7c::t_e88a5572a96cc9 484,514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb0c94d16e62e672cd7bd8866e91cc242ff7a9cc",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
