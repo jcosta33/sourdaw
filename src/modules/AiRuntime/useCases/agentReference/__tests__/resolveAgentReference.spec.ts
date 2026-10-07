@@ -536,6 +536,50 @@ describe('resolveAgentReference', () => {
         ).toEqual(resolvedTo('bus-master-name', 'Master', 'exact-name'));
     });
 
+    it('drops a literal master id nested in a longer exact track name, keeping a bare master reference', () => {
+        const project = createProjectState();
+        const fixtureTrack = project.tracks[0];
+        if (!fixtureTrack) {
+            throw new Error('Expected track fixture');
+        }
+        const master = {
+            ...fixtureTrack,
+            id: 'master',
+            name: 'Master',
+            kind: 'master' as const,
+            outputId: 'hw_out',
+        };
+        const masterVox = { ...fixtureTrack, id: 'track-master-vox', name: 'Master Vox' };
+        const masteringBus = { ...fixtureTrack, id: 'track-mastering-bus', name: 'Mastering Bus' };
+        const masterVoxContext = { ...project, tracks: [masterVox, master], selectedTrackId: masterVox.id };
+
+        expect(resolveTrack('mute Master Vox', 'track-master-vox', masterVoxContext)).toEqual(
+            resolvedTo('track-master-vox', 'Master Vox', 'exact-name')
+        );
+        expect(resolveTrack('mute Master Vox', 'master', masterVoxContext)).toEqual(
+            rejectedWith('asserted-target-mismatch', [
+                referenceCandidate('track-master-vox', 'Master Vox', 'exact-name'),
+            ])
+        );
+        expect(resolveTrack('mute master', 'master', masterVoxContext)).toEqual(
+            resolvedTo('master', 'Master', 'literal-id')
+        );
+        expect(resolveTrack('mute Master Vox and the master', 'track-master-vox', masterVoxContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Master Vox and the master', 'master', masterVoxContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('mute Mastering Bus', 'track-mastering-bus', {
+                ...project,
+                tracks: [masteringBus, master],
+            })
+        ).toEqual(resolvedTo('track-mastering-bus', 'Mastering Bus', 'exact-name'));
+    });
+
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];

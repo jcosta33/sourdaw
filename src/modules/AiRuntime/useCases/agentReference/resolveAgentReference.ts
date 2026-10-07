@@ -463,6 +463,45 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     }
 }
 
+/**
+ * A literal id read from a word that every occurrence sits inside a longer exact-name match was the
+ * name being typed, not the id ("Master" inside "Master Vox"), so it yields to the name. A span that
+ * only equals the id's own text stays ambiguous: that prompt names both objects equally.
+ */
+function removeLiteralIdEvidenceNestedInExactNames(
+    prompt: string,
+    candidates: readonly CapabilityCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>
+): void {
+    const overlapPrompt = foldReferenceMarks(prompt);
+    const exactNameRanges = candidates.flatMap((candidate) =>
+        evidenceById.get(candidate.id) === 'exact-name' ? [...getExactNameOverlapRanges(prompt, candidate.name)] : []
+    );
+    if (exactNameRanges.length === 0) {
+        return;
+    }
+    for (const candidate of candidates) {
+        if (evidenceById.get(candidate.id) !== 'literal-id') {
+            continue;
+        }
+        const idRanges = getContiguousReferenceRanges(overlapPrompt, candidate.id);
+        if (idRanges.length === 0) {
+            continue;
+        }
+        const everyIdOccurrenceIsInsideALongerExactName = idRanges.every((idRange) =>
+            exactNameRanges.some(
+                (nameRange) =>
+                    nameRange.start <= idRange.start &&
+                    idRange.end <= nameRange.end &&
+                    (nameRange.start < idRange.start || idRange.end < nameRange.end)
+            )
+        );
+        if (everyIdOccurrenceIsInsideALongerExactName) {
+            evidenceById.delete(candidate.id);
+        }
+    }
+}
+
 function isGatedRisk(risk: AppActionRisk | undefined): boolean {
     return risk === undefined || GATED_RISKS.has(risk);
 }
@@ -651,6 +690,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
 
     removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
     removeOverlappedExactNameEvidence(input.prompt, candidates, evidenceById);
+    removeLiteralIdEvidenceNestedInExactNames(input.prompt, candidates, evidenceById);
 
     const gated = isGatedRisk(input.risk);
     // Every tiered evidence already clears MIN_BINDING_CONFIDENCE, so approximate names are read only
