@@ -33,8 +33,8 @@ const stores = vi.hoisted(() => ({
     transportStore: null as unknown as Store<TestTransport>,
 }));
 
-// Only the track store is replaced: the owner reads track kinds against the
-// real Arrangement eligibility table, so a stub cannot decide which kinds pass.
+// Only the track store is replaced; the rest of the Arrangement barrel stays
+// real, so no stub of it can decide which track kinds the owner admits.
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const { createStore: create } = await import('#/infra/store/createStore');
     stores.trackStore = create<{ tracks: TestTrack[] }>();

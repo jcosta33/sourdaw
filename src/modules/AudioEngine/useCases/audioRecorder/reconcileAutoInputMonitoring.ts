@@ -107,10 +107,12 @@ export function reconcileAutoInputMonitoring(): void {
             closeEdge(track.id);
         } else if (track.inputMonitoring === 'off' && openRequests.has(track.id)) {
             // A store-only write (a restored version, a collaborator) can turn
-            // an Auto track Off without a gesture that stops its edge.
+            // an Auto track Off without a gesture that stops its edge, also
+            // after passing through On.
             closeEdge(track.id);
-        } else {
-            // On keeps the edge the user asked for; it is no longer ours.
+        } else if (track.inputMonitoring === 'on' && openRequests.get(track.id)?.refused) {
+            // On keeps whatever edge this owner holds, so a later Off can still
+            // release it. Only a refusal is forgiven: the user now asks for input.
             openRequests.delete(track.id);
         }
     }

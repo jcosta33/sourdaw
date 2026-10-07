@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
 import { stopInputMonitoring } from '../stopInputMonitoring';
+import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
 
 import type { Store } from '#/infra/store/types';
 
@@ -101,6 +102,7 @@ function deferGrant(): (granted: TestStream) => void {
 
 describe('reconcileAutoInputMonitoring when a track leaves Auto without a gesture', () => {
     let source: TestSource;
+    let unsubscribe: (() => void) | null = null;
 
     beforeEach(() => {
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
@@ -120,6 +122,8 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
     });
 
     afterEach(() => {
+        unsubscribe?.();
+        unsubscribe = null;
         stopInputMonitoring();
         stores.trackStore.set({ tracks: [] });
         reconcileAutoInputMonitoring();
@@ -157,6 +161,49 @@ describe('reconcileAutoInputMonitoring when a track leaves Auto without a gestur
 
         expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
         expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+    });
+
+    it('connects nothing and stops the stream when a store-only On then Off lands before a pending grant resolves', async () => {
+        const grant = deferGrant();
+        unsubscribe = syncAutoInputMonitoring();
+        expect(harness.getUserMedia).toHaveBeenCalledTimes(1);
+
+        writeStoreOnly('on');
+        writeStoreOnly('off');
+        const granted = liveStream();
+        grant(granted);
+        await harness.opens[0];
+
+        expect(harness.createMediaStreamSource).not.toHaveBeenCalled();
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases a live Auto edge and its capture after a store-only On then Off', async () => {
+        const grant = deferGrant();
+        unsubscribe = syncAutoInputMonitoring();
+        const granted = liveStream();
+        grant(granted);
+        await harness.opens[0];
+        expect(source.connect).toHaveBeenCalledWith(GAIN_NODE);
+
+        writeStoreOnly('on');
+        writeStoreOnly('off');
+
+        expect(source.disconnect).toHaveBeenCalledWith(GAIN_NODE);
+        expect(granted.stopTrack).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the Auto edge after a store-only On with no later Off', async () => {
+        const grant = deferGrant();
+        unsubscribe = syncAutoInputMonitoring();
+        const granted = liveStream();
+        grant(granted);
+        await harness.opens[0];
+
+        writeStoreOnly('on');
+
+        expect(source.disconnect).not.toHaveBeenCalled();
+        expect(granted.stopTrack).not.toHaveBeenCalled();
     });
 
     it('keeps a live Auto edge when the track moves to On', async () => {
