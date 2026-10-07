@@ -44,10 +44,11 @@
  *     sends the render to Web Audio with a reason naming both buses. "Would
  *     contribute" is what the Web Audio build and its print reachability make
  *     of the send (`busOriginSendGateReason`): the target is a bus this render
- *     builds, the level is above zero, and a post-fader send's source bus is
- *     not muted (a pre-fader tap sits ahead of the mute and survives it). A
- *     send the Web Audio build would skip, or one that carries nothing, does
- *     not gate. Whether the source or target bus itself reaches the print, and
+ *     builds, and a post-fader send's source bus is not muted (a pre-fader tap
+ *     sits ahead of the mute and survives it). A send the Web Audio build
+ *     would skip, or a post-fader one off a muted bus, does not gate. A level
+ *     of 0 does not exempt a send: a `send:<busId>` automation lane can raise
+ *     it during the render, and selection does not read lanes. Whether the source or target bus itself reaches the print, and
  *     solo gating, are not read here, so those shapes also go web: a wrong
  *     web answer costs speed, a wrong native one drops audio. A native bus send
  *     tap is the follow-up that retires this gate. Live native playback keeps
@@ -124,15 +125,16 @@ function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>
  * Why a bus-origin send keeps this render off the native engine, or `null`
  * when none would contribute. Mirrors what the Web Audio build wires: its
  * `add-send` needs a source strip and a target bus strip this render builds,
- * clamps the level into [0, 1], and taps pre-fader ahead of the strip's mute
- * or post-fader after it (`resolvePrintReachability`).
+ * and taps pre-fader ahead of the strip's mute or post-fader after it
+ * (`resolvePrintReachability`). The level is not read: a send at 0 can be
+ * raised by its `send:<busId>` automation lane, which selection does not see.
  */
 function busOriginSendGateReason(renderableTracks: readonly Track[]): string | null {
     const busesById = new Map(renderableTracks.filter((track) => track.kind === 'bus').map((bus) => [bus.id, bus]));
     for (const source of busesById.values()) {
         for (const send of source.sends) {
             const target = busesById.get(send.busId);
-            if (target === undefined || !(send.level > 0)) {
+            if (target === undefined) {
                 continue;
             }
             if (source.muted && !send.preFader) {

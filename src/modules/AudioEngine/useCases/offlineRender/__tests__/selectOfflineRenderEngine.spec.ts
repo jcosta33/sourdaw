@@ -299,7 +299,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         });
 
         it.each([
-            { name: 'a send at zero level', send: { level: 0 }, source: {} },
             { name: 'a send to a bus this render does not build', send: { busId: 'bus-gone' }, source: {} },
             { name: 'a post-fader send from a muted bus', send: { preFader: false }, source: { muted: true } },
         ])('hands $name to the native engine, because Web Audio carries nothing through it', async (shape) => {
@@ -308,6 +307,14 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             const selection = await selectOfflineRenderEngine(busSendProject(shape.send, shape.source));
 
             expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        it('degrades a send at zero level, because a send automation lane can raise it during the render', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(busSendProject({ level: 0 }));
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
         });
 
         it('degrades a pre-fader send from a muted bus, which a cue mix keeps feeding', async () => {
