@@ -6,6 +6,8 @@ import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
+
 type SplitClipAction = Extract<AppAction, { type: 'splitClip' }>;
 
 function prepareAction(action: SplitClipAction) {
@@ -28,6 +30,7 @@ function prepareAction(action: SplitClipAction) {
 }
 
 export const handleSplitClip = createHandler<'splitClip'>({
+    validateSessionEntry: isSplitClipSessionEntry,
     validate: (action) =>
         prepareClipSplit({
             clipId: action.payload.clipId,

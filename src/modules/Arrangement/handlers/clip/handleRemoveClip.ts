@@ -11,6 +11,7 @@ import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
 import { refreshRetiredTakeLanesForRedo } from './takeRetirementRedo';
+import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
@@ -56,6 +57,7 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
 }
 
 export const handleRemoveClip = createHandler<'removeClip'>({
+    validateSessionEntry: isRemoveClipSessionEntry,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole
     // batch once a target is gone. Single-action dispatch never calls validate,

@@ -10,6 +10,8 @@ import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceCl
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 
+import { isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
+
 type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 
 /**
@@ -54,6 +56,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction): boolean {
 }
 
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
+    validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
     // precondition `validate` re-checks.
     canReapplyAfterDivergence: () => true,

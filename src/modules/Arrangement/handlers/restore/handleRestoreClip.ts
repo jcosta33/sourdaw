@@ -6,6 +6,7 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 import { updateTrack } from '../../useCases/updateTrack';
+import { isRestoreClipSessionPayload } from '../clip/validateClipEditSessionEntries';
 
 /**
  * Inverse-action handler for `removeClip`. Replays snapshot data carried in the
@@ -53,6 +54,7 @@ function batchMembersAreIndependent(action: RestoreClipAction, context: HandlerV
 }
 
 export const handleRestoreClip = createHandler<'restoreClip'>({
+    validateSessionActionArguments: isRestoreClipSessionPayload,
     // Grouped undo replays every inverse of the gesture as one batch; this
     // preflight keeps that batch honest. Single-entry undo never calls validate.
     validate: (action, context) => restoreStateMatches(action) && batchMembersAreIndependent(action, context),

@@ -4,8 +4,13 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
+import {
+    getAutomationHandlers,
+    prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore as undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -14,6 +19,8 @@ import {
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
+    registerProductionCommandHandlers,
+    isExecutableAppActionType,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -24,10 +31,21 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     setupProjectionBridge,
+    getDrumPreviewBranchHandlers,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
-import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
+import {
+    getMidiNoteTransformHandlers,
+    prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
+} from '#/modules/MIDI/useCases';
+import {
+    getTransportHandlers,
+    prepareTimelineMapStateRestore,
+    prepareTimelineMapTimeOperation,
+} from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -40,6 +58,7 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
 import { validateTakeLaneTransitionPlan } from '../../../useCases/timeOperations/validateTakeLaneTransitionPlan';
+import { isDeleteTimeSessionEntry, isRestoreTimeOperationSessionPayload } from '../validateClipEditSessionEntries';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
@@ -257,6 +276,98 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             })
         ).toBeNull();
         expectAuthority();
+    });
+
+    it('persists a real Delete Time entry across production hydration and replays it', async () => {
+        expect(isExecutableAppActionType('deleteTime')).toBe(false);
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        arrangeComp(0, 10);
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        expect(isDeleteTimeSessionEntry(undoStore.value?.past[0] as HandlerSessionActionEntry)).toBe(true);
+        const liveEntry = undoStore.value?.past[0] as HandlerSessionActionEntry;
+        expect(isRestoreTimeOperationSessionPayload(liveEntry.inverseAction?.payload)).toBe(true);
+        expect(isRestoreTimeOperationSessionPayload(liveEntry.redoAction?.payload)).toBe(true);
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            const stored = JSON.parse(raw!) as { past: { inverseAction: { type: string } }[] };
+            expect(stored.past).toHaveLength(1);
+            expect(stored.past[0]?.inverseAction.type).toBe('restoreTimeOperationState');
+        });
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clips().map((clip) => [clip.startBeat, clip.endBeat])).toEqual([[0, 10]]);
+        await redo();
+        expect(clips().map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
+            [0, 2],
+            [2, 6],
+        ]);
+        expectAuthority();
+    });
+
+    it.each([
+        { name: 'bogus inverse scope', leg: 'inverseAction', scope: 'other-scope' },
+        { name: 'mismatched redo scope', leg: 'redoAction', scope: 'selected-range' },
+    ])('drops a Delete Time entry with $name before a project write', async ({ leg, scope }) => {
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        arrangeComp(0, 10);
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() => {
+            const raw = sessionStorage.getItem('sourdaw-undo-session');
+            expect(raw).not.toBeNull();
+            const stored = JSON.parse(raw!) as { past: unknown[] };
+            expect(stored.past).toHaveLength(1);
+        });
+        const raw = sessionStorage.getItem('sourdaw-undo-session');
+        const stored = JSON.parse(raw!) as {
+            past: {
+                inverseAction: { payload: { plan: { scope: string } } };
+                redoAction: { payload: { plan: { scope: string } } };
+            }[];
+        };
+        stored.past[0]![leg as 'inverseAction' | 'redoAction'].payload.plan.scope = scope;
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+        const before = structuredClone(getCrdtDoc<Project>('root'));
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(getCrdtDoc<Project>('root')).toEqual(before);
     });
 
     it.each(['global', 'selected'] as const)(

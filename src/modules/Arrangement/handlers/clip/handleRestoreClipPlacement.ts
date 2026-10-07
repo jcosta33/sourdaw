@@ -6,6 +6,8 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
+import { isRestoreClipPlacementSessionPayload } from './validateClipEditSessionEntries';
+
 function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnapshot): boolean {
     return (
         left.trackId === right.trackId &&
@@ -75,6 +77,7 @@ function expectedMoveStateMatches(action: RestoreClipPlacementAction, projected:
 }
 
 export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>({
+    validateSessionActionArguments: isRestoreClipPlacementSessionPayload,
     // `expected` is mandatory on this payload (unlike optional replay guards elsewhere), so
     // every instance of this action carries a real precondition `validate` re-checks.
     canReapplyAfterDivergence: () => true,

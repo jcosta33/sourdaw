@@ -6,6 +6,8 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isMoveClipSessionEntry } from './validateClipEditSessionEntries';
+
 function moveState(
     trackId: string,
     startBeat: number,
@@ -24,6 +26,7 @@ function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnap
 }
 
 export const handleMoveClip = createHandler<'moveClip'>({
+    validateSessionEntry: isMoveClipSessionEntry,
     execute: (action) => {
         return toHandlerExecutionResult(
             moveClip(action.payload.clipId, action.payload.trackId, action.payload.startBeat)

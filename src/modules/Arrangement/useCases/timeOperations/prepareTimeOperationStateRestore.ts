@@ -263,6 +263,13 @@ function validateCombinedPlan(value: unknown): CombinedStateRestorePlan | null {
     }
 }
 
+/** Validate a persisted replay plan without consulting or writing live project state. */
+export const timeOperationRestorePlan = {
+    isValid(value: unknown): boolean {
+        return validateCombinedPlan(value) !== null;
+    },
+};
+
 function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState | null {
     const capturedTrackState = getTrackState();
     if (!capturedTrackState) {

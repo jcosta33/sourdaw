@@ -139,6 +139,22 @@ and without optional metadata, while admitting the owner's canonical and legacy 
 entries and legitimate missing replay legs. Enforce this relationship in the owner: some other
 commands legitimately have different inverse types, so global type equality is not the contract.
 
+## Lesson from the persisted clip-edit undo escape
+
+PR #3354 introduced the session mirror but did not prove that the real Delete Time, split, move,
+and remove handlers could save their generated inverse and redo payloads. Their live undo stacks
+worked until a reload; the mirror silently omitted entries whose internal restore actions lacked
+owner replay contracts. A neutral generated schema can also be narrower than the complete clip or
+time-operation snapshot captured by its owning handler.
+
+For each affected edit, execute the production action, wait until the session mirror contains its
+entry, register fresh production handlers to hydrate it, and exercise Undo and Redo against the
+authoritative project and its projections. Corrupt the saved inverse and redo separately: swap a
+clip identity, placement, or split snapshot; put a nonfinite number in a snapshot; change a time
+plan's scope or make its replay legs disagree. Hydration must drop each forged entry before any
+project write. Keep internal restore validation with the owner and session mirror; admitting a
+local forward action to the mirror must not add it to executable action discovery.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

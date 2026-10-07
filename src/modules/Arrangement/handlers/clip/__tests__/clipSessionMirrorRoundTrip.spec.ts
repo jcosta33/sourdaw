@@ -1,13 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
-import { commitUndoEntry, createUndoEntry, registerProductionCommandHandlers } from '#/modules/Command/useCases';
+import {
+    commitUndoEntry,
+    createUndoEntry,
+    executeAppAction,
+    registerProductionCommandHandlers,
+    undo,
+    redo,
+} from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     getDrumPreviewBranchHandlers,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -306,4 +314,109 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(clipOnTrack(TRACK_ID, 'clip-a')?.startBeat).toBe(0);
         expect(clipOnTrack(TRACK_ID, 'clip-b')?.startBeat).toBe(4);
     });
+
+    it.each([
+        {
+            name: 'splitClip',
+            action: { type: 'splitClip' as const, payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            inverse: 'restoreClipSplitState',
+        },
+        {
+            name: 'moveClip',
+            action: { type: 'moveClip' as const, payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 9 } },
+            inverse: 'restoreClipPlacement',
+        },
+        {
+            name: 'removeClip',
+            action: { type: 'removeClip' as const, payload: { clipId: 'clip-a' } },
+            inverse: 'restoreClip',
+        },
+    ])('$name: production action survives session hydration and real undo/redo', async ({ action, inverse }) => {
+        await executeAppAction(action, { source: 'manual' });
+        const afterAction = structuredClone(trackStore.value);
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const past = persisted.past as { inverseAction: { type: string } }[];
+        expect(past).toHaveLength(1);
+        expect(past[0]?.inverseAction.type).toBe(inverse);
+
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: 4 });
+        await redo();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(trackStore.value).toEqual(afterAction);
+        const projectClips = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips;
+        expect(projectClips?.map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual(
+            trackStore.value?.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat])
+        );
+    });
+
+    it.each([
+        {
+            name: 'splitClip',
+            action: { type: 'splitClip' as const, payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            corrupt: (entry: unknown) => {
+                (entry as { inverseAction: { payload: { rightClipId: string } } }).inverseAction.payload.rightClipId =
+                    'other-right';
+            },
+        },
+        {
+            name: 'moveClip',
+            action: { type: 'moveClip' as const, payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 9 } },
+            corrupt: (entry: unknown) => {
+                (
+                    entry as { redoAction: { payload: { replacement: { startBeat: number } } } }
+                ).redoAction.payload.replacement.startBeat = 11;
+            },
+        },
+        {
+            name: 'removeClip',
+            action: { type: 'removeClip' as const, payload: { clipId: 'clip-a' } },
+            corrupt: (entry: unknown) => {
+                (
+                    entry as { inverseAction: { payload: { clipSnapshot: { id: string } } } }
+                ).inverseAction.payload.clipSnapshot.id = 'other-clip';
+            },
+        },
+        {
+            name: 'moveClip nonfinite placement',
+            action: { type: 'moveClip' as const, payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 9 } },
+            corrupt: (entry: unknown) => {
+                (
+                    entry as { inverseAction: { payload: { expected: { startBeat: number } } } }
+                ).inverseAction.payload.expected.startBeat = Number.POSITIVE_INFINITY;
+            },
+        },
+        {
+            name: 'removeClip malformed snapshot',
+            action: { type: 'removeClip' as const, payload: { clipId: 'clip-a' } },
+            corrupt: (entry: unknown) => {
+                (
+                    entry as { inverseAction: { payload: { clipSnapshot: { type: string } } } }
+                ).inverseAction.payload.clipSnapshot.type = 'other';
+            },
+        },
+    ])(
+        '$name: forged replay relationship is dropped on hydration without project writes',
+        async ({ action, corrupt }) => {
+            await executeAppAction(action, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            const projectBefore = structuredClone(trackStore.value);
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const past = persisted.past as unknown[];
+            corrupt(past[0]);
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toEqual([]);
+            expect(trackStore.value).toEqual(projectBefore);
+        }
+    );
 });
