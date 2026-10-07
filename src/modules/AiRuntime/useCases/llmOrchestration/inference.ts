@@ -16,7 +16,7 @@ import {
     LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
 } from '../../models/LocalPlanningBudget';
-import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
+import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODEL_ID, WEBLLM_MODELS } from '../../models/ModelInfo';
 import {
     estimateCompiledProviderRequestTokenCeiling,
     type ProviderAttemptCostEstimate,
@@ -392,6 +392,14 @@ async function generateLocalToolPlanningOutcome(input: {
     }
 }
 
+/** The display name of a local model whose larger window would hold a refused request, if one exists. */
+function findLocalModelHolding(shortfall: LocalContextWindowShortfall): string | undefined {
+    return WEBLLM_MODELS.find((model) => {
+        const windowTokens = WEBLLM_CONTEXT_WINDOW_TOKENS[model.id] ?? 0;
+        return windowTokens > shortfall.windowTokens && windowTokens >= shortfall.neededTokens;
+    })?.displayName;
+}
+
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
     if (!signal) {
         return inference;
@@ -696,7 +704,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         signal,
                     });
                     if (local.status === 'exceeded') {
-                        const reason = describeLocalContextWindowShortfall(local.shortfall);
+                        const reason = describeLocalContextWindowShortfall(
+                            local.shortfall,
+                            findLocalModelHolding(local.shortfall)
+                        );
                         const refusedResult = providerSource.finish({
                             reason: 'error',
                             failure: {

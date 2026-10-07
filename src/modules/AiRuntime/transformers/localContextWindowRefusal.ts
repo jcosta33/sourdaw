@@ -9,12 +9,22 @@ const ENGINE_CONTEXT_WINDOW_FIGURES = /number of prompt tokens: (\d+); context w
 
 export type LocalContextWindowShortfall = { neededTokens: number; windowTokens: number };
 
-/** The user-visible refusal of a local planning request the local model's window cannot hold. */
-export function describeLocalContextWindowShortfall(shortfall: LocalContextWindowShortfall): string {
+/**
+ * The user-visible refusal of a local planning request the local model's window cannot hold.
+ * `largerLocalModel` names a local model whose window would hold it, when there is one.
+ */
+export function describeLocalContextWindowShortfall(
+    shortfall: LocalContextWindowShortfall,
+    largerLocalModel?: string
+): string {
+    const remedy =
+        largerLocalModel === undefined
+            ? 'Use a hosted model for a request this large.'
+            : `Switch to the ${largerLocalModel} local model, whose window holds it, or use a hosted model.`;
     return (
         `This request needs about ${TOKEN_FORMAT.format(shortfall.neededTokens)} tokens of the local model's ` +
         `context window, ${TOKEN_FORMAT.format(LOCAL_PLANNING_REPLY_RESERVE_TOKENS)} of them reserved for its reply, ` +
-        `and the window holds ${TOKEN_FORMAT.format(shortfall.windowTokens)}. Use a hosted model for a request this large.`
+        `and the window holds ${TOKEN_FORMAT.format(shortfall.windowTokens)}. ${remedy}`
     );
 }
 

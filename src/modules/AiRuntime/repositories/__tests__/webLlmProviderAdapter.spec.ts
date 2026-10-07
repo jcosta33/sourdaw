@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WEBLLM_MODELS } from '../../models/ModelInfo';
+import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS } from '../../models/ModelInfo';
 import { createWebLlmAppConfig } from '../webLlm/createWebLlmAppConfig';
 import { engineState } from '../webLlm/engineLifecycleState';
 import { getWebLlmArtifactUrl } from '../webLlm/getWebLlmArtifactUrl';
@@ -301,8 +301,7 @@ describe('WebLLM provider artifact admission', () => {
         }
     });
 
-    // Admission refuses a model whose recorded digest is not the digest of its serialized set, so a
-    // hand-edited manifest entry (its window, its VRAM figure) must restate the digest with it.
+    // Admission refuses a model whose recorded digest is not the digest of its serialized set.
     it('records each artifact-set digest over the set it ships', () => {
         for (const selectableModel of WEBLLM_MODELS) {
             const model = getWebLlmArtifactManifestModel(selectableModel.id);
@@ -312,14 +311,45 @@ describe('WebLLM provider artifact admission', () => {
         }
     });
 
-    it('loads each model with the one context window the planning budget reads', () => {
-        for (const selectableModel of WEBLLM_MODELS) {
-            const model = getWebLlmArtifactManifestModel(selectableModel.id);
-            const [record] = createWebLlmAppConfig(model).model_list;
+    // Admission purges every recorded set of a model whose digest differs from the release's, and a
+    // purged model needs consent and a full download again. A digest that moves, its engine block
+    // included, costs every user who downloaded the model that download; these are the digests the
+    // shipped sets were recorded under.
+    it.each([
+        ['Qwen3-1.7B-q4f16_1-MLC', '932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255'],
+        ['Qwen3-4B-q4f16_1-MLC', '2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f'],
+        ['Qwen3-8B-q4f16_1-MLC', '7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb'],
+    ])('keeps the artifact-set digest %s was downloaded under', (modelId, digest) => {
+        expect(getWebLlmArtifactManifestModel(modelId).artifactSetDigest).toBe(digest);
+    });
 
-            expect(record?.overrides?.context_window_size).toBe(getWebLlmContextWindowSize(selectableModel.id));
-            expect(getWebLlmContextWindowSize(selectableModel.id)).toBe(model.engine.contextWindowSize);
+    it('loads the planning window from code, apart from the digested manifest', () => {
+        expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(24_576);
+        expect(getWebLlmContextWindowSize('Qwen3-1.7B-q4f16_1-MLC')).toBe(8_192);
+        expect(getWebLlmContextWindowSize('Qwen3-8B-q4f16_1-MLC')).toBe(8_192);
+        for (const selectableModel of WEBLLM_MODELS) {
+            expect(getWebLlmContextWindowSize(selectableModel.id)).toBe(
+                WEBLLM_CONTEXT_WINDOW_TOKENS[selectableModel.id]
+            );
         }
+        expect(() => getWebLlmContextWindowSize('mutable-or-unknown-model')).toThrow(/no context window/);
+    });
+
+    // The manifest records web-llm's published VRAM figure at its own window; every token the model
+    // loads beyond that window adds its KV cache: two tensors of 8 KV heads × 128 dimensions at
+    // 2 bytes for each of Qwen3-4B's 36 layers.
+    it("publishes the 4B's memory need for the window it loads with", () => {
+        const kvCacheMbPerToken = (2 * 8 * 128 * 2 * 36) / (1024 * 1024);
+        const model = getWebLlmArtifactManifestModel('Qwen3-4B-q4f16_1-MLC');
+        const loadedWindow = getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC');
+        const vramMb =
+            model.engine.vramRequiredMb + (loadedWindow - model.engine.contextWindowSize) * kvCacheMbPerToken;
+        const halfGigabytes = Math.ceil(vramMb / 500) / 2;
+
+        expect(vramMb).toBeCloseTo(6_311.59, 2);
+        expect(WEBLLM_MODELS.find((entry) => entry.id === model.modelId)?.ramUsage).toBe(
+            `~${halfGigabytes.toFixed(1)} GB`
+        );
     });
 
     it('cryptographically binds every release artifact-set digest to its exact manifest entries', async () => {

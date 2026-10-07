@@ -96,6 +96,12 @@ describe('local context window refusal', () => {
         );
     });
 
+    it('points at a local model whose window holds the request when there is one', () => {
+        expect(describeLocalContextWindowShortfall({ neededTokens: 21_020, windowTokens: 8_192 }, 'Standard')).toBe(
+            "This request needs about 21,020 tokens of the local model's context window, 2,048 of them reserved for its reply, and the window holds 8,192. Switch to the Standard local model, whose window holds it, or use a hosted model."
+        );
+    });
+
     it("reads web-llm's overflow figures, adding the reply reserve to the prompt it counted", () => {
         const error = new Error(
             'Prompt tokens exceed context window size: number of prompt tokens: 30000; context window size: 24576\nConsider shortening the prompt, or increase `context_window_size`, or using sliding window via `sliding_window_size`.'

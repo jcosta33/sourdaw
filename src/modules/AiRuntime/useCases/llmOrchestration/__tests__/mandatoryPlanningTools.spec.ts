@@ -12,6 +12,7 @@ import {
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
     LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
 } from '../../../models/LocalPlanningBudget';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -25,6 +26,7 @@ import {
     compileProviderAdapterInstallation,
     OPENAI_RESPONSES_ADAPTER_ID,
 } from '../../../repositories/providerAdapterRegistry';
+import { engineState } from '../../../repositories/webLlm/engineLifecycleState';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
@@ -505,6 +507,27 @@ describe('mandatory planning tools', () => {
                     safeMessage: outcome.reason,
                 });
             });
+
+            it.each(['Qwen3-1.7B-q4f16_1-MLC', 'Qwen3-8B-q4f16_1-MLC'])(
+                'refuses a five-track request on %s and points at the local model whose window holds it',
+                async (modelId) => {
+                    engineState.activeModelId = modelId;
+                    try {
+                        const { outcome, providerResults } = await sendLocalRequest(fiveTrackProject());
+
+                        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                        expect(outcome).toMatchObject({
+                            status: 'rejected',
+                            reason: expect.stringContaining(
+                                `the window holds ${getWebLlmContextWindowSize(modelId).toLocaleString('en-US')}. Switch to the Standard local model, whose window holds it, or use a hosted model.`
+                            ),
+                        });
+                        expect(providerResults[0]?.failure?.code).toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
+                    } finally {
+                        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
+                    }
+                }
+            );
 
             it("refuses the request the same way when the engine's own count overflows the window", async () => {
                 mocks.generateWebLlmCompletion.mockRejectedValue(

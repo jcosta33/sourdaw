@@ -12,12 +12,6 @@ export type ModelInfo = {
 };
 
 // -- WebLLM model options (browser) --
-//
-// `ramUsage` is the release manifest's `vramRequiredMb` for the window the model loads with,
-// rounded up to the next half gigabyte. That figure is web-llm's published requirement at a
-// 4,096-token window plus the KV cache for every token above it: two tensors of 8 KV heads ×
-// 128 dimensions at 2 bytes per layer, so 144 KiB per token for the 36-layer 4B and 8B models
-// and 112 KiB for the 28-layer 1.7B.
 
 export const WEBLLM_MODELS: ModelInfo[] = [
     {
@@ -26,14 +20,18 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         parameterCount: '1.7B',
         description: 'Fast responses, low resource usage. Best for simple edits.',
         downloadSize: '~0.99 GB',
-        ramUsage: '~2.5 GB',
+        ramUsage: '~1.8 GB',
     },
     {
         id: 'Qwen3-4B-q4f16_1-MLC',
         displayName: 'Standard',
         parameterCount: '4B',
-        description: 'Good quality with moderate resource usage. Recommended.',
+        description:
+            'The local model that can plan project edits: its context window holds a planning request. Recommended.',
         downloadSize: '~2.28 GB',
+        // The release manifest's VRAM figure, web-llm's published requirement at its recorded
+        // 4,096-token window, plus the KV cache for every token up to the window below, rounded up
+        // to the next half gigabyte.
         ramUsage: '~6.5 GB',
     },
     {
@@ -45,6 +43,19 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         ramUsage: '~6.5 GB',
     },
 ];
+
+/**
+ * The context window, in tokens, each local model loads with. It lives here rather than in the
+ * release manifest's engine block because that block is part of the digested artifact set: a
+ * changed window there would change the digest, and admission purges a downloaded model whose
+ * digest changed. The engine loads this value and the planning budget measures against it.
+ */
+export const WEBLLM_CONTEXT_WINDOW_TOKENS: Readonly<Record<string, number>> = {
+    'Qwen3-1.7B-q4f16_1-MLC': 8_192,
+    // The smallest window a five-track first turn and a receipt turn fit with the reply reserve.
+    'Qwen3-4B-q4f16_1-MLC': 24_576,
+    'Qwen3-8B-q4f16_1-MLC': 8_192,
+};
 
 export const DEFAULT_WEBLLM_MODEL_ID = 'Qwen3-4B-q4f16_1-MLC';
 
