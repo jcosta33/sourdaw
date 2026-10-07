@@ -7,7 +7,7 @@ import type { Store } from '#/infra/store/types';
 
 type TestTrack = {
     id: string;
-    kind: 'audio' | 'midi';
+    kind: 'audio' | 'midi' | 'bus';
     armed: boolean;
     inputMonitoring: 'auto' | 'on' | 'off';
     inputId: string | null;
@@ -33,12 +33,14 @@ const stores = vi.hoisted(() => ({
     transportStore: null as unknown as Store<TestTransport>,
 }));
 
-vi.mock('#/modules/Arrangement/stores', async () => {
+// Only the track store is replaced: the owner reads track kinds against the
+// real Arrangement eligibility table, so a stub cannot decide which kinds pass.
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const { createStore: create } = await import('#/infra/store/createStore');
     stores.trackStore = create<{ tracks: TestTrack[] }>();
     return {
+        ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
         trackStore: stores.trackStore,
-        getTrackEligibility: (kind: string) => ({ acceptsMonitoring: kind === 'audio' }),
     };
 });
 
@@ -182,10 +184,13 @@ describe('syncAutoInputMonitoring', () => {
         expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('does not monitor a track whose kind refuses monitoring', () => {
-        setTracks(audioTrack({ kind: 'midi' }));
+    it.each(['midi', 'bus'] as const)('never opens the microphone for an armed %s track', (kind) => {
+        setTracks(audioTrack({ kind }));
+        setTransport({ isPlaying: true, isRecording: true });
+        setTransport({ isPlaying: false, isRecording: false });
 
         expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+        expect(harness.monitored.has('track-1')).toBe(false);
     });
 
     it('does not reopen an edge that is already open', () => {
@@ -216,6 +221,20 @@ describe('syncAutoInputMonitoring', () => {
 
     it('closes the edge of an Auto track removed from the project', () => {
         setTracks(audioTrack());
+
+        setTracks();
+
+        expect(harness.stopTrackInputMonitoring).toHaveBeenCalledWith('track-1');
+        expect(harness.monitored.has('track-1')).toBe(false);
+    });
+
+    it('closes an edge adopted from On when the track is deleted after switching to Auto', () => {
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        harness.monitored.set('track-1', 'input-1');
+
+        setTracks(audioTrack({ inputMonitoring: 'auto' }));
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+        expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
 
         setTracks();
 
