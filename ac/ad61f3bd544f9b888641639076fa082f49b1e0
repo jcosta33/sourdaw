@@ -1,0 +1,54 @@
+src/modules/AiRuntime/models/DeviceManifestPageLimits.ts
+  s_1c08b47ac3792f::t_8b62841780f4b0 5-12
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1c08b47ac3792f::t_a4d575df469fa8 76
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceShaping.ts
+  s_1c08b47ac3792f::t_26a8a62836a9a2 117,121
+  s_1c08b47ac3792f::t_69452cc13eb5ad 34
+  s_1c08b47ac3792f::t_92315f3968bd50 47
+  s_1c08b47ac3792f::t_29f4055da89497 79
+  s_1c08b47ac3792f::t_ae9470e4b82107 52
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1c08b47ac3792f::t_f3b780d9ea31c3 132-171
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceSources.ts
+  s_1c08b47ac3792f::t_9172a174fd7bc4 176
+  s_1c08b47ac3792f::t_d3e626c363cccb 196
+  s_1c08b47ac3792f::t_ce269036c750d4 48
+  s_1c08b47ac3792f::t_68d4dc2a94b12e 83
+  s_1c08b47ac3792f::t_8fab9dc39d7543 147
+  s_1c08b47ac3792f::t_5b4cb7972a5467 155-156
+  s_1c08b47ac3792f::t_fd85221c196d90 167
+  s_1c08b47ac3792f::t_577089bfdc2f6e 205
+  s_1c08b47ac3792f::t_0a638645576542 54
+  s_1c08b47ac3792f::t_b637cc010037e9 152
+  s_1c08b47ac3792f::t_451ccd1820bd8a 130
+  s_1c08b47ac3792f::t_ede0a44c6d16a9 163
+  s_1c08b47ac3792f::t_afa48c72e943b8 214
+  s_1c08b47ac3792f::t_a93c1cb42a03c0 348
+  s_1c08b47ac3792f::t_6e0750c9d5f859 402
+  s_1c08b47ac3792f::t_d2e519d51b6abd 39
+  s_1c08b47ac3792f::t_5aed580ec5c264 181,185
+  s_1c08b47ac3792f::t_3768209fffc8d2 204
+  s_1c08b47ac3792f::t_dec0f2a5e60889 112
+  s_1c08b47ac3792f::t_79e8767d3cce8a 141,145
+  s_1c08b47ac3792f::t_c7361a2d0907d2 192,195
+  s_1c08b47ac3792f::t_fa1b28778f86d7 134
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_0216407950472e 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acad61f3bd544f9b888641639076fa082f49b1e0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
