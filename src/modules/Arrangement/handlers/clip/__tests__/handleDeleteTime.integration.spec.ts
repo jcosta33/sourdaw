@@ -25,7 +25,7 @@ import {
     resetCrdtProjectAuthority,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
 
@@ -115,7 +115,12 @@ function arrangeJoinedOwners(): void {
     mutateCrdtDoc<Project>({
         id: 'root',
         changeFn: (project) => {
-            project.midi = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+            project.midi = {
+                probabilitySeed: defaultMidiStoreState.probabilitySeed,
+                notesByClipId: {},
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
             project.automation = { lanes: [] };
             project.gainEnvelopes = { envelopes: {} };
             project.tracks.tracks[0]!.clips.push(
