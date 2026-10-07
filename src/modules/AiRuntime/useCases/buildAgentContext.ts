@@ -301,9 +301,9 @@ function buildRevisionPayload(input: {
 /**
  * The planning context for one turn, in two renderings of the same evidence. `message` is what a
  * hosted provider reads. `localMessage` is what the local model reads inside its context window:
- * no fixed policy or tool names, which its system prompt already carries; the capability data and
- * the project once each; and devices by name and parameter value, a type's parameter ranges being
- * one `device.factory-manifest.read` away.
+ * the same grounding sections, without the fixed policy and tool names its system prompt already
+ * carries or the selected track's duplicate, closed by the local project context, which states only
+ * what those sections leave out.
  */
 export function buildAgentContext(input: BuildAgentContextInput): {
     authorityComplete: boolean;
@@ -427,7 +427,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const fullTurn = evidence.delta.mode === 'full';
     const availableCapabilities = stableJson(input.capabilityData ?? null).slice(0, 8_192);
     const leadingSections = [
         `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
@@ -441,57 +440,39 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         `measurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}`,
     ];
     const hostedSections = [
-        `fixed_policy:\n${input.fixedPolicy}`,
         ...leadingSections,
         `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities })}`,
         ...trailingSections,
         `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
-    ];
-    // The local system prompt already spells every tool the local model may call, so the local
-    // message names no tools; a full turn states the capability data and the project once, in the
-    // project context that closes it, and a delta turn, which carries no project context, states
-    // them here.
+    ].join('\n\n');
+    // The local message carries every section a model grounds targets and capabilities in. It
+    // leaves out three things the local model reads elsewhere: the fixed policy and the tool names,
+    // which its system prompt already spells, and the selected track's second copy, which repeats
+    // a selectable target the selection already names by id.
+    const { selectedTrack: _selectedTrackCopy, ...localProjectPayload } = revisionPayload.projectPayload;
     const localSections = [
         ...leadingSections,
-        ...(fullTurn
-            ? []
-            : [`capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities })}`]),
+        `capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities })}`,
         ...trailingSections,
-        `untrusted_project_data:\n${stableJson({
-            snapshotIdentity: snapshot.identity,
-            mode: evidence.delta.mode,
-            data: fullTurn ? buildLocalProjectPayload(projectData) : revisionPayload.projectPayload,
-        })}`,
-    ];
+        `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: localProjectPayload })}`,
+    ].join('\n\n');
+    // A delta turn carries no project context; a full turn closes with it, and the local profile
+    // of it states only what the sections above leave out.
     const projectContextMessage = (profile: LlmActionMessageProfile): string =>
-        fullTurn
-            ? `\n\n${buildLlmActionUserMessage({
+        evidence.delta.mode === 'delta'
+            ? ''
+            : `\n\n${buildLlmActionUserMessage({
                   prompt: input.prompt,
                   context: input.context,
                   projectRevision: input.projectRevision,
                   profile,
                   ...input.capabilityData,
-              })}`
-            : '';
+              })}`;
 
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `${hostedSections.join('\n\n')}${projectContextMessage('hosted')}`,
-        localMessage: `${localSections.join('\n\n')}${projectContextMessage('local')}`,
-    };
-}
-
-/**
- * What a full local turn keeps of the bounded project payload: the project context after it
- * already states every track, clip, section and lane, so only the level law and the canonical role
- * evidence, which that context does not carry, stay here.
- */
-function buildLocalProjectPayload(projectData: ReturnType<typeof buildProjectData>) {
-    return {
-        levelLaw: projectData.levelLaw,
-        canonicalRoles: projectData.selectableTargets.flatMap((target) =>
-            target.canonicalRole === null ? [] : [{ trackId: target.id, canonicalRole: target.canonicalRole }]
-        ),
+        message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
+        localMessage: `${localSections}${projectContextMessage('local')}`,
     };
 }

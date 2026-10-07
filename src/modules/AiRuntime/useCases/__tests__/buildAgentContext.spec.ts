@@ -671,16 +671,61 @@ describe('buildAgentContext', () => {
             expect(hostedTracks[0]?.devices).toEqual(fiveTrackProject.tracks[0]?.devices);
         });
 
-        it('names no tools in a full local turn, whose system prompt spells the tools it may call', () => {
-            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+        const GROUNDING_SECTIONS = [
+            'run_authority',
+            'user_request',
+            'production_brief_and_locks',
+            'revision_and_selection',
+            'relevant_evidence',
+            'validation_failures',
+            'measurements',
+        ];
 
-            expect(built.message).toContain('capability_schemas:\n');
-            expect(built.localMessage).not.toContain('capability_schemas');
-            expect(built.localMessage).not.toContain('"schemas"');
-        });
+        // A local model grounds every target and capability in these sections as a hosted one does.
+        // The local message leaves out only the tool names its system prompt spells and the selected
+        // track's copy of a selectable target.
+        function expectHostedGrounding(built: ReturnType<typeof buildAgentContext>): void {
+            for (const section of GROUNDING_SECTIONS) {
+                expect(parseMessageSection(built.localMessage, section), section).toEqual(
+                    parseMessageSection(built.message, section)
+                );
+            }
+            const hostedSchemas = parseMessageSection(built.message, 'capability_schemas') as Record<string, unknown>;
+            expect(parseMessageSection(built.localMessage, 'capability_schemas')).toEqual({
+                trust: hostedSchemas.trust,
+                availableCapabilities: hostedSchemas.availableCapabilities,
+            });
+            const hostedProject = parseMessageSection(built.message, 'untrusted_project_data') as {
+                data: Record<string, unknown>;
+            };
+            const { selectedTrack: _selectedTrackCopy, ...hostedTargets } = hostedProject.data;
+            expect(parseMessageSection(built.localMessage, 'untrusted_project_data')).toEqual({
+                ...hostedProject,
+                data: hostedTargets,
+            });
+        }
 
         it.each(['a five-track first turn with capability data', 'a five-track receipt turn'] as const)(
-            'states the capability data and the project once each in the local message for %s',
+            'keeps every grounding section of the hosted message in the local message for %s',
+            (label) => {
+                const built = buildAgentContext(hostedInputs[label]);
+
+                expectHostedGrounding(built);
+                const project = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
+                    data: { selectableTargets: Array<{ id: string }> };
+                };
+                expect(project.data.selectableTargets.map((target) => target.id)).toEqual(
+                    fiveTrackProject.tracks.map((track) => track.id)
+                );
+                const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
+                    availableCapabilities: string;
+                };
+                expect(JSON.parse(schemas.availableCapabilities)).toEqual(capabilityData);
+            }
+        );
+
+        it.each(['a five-track first turn with capability data', 'a five-track receipt turn'] as const)(
+            'states the capability data and every clip once in the local message for %s',
             (label) => {
                 const built = buildAgentContext(hostedInputs[label]);
                 const catalogId = capabilityData.creativeInterpretationCatalog.catalogId;
@@ -690,37 +735,73 @@ describe('buildAgentContext', () => {
                 expect(occurrences(built.localMessage, catalogId)).toBe(1);
                 expect(occurrences(built.message, clipName)).toBe(2);
                 expect(occurrences(built.localMessage, clipName)).toBe(1);
-                const project = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
-                    snapshotIdentity: string;
-                    mode: string;
-                    data: Record<string, unknown>;
-                };
-                expect(project.snapshotIdentity).toBe(built.evidence.snapshot.identity);
-                expect(project.mode).toBe('full');
-                expect(Object.keys(project.data).sort()).toEqual(['canonicalRoles', 'levelLaw']);
             }
         );
 
-        it('keeps the canonical role evidence the local project context does not carry', () => {
-            const canonicalRole = { role: 'kick', source: 'clip-content', evidence: 'stored-drum-voices' };
-            const withRole = {
+        it('closes the local message with only what the context sections leave out', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            const local = projectContextOf(built.localMessage);
+            expect(Object.keys(local).sort()).toEqual(
+                [
+                    'availableDeviceTypes',
+                    'isLooping',
+                    'isPlaying',
+                    'isRecording',
+                    'loopEnd',
+                    'loopStart',
+                    'metronomeEnabled',
+                    'metronomeVolume',
+                    'productionBrief',
+                    'punchInBeat',
+                    'punchInEnabled',
+                    'punchOutBeat',
+                    'sidechainRoutes',
+                    'tempo',
+                    'timeSignature',
+                    'trackDefaults',
+                    'tracks',
+                    'vcaGroups',
+                ].sort()
+            );
+            const [track] = local.tracks as Array<Record<string, unknown>>;
+            expect(Object.keys(track ?? {}).sort()).toEqual(['devices', 'id']);
+        });
+
+        it('lists only the mix state a track changed from the stated track defaults', () => {
+            const changed = {
                 ...fiveTrackProject,
                 tracks: fiveTrackProject.tracks.map((track, index) =>
-                    index === 0 ? { ...track, canonicalRole } : track
+                    index === 1 ? { ...track, muted: true, pan: -0.25, outputId: 'bus-drums' } : track
                 ),
             };
 
-            const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'find the kick', context: withRole });
+            const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'balance', context: changed });
 
-            const project = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
-                data: { canonicalRoles: unknown };
+            const local = projectContextOf(built.localMessage) as {
+                trackDefaults: Record<string, unknown>;
+                tracks: Array<Record<string, unknown>>;
             };
-            expect(project.data.canonicalRoles).toEqual([
-                { trackId: 'track-1', canonicalRole: { ...canonicalRole, contentRevision: undefined } },
-            ]);
+            expect(local.trackDefaults).toEqual({
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                pan: 0,
+                automationMode: 'read',
+                vcaGroupId: null,
+                outputId: 'master',
+            });
+            expect(local.tracks[1]).toEqual({
+                id: 'track-2',
+                muted: true,
+                pan: -0.25,
+                outputId: 'bus-drums',
+                devices: expect.any(Array),
+            });
         });
 
-        it('carries the capability data and the project delta of a delta turn, which has no project context', () => {
+        it('states a delta turn, which has no project context, with the hosted grounding', () => {
             const first = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
             const delta = buildAgentContext({
                 ...hostedInputs['a five-track first turn with capability data'],
@@ -732,10 +813,7 @@ describe('buildAgentContext', () => {
             expect(delta.evidence.delta.mode).toBe('delta');
             expect(delta.localMessage).not.toContain('<project_context>');
             expect(delta.localMessage).not.toContain('fixed_policy');
-            expect(occurrences(delta.localMessage, capabilityData.creativeInterpretationCatalog.catalogId)).toBe(1);
-            expect(parseMessageSection(delta.localMessage, 'untrusted_project_data')).toEqual(
-                parseMessageSection(delta.message, 'untrusted_project_data')
-            );
+            expectHostedGrounding(delta);
         });
     });
 });
