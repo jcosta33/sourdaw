@@ -1,0 +1,54 @@
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_1f0dcd815e8946::t_1974ade8f17911 844-863
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_1f0dcd815e8946::t_42a4e4b7ec0706 15-16,313-318
+  s_1f0dcd815e8946::t_231191b589b106 10-14,71,141,308-312,319-325
+  s_1f0dcd815e8946::t_2bfea4efb66a04 246
+  s_1f0dcd815e8946::t_aa8aaf6b78ab41 326-327
+src/modules/Arrangement/models/TimelineRenderModel.ts
+  s_1f0dcd815e8946::t_35abe28a6a4f9e 59-60
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_1f0dcd815e8946::t_35abe28a6a4f9e 8-9,115,125,194,205-206,216,247,280,324,419
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_1f0dcd815e8946::t_4cfc8611957ad8 3,75,87,161-177
+  s_1f0dcd815e8946::t_9c4847a8539f6e 178-183
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_1f0dcd815e8946::t_dd39958295763e 276-283
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_885b8a198717aa 1-29
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_1f0dcd815e8946::t_4db3e3797b7082 25,84-88,90-93
+  s_1f0dcd815e8946::t_628b0d9914c2b0 66-68,89,385-392
+  s_1f0dcd815e8946::t_ee5148d1b85831 353,379-384,393-411
+  s_1f0dcd815e8946::t_3d5bbeb9e8bd9d 412
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_1f0dcd815e8946::t_6cb5e2c9268641 12,34,74-85
+  s_1f0dcd815e8946::t_42a4e4b7ec0706 22-23
+  s_1f0dcd815e8946::t_c6a0529f6e0802 86-87
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_1f0dcd815e8946::t_c1556913bd7426 2,60
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_1f0dcd815e8946::t_c1556913bd7426 4,232
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_1f0dcd815e8946::t_c1556913bd7426 599
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_1f0dcd815e8946::t_c1556913bd7426 493
+src/modules/Arrangement/useCases/timelineInteractions/snapToZeroCrossing.ts
+  s_1f0dcd815e8946::t_c1556913bd7426 2,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "012959e9334d6120d2eb91e32b992cc40f88f516",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
