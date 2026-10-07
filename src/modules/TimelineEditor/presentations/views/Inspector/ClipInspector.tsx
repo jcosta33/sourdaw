@@ -9,14 +9,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import {
-    trimClipStart,
-    trimClipEnd,
-    setClipFade,
-    setClipColor,
-    renameClip,
-    setClipFollowAction,
-} from '#/modules/Arrangement/useCases';
+import { setClipFade, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -188,13 +181,20 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
                 <Stack gap={2}>
+                    {/* Trim edits dispatch the registered trim actions rather
+                        than the use cases directly, so undo history and the
+                        handlers' inverse capture see the same edit as a
+                        timeline drag. */}
                     <div>
                         <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
                             value={[clip.startBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    trimClipStart(clip.id, value);
+                                    void executeUserAppAction({
+                                        type: 'trimClipStart',
+                                        payload: { clipId: clip.id, newStartBeat: value },
+                                    });
                                 }
                             }}
                             max={clip.endBeat - 1}
@@ -208,7 +208,10 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             value={[clip.endBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    trimClipEnd(clip.id, value);
+                                    void executeUserAppAction({
+                                        type: 'trimClipEnd',
+                                        payload: { clipId: clip.id, newEndBeat: value },
+                                    });
                                 }
                             }}
                             min={clip.startBeat + 1}

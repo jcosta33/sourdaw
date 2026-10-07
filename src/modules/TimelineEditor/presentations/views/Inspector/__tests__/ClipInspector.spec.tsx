@@ -393,6 +393,32 @@ describe('ClipInspector', () => {
         expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
+    it('routes a Trim Start slider edit through the registered trimClipStart action', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip start');
+
+        fireEvent.change(slider, { target: { value: '2' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'trimClipStart',
+            payload: { clipId: 'clip-1', newStartBeat: 2 },
+        });
+    });
+
+    it('routes a Trim End slider edit through the registered trimClipEnd action', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end');
+
+        fireEvent.change(slider, { target: { value: '6' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'trimClipEnd',
+            payload: { clipId: 'clip-1', newEndBeat: 6 },
+        });
+    });
+
     it('should render time stretch select for audio clips and dispatch setClipStretchMode on change', () => {
         const { container } = render(<ClipInspector {...defaultProps} />);
         const select = container.querySelector<HTMLSelectElement>('#stretch-mode-select');
