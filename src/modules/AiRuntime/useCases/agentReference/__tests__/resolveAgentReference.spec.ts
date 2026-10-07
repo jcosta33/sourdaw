@@ -618,6 +618,56 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it.each([
+        { name: 'Master-Vox', prompt: 'mute Master-Vox', id: 'track-master-vox' },
+        { name: "Master's Choir", prompt: "mute Master's Choir", id: 'track-masters-choir' },
+        { name: 'Master/Vox', prompt: 'mute Master/Vox', id: 'track-master-slash-vox' },
+    ])('resolves $name beside the master channel through its name punctuation', ({ name, prompt, id }) => {
+        const project = createProjectState();
+        const fixtureTrack = project.tracks[0];
+        if (!fixtureTrack) {
+            throw new Error('Expected track fixture');
+        }
+        const master = {
+            ...fixtureTrack,
+            id: 'master',
+            name: 'Master',
+            kind: 'master' as const,
+            outputId: 'hw_out',
+        };
+        const punctuated = { ...fixtureTrack, id, name };
+
+        expect(resolveTrack(prompt, id, { ...project, tracks: [punctuated, master] })).toEqual(
+            resolvedTo(id, name, 'exact-name')
+        );
+    });
+
+    it('keeps the master id alive when a master-qualifier noun completes a matching track name', () => {
+        const project = createProjectState();
+        const fixtureTrack = project.tracks[0];
+        if (!fixtureTrack) {
+            throw new Error('Expected track fixture');
+        }
+        const master = {
+            ...fixtureTrack,
+            id: 'master',
+            name: 'Master',
+            kind: 'master' as const,
+            outputId: 'hw_out',
+        };
+        const masterChannel = { ...fixtureTrack, id: 'track-master-channel', name: 'Master Channel' };
+        const masterChannelContext = { ...project, tracks: [masterChannel, master] };
+
+        expect(resolveTrack('mute the master channel', 'master', masterChannelContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute the master channel', 'track-master-channel', masterChannelContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];

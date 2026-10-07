@@ -89,9 +89,17 @@ const NO_RESERVED_REFERENCE_WORDS: ReadonlySet<string> = new Set();
 
 /**
  * Tokens a clause states after its target rather than as the rest of its name: the direction and
- * qualifier words a level clause uses, the track control verbs, and any numeric figure.
+ * qualifier words a level clause uses, the track control verbs, the nouns that qualify a master
+ * output reference, and any numeric figure.
  */
-const SENTENCE_MATERIAL_TOKENS: ReadonlySet<string> = new Set([...LEVEL_DIRECTION_WORDS, 'mute', 'solo']);
+const SENTENCE_MATERIAL_TOKENS: ReadonlySet<string> = new Set([
+    ...LEVEL_DIRECTION_WORDS,
+    'mute',
+    'solo',
+    'bus',
+    'channel',
+    'output',
+]);
 
 const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
@@ -472,10 +480,19 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
 }
 
 /**
+ * List punctuation starts another list item — a comma, a semicolon, or a dash set off by spaces —
+ * while name punctuation continues one name ("Master-Vox", "Master's Choir", "Master/Vox").
+ */
+function joinerCarriesListPunctuation(joiner: string): boolean {
+    return /[,;]|\s[-–—]|[-–—]\s/u.test(joiner);
+}
+
+/**
  * Whether one exact-name match reads the given id occurrence as part of the name being typed. A match
  * that reaches past the id word through list punctuation ("master, drums") or ends on sentence
- * material — a level figure, a direction, or a control or qualifier word — is the instruction
- * continuing after the target, not the rest of its name.
+ * material — a level figure, a direction, a control verb, or a master-qualifier noun — is the
+ * instruction continuing after the target, not the rest of its name. Name punctuation continues the
+ * name itself, so it consumes the occurrence.
  */
 function nameMatchConsumesIdOccurrence(
     foldedPrompt: string,
@@ -484,7 +501,7 @@ function nameMatchConsumesIdOccurrence(
 ): boolean {
     const tail = foldedPrompt.slice(idRange.end, nameRange.end);
     const joinerAfterId = /^[^\p{L}\p{N}]+/u.exec(tail)?.[0];
-    if (joinerAfterId !== undefined && /\S/u.test(joinerAfterId)) {
+    if (joinerAfterId !== undefined && joinerCarriesListPunctuation(joinerAfterId)) {
         return false;
     }
     const matchedName = foldedPrompt.slice(nameRange.start, nameRange.end);
