@@ -647,7 +647,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Bounded like the retried install elsewhere: a stalled download fails in
+      # minutes rather than holding the job to its limit. Healthy installs on
+      # this runner take under 25s.
       - name: Install Chromium
+        timeout-minutes: 5
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission

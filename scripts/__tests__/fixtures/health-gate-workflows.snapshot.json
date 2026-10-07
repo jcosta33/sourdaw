@@ -335,6 +335,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {
@@ -1756,6 +1757,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {

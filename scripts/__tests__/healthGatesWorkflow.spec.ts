@@ -1498,6 +1498,12 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
     }
 }
 
+function assertBrowserAiChromiumInstallBounded(job: UnknownRecord): void {
+    if (stepNamed(job, 'Install Chromium')['timeout-minutes'] !== 5) {
+        throw new Error('Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast');
+    }
+}
+
 function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     const job = jobAt(candidate, BROWSER_AI_WEBGPU_JOB);
     if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
@@ -1512,6 +1518,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
+    assertBrowserAiChromiumInstallBounded(job);
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
@@ -1539,6 +1546,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
     }
+    assertBrowserAiChromiumInstallBounded(job);
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
@@ -3531,6 +3539,18 @@ describe('health gates workflow contract', () => {
             'pnpm test:e2e tests/e2e/browserAiWebGpuAdmission.spec.ts';
         expect(() => assertBrowserAiWebGpuJob(defaultMatrix)).toThrow(
             'Browser AI WebGPU job must run the dedicated hardware command'
+        );
+
+        const unboundedHeavyInstall = asRecord(structuredClone(heavyWorkflow), 'unbounded Browser AI heavyWorkflow');
+        delete stepNamed(jobAt(unboundedHeavyInstall, BROWSER_AI_WEBGPU_JOB), 'Install Chromium')['timeout-minutes'];
+        expect(() => assertBrowserAiWebGpuJob(unboundedHeavyInstall)).toThrow(
+            'Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast'
+        );
+
+        const unboundedNightlyInstall = asRecord(structuredClone(nightly), 'unbounded Browser AI nightly');
+        delete stepNamed(jobAt(unboundedNightlyInstall, BROWSER_AI_WEBGPU_JOB), 'Install Chromium')['timeout-minutes'];
+        expect(() => assertNightlyBrowserAiWebGpuJob(unboundedNightlyInstall)).toThrow(
+            'Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast'
         );
 
         const disconnectedGate = asRecord(structuredClone(heavyWorkflow), 'disconnected Browser AI heavy workflow');
