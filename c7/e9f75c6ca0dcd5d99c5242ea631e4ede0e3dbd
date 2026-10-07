@@ -1,0 +1,30 @@
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_2bfd55a4393d7c::t_b46192c6ad9c22 25,27-29,44,49-50,75-85,88,158-162,165-168,175-208,211-213,215-223,225,234,237-240,245,247,299-301,303-339,344-379,381-382,386,388,393,406-407,409,413-415,418,422-426,431-434,445-448,450-458,464-465,505,541-568,628,630,647-758
+  s_2bfd55a4393d7c::t_0a637b7d28d085 297-298,302
+  s_2bfd55a4393d7c::t_e9d7d700c26e8b 32-33
+  s_2bfd55a4393d7c::t_008737bd304b84 226-233
+scripts/reviewPublicationBinding.ts
+  s_2bfd55a4393d7c::t_ac35f9402a4793 573
+  s_2bfd55a4393d7c::t_b8f089cd5a0a51 276-279,282,286,289,291
+  s_2bfd55a4393d7c::t_0a8bffc555a03b 499
+  s_2bfd55a4393d7c::t_9ab46fd65a4f5c 451-452
+  s_2bfd55a4393d7c::t_51b21109769aba 539-541,544,548-554
+scripts/recoverPublishReviewLock.ts
+  s_2bfd55a4393d7c::t_ab7af8a8552574 578-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7e9f75c6ca0dcd5d99c5242ea631e4ede0e3dbd",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
