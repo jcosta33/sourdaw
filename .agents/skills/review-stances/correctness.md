@@ -485,3 +485,20 @@ the actual provider advertisement for both primitive and semantic-list proposal 
 each through the common provider admission and canonical decoder. Verify the proposal reaches the
 normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
 and local WebLLM control so wire repair does not change their canonical arguments.
+
+### 2026-10-07 — mono input vanished at stereo modulation splitters (introduced in 0249a95cc52; fixed for #5034)
+
+Auto Pan and Stereo Widener fed a default-mode GainNode into a two-output ChannelSplitterNode.
+The splitter uses explicit, discrete channel mixing, so a mono source reached its left output while
+its right output was silent. The strip's later dual-mono panner feed from PR #5006 could not repair
+the signal before either effect: Auto Pan lost its right side, and Widener treated the missing right
+side as stereo difference.
+
+Blind spot: graph-construction checks counted splitters and mergers, and a Widener matrix test
+supplied equal left and right arrays itself. Neither rendered a one-channel source through the
+actual factory input, where Web Audio decides the channel count.
+
+Probe: render a mono buffer through each real factory in Chromium OfflineAudioContext. Auto Pan
+must produce a right-channel peak; Widener at non-unity width must emit equal left and right
+samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
+Removing the explicit speakers upmix at either input must turn its mono assertion red.
