@@ -248,29 +248,87 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
-    it('hands a project whose extra is a bus-to-bus send to the native engine', async () => {
-        mocks.availability = { available: true, transport: stubTransport };
-        const { renderableTracks, scheduledTracks } = cleanProject();
-        const verb = createTrack({ id: 'bus-2', name: 'Verb', kind: 'bus' });
-        const project = {
-            scheduledTracks,
-            sidechainRoutes: [],
-            renderableTracks: [
-                ...renderableTracks.map((track) =>
-                    track.kind === 'bus'
-                        ? {
-                              ...track,
-                              sends: [{ busId: 'bus-2', level: 0.4, preFader: false }] as Track['sends'],
-                          }
-                        : track
-                ),
-                verb,
-            ],
-        };
+    /**
+     * #3658 — the native strip has no send tap on a bus, so the native producer
+     * drops a bus-origin send and the mix would print without it. A send the
+     * Web Audio render would wire therefore keeps the render on Web Audio.
+     */
+    describe('bus-origin sends — a send that would contribute degrades, one that cannot does not', () => {
+        /** Track → bus A → master, bus A optionally sending to bus B (routed to master). */
+        function busSendProject(send: Partial<Track['sends'][number]> | null, source: Partial<Track> = {}) {
+            const { renderableTracks, scheduledTracks } = cleanProject();
+            const busA = createTrack({
+                id: 'bus-1',
+                name: 'Bus A',
+                kind: 'bus',
+                sends: send === null ? [] : [{ busId: 'bus-b', level: 0.4, preFader: false, ...send }],
+                ...source,
+            });
+            const busB = createTrack({ id: 'bus-b', name: 'Bus B', kind: 'bus' });
+            return {
+                scheduledTracks,
+                sidechainRoutes: [],
+                renderableTracks: [...renderableTracks.filter((track) => track.kind !== 'bus'), busA, busB],
+            };
+        }
 
-        const selection = await selectOfflineRenderEngine(project);
+        it('degrades a bus that sends to another bus, naming both', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
 
-        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+            const selection = await selectOfflineRenderEngine(busSendProject({}));
+
+            expect(selection).toEqual({
+                engine: 'web-audio/offline',
+                reason: 'bus "Bus A" sends to bus "Bus B", which the native engine has no bus send tap for',
+                degraded: true,
+            });
+        });
+
+        it('does not call it a degradation in a browser, where Web Audio is the platform', async () => {
+            const selection = await selectOfflineRenderEngine(busSendProject({}));
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: false });
+        });
+
+        it('hands the same project without the bus-to-bus send to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(busSendProject(null));
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        it.each([
+            { name: 'a send at zero level', send: { level: 0 }, source: {} },
+            { name: 'a send to a bus this render does not build', send: { busId: 'bus-gone' }, source: {} },
+            { name: 'a post-fader send from a muted bus', send: { preFader: false }, source: { muted: true } },
+        ])('hands $name to the native engine, because Web Audio carries nothing through it', async (shape) => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(busSendProject(shape.send, shape.source));
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        it('degrades a pre-fader send from a muted bus, which a cue mix keeps feeding', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+
+            const selection = await selectOfflineRenderEngine(busSendProject({ preFader: true }, { muted: true }));
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
+        });
+
+        it('hands a track-origin send to a bus to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const project = busSendProject(null);
+            const [track] = project.renderableTracks;
+
+            // The source track sends 0.5 to bus-1 and bus-1 sends nowhere.
+            expect(track!.sends).toEqual([{ busId: 'bus-1', level: 0.5, preFader: false }]);
+            const selection = await selectOfflineRenderEngine(project);
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
     });
 
     it('hands a project with a time-stretched clip to the native engine (#3068)', async () => {
