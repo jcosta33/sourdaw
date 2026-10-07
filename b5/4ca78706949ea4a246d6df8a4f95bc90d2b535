@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_2bfd55a4393d7c::t_dae2183deeaa1b 54-59,160-197
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_2bfd55a4393d7c::t_cab44e8fa2d67d 64-86,214,217-222,233,236-241
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_1c08b47ac3792f::t_07733d209b4431 401-403,417-419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b54ca78706949ea4a246d6df8a4f95bc90d2b535",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
