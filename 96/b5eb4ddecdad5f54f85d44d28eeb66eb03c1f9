@@ -1,0 +1,23 @@
+src/modules/Command/AGENTS.md
+  s_2bfd55a4393d7c::t_168215b0fbbe1f 29
+src/modules/Command/useCases/__tests__/parseVersionedCommandEnvelopeHandlerMintedIds.spec.ts
+  s_2bfd55a4393d7c::t_97d15deb3e0a7a 1-122
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_2bfd55a4393d7c::t_40160861cdfca8 220-234,332-334,340-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96b5eb4ddecdad5f54f85d44d28eeb66eb03c1f9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
