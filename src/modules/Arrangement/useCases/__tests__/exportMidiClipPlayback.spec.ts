@@ -477,6 +477,52 @@ describe('exportMidiClip writes what the clip plays', () => {
         });
     });
 
+    it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {
+        const clip = { startBeat: 0.1, endBeat: 4.1, midiOffsetBeats: 1 / 3 };
+        const [played] = projectClipMidiEvents({
+            events: [note('n', 0.9, 0.25)],
+            clipId: 'clip',
+            clipStartBeat: clip.startBeat,
+            clipEndBeat: clip.endBeat,
+            iterationStartBeat: clip.startBeat,
+            loopLengthBeats: clip.endBeat - clip.startBeat,
+            midiOffsetBeats: clip.midiOffsetBeats,
+        });
+        const [moved] = projectClipControllerEvents({
+            controlChanges: [sustain('pedal', 0.9, 127)],
+            clip,
+            fromBeat: Number.NEGATIVE_INFINITY,
+            toBeat: clip.endBeat,
+        });
+        // The premise: the note projects a double earlier than the controller, so only a
+        // tolerance on the beat puts the controller first.
+        expect(played?.startBeat).toBeLessThan(moved!.beat);
+
+        const events = exportClip(clip, [note('n', 0.9, 0.25)], [sustain('pedal', 0.9, 127)]);
+
+        expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['cc', 320],
+            ['on', 320],
+            ['off', 440],
+        ]);
+    });
+
+    it('carries a controller from before a clip that starts between ticks onto the first tick of the clip', () => {
+        const startBeat = 1 / 960;
+        const events = exportClip(
+            { startBeat, endBeat: startBeat + 4, midiOffsetBeats: 1 / 3 },
+            [note('n', 1 / 3, 1)],
+            [sustain('held', -1, 127)]
+        );
+
+        // The clip starts half a tick in, so its first tick is 1 and the carry sits on it with the note-on.
+        expect(events.map((event) => [event.kind, event.tick])).toEqual([
+            ['cc', 1],
+            ['on', 1],
+            ['off', 481],
+        ]);
+    });
+
     describe('in the coordinates the scheduler projects in', () => {
         type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
 

@@ -63,23 +63,70 @@ type MidiEvent = {
     data: number[];
 };
 
-function compareEvents(left: MidiEvent, right: MidiEvent): number {
+type SortableEvent = MidiEvent & {
+    /** The beat on a grid of tolerance size, so beats a float apart compare equal. */
+    sortBeat: number;
+};
+
+function snapToBeatGrid(beat: number): number {
+    return Math.round(beat / SAME_BEAT_TOLERANCE);
+}
+
+/**
+ * A file never strikes a key it releases on the same tick, whatever the beats: the
+ * strike takes the sort beat of the latest such release, so the release goes first.
+ */
+function toSortableEvents(events: MidiEvent[]): SortableEvent[] {
+    const latestReleaseByKeyAndTick = new Map<string, number>();
+    for (const event of events) {
+        if (event.kind !== 'off' || event.noteKey === undefined) {
+            continue;
+        }
+        const releaseId = `${event.tick}|${event.noteKey}`;
+        const sortBeat = snapToBeatGrid(event.beat);
+        latestReleaseByKeyAndTick.set(
+            releaseId,
+            Math.max(sortBeat, latestReleaseByKeyAndTick.get(releaseId) ?? sortBeat)
+        );
+    }
+    return events.map((event) => {
+        const sortBeat = snapToBeatGrid(event.beat);
+        if (event.kind !== 'on' || event.noteKey === undefined) {
+            return { ...event, sortBeat };
+        }
+        const releaseSortBeat = latestReleaseByKeyAndTick.get(`${event.tick}|${event.noteKey}`);
+        return { ...event, sortBeat: Math.max(sortBeat, releaseSortBeat ?? sortBeat) };
+    });
+}
+
+function compareDataBytes(left: number[], right: number[]): number {
+    for (let index = 0; index < Math.min(left.length, right.length); index++) {
+        if (left[index] !== right[index]) {
+            return left[index]! - right[index]!;
+        }
+    }
+    return left.length - right.length;
+}
+
+/**
+ * A total order on (tick, sort beat, kind, data bytes), so the same events write the
+ * same bytes whatever order they were stored in. Playback keeps time order across
+ * sample frames and applies its release, controller, note-on order only within one
+ * frame, so events a tick apart keep their time order whatever their kinds; sort
+ * beats on the tolerance grid make beats a float apart one instant, and the data
+ * bytes settle events equal on everything else.
+ */
+function compareEvents(left: SortableEvent, right: SortableEvent): number {
     if (left.tick !== right.tick) {
         return left.tick - right.tick;
     }
-    // A file never strikes a key it then releases on the same tick: whatever their
-    // beats, a release goes ahead of a strike of the same pitch and channel.
-    if (left.noteKey !== undefined && left.noteKey === right.noteKey && left.kind !== right.kind) {
+    if (left.sortBeat !== right.sortBeat) {
+        return left.sortBeat - right.sortBeat;
+    }
+    if (left.kind !== right.kind) {
         return SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind];
     }
-    // Playback keeps time order across sample frames and applies its release,
-    // controller, note-on order only within one frame; two events a tick apart
-    // keep their time order, whatever their kinds.
-    const beatGap = left.beat - right.beat;
-    if (Math.abs(beatGap) > SAME_BEAT_TOLERANCE) {
-        return beatGap;
-    }
-    return SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind];
+    return compareDataBytes(left.data, right.data);
 }
 
 type TickedNote = {
@@ -94,6 +141,33 @@ type TickedNote = {
 
 function noteKey(note: Pick<TickedNote, 'pitch' | 'channel'>): string {
     return `${note.channel}:${note.pitch}`;
+}
+
+function precedesByBeat(left: TickedNote, right: TickedNote): boolean {
+    if (left.startBeat !== right.startBeat) {
+        return left.startBeat < right.startBeat;
+    }
+    if (left.endBeat !== right.endBeat) {
+        return left.endBeat < right.endBeat;
+    }
+    return left.velocity <= right.velocity;
+}
+
+/**
+ * Sub-tick notes of one key that share a start tick write overlapping one-tick spans,
+ * which would strike the key twice; the earliest by beat is the one written, so the
+ * result does not depend on the order the notes were stored in.
+ */
+function collapseSubTickNotes(subTick: TickedNote[]): TickedNote[] {
+    const earliestByKeyAndTick = new Map<string, TickedNote>();
+    for (const note of subTick) {
+        const spanId = `${noteKey(note)}|${note.startTick}`;
+        const earliest = earliestByKeyAndTick.get(spanId);
+        if (earliest === undefined || !precedesByBeat(earliest, note)) {
+            earliestByKeyAndTick.set(spanId, note);
+        }
+    }
+    return [...earliestByKeyAndTick.values()];
 }
 
 /**
@@ -141,7 +215,7 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
             soundedByKey.set(noteKey(note), [note]);
         }
     }
-    const survivingSubTick = subTick.filter((sliver) => {
+    const survivingSubTick = collapseSubTickNotes(subTick).filter((sliver) => {
         const sameKey = soundedByKey.get(noteKey(sliver)) ?? [];
         return !sameKey.some((other) => other.startTick < sliver.endTick && other.endTick > sliver.startTick);
     });
@@ -180,7 +254,7 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         });
     }
 
-    events.sort(compareEvents);
+    const sortedEvents = toSortableEvents(events).sort(compareEvents);
 
     const nameBytes = writeString(trackName);
     const trackNameEvent = {
@@ -190,7 +264,7 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
 
     const trackBytes: number[] = [];
     let lastTick = 0;
-    for (const event of [trackNameEvent, ...events]) {
+    for (const event of [trackNameEvent, ...sortedEvents]) {
         const delta = Math.max(0, event.tick - lastTick);
         const deltaBytes = writeVarLen(delta);
         for (let index = 0; index < deltaBytes.length; index++) {

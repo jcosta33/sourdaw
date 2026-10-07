@@ -2,12 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
+import { type MidiCC, type MidiNote } from '../../models/MidiNote';
 import { downloadBlob } from '../../repositories/downloadFile';
 import { downloadMidiFile } from '../exportMidiFile';
 
 vi.mock('../../repositories/downloadFile', () => ({
     downloadBlob: vi.fn(),
 }));
+
+function permutations<T>(items: T[]): T[][] {
+    if (items.length <= 1) {
+        return [items];
+    }
+    return items.flatMap((item, index) =>
+        permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest])
+    );
+}
 
 function toHex(bytes: Uint8Array): string {
     let out = '';
@@ -214,6 +224,67 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
 
         // Delta 480 (83 60) reaches the tick; the three events then share it with delta 0.
         expect(toHex(lastDownloadedBytes())).toContain('8360803c0000b0407f00903c64');
+    });
+
+    it('writes one file for every stored order of notes whose beats differ by less than a tick', () => {
+        // Note a releases pitch 60 at beat 1.0004 and b strikes it at 1.0, both on tick
+        // 480, and d strikes pitch 64 at 1.0002 between them. A release goes ahead of a
+        // strike of its own key, so off60 precedes on60 whatever order the rows are stored in.
+        const a: MidiNote = { id: 'a', pitch: 60, startBeat: 0, duration: 1.0004, velocity: 100 };
+        const b: MidiNote = { id: 'b', pitch: 60, startBeat: 1, duration: 1, velocity: 100 };
+        const d: MidiNote = { id: 'd', pitch: 64, startBeat: 1.0002, duration: 1, velocity: 100 };
+
+        const files = permutations([a, b, d]).map((notes) => {
+            downloadMidiFile({ clipName: 'C', clipStartBeat: 0, notes, ccs: [] });
+            return toHex(lastDownloadedBytes());
+        });
+
+        expect(new Set(files).size).toBe(1);
+        // Tick 480 in file order: on64 (1.0002), off60 (1.0004), on60 (struck at 1.0, after its release).
+        expect(files[0]).toContain('836090406400803c0000903c64');
+    });
+
+    it('writes one file for every stored order when a controller sits between a strike and its key release', () => {
+        // The controller at 1.0002 is later than the strike (1.0) but earlier than the
+        // release (1.0004). The strike is moved to its release, so the controller keeps its
+        // own time ahead of both: B0 40 7F, 80 3C 00, 90 3C 64.
+        const a: MidiNote = { id: 'a', pitch: 60, startBeat: 0, duration: 1.0004, velocity: 100 };
+        const b: MidiNote = { id: 'b', pitch: 60, startBeat: 1, duration: 1, velocity: 100 };
+        const pedal: MidiCC = { id: 'pedal', controller: 64, value: 127, beat: 1.0002, channel: 0 };
+
+        const files = permutations<MidiNote | MidiCC>([a, b, pedal]).map((rows) => {
+            downloadMidiFile({
+                clipName: 'C',
+                clipStartBeat: 0,
+                notes: rows.filter((row): row is MidiNote => 'pitch' in row),
+                ccs: rows.filter((row): row is MidiCC => 'controller' in row),
+            });
+            return toHex(lastDownloadedBytes());
+        });
+
+        expect(new Set(files).size).toBe(1);
+        expect(files[0]).toContain('8360b0407f00803c0000903c64');
+    });
+
+    it('writes one on and off pair for sub-tick notes of one key that share a start tick', () => {
+        // Both notes are shorter than a tick and round to start tick 480, so written
+        // as they are they would strike pitch 60 twice and release it twice.
+        const first: MidiNote = { id: 'first', pitch: 60, startBeat: 1, duration: 0.0001, velocity: 100 };
+        const second: MidiNote = { id: 'second', pitch: 60, startBeat: 1.0001, duration: 0.0001, velocity: 90 };
+
+        const files = [
+            [first, second],
+            [second, first],
+        ].map((notes) => {
+            downloadMidiFile({ clipName: 'C', clipStartBeat: 0, notes, ccs: [] });
+            return toHex(lastDownloadedBytes());
+        });
+
+        expect(files[1]).toBe(files[0]);
+        // The earlier note is the one written: on at tick 480 with velocity 100, off one tick later.
+        expect(files[0]).toContain('8360903c6401803c0000ff2f00');
+        expect(files[0]!.match(/903c/g)).toHaveLength(1);
+        expect(files[0]!.match(/803c/g)).toHaveLength(1);
     });
 
     it('does not write a note of no duration, which playback does not sound', () => {
