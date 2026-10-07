@@ -1,0 +1,32 @@
+docs/06-testing.md
+  s_d257b09300b1ad::t_b485b86365f48d 763-767
+playwright.config.ts
+  s_d257b09300b1ad::t_e704966950e90a 31-33
+scripts/__tests__/e2eShardPartition.spec.ts
+  s_d257b09300b1ad::t_af9ba7f802a0d3 1-118
+scripts/e2eShardPartition.ts
+  s_d257b09300b1ad::t_e8df06c88dc7f9 1-141
+  s_d257b09300b1ad::t_c61a088ed6ff62 142-147
+AGENTS.md
+  s_d257b09300b1ad::t_7e3be59b4dd865 361
+scripts/e2eSpecDurations.json
+  s_d257b09300b1ad::t_7d9a5fe075e43a 1-315
+scripts/prValidationScope.ts
+  s_d257b09300b1ad::t_fe0758bff3f64e 6-7,156-170,221,290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b8b8c11d7c4e620ddd509cf8a40aefb139823c8",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
