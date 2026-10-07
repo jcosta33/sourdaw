@@ -580,6 +580,44 @@ describe('resolveAgentReference', () => {
         ).toEqual(resolvedTo('track-mastering-bus', 'Mastering Bus', 'exact-name'));
     });
 
+    it('keeps a bare master id ambiguous when a master-named track only matches sentence material', () => {
+        const project = createProjectState();
+        const fixtureTrack = project.tracks[0];
+        if (!fixtureTrack) {
+            throw new Error('Expected track fixture');
+        }
+        const master = {
+            ...fixtureTrack,
+            id: 'master',
+            name: 'Master',
+            kind: 'master' as const,
+            outputId: 'hw_out',
+        };
+        const masterTwo = { ...fixtureTrack, id: 'track-master-2', name: 'Master 2' };
+        const masterDown = { ...fixtureTrack, id: 'track-master-down', name: 'Master Down' };
+        const masterDrums = { ...fixtureTrack, id: 'track-master-drums', name: 'Master Drums' };
+        const masterTwoContext = { ...project, tracks: [masterTwo, master] };
+        const masterDownContext = { ...project, tracks: [masterDown, master] };
+        const masterDrumsContext = { ...project, tracks: [masterDrums, master] };
+
+        expect(resolveTrack('turn the master 2 dB down', 'master', masterTwoContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('turn the master 2 dB down', 'track-master-2', masterTwoContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('turn the master down 2 dB', 'master', masterDownContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute master, drums', 'master', masterDrumsContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
