@@ -12,6 +12,7 @@ import {
     type ProjectContextProductionBrief,
     type ProjectContextTrack,
 } from '../../models/ProjectContext';
+import { RECIPE_EXPANSION_MAX_COMMANDS } from '../../models/RecipeExpansionLimits';
 import { type VibeRunBatch, type VibeRunMeasurement } from '../../models/VibeRunPlan';
 import { expandMixRecipe } from '../expandMixRecipe';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
@@ -728,6 +729,99 @@ describe('planWholeProjectVibeRun batches', () => {
 
         expect(result.batches).toEqual([]);
         expect(result.unplannedRoles.map((entry) => entry.role)).toEqual(['drums', 'bass']);
+    });
+});
+
+describe('planWholeProjectVibeRun recipe admission', () => {
+    it('leaves out a track holding two live devices of the type a retune recipe would retune', () => {
+        const compressor = { id: 'dev-comp-1', type: 'builtin-compressor', bypassed: false };
+        const doubled = contextTrack('t-bus-doubled', 'Group', 'bus', {
+            devices: [compressor, { ...compressor, id: 'dev-comp-2' }],
+        });
+        const context = projectContext([doubled]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['punchy'],
+            recipes: [catalogRecipe('bus-punchy')],
+            measurements: [],
+        });
+
+        expect(result.batches).toEqual([]);
+        expect(result.excludedTargets).toEqual([{ targetId: 't-bus-doubled', reason: 'no-applicable-recipe' }]);
+        const refusal = expandMixRecipe(
+            { recipeId: 'bus-punchy', targetId: 't-bus-doubled', role: null, values: [] },
+            context,
+            0
+        );
+        expect(refusal.status).toBe('refused');
+    });
+
+    it('never lists a recipe whose own expansion passes what one expansion may add to a batch', () => {
+        const oversizedParameterCount = RECIPE_EXPANSION_MAX_COMMANDS + 3;
+        const oversized = synthetic(
+            'warm-oversized',
+            'warm',
+            ['drums'],
+            [{ metric: 'spectralCentroid', direction: 'decrease' }],
+            oversizedParameterCount
+        );
+        expect(oversizedParameterCount + 1).toBeGreaterThan(RECIPE_EXPANSION_MAX_COMMANDS);
+        expect(oversizedParameterCount + 1).toBeLessThanOrEqual(MAX_LLM_ACTIONS_PER_BATCH);
+        const ordinary = synthetic(
+            'warm-ordinary',
+            'warm',
+            ['drums'],
+            [{ metric: 'spectralCentroid', direction: 'decrease' }]
+        );
+
+        const result = planWholeProjectVibeRun({
+            context: { tracks: [contextTrack('t-kick', 'Kick', 'kick')] },
+            descriptors: ['warm'],
+            recipes: [oversized, ordinary],
+            measurements: [],
+        });
+
+        const listed = result.batches.flatMap((batch) => batch.targets.flatMap((target) => target.recipeIds));
+        expect(listed).toEqual(['warm-ordinary']);
+    });
+
+    it('limits each target baseline to the metrics that target own recipes expect', () => {
+        const ready = contextTrack('t-bus-ready', 'Group A', 'bus', {
+            devices: [{ id: 'dev-comp', type: 'builtin-compressor', bypassed: false }],
+        });
+        const bare = contextTrack('t-bus-bare', 'Group B', 'bus');
+        const everyMetric = {
+            frequencyBandEnergy: figure(1),
+            spectralCentroid: figure(2),
+            crestFactor: figure(3),
+            transientDensity: figure(4),
+        };
+
+        const result = planWholeProjectVibeRun({
+            context: { tracks: [ready, bare], sections: [SECTION_A] },
+            descriptors: ['warm', 'punchy'],
+            recipes: [catalogRecipe('bus-warm'), catalogRecipe('bus-punchy')],
+            measurements: [
+                measurement(window(0, 16, 's-a'), { 't-bus-ready': everyMetric, 't-bus-bare': everyMetric }),
+            ],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the two groups to share one batch.');
+        }
+        const metricsOf = (targetId: string) =>
+            Object.keys(
+                batch.baselines.find((baseline) => baseline.targetId === targetId)?.measurements ?? {}
+            ).toSorted();
+        expect(metricsOf('t-bus-ready')).toEqual([
+            'crestFactor',
+            'frequencyBandEnergy',
+            'spectralCentroid',
+            'transientDensity',
+        ]);
+        expect(metricsOf('t-bus-bare')).toEqual(['frequencyBandEnergy', 'spectralCentroid']);
     });
 });
 
