@@ -1,0 +1,16 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  h_beb54bf43b47b7 621-670
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  h_beb54bf43b47b7 92-93,95-102,482-489,493-495,504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86e2640e69999c685d3a6fbca92c1bdeb9a42505",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
