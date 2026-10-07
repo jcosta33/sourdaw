@@ -526,6 +526,48 @@ export function recordPublicationBindings(
 }
 
 /**
+ * Binds a publication that review:publish:recover found landed exactly after the posting run died
+ * before binding it (#5008), so a later review:publish on the head replays it instead of posting a
+ * duplicate. The events are the ones review:publish writes. The escalation gate re-runs with the
+ * landed review hidden from the public rounds, so it sees the count the posting run saw and yields
+ * the reassessment that run consumed. A dossier already binding this review is left unchanged.
+ */
+export function recordRecoveredPublicationBindings(
+    number: number,
+    head: string,
+    document: ReviewDocument,
+    reviewId: number,
+    actorNodeId: string,
+    port: PublishReviewPort
+): void {
+    const recorded = recordedPublicationReplay(number, head, document, actorNodeId, port);
+    if (recorded !== undefined) {
+        if (recorded !== reviewId) {
+            fail(`review dossier binds publication ${recorded}, not the recovered landed review ${reviewId}`);
+        }
+        return;
+    }
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    if (!hasRiskPlan(bundle, port)) {
+        // A legacy bundle binds nothing; the binding itself refuses a plan its manifest records.
+        recordPublicationBindings(number, head, document, reviewId, port);
+        return;
+    }
+    const publicReviews = port.publicReviews;
+    if (publicReviews === undefined) {
+        fail('review publication recovery requires the port to read the pull request public reviews');
+    }
+    const reassessment = prepareReviewDossierPublication({
+        number,
+        head,
+        bundle,
+        document,
+        port: { ...port, publicReviews: (pr) => publicReviews(pr).filter((review) => review.id !== reviewId) },
+    });
+    recordPublicationBindings(number, head, document, reviewId, port, reassessment);
+}
+
+/**
  * Acceptance-time accounting gate (#3375, spec #3367 AC-004): the orchestrator may not accept a
  * head whose dossier records the review round incompletely. When the bundle carries a risk plan,
  * the dossier must exist, must name the landed publication, and must bind every accepted finding

@@ -20,7 +20,9 @@ import {
     renderReviewDocumentBody,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
+    shellPort,
     type PublishReviewAuthentication,
+    type PublishReviewPort,
     type ReviewDocument,
 } from './publishReview.ts';
 import {
@@ -38,6 +40,7 @@ import {
     type PullRequestMutationLockOwnerFence,
 } from './pullRequestMutationLock.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
+import { recordRecoveredPublicationBindings } from './reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
 import {
     OPERATOR_ABSENT_ATTESTATION,
@@ -76,6 +79,8 @@ export type RecoverPublishReviewDependencies = {
         session: GhSession,
         primaryRoot: string
     ) => RecoveryInspection;
+    /** The publication port a landed reviewer recovery binds the head's dossier through. */
+    publicationPort?: (session: GhSession, primaryRoot: string) => PublishReviewPort;
     isOwnerLive?: (owner: ReviewPublicationLockOwner) => boolean;
     currentOwnerFence?: () => PullRequestMutationLockOwnerFence;
     isLegacyOwnerLive?: (pid: number) => boolean;
@@ -477,23 +482,6 @@ function assertNoUnauthorizedLandedEvidence(
     }
 }
 
-/**
- * The ids of the actor's reviews at the head that exactly match the retained document. Thread
- * replies — review:confirm's included — mint their own COMMENTED reviews under the same actor and
- * head, so the actor's review count says nothing about whether the publication landed; only
- * exactness identifies it (#5008).
- */
-function exactLandedReviewIds(
-    inspection: RecoveryInspection,
-    document: ReviewDocument,
-    expectedHead: string,
-    expectedActorNodeId: string
-): number[] {
-    return inspection.reviews
-        .filter((review) => exactPublishedReview(review, document, expectedHead, expectedActorNodeId))
-        .map((review) => review.id);
-}
-
 function assertSingleExactLandedReview(
     inspection: RecoveryInspection,
     document: ReviewDocument,
@@ -501,8 +489,9 @@ function assertSingleExactLandedReview(
     expectedActorNodeId: string
 ): void {
     if (
-        inspection.reviews.length > 0 &&
-        exactLandedReviewIds(inspection, document, expectedHead, expectedActorNodeId).length !== 1
+        inspection.reviews.length > 1 ||
+        (inspection.reviews.length === 1 &&
+            !exactPublishedReview(inspection.reviews[0]!, document, expectedHead, expectedActorNodeId))
     ) {
         fail('review-publication recovery found ambiguous or non-exact remote review evidence');
     }
@@ -570,10 +559,7 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     );
     assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     assertReconciliationStable(first, second, document, attestation.expectedHead, attestation.expectedActorNodeId);
-    const outcome =
-        exactLandedReviewIds(second, document, attestation.expectedHead, attestation.expectedActorNodeId).length === 1
-            ? 'landed'
-            : 'absent';
+    const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
     const absentReleaseAuthorizedByJournal =
         attestation.journaledOwner?.mutation.phase === 'prepared' ||
         attestation.legacyIncident?.definitiveNoMutationHttpStatus === 422 ||
@@ -583,6 +569,18 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     if (outcome === 'absent' && !absentReleaseAuthorizedByJournal && !attestation.attestAbsent) {
         fail(
             'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
+        );
+    }
+    // The dossier binding precedes the receipt: a crash between them leaves the adopted owner, whose
+    // own recovery finds the binding already recorded and goes on to the receipt.
+    if (outcome === 'landed' && attestation.expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
+        recordRecoveredPublicationBindings(
+            number,
+            attestation.expectedHead,
+            document,
+            second.reviews[0]!.id,
+            attestation.expectedActorNodeId,
+            (dependencies.publicationPort ?? recoveryPublicationPort)(session, primaryRoot)
         );
     }
     const receipt = recoveryReceipt(
@@ -604,6 +602,10 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     return 0;
 }
 
+function recoveryPublicationPort(session: GhSession, primaryRoot: string): PublishReviewPort {
+    return { ...shellPort(session, primaryRoot), primaryRoot: () => primaryRoot };
+}
+
 function assertReconciliationStable(
     first: RecoveryInspection,
     second: RecoveryInspection,
@@ -611,14 +613,12 @@ function assertReconciliationStable(
     expectedHead: string,
     expectedActorNodeId: string
 ): void {
-    const firstLanded = exactLandedReviewIds(first, document, expectedHead, expectedActorNodeId);
-    const secondLanded = exactLandedReviewIds(second, document, expectedHead, expectedActorNodeId);
     if (
         second.state !== first.state ||
         second.head !== first.head ||
         second.reviews.length !== first.reviews.length ||
-        secondLanded.length !== firstLanded.length ||
-        secondLanded.some((id, index) => id !== firstLanded[index])
+        (second.reviews.length === 1 &&
+            !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
     ) {
         fail('review-publication recovery remote state changed during reconciliation');
     }
