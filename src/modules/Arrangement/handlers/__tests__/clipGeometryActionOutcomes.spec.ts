@@ -38,6 +38,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getNotesForClip: vi.fn(() => []),
+    setNotesForClip: vi.fn(),
     shiftClipMidiNotes: mocks.shiftClipMidiNotes,
 }));
 
