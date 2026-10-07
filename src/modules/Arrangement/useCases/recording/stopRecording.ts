@@ -11,7 +11,7 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
-import { placeRecordingClipOnMedia } from './placeRecordingClipOnMedia';
+import { placeRecordingClipStart } from './placeRecordingClipStart';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -44,11 +44,11 @@ function completedLoopPassEndBeat(lanes: readonly TakeLane[], clipId: string): n
  */
 function placeMidiClipOnMedia(clip: Clip): Clip {
     const mediaOriginBeat = clip.startBeat - (clip.midiOffsetBeats ?? 0);
-    const placement = placeRecordingClipOnMedia(clip.id, mediaOriginBeat);
-    if (placement.startBeat === clip.startBeat) {
+    const startBeat = placeRecordingClipStart(clip.id, mediaOriginBeat);
+    if (startBeat === clip.startBeat) {
         return clip;
     }
-    return { ...clip, startBeat: placement.startBeat, midiOffsetBeats: placement.mediaOffsetBeats };
+    return { ...clip, startBeat, midiOffsetBeats: startBeat - mediaOriginBeat };
 }
 
 function closeTakeAt(take: Take, endBeat: number): Take {

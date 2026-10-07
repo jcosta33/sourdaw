@@ -44,14 +44,6 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
-        rebaseRecordingTakes:
-            vi.fn<(input: { clipId: string; provisionalStartBeat: number; shiftBeats: number }) => void>(),
-        // A recording with no loop pass: the clip opens on its media origin,
-        // clamped to beat 0.
-        placeRecordingClipOnMedia: vi.fn((_clipId: string, mediaOriginBeat: number) => {
-            const startBeat = Math.max(0, mediaOriginBeat);
-            return { startBeat, mediaOffsetBeats: startBeat - mediaOriginBeat };
-        }),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
@@ -101,8 +93,6 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
-    placeRecordingClipOnMedia: mocks.placeRecordingClipOnMedia,
-    rebaseRecordingTakes: mocks.rebaseRecordingTakes,
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
 }));
