@@ -1,0 +1,30 @@
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 106
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  h_beb54bf43b47b7 41-42
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  h_beb54bf43b47b7 106
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  h_beb54bf43b47b7 94
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOperations.spec.ts
+  h_beb54bf43b47b7 11-15
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_beb54bf43b47b7 97
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 164
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 226
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "178a71cb3e41ec19faeb0271ec16a76cbe2c8e97",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
