@@ -12,12 +12,12 @@ function createRefusal(holder: RenderLockHolder): Error {
 
 /**
  * Acquires the render lock for `holder`. Throws if another render holds it or a musician's export is
- * queued for it: a musician's export gets today's "already in progress" message, a measurement a
- * `RenderBusy` error its caller reports as `render-busy`. Never waits; a musician's export that must
- * first stop a measurement goes through `acquireRenderLockFromMeasurement`.
+ * queued for it: a musician's export gets today's "already in progress" message, an agent render a
+ * `RenderBusy` error its caller reports as busy. Never waits; a musician's export that must first
+ * stop an agent render goes through `acquireRenderLockFromAgentRender`.
  * Returns a release function that MUST be called in a finally block.
  *
- * `preempt` is how a musician's export stops this holder's render; only a measurement passes one.
+ * `preempt` is how a musician's export stops this holder's render; only an agent render passes one.
  */
 export function acquireRenderLock(holder: RenderLockHolder, preempt: (() => void) | null = null): () => void {
     if (exportCancellationState.renderLock !== null || exportCancellationState.queuedMusicianExport !== null) {
