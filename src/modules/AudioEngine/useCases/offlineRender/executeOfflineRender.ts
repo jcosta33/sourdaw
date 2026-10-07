@@ -2,10 +2,11 @@ import { createRenderBusyError } from '../../errors/RenderBusyError';
 import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { acquireRenderLock } from './acquireRenderLock';
-import { acquireRenderLockFromMeasurement } from './acquireRenderLockFromMeasurement';
+import { acquireRenderLockFromAgentRender } from './acquireRenderLockFromAgentRender';
+import { agentRenderNoun } from './agentRenderNoun';
 import { beginExportCancellationScope } from './beginExportCancellationScope';
 import { buildOfflineWebAudioGraph } from './buildOfflineWebAudioGraph';
-import { canPreemptMeasurement } from './canPreemptMeasurement';
+import { canPreemptAgentRender } from './canPreemptAgentRender';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { createOfflineRenderBackend } from './createOfflineRenderBackend';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
@@ -25,22 +26,23 @@ function withPreemption(preemption: AbortSignal, callerSignal: AbortSignal | und
 
 /**
  * Admission, capture and teardown share one uninterrupted lock ownership boundary, except that a
- * musician's export which finds an agent measurement holding the lock first stops it and waits for
- * its release (#4768); its capture then reads the project once the lock is its own.
+ * musician's export which finds an agent render, a measurement or a section render, holding the lock
+ * first stops it and waits for its release (#4768, #5036); its capture then reads the project once
+ * the lock is its own. Agent renders never preempt one another.
  */
 export async function executeOfflineRender(
     capture: () => ReturnType<typeof captureOfflineRenderInput>,
     options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder'> = {}
 ): Promise<AudioBuffer> {
     const holder = options.lockHolder ?? 'musician-export';
-    // A measurement's render stops on this signal beside its caller's own stop, so a musician's export
+    // An agent render stops on this signal beside its caller's own stop, so a musician's export
     // can end it without raising the process-wide cancel flag every other render reads.
     const preemption = new AbortController();
     let releaseLock: () => void;
-    if (holder === 'agent-measurement') {
+    if (holder !== 'musician-export') {
         releaseLock = acquireRenderLock(holder, () => preemption.abort());
-    } else if (canPreemptMeasurement()) {
-        releaseLock = await acquireRenderLockFromMeasurement();
+    } else if (canPreemptAgentRender()) {
+        releaseLock = await acquireRenderLockFromAgentRender();
     } else {
         releaseLock = acquireRenderLock(holder);
     }
@@ -50,7 +52,7 @@ export async function executeOfflineRender(
     let backend: WebAudioOfflineBackend | undefined;
     try {
         const abortSignal =
-            holder === 'agent-measurement' ? withPreemption(preemption.signal, callerSignal) : callerSignal;
+            holder === 'musician-export' ? callerSignal : withPreemption(preemption.signal, callerSignal);
         const callbacks = { ...options, abortSignal };
         // The scope's signal is this render's cancellation handle (#4440),
         // threaded into the backend so instrument setup aborts at the moment
@@ -92,8 +94,11 @@ export async function executeOfflineRender(
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } catch (error) {
         // A render a musician's export stopped reports why, unless its caller stopped it first.
-        if (preemption.signal.aborted && callerSignal?.aborted !== true) {
-            throw createRenderBusyError("The assistant's measurement stopped because an export started.", error);
+        if (holder !== 'musician-export' && preemption.signal.aborted && callerSignal?.aborted !== true) {
+            throw createRenderBusyError(
+                `The assistant's ${agentRenderNoun(holder)} stopped because an export started.`,
+                error
+            );
         }
         throw error;
     } finally {

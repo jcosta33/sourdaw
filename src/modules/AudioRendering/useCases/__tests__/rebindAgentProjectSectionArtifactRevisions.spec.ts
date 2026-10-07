@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelExport: mocks.cancelExport,
+    isRenderBusyError: () => false,
     renderOffline: mocks.renderOffline,
 }));
 
