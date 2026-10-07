@@ -226,6 +226,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         getMidiInputTrackOwnerId: vi.fn(),
         getMidiInputTrackRevision: vi.fn(),
         getMidiStoreState: vi.fn(),
+        getNotesForClip: vi.fn(() => []),
         getScopedGrooveAssignment: vi.fn(),
         getScopedGrooveConsumerId: vi.fn(),
         getStraightGrooveTemplateId: vi.fn(),

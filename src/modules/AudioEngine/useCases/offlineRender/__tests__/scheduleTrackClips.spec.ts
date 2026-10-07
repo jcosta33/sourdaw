@@ -1952,7 +1952,7 @@ describe('scheduleTrackClips — export cancellation is caller-owned', () => {
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
         exportCancellationState.cancelFlag = false;
-        exportCancellationState.isRenderingActive = false;
+        exportCancellationState.renderLock = null;
     });
 
     afterEach(() => {

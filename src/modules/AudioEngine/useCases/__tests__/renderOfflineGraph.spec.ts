@@ -25,8 +25,10 @@ import { type NativeGraphWireCommand } from '../../repositories/nativeGraph/seri
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
+import { acquireRenderLock } from '../offlineRender/acquireRenderLock';
 import { captureOfflineRenderInput } from '../offlineRender/captureOfflineRenderInput';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
+import { isExportActive } from '../offlineRender/isExportActive';
 import { type OfflineRenderProjectSource } from '../offlineRender/OfflineRenderSource';
 import { renderOfflineInput } from '../offlineRender/renderOfflineInput';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
@@ -371,16 +373,16 @@ describe('renderOffline — graph construction and lifecycle', () => {
 
     it.each([4, 0])('refuses an active export before capturing a request of %s beats', async (durationBeats) => {
         const readBuffer = vi.spyOn(mocks.buffers, 'get');
-        exportCancellationState.isRenderingActive = true;
+        const releaseActiveExport = acquireRenderLock('musician-export');
         exportCancellationState.cancelFlag = true;
         try {
             await expect(renderOffline(durationBeats)).rejects.toThrow('An export is already in progress');
             expect(mocks.resolveRenderContext).not.toHaveBeenCalled();
             expect(readBuffer).not.toHaveBeenCalled();
             expect(exportCancellationState.cancelFlag).toBe(true);
-            expect(exportCancellationState.isRenderingActive).toBe(true);
+            expect(isExportActive()).toBe(true);
         } finally {
-            exportCancellationState.isRenderingActive = false;
+            releaseActiveExport();
             exportCancellationState.cancelFlag = false;
             readBuffer.mockRestore();
         }
