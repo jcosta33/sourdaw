@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
     assertGrandBouleReleaseInventory,
@@ -27,6 +27,31 @@ const STALE_SHA256 = 'c'.repeat(64);
 const STALE_LABEL = GRAND_BOULE_RELEASE_REGISTRY.boundaries[0]!.digestLabel;
 
 const fixtureRoots: string[] = [];
+
+/**
+ * Every fixture here is a throwaway git repository, but a git process in it is still observed by
+ * this machine's git-ai daemon: the global git config points `trace2.eventtarget` at the daemon's
+ * socket, and the daemon reacts to ANY git command it sees run in a repository — `status` and
+ * `ls-files` included — by writing `.git/ai/working_logs` into that repository tens of
+ * milliseconds after the command already returned. In a fixture that late write lands during
+ * afterEach's `rmSync` and fails the case with ENOTEMPTY although every assertion passed.
+ * Disabling trace2 event delivery (`0`) for this spec's duration blinds the daemon to the
+ * fixture repositories, so nothing writes into them after the fixture's own synchronous
+ * commands return. Restored afterwards so other tooling keeps its tracking.
+ */
+const priorTrace2EventTarget = process.env.GIT_TRACE2_EVENT;
+
+beforeAll(() => {
+    process.env.GIT_TRACE2_EVENT = '0';
+});
+
+afterAll(() => {
+    if (priorTrace2EventTarget === undefined) {
+        delete process.env.GIT_TRACE2_EVENT;
+    } else {
+        process.env.GIT_TRACE2_EVENT = priorTrace2EventTarget;
+    }
+});
 
 afterEach(() => {
     for (const root of fixtureRoots.splice(0)) {
@@ -95,9 +120,21 @@ function writeGrandBouleTrackedSetFixture(root: string): void {
     }
     execFileSync('git', ['init', '--quiet'], { cwd: root });
     execFileSync('git', ['add', '-A'], { cwd: root });
+    // `git commit` also forks a detached `git maintenance run --auto` child that keeps writing
+    // into `.git` after commit returns; this repository is throwaway, so refuse to detach it.
     execFileSync(
         'git',
-        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'source'],
+        [
+            '-c',
+            'gc.autoDetach=false',
+            '-c',
+            'user.name=Fixture',
+            '-c',
+            'user.email=fixture@example.test',
+            'commit',
+            '-qm',
+            'source',
+        ],
         { cwd: root }
     );
 }

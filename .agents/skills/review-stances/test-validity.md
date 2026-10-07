@@ -574,6 +574,19 @@ For a point-command change, dispatch through real Command and CRDT-backed Automa
 document, owning projection, undo history, and `getAutomationValueAtBeat`. A handler-call or stored-value assertion
 cannot prove the sampler will use the point.
 
+## Lesson from the PR #645 projection-identity oracle escape
+
+PR #645's selected-range Undo fixture treated a value-equal shallow copy as a stale conflict while successful fixtures
+kept the original projection reference. That oracle accepted a guard which rejected ordinary CRDT settlement. Retained
+evidence of a real post-settlement Undo probe is missing; historical stance dispatch is unverified.
+
+Flush the production CRDT write and prove equal canonical values with replaced projection identity before actual Command
+Undo. Assert raw/projected state, resolved comp coverage, buffer-retention metadata and history through Undo/Redo. Use a
+changed clip value as the rejection control; a copied object alone is not conflicting project truth. Replacing fresh
+semantic preparation with the retained handle must fail the settled replay case, while weakening intra-publication
+guards must fail reentrancy or compensation controls. Include an initially empty lane with later peer fragment facets,
+and a write-then-throw after their retirement, so empty captures and rollback cannot disappear behind helper-only proof.
+
 ### 2026-09-28 — disposable Git fixtures inherited asynchronous Trace2 writes (escaped via PR #4854)
 
 PR #4854 added disposable Git fixtures whose child commands inherited `GIT_TRACE2_EVENT`; its event writer could

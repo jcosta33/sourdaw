@@ -737,6 +737,11 @@ function reconcileAgentRunBudgetAttempt(input: {
             throw new Error(`Unknown budget attempt: ${input.attemptId}`);
         }
         const previous = run.budgetAttempts[index]!;
+        // A final settle refunds the reservation's unused remainder exactly once; a second one would
+        // refund it again and erase another attempt's live reservation on the same run.
+        if (input.mode === 'final' && previous.final) {
+            throw new Error(`Budget attempt already final: ${input.attemptId}`);
+        }
         const actual =
             input.mode === 'delta' ? previous.actual + input.consumed : Math.max(previous.actual, input.consumed);
         const additionalCeiling = Math.max(0, actual - previous.reserved);

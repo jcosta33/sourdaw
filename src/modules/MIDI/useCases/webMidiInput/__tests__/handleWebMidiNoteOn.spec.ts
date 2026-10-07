@@ -789,6 +789,72 @@ describe('handleWebMidiNoteOn', () => {
         );
     });
 
+    // Sequenced playback, audition and export resolve the drum device and kit
+    // through `resolveDrumKitBy`: every drum device type, `kit` first, then the
+    // legacy `kitId`, then index 0. Live input has to pick the same kit.
+    it.each([
+        { type: 'drum-kit', parameterValues: { kitId: 2 }, kitIndex: 2 },
+        { type: 'builtin-drum-kit', parameterValues: { kitId: 3 }, kitIndex: 3 },
+        { type: 'builtin-drum-machine-808', parameterValues: { kit: 1, kitId: 3 }, kitIndex: 1 },
+        { type: 'builtin-drum-machine-analog', parameterValues: {}, kitIndex: 0 },
+    ])(
+        'resolves the kit definition of a $type device with $parameterValues as kit $kitIndex',
+        async ({ type, parameterValues, kitIndex }) => {
+            const schedule_drum_kit_note = vi.fn();
+            const get_kit_def = vi.fn((index: number) => ({ id: `kit-def-${index}` }));
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [{ id: 'track-1', devices: [{ id: 'kit-1', type, parameterValues }] }],
+                        selectedTrackId: 'track-1',
+                    }),
+                    getDrumKitDefByIndex: get_kit_def,
+                    scheduleDrumKitNote: schedule_drum_kit_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(0, 36, 110);
+
+            expect(get_kit_def).toHaveBeenCalledWith(kitIndex);
+            expect(schedule_drum_kit_note).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.anything(),
+                { id: `kit-def-${kitIndex}` },
+                36,
+                expect.anything(),
+                110
+            );
+        }
+    );
+
+    it('falls back to the factory kit the same device selects when no kit definition covers it', async () => {
+        const schedule_kit_note = vi.fn(() => null);
+        const get_kit = vi.fn((index: number) => ({ id: `factory-${index}` }));
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [{ id: 'kit-1', type: 'drum-kit', parameterValues: { kitId: 4 } }],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getDrumKitDefByIndex: () => null,
+                getDrumKitByIndex: get_kit,
+                scheduleKitNote: schedule_kit_note,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 36, 110);
+
+        expect(get_kit).toHaveBeenCalledWith(4);
+        expect(schedule_kit_note).toHaveBeenCalledTimes(1);
+    });
+
     it('logs a warning and returns early when no target track is selected', async () => {
         target_track_id.value = null;
         const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});

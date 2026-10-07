@@ -83,6 +83,50 @@ const context: ProjectContext = {
     playheadPosition: 0,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+/**
+ * The call ids the receipts still instruct a retry for, as a planner following every receipt reads
+ * them: refusals marked retryable whose call has not also completed — directly, or through the
+ * `retry-<callId>` reissue this planner sends — in a later turn.
+ */
+function retryableCallIdsIn(receiptContext: string | null): string[] {
+    if (receiptContext === null) {
+        return [];
+    }
+    const serializedReceipts = receiptContext.split('\n').at(-1);
+    if (serializedReceipts === undefined) {
+        return [];
+    }
+    const envelope: unknown = JSON.parse(serializedReceipts);
+    if (!isRecord(envelope) || !Array.isArray(envelope.receipts)) {
+        return [];
+    }
+    const refusedOnce = new Set<string>();
+    const completed = new Set<string>();
+    for (const receipt of envelope.receipts) {
+        if (!isRecord(receipt) || typeof receipt.callId !== 'string') {
+            continue;
+        }
+        if (receipt.status === 'success') {
+            completed.add(receipt.callId);
+            if (receipt.callId.startsWith('retry-')) {
+                completed.add(receipt.callId.slice('retry-'.length));
+            }
+            continue;
+        }
+        if (isRecord(receipt.error) && receipt.error.retryable === true) {
+            refusedOnce.add(receipt.callId);
+        }
+    }
+    for (const callId of completed) {
+        refusedOnce.delete(callId);
+    }
+    return [...refusedOnce];
+}
+
 describe('application-owned tool loop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1471,6 +1515,210 @@ describe('application-owned tool loop', () => {
                 error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
             })
         );
+    });
+
+    it('charges kept retries jointly so the later of two refusals that each fit alone is demoted, and the one instructed retry left lands in the same run', async () => {
+        // Two filler turns charge 24,416 bytes, leaving 8,836 of the run's budget. Two 15,604-byte
+        // reads admit for real, then x-read and y-read both refuse on the turn's own cap while
+        // still fitting the run, so each starts the retryable turn form. Each refusal's retry
+        // context alone (8,434 and 8,384 bytes) fits that remainder, so a reclassification that
+        // fit-checks them separately keeps both retryable — and a planner that follows every
+        // receipt retries both in one later turn, where 16,818 bytes cannot fit what remains: both
+        // retries come back `run-receipt-budget-spent` and no instructed retry lands. Charging the
+        // kept retries jointly demotes the later y-read up front, leaving one retry the run can
+        // honour, and that retry lands as a real receipt the next turn.
+        let callIndex = 0;
+        function nameLenForCall(index: number): number {
+            if (index <= 4) {
+                return 5_380;
+            }
+            if (index <= 6) {
+                return 14_995;
+            }
+            if (index === 7) {
+                return 7_600;
+            }
+            if (index === 8) {
+                return 7_550;
+            }
+            return index === 9 ? 7_600 : 7_550;
+        }
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            callIndex += 1;
+            const nameLen = nameLenForCall(callIndex);
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi.fn(async ({ turn, receiptContext }: { turn: number; receiptContext: string | null }) => {
+            if (turn === 1) {
+                return { status: 'complete' as const, toolCalls: fillerCalls('fill-a') };
+            }
+            if (turn === 2) {
+                return { status: 'complete' as const, toolCalls: fillerCalls('fill-b') };
+            }
+            if (turn === 3) {
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        { id: 'wide-1', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'wide-2', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'x-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'y-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                };
+            }
+            // Follow every receipt: retry exactly what the receipts still instruct.
+            return {
+                status: 'complete' as const,
+                toolCalls: retryableCallIdsIn(receiptContext).map((callId) => ({
+                    id: `retry-${callId}`,
+                    name: 'project.query',
+                    arguments: { type: 'project-summary' },
+                })),
+            };
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-joint-retry-accounting',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 6, maxTotalCalls: 12 },
+        });
+
+        expect(result.status).toBe('complete');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'x-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'turn-receipt-budget-spent', retryable: true }),
+            })
+        );
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'y-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+        expect(result.receipts).toContainEqual(expect.objectContaining({ callId: 'retry-x-read', status: 'success' }));
+    });
+
+    it('keeps two refusals retryable when their retries fit the remaining budget together, and both instructed retries land', async () => {
+        // The same skeleton as the joint-accounting row, with smaller refused reads: the retry
+        // contexts (4,134 and 4,034 bytes) sum to 8,168 against the 8,836-byte remainder, so both
+        // refusals stay honestly retryable and a planner that retries both lands both as real
+        // receipts the next turn. Joint charging must not demote a set the run can honour.
+        let callIndex = 0;
+        function nameLenForCall(index: number): number {
+            if (index <= 4) {
+                return 5_380;
+            }
+            if (index <= 6) {
+                return 14_995;
+            }
+            if (index === 7) {
+                return 3_300;
+            }
+            if (index === 8) {
+                return 3_200;
+            }
+            return index === 9 ? 3_300 : 3_200;
+        }
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            callIndex += 1;
+            const nameLen = nameLenForCall(callIndex);
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi.fn(async ({ turn, receiptContext }: { turn: number; receiptContext: string | null }) => {
+            if (turn === 1) {
+                return { status: 'complete' as const, toolCalls: fillerCalls('fill-a') };
+            }
+            if (turn === 2) {
+                return { status: 'complete' as const, toolCalls: fillerCalls('fill-b') };
+            }
+            if (turn === 3) {
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        { id: 'wide-1', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'wide-2', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'x-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'y-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                };
+            }
+            // Follow every receipt: retry exactly what the receipts still instruct.
+            return {
+                status: 'complete' as const,
+                toolCalls: retryableCallIdsIn(receiptContext).map((callId) => ({
+                    id: `retry-${callId}`,
+                    name: 'project.query',
+                    arguments: { type: 'project-summary' },
+                })),
+            };
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-joint-retries-fit-together',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 6, maxTotalCalls: 12 },
+        });
+
+        expect(result.status).toBe('complete');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'x-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'turn-receipt-budget-spent', retryable: true }),
+            })
+        );
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'y-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'turn-receipt-budget-spent', retryable: true }),
+            })
+        );
+        expect(result.receipts).toContainEqual(expect.objectContaining({ callId: 'retry-x-read', status: 'success' }));
+        expect(result.receipts).toContainEqual(expect.objectContaining({ callId: 'retry-y-read', status: 'success' }));
     });
 
     it('does not disclose a command schema from a catalog discovery receipt replaced for the turn receipt budget', async () => {

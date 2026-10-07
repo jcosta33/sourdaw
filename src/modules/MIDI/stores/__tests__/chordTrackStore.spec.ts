@@ -1,8 +1,9 @@
-import { change, clone, from, getHeads, merge, save, type Doc } from '@automerge/automerge';
+import { change, clone, from, getConflicts, getHeads, merge, save, type Doc } from '@automerge/automerge';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
@@ -551,6 +552,79 @@ describe('chordTrackStore CRDT projection', () => {
         expect(Object.keys((peer.getDoc().chordTrack as { events: Record<string, unknown> }).events)).toEqual([
             'fresh',
         ]);
+    });
+
+    describe('inside a command-preview scope', () => {
+        function createConflictedPeer() {
+            const left = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+            const right = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+            writePeer(left, { enabled: true, events: chordState('left', 4).events });
+            writePeer(right, { enabled: false, events: chordState('right', 7).events });
+            return createPeer(merge(left.getDoc(), right.getDoc()));
+        }
+
+        function readInPreview(storage: ReturnType<typeof createChordTrackAutomergeStorage>, doc: Doc<RootDocument>) {
+            const preview = createAutomergeStoragePreview(new Map([['root', doc]]));
+            try {
+                return preview.scope(() => storage.get());
+            } finally {
+                preview.release();
+            }
+        }
+
+        it('keeps the live reconciled conflict state when the preview document decodes without a conflict', () => {
+            const previewDoc = createBaseline(chordState('preview-only', 2));
+            const peer = createConflictedPeer();
+            const storage = createStorage(peer);
+
+            readInPreview(storage, previewDoc);
+            storage.set(chordState('after-conflict', 9));
+            flushAutomergeStorageWrites();
+
+            const crdt = peer.getDoc().chordTrack as { events: Record<string, unknown> };
+            expect(Object.keys(crdt.events).sort()).toEqual(['after-conflict', 'left', 'right']);
+        });
+
+        it('keeps the live rejected authority when the preview document decodes cleanly', () => {
+            const previewDoc = createBaseline(chordState('preview-only', 2));
+            // The valid branch wins the root conflict (greater actor id), so the
+            // document itself would accept a write: only the adapter's recorded
+            // rejection of the unsupported branch refuses it.
+            const winning = from<RootDocument>(
+                { chordTrack: chordState('winning', 3) },
+                '000000000000000000000000000000ff'
+            );
+            const rejectedBranch = from<RootDocument>(
+                { chordTrack: { ...validSchema, schemaVersion: 2 } },
+                '00000000000000000000000000000011'
+            );
+            const peer = createPeer(merge(winning, rejectedBranch));
+            expect(getConflicts(peer.getDoc(), 'chordTrack')).toBeDefined();
+            const originalBytes = save(peer.getDoc());
+            const storage = createStorage(peer);
+            expect(storage.get()).toEqual(defaultChordTrackState);
+
+            readInPreview(storage, previewDoc);
+            storage.set(chordState('replacement', 3));
+
+            expect(() => flushAutomergeStorageWrites()).toThrow();
+            expect(save(peer.getDoc())).toEqual(originalBytes);
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        });
+
+        it('keeps a conflict the preview reconciled out of the live document write', () => {
+            const previewDoc = createConflictedPeer().getDoc();
+            const livePeer = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+            const storage = createStorage(livePeer);
+
+            readInPreview(storage, previewDoc);
+            storage.set(chordState('live-only', 5));
+            flushAutomergeStorageWrites();
+
+            const crdt = livePeer.getDoc().chordTrack as { events: Record<string, unknown> };
+            expect(Object.keys(crdt.events)).toEqual(['live-only']);
+        });
     });
 });
 

@@ -1,4 +1,5 @@
 import { dbToGain } from '#/utils/audioLevelLaw';
+import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 import { FLANGER_MIN_DELAY_SECONDS } from '../models/DeviceParamLaws';
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
@@ -7,14 +8,7 @@ import { type OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import { type DrumKit } from '../models/SynthModels';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find(
-        (data) => data.type === 'builtin-drum-kit' || data.type.startsWith('builtin-drum-machine')
-    );
-    if (!kitDevice) {
-        return null;
-    }
-    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
-    return getDrumKitByIndex(kitIndex);
+    return resolveDrumKitBy(devices, getDrumKitByIndex);
 }
 
 export function resolveDeviceParam(

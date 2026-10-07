@@ -30,6 +30,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 - **Worker / Off-Thread Saves**: Document serialization and compaction run off the main thread; do not block audio or UI rendering with synchronous Automerge binary encodes.
 - **Uni-Directional Projection**: Store updates flow CRDT -> Store Projections. Dispatched commands must target use cases/handlers mutating CRDT, not directly write to stores.
 - **Single Branch-State Writer**: `branchStore` is a memory projection. Durable branch state is one revisioned envelope written only by `branchStateAuthority`, under a Web Lock, as a compare-and-swap against the revision the writer observed (`captureRevision`). Never persist branch state from anywhere else, and never restore a collaboration session's pre-session list without its session record still owning the envelope.
+- **Preview Scope Never Touches Live Decoder State**: A read inside a command-preview scope runs the store's decode hooks against the preview document. An adapter whose `fromCrdt`, `hydrateMissing`, `resolveCrdtConflicts` or `mutateCrdt` keeps closure state between calls MUST declare it through `createAutomergeStorage`'s `decoderState` option, so the scope swaps it out for the preview and restores it afterwards (also when the callback throws); otherwise the preview rebinds state the live document's next decode or write depends on.
 - **Automerge WASM Entry**: `@automerge/automerge` requires the base64 wasm alias in Vite configuration.
 
 ## Verification
