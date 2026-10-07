@@ -1,0 +1,21 @@
+.agents/skills/review-stances/nightly-failure-observation.md
+  s_97ab82e0b4f10c::t_b7bdb6e47130c4 31-41
+.github/workflows/nightly.yml
+  s_97ab82e0b4f10c::t_3f6a95d6a1e5ec 702-703
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd63723e62c16454deb5231d9fb14b0bbaf87416",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
