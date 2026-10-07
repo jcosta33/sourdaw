@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => ({
     startNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
     startPlayheadScheduler: vi.fn<() => void>(),
+    scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     startSource: vi.fn<StartSource>(),
     resolveClipsWithComping: vi.fn<(trackId: string, clips: unknown[]) => unknown[]>(() => []),
 }));
@@ -85,7 +86,7 @@ vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: ()
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
-    scheduleClick: vi.fn(),
+    scheduleClick: mocks.scheduleClick,
     cacheAudioBuffer: vi.fn(),
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: vi.fn(() => Promise.resolve()),
@@ -156,6 +157,11 @@ async function recordTakeFromStoppedTransport(options: {
 
     toggleRecording();
     if (options.countInBars !== undefined) {
+        // The count-in route is taken: its bar of clicks is scheduled and neither
+        // the capture nor the take has opened before the boundary is reached.
+        expect(mocks.scheduleClick).toHaveBeenCalledTimes(4);
+        expect(mocks.startAudioRecording).not.toHaveBeenCalled();
+        expect(mocks.startRecording).not.toHaveBeenCalled();
         // One 4/4 bar at 120 BPM is 2 s on the audio clock the count-in arms against.
         audioClock.currentTime = 2;
         await vi.advanceTimersByTimeAsync(2000);
@@ -222,6 +228,9 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
             takeSeconds: 10,
             countInBars: 1,
         });
+
+        // The take opens on the boundary beat the count-in counted to, not on a default.
+        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT);
 
         const mediaOriginBeat = committed.startBeat - (committed.audioOffsetBeats ?? 0);
         expect(mediaOriginBeat).toBeCloseTo(RECORD_POINT_BEAT - 8 - LATENCY_BEATS, 9);
