@@ -1,0 +1,22 @@
+scripts/resourceGuard.ts
+  s_97ab82e0b4f10c::t_d3a2daf3df54c9 119
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_97ab82e0b4f10c::t_641bdb9ccb3411 3-12,52,394-409,414,558-559,10704,10848,11909-11918
+  s_97ab82e0b4f10c::t_89596c6a0d77da 11919-11921,11923-11929
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "119c136b97ec1d2442e869ab04e4acc32c443056",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
