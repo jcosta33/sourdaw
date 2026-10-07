@@ -53,6 +53,7 @@ import {
     formatReviewDiffSummary,
     summarizeReviewDiff,
     type ReviewChangedPath,
+    type ReviewDiffGroup,
 } from './reviewDiffSummary.ts';
 import {
     assertStackAcyclic,
@@ -548,11 +549,18 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
 /**
  * Product scope means a *handwritten* change under a product tree. Test, docs, and generated paths
  * under the same trees have no user-observable surface of their own, so they never fire the gate.
+ * A rename record names its source beside its destination, and both classify: the gate must fire
+ * when the moved file's source sat in a product tree, exactly as deleting that file would.
  */
+function isProductScopePath(path: string, group: ReviewDiffGroup): boolean {
+    return group === 'handwritten' && PRODUCT_SCOPE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 export function isProductScopeChange(paths: readonly ReviewChangedPath[]): boolean {
     return paths.some(
         (entry) =>
-            entry.group === 'handwritten' && PRODUCT_SCOPE_PREFIXES.some((prefix) => entry.path.startsWith(prefix))
+            isProductScopePath(entry.path, entry.group) ||
+            (entry.previous !== undefined && isProductScopePath(entry.previous.path, entry.previous.group))
     );
 }
 

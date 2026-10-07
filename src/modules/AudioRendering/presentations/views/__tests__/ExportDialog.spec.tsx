@@ -790,4 +790,74 @@ describe('ExportDialog', () => {
 
         expect(screen.queryByText(/has a sequencer pattern that is not in the arrangement/i)).not.toBeInTheDocument();
     });
+
+    it('starts fresh on reopen after a completed export so a second bake is possible', async () => {
+        // AppShell keeps the dialog mounted and toggles only `open`; the rerender
+        // pair below reproduces exactly that close-then-reopen sequence.
+        const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+        view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('does not let a completed export auto-close a dialog reopened within the timer window', async () => {
+        // The success auto-close timer is armed by the finishing export; closing
+        // and reopening inside its window starts a new session, and the stale
+        // timer must not fire onClose against that fresh session.
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open={true} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={onClose} />);
+        view.rerender(<ExportDialog open={true} onClose={onClose} />);
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 2600);
+        });
+        expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('starts fresh on reopen after a failed export so no stale error remains', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+        const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('disk full')).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+        view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByText('disk full')).not.toBeInTheDocument();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('renders the failure status beside the error when an export fails', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('The bread burned...')).toBeInTheDocument();
+        });
+        expect(screen.getByText('disk full')).toBeInTheDocument();
+    });
 });

@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, useEffect, useState, useRef } from 'react';
 
 import { zipSync } from 'fflate';
 import { Flame, X, CheckCircle2 } from 'lucide-react';
@@ -194,7 +194,30 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
     const [errorText, setErrorText] = useState('');
+    // The success auto-close timers must belong to the export session that armed
+    // them: the props each timer closes over come from the render that started
+    // the export — `open` always true — so a user closing and reopening within
+    // the timer window would have the stale timer slam the fresh session shut.
+    // The session counter increments on every open transition; a timer fires
+    // only when its session still owns the dialog.
+    const openSessionRef = useRef(0);
+    const openRef = useRef(open);
+    openRef.current = open;
     const cancelledRef = useRef(false);
+
+    // AppShell keeps this dialog mounted and toggles only `open`, so the last
+    // export's progress, status and error would otherwise survive a close — a
+    // finished bake reopens showing "Baking Complete" with only Close Bakery,
+    // and a failure greets the next session with its stale error box.
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        openSessionRef.current += 1;
+        setProgress(0);
+        setStatusText('');
+        setErrorText('');
+    }, [open]);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
     const marqueeAvailable = clipSelection.marqueeSelection !== null;
@@ -362,6 +385,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const handleExport = async () => {
         setErrorText('');
         cancelledRef.current = false;
+        const session = openSessionRef.current;
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
 
@@ -587,7 +611,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setStatusText('Clip ready in the timeline.');
                 notifyUser('Rendered audio placed as a new clip', 'success');
                 setTimeout(() => {
-                    if (open) {
+                    if (openSessionRef.current === session && openRef.current) {
                         onClose();
                     }
                 }, 1500);
@@ -730,9 +754,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setStatusText('Ding! Baking Complete! 🍞');
             notifyUser('Ding! The audio finished baking', 'success');
 
-            // Auto-close after 2.5s
+            // Auto-close after 2.5s, only if this export's session still owns the dialog
             setTimeout(() => {
-                if (open) {
+                if (openSessionRef.current === session && openRef.current) {
                     onClose();
                 }
             }, 2500);
@@ -806,10 +830,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             );
         }
         if (errorText) {
+            // A failure sets exporting=false and progress=0, so this branch is
+            // the only place the failure status is ever visible — keep it beside
+            // the error detail.
             return (
-                <Row className="h-full rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                    {errorText}
-                </Row>
+                <Stack gap={1} className="animate-in fade-in duration-300">
+                    <span className="text-xs font-medium text-red-400">{statusText}</span>
+                    <Row className="rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400">
+                        {errorText}
+                    </Row>
+                </Stack>
             );
         }
         return (

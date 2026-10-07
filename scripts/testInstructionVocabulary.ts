@@ -474,12 +474,13 @@ export const GATE_CHECK_STATUSES = ['green'];
 
 /**
  * The nouns that make `Gate` the repository's check rather than the DAW device wherever they sit
- * behind it: `the Gate check`, `the Gate jobs`. Only words that cannot be a verb qualify: `the Gate
- * checks the sidechain`, `the Gate runs before the compressor`, and `let the Gate run for a bar`
- * describe the device, so `checks`, `run`, and `runs` stay out. Exported so the specs can pin the
+ * behind it: `the Gate jobs`, `the Gate workflow`. Only words that cannot be a verb qualify:
+ * `Tick the Gate check box`, `let the Gate check the sidechain`, `the Gate checks the sidechain`,
+ * `the Gate runs before the compressor`, and `let the Gate run for a bar` describe the step or the
+ * device, so `check`, `checks`, `run`, and `runs` stay out. Exported so the specs can pin the
  * inventory: changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'workflow', 'workflows'];
+export const CHECK_RUN_NOUNS = ['job', 'jobs', 'workflow', 'workflows'];
 
 /**
  * The verdict verbs a suite or the pipeline reports with: `the suite passed`, `the pipeline
@@ -490,25 +491,25 @@ export const SUITE_OR_PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passe
 
 /**
  * The prepositions that may tie a verdict to its check context: `green on this head`, `passed for
- * this pull request`. Exported so the specs can pin the inventory: changing any member reddens the
- * equality pin and that member's case.
+ * this pull request`, `passed after the last push`. Exported so the specs can pin the inventory:
+ * changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_PREPOSITIONS = ['on', 'for'];
+export const CHECK_CONTEXT_PREPOSITIONS = ['on', 'for', 'after'];
 
 /**
- * The determiners that point a verdict at one revision: `this head`, `the latest push`, `the
- * current commit`. Exported so the specs can pin the inventory: changing any member reddens the
- * equality pin and that member's case.
+ * The determiners that point a verdict at one revision, each the full phrase a verdict is followed
+ * by: `this head`, `the latest push`, `the last push`, `the current commit`, `the new commit`. Exported so the specs
+ * can pin the inventory: changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_DETERMINERS = ['this', 'the latest', 'the current'];
+export const CHECK_CONTEXT_DETERMINERS = ['this', 'the latest', 'the last', 'the current', 'the new'];
 
 /**
- * The revisions only a check passes on: a DAW step has no head, push, commit, pull request, or
- * change to be green on. `change` keeps `The pipeline validated this change` a report. Exported so
- * the specs can pin the inventory: changing any member reddens the equality pin and that member's
- * case.
+ * The revisions only a check passes on: a DAW step has no head, push, commit, pull request, PR, or
+ * change to be green on. `change` keeps `The pipeline validated this change` a report and `PR`
+ * keeps `Confirm Gate is green for this PR` one. Exported so the specs can pin the inventory:
+ * changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 'change'];
+export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 'change', 'PR'];
 
 /**
  * The clauses that tie a verdict to delivery without naming a revision: `the suite passed before
@@ -520,7 +521,18 @@ export const CHECK_CONTEXT_CLAUSES = ['before merging'];
 /**
  * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
  * in the same segment: `the existing test track still passes`, `the existing test project covers
- * this`. Exported so the specs can pin the inventory: changing any member reddens the equality pin
- * and that member's case.
+ * this`, `the existing test clip is still passing`. The progressive `passing` and `failing` read as
+ * coverage only behind the literal `existing test`, so `the test tone is still passing through the
+ * gate` — no `existing test` in it — stays a step. Exported so the specs can pin the inventory:
+ * changing any member reddens the equality pin and that member's case.
  */
-export const COVERAGE_VERDICT_VERBS = ['passes', 'passed', 'fails', 'failed', 'covers', 'covered'];
+export const COVERAGE_VERDICT_VERBS = [
+    'passes',
+    'passed',
+    'passing',
+    'fails',
+    'failed',
+    'failing',
+    'covers',
+    'covered',
+];

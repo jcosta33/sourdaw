@@ -667,11 +667,12 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * nouns in `TEST_MODIFIED_NOUNS`: `the existing test covers this` is coverage, while `an existing
  * test project` is something a reviewer opens (unless a verdict follows it, which
  * `EXISTING_TEST_WITH_VERDICT` judges). A fixture names coverage only as a test fixture, with at
- * most one word between (`test fixture`, `test project fixture`, `test-project fixture`): `the
- * fixture project` and `the demo fixture song` are things a reviewer opens.
+ * most one word between (`test fixture`, `test project fixture`, `test-project fixture`) and no DAW
+ * noun behind it: `the fixture project`, `the demo fixture song`, and `the test fixture project`
+ * are things a reviewer opens.
  */
 const TEST_SUITE_WORDS = new RegExp(
-    `\\b(?:specs?|e2e|test[- ](?:\\w+[- ])?fixtures?|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
+    `\\b(?:specs?|e2e|test[- ](?:\\w+[- ])?fixtures?(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
     'i'
 );
 
@@ -707,20 +708,22 @@ function phraseAlternation(phrases: readonly string[]): string {
 /**
  * The check context a verdict may be tied to (`on this head`, `for the latest push`, `before
  * merging`), as a pattern fragment with its leading whitespace: only a check has a head, a push, or
- * a pull request to pass on.
+ * a pull request to pass on. A delivery clause counts only where it closes the segment — `before
+ * merging the stems` merges audio, so the clause has ended the sentence for it to be delivery.
  */
 const CHECK_CONTEXT_SOURCE =
     `\\s+(?:(?:${CHECK_CONTEXT_PREPOSITIONS.join('|')})\\s+)?(?:${phraseAlternation(CHECK_CONTEXT_DETERMINERS)})` +
-    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_OBJECTS)})\\b|\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})\\b`;
+    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_OBJECTS)})\\b|\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})\\W*$`;
 
 /**
  * A pattern for `subject` followed by `verdict` read as a status report, not as a DAW step that
  * happens to contain the words. Either the report is the whole sentence, behind at most the
  * article `the` and followed by nothing but an optional status adverb (`Gate is green`, `The suite
  * is green again`), or the verdict is tied to a check context anywhere in the step (`Confirm Gate
- * is green on the latest push`, `make sure the suite passed before merging`). The same words
- * anywhere else describe the device or the plugin: `lower the threshold until the Gate turns
- * green`, `confirm the Levain suite passes`.
+ * is green on the latest push`, `make sure the suite passed before merging`) — a delivery clause
+ * only where it closes the sentence, since `before merging the stems` is the step's own operation.
+ * The same words anywhere else describe the device or the plugin: `lower the threshold until the
+ * Gate turns green`, `confirm the Levain suite passes`.
  */
 function statusReport(subject: string, verdict: string, flags = ''): RegExp {
     const report = `${subject}${verdict}(?:\\s+(?:${STATUS_ADVERBS.join('|')}))?`;
@@ -731,7 +734,7 @@ function statusReport(subject: string, verdict: string, flags = ''): RegExp {
  * The repository's own check names that read as the check wherever they sit, matched
  * case-sensitively as the proper nouns they are. `HeavyGate` names nothing else, so it matches
  * bare. `Gate` is also the DAW's noise-gate device, so anywhere in a step it names the check only
- * with a noun from `CHECK_RUN_NOUNS` directly behind it (`the Gate check passed`).
+ * with a noun from `CHECK_RUN_NOUNS` directly behind it (`the Gate job passed`).
  */
 const REPOSITORY_CHECK_NAMES = new RegExp(`\\bHeavyGate\\b|\\bGate\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b`);
 
