@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/__tests__/planWholeProjectVibeRun.spec.ts
+  s_1c08b47ac3792f::t_807ef03d3e885b 607-609
+  s_1c08b47ac3792f::t_69369b4ac8c0a0 185-186
+  s_1c08b47ac3792f::t_cfa3b57a191683 641-691,697-699,704,709
+  s_1c08b47ac3792f::t_4ddf5506f6edcf 692-696,701-703
+  s_1c08b47ac3792f::t_bb2f4959b2a17b 705-708
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_1c08b47ac3792f::t_89f54d4ca37796 41-45,52-61,63-65,69-70
+  s_1c08b47ac3792f::t_4429cf2cfcf2ef 86-88
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_1c08b47ac3792f::t_2a7c5fcefee317 318
+  s_1c08b47ac3792f::t_d6b6d443950843 42
+  s_1c08b47ac3792f::t_e93e17a6519ba4 327
+  s_1c08b47ac3792f::t_4452df95e8294d 333-335,341-346
+  s_1c08b47ac3792f::t_f7c15009779d0d 241-242,246-247,249,253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "039ba9654d2815b2a50308fa087130482cfbad58",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
