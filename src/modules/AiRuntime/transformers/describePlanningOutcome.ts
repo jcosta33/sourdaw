@@ -21,6 +21,9 @@ export function describePlanningOutcome(outcome: PlanningOutcome | undefined): s
             outcome.searchedIntents.length === 0 ? [] : [`Searched: ${outcome.searchedIntents.join(', ')}`];
         return [`Not supported: ${outcome.reason}`, ...searched].join(' ');
     }
+    if (outcome?.kind === 'answer') {
+        return outcome.text;
+    }
     if (outcome?.kind === 'no-match') {
         return NO_MATCH_PLANNING_OUTCOME_TEXT;
     }
