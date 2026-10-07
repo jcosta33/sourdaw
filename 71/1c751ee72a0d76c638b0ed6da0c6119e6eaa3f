@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingClipOnMedia.spec.ts
+  s_4c8cd08893b364::t_b888d1025f4efc 1-65
+src/modules/Arrangement/useCases/recording/placeRecordingClipOnMedia.ts
+  s_4c8cd08893b364::t_2ca9058d206ee3 1-36
+src/modules/Arrangement/useCases/index.ts
+  s_4c8cd08893b364::t_ec3d168d580582 205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "711c751ee72a0d76c638b0ed6da0c6119e6eaa3f",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
