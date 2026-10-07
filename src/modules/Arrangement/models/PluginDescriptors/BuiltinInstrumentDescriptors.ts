@@ -1,8 +1,11 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-import { BUILTIN_SYNTH_PARAMETER_GUIDANCE } from './BuiltinInstrumentDescriptorsGuidance';
+import {
+    BUILTIN_DRUM_KIT_PARAMETER_GUIDANCE,
+    BUILTIN_SYNTH_PARAMETER_GUIDANCE,
+} from './BuiltinInstrumentDescriptorsGuidance';
 import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+import { instrumentGuidance } from './GuidanceProfiles';
 
 /** Built-in instrument plugin descriptors (Synth, Drum Kit). */
 const BUILTIN_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
@@ -362,17 +365,17 @@ const BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance(
         'builtin-drum-kit',
         instrumentGuidance(
-            'Choose a synthesized kit, then set output level for the surrounding drum bus.',
-            ['Gain-stage the kit before bus processing and leave transient headroom.'],
-            ['Kit selection changes the generated voices while gain sets their output staging.'],
-            ['High kit gain can overload later drum-bus processing.']
+            'Choose one of six synthesized kits and play it from MIDI notes; level is set on the track, not on the kit.',
+            [
+                'Set drum level with track or clip gain: the kit gain parameter is not read by any drum scheduler, and each hit is scaled only by its kit voice level and note velocity.',
+            ],
+            [
+                'The kit choice decides which MIDI notes sound: kit 0 answers fifteen notes from 36 to 75, kits 1 to 5 answer eight notes from 36 to 48.',
+            ],
+            ['Changing kit on an existing pattern silences every note the new kit does not map.']
         ),
-        declaredControl(
-            'Drum-kit control',
-            'Changes the selected synthesized kit or its output level.',
-            ['Set kit choice before adjusting bus processing.'],
-            ['High output gain can overload the drum bus.']
-        )
+        undefined,
+        BUILTIN_DRUM_KIT_PARAMETER_GUIDANCE
     ),
 ];
 

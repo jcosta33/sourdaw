@@ -31,6 +31,28 @@ export function isDrumDevice(deviceType: string): boolean {
 }
 
 /**
+ * The one drum-kit resolution live playback and offline render both run:
+ * the first drum device on the chain selects the kit by its `kit` parameter
+ * (the legacy `kitId` when absent, index 0 when neither is set), and `lookup`
+ * maps that index to the caller's kit shape. Null when the chain has no drum
+ * device or `lookup` knows no kit at that index.
+ *
+ * Callers differ only in `lookup` — the dedicated drum-voice definitions or
+ * the factory kit table — so the device test and the index rule cannot drift
+ * between the live scheduler and an export.
+ */
+export function resolveDrumKitBy<Kit>(
+    devices: readonly { type: string; parameterValues: Record<string, number> }[],
+    lookup: (kitIndex: number) => Kit | null
+): Kit | null {
+    const kitDevice = devices.find((device) => isDrumDevice(device.type));
+    if (!kitDevice) {
+        return null;
+    }
+    return lookup(kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0);
+}
+
+/**
  * True for the built-in synthesizer family, which is voiced directly by
  * `scheduleNoteOffline` / `scheduleNote` from `getSynthParamsFromDevices` and
  * contributes no chain node. The prefix arm covers the catalog's generated

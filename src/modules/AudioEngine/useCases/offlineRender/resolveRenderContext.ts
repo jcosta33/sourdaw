@@ -12,6 +12,7 @@ import {
     offlineMidiEventProjectorState,
     type OfflineChordPitchProjector,
     type OfflineAutomationValueEvaluator,
+    type OfflineClipControllerProjector,
     type OfflineMidiEventProjector,
     type OfflineMidiArticulationResolver,
     type OfflineMidiProbabilitySelector,
@@ -48,6 +49,7 @@ export type OfflineRenderContext = {
     processYeastMidi: OfflineYeastMidiProcessor | null;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId?: OfflineMidiArticulationResolver | null;
+    projectClipControllers?: OfflineClipControllerProjector | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -106,5 +108,6 @@ export function resolveRenderContext(
         resolveTempoAtBeat: offlinePpqEndpointProjectorState.resolveTempoAtBeat,
         ...captureOfflineMusicalProjections(tracks, source),
         resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
+        projectClipControllers: offlineMidiEventProjectorState.projectClipControllers,
     };
 }

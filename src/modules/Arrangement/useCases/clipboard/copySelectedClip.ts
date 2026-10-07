@@ -1,10 +1,12 @@
-import { midiStore } from '#/modules/MIDI/stores';
-
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
+import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { getTrackStoreState } from '../getTrackStoreState';
+
+import { captureMidiClipRows } from './captureMidiClipRows';
 
 export function copySelectedClip(): boolean {
     const workspace = clipSelectionStore.value;
@@ -36,7 +38,6 @@ export function copySelectedClip(): boolean {
         }
     }
 
-    const midiState = midiStore.value;
     const state = getTrackStoreState();
     if (!state) {
         return false;
@@ -48,10 +49,19 @@ export function copySelectedClip(): boolean {
         if (!found) {
             return false;
         }
-        const midiNotes = found.clip.type === 'midi' ? midiState?.notesByClipId[found.clip.id] : undefined;
         entries.push({
             clip: { ...found.clip },
-            midiNotes: midiNotes ? midiNotes.map((node) => ({ ...node })) : undefined,
+            ...captureMidiClipRows(found.clip),
+            // The payload must be self-contained: the source clip may be deleted
+            // before the paste, so the clip-id-keyed satellites are read here,
+            // at copy time, exactly where the clip rectangle and the notes are
+            // captured. Take lanes are deliberately not part of the snapshot —
+            // see `pasteClip`.
+            satellites: readClipSatelliteEntry(found.clip.id),
+            // Clip-scoped automation lanes are the other clip-id-keyed records
+            // the paste must carry; read here for the same self-containment
+            // reason (`duplicateClipAutomation` is their carry-over contract).
+            automationLanes: readClipScopedAutomationLanes([found.clip.id]),
             sourceTrackId: found.trackId,
         });
     }

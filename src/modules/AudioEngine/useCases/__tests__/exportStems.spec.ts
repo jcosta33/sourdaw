@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
+import { acquireRenderLock } from '../offlineRender/acquireRenderLock';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
+import { isExportActive } from '../offlineRender/isExportActive';
 
 const offlineRenderMocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => unknown>(() => null),
@@ -723,6 +725,9 @@ describe('exportStems', () => {
 describe('exportStems — option parsing, validation & control flow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // A row that fails while holding the lock must not fail every row after it.
+        exportCancellationState.renderLock = null;
+        exportCancellationState.queuedMusicianExport = null;
         offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(null));
         configureOfflineMidiEventProjection({
             createProjector:
@@ -753,6 +758,29 @@ describe('exportStems — option parsing, validation & control flow', () => {
         await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
         await expect(exportStems(-4)).rejects.toThrow(/Invalid export duration/);
         await expect(exportStems(Number.NaN)).rejects.toThrow(/Invalid export duration/);
+    });
+
+    it('stops an agent measurement holding the render lock and takes the lock after its release (#4768)', async () => {
+        let releaseMeasurement: () => void = () => undefined;
+        const stopMeasurement = vi.fn(() => queueMicrotask(releaseMeasurement));
+        releaseMeasurement = acquireRenderLock('agent-measurement', stopMeasurement);
+
+        // Reaching the duration check means the export got past lock admission.
+        await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
+
+        expect(stopMeasurement).toHaveBeenCalledTimes(1);
+        expect(isExportActive()).toBe(false);
+        acquireRenderLock('musician-export')();
+    });
+
+    it('still refuses a stem export while another musician export holds the lock', async () => {
+        const release = acquireRenderLock('musician-export');
+
+        await expect(exportStems(4)).rejects.toThrow(
+            'An export is already in progress. Cancel the current export before starting a new one.'
+        );
+
+        release();
     });
 
     it('parses the OfflineRenderOptions object form (sampleRate, startBeat, tailSeconds, callbacks)', async () => {
@@ -931,9 +959,9 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
     it('rejects when a cancel is requested before the render pool starts', async () => {
         const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
-        // resolveRenderContext runs AFTER resetCancelFlag (line 38) clears the
-        // flag, so setting it here as a side effect of resolving the context
-        // makes the pool's isCancelRequested() guard (line 226) observe true.
+        // resolveRenderContext runs after the export began its cancellation
+        // scope, so setting the flag here as a side effect of resolving the
+        // context makes the pool's isCancelRequested() guard observe true.
         offlineRenderMocks.resolveRenderContext.mockImplementation(() => {
             exportCancellationState.cancelFlag = true;
             return createRenderContext([track]);
@@ -947,8 +975,10 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
         await expect(exportStems(4)).rejects.toThrow('Export cancelled');
 
-        // Reset for subsequent tests.
-        exportCancellationState.cancelFlag = false;
+        // A settled export lowers the flag it was cancelled under (#4782); the
+        // manual reset this used to need would hide a regression.
+        expect(exportCancellationState.cancelFlag).toBe(false);
+
         vi.unstubAllGlobals();
     });
 });

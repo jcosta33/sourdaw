@@ -17,7 +17,7 @@ describe('Arrangement Misc Stores', () => {
         });
 
         it('should manage clip clipboard', () => {
-            const entry = { clip: { id: 'c1' } as unknown as Clip, sourceTrackId: 't1' };
+            const entry = { clip: { id: 'c1' } as unknown as Clip, automationLanes: [], sourceTrackId: 't1' };
             setClipClipboard([entry]);
             expect(clipboardStore.value?.clipClipboard).toHaveLength(1);
             expect(clipboardStore.value?.clipClipboard[0]).toEqual(entry);

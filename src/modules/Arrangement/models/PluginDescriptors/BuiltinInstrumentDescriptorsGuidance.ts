@@ -211,3 +211,40 @@ export const BUILTIN_SYNTH_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePar
         ['High sensitivity can make low-velocity notes unexpectedly dull or nearly inaudible through a low cutoff.']
     ),
 };
+
+/**
+ * Guidance for the drum kit and, through `createDrumVariant`'s spread of the
+ * base descriptor, the four drum-machine variants, which differ only in the
+ * `kit` default.
+ *
+ * Kit 0 resolves through `getDrumKitDefByIndex` to the dedicated drum-voice
+ * set `scheduleDrumKitNote` plays; kits 1–5 resolve through
+ * `getDrumKitByIndex` to the factory kits `scheduleKitNote` plays as builtin
+ * synth voices. Neither scheduler receives the device's `gain`.
+ */
+export const BUILTIN_DRUM_KIT_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
+    kit: synthParameterGuidance(
+        'Synthesized drum-kit selection',
+        'Chooses which synthesized voices the notes trigger: 0 is the dedicated 808 voice set, 1 to 5 are the Analog, Electronic, Acoustic, Lo-fi Vinyl and Trap synth-voice kits.',
+        0,
+        3,
+        [
+            'Each kit carries its own per-voice levels (the factory kits span 0.3 to 0.9), and gain does not rescale them, so level a kit change with track or clip gain.',
+        ],
+        [
+            'Kit 0 answers notes 36, 37, 38, 39, 42, 43, 46, 47, 50, 56, 62, 63, 64, 70 and 75, while kits 1 to 5 answer only 36, 38, 40, 42, 45, 46, 47 and 48, so a pattern written for one goes partly silent on the other (a clap on 39 or a high tom on 50 stops sounding on kits 1 to 5).',
+        ]
+    ),
+    gain: synthParameterGuidance(
+        'Stored kit output level that no drum scheduler reads',
+        'Has no audible effect: every drum hit takes its level from the selected kit voice and the note velocity alone.',
+        0.8,
+        0.8,
+        [
+            'Changing kit is what changes the voice levels; set the kit level with track gain or clip gain, which the schedulers do read.',
+        ],
+        [
+            'An automation lane on gain records but cannot duck or swell the kit, because the live, audition and offline drum paths never pass it to scheduleDrumKitNote or scheduleKitNote.',
+        ]
+    ),
+};

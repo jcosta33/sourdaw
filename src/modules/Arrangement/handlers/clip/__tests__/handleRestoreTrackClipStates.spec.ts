@@ -22,6 +22,7 @@ type FakeMidiState = {
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     updateTrack: vi.fn(),
+    removeMidiClipData: vi.fn(),
     restoreMidiClipData: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),
     readClipSatelliteEntry: vi.fn((clipId: string): ClipSatelliteEntrySnapshot => ({
@@ -47,6 +48,7 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    removeMidiClipData: mocks.removeMidiClipData,
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
@@ -955,6 +957,109 @@ describe('handleRestoreTrackClipStates', () => {
                 [],
                 [lane]
             );
+        });
+
+        it('clears the satellite records of clips the restore drops and keeps the records it restores', () => {
+            // The paste-undo shape: the forward minted clips that carry satellites, so
+            // the post-capture (`expected`) holds their satellite records and the
+            // pre-capture (`replacement`) does not. Undo must remove exactly what the
+            // paste added — the same rule `removeClip` applies on a removal's forward
+            // path — while every satellite the replacement itself restores stays.
+            const sourceSatellite: ClipSatelliteEntrySnapshot = {
+                clipId: 'source-c1',
+                gainEnvelope: {
+                    clipId: 'source-c1',
+                    points: [{ id: 'gain-1', beatOffset: 0, gainDb: -6 }],
+                    enabled: true,
+                },
+                warpState: null,
+            };
+            const pastedSatellite: ClipSatelliteEntrySnapshot = {
+                clipId: 'pasted-c1',
+                gainEnvelope: {
+                    clipId: 'pasted-c1',
+                    points: [{ id: 'gain-2', beatOffset: 0, gainDb: 2 }],
+                    enabled: true,
+                },
+                warpState: null,
+            };
+            mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => {
+                if (clipId === 'source-c1') {
+                    return sourceSatellite;
+                }
+                if (clipId === 'pasted-c1') {
+                    return pastedSatellite;
+                }
+                return { clipId, gainEnvelope: null, warpState: null };
+            });
+            const track = liveTrack('t1', ['source-c1', 'pasted-c1']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['source-c1', 'pasted-c1'], {
+                            clipSatellites: [sourceSatellite, pastedSatellite],
+                        }),
+                    ],
+                    replacement: [snapshotFor('t1', ['source-c1'], { clipSatellites: [sourceSatellite] })],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            // The replacement's own satellite write (the restored source record)...
+            expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledWith(sourceSatellite);
+            // ...plus the clear of the dropped clip's record, and no clear of the
+            // retained id's record.
+            expect(mocks.writeClipSatelliteEntry).toHaveBeenCalledWith({
+                clipId: 'pasted-c1',
+                gainEnvelope: null,
+                warpState: null,
+            });
+            const clears = mocks.writeClipSatelliteEntry.mock.calls
+                .map((call) => call[0])
+                .filter((entry) => entry.gainEnvelope === null && entry.warpState === null);
+            expect(clears).toStrictEqual([{ clipId: 'pasted-c1', gainEnvelope: null, warpState: null }]);
+        });
+
+        it('clears the midi rows of clips the restore drops and keeps the rows it restores', () => {
+            // The paste-undo shape for the midi streams: the paste cloned the
+            // source's notes, controller changes and pitch bends onto an id it
+            // minted, so the post-capture (`expected`) holds those rows and the
+            // pre-capture (`replacement`) does not. Undo must retire the minted
+            // id's rows — the same rule `removeClip` applies on a removal's
+            // forward path — while every row the replacement itself restores
+            // stays untouched.
+            const track = liveTrack('t1', ['source-c1', 'pasted-c1']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+            // The undivergent state the guard requires: live midi rows match
+            // what the post-capture holds for every id it names.
+            mocks.midiStore.value = {
+                notesByClipId: { 'source-c1': [{ id: 'note-1' }], 'pasted-c1': [{ id: 'note-2' }] },
+                ccByClipId: { 'pasted-c1': [{ id: 'cc-1' }] },
+                pitchBendByClipId: { 'pasted-c1': [{ id: 'pb-1' }] },
+            };
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [
+                        snapshotFor('t1', ['source-c1', 'pasted-c1'], {
+                            midiNotesByClipId: { 'source-c1': [{ id: 'note-1' }], 'pasted-c1': [{ id: 'note-2' }] },
+                            midiCcByClipId: { 'pasted-c1': [{ id: 'cc-1' }] },
+                            midiPitchBendByClipId: { 'pasted-c1': [{ id: 'pb-1' }] },
+                        }),
+                    ],
+                    replacement: [
+                        snapshotFor('t1', ['source-c1'], { midiNotesByClipId: { 'source-c1': [{ id: 'note-1' }] } }),
+                    ],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeMidiClipData).toHaveBeenCalledTimes(1);
+            expect(mocks.removeMidiClipData).toHaveBeenCalledWith(['pasted-c1']);
         });
 
         it('refuses without touching any track when the automation lane transition refuses', () => {

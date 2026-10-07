@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { quantizeMidiNoteLengths } from '../../transformers/quantizeMidiNoteLengths';
 import { quantizeNoteLengths } from '../../useCases/midiNoteTransforms/quantizeNoteLengths';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -25,6 +26,9 @@ function prepareQuantizeNoteLengths(action: Extract<AppAction, { type: 'quantize
 
 export const handleQuantizeNoteLengths = createHandler<'quantizeNoteLengths'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written =
             action.payload.noteIds !== undefined
                 ? quantizeNoteLengths(action.payload.clipId, action.payload.gridSize, action.payload.noteIds)

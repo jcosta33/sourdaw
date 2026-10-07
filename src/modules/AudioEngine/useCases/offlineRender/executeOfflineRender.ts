@@ -1,31 +1,60 @@
+import { createRenderBusyError } from '../../errors/RenderBusyError';
 import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { acquireRenderLock } from './acquireRenderLock';
+import { acquireRenderLockFromMeasurement } from './acquireRenderLockFromMeasurement';
 import { beginExportCancellationScope } from './beginExportCancellationScope';
 import { buildOfflineWebAudioGraph } from './buildOfflineWebAudioGraph';
+import { canPreemptMeasurement } from './canPreemptMeasurement';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { createOfflineRenderBackend } from './createOfflineRenderBackend';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
+import { endExportCancellationScope } from './endExportCancellationScope';
 import { resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { scheduleOfflineMix } from './scheduleOfflineMix';
 import { tryNativeOfflineRender } from './tryNativeOfflineRender';
 import { type OfflineRenderOptions } from './types';
 
-/** Admission, capture and teardown share one uninterrupted lock ownership boundary. */
+function withPreemption(preemption: AbortSignal, callerSignal: AbortSignal | undefined): AbortSignal {
+    if (callerSignal === undefined) {
+        return preemption;
+    }
+    return AbortSignal.any([preemption, callerSignal]);
+}
+
+/**
+ * Admission, capture and teardown share one uninterrupted lock ownership boundary, except that a
+ * musician's export which finds an agent measurement holding the lock first stops it and waits for
+ * its release (#4768); its capture then reads the project once the lock is its own.
+ */
 export async function executeOfflineRender(
     capture: () => ReturnType<typeof captureOfflineRenderInput>,
-    callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal'> = {}
+    options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder'> = {}
 ): Promise<AudioBuffer> {
-    const releaseLock = acquireRenderLock();
+    const holder = options.lockHolder ?? 'musician-export';
+    // A measurement's render stops on this signal beside its caller's own stop, so a musician's export
+    // can end it without raising the process-wide cancel flag every other render reads.
+    const preemption = new AbortController();
+    let releaseLock: () => void;
+    if (holder === 'agent-measurement') {
+        releaseLock = acquireRenderLock(holder, () => preemption.abort());
+    } else if (canPreemptMeasurement()) {
+        releaseLock = await acquireRenderLockFromMeasurement();
+    } else {
+        releaseLock = acquireRenderLock(holder);
+    }
+    const { abortSignal: callerSignal } = options;
     // The backend's device map is the scheduler's read model and the sole disposal root.
     // Assign it before any Web Audio preparation can yield or fail.
     let backend: WebAudioOfflineBackend | undefined;
     try {
+        const abortSignal =
+            holder === 'agent-measurement' ? withPreemption(preemption.signal, callerSignal) : callerSignal;
+        const callbacks = { ...options, abortSignal };
         // The scope's signal is this render's cancellation handle (#4440),
         // threaded into the backend so instrument setup aborts at the moment
         // Cancel fires rather than at the next between-track checkpoint.
-        const { abortSignal } = callbacks;
         const scopeSignal = beginExportCancellationScope();
         // Instrument setup stops at an export cancel or at this render's own stop, whichever comes first.
         const cancellationSignal =
@@ -61,7 +90,16 @@ export async function executeOfflineRender(
         }
         callbacks.onProgress?.(1);
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
+    } catch (error) {
+        // A render a musician's export stopped reports why, unless its caller stopped it first.
+        if (preemption.signal.aborted && callerSignal?.aborted !== true) {
+            throw createRenderBusyError("The assistant's measurement stopped because an export started.", error);
+        }
+        throw error;
     } finally {
+        // The mixdown owns its scope's lifetime: a cancelled render's flag must
+        // not outlive it (#4782).
+        endExportCancellationScope();
         backend?.dispose();
         releaseLock();
     }

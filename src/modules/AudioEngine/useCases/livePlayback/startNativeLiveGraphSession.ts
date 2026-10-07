@@ -129,6 +129,7 @@ import { readLiveStripTracks } from './readLiveStripTracks';
 import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
+import { restoreNativeChains } from './restoreNativeChains';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
@@ -435,6 +436,44 @@ function builtDeviceAddresses(
 }
 
 /**
+ * The chains the batch as built will create, as strip reports shaped for the
+ * chain record (#4785).
+ *
+ * `applyTopologyBatch` records the engine's reports only once the apply has
+ * landed, and a stop cleared the record before it, so the whole start window
+ * read as strips with no chains and `isDeviceCarriedByNativeSession` answered
+ * false to the write doors — an edit made while the start was in flight was
+ * sent nowhere, and the engine rolled on with what the pre-edit projection had
+ * carried. Reading the chains off the same commands the claim is read from
+ * closes that window: the session's own writes queue behind the start on the
+ * session chain and reach the engine right after the batch that builds the
+ * devices they address. The first applied batch's reports replace this record
+ * with engine truth; a device the mapper degrades between the two costs at
+ * worst one write the engine refuses, never one it misapplies.
+ */
+function projectedChainReports(commands: readonly AudioGraphCommand[]): readonly AudioGraphStripReport[] {
+    const chains = new Map<string, { kind: 'track' | 'bus'; deviceIds: string[] }>();
+    for (const command of commands) {
+        if (command.kind === 'create-track-strip') {
+            chains.set(command.trackId, {
+                kind: 'track',
+                deviceIds: command.devices.map((device) => device.id),
+            });
+        } else if (command.kind === 'create-bus-strip') {
+            chains.set(command.busId, {
+                kind: 'bus',
+                deviceIds: command.devices.map((device) => device.id),
+            });
+        }
+    }
+    const reports: AudioGraphStripReport[] = [];
+    for (const [id, chain] of chains) {
+        reports.push({ id, kind: chain.kind, deviceIds: chain.deviceIds });
+    }
+    return reports;
+}
+
+/**
  * What one whole-topology batch left behind.
  *
  * Three outcomes rather than two, because a caller with a topology already
@@ -617,6 +656,24 @@ function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBac
         // Thrown before this handle was adopted, so nothing else will ever
         // close it.
         backend.dispose();
+    }
+}
+
+/**
+ * Settle the chain record a refused first batch leaves behind.
+ *
+ * The refusal changed nothing the engine holds, so the truth is whatever this
+ * start found: a session still adopted — the one a refused park deliberately
+ * keeps, engine still rolling — gets its own record back, and the projection
+ * this start wrote over it goes. With nothing adopted, the projected chains
+ * name a graph nothing built, and the empty record the stop left is the truth
+ * to restore — the same reason the unreconciled branch below clears.
+ */
+function settleRefusedStartRecord(chainsTheStartFound: ReadonlyMap<string, readonly string[]>): void {
+    if (nativeLiveGraphSession.backend === null) {
+        clearNativeChains();
+    } else {
+        restoreNativeChains(chainsTheStartFound);
     }
 }
 
@@ -1086,7 +1143,17 @@ export function startNativeLiveGraphSession(
                 // Before the first await, and only for an audible session — see the
                 // header for why the claim is made ahead of the answer rather than after
                 // it. A shadowed session sounds nothing, so it releases instead.
+                // The chains travel with the claim (#4785): recorded from the
+                // projected batch, they carry the carriage answer the write
+                // doors read across the whole start window, and every way out
+                // of the start that reopens the gates below also settles the
+                // record — dropping it, restoring it, or replacing it with the
+                // applied batch's reports.
+                const chainsTheStartFound = nativeLiveGraphSession.nativeChainByStripId;
                 claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
+                if (audible) {
+                    replaceNativeChains(projectedChainReports(firstCommands));
+                }
                 const started = await applyTopologyBatch({
                     transport: availability.transport,
                     backend,
@@ -1095,6 +1162,7 @@ export function startNativeLiveGraphSession(
                 if (started.outcome !== 'applied') {
                     releaseCarriedStrips();
                     backend.dispose();
+                    settleRefusedStartRecord(chainsTheStartFound);
                     notifyNativeDecline(started.reason);
                     return { outcome: 'declined', reason: started.reason };
                 }

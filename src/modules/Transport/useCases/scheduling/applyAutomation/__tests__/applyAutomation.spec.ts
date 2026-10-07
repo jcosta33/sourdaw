@@ -17,7 +17,9 @@ import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue 
 import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
+import { defaultTransportState } from '../../../../models/TransportState';
 import { tempoMapStore } from '../../../../stores/tempoMapStore';
+import { transportStore } from '../../../../stores/transportStore';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
 import { deviceReadBeatByTrack } from '../deviceReadBeatByTrack';
@@ -213,6 +215,11 @@ describe('applyAutomation', () => {
         // every case in this file; reset it so a case that mutates it cannot
         // leak into the next regardless of run order.
         tempoMapStore.set({ changes: [] });
+        // The same is true of the transport region and the scheduler's last
+        // seam instant: a case that leaves either standing would map-back the
+        // next case's compensated reads (#4784).
+        transportStore.set(null);
+        schedulerSession.lastLoopSeamAudioTime = null;
     });
 
     it('should export applyAutomation', () => {
@@ -603,6 +610,138 @@ describe('applyAutomation', () => {
             const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
             expect(readBeat).toBeCloseTo(3.7, 9);
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
+
+        // #4784 — across a live loop wrap the dying pass's tail is what a
+        // compensated track is fed for the first `compensation` seconds: the
+        // fence now spares it (schedulerSession) and the wrap-floor in
+        // scheduleAudioClips holds the incoming pass until it is done. The read
+        // must follow that material — mapped back across the region — rather
+        // than the wrapped-domain beat, which sits before loopStart in that
+        // window and names material nothing plays.
+        it('maps the compensated read back across a fresh loop wrap onto the dying pass for the first compensation window', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7 ? 0 : 1));
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            // The seam the scheduler just crossed: the published beat is 0.1 s
+            // (0.2 beats at 120 BPM) past loopStart, and the dying tail is fed
+            // for another 0.15 s of the 0.25 s compensation window.
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 500;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 501;
+            applyAutomation(4.2);
+
+            // Wrapped-domain read: 4.2 beats = 2.1 s − 0.25 s = 1.85 s → 3.7,
+            // before loopStart — exactly the window in which the dying tail is
+            // what the track is fed. Mapped back across the 4-beat region: 7.7.
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', expect.closeTo(7.7, 9));
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        it('keeps the wrapped-domain read once the compensation window has carried the pass boundary', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            // 0.4 s after the seam: past the 0.25 s window, so the incoming
+            // pass is what the track is fed and the plain wrapped-domain read
+            // stands.
+            vi.mocked(getCurrentTime).mockReturnValue(10.4);
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 510;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 511;
+            applyAutomation(4.8);
+
+            // 4.8 beats = 2.4 s − 0.25 s = 2.15 s → 4.3, already at or past
+            // loopStart — no map-back in either the window or out of it.
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', expect.closeTo(4.3, 9));
+        });
+
+        // #4784 review — the wrap-back must follow the dying tail through the
+        // tempo map, not add the region's beat span: with a tempo change inside
+        // the region, the beat-space addition names a beat half a compensation
+        // window away from the material the track is actually fed.
+        it('maps the wrap-back through the tempo map in seconds when a tempo change sits inside the region', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            // The two mappings disagree: the beat-space region-span addition
+            // lands on 7.2, the seconds-mapped read on 7.6 — the boundary below
+            // separates them.
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7.4 ? 0 : 1));
+
+            // 120 BPM to beat 6, 60 after — the change sits inside [4, 8].
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-change-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-change-1', beat: 6, tempo: 60, curve: 'instant' },
+                ],
+            });
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 4, loopEnd: 8 });
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 600;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 601;
+            applyAutomation(4.2);
+
+            // Wrapped-domain read: 4.2 beats = 2.1 s − 0.5 s = 1.6 s → 3.2,
+            // before loopStart — inside the compensation window. The chain entry
+            // sits 0.5 s behind the clock: 0.4 s before the seam at 60 BPM is
+            // 0.4 beats, so the dying tail the track is fed is beat 7.6 — not
+            // 7.2, the beat-space span addition.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.6, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        // #4784 review — a region that begins at the arrangement origin made
+        // the wrap-back gate dead: the compensated read is clamped with
+        // Math.max(0, …) upstream, so at loopStart 0 the clamped beat could
+        // never sit below loopStart and the gate never fired. The gate reads
+        // the UNCLAMPED compensated read instead, so a region at [0, 8] maps
+        // back onto the dying pass exactly as a region at [4, 8] does.
+        it('maps the wrap-back across a region starting at beat 0, whose clamped read can never sit below loopStart', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCurrentTime).mockReturnValue(10.1);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 7 ? 0 : 1));
+            transportStore.set({ ...defaultTransportState, isLooping: true, loopStart: 0, loopEnd: 8 });
+            // The seam the scheduler just crossed: the published beat is 0.1 s
+            // (0.2 beats at 120 BPM) past loopStart 0, and the dying tail is
+            // fed for another 0.15 s of the 0.25 s compensation window.
+            schedulerSession.lastLoopSeamAudioTime = 10;
+
+            schedulerSession.discontinuityEpoch = 700;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 701;
+            applyAutomation(0.2);
+
+            // Wrapped-domain read: 0.2 beats = 0.1 s − 0.25 s = −0.15 s, which
+            // the clamp pins to beat 0 — indistinguishable from loopStart for a
+            // gate comparing the clamped value. The unclamped read is what
+            // crosses the gate, and the mapped read follows the dying tail:
+            // 0.15 s before the seam at 120 BPM is 0.3 beats → 7.7.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(7.7, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
         });
 
         it('gates a clip-owned device lane on the compensated beat, not the playhead beat, so it does not fire before the clip audio has reached the device', () => {
@@ -1590,6 +1729,195 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-low', 'mix', 0);
+        });
+    });
+
+    describe('duplicate track-level lanes on one parameter (#4928)', () => {
+        /**
+         * Two track-level lanes reach one parameter only through a CRDT collab
+         * merge or legacy/preset data — the add-lane action folds track-level
+         * duplicates. Every export family resolves such duplicates through the
+         * automation merges, where the later single-point lane compiles to a
+         * lone zero-length terminator covering no span and contributes nothing
+         * (pinned as the agreement target by
+         * offlineScheduler `trackLaneSinglePointDuplicateParity.spec.ts`). The
+         * live apply resolves the same duplicates the same way: the no-span
+         * lane stands down in favour of the sibling whose curve has material.
+         */
+        type DuplicateLaneSeed = {
+            id: string;
+            parameterId: string;
+            points: Array<{ beat: number; value: number }>;
+            enabled?: boolean;
+        };
+
+        function seedDuplicateTrackLanes(devices: SeedDevice[], lanes: DuplicateLaneSeed[]): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices,
+                        gain: 0.4,
+                        pan: 0,
+                        sends: [],
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: lanes.map((lane) => ({ ...lane, trackId: 'track-1', minValue: 0 })),
+            };
+        }
+
+        function voiceLaneCurves(byLaneId: Record<string, (beat: number) => number>): void {
+            vi.mocked(getAutomationValueAtBeat).mockImplementation(
+                (laneId: string, beat: number) => byLaneId[laneId]?.(beat) ?? 0
+            );
+        }
+
+        const RAMP_POINTS = [
+            { beat: 0, value: 0.2 },
+            { beat: 16, value: 0.6 },
+        ];
+        const HELD_POINTS = [{ beat: 4, value: 0.9 }];
+
+        it('gain: voices the earlier material lane and never the later single-point lane', () => {
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            applyAutomation(0);
+            applyAutomation(8);
+
+            expect(vi.mocked(scheduleTrackGain).mock.calls.map((call) => call[1])).toEqual([0.2, 0.6]);
+        });
+
+        it('device param: delivers the earlier material lane and never the later single-point lane', () => {
+            seedDuplicateTrackLanes(
+                [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                [
+                    { id: 'lane-ramp', parameterId: 'device-eq1:eq-low-gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'device-eq1:eq-low-gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            // The scope-entry snap (#4741) on the first tick and the epoch
+            // bump on the second deliver exact curve values instead of slew
+            // glides, so the delivered sequence is assertable as written.
+            schedulerSession.discontinuityEpoch = 900;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 901;
+            applyAutomation(8);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
+        });
+
+        it('device param: a legacy-spelled single-point duplicate stands down beside a canonical material sibling', () => {
+            // Both spellings resolve to one device target — the canonical
+            // `device-id:param` and the legacy `device-type:param` — so the
+            // export merges both streams into one (device, parameter) group
+            // where the lone terminator contributes nothing. Live must group
+            // by that resolved target too: keyed by the raw string, the held
+            // duplicate would see no material sibling and drive flat 0.9 over
+            // the sibling's ramp.
+            seedDuplicateTrackLanes(
+                [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                [
+                    { id: 'lane-ramp', parameterId: 'device-eq1:eq-low-gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'builtin-eq:eq-low-gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            schedulerSession.discontinuityEpoch = 900;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 901;
+            applyAutomation(8);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
+        });
+
+        it('lets the single-point lane drive again once the material lane is gone', () => {
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': () => 0.2,
+                'lane-held': () => 0.9,
+            });
+            applyAutomation(0);
+
+            mutableAutomationStore.value = {
+                lanes: [{ id: 'lane-held', trackId: 'track-1', parameterId: 'gain', minValue: 0, points: HELD_POINTS }],
+            };
+            applyAutomation(1);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.9, 5);
+        });
+
+        it('still plays the single-point lane when the material sibling is disabled', () => {
+            // A disabled lane is not in the export's stream collection either
+            // (`scheduleTrackAutomation` filters `enabled !== false`), so the
+            // held lane's lone terminator is the only stream and its value is
+            // what an export holds — live must play it.
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS, enabled: false },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': () => 0.2,
+                'lane-held': () => 0.9,
+            });
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.9, 5);
+        });
+
+        it('keeps later-lane-wins when both duplicates are single-point', () => {
+            // No sibling carries material, so there is nothing to stand down
+            // for: the merge splices equal zero-span streams to the last one's
+            // value, and live keeps its last-write-wins per tick.
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-first', parameterId: 'gain', points: [{ beat: 0, value: 0.3 }] },
+                    { id: 'lane-second', parameterId: 'gain', points: [{ beat: 4, value: 0.7 }] },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-first': () => 0.3,
+                'lane-second': () => 0.7,
+            });
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.7, 5);
         });
     });
 });

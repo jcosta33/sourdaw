@@ -7,18 +7,39 @@
  * cancellation begins a scope, threads the scope's signal down to the work
  * only it is doing, and `cancelExport` both raises the flag and aborts the
  * scope — so an awaited fetch inside instrument setup can stop at the moment
- * of cancellation rather than at the next `checkCancel()` between tracks.
- * Renders that do not begin a scope (the freeze path) share the flag's
- * between-step semantics and are untouched by the controller.
+ * of cancellation rather than at the next `checkCancel()` between tracks. The
+ * scope closes when the export settles (`endExportCancellationScope`), so a
+ * cancelled export's flag never outlives its render (#4782). Freeze and
+ * bounce begin no scope and read none of this state: they stop only on a
+ * caller's own `abortSignal`.
+ *
+ * The render lock records who holds it (#4768). A musician's export outranks an
+ * agent measurement: it stops the measurement through `preempt` and takes the
+ * lock once `released` settles, while `queuedMusicianExport` marks that claim so
+ * no other render can slip in between.
  */
+export type RenderLockHolder = 'musician-export' | 'agent-measurement';
+
+type RenderLock = {
+    holder: RenderLockHolder;
+    /** Stops the holder's render. Only a measurement has one; a musician's export is never preempted. */
+    preempt: (() => void) | null;
+    /** Settles once the holder has released the lock. */
+    released: Promise<void>;
+    settleReleased: () => void;
+};
+
 type RenderCoordination = {
     cancelFlag: boolean;
-    isRenderingActive: boolean;
+    renderLock: RenderLock | null;
+    /** A musician's export waiting for a measurement to release; aborted by `cancelExport`. */
+    queuedMusicianExport: AbortController | null;
     controller: AbortController;
 };
 
 export const exportCancellationState: RenderCoordination = {
     cancelFlag: false,
-    isRenderingActive: false,
+    renderLock: null,
+    queuedMusicianExport: null,
     controller: new AbortController(),
 };

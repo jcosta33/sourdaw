@@ -10,7 +10,8 @@
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' }
  *   { type: 'param', name, value }
- *   { type: 'cc', cc, value, sampleFrame? }
+ *   { type: 'cc', cc, value, sampleFrame?, stored? }
+ *   { type: 'discardStoredCc' }
  *   { type: 'bypass', bypassed }
  *   { type: 'beginSampleBank', bankKey, instrumentId, loadToken }
  *   { type: 'abortSampleBank', loadToken }
@@ -127,7 +128,10 @@ type LevainMsg =
     | NoteExpressionMsg
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
-    | { type: 'cc'; cc: number; value: number; sampleFrame?: number }
+    // `stored` marks a move stored clip playback posted, as against one a
+    // performer played: `discardStoredCc` drops only those while they are queued.
+    | { type: 'cc'; cc: number; value: number; sampleFrame?: number; stored?: boolean }
+    | { type: 'discardStoredCc' }
     | { type: 'bypass'; bypassed: boolean }
     | { type: 'beginSampleBank'; bankKey: string; instrumentId: string; loadToken: number }
     | { type: 'abortSampleBank'; loadToken: number }
@@ -156,7 +160,7 @@ type LevainQueued =
       }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number })
-    | { type: 'cc'; cc: number; value: number; sampleFrame: number };
+    | { type: 'cc'; cc: number; value: number; sampleFrame: number; stored?: boolean };
 
 type BankRole = 'owner' | 'follower' | 'ready';
 type BankBuild = { numArticulations: number; numMics: number };
@@ -460,6 +464,20 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._queueHead = 0;
     }
 
+    /** Drop every queued controller move stored playback posted, compacting in place (no allocation). */
+    _discardQueuedStoredControllers(): void {
+        let retained = 0;
+        for (let index = this._queueHead; index < this._queue.length; index++) {
+            const queued = this._queue[index];
+            if (queued && !(queued.type === 'cc' && queued.stored === true)) {
+                this._queue[retained] = queued;
+                retained++;
+            }
+        }
+        this._queue.length = retained;
+        this._queueHead = 0;
+    }
+
     _discardQueuedController(cc: number): void {
         let retained = 0;
         for (let index = this._queueHead; index < this._queue.length; index++) {
@@ -485,9 +503,12 @@ class LevainProcessor extends AudioWorkletProcessor {
             this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
             return;
         }
-        if (msg.type === 'cc') {
+        if (msg.type === 'cc' && msg.stored !== true) {
             // A controller applying now is the newer move of that controller:
             // an older framed one still queued would drain after it and win.
+            // A move stored playback posted speaks only for stored playback: it
+            // leaves a performer's queued moves alone, and `discardStoredCc`,
+            // sent before it, clears the stored ones.
             this._discardQueuedController(msg.cc);
         }
         this._dispatch(msg);
@@ -547,6 +568,11 @@ class LevainProcessor extends AudioWorkletProcessor {
                 // Reached with a frame when a queued controller falls due, and
                 // without one for a controller that has no frame to wait for.
                 inst.handle_cc(msg.cc, msg.value);
+                break;
+            case 'discardStoredCc':
+                // Queue-only: a controller already applied keeps its value, so a
+                // stop never changes where CC1, CC7 or CC11 currently stand.
+                this._discardQueuedStoredControllers();
                 break;
             case 'bypass':
                 this._bypassed = msg.bypassed;

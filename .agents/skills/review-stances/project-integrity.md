@@ -153,3 +153,39 @@ Drive follower-point refusal through both `executeAppAction` and its supported s
 Require the authoritative document, Automation projection, links, samples, and undo history to stay unchanged after
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
+
+## Lesson from the PR #645 selected-range undo escape
+
+PR #645 made selected-range deletion retain prepared publication handles for durable Undo. Ordinary CRDT settlement
+replaced the track projection with equal values and a new object reference, so the retained handle refused Undo before
+restoring clips or takes. Retained evidence of a real post-settlement Undo probe is missing; historical stance dispatch
+is unverified.
+
+Drive the selected UI callback through real Command history after flushing CRDT writes, with no peer edit first. Require
+exact raw/projected clips, takes, comp coverage and history through Undo and Redo. Repeat with a surviving peer take's
+selection and comp change, then change canonical clip geometry and require zero-write refusal with history pending.
+Prepare semantic restoration at durable replay time while retaining exact-reference guards inside one synchronous
+publication and compensation. For disappearing fragments, also start with no captured takes, add peer facets afterward,
+and prove only those fragment-owned facets retire; induce a later publication failure and require their exact recovery.
+
+### 2026-09-30 — MIDI transform inverses lacked replay authority (escaped at 64b9d77c01a)
+
+PR #939 (`90953dc23e0`) originated the shared transforms' exact-snapshot inverse and redo before a
+replay guard contract existed. Commit `64b9d77c01a` first required an inverse handler to declare safe
+reapplication during compensated-batch preflight; PR #2747 (`06fb56e3897`) then made
+`restoreMidiClipNotes` admit only guarded replay. Neither integration updated the transform producer,
+so the family could no longer pass compensated-batch preflight even though direct execution and undo
+tests stayed green. No pull-request number is recorded in Git history for `64b9d77c01a`.
+
+For every shared action family that emits a guarded restore, run the registered handler through
+`executeAppActionBatch(..., { requireCompensation: true })`, then prove exact undo and redo against
+the authoritative target. Remove the guard from both replay legs: the atomic case must fail. Initial
+missing, ambiguous, wrong-kind, locked, or frozen topology must reject atomic and direct execution
+before a write, because the direct dispatcher does not use handler validation as an execution gate.
+After commit, independently change notes or make the target missing, moved, wrong-kind, locked, or
+owned by a frozen track; replay must refuse without consuming history or replacing live notes.
+For a guarded clip restore, also duplicate the captured clip ID after commit, both within its owning
+track and on another active track. Undo must keep the original history head and transformed notes;
+after a successful undo, the same duplicate-ID states must keep redo pending and preserve the restored
+notes. Replay authority requires one live MIDI clip under the captured track owner, not merely a first
+matching clip in that track.

@@ -1,6 +1,44 @@
 import { describe, it, expect } from 'vitest';
 
-import { isDrumDevice, isBuiltinSynthDevice } from '../deviceTypeMatching';
+import { isDrumDevice, isBuiltinSynthDevice, resolveDrumKitBy } from '../deviceTypeMatching';
+
+describe('resolveDrumKitBy', () => {
+    const lookup = (kitIndex: number) => (kitIndex < 3 ? `kit-${kitIndex}` : null);
+
+    it.each([
+        'builtin-drum-kit',
+        'drum-kit',
+        'builtin-drum-machine-808',
+        'builtin-drum-machine-analog',
+        'builtin-drum-machine-electronic',
+        'builtin-drum-machine-acoustic',
+    ])('resolves the kit a %s device selects', (type) => {
+        expect(resolveDrumKitBy([{ type, parameterValues: { kit: 2 } }], lookup)).toBe('kit-2');
+    });
+
+    it('reads the legacy kitId when kit is absent and index 0 when neither is set', () => {
+        expect(resolveDrumKitBy([{ type: 'drum-kit', parameterValues: { kitId: 1 } }], lookup)).toBe('kit-1');
+        expect(resolveDrumKitBy([{ type: 'builtin-drum-machine-808', parameterValues: {} }], lookup)).toBe('kit-0');
+    });
+
+    it('prefers kit over kitId', () => {
+        expect(resolveDrumKitBy([{ type: 'drum-kit', parameterValues: { kit: 0, kitId: 2 } }], lookup)).toBe('kit-0');
+    });
+
+    it('takes the first drum device on the chain', () => {
+        const devices = [
+            { type: 'eq', parameterValues: { kit: 2 } },
+            { type: 'builtin-drum-machine-808', parameterValues: { kit: 1 } },
+            { type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+        ];
+        expect(resolveDrumKitBy(devices, lookup)).toBe('kit-1');
+    });
+
+    it('is null without a drum device and when the lookup knows no kit at the index', () => {
+        expect(resolveDrumKitBy([{ type: 'builtin-synth-strings', parameterValues: { kit: 0 } }], lookup)).toBeNull();
+        expect(resolveDrumKitBy([{ type: 'builtin-drum-kit', parameterValues: { kit: 9 } }], lookup)).toBeNull();
+    });
+});
 
 describe('isDrumDevice', () => {
     it('returns true for builtin-drum-kit', () => {

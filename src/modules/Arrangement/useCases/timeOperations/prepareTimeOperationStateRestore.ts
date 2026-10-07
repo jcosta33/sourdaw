@@ -2,7 +2,11 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { planTakeRetirement } from '../comping/planTakeRetirement';
+import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
@@ -658,6 +662,97 @@ function localStateIsStillPrepared(prepared: PreparedLocalState): boolean {
     );
 }
 
+function prepareDisappearingClipTakeRetirement(
+    local: PreparedLocalState,
+    takeLanes: TakeLaneTransitionPlan | null
+): PreparedHandle | null {
+    const replacementClipIds = collectLiveClipIds(local.replacementTrackState.tracks);
+    const disappearingClipIds = local.capturedTrackState.tracks.flatMap((track) =>
+        track.clips.filter((clip) => !replacementClipIds.has(clip.id)).map((clip) => clip.id)
+    );
+    const capturedState = takeLaneStore.value;
+    // Captured identities must reach their own transition: removing them first
+    // can leave the owning leg without a lane to retire or reconcile.
+    const transitionTakeIds = new Set(
+        (takeLanes?.reKeyedLanes ?? []).flatMap((lane) =>
+            (takeLanes?.appliedEffect === 'restore' ? lane.takesAfter : lane.takesBefore).map((take) => take.id)
+        )
+    );
+    const planOwnedLaneIds = new Set<string>();
+    if (takeLanes?.appliedEffect === 'retire') {
+        for (const snapshot of takeLanes.retiredLanes) {
+            planOwnedLaneIds.add(snapshot.lane.id);
+            for (const takeId of snapshot.retiredTakeIds ?? []) {
+                transitionTakeIds.add(takeId);
+            }
+        }
+    }
+    // A retire plan owns its captured hosts; other live hosts may have existed
+    // empty before deletion or replaced the captured lane through a peer edit.
+    const preservedLaneIds = new Set(
+        (capturedState?.lanes ?? []).filter((lane) => !planOwnedLaneIds.has(lane.id)).map((lane) => lane.id)
+    );
+    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, { preservedLaneIds });
+    if (!retirement) {
+        return null;
+    }
+    const nextState = { lanes: retirement.lanes };
+    const retiredLanes = retirement.retiredLanes;
+    let publicationAttempted = false;
+
+    function restore(): boolean {
+        if (!publicationAttempted) {
+            return true;
+        }
+        restoreTakesForClip(retiredLanes);
+        for (const snapshot of retiredLanes) {
+            const live = takeLaneStore.value?.lanes.find(
+                (lane) => lane.id === snapshot.lane.id || lane.trackId === snapshot.lane.trackId
+            );
+            const retiredTakeIds = new Set(snapshot.retiredTakeIds);
+            for (const take of snapshot.lane.takes.filter((take) => retiredTakeIds.has(take.id))) {
+                if (
+                    !timeOperationStateCodec.valuesEqual(
+                        live?.takes.find((entry) => entry.id === take.id),
+                        take
+                    )
+                ) {
+                    return false;
+                }
+            }
+            for (const region of snapshot.lane.activeCompRegions.filter((region) =>
+                retiredTakeIds.has(region.takeId)
+            )) {
+                if (!live?.activeCompRegions.some((entry) => timeOperationStateCodec.valuesEqual(entry, region))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    return {
+        name: 'Disappearing clip takes',
+        hasChanges: true,
+        apply: () => {
+            if (takeLaneStore.value !== capturedState) {
+                return false;
+            }
+            publicationAttempted = true;
+            takeLaneStore.set(nextState);
+            return takeLaneStore.value === nextState;
+        },
+        revert: restore,
+        recoverAfterFailedApply: () => {
+            try {
+                return restore() ? [] : [new Error('Disappearing clip takes could not be restored')];
+            } catch (error) {
+                return [error];
+            }
+        },
+    };
+}
+
 function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDependencies): PreparedCombinedState | null {
     const plan = validateCombinedPlan(value);
     if (!plan) {
@@ -692,6 +787,13 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
     const takeLanes = plan.takeLanes === null ? null : prepareTakeLaneStateRestore(plan.takeLanes);
 
     const handles: PreparedHandle[] = [];
+    // Snapshots also name disappearing fragments when no take existed at capture.
+    // Retire their live facets first: compensation restores them last, once the
+    // prior clip geometry is back. Successful replay never sweeps unrelated orphans.
+    const disappearingTakes = prepareDisappearingClipTakeRetirement(localState, plan.takeLanes);
+    if (disappearingTakes) {
+        handles.push(disappearingTakes);
+    }
     if (plan.scope === 'selected-range') {
         if (midi) {
             handles.push(midi);

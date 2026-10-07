@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createAppError } from '#/infra/errors/createAppError';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
@@ -477,6 +478,16 @@ describe('analysis.measure', () => {
 
         expect(receipt).toMatchObject({ status: 'failure', error: { code: 'render-busy', retryable: true } });
         expect(engine.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it("reports render-busy and retains nothing when a musician's export stops the mixdown (#4768)", async () => {
+        engine.renderOffline.mockRejectedValue(createAppError('RenderBusy', 'stopped for an export'));
+
+        const { receipt } = await measureOnce({ scope: MASTER, range: CHORUS });
+
+        expect(receipt).toMatchObject({ status: 'failure', error: { code: 'render-busy', retryable: true } });
+        expect(engine.renderOffline).toHaveBeenCalledTimes(1);
+        expect(getAgentMeasurementArtifacts()).toEqual([]);
     });
 
     it('refuses a target whose muted contributor the isolated render would unmute', async () => {

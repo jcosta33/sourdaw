@@ -94,11 +94,17 @@ export type GrandBouleNoteExpressionMsg = {
 
 export type GrandBouleParamMsg = { type: 'param'; name: string; value: number; sampleFrame?: number };
 
-export type GrandBouleSustainMsg = { type: 'sustain'; position: number; sampleFrame?: number };
+/**
+ * `stored` marks a pedal move that transport playback of stored clip controllers
+ * posted, as against one a performer played: only the stored ones can be dropped
+ * by `discardStoredPedals`, and a stored move with no frame does not supersede
+ * queued moves of its pedal (see `receiveGrandBouleMessage`).
+ */
+export type GrandBouleSustainMsg = { type: 'sustain'; position: number; sampleFrame?: number; stored?: boolean };
 
-export type GrandBouleUnaCordaMsg = { type: 'unaCorda'; engaged: boolean; sampleFrame?: number };
+export type GrandBouleUnaCordaMsg = { type: 'unaCorda'; engaged: boolean; sampleFrame?: number; stored?: boolean };
 
-export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; sampleFrame?: number };
+export type GrandBouleSostenutoMsg = { type: 'sostenuto'; engaged: boolean; sampleFrame?: number; stored?: boolean };
 
 export type GrandBoulePedalMsg = GrandBouleSustainMsg | GrandBouleUnaCordaMsg | GrandBouleSostenutoMsg;
 
@@ -125,7 +131,9 @@ export type GrandBouleDispatchMsg =
     | GrandBouleSostenutoMsg
     | { type: 'noteOnMidi2'; midiNote: number; velocity16bit: number; pitchOffsetQ24: number }
     | { type: 'temperament'; index: number }
-    | { type: 'allNotesOff' };
+    | { type: 'allNotesOff' }
+    /** Drop every queued pedal move stored playback posted; moves a performer played stay. */
+    | { type: 'discardStoredPedals' };
 
 export type CreateGrandBouleInstanceInput = {
     /** The compiled `daw-dsp` module, shared by the node factory across hosts. */
@@ -307,6 +315,10 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
         case 'allNotesOff':
             instance.all_notes_off();
             break;
+        case 'discardStoredPedals':
+            // A queue operation (`receiveGrandBouleMessage` performs it); there
+            // is nothing to tell the engine.
+            break;
         default: {
             // Compile-time exhaustiveness, runtime tolerance — and the second
             // half is not a hedge.
@@ -352,6 +364,8 @@ export type GrandBouleFrameQueue = {
     discardNotes: () => void;
     /** Drop every pending move of one pedal, leaving notes, parameters and the other pedals queued. */
     discardPedal: (kind: GrandBoulePedalMsg['type']) => void;
+    /** Drop every pending pedal move stored playback posted, leaving the ones a performer played, notes and parameters. */
+    discardStored: () => void;
     /**
      * Pull every pending pedal move back to `frame` when it sits later, keeping
      * their order. A host whose clock steps back (a flush that restarts the
@@ -454,6 +468,10 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
             retain((queued) => queued.type !== kind);
         },
 
+        discardStored() {
+            retain((queued) => !(isPedalMsg(queued) && queued.stored === true));
+        },
+
         capPendingFrames(frame) {
             for (let index = head; index < queue.length; index++) {
                 const queued = queue[index];
@@ -536,6 +554,9 @@ export type ReceiveGrandBouleMessageInput = {
  * A pedal move with no usable frame is the newest gesture, so it first removes
  * the queued moves of the same pedal; a queued one would otherwise drain after
  * it and put the pedal back. Notes, parameters and the other pedals stay queued.
+ * A frameless move that stored playback posted is the exception: it speaks only
+ * for stored playback, so it leaves a performer's queued moves alone and relies
+ * on `discardStoredPedals`, sent before it, to clear the stored ones.
  */
 export function receiveGrandBouleMessage({ instance, queue, msg, block }: ReceiveGrandBouleMessageInput): void {
     if (msg.type === 'allNotesOff') {
@@ -545,9 +566,13 @@ export function receiveGrandBouleMessage({ instance, queue, msg, block }: Receiv
         dispatch(instance, msg);
         return;
     }
+    if (msg.type === 'discardStoredPedals') {
+        queue.discardStored();
+        return;
+    }
 
     const placeable = isFramedGrandBouleMsg(msg) && isPlaceableGrandBouleMsg(msg);
-    if (isPedalMsg(msg) && !placeable) {
+    if (isPedalMsg(msg) && !placeable && msg.stored !== true) {
         queue.discardPedal(msg.type);
     }
 

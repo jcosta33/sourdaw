@@ -14,7 +14,9 @@ import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/make
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
+import { acquireRenderLockFromMeasurement } from './offlineRender/acquireRenderLockFromMeasurement';
 import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
+import { canPreemptMeasurement } from './offlineRender/canPreemptMeasurement';
 import { checkCancel } from './offlineRender/checkCancel';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -22,6 +24,7 @@ import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRende
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
+import { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
@@ -124,7 +127,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
     optsOrBeats: OfflineRenderOptions | number,
     maybeSampleRate?: number
 ): Promise<Map<string, AudioBuffer>> {
-    const releaseLock = acquireRenderLock();
+    // A stem export is always a musician's: it stops an agent measurement holding the lock and waits
+    // for it to release (#4768).
+    const releaseLock = canPreemptMeasurement()
+        ? await acquireRenderLockFromMeasurement()
+        : acquireRenderLock('musician-export');
 
     try {
         // The scope's signal is this stem set's cancellation handle (#4440):
@@ -163,6 +170,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
+            projectClipControllers,
         } = renderContext;
         const stems = new Map<string, AudioBuffer>();
         // FX-9 — read once; each stem then plans only the routes that key a device
@@ -365,6 +373,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -403,6 +412,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -523,6 +533,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         return stems;
     } finally {
+        // The stem set owns its scope's lifetime: a cancelled export's flag
+        // must not outlive it (#4782).
+        endExportCancellationScope();
         releaseLock();
     }
 };

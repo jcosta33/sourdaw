@@ -1,5 +1,7 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
+
 /**
  * The take-lane leg of a time operation's restore plan (#4520).
  *
@@ -23,4 +25,15 @@ export type TakeLaneTransitionPlan = {
     appliedEffect: 'restore' | 'retire';
     removedClipIds: readonly string[];
     retiredLanes: readonly RetiredTakeLaneSnapshot[];
+    /**
+     * The re-key half of the same delete (#4841): takes and comp regions whose
+     * clips the operation re-keyed, split, trimmed, or shifted rather than
+     * removed. Each entry carries both facet sides, so the restore direction
+     * puts the pre-operation facets back and the retire direction replays the
+     * post-operation ones — with the exact take ids a split minted, since the
+     * redo cannot re-derive them. Optional so plans written before re-keying
+     * joined the operation still decode; absent means the operation re-keyed
+     * nothing.
+     */
+    reKeyedLanes?: readonly TakeReKeyLaneTransition[];
 };

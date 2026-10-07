@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { undoStore } from '#/modules/Command/stores';
+import { undoHistoryStore as undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
+import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -27,7 +27,7 @@ function installDependencies(): void {
         prepareAutomationTimeOperation: noChangePreparation,
         prepareAutomationTimeStateRestore: noChangePreparation,
         prepareMidiGlobalTimeTransaction,
-        prepareMidiTimeStateRestore: noChangePreparation,
+        prepareMidiTimeStateRestore,
         prepareTimelineMapTimeOperation: noChangePreparation,
         prepareTimelineMapStateRestore: noChangePreparation,
     });
@@ -185,8 +185,8 @@ describe('deleteTimeRange', () => {
 
         await undo();
 
-        expect(trackStore.value).toBe(originalState);
-        expect(midiStore.value).toBe(originalMidiState);
+        expect(trackStore.value).toEqual(originalState);
+        expect(midiStore.value).toEqual(originalMidiState);
         expect(historyState().past).toHaveLength(0);
         expect(historyState().future).toHaveLength(1);
 
@@ -202,8 +202,8 @@ describe('deleteTimeRange', () => {
         expect(historyState().future).toHaveLength(0);
 
         await undo();
-        expect(trackStore.value).toBe(originalState);
-        expect(midiStore.value).toBe(originalMidiState);
+        expect(trackStore.value).toEqual(originalState);
+        expect(midiStore.value).toEqual(originalMidiState);
         await redo();
         expect(trackStore.value).toEqual(firstAppliedArrangement);
         expect(midiStore.value).toEqual(firstAppliedMidi);
@@ -255,7 +255,7 @@ describe('deleteTimeRange', () => {
         expect(midiStore.value).toBe(originalMidiState);
         expect(trackStore.value?.tracks[0]?.clips[2]).toBe(after);
         await undo();
-        expect(trackStore.value).toBe(originalState);
+        expect(trackStore.value).toEqual(originalState);
         expect(midiStore.value).toBe(originalMidiState);
     });
 
@@ -304,10 +304,13 @@ describe('deleteTimeRange', () => {
         if (!applied) {
             throw new Error('Expected applied track state');
         }
-        const intervening = { ...applied };
+        const intervening = {
+            ...applied,
+            tracks: applied.tracks.map((track) => ({ ...track, name: 'Peer renamed track' })),
+        };
         trackStore.set(intervening);
 
-        await expect(undo()).rejects.toThrow('Arrangement undo returned false');
+        await expect(undo()).rejects.toThrow('Delete Time Range undo was not applied');
         expect(trackStore.value).toBe(intervening);
         expect(historyState().past).toHaveLength(1);
         expect(historyState().future).toHaveLength(0);

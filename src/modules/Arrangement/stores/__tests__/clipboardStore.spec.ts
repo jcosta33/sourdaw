@@ -25,6 +25,7 @@ function makeClipEntry(id: string, trackId: string): ClipboardEntry {
             fadeInBeats: 0,
             fadeOutBeats: 0,
         } as ClipboardEntry['clip'],
+        automationLanes: [],
         sourceTrackId: trackId,
     };
 }

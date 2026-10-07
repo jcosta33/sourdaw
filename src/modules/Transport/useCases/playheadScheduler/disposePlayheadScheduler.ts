@@ -1,5 +1,6 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
+import { forgetStoredControllerEngagements } from '../../services/storedControllerEngagement';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
@@ -34,6 +35,7 @@ export function disposePlayheadScheduler(): void {
     } catch {
         // AudioContext may already be gone on teardown; still drop the references.
         schedulerSession.activeAudioSources.length = 0;
+        schedulerSession.pendingFences.length = 0;
     }
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
@@ -49,5 +51,8 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.lastLoopSignature = '';
     schedulerSession.pendingSeam = null;
     resetMetronomeBeat(0);
+    // The graph the engagements were pressed on is being discarded with the
+    // session, so there is nothing left to release them on.
+    forgetStoredControllerEngagements();
     disposeAudioClipScheduling();
 }

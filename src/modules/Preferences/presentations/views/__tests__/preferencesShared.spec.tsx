@@ -1,7 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { GRID_SNAP_OPTIONS } from '../../../models/Preferences';
 import { FieldGroup, GridSubdivisionSection, SectionTitle, ToggleRow, VoiceKeyEditor } from '../preferencesShared';
+
+// The piano-roll snap/quantize label contract (#4848), pinned in
+// PianoRollContextMenu.quantizeGridLabels.spec.tsx: gridSize is beats and the
+// token '1/N' is the 1/N note in 4/4 — a 1-beat grid is the 1/4 note. The
+// Preferences Grid Snap table must render the same token for the same beats
+// so the two surfaces cannot drift apart again (#4853).
+const PIANO_ROLL_SNAP_LABELS = { 1: '1/4', 0.5: '1/8', 0.25: '1/16', 0.125: '1/32' } as const;
 
 describe('SectionTitle', () => {
     beforeEach(() => {
@@ -106,14 +114,15 @@ describe('GridSubdivisionSection', () => {
     it('marks the currently selected option as the secondary variant', () => {
         render(<GridSubdivisionSection value="1/4" onChange={vi.fn()} />);
 
-        expect(screen.getByRole('button', { name: '1/4' })).toHaveAttribute('data-variant', 'secondary');
+        // Stored `1/4` (0.25 beats) renders under its note-value label `1/16`.
+        expect(screen.getByRole('button', { name: '1/16' })).toHaveAttribute('data-variant', 'secondary');
     });
 
     it('calls onChange with the clicked option value', () => {
         const onChange = vi.fn();
         render(<GridSubdivisionSection value="1/4" onChange={onChange} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Bar' }));
+        fireEvent.click(screen.getByRole('button', { name: '1/1' }));
 
         expect(onChange).toHaveBeenCalledWith('bar');
     });
@@ -122,5 +131,15 @@ describe('GridSubdivisionSection', () => {
         render(<GridSubdivisionSection value="off" onChange={vi.fn()} />);
 
         expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('data-variant', 'secondary');
+    });
+
+    it('renders the piano-roll snap token for each shared beats value', () => {
+        render(<GridSubdivisionSection value="beat" onChange={vi.fn()} />);
+
+        for (const [beats, token] of Object.entries(PIANO_ROLL_SNAP_LABELS)) {
+            const option = GRID_SNAP_OPTIONS.find((entry) => entry.beats === Number(beats));
+            expect(option?.label).toBe(token);
+            expect(screen.getByRole('button', { name: token })).toBeInTheDocument();
+        }
     });
 });

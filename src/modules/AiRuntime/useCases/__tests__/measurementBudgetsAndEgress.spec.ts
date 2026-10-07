@@ -12,7 +12,7 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import { checkCancel, resetCancelFlag } from '#/modules/AudioEngine/useCases';
+import { checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
 import {
     clearAgentMeasurementArtifacts,
     getAgentMeasurementArtifacts,
@@ -457,7 +457,7 @@ afterEach(() => {
     resetActionReplayAuthority();
     clearAgentMeasurementArtifacts();
     // The export cancel flag is process-wide; a row that raised it must not fail a later spec's render.
-    resetCancelFlag();
+    endExportCancellationScope();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
