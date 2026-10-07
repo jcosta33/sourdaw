@@ -699,8 +699,8 @@ jobs:
   codeql:
     name: CodeQL
     needs: decide
-    # Minutes rather than seconds, so this runs on the nightly train rather
-    # than on every pull request. PR Gate does not skip-pass this job.
+    # Nightly analysis covers the scheduled train revision; eligible pull
+    # requests run separate scope-selected CodeQL analysis in Health gates.
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45

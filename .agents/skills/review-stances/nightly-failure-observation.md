@@ -28,3 +28,14 @@ Probe: give the actual reporter command a payload whose only failed entry is `e2
 with issue creation stubbed, and require the body to name `e2e-report`. Also remove `e2e-report` from
 the reporter's direct `needs` and require the workflow contract check to fail, while retaining the
 scheduled-only condition and the deploy job's own dependency policy.
+
+### 2026-10-08 — nightly CodeQL comment drifted from pull-request Gate policy
+
+PR #3170 (`f68bbf3c8a2`) introduced the nightly comment describing CodeQL as absent from
+pull requests. PR #4854 (`14b7a8a4266`) later added scope-selected CodeQL to the required
+pull-request Health gates workflow while the nightly comment remained unchanged. The source trace
+shows documentation drift; it does not establish what any historical reviewer saw or concluded.
+
+Probe: compare each workflow comment about where a check runs with the active triggers, job
+conditions, and required Gate dependencies in every workflow that supplies that check. A comment
+that describes only one workflow must not imply that the check is absent from the others.
