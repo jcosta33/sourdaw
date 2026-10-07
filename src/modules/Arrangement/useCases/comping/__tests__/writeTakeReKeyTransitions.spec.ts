@@ -174,6 +174,29 @@ describe('writeTakeReKeyTransitions', () => {
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
+    it('moves a pass whose placement alone the transition changed, both ways', () => {
+        // The two facets differ only in where the pass sounds against its
+        // clip's media, so that field alone must mark the take as moved.
+        const pass = { ...createTake('clip-1', 'Pass 2', 0, 4, 4), passStartBeats: 0 };
+        const placedPass = { ...pass, passStartBeats: -4 };
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [pass] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        const transition: TakeReKeyLaneTransition = {
+            laneId: lane.id,
+            trackId: 'track-1',
+            takesBefore: [pass],
+            takesAfter: [placedPass],
+            regionsBefore: [],
+            regionsAfter: [],
+        };
+
+        applyTakeReKeyTransitions([transition]);
+        expect(liveLane().takes).toEqual([placedPass]);
+
+        restoreTakeReKeyTransitions([transition]);
+        expect(liveLane().takes).toEqual([pass]);
+    });
+
     it('re-adds missing fragment takes across two lanes with a single project-wide clip scan', () => {
         const first = splitFixture('clip-1', 'track-1');
         const second = splitFixture('clip-2', 'track-2');
