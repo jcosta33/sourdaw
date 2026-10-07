@@ -16,7 +16,10 @@ export type RenderToClipInput = {
     /** Target track id, or the literal 'new' to create a fresh audio track. */
     targetTrackId: string;
     startBeat: number;
+    /** Musical end of the rendered selection, before any tail. */
     endBeat: number;
+    /** Seconds of tail the render carried past the selection; 0 when it rendered none. */
+    tailSeconds: number;
     buffer: AudioBuffer;
     name: string;
 };
@@ -26,6 +29,24 @@ export type RenderToClipOutput = {
     clipId: string;
     audioBufferId: string;
 };
+
+// A render that carried a tail holds audio past the selection, so the clip spans
+// the buffer's own duration through the tempo map. A render with none holds the
+// selection exactly, but its frame count is rounded up to a whole sample, so
+// reading the end back from the buffer would land a hair past the musical end
+// and put duplicates off the grid.
+function resolveClipEndBeat(input: RenderToClipInput): number {
+    if (input.tailSeconds <= 0) {
+        return input.endBeat;
+    }
+    return resolveBouncedClipEndBeat({
+        startBeat: input.startBeat,
+        musicalEndBeat: input.endBeat,
+        renderedBuffer: input.buffer,
+        timelineSecondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+        projectSampleToBeat: readBeatAtSamples,
+    });
+}
 
 export function renderToClip(input: RenderToClipInput): RenderToClipOutput | null {
     const audioBufferId = `rendered-${crypto.randomUUID()}`;
@@ -43,13 +64,7 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
         trackId = input.targetTrackId;
     }
 
-    const endBeat = resolveBouncedClipEndBeat({
-        startBeat: input.startBeat,
-        musicalEndBeat: input.endBeat,
-        renderedBuffer: input.buffer,
-        timelineSecondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
-        projectSampleToBeat: readBeatAtSamples,
-    });
+    const endBeat = resolveClipEndBeat(input);
 
     const clip = addClip({
         trackId,

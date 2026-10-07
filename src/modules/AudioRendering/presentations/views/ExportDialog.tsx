@@ -585,6 +585,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     targetTrackId: renderTargetTrackId,
                     startBeat,
                     endBeat,
+                    tailSeconds: tail,
                     buffer,
                     name: clipName,
                 });

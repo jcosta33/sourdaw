@@ -1,66 +1,53 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
+import { renderToClip, type RenderToClipInput } from '../renderToClip';
 
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     pushUndoEntry: vi.fn(),
-    trackStoreValue: { tracks: [], selectedTrackId: null },
-    trackStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value() {
-            return mocks.trackStoreValue;
-        },
-        set: mocks.trackStoreSet,
-    },
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
+// The real `resolveBouncedClipEndBeat` and the real Transport tempo readers run:
+// only the project mutations around them are replaced.
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
     removeClip: vi.fn(),
     removeTrack: vi.fn(),
     captureRetiredTakeLanes: vi.fn(() => []),
     restoreTakesForClip: vi.fn(),
-    resolveBouncedClipEndBeat: (input: {
-        startBeat: number;
-        musicalEndBeat: number;
-        renderedBuffer: AudioBuffer;
-        timelineSecondsAtBeat: (beat: number) => number;
-        projectSampleToBeat: (position: { samples: number; sampleRate: number }) => number;
-    }) => {
-        const sampleRate = input.renderedBuffer.sampleRate;
-        const startSamples = Math.round(input.timelineSecondsAtBeat(input.startBeat) * sampleRate);
-        const bufferEndBeat = input.projectSampleToBeat({
-            samples: startSamples + input.renderedBuffer.length,
-            sampleRate,
-        });
-        return Math.max(input.musicalEndBeat, bufferEndBeat);
-    },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: mocks.pushUndoEntry,
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
+
+const SAMPLE_RATE = 48_000;
+
+type PlacedEnds = { first: number; redo: number };
 
 describe('renderToClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.trackStoreValue = { tracks: [], selectedTrackId: null };
+        resetTempo();
     });
 
-    it('writes the buffer into the cache, creates a clip on the target track, and records an undo entry', async () => {
-        const { renderToClip } = await import('../renderToClip');
+    afterEach(() => {
+        resetTempo();
+    });
 
+    it('writes the buffer into the cache, creates a clip on the target track, and records an undo entry', () => {
         const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         mocks.addClip.mockReturnValue({ id: 'clip-new', trackId: 'track-1' });
 
@@ -68,6 +55,7 @@ describe('renderToClip', () => {
             targetTrackId: 'track-1',
             startBeat: 4,
             endBeat: 12,
+            tailSeconds: 0,
             buffer,
             name: 'Rendered Mixdown',
         });
@@ -92,9 +80,7 @@ describe('renderToClip', () => {
         });
     });
 
-    it('creates a new audio track when targetTrackId is "new"', async () => {
-        const { renderToClip } = await import('../renderToClip');
-
+    it('creates a new audio track when targetTrackId is "new"', () => {
         const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         mocks.addTrack.mockReturnValue({ id: 'track-fresh', name: 'Rendered', kind: 'audio' });
         mocks.addClip.mockReturnValue({ id: 'clip-fresh', trackId: 'track-fresh' });
@@ -103,6 +89,7 @@ describe('renderToClip', () => {
             targetTrackId: 'new',
             startBeat: 0,
             endBeat: 8,
+            tailSeconds: 0,
             buffer,
             name: 'Rendered',
         });
@@ -114,82 +101,128 @@ describe('renderToClip', () => {
         );
     });
 
-    it('places the clip through the end of a buffer that outlasts the musical selection', async () => {
-        const { renderToClip } = await import('../renderToClip');
+    describe('a render that carried a tail', () => {
+        it('spans the buffer at a tempo other than 120', () => {
+            setFlatTempo(133);
 
-        // Beats 0–8 at the 120 BPM fallback are 4 seconds. Six seconds of audio
-        // keeps two seconds of decay, which lands at beat 12.
-        const sampleRate = 48_000;
-        const buffer = createRenderedBuffer(6 * sampleRate, sampleRate);
-        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+            // Beats 0-8 are 3.609 s at 133 BPM. Six seconds of audio holds the
+            // decay past them and ends at 6 s * 133 / 60 = 13.3 beats.
+            const ends = placeRender({
+                startBeat: 0,
+                endBeat: 8,
+                tailSeconds: 2.391,
+                buffer: createRenderedBuffer(6 * SAMPLE_RATE),
+            });
 
-        renderToClip({
-            targetTrackId: 'track-1',
-            startBeat: 0,
-            endBeat: 8,
-            buffer,
-            name: 'Rendered Tail',
+            expect(ends.first).toBeCloseTo(13.3, 5);
+            expect(ends.redo).toBeCloseTo(13.3, 5);
         });
 
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-1', startBeat: 0, endBeat: expect.closeTo(12, 5) })
-        );
+        it('spans the buffer across a tempo change from a start after beat zero', () => {
+            setTempoMap([
+                { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+            ]);
 
-        const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
-        if (!recordedUndo) {
-            throw new Error('expected a render-to-clip undo entry');
-        }
-        const redo: () => void = recordedUndo[2];
-        mocks.addClip.mockClear();
-        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
-        redo();
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-1', startBeat: 0, endBeat: expect.closeTo(12, 5) })
-        );
+            // Beat 4 sits at 2 s. Eight seconds of audio reaches 10 s: beat 8 is at
+            // 4 s, and the six seconds after it run at 60 BPM, six beats further.
+            const ends = placeRender({
+                startBeat: 4,
+                endBeat: 12,
+                tailSeconds: 2,
+                buffer: createRenderedBuffer(8 * SAMPLE_RATE),
+            });
+
+            expect(ends.first).toBeCloseTo(14, 5);
+            expect(ends.redo).toBeCloseTo(14, 5);
+        });
+
+        it('spans the buffer at the 120 BPM fallback when no tempo is set', () => {
+            // Beats 16-24 are 4 s starting at second 8. Six seconds of audio
+            // keeps two seconds of decay, which lands at beat 28.
+            const ends = placeRender({
+                startBeat: 16,
+                endBeat: 24,
+                tailSeconds: 2,
+                buffer: createRenderedBuffer(6 * SAMPLE_RATE),
+            });
+
+            expect(ends.first).toBeCloseTo(28, 5);
+            expect(ends.redo).toBeCloseTo(28, 5);
+        });
     });
 
-    it('places a clip that starts after beat zero through the end of a buffer that outlasts the selection', async () => {
-        const { renderToClip } = await import('../renderToClip');
+    describe('a render that carried no tail', () => {
+        it('keeps the exact musical end although the buffer length is rounded up to a whole sample', () => {
+            setFlatTempo(133);
 
-        // Beats 16–24 at the 120 BPM fallback are 4 seconds starting at second 8.
-        // Six seconds of audio keeps two seconds of decay, which lands at beat 28.
-        const sampleRate = 48_000;
-        const buffer = createRenderedBuffer(6 * sampleRate, sampleRate);
-        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
+            const seconds = (16 * 60) / 133;
+            const length = Math.ceil(seconds * SAMPLE_RATE);
+            // The premise: the rounded-up buffer reads back past beat 16, which is
+            // what moved duplicates placed at the clip's end off the grid.
+            expect(length / SAMPLE_RATE).toBeGreaterThan(seconds);
 
-        renderToClip({
-            targetTrackId: 'track-1',
-            startBeat: 16,
-            endBeat: 24,
-            buffer,
-            name: 'Rendered Tail',
+            const ends = placeRender({
+                startBeat: 0,
+                endBeat: 16,
+                tailSeconds: 0,
+                buffer: createRenderedBuffer(length),
+            });
+
+            expect(ends.first).toBe(16);
+            expect(ends.redo).toBe(16);
         });
-
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-1', startBeat: 16, endBeat: expect.closeTo(28, 5) })
-        );
-
-        const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
-        if (!recordedUndo) {
-            throw new Error('expected a render-to-clip undo entry');
-        }
-        const redo: () => void = recordedUndo[2];
-        mocks.addClip.mockClear();
-        mocks.addClip.mockReturnValue({ id: 'clip-tail', trackId: 'track-1' });
-        redo();
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 'track-1', startBeat: 16, endBeat: expect.closeTo(28, 5) })
-        );
     });
 });
 
-function createRenderedBuffer(lengthSamples: number, sampleRate: number): AudioBuffer {
+function resetTempo(): void {
+    tempoMapStore.set({ changes: [] });
+    transportStore.set(defaultTransportState);
+}
+
+function setFlatTempo(tempo: number): void {
+    transportStore.set({ ...defaultTransportState, tempo });
+    tempoMapStore.set({ changes: [] });
+}
+
+function setTempoMap(changes: Parameters<typeof tempoMapStore.set>[0]['changes']): void {
+    tempoMapStore.set({ changes });
+}
+
+/** Renders to a clip, then runs the redo, and returns the end beat each add received. */
+function placeRender(input: Omit<RenderToClipInput, 'targetTrackId' | 'name'>): PlacedEnds {
+    mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
+    renderToClip({ ...input, targetTrackId: 'track-1', name: 'Rendered' });
+
+    const first = lastAddedEndBeat();
+    const recordedUndo = mocks.pushUndoEntry.mock.calls[0];
+    if (!recordedUndo) {
+        throw new Error('expected a render-to-clip undo entry');
+    }
+    const redo: () => void = recordedUndo[2];
+    mocks.addClip.mockClear();
+    mocks.addClip.mockReturnValue({ id: 'clip-placed', trackId: 'track-1' });
+    redo();
+
+    return { first, redo: lastAddedEndBeat() };
+}
+
+function lastAddedEndBeat(): number {
+    const call = mocks.addClip.mock.calls.at(-1);
+    const added: { endBeat?: number } | undefined = call?.[0];
+    if (added?.endBeat === undefined) {
+        throw new Error('expected addClip to receive an end beat');
+    }
+    return added.endBeat;
+}
+
+function createRenderedBuffer(lengthSamples: number): AudioBuffer {
     const channel = new Float32Array(lengthSamples);
     return {
-        duration: lengthSamples / sampleRate,
+        duration: lengthSamples / SAMPLE_RATE,
         length: lengthSamples,
         numberOfChannels: 1,
-        sampleRate,
+        sampleRate: SAMPLE_RATE,
         getChannelData: () => channel,
         copyFromChannel: () => undefined,
         copyToChannel: () => undefined,
