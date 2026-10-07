@@ -13,16 +13,19 @@
  * bounce begin no scope and read none of this state: they stop only on a
  * caller's own `abortSignal`.
  *
- * The render lock records who holds it (#4768). A musician's export outranks an
- * agent measurement: it stops the measurement through `preempt` and takes the
- * lock once `released` settles, while `queuedMusicianExport` marks that claim so
- * no other render can slip in between.
+ * The render lock records who holds it (#4768, #5036). A musician's export
+ * outranks every agent render, a measurement or a section render: it stops the
+ * render through `preempt` and takes the lock once `released` settles, while
+ * `queuedMusicianExport` marks that claim so no other render can slip in
+ * between. Agent renders never preempt one another.
  */
-export type RenderLockHolder = 'musician-export' | 'agent-measurement';
+export type AgentRenderHolder = 'agent-measurement' | 'agent-section-render';
+
+export type RenderLockHolder = 'musician-export' | AgentRenderHolder;
 
 type RenderLock = {
     holder: RenderLockHolder;
-    /** Stops the holder's render. Only a measurement has one; a musician's export is never preempted. */
+    /** Stops the holder's render. Only an agent render has one; a musician's export is never preempted. */
     preempt: (() => void) | null;
     /** Settles once the holder has released the lock. */
     released: Promise<void>;
@@ -32,7 +35,7 @@ type RenderLock = {
 type RenderCoordination = {
     cancelFlag: boolean;
     renderLock: RenderLock | null;
-    /** A musician's export waiting for a measurement to release; aborted by `cancelExport`. */
+    /** A musician's export waiting for an agent render to release; aborted by `cancelExport`. */
     queuedMusicianExport: AbortController | null;
     controller: AbortController;
 };
