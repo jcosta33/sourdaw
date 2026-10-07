@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/planWholeProjectVibeRun.spec.ts
+  s_1c08b47ac3792f::t_ca6877a218811e 735-817,826-827
+  s_1c08b47ac3792f::t_03e26b32521aad 15
+  s_1c08b47ac3792f::t_ebf2bdb3d8b948 818-825
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2c33f244dcd3f4c7c66d9e37c94a4599d4b00d1",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
