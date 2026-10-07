@@ -112,7 +112,10 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                 if (!clipIdSet.has(context.id)) {
                     return context;
                 }
-                const minEnd = context.type === 'midi' ? context.startBeat + 1 : context.startBeat;
+                // Every recording clip takes the one-beat minimum its take-lane
+                // entry takes below, so a clip and its take agree on the end and
+                // the take never names timeline the clip does not cover (#4994).
+                const minEnd = context.startBeat + 1;
                 const finalized = {
                     ...context,
                     endBeat: Math.max(minEnd, endBeat, completedLoopPassEndBeat(lanes, context.id)),

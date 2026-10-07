@@ -57,7 +57,6 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ],
     ['percussion', /\b(?:percussion|perc|clap|claps|rim|rimshot|shaker|tambourine|cowbell|conga|bongo)\b/],
     ['overhead', new RegExp(String.raw`\boverheads?\b|${wholeNameWithQualifiers('oh', 'left|right|l|r|mono|stereo')}`)],
-    // A room needs a drum word beside it: room tone and "Room" alone name non-drum tracks.
     // A room word names the room mic only beside other drum evidence (see `namedRolesFromTokens`):
     // room tone and "Room" alone name non-drum tracks.
     ['room', /\brooms?\b/],
@@ -109,6 +108,9 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
 ]);
 
 const BASS_QUALIFIED_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['keys', 'pad']);
+
+// A bass word directly followed by a drum word.
+const BASS_DRUM_COMPOUND = /\bbass\s+drums?\b/g;
 
 const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_DRUM_ROLES, 'drums']);
 
@@ -337,6 +339,26 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     return null;
 }
 
+/**
+ * "Bass drum" written as one compound names the kick, so beside a kit-mic word ("Bass Drum Room",
+ * "Bass Drum Overheads") it is kick evidence like "Kick Room", not a separate bass and a separate
+ * drums word. The compound is replaced by "kick" and the remaining words are resolved as usual, so
+ * a bass word outside the compound ("Bass Drum & Bass") still conflicts. Null when the name has no
+ * compound or the remaining roles do not resolve.
+ */
+function resolveBassDrumCompound(name: string): CanonicalTrackRole | null {
+    const adjacent = compoundAdjacencyTokens(name);
+    const substituted = adjacent.replaceAll(BASS_DRUM_COMPOUND, ' kick ');
+    if (substituted === adjacent) {
+        return null;
+    }
+    const roles = namedRolesFromTokens(normalizedTokens(substituted));
+    if (roles.length === 1) {
+        return roles[0] ?? null;
+    }
+    return resolveDrumFamilyConflict(roles, substituted);
+}
+
 /** An unqualified vocal word is the lead by convention; a backing qualifier keeps it backing. */
 function resolveBareVocalRole(tokens: string): CanonicalTrackRole | null {
     if (!BARE_VOCAL_WORD.test(tokens)) {
@@ -466,7 +488,9 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     }
     if (roles.length > 1) {
         const resolved =
-            resolveDrumFamilyConflict(roles, input.track.name) ?? resolveNamedRoleConflict(roles, input.track.name);
+            resolveDrumFamilyConflict(roles, input.track.name) ??
+            resolveNamedRoleConflict(roles, input.track.name) ??
+            resolveBassDrumCompound(input.track.name);
         if (resolved) {
             return { role: resolved, source: 'name-tags', evidence: 'resolved-name-tags' };
         }

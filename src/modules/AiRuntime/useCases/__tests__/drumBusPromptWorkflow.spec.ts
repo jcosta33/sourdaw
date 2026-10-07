@@ -3349,6 +3349,31 @@ describe('drum bus prompt workflow', () => {
         ).toEqual(['track-kick', 'track-drums-room']);
     });
 
+    it('routes a kit with a "Bass Drum Room" track instead of refusing it as ambiguous', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-kick', 'Kick'),
+                createTrack('track-bass-drum-room', 'Bass Drum Room'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const message = chatStore.value?.messages.find((candidate) => candidate.pendingActionConfirmationId);
+        const confirmation = getPendingActionConfirmation(message?.pendingActionConfirmationId ?? '');
+        expect(chatStore.value?.messages.at(-1)?.content).not.toContain('MF-01 track role is ambiguous');
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-kick', 'track-bass-drum-room']);
+    });
+
     it('routes the kit and protects a Bass Pad track, a keys-family part, instead of refusing', async () => {
         trackStore.set({
             tracks: [

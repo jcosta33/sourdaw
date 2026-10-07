@@ -4,6 +4,8 @@ import {
 } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 
+import { type RenderLockHolder } from './exportCancellationState';
+
 type PendingWorkletEventAddress = {
     /** Seconds into the render at which the event applies. */
     time: number;
@@ -153,4 +155,10 @@ export type OfflineRenderOptions = {
      * so a freeze or bounce running beside this render is not failed by it.
      */
     abortSignal?: AbortSignal;
+    /**
+     * Who the render holds the process-wide render lock for. Defaults to a musician's export, which
+     * refuses a second render; an agent render, a measurement or a section render, yields the lock
+     * to a musician's export, which stops it with a `RenderBusy` error (#4768, #5036).
+     */
+    lockHolder?: RenderLockHolder;
 };

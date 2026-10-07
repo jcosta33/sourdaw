@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { clipDragPreviewRef } from '../../../stores/clipDragPreviewRef';
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
 type TrackStoreSubscribe = (typeof import('../../../stores/trackStore'))['trackStore']['subscribe'];
@@ -313,6 +314,7 @@ describe('useTimelineInteractions', () => {
         mocks.midiStoreValue.value = { notesByClipId: {} };
         mocks.inlineMidiNotePreviewRef.current = null;
         mocks.clipSelectionStoreValue.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
+        clipDragPreviewRef.current = null;
     });
 
     it('selects a clip on mouse down', () => {
@@ -529,6 +531,67 @@ describe('useTimelineInteractions', () => {
 
             expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        }
+    );
+
+    // The trim-start commit (trimClipStart) advances the content offsets by the
+    // same delta it applies to startBeat. The preview must carry exactly that
+    // so the drawn notes/waveform stay at their post-commit timeline positions
+    // under the moving edge instead of sliding with it (#4989).
+    const trimOffsetCases = [
+        {
+            name: 'midi clip',
+            clip: {
+                id: 'clip-1',
+                trackId: 'track-1',
+                type: 'midi',
+                startBeat: 0,
+                endBeat: 4,
+                audioOffsetBeats: 0.5,
+                midiOffsetBeats: 1.25,
+            },
+            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: 3.25 },
+        },
+        {
+            name: 'audio clip',
+            clip: { id: 'clip-1', trackId: 'track-1', type: 'audio', startBeat: 0, endBeat: 4, audioOffsetBeats: 0.5 },
+            expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: undefined },
+        },
+    ];
+
+    it.each(trimOffsetCases)(
+        'trim start preview draws a $name at its post-commit content offset',
+        ({ clip, expectedOffsets }) => {
+            mocks.trackStoreValue.value = { tracks: [{ id: 'track-1', clips: [clip] }] };
+            mocks.hitTestClip.mockReturnValue({ clipId: 'clip-1', trackId: 'track-1' });
+            mocks.hitTestClipEdge.mockReturnValue({ edge: 'left' });
+            mocks.beginClipDrag.mockReturnValue({
+                clipId: 'clip-1',
+                sourceTrackId: 'track-1',
+                startBeat: 0,
+                endBeat: 4,
+                offsetBeat: 0,
+                mode: 'trim-start',
+            });
+            const { result } = renderHook(() => useTimelineInteractions(canvasRef));
+
+            act(() => {
+                result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+            });
+            act(() => {
+                result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+            });
+
+            // clientX 200 at 100 px/beat previews start 2: a +2 delta, so the
+            // commit advances both offsets by 2 — the preview must show the
+            // advanced offsets together with the moved start.
+            expect(clipDragPreviewRef.current?.positions.get('clip-1')).toEqual({
+                trackId: 'track-1',
+                startBeat: 2,
+                endBeat: 4,
+                audioOffsetBeats: expectedOffsets.audioOffsetBeats,
+                midiOffsetBeats: expectedOffsets.midiOffsetBeats,
+            });
         }
     );
 
