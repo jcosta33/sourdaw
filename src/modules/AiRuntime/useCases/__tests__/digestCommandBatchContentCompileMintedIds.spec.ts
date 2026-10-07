@@ -105,7 +105,16 @@ type Compilation = {
     digest: string;
     /** The ids the compilation recorded as drawn for the objects it creates, by argument path. */
     assignedIds: Record<string, string>;
+    /** The ids of the section render jobs the batch carries, which are not project entities. */
+    renderJobIds: string[];
 };
+
+function readJobIds(jobs: unknown): string[] {
+    if (!Array.isArray(jobs)) {
+        return [];
+    }
+    return jobs.map((job: { jobId: string }) => job.jobId);
+}
 
 /** One compilation of `actions` as a measured preview compiles it, and what the batch hashes to. */
 function compileOnce(actions: readonly AppAction[]): Compilation {
@@ -134,6 +143,9 @@ function compileOnce(actions: readonly AppAction[]): Compilation {
                 ])
             )
         ),
+        renderJobIds: parsed.envelope.commands
+            .filter((command) => command.operation === 'renderProjectSections')
+            .flatMap((command) => readJobIds(command.arguments.jobs)),
     };
 }
 
@@ -343,8 +355,9 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
         });
     });
 
-    // Red when the arpeggio's added note ids or the section render jobs' ids leave the record: the
-    // state guards draw them while a proposal is admitted, and the batch hashes them verbatim.
+    // Red when the arpeggio's added note ids leave the record, or the section render jobs' ids leave
+    // the digest: the state guards draw them while a proposal is admitted, and the batch hashes them
+    // verbatim.
     describe('ids the state guards draw while a proposal is admitted', () => {
         function guard(
             action: Parameters<typeof materializeActionStateGuards>[0][number],
@@ -390,6 +403,8 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
             ]);
         });
 
+        // A job is not a project entity: the batch receipt reads the assigned-id record as the objects a
+        // later command can target and links jobs under `links.render`, so the record never names them.
         it('hashes two admissions of one section render alike though each draws its own job ids', () => {
             const compilations = compileTwice(() =>
                 guard(
@@ -398,7 +413,11 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
                 )
             );
 
-            expectStableHashOverFreshIds(compilations, ['0.renderProjectSections.jobs[0].jobId']);
+            expect(compilations.first.renderJobIds).toHaveLength(1);
+            expect(compilations.second.renderJobIds).toHaveLength(1);
+            expect(compilations.second.renderJobIds).not.toEqual(compilations.first.renderJobIds);
+            expect(compilations.second.digest).toBe(compilations.first.digest);
+            expect(compilations.first.assignedIds).toEqual({});
         });
     });
 });

@@ -34,7 +34,8 @@ type HandlerMintedIdReader = (argumentsValue: CommandArguments) => CommandApplic
  * Commands whose arguments are derived from project state when they compile, so the ids they
  * create cannot be drawn before the handler or the state guards run: how many lanes a glue migrates
  * or segments a strip cuts is only known from the project. Each reader names, in the compiled
- * arguments, every id drawn for an object the command creates.
+ * arguments, every id drawn for a project entity the command creates. A render job is not one: the
+ * receipt links it under `links.render`, and the batch digest reads those ids itself.
  */
 const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = new Map([
     [
@@ -52,7 +53,6 @@ const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = ne
         ],
     ],
     ['arpeggiate', (argumentsValue) => readListedIds(argumentsValue, '', 'addedNotes', 'id')],
-    ['renderProjectSections', (argumentsValue) => readListedIds(argumentsValue, '', 'jobs', 'jobId')],
 ]);
 
 /**
