@@ -1,0 +1,28 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1c08b47ac3792f::t_93c1a6cae32e90 708-710
+  s_1c08b47ac3792f::t_043ec5c1e3fd23 3068-3074
+.github/workflows/heavy-gates.yml
+  s_1c08b47ac3792f::t_9bf3e5cf5bf2cb 55-58,62
+.github/workflows/nightly.yml
+  s_1c08b47ac3792f::t_c85c2c7c478e69 582-585,589
+.github/workflows/validation.yml
+  s_1c08b47ac3792f::t_39f0b4b2d6a227 586-589,593
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1c08b47ac3792f::t_9b4b87e6638a29 213,791,1696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7322e5a77783de32ab0c5c099edc333635c8f0db",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
