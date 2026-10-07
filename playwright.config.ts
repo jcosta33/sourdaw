@@ -28,7 +28,9 @@ export default defineConfig({
     forbidOnly: !!env.CI,
     // A result that needed a retry is a flaky result and creates the same duty as a failure.
     retries: 0,
-    workers: 1,
+    // CI shards own a four-vCPU runner each, so two browsers share it; local
+    // runs share one machine with every other lane and keep one.
+    workers: env.CI ? 2 : 1,
     reporter: 'html',
     use: {
         baseURL: e2eOrigin(port),

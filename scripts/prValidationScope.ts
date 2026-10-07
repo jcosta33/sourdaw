@@ -3,6 +3,8 @@ import { appendFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
+
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
 // Explicit operational entry points: adding a new script never silently opts out.
@@ -151,7 +153,21 @@ export function parseChangedPaths(diff: string): string[] {
     return [...paths].sort();
 }
 
-export function selectValidationPlan(paths: readonly string[], availableSpecs: readonly string[]): ValidationPlan {
+function browserMatrix(specs: readonly string[], durations: SpecDurations): BrowserMatrix {
+    if (specs.length === 0) {
+        return { include: [] };
+    }
+    const count = Math.min(12, Math.ceil(specs.length / 12));
+    return {
+        include: partitionByDuration(specs, durations, count).map((group, index) => ({ id: index + 1, specs: group })),
+    };
+}
+
+export function selectValidationPlan(
+    paths: readonly string[],
+    availableSpecs: readonly string[],
+    durations: SpecDurations = new Map()
+): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
     }
@@ -202,17 +218,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
     if (broad && specs.length === 0) {
         throw new Error('Full browser coverage has no specs');
     }
-    const count = Math.min(12, Math.ceil(specs.length / 12));
-    const matrix: BrowserMatrix = {
-        include: Array.from({ length: count }, (_, index) => ({ id: index + 1, specs: [] })),
-    };
-    for (const [index, spec] of specs.entries()) {
-        const group = matrix.include[index % count];
-        if (group === undefined) {
-            throw new Error('Invalid E2E partition');
-        }
-        group.specs.push(spec);
-    }
+    const matrix = browserMatrix(specs, durations);
     let profile: ValidationPlan['profile'] = 'docs';
     if (browser) {
         profile = 'broad';
@@ -281,7 +287,7 @@ function main(): void {
         encoding: 'utf8',
         maxBuffer: 16 * 1024 * 1024,
     });
-    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root));
+    const plan = selectValidationPlan(parseChangedPaths(diff), listSpecs(root), readSpecDurations());
     writeFileSync('pr-validation-scope.json', `${JSON.stringify(plan, null, 2)}\n`);
     appendFileSync(
         output,
