@@ -671,14 +671,28 @@ function prepareDisappearingClipTakeRetirement(
         track.clips.filter((clip) => !replacementClipIds.has(clip.id)).map((clip) => clip.id)
     );
     const capturedState = takeLaneStore.value;
-    // Captured re-key identities must reach their own transition: removing an
-    // entire lane here would leave that transition without a reconciliation host.
-    const reKeyedTakeIds = new Set(
+    // Captured identities must reach their own transition: removing them first
+    // can leave the owning leg without a lane to retire or reconcile.
+    const transitionTakeIds = new Set(
         (takeLanes?.reKeyedLanes ?? []).flatMap((lane) =>
             (takeLanes?.appliedEffect === 'restore' ? lane.takesAfter : lane.takesBefore).map((take) => take.id)
         )
     );
-    const retirement = planTakeRetirement(disappearingClipIds, reKeyedTakeIds, { preserveEmptyLanes: true });
+    const planOwnedLaneIds = new Set<string>();
+    if (takeLanes?.appliedEffect === 'retire') {
+        for (const snapshot of takeLanes.retiredLanes) {
+            planOwnedLaneIds.add(snapshot.lane.id);
+            for (const takeId of snapshot.retiredTakeIds ?? []) {
+                transitionTakeIds.add(takeId);
+            }
+        }
+    }
+    // A retire plan owns its captured hosts; other live hosts may have existed
+    // empty before deletion or replaced the captured lane through a peer edit.
+    const preservedLaneIds = new Set(
+        (capturedState?.lanes ?? []).filter((lane) => !planOwnedLaneIds.has(lane.id)).map((lane) => lane.id)
+    );
+    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, { preservedLaneIds });
     if (!retirement) {
         return null;
     }

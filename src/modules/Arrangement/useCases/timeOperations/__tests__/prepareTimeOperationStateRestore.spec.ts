@@ -1112,6 +1112,57 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
+    it.each(['captured', 'replacement'] as const)(
+        'retire replay respects a %s host when only a later peer take remains',
+        (host) => {
+            const expectedTrackState = createTrackState(2);
+            const replacementTrackState = createTrackState(1, 0, {
+                clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 })],
+            });
+            const markerState = createMarkerState(8);
+            setCurrentState(expectedTrackState, markerState);
+            installDependencies();
+            const retiredTake = createTake('clip-1', 'Retired take', 0, 4);
+            const retiredLane = { ...createTakeLane('track-1'), takes: [retiredTake] };
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState: markerState,
+                    replacementMarkerState: markerState,
+                    takeLanes: {
+                        version: 1,
+                        appliedEffect: 'restore',
+                        removedClipIds: ['clip-1'],
+                        retiredLanes: [{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [retiredTake.id] }],
+                    },
+                })
+            );
+            expect(transaction.apply()).toBe(true);
+            const peerTake = createTake('clip-1', 'Later peer take', 0, 4);
+            let liveLaneId = retiredLane.id;
+            if (host === 'replacement') {
+                liveLaneId = `${retiredLane.id}-peer`;
+            }
+            const liveLane = {
+                ...retiredLane,
+                id: liveLaneId,
+                takes: [peerTake],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: peerTake.id }],
+            };
+            takeLaneStore.set({ lanes: [liveLane] });
+
+            expect(transaction.revert()).toBe(true);
+            expect(mocks.trackState.value).toEqual(expectedTrackState);
+            if (host === 'captured') {
+                expect(takeLaneStore.value?.lanes).toEqual([]);
+            } else {
+                expect(takeLaneStore.value?.lanes).toEqual([{ ...liveLane, takes: [], activeCompRegions: [] }]);
+            }
+        }
+    );
+
     // #4841 — the re-key half of the slot: applying a restore plan un-re-keys
     // the captured facets, and reverting it (the reversed plan, as redo uses)
     // replays the post-operation ones.

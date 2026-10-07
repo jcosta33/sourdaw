@@ -24,13 +24,13 @@ export type TakeRetirementPlan = {
  * names a retiring clip.
  * A joined re-key transition can preserve its captured identities here so
  * that it remains their sole owner, including when they are a lane's last takes.
- * Time replay can preserve empty lane hosts when it owns only disappearing
- * clip facets, rather than the live lane itself.
+ * Time replay can preserve specified empty lane hosts when it owns only
+ * disappearing clip facets, rather than those live lanes themselves.
  */
 export function planTakeRetirement(
     clipIds: readonly string[],
     preservedTakeIds?: ReadonlySet<string>,
-    options?: { readonly preserveEmptyLanes: boolean }
+    options?: { readonly preservedLaneIds: ReadonlySet<string> }
 ): TakeRetirementPlan | null {
     const state = takeLaneStore.value;
     if (!state || clipIds.length === 0) {
@@ -58,7 +58,7 @@ export function planTakeRetirement(
         retiredLanes.push({ lane: structuredClone(lane), laneIndex: index, retiredTakeIds: [...removedTakeIds] });
 
         const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
-        if (takes.length === 0 && !options?.preserveEmptyLanes) {
+        if (takes.length === 0 && !options?.preservedLaneIds.has(lane.id)) {
             continue;
         }
         nextLanes.push({
