@@ -114,6 +114,14 @@ src/modules/Project/useCases/getCanonicalTrackRole.ts
   "base_commit_sha": "45a017c4d1212f710ddf5e6fbde77519066d9c98",
   "prompts": {},
   "sessions": {
+    "s_03e98491fbf35d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "db2f917f-c3de-42f4-b7c2-112649a81907",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_1c08b47ac3792f": {
       "agent_id": {
         "tool": "claude",
@@ -127,6 +135,22 @@ src/modules/Project/useCases/getCanonicalTrackRole.ts
         "tool": "claude",
         "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
         "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_440baeb78ec8d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a4-6293-7383-9164-1c36e1e38035",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ed4684cddb12c5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7c15b6ef-f2b0-4558-9260-55c30a78337b",
+        "model": "grok-4.7-high-fast"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
