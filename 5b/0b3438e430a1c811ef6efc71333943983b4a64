@@ -1,0 +1,31 @@
+src/modules/Transport/useCases/scheduling/releaseStoredControllers.ts
+  s_2bfd55a4393d7c::t_4138ef20a2f6d2 33-34
+  s_2bfd55a4393d7c::t_cb0c2a1d403b78 4
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_b13b8a91dd025c 796-798
+  s_2bfd55a4393d7c::t_00a94d47686c49 35-40,45,898-901,909-926,935,964,967,976,1564
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_a0bcec96b9e275 149-178,183
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_c4a199c570f1b7 25
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_61feb8817356b1 2105,3299-3478
+src/modules/Transport/useCases/scheduling/mutesStoredControllersInWindow.ts
+  s_2bfd55a4393d7c::t_db046b6a73fde8 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b0b3438e430a1c811ef6efc71333943983b4a64",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
