@@ -1,0 +1,136 @@
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_4c8cd08893b364::t_4fb92fcdc7aa4d 3
+  s_4c8cd08893b364::t_c1efcebf5e2dde 167
+  s_4c8cd08893b364::t_35c3ea05c4e02f 177,192,195-198
+  s_4c8cd08893b364::t_aaf5fff8fcbe92 15,26,32-37,39-43,53-97,146-152,154-164,254-258,266-267
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_4c8cd08893b364::t_6783be96117134 115-118
+evidence/agent-campaign/manifest.json
+  s_4c8cd08893b364::t_965b498ea4e9ab 647
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  s_4c8cd08893b364::t_6ce0c755259655 3,483-492
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_4c8cd08893b364::t_9a97776eb3381b 3352-3376
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_4c8cd08893b364::t_055f84abea1544 195-233
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_4c8cd08893b364::t_bf3e3373db6f69 540-541
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_4c8cd08893b364::t_98fea0cd8f73b0 5677-5705
+src/modules/AiRuntime/useCases/agentReference/__tests__/naturalLevelPhrasingGrounding.spec.ts
+  s_4c8cd08893b364::t_36ddbb9f04aa4d 372-387
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_4c8cd08893b364::t_7d8a04edf5af1f 539-670
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_4c8cd08893b364::t_fad967b8b1c8a6 1424-1426,1440-1451
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_4c8cd08893b364::t_049b04704fde50 48-54
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_4c8cd08893b364::t_fc7fabfee4c67e 8,10,90-103,482-553,742
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_4c8cd08893b364::t_f2b5a17a31406c 39-45
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_4c8cd08893b364::t_133f6ffada088e 55-60,161-198
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_4c8cd08893b364::t_22f5b3604c7c09 17-31,53,83
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_4c8cd08893b364::t_a4c9b3f05382b3 4,317,537-597
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_4c8cd08893b364::t_4db4a42f132d4f 433-434,595-607
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_4c8cd08893b364::t_9a35a23b5abe5f 127-149
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_73a46090cd25ec 44
+src/modules/AudioEngine/errors/ExportInProgressError.ts
+  s_4c8cd08893b364::t_d8d3c39a2a7ae2 1-5
+src/modules/AudioEngine/errors/RenderBusyError.ts
+  s_4c8cd08893b364::t_eda325d9e1d3d6 1-7
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_4c8cd08893b364::t_c52a6000f0e35c 6,8,728-730,763-788
+src/modules/AudioEngine/useCases/__tests__/renderOfflineCancellation.spec.ts
+  s_4c8cd08893b364::t_802799c19d9c0c 187
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_4c8cd08893b364::t_c9017a8e611440 28,31,376,383,385
+src/modules/AudioEngine/useCases/__tests__/renderOfflineInstrumentSetupCancellation.spec.ts
+  s_4c8cd08893b364::t_3b9d5762363da7 154
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_4c8cd08893b364::t_6f6c3ab9e63125 17,19,130-134
+src/modules/AudioEngine/useCases/index.ts
+  s_4c8cd08893b364::t_f019615ef96373 157
+src/modules/AudioEngine/useCases/offlineRender/__tests__/executeOfflineRenderLockPriority.spec.ts
+  s_4c8cd08893b364::t_0db1a9d1ed2c30 1-450
+src/modules/AudioEngine/useCases/offlineRender/__tests__/exportCancellation.spec.ts
+  s_4c8cd08893b364::t_e8576c494db7cc 3-11,19-20,26,28,37,43-110,151
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_4c8cd08893b364::t_a76ddc0975181c 1955
+src/modules/AudioEngine/useCases/offlineRender/acquireRenderLock.ts
+  s_4c8cd08893b364::t_d3817eec292db0 1-2,4-11,14-17,19-20,22-24,26-28,30-33
+src/modules/AudioEngine/useCases/offlineRender/acquireRenderLockFromAgentRender.ts
+  s_4c8cd08893b364::t_218a7406d6617b 1-65
+src/modules/AudioEngine/useCases/offlineRender/agentRenderNoun.ts
+  s_4c8cd08893b364::t_cf3fa8f1259e62 1-6
+src/modules/AudioEngine/useCases/offlineRender/canPreemptAgentRender.ts
+  s_4c8cd08893b364::t_e065b7808f40b8 1-9
+src/modules/AudioEngine/useCases/offlineRender/constants.ts
+  s_4c8cd08893b364::t_3d85256356c964 93-108
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_4c8cd08893b364::t_7771059e37f7a6 1,5-6,9,20-32,35,37-49,54-56,95-103
+src/modules/AudioEngine/useCases/offlineRender/exportCancellation.ts
+  s_4c8cd08893b364::t_c36c301ed1dae6 8-9
+src/modules/AudioEngine/useCases/offlineRender/exportCancellationState.ts
+  s_4c8cd08893b364::t_631aa5db7d8671 15-20,22-34,37-39,45-46
+src/modules/AudioEngine/useCases/offlineRender/isExportActive.ts
+  s_4c8cd08893b364::t_7e3198b226ce58 4-6,9-12
+src/modules/AudioEngine/useCases/offlineRender/isRenderBusyError.ts
+  s_4c8cd08893b364::t_9fcc2e622f9b01 1-8
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineInput.ts
+  s_4c8cd08893b364::t_4416abd9020686 8
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_4c8cd08893b364::t_c3cc1f5df5a4bf 7-8,158-163
+src/modules/AudioRendering/AGENTS.md
+  s_4c8cd08893b364::t_6ad19c3e779e2a 31-32
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_4c8cd08893b364::t_35c2ddb71b30a0 19
+src/modules/AudioRendering/useCases/__tests__/rebindAgentProjectSectionArtifactRevisions.spec.ts
+  s_4c8cd08893b364::t_331bb7370104b3 19
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  s_4c8cd08893b364::t_90461b740018e0 3,142-191
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_4c8cd08893b364::t_f24b105a47ad49 3,5,96,245-303
+src/modules/AudioRendering/useCases/renderAgentMeasurementTargets.ts
+  s_4c8cd08893b364::t_a9bfd83972f8a2 4,55,61-64,98-99,123-128,148-150
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_4c8cd08893b364::t_231f50cd502605 1,239-240,301-307
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_4c8cd08893b364::t_c97457e3dd502b 283-289
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_4c8cd08893b364::t_037855a45e6777 112-114,342-361,491-493
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_4c8cd08893b364::t_13480593096d76 12,64-86,207-210,214,217-222,233,236-241
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_4c8cd08893b364::t_b7d5e1dbed66d2 396-427
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_4c8cd08893b364::t_af5b8405b7e942 1-342
+src/modules/Transport/useCases/transportControls/resolveRollStartBeat.ts
+  s_4c8cd08893b364::t_3a23aae12a39b7 1-37
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_4c8cd08893b364::t_a77eff9cfe787c 14,51
+src/utils/agentRenderReceipt.ts
+  s_4c8cd08893b364::t_127549930c524c 29-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90904d3e44c42a14b204f6589cda0fee1100ec28",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
