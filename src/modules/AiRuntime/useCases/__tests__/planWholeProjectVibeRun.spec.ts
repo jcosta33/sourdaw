@@ -604,6 +604,8 @@ describe('planWholeProjectVibeRun batches', () => {
             measurements: [],
         });
 
+        expect(result.batches.length).toBeGreaterThan(0);
+        expect(plannedTargetIds(result)).toEqual(tracks.map((track) => track.id));
         for (const batch of result.batches) {
             for (const target of batch.targets) {
                 expect(target.recipeIds).toEqual(['drums-warm', 'drums-bright']);
@@ -734,9 +736,13 @@ describe('planWholeProjectVibeRun batches', () => {
 
 describe('planWholeProjectVibeRun recipe admission', () => {
     it('leaves out a track holding two live devices of the type a retune recipe would retune', () => {
-        const compressor = { id: 'dev-comp-1', type: 'builtin-compressor', bypassed: false };
+        const editStep = catalogRecipe('bus-punchy').steps.find((step) => step.kind === 'edit');
+        if (editStep === undefined) {
+            throw new TypeError('bus-punchy no longer retunes a device; use a recipe that does.');
+        }
+        const retuned = { id: 'dev-retuned-1', type: editStep.deviceType, bypassed: false };
         const doubled = contextTrack('t-bus-doubled', 'Group', 'bus', {
-            devices: [compressor, { ...compressor, id: 'dev-comp-2' }],
+            devices: [retuned, { ...retuned, id: 'dev-retuned-2' }],
         });
         const context = projectContext([doubled]);
 
@@ -754,7 +760,7 @@ describe('planWholeProjectVibeRun recipe admission', () => {
             context,
             0
         );
-        expect(refusal.status).toBe('refused');
+        expect(refusal).toMatchObject({ status: 'refused', reason: expect.stringContaining('ambiguous') });
     });
 
     it('never lists a recipe whose own expansion passes what one expansion may add to a batch', () => {
