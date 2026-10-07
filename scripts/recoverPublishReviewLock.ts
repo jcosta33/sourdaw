@@ -575,11 +575,14 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     // own recovery finds the binding already recorded and goes on to the receipt.
     if (outcome === 'landed' && attestation.expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
         recordRecoveredPublicationBindings(
-            number,
-            attestation.expectedHead,
+            {
+                number,
+                head: attestation.expectedHead,
+                liveHead: second.head,
+                reviewId: second.reviews[0]!.id,
+                actorNodeId: attestation.expectedActorNodeId,
+            },
             document,
-            second.reviews[0]!.id,
-            attestation.expectedActorNodeId,
             (dependencies.publicationPort ?? recoveryPublicationPort)(session, primaryRoot)
         );
     }

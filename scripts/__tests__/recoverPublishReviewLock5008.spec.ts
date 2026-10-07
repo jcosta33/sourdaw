@@ -22,10 +22,14 @@ import {
     readPullRequestMutationLockReceipt,
     writePullRequestMutationLockOwner,
 } from '../pullRequestMutationLock.ts';
+import { readPullRequestReviewState } from '../pullRequestReviewState.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import { parseReviewDossier } from '../reviewDossier.ts';
-import { publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
+import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
+import { buildReviewDossier } from '../reviewDossierPublication.ts';
+import { deliveryAuthorization, publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
 import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
+
+import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 /*
  * The #5008 incident on PR 4997: review:publish posted review 5433781938 at head 090d3d5 and died
@@ -37,9 +41,12 @@ import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspec
 const number = 4997;
 const head = '090d3d5b983dadef55d6a84c6b231d2afb6642a4';
 const previousHead = 'ca0ca85448c868d858d43dd54242c2318b10aa93';
+const movedHead = '94f0976eafcfd74aeb914c94fdc3ee7f7b118a34';
 const base = '45a017c4d1212f710ddf5e6fbde77519066d9c98';
 const landedReviewId = 5433781938;
 const landedCommentIds = [4199756097, 4199756111];
+
+type Landing = 'request-changes' | 'approve';
 
 const reviewDocumentJson = {
     event: 'REQUEST_CHANGES',
@@ -65,8 +72,20 @@ const reviewDocumentJson = {
     ],
 };
 
+const approvalDocumentJson = {
+    event: 'APPROVE',
+    reviewerModel: 'claude-opus-5-5',
+    body: 'Attacked the amended stacking rule against the stack procedure; it held.',
+    comments: [],
+};
+
+const documentJson: Record<Landing, unknown> = {
+    'request-changes': reviewDocumentJson,
+    approve: approvalDocumentJson,
+};
 const document = parseReviewDocument(reviewDocumentJson);
 const renderedBody = renderReviewDocumentBody(document);
+const approvalBody = renderReviewDocumentBody(parseReviewDocument(approvalDocumentJson));
 const landedCommentBodies = document.comments.map((comment) => composeReviewCommentBody(comment));
 
 type RestReview = { id: number; state: string; body: string; commit_id: string; user: { node_id: string } };
@@ -136,41 +155,96 @@ function prePublicationComments(): RestComment[] {
     ];
 }
 
-function incidentReviews(): RestReview[] {
-    return [
-        ...prePublicationReviews(),
-        restReview(landedReviewId, 'CHANGES_REQUESTED', renderedBody, REVIEWER_BOT_NODE_ID),
-    ];
+function landedReview(landing: Landing): RestReview {
+    if (landing === 'approve') {
+        return restReview(landedReviewId, 'APPROVED', approvalBody, REVIEWER_BOT_NODE_ID);
+    }
+    return restReview(landedReviewId, 'CHANGES_REQUESTED', renderedBody, REVIEWER_BOT_NODE_ID);
 }
 
-function incidentComments(): RestComment[] {
+function landedComments(landing: Landing): RestComment[] {
+    if (landing === 'approve') {
+        return [];
+    }
     return [
-        ...prePublicationComments(),
         restComment(landedReviewId, landedCommentIds[0]!, 670, landedCommentBodies[0]!),
         restComment(landedReviewId, landedCommentIds[1]!, 64, landedCommentBodies[1]!, { originalPosition: 5 }),
     ];
 }
 
+function incidentReviews(landing: Landing = 'request-changes'): RestReview[] {
+    return [...prePublicationReviews(), landedReview(landing)];
+}
+
+function incidentComments(landing: Landing = 'request-changes'): RestComment[] {
+    return [...prePublicationComments(), ...landedComments(landing)];
+}
+
+/** The GraphQL review-state page `readPullRequestReviewState` reads, for the given live head. */
+function reviewStatePage(liveHead: string, reviews: RestReview[]): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    id: 'PR_kwDOfixture',
+                    headRefOid: liveHead,
+                    reviews: {
+                        nodes: reviews.map((review) => ({
+                            id: `PRR_${review.id}`,
+                            databaseId: review.id,
+                            state: review.state,
+                            submittedAt: '2026-10-06T19:46:57Z',
+                            author: { login: 'app[bot]', __typename: 'Bot', id: review.user.node_id },
+                            commit: { oid: review.commit_id },
+                        })),
+                        pageInfo: { hasPreviousPage: false, startCursor: null },
+                    },
+                    reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                },
+            },
+        },
+    });
+}
+
 /**
  * A fake GitHub for one pull request. Before the review POST it holds the pre-publication reviews
- * and comments; the POST lands the incident review and its comments. `failCommentReadsAfterPost`
- * fails that many comment listings after the POST, the way the incident run died after posting.
+ * and comments (plus any `priorReviews`); the POST lands the incident review and its comments.
+ * `failCommentReadsAfterPost` fails that many comment listings after the POST, the way the
+ * incident run died after posting. `liveHead` is the pull request's current head.
  */
-function fakeGitHub(input: { posted: boolean; reviews?: RestReview[]; comments?: RestComment[] }) {
+function fakeGitHub(input: {
+    posted: boolean;
+    landing?: Landing;
+    reviews?: RestReview[];
+    comments?: RestComment[];
+    priorReviews?: RestReview[];
+    liveHead?: string;
+}) {
+    const landing = input.landing ?? 'request-changes';
     const state = { posted: input.posted, posts: 0, failCommentReadsAfterPost: 0 };
-    const reviews = () => input.reviews ?? (state.posted ? incidentReviews() : prePublicationReviews());
-    const comments = () => input.comments ?? (state.posted ? incidentComments() : prePublicationComments());
+    const liveHead = input.liveHead ?? head;
+    const priorReviews = input.priorReviews ?? [];
+    const currentReviews = () => {
+        if (input.reviews !== undefined) {
+            return input.reviews;
+        }
+        return state.posted ? incidentReviews(landing) : prePublicationReviews();
+    };
+    const reviews = () => [...priorReviews, ...currentReviews()];
+    const comments = () => input.comments ?? (state.posted ? incidentComments(landing) : prePublicationComments());
     const gh = (args: string[]): string => {
         if (args[0] === 'pr') {
-            return JSON.stringify({ state: 'OPEN', headRefOid: head, labels: [] });
+            return JSON.stringify({ state: 'OPEN', headRefOid: liveHead, labels: [] });
+        }
+        if (args[0] === 'api' && args[1] === 'graphql') {
+            return reviewStatePage(liveHead, reviews());
         }
         if (args.includes('--method')) {
             state.posts += 1;
             state.posted = true;
+            const posted = landedReview(landing);
             return JSON.stringify({
-                id: landedReviewId,
-                state: 'CHANGES_REQUESTED',
-                commit_id: head,
+                ...posted,
                 user: { node_id: REVIEWER_BOT_NODE_ID, login: 'reviewer[bot]', type: 'Bot' },
             });
         }
@@ -220,62 +294,103 @@ function bundlePath(root: string): string {
     return join(root, '.agents', 'review-bundles', `${number}-${head}`);
 }
 
-/** The plan-carrying files review:prepare writes and the caller's dossier input beside them. */
-function writePlanCarryingBundleFiles(bundle: string): void {
+const riskPlan: ReviewRiskPlan = {
+    format: 'risk-plan-v1',
+    pr: number,
+    headSha: head,
+    baseSha: base,
+    riskClasses: ['small'],
+    requiredStances: ['correctness', 'test-validity'],
+    triggers: ['small:handwritten-lines<=200'],
+};
+
+function dossierInput(landing: Landing): Record<string, unknown> {
+    return {
+        format: 'dossier-input-v1',
+        pr: number,
+        headSha: head,
+        baseSha: base,
+        stances: [
+            {
+                stance: 'correctness',
+                reviewerModel: 'review-model',
+                modelTier: 'strongest',
+                outcome: landing === 'approve' ? 'clean' : 'blocker-found',
+            },
+            { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+        ],
+        evidence: [
+            {
+                observable: 'the stacking rule against the stack procedure',
+                verification: 'read AGENTS.md against the delivery skill',
+                observed: 'the two sentences compared',
+            },
+        ],
+        limitations: [],
+        assessmentImpact: 'none',
+    };
+}
+
+/**
+ * The plan-carrying files review:prepare writes, and the dossier: the caller's input for a
+ * request-changes round (the publish run persists the canonical record), or the canonical record
+ * an approval's publish run persists before its POST.
+ */
+function writePlanCarryingBundleFiles(bundle: string, landing: Landing): void {
     writeFileSync(
         join(bundle, 'manifest.json'),
         JSON.stringify({ pr: number, baseRefName: 'main', baseSha: base, headSha: head })
     );
-    writeFileSync(
-        join(bundle, 'risk-plan.json'),
-        JSON.stringify({
-            format: 'risk-plan-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            riskClasses: ['small'],
-            requiredStances: ['correctness', 'test-validity'],
-            triggers: ['small:handwritten-lines<=200'],
-        })
+    writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(riskPlan));
+    if (landing === 'request-changes') {
+        writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(dossierInput(landing)));
+        return;
+    }
+    const { canonical } = buildReviewDossier({
+        plan: riskPlan,
+        raw: dossierInput(landing),
+        discarded: [],
+        comments: [],
+        recommendation: 'approve',
+    });
+    writeFileSync(join(bundle, 'dossier.json'), canonical);
+}
+
+function writeOwner(
+    root: string,
+    payloadDigest: string,
+    phase: 'prepared' | 'remote-mutation-attempted',
+    token = '11111111-1111-4111-8111-111111111111'
+): string {
+    const ownerOid = writePullRequestMutationLockOwner(
+        root,
+        {
+            version: 3,
+            pid: 999_999,
+            token,
+            operation: 'review-publication',
+            number,
+            expectedHead: head,
+            payloadDigest,
+            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+            ownerFence: { kind: 'pgid', pgid: 999_999, leaderStartedAt: 'Tue Oct  6 19:46:37 2026' },
+            mutation: { phase, epoch: 1 },
+        },
+        number
     );
-    writeFileSync(
-        join(bundle, 'dossier.json'),
-        JSON.stringify({
-            format: 'dossier-input-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            stances: [
-                {
-                    stance: 'correctness',
-                    reviewerModel: 'review-model',
-                    modelTier: 'strongest',
-                    outcome: 'blocker-found',
-                },
-                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-            ],
-            evidence: [
-                {
-                    observable: 'the stacking rule conflicts with the stack procedure',
-                    verification: 'read AGENTS.md against the delivery skill',
-                    observed: 'two conflicting sentences',
-                },
-            ],
-            limitations: [],
-            assessmentImpact: 'none',
-        })
-    );
+    runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
+    return ownerOid;
 }
 
 function createIncidentFixture(
-    phase: 'prepared' | 'remote-mutation-attempted' = 'remote-mutation-attempted',
-    planCarrying = false
+    input: { phase?: 'prepared' | 'remote-mutation-attempted'; planCarrying?: boolean; landing?: Landing } = {}
 ) {
+    const landing = input.landing ?? 'request-changes';
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-5008-'));
     runGit(root, ['init']);
     const bundle = bundlePath(root);
     mkdirSync(bundle, { recursive: true });
-    writeFileSync(join(bundle, 'review.json'), JSON.stringify(reviewDocumentJson));
+    writeFileSync(join(bundle, 'review.json'), JSON.stringify(documentJson[landing]));
     writeFileSync(
         join(bundle, 'diff.patch'),
         [
@@ -288,43 +403,35 @@ function createIncidentFixture(
             '+collision rule',
         ].join('\n')
     );
-    if (planCarrying) {
-        writePlanCarryingBundleFiles(bundle);
+    if (input.planCarrying === true) {
+        writePlanCarryingBundleFiles(bundle, landing);
     }
+    const parsed = parseReviewDocument(documentJson[landing]);
     const payloadDigest = reviewPublicationPayloadDigest(
         reviewPublicationPayload({
             commitId: head,
-            event: document.event,
-            body: renderedBody,
-            comments: document.comments,
+            event: parsed.event,
+            body: renderReviewDocumentBody(parsed),
+            comments: parsed.comments,
         })
     );
-    const ownerOid = writePullRequestMutationLockOwner(
-        root,
-        {
-            version: 3,
-            pid: 999_999,
-            token: '11111111-1111-4111-8111-111111111111',
-            operation: 'review-publication',
-            number,
-            expectedHead: head,
-            payloadDigest,
-            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
-            ownerFence: { kind: 'pgid', pgid: 999_999, leaderStartedAt: 'Tue Oct  6 19:46:37 2026' },
-            mutation: { phase, epoch: 1 },
-        },
-        number
-    );
-    runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
+    const ownerOid = writeOwner(root, payloadDigest, input.phase ?? 'remote-mutation-attempted');
     return { root, ownerOid, payloadDigest };
 }
 
-function recoverWith(root: string, ownerOid: string, gh: (args: string[]) => string) {
+type Gh = (args: string[]) => string;
+
+/** Recovers through the real inspection; `inspectionGh` may answer each inspection differently. */
+function recoverWith(root: string, ownerOid: string, gh: Gh, inspectionGh?: (inspection: number) => Gh) {
+    let inspections = 0;
     return runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
         primaryRoot: () => root,
         authenticateReviewer: async () => ({ minted: { actorNodeId: REVIEWER_BOT_NODE_ID }, session }),
         repositoryName: () => 'jcosta33/sourdaw',
-        inspect: (pr, actorNodeId, expectedHead) => inspectReviewPublicationRemote(pr, actorNodeId, expectedHead, gh),
+        inspect: (pr, actorNodeId, expectedHead) => {
+            inspections += 1;
+            return inspectReviewPublicationRemote(pr, actorNodeId, expectedHead, inspectionGh?.(inspections) ?? gh);
+        },
         publicationPort: (_session, primaryRoot) => publicationPort(primaryRoot, gh),
         isOwnerLive: () => false,
         currentOwnerFence: () => ({ kind: 'pid' as const, pid: process.pid, startedAt: 'test-process' }),
@@ -335,15 +442,27 @@ function lockOid(root: string): string | undefined {
     return readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
 }
 
+function dossierText(root: string): string {
+    return readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+}
+
 function readDossier(root: string) {
-    return parseReviewDossier(JSON.parse(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')) as unknown);
+    return parseReviewDossier(JSON.parse(dossierText(root)) as unknown);
+}
+
+/** Runs the real publish against the fake until its POST lands and the comment read then fails. */
+function crashAfterPost(root: string, remote: ReturnType<typeof fakeGitHub>): void {
+    remote.state.failCommentReadsAfterPost = 1;
+    expect(() => publishReview(number, publicationPort(root, remote.gh))).toThrow(/transient comment listing failure/);
+    expect(remote.state.posts).toBe(1);
+    expect(publishedReviewId(readDossier(root))).toBeUndefined();
 }
 
 describe('review-publication recovery of a landed review among thread-reply reviews (#5008)', () => {
     const roots: string[] = [];
 
-    function fixtureFor(...args: Parameters<typeof createIncidentFixture>) {
-        const fixture = createIncidentFixture(...args);
+    function fixtureFor(input?: Parameters<typeof createIncidentFixture>[0]) {
+        const fixture = createIncidentFixture(input);
         roots.push(fixture.root);
         return fixture;
     }
@@ -383,7 +502,7 @@ describe('review-publication recovery of a landed review among thread-reply revi
     });
 
     it('releases a prepared owner as absent when the head holds only reviewer reply reviews', async () => {
-        const fixture = fixtureFor('prepared');
+        const fixture = fixtureFor({ phase: 'prepared' });
 
         await expect(recoverWith(fixture.root, fixture.ownerOid, fakeGitHub({ posted: false }).gh)).resolves.toBe(0);
 
@@ -416,6 +535,34 @@ describe('review-publication recovery of a landed review among thread-reply revi
         await expect(
             recoverWith(fixture.root, fixture.ownerOid, fakeGitHub({ posted: true, reviews }).gh)
         ).rejects.toThrow(/ambiguous or non-exact remote review evidence/);
+        expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
+    });
+
+    it.each([
+        {
+            shape: 'a non-empty body over reply-only comments',
+            review: restReview(5433790002, 'COMMENTED', 'A reply note.', REVIEWER_BOT_NODE_ID),
+            comments: [restComment(5433790002, 4199790010, 670, 'Replying.', { inReplyTo: landedCommentIds[0]! })],
+        },
+        {
+            shape: 'an empty body over one reply and one top-level comment',
+            review: restReview(5433790003, 'COMMENTED', '', REVIEWER_BOT_NODE_ID),
+            comments: [
+                restComment(5433790003, 4199790011, 670, 'Replying.', { inReplyTo: landedCommentIds[0]! }),
+                restComment(5433790003, 4199790012, 64, 'A new top-level note.'),
+            ],
+        },
+    ])('retains the owner beside a reviewer COMMENTED review with $shape', async ({ review, comments }) => {
+        const fixture = fixtureFor();
+        const remote = fakeGitHub({
+            posted: true,
+            reviews: [...incidentReviews(), review],
+            comments: [...incidentComments(), ...comments],
+        });
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+            /ambiguous or non-exact remote review evidence/
+        );
         expect(lockOid(fixture.root)).toBe(fixture.ownerOid);
     });
 
@@ -478,15 +625,9 @@ describe('review-publication recovery of a landed review among thread-reply revi
     });
 
     it('records the recovered publication in the dossier so a later publish replays it without posting', async () => {
-        const fixture = fixtureFor('remote-mutation-attempted', true);
+        const fixture = fixtureFor({ planCarrying: true });
         const remote = fakeGitHub({ posted: false });
-        remote.state.failCommentReadsAfterPost = 1;
-
-        expect(() => publishReview(number, publicationPort(fixture.root, remote.gh))).toThrow(
-            /transient comment listing failure/
-        );
-        expect(remote.state.posts).toBe(1);
-        expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+        crashAfterPost(fixture.root, remote);
 
         await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
 
@@ -502,5 +643,117 @@ describe('review-publication recovery of a landed review among thread-reply revi
 
         expect(publishReview(number, publicationPort(fixture.root, remote.gh))).toBe(landedReviewId);
         expect(remote.state.posts).toBe(1);
+    });
+
+    it('refuses and leaves the dossier unbound when the landed review drifts between the two inspections', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        const drifted = fakeGitHub({
+            posted: true,
+            comments: incidentComments().map((comment) => {
+                if (comment.id !== landedCommentIds[0]) {
+                    return comment;
+                }
+                return { ...comment, body: `${String(comment.body)} edited` };
+            }),
+        });
+
+        await expect(
+            recoverWith(fixture.root, fixture.ownerOid, remote.gh, (inspection) =>
+                inspection === 1 ? remote.gh : drifted.gh
+            )
+        ).rejects.toThrow(/remote state changed during reconciliation/);
+        expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+        expect(lockOid(fixture.root)).not.toBeUndefined();
+    });
+
+    it('releases again over a dossier already bound to the landed review and leaves it byte-unchanged', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+        const bound = dossierText(fixture.root);
+        expect(publishedReviewId(readDossier(fixture.root))).toBe(landedReviewId);
+        const nextOwnerOid = writeOwner(
+            fixture.root,
+            fixture.payloadDigest,
+            'remote-mutation-attempted',
+            '22222222-2222-4222-8222-222222222222'
+        );
+
+        await expect(recoverWith(fixture.root, nextOwnerOid, remote.gh)).resolves.toBe(0);
+
+        expect(dossierText(fixture.root)).toBe(bound);
+        expect(lockOid(fixture.root)).toBeUndefined();
+    });
+
+    it('refuses a dossier already bound to a different review than the landed one', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        const otherReviewId = 5433700000;
+        const foreignBound = appendReviewDossierEvents(readDossier(fixture.root), [
+            { kind: 'review-published', reviewId: otherReviewId },
+            { kind: 'finding-published', findingId: 'comment-0', reviewId: otherReviewId, commentId: 4199700001 },
+            { kind: 'finding-published', findingId: 'comment-1', reviewId: otherReviewId, commentId: 4199700002 },
+        ]);
+        writeFileSync(join(bundlePath(fixture.root), 'dossier.json'), serializeReviewDossier(foreignBound));
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).rejects.toThrow(
+            `review dossier binds publication ${otherReviewId}, not the recovered landed review ${landedReviewId}`
+        );
+        expect(publishedReviewId(readDossier(fixture.root))).toBe(otherReviewId);
+        expect(lockOid(fixture.root)).not.toBeUndefined();
+    });
+
+    it('recounts the escalation rounds without the landed review and records no reassessment', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({
+            posted: false,
+            priorReviews: [restReview(5433500000, 'CHANGES_REQUESTED', 'An older round.', REVIEWER_BOT_NODE_ID, base)],
+        });
+        crashAfterPost(fixture.root, remote);
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+        const dossier = readDossier(fixture.root);
+        expect(publishedReviewId(dossier)).toBe(landedReviewId);
+        expect(dossier.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+    });
+
+    it('releases a recovered approval on a moved head as landed and binds no delivery authorization', async () => {
+        const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+        const remote = fakeGitHub({ posted: true, landing: 'approve', liveHead: movedHead });
+        expect(() => readPullRequestReviewState(number, head, 'jcosta33/sourdaw', remote.gh)).toThrow(
+            /cannot prove complete review state/
+        );
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+        const dossier = readDossier(fixture.root);
+        expect(publishedReviewId(dossier)).toBe(landedReviewId);
+        expect(deliveryAuthorization(dossier)).toBeUndefined();
+        expect(dossier.events.some((event) => event.kind === 'delivery-authorized')).toBe(false);
+        expect(lockOid(fixture.root)).toBeUndefined();
+        expect(readPullRequestMutationLockReceipt(fixture.root, number, fixture.ownerOid)).toMatchObject({
+            outcome: 'landed',
+        });
+    });
+
+    it('binds the delivery authorization of a recovered approval whose head has not moved', async () => {
+        const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+        const remote = fakeGitHub({ posted: true, landing: 'approve' });
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+        const dossier = readDossier(fixture.root);
+        expect(publishedReviewId(dossier)).toBe(landedReviewId);
+        expect(deliveryAuthorization(dossier)).toMatchObject({
+            reviewId: landedReviewId,
+            approvalReviewId: landedReviewId,
+            unresolvedThreads: 0,
+        });
+        expect(lockOid(fixture.root)).toBeUndefined();
     });
 });
