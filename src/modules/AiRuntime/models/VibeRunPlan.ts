@@ -38,19 +38,36 @@ export type VibeRunExpectedDelta = {
     readonly direction: 'increase' | 'decrease' | 'hold';
 };
 
-/** What one batch is for: the characters it pursues on one role family, over which sections, by which recipes. */
+/**
+ * What one batch is for: the characters it pursues on one role family, over which sections.
+ * `descriptors` is the union of the descriptors of every target's own recipes; which recipes apply
+ * to which target is stated per target, never here.
+ */
 export type VibeRunBatchObjective = {
     readonly descriptors: readonly string[];
     readonly role: SemanticCommandListRoleFamily;
     /** The project's sections in timeline order; empty when the project has none and the scope is the whole project. */
     readonly sections: readonly VibeRunSectionScope[];
     readonly sectionGoals: readonly { readonly sectionId: string; readonly statement: string }[];
-    readonly recipeIds: readonly string[];
 };
 
 /**
- * One target's measured figures standing for one section, limited to the metrics the batch expects to
- * move. `window` is the beat range the figures were rendered over: the section's own, or a wider one
+ * One target of a batch with the recipes that apply to it and what those recipes promise. Targets of
+ * one batch may carry different recipes: a retune recipe applies only to a track holding the device it
+ * retunes. Every listed `recipeIds` entry expands on this target through `recipe.expand`, and every
+ * delta in `expectedDeltas` is promised by one of those recipes and by no other.
+ */
+export type VibeRunBatchTarget = {
+    readonly targetId: string;
+    readonly recipeIds: readonly string[];
+    readonly expectedDeltas: readonly VibeRunExpectedDelta[];
+    /** The commands this target's recipes expand to. */
+    readonly commandCount: number;
+};
+
+/**
+ * One target's measured figures standing for one section, limited to the metrics that target's own
+ * recipes expect to move. `window` is the beat range the figures were rendered over: the section's own, or a wider one
  * that fully contains it.
  */
 export type VibeRunBaseline = {
@@ -66,8 +83,9 @@ export type VibeRunBatch = {
     readonly ordinal: number;
     readonly objective: VibeRunBatchObjective;
     readonly targetIds: readonly string[];
-    readonly expectedDeltas: readonly VibeRunExpectedDelta[];
-    /** The commands the batch's recipes expand to over all its targets; never above the batch cap. */
+    /** One entry per target, in `targetIds` order, with its own recipes and expected deltas. */
+    readonly targets: readonly VibeRunBatchTarget[];
+    /** The sum of each target's own `commandCount`; never above the batch cap. */
     readonly commandCount: number;
     readonly baselines: readonly VibeRunBaseline[];
     /** Targets no supplied measurement stands for in any section; their figures are read when the batch is previewed. */

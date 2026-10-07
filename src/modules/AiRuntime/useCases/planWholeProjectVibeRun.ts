@@ -39,6 +39,7 @@ type PlanWholeProjectVibeRunInput = {
 type PlannableTarget = {
     id: string;
     recipes: readonly MixRecipe[];
+    expectedDeltas: readonly VibeRunExpectedDelta[];
     commandCount: number;
 };
 
@@ -237,19 +238,19 @@ function readSectionBaseline(
 
 function readBatchBaselines(
     measurements: readonly VibeRunMeasurement[],
-    targetIds: readonly string[],
-    sections: readonly VibeRunSectionScope[],
-    metrics: ReadonlySet<string>
+    targets: readonly PlannableTarget[],
+    sections: readonly VibeRunSectionScope[]
 ): Pick<VibeRunBatch, 'baselines' | 'baselineConflicts'> {
     const baselines: VibeRunBaseline[] = [];
     const baselineConflicts: { targetId: string; sectionId: string }[] = [];
-    for (const targetId of targetIds) {
+    for (const target of targets) {
+        const metrics = new Set(target.expectedDeltas.map((delta) => delta.metric));
         for (const section of sections) {
-            const result = readSectionBaseline(measurements, targetId, section, metrics);
+            const result = readSectionBaseline(measurements, target.id, section, metrics);
             if (result.status === 'found') {
                 baselines.push(result.baseline);
             } else if (result.status === 'conflict') {
-                baselineConflicts.push({ targetId, sectionId: section.id });
+                baselineConflicts.push({ targetId: target.id, sectionId: section.id });
             }
         }
     }
@@ -314,36 +315,35 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
             } else if (commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
                 oversizedTargetIds.push(track.id);
             } else {
-                plannable.push({ id: track.id, recipes, commandCount });
+                plannable.push({ id: track.id, recipes, expectedDeltas: readExpectedDeltas(recipes), commandCount });
             }
         }
         if (oversizedTargetIds.length > 0) {
             unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: oversizedTargetIds });
         }
         for (const group of packWithinCommandCap(plannable)) {
-            const recipes = rolePlanRecipes.filter((recipe) => group.some((target) => target.recipes.includes(recipe)));
-            const expectedDeltas = readExpectedDeltas(recipes);
             const targetIds = group.map((target) => target.id);
             const ordinal = batches.length + 1;
-            const { baselines, baselineConflicts } = readBatchBaselines(
-                input.measurements,
-                targetIds,
-                sections,
-                new Set(expectedDeltas.map((delta) => delta.metric))
-            );
+            const { baselines, baselineConflicts } = readBatchBaselines(input.measurements, group, sections);
             const measuredTargetIds = new Set(baselines.map((baseline) => baseline.targetId));
             batches.push({
                 id: `vibe-batch-${String(ordinal)}`,
                 ordinal,
                 objective: {
-                    descriptors: [...new Set(recipes.map((recipe) => recipe.descriptor))],
+                    descriptors: [
+                        ...new Set(group.flatMap((target) => target.recipes.map((recipe) => recipe.descriptor))),
+                    ],
                     role,
                     sections,
                     sectionGoals,
-                    recipeIds: recipes.map((recipe) => recipe.id),
                 },
                 targetIds,
-                expectedDeltas,
+                targets: group.map((target) => ({
+                    targetId: target.id,
+                    recipeIds: target.recipes.map((recipe) => recipe.id),
+                    expectedDeltas: target.expectedDeltas,
+                    commandCount: target.commandCount,
+                })),
                 commandCount: group.reduce((total, target) => total + target.commandCount, 0),
                 baselines,
                 unmeasuredTargetIds: targetIds.filter((targetId) => !measuredTargetIds.has(targetId)),

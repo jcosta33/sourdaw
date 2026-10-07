@@ -182,8 +182,8 @@ function planCatalogWarmDrums(context: PlannerContext) {
 function expandBatch(batch: VibeRunBatch, context: ProjectContext): number {
     let total = 0;
     let ordinal = 0;
-    for (const targetId of batch.targetIds) {
-        for (const recipeId of batch.objective.recipeIds) {
+    for (const { targetId, recipeIds } of batch.targets) {
+        for (const recipeId of recipeIds) {
             const result = expandMixRecipe({ recipeId, targetId, role: null, values: [] }, context, ordinal);
             if (result.status === 'refused') {
                 throw new TypeError(result.reason);
@@ -604,7 +604,9 @@ describe('planWholeProjectVibeRun batches', () => {
         });
 
         for (const batch of result.batches) {
-            expect(batch.objective.recipeIds).toEqual(['drums-warm', 'drums-bright']);
+            for (const target of batch.targets) {
+                expect(target.recipeIds).toEqual(['drums-warm', 'drums-bright']);
+            }
             expect(expandBatch(batch, context)).toBe(batch.commandCount);
             expect(batch.commandCount).toBeLessThanOrEqual(MAX_LLM_ACTIONS_PER_BATCH);
         }
@@ -636,12 +638,75 @@ describe('planWholeProjectVibeRun batches', () => {
 
         for (const batch of result.batches) {
             expect(batch.objective.descriptors).toEqual(['warm']);
-            expect(batch.objective.recipeIds).toEqual(['warm-source']);
-            expect(batch.expectedDeltas).toEqual([
-                { descriptor: 'warm', metric: 'spectralCentroid', band: null, direction: 'decrease' },
-                { descriptor: 'warm', metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
-            ]);
+            for (const target of batch.targets) {
+                expect(target.recipeIds).toEqual(['warm-source']);
+                expect(target.expectedDeltas).toEqual([
+                    { descriptor: 'warm', metric: 'spectralCentroid', band: null, direction: 'decrease' },
+                    { descriptor: 'warm', metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+                ]);
+            }
         }
+    });
+
+    it('plans only the recipes whose metrics analysis.measure can report', () => {
+        const measurable = synthetic(
+            'warm-measurable',
+            'warm',
+            ['drums'],
+            [{ metric: 'spectralCentroid', direction: 'decrease' }]
+        );
+        const unmeasurable = synthetic(
+            'warm-unmeasurable',
+            'warm',
+            ['drums'],
+            [{ metric: 'spectralRolloff', direction: 'decrease' }]
+        );
+
+        const result = planWholeProjectVibeRun({
+            context: { tracks: [contextTrack('t-kick', 'Kick', 'kick')] },
+            descriptors: ['warm'],
+            recipes: [unmeasurable, measurable],
+            measurements: [],
+        });
+
+        expect(result.batches).toHaveLength(1);
+        expect(result.batches[0]?.targets).toEqual([
+            {
+                targetId: 't-kick',
+                recipeIds: ['warm-measurable'],
+                expectedDeltas: [{ descriptor: 'warm', metric: 'spectralCentroid', band: null, direction: 'decrease' }],
+                commandCount: 1,
+            },
+        ]);
+    });
+
+    it('lists on each target only the recipes that expand on it, and the deltas those recipes promise', () => {
+        const ready = contextTrack('t-bus-ready', 'Group A', 'bus', {
+            devices: [{ id: 'dev-comp', type: 'builtin-compressor', bypassed: false }],
+        });
+        const bare = contextTrack('t-bus-bare', 'Group B', 'bus');
+        const context = projectContext([ready, bare]);
+
+        const result = planWholeProjectVibeRun({
+            context,
+            descriptors: ['warm', 'punchy'],
+            recipes: [catalogRecipe('bus-warm'), catalogRecipe('bus-punchy')],
+            measurements: [],
+        });
+
+        const [batch] = result.batches;
+        if (batch === undefined || result.batches.length !== 1) {
+            throw new TypeError('Expected the two groups to share one batch.');
+        }
+        const readyTarget = batch.targets.find((target) => target.targetId === 't-bus-ready');
+        const bareTarget = batch.targets.find((target) => target.targetId === 't-bus-bare');
+        expect(readyTarget?.recipeIds).toEqual(['bus-warm', 'bus-punchy']);
+        expect(readyTarget?.expectedDeltas.map((delta) => delta.descriptor)).toContain('punchy');
+        expect(bareTarget?.recipeIds).toEqual(['bus-warm']);
+        expect(bareTarget?.expectedDeltas.map((delta) => delta.descriptor)).toEqual(['warm', 'warm']);
+        expect(batch.objective.descriptors).toEqual(['warm', 'punchy']);
+        expect(expandBatch(batch, context)).toBe(batch.commandCount);
+        expect(batch.commandCount).toBe(batch.targets.reduce((total, target) => total + target.commandCount, 0));
     });
 
     it('reports a role no requested character has a measurable recipe for instead of planning an empty batch', () => {
