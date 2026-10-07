@@ -398,6 +398,9 @@ describe('ClipInspector', () => {
         const slider = screen.getByLabelText('Trim clip start');
 
         fireEvent.change(slider, { target: { value: '2' } });
+        // Mid-gesture ticks never reach the command layer.
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '2' } });
 
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
@@ -411,6 +414,9 @@ describe('ClipInspector', () => {
         const slider = screen.getByLabelText('Trim clip end');
 
         fireEvent.change(slider, { target: { value: '6' } });
+        // Mid-gesture ticks never reach the command layer.
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '6' } });
 
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({

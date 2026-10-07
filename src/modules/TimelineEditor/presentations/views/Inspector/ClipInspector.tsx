@@ -61,6 +61,29 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
         setEditingName(false);
     };
 
+    // Trim edits commit one undoable action per gesture, the same contract
+    // as the gain slider and a timeline drag: the drag only moves local
+    // thumb state — the store does not react mid-gesture — and the commit
+    // dispatches the registered trim action once with the committed value.
+    const [trimStartDrag, setTrimStartDrag] = useState<number | null>(null);
+    const [trimEndDrag, setTrimEndDrag] = useState<number | null>(null);
+
+    const commitTrimStart = (beat: number): void => {
+        setTrimStartDrag(null);
+        void executeUserAppAction({
+            type: 'trimClipStart',
+            payload: { clipId: clip.id, newStartBeat: beat },
+        });
+    };
+
+    const commitTrimEnd = (beat: number): void => {
+        setTrimEndDrag(null);
+        void executeUserAppAction({
+            type: 'trimClipEnd',
+            payload: { clipId: clip.id, newEndBeat: beat },
+        });
+    };
+
     // Clip gain edits are one undoable action per gesture. The drag never
     // writes the store (scheduled clips would not react mid-playthrough anyway,
     // and per-tick writes would churn project truth), so the gesture start is
@@ -188,13 +211,15 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <div>
                         <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
-                            value={[clip.startBeat]}
+                            value={[trimStartDrag ?? clip.startBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    void executeUserAppAction({
-                                        type: 'trimClipStart',
-                                        payload: { clipId: clip.id, newStartBeat: value },
-                                    });
+                                    setTrimStartDrag(value);
+                                }
+                            }}
+                            onValueCommit={([value]) => {
+                                if (value !== undefined) {
+                                    commitTrimStart(value);
                                 }
                             }}
                             max={clip.endBeat - 1}
@@ -205,13 +230,15 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <div>
                         <ControlHeader className="mb-1" label="Trim End" />
                         <Slider
-                            value={[clip.endBeat]}
+                            value={[trimEndDrag ?? clip.endBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    void executeUserAppAction({
-                                        type: 'trimClipEnd',
-                                        payload: { clipId: clip.id, newEndBeat: value },
-                                    });
+                                    setTrimEndDrag(value);
+                                }
+                            }}
+                            onValueCommit={([value]) => {
+                                if (value !== undefined) {
+                                    commitTrimEnd(value);
                                 }
                             }}
                             min={clip.startBeat + 1}
