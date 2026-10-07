@@ -285,6 +285,8 @@ describe('canonical track roles', () => {
         { name: 'Bass Drum Overheads', role: 'drums', evidence: 'resolved-name-tags' },
         { name: 'Bass-Drum Room', role: 'drums', evidence: 'resolved-name-tags' },
         { name: 'Bass_Drums Overheads', role: 'drums', evidence: 'resolved-name-tags' },
+        { name: 'Bass Drum (Kick)', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Kick Bass Drum', role: 'kick', evidence: 'resolved-name-tags' },
         { name: 'China', role: 'cymbal', evidence: 'name-tokens' },
         { name: 'Splash 2', role: 'cymbal', evidence: 'name-tokens' },
     ] as const)('names a kit track by its drum abbreviation or kit-mic word: $name', ({ name, role, evidence }) => {
