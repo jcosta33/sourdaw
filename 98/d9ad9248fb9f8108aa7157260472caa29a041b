@@ -1,0 +1,30 @@
+.github/workflows/heavy-gates.yml
+  s_1f0dcd815e8946::t_6b106e371c71e6 57,60
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_322f01fc807f24 9-22
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1f0dcd815e8946::t_cc5c7e38bc5688 3137-3141,3157-3163,3174,3177-3183,3192-3204,3206-3211,3213-3222
+  s_1f0dcd815e8946::t_024c4a80ed33a1 713-716,719-729,731-744
+  s_1f0dcd815e8946::t_f142e07ff0c08c 717-718,730
+  s_1f0dcd815e8946::t_e497425bdb3a22 3164-3173,3188
+  s_1f0dcd815e8946::t_63eb4efb3735b0 2,3212
+  s_1f0dcd815e8946::t_a2fbe5a26a951c 4,3142-3156,3175-3176,3184-3187,3189-3191,3205
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1f0dcd815e8946::t_a660a0e19e5110 213-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98d9ad9248fb9f8108aa7157260472caa29a041b",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
