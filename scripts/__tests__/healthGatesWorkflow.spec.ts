@@ -236,6 +236,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'native-windows',
     'desktop-measure',
     'e2e',
+    'e2e-report',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -3601,6 +3602,42 @@ describe('health gates workflow contract', () => {
         expect(() => requireBrowserWebGpuHardware({ status: 'unavailable', reason: 'fallback-adapter' })).toThrow(
             'This Browser AI proof requires hardware WebGPU (fallback-adapter)'
         );
+    });
+
+    it('reports a sole nightly E2E report failure on scheduled runs', () => {
+        const report = jobAt(nightly, 'nightly-report');
+        expect.soft(arrayAt(report, 'needs')).toContain('e2e-report');
+        expect(report.if).toBe("${{ failure() && github.event_name == 'schedule' }}");
+
+        const reporter = stepNamed(report, 'Open or update the nightly failure issue');
+        expect(recordAt(reporter, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-nightly-report-'));
+        try {
+            const bin = join(directory, 'bin');
+            mkdirSync(bin);
+            writeFileSync(
+                join(bin, 'gh'),
+                '#!/bin/sh\nif [ "$2" = list ]; then printf "[]\\n"; exit 0; fi\nprintf "%s\\n" "$*" >> "$GH_CAPTURE"\n',
+                { mode: 0o755 }
+            );
+            const result = spawnSync('bash', ['-c', stringAt(reporter, 'run')], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GH_CAPTURE: join(directory, 'gh-calls.txt'),
+                    GH_TOKEN: 'unit-test',
+                    GITHUB_REPOSITORY: 'owner/repository',
+                    PATH: `${bin}:${process.env.PATH ?? ''}`,
+                    RESULTS: JSON.stringify({ 'e2e-report': { result: 'failure' } }),
+                    RUN_URL: 'https://github.com/owner/repository/actions/runs/1',
+                },
+            });
+            expect(result.status).toBe(0);
+            expect(readFileSync(join(directory, 'gh-calls.txt'), 'utf8')).toContain('Failing jobs: e2e-report');
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
