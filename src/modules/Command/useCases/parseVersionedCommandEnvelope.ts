@@ -12,6 +12,7 @@ import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
+import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
@@ -216,6 +217,21 @@ function getRequiredApplicationAssignedIdArguments(
     return [rule.argument];
 }
 
+/**
+ * An envelope written before the handler-minted ids were recorded names none of them, and one
+ * written since names every one, so each is the whole set or nothing: a partial set is a record
+ * someone edited, not one either writer produced.
+ */
+function recordsAllOrNoneOf(
+    applicationAssignedIds: readonly CommandApplicationAssignedId[],
+    handlerMintedArguments: readonly string[]
+): boolean {
+    const recorded = handlerMintedArguments.filter((argument) =>
+        applicationAssignedIds.some((entry) => entry.argument === argument)
+    );
+    return recorded.length === 0 || recorded.length === handlerMintedArguments.length;
+}
+
 function hasCanonicalArgumentMetadata(
     operation: string,
     argumentsValue: Record<string, unknown>,
@@ -313,12 +329,19 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     const requiredApplicationAssignedIdArguments = isRecord(argumentsValue)
         ? getRequiredApplicationAssignedIdArguments(value.operation, argumentsValue)
         : [];
+    const handlerMintedArguments = isRecord(argumentsValue)
+        ? readHandlerMintedApplicationIds(value.operation, argumentsValue).map(({ argument }) => argument)
+        : [];
     if (
         !Array.isArray(applicationAssignedIds) ||
         !applicationAssignedIds.every(isApplicationAssignedId) ||
         !isRecord(argumentsValue) ||
         new Set(applicationAssignedIds.map(({ argument }) => argument)).size !== applicationAssignedIds.length ||
-        applicationAssignedIds.some(({ argument }) => !requiredApplicationAssignedIdArguments.includes(argument)) ||
+        applicationAssignedIds.some(
+            ({ argument }) =>
+                !requiredApplicationAssignedIdArguments.includes(argument) && !handlerMintedArguments.includes(argument)
+        ) ||
+        !recordsAllOrNoneOf(applicationAssignedIds, handlerMintedArguments) ||
         applicationAssignedIds.some(
             ({ argument, value: assignedValue }) => getArgumentPathValue(argumentsValue, argument) !== assignedValue
         ) ||
