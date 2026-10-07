@@ -1421,6 +1421,9 @@ function resolveActionPromptScope({
                     continue;
                 }
                 if (namesLevelOutsideActionFader(actionName, clause, context)) {
+                    // The clause carries the level verb even though another fader owns its level,
+                    // so the next clause may still continue that verb onto this action's fader.
+                    takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
@@ -1431,16 +1434,21 @@ function resolveActionPromptScope({
         const previousScope = matchingScopes.at(-1);
         if (
             continuesScope &&
-            previousScope &&
             isLevelContinuationClause(clause.masked, decibelLevelForms) &&
             !namesLevelOutsideActionFader(actionName, clause, context)
         ) {
-            matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
-                previousScope,
-                clause,
-                prompt,
-                maskedPrompt
-            );
+            if (previousScope) {
+                matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
+                    previousScope,
+                    clause,
+                    prompt,
+                    maskedPrompt
+                );
+            } else {
+                // The verb lives on a clause another fader owns, so the continuation opens this
+                // action's first scope carrying only its own reference and figure.
+                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: '' });
+            }
             takesContinuation = true;
             continue;
         }

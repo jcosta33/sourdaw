@@ -5674,6 +5674,35 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('grounds a track-level edit on a track whose name holds the word Master', () => {
+        const masterVox = createTrack({ id: 'track-master-vox', name: 'Master Vox' });
+        const masterVoxContext = {
+            ...projectContext,
+            tracks: [masterVox, master],
+            selectedTrackId: masterVox.id,
+        };
+        const brought = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: masterVox.id, deltaDb: 3 } }],
+            'Bring the Master Vox up 3 dB.',
+            masterVoxContext
+        );
+        const turned = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: masterVox.id, deltaDb: 3 } }],
+            'Turn the Master Vox up 3 dB.',
+            masterVoxContext
+        );
+        const placed = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: masterVox.id, gainDb: -9 } }],
+            'Put the Master Vox at -9 dB.',
+            masterVoxContext
+        );
+
+        expect(brought.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: masterVox.id, deltaDb: 3 } }]);
+        expect(turned.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: masterVox.id, deltaDb: 3 } }]);
+        expect(placed.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: masterVox.id, gainDb: -9 } }]);
+        expect(brought.rejections).toEqual([]);
+    });
+
     it('rejects a single removeTrack when the prompt cites both an independent name and a literal id', () => {
         const independentNameContext = {
             ...projectContext,
