@@ -1,3 +1,5 @@
+import { type AnswerEvidenceEntry } from './PlanningOutcome';
+
 export type ChatRole = 'user' | 'assistant' | 'system';
 
 export type ChatActionConfirmationStatus =
@@ -14,6 +16,8 @@ export type ChatMessage = {
     error?: string;
     /** Hidden reasoning tokens from the model (collapsible in UI) */
     reasoning?: string;
+    /** Tool receipts an answer rests on; the panel lists them in a collapsed disclosure. */
+    answerEvidence?: readonly AnswerEvidenceEntry[];
     /** Whether this message is an executable prompt-command receipt rather than ordinary chat. */
     isCommandAction?: boolean;
     /** Pending prompt-action confirmation owned by AiRuntime. */

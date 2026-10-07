@@ -22,6 +22,7 @@ import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRende
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
+import { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
@@ -163,6 +164,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
+            projectClipControllers,
         } = renderContext;
         const stems = new Map<string, AudioBuffer>();
         // FX-9 — read once; each stem then plans only the routes that key a device
@@ -365,6 +367,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -403,6 +406,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -523,6 +527,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         return stems;
     } finally {
+        // The stem set owns its scope's lifetime: a cancelled export's flag
+        // must not outlive it (#4782).
+        endExportCancellationScope();
         releaseLock();
     }
 };

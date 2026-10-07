@@ -93,11 +93,17 @@ function bridge(
 
 describe('compiler graph alignment', () => {
     it('rejects a same-type EX-03 canonical reorder instead of reassigning compiler dependency indexes', () => {
-        const bass = createTrack({
-            id: 'track-bass',
-            name: 'Bass',
-            devices: [{ id: 'device-bass-distortion', name: 'Bass Distortion', type: 'distortion', bypassed: false }],
-        });
+        // The role the context producer derives from the name "Bass"; the bass-copy scope reads it, not the name.
+        const bass: ProjectTrack = {
+            ...createTrack({
+                id: 'track-bass',
+                name: 'Bass',
+                devices: [
+                    { id: 'device-bass-distortion', name: 'Bass Distortion', type: 'distortion', bypassed: false },
+                ],
+            }),
+            canonicalRole: { role: 'bass', source: 'name-tags', evidence: 'name-tokens' },
+        };
         const context: ProjectContext = {
             ...projectContext,
             sections: [

@@ -6,7 +6,7 @@ import {
 } from '../../models/DrumRoutingCapability';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
-import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
+import { getDrumRoutingRole } from './getDrumRoutingRole';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
 type DrumRoutingPromptScope =
@@ -32,7 +32,10 @@ function isLocked(track: ProjectContextTrack): boolean {
     return track.clips.some((clip) => clip.locked === true);
 }
 
-type RoutingClassification = ReturnType<typeof projectCanonicalTrackRole>;
+type RoutingClassification =
+    | { classification: 'drum'; role: DrumRoutingRole; evidence: string }
+    | { classification: 'non-drum'; role: string; evidence: string }
+    | { classification: 'ambiguous' };
 
 type RoutableTrack = ProjectContextTrack & { kind: 'audio' | 'midi' };
 
@@ -40,15 +43,6 @@ type RoutableTrack = ProjectContextTrack & { kind: 'audio' | 'midi' };
 function isRoutableTrack(track: ProjectContextTrack): track is RoutableTrack {
     return track.kind === 'audio' || track.kind === 'midi';
 }
-
-const DRUM_ROLE_BY_CANONICAL_ROLE: Partial<Record<string, DrumRoutingRole>> = {
-    kick: 'kick',
-    snare: 'snare',
-    'hi-hat': 'hi-hat',
-    tom: 'tom',
-    cymbal: 'cymbal',
-    percussion: 'percussion',
-};
 
 function describeCanonicalRole(canonicalRole: ProjectContextTrack['canonicalRole']): {
     role: string;
@@ -67,30 +61,21 @@ function resolveDrumTrackIds(context: ProjectContext): ReadonlySet<string> {
 /**
  * Whether a track is a drum, protected, or unclassifiable. Drum membership is the shared
  * resolver's `roleFamily: 'drums'`, which reads the track's canonical role, so a role the user
- * set in the inspector decides it either way. The name aliases only supply the role label the
- * provider sees for a name-derived role, and classify a track whose canonical role is `unknown`
- * because its name ("Hats", "OH", "BD") carries evidence the canonical name patterns do not
- * recognise.
+ * set in the inspector or the name derived decides it either way. A canonical `unknown` is
+ * ambiguous: the scope refuses rather than guess.
  */
 function classifyRoutingTrack(track: RoutableTrack, drumTrackIds: ReadonlySet<string>): RoutingClassification {
-    const named = projectCanonicalTrackRole(track);
     const canonicalRole = track.canonicalRole;
     if (drumTrackIds.has(track.id)) {
-        if (named.classification === 'drum' && canonicalRole?.source !== 'authored') {
-            return named;
-        }
         const described = describeCanonicalRole(canonicalRole);
         return {
             classification: 'drum',
-            role: DRUM_ROLE_BY_CANONICAL_ROLE[described.role] ?? 'drums',
+            role: getDrumRoutingRole(described.role) ?? 'drums',
             evidence: described.evidence,
         };
     }
     if (canonicalRole === undefined || canonicalRole.role === 'unknown') {
-        return named;
-    }
-    if (named.classification === 'non-drum') {
-        return named;
+        return { classification: 'ambiguous' };
     }
     return { classification: 'non-drum', ...describeCanonicalRole(canonicalRole) };
 }

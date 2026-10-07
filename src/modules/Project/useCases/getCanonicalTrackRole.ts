@@ -20,22 +20,81 @@ type RoleInput = {
     notesByClipId?: Readonly<Record<string, readonly Note[]>>;
 };
 
+/**
+ * A name that is only an abbreviation or an ambiguous word ("oh", "bd", "sd", "china"), optionally
+ * followed by its mic or position qualifiers. Anywhere else in a longer name those letters are
+ * ordinary words ("Oh Yeah Vox"), so they match only as the whole name.
+ */
+function wholeNameWithQualifiers(words: string, qualifiers: string): string {
+    return String.raw`^\s*(?:${words})(?:\s+(?:${qualifiers}|\d+))*\s*$`;
+}
+
+// Instruments that carry a string count or material of their own, so "string(s)" beside them does
+// not name a guitar.
+const STRING_COUNT_OTHER_INSTRUMENTS = 'bass|violin|viola|cello|ukulele|uke|mandolin|banjo|bouzouki|sitar|harp';
+
 const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
-    ['kick', /\b(?:kick|kicks)\b/],
-    ['snare', /\bsnares?\b/],
-    ['hi-hat', /\b(?:hi hat|hi hats|hihat|hihats|hh)\b/],
+    [
+        'kick',
+        new RegExp(
+            String.raw`\b(?:kick|kicks)\b|${wholeNameWithQualifiers('bd', 'in|out|inside|outside|sub|close|far|mic')}`
+        ),
+    ],
+    ['snare', new RegExp(String.raw`\bsnares?\b|${wholeNameWithQualifiers('sd', 'top|bottom|side|close|far|mic')}`)],
+    // A bare "hat" is also a garment and a football term ("Black Hat Synth", "Hat Trick").
+    [
+        'hi-hat',
+        new RegExp(
+            String.raw`\b(?:hi hat|hi hats|hihat|hihats|hh)\b|${wholeNameWithQualifiers('hats?', 'open|closed|pedal|mic')}`
+        ),
+    ],
     ['tom', /\btoms?\b/],
-    ['cymbal', /\b(?:cymbals?|ride|crash)\b/],
+    [
+        'cymbal',
+        new RegExp(
+            String.raw`\b(?:cymbals?|ride|crash)\b|${wholeNameWithQualifiers('china|splash', 'left|right|l|r|mic')}`
+        ),
+    ],
     ['percussion', /\b(?:percussion|perc|clap|claps|rim|rimshot|shaker|tambourine|cowbell|conga|bongo)\b/],
+    ['overhead', new RegExp(String.raw`\boverheads?\b|${wholeNameWithQualifiers('oh', 'left|right|l|r|mono|stereo')}`)],
+    // A room needs a drum word beside it: room tone and "Room" alone name non-drum tracks.
+    // A room word names the room mic only beside other drum evidence (see `namedRolesFromTokens`):
+    // room tone and "Room" alone name non-drum tracks.
+    ['room', /\brooms?\b/],
     ['drums', /\bdrums?\b/],
     ['bass', /\bbass\b/],
     ['lead vocal', /\b(?:lead vocals?|main vocals?)\b/],
     ['backing vocal', /\b(?:backing vocals?|background vocals?|bgv)\b/],
-    ['guitar', /\bguitars?\b/],
+    // A guitar named by its string count before the singular ("12 String") or its material
+    // ("Nylon String", "Nylon Strings") is a guitar, not an orchestral strings section; "12 Strings"
+    // is a section. The clause yields when another instrument is named beside it ("6 String Bass",
+    // "8 String Ukulele"), and counts that name other instruments (a 5 string banjo) are not guitar
+    // counts.
+    [
+        'guitar',
+        new RegExp(
+            String.raw`\b(?:guitars?|gtrs?)\b|(?<!\b(?:${STRING_COUNT_OTHER_INSTRUMENTS})\s+)\b(?:(?:6|7|8|12)\s+string|(?:nylon|steel)\s+strings?)\b(?!\s+(?:${STRING_COUNT_OTHER_INSTRUMENTS})\b)`
+        ),
+    ],
     ['keys', /\b(?:keys|keyboard|keyboards|piano|organ)\b/],
     ['synth', /\bsynths?\b/],
     ['pad', /\bpads?\b/],
     ['fx', /\b(?:fx|sfx|effects)\b/],
+];
+
+/**
+ * Words that describe a track without naming its part ("Rim Click", "Brass Snare", "String Bass",
+ * "Guide Vocal"). They claim a name only when no role above does, so they never turn a name that
+ * another role already names into a conflict.
+ */
+const MODIFIER_NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
+    // A string count or material before the word names an instrument's strings, not a section. The
+    // material words are reachable here when the guitar clause above yields to another instrument
+    // ("Nylon String Ukulele"), which must not fall through to an orchestral strings track.
+    ['strings', /(?<!\b(?:nylon|steel)\s+)\bstrings\b|(?<!\b(?:\d+|nylon|steel)\s+)\bstring\b/],
+    ['brass', /\bbrass\b/],
+    // Session furniture that carries no part of the song.
+    ['utility', /\b(?:click|metronome|reference|ref|guide|cue|hat trick)\b/],
 ];
 
 const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
@@ -45,7 +104,100 @@ const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
     'tom',
     'cymbal',
     'percussion',
+    'overhead',
+    'room',
 ]);
+
+const BASS_QUALIFIED_ROLES: ReadonlySet<CanonicalTrackRole> = new Set(['keys', 'pad']);
+
+const DRUM_FAMILY_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([...SPECIFIC_DRUM_ROLES, 'drums']);
+
+// Separators that only label a name ("Drums (Room)", "Drums - Kick In", "Drums_Snare"). Anything
+// else between two words ("&", "+", ",") joins separate things.
+const LABELLING_SEPARATOR = /^[\s()[\]{}:./\\_–—-]*$/u;
+
+// A word before a drum piece that adds or removes it ("Drums No Overheads", "w/ Room").
+const CONJUNCTION_OR_NEGATION_WORDS: ReadonlySet<string> = new Set(['and', 'with', 'no', 'without', 'w', 'o', 'minus']);
+
+function splitNameWords(name: string): { words: string[]; separators: string[] } {
+    const lowered = name.normalize('NFKD').toLowerCase();
+    return {
+        words: lowered.match(/[a-z0-9]+/g) ?? [],
+        separators: lowered.split(/[a-z0-9]+/).slice(1, -1),
+    };
+}
+
+function countSpaces(text: string): number {
+    return (text.match(/ /g) ?? []).length;
+}
+
+function wordSpanOfRole(tokens: string, role: CanonicalTrackRole): { first: number; last: number } | null {
+    const spans = roleSpans(tokens, role);
+    const span = spans[0];
+    if (spans.length !== 1 || !span) {
+        return null;
+    }
+    return { first: countSpaces(tokens.slice(0, span.start)), last: countSpaces(tokens.slice(0, span.end - 1)) };
+}
+
+/**
+ * Whether a generic drums word and one specific drum piece are written as one label: directly
+ * adjacent, or joined only by a labelling separator, in either order, with nothing before the
+ * piece that adds or removes it.
+ */
+function labelsDrumPiece(name: string, piece: CanonicalTrackRole): boolean {
+    // A truncated imported name could hide contradictory evidence after the cut.
+    if (name.length > 256) {
+        return false;
+    }
+    const { words, separators } = splitNameWords(name);
+    const tokens = words.join(' ');
+    const drums = wordSpanOfRole(tokens, 'drums');
+    const pieceSpan = wordSpanOfRole(tokens, piece);
+    if (!drums || !pieceSpan) {
+        return false;
+    }
+    // "Room (Drums)" labels the room mic; a plural "Rooms" before the drums word is no label.
+    if (piece === 'room' && pieceSpan.first < drums.first && words[pieceSpan.first] === 'rooms') {
+        return false;
+    }
+    const [first, second] = drums.first < pieceSpan.first ? [drums, pieceSpan] : [pieceSpan, drums];
+    if (second.first !== first.last + 1 || !LABELLING_SEPARATOR.test(separators[first.last] ?? '')) {
+        return false;
+    }
+    if (pieceSpan.first === 0) {
+        return true;
+    }
+    const wordBefore = words[pieceSpan.first - 1] ?? '';
+    return (
+        !CONJUNCTION_OR_NEGATION_WORDS.has(wordBefore) &&
+        LABELLING_SEPARATOR.test(separators[pieceSpan.first - 1] ?? '')
+    );
+}
+
+/**
+ * Names that carry only drum-family evidence ("Kick & Snare", "Drums & Room") still say the track
+ * is drums. A generic drums word with exactly one specific piece names that piece only when the
+ * two are written as one label ("Drums (Room)", "Kick Drum"). A mixed-family conflict stays a
+ * conflict, and null leaves the name to the other rules.
+ */
+function resolveDrumFamilyConflict(roles: readonly CanonicalTrackRole[], name: string): CanonicalTrackRole | null {
+    if (!roles.every((role) => DRUM_FAMILY_ROLES.has(role))) {
+        return null;
+    }
+    // Percussion is the sibling family of the kit, not a piece of it: it never yields.
+    const piece = roles.find((role) => role !== 'drums');
+    if (
+        roles.length === 2 &&
+        roles.includes('drums') &&
+        piece !== undefined &&
+        piece !== 'percussion' &&
+        labelsDrumPiece(name, piece)
+    ) {
+        return piece;
+    }
+    return 'drums';
+}
 
 // An unqualified "vocal"/"vocals"/"vox" carries no dedicated pattern above: the canonical set has
 // no generic vocal role, so it must be resolved to lead or backing rather than matched directly.
@@ -64,7 +216,30 @@ function normalizedTokens(name: string): string {
 }
 
 function namedRolesFromTokens(tokens: string): CanonicalTrackRole[] {
-    return NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+    const roles = NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+    const hasOtherDrumEvidence = roles.some((role) => role !== 'room' && DRUM_FAMILY_ROLES.has(role));
+    return hasOtherDrumEvidence ? roles : roles.filter((role) => role !== 'room');
+}
+
+/**
+ * A bass word followed by "strings" or "brass". Written as one compound ("Bass Strings",
+ * "Bass-Brass") it is an orchestral part voiced as a bass, not a bass instrument; with any other
+ * connector ("Bass & Strings", "Bass, Strings") it names two things and stays a conflict. Null
+ * when the name has no such pair, so "String Bass" stays a bass.
+ */
+function resolveBassWithOrchestralWord(name: string, tokens: string): CanonicalTrackRoleProjection | null {
+    if (!/\bbass\b.*\b(?:strings|brass)\b/.test(tokens)) {
+        return null;
+    }
+    const match = /\bbass\s+(strings|brass)\b/.exec(compoundAdjacencyTokens(name));
+    if (!match) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
+    return { role: match[1] === 'brass' ? 'brass' : 'strings', source: 'name-tags', evidence: 'resolved-name-tags' };
+}
+
+function modifierRolesFromTokens(tokens: string): CanonicalTrackRole[] {
+    return MODIFIER_NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
 }
 
 function namedRoles(name: string): CanonicalTrackRole[] {
@@ -103,6 +278,23 @@ function hasIndependentBareVocal(tokens: string, role: CanonicalTrackRole): bool
     });
 }
 
+/** What the word "bass" means directly before another role word, or null when it keeps the conflict. */
+function resolveBassQualifiedRole(secondRole: CanonicalTrackRole): CanonicalTrackRole | null {
+    // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
+    if (secondRole === 'drums') {
+        return 'kick';
+    }
+    // "Bass guitar" names the bass, by studio convention.
+    if (secondRole === 'guitar') {
+        return 'bass';
+    }
+    // "Bass keys" and "bass pad" are a keys-family part voiced as a bass, not a bass instrument.
+    if (BASS_QUALIFIED_ROLES.has(secondRole)) {
+        return secondRole;
+    }
+    return secondRole === 'synth' ? 'bass' : null;
+}
+
 /**
  * Interprets a name matching exactly two patterns as one convention-backed role instead of a
  * genuine conflict. Only these paired combinations carry an unambiguous studio meaning, and only
@@ -132,13 +324,8 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     if (!/^\s+$/.test(tokens.slice(firstSpan.end, secondSpan.start))) {
         return null;
     }
-    // A specific drum role named directly before the generic "drums" is the specific role.
-    if (secondRole === 'drums' && SPECIFIC_DRUM_ROLES.has(firstRole)) {
-        return firstRole;
-    }
-    // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
-    if (firstRole === 'bass' && secondRole === 'drums') {
-        return 'kick';
+    if (firstRole === 'bass') {
+        return resolveBassQualifiedRole(secondRole);
     }
     // "Synth" directly adjacent to exactly one other role yields that other role, in either order.
     if (firstRole === 'synth') {
@@ -278,17 +465,30 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length > 1) {
-        const resolved = resolveNamedRoleConflict(roles, input.track.name);
+        const resolved =
+            resolveDrumFamilyConflict(roles, input.track.name) ?? resolveNamedRoleConflict(roles, input.track.name);
         if (resolved) {
             return { role: resolved, source: 'name-tags', evidence: 'resolved-name-tags' };
         }
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length === 1) {
+        const bassWithOrchestralWord =
+            roles[0] === 'bass' ? resolveBassWithOrchestralWord(input.track.name, tokens) : null;
+        if (bassWithOrchestralWord) {
+            return bassWithOrchestralWord;
+        }
         return { role: roles[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
     if (bareVocalRole) {
         return { role: bareVocalRole, source: 'name-tags', evidence: 'resolved-name-tags' };
+    }
+    const modifiers = modifierRolesFromTokens(tokens);
+    if (modifiers.length > 1) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
+    if (modifiers.length === 1) {
+        return { role: modifiers[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
     return contentRole(input);
 }

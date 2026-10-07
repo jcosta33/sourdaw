@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { quantizeMidiNotes } from '../../transformers/quantizeMidiNotes';
 import { quantizeNotes } from '../../useCases/midiNoteTransforms/quantizeNotes';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -25,6 +26,9 @@ function prepareQuantizeNotes(action: Extract<AppAction, { type: 'quantizeNotes'
 
 export const handleQuantizeNotes = createHandler<'quantizeNotes'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written =
             action.payload.noteIds !== undefined
                 ? quantizeNotes(

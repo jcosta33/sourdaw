@@ -161,4 +161,67 @@ describe('agent cost budget', () => {
         expect(agentRunLifecycle.get('atomic-budget-run')?.budgets.consumed).toEqual({});
         expect(agentRunLifecycle.get('atomic-budget-run')?.budgetAttempts).toEqual([]);
     });
+
+    it('refuses a second final settle so an already-final attempt cannot refund its reservation again', () => {
+        agentRunLifecycle.create({
+            runId: 'double-settle-run',
+            request: 'Render the chorus twice.',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+            budgets: { limits: { maxRenderJobs: 4 }, consumed: {} },
+        });
+
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: 'double-settle-run',
+                attemptId: 'batch:maxRenderJobs',
+                category: 'maxRenderJobs',
+                estimate: 2,
+                provenance: 'versioned-estimate',
+            })
+        ).toMatchObject({ status: 'reserved' });
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: 'double-settle-run',
+                attemptId: 'measurement:maxRenderJobs',
+                category: 'maxRenderJobs',
+                estimate: 2,
+                provenance: 'versioned-estimate',
+            })
+        ).toMatchObject({ status: 'reserved' });
+
+        const settleMeasurement = () =>
+            agentRunLifecycle.reconcileBudgetAttempt({
+                runId: 'double-settle-run',
+                attemptId: 'measurement:maxRenderJobs',
+                consumed: 0,
+                mode: 'final',
+                provenance: 'versioned-estimate',
+            });
+
+        settleMeasurement();
+        expect(agentRunLifecycle.get('double-settle-run')?.budgets.consumed).toEqual({ maxRenderJobs: 2 });
+
+        expect(settleMeasurement).toThrow('Budget attempt already final: measurement:maxRenderJobs');
+
+        expect(agentRunLifecycle.get('double-settle-run')?.budgets.consumed).toEqual({ maxRenderJobs: 2 });
+        expect(agentRunLifecycle.get('double-settle-run')?.budgetAttempts).toEqual([
+            {
+                attemptId: 'batch:maxRenderJobs',
+                category: 'maxRenderJobs',
+                reserved: 2,
+                actual: 0,
+                provenance: 'versioned-estimate',
+                final: false,
+            },
+            {
+                attemptId: 'measurement:maxRenderJobs',
+                category: 'maxRenderJobs',
+                reserved: 2,
+                actual: 0,
+                provenance: 'versioned-estimate',
+                final: true,
+            },
+        ]);
+    });
 });

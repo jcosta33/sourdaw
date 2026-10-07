@@ -12,22 +12,28 @@ export type { AudioLatencyProfile };
 export type GridSnapOption =
     'bar' | 'beat' | '1/2' | '1/4' | '1/8' | '1/16' | '1/32' | '1/4T' | '1/8T' | '1/16T' | '1/4D' | '1/8D' | 'off';
 
+// Labels are note values in 4/4 — one beat is the 1/4 note — matching the
+// piano-roll toolbar's Snap pills and the quantize menus (#4848), so the same
+// token names the same grid on every surface. The `value` tokens are the
+// persisted identifiers (preferences and projects) and keep their historical
+// beat-fraction spelling; only `label` carries the convention.
 export const GRID_SNAP_OPTIONS: { value: GridSnapOption; label: string; beats: number }[] = [
-    { value: 'bar', label: 'Bar', beats: 4 },
-    { value: 'beat', label: 'Beat', beats: 1 },
-    { value: '1/2', label: '1/2', beats: 0.5 },
-    { value: '1/4', label: '1/4', beats: 0.25 },
-    { value: '1/8', label: '1/8', beats: 0.125 },
-    { value: '1/16', label: '1/16', beats: 0.0625 },
-    { value: '1/32', label: '1/32', beats: 0.03125 },
+    { value: 'bar', label: '1/1', beats: 4 },
+    { value: 'beat', label: '1/4', beats: 1 },
+    { value: '1/2', label: '1/8', beats: 0.5 },
+    { value: '1/4', label: '1/16', beats: 0.25 },
+    { value: '1/8', label: '1/32', beats: 0.125 },
+    { value: '1/16', label: '1/64', beats: 0.0625 },
+    { value: '1/32', label: '1/128', beats: 0.03125 },
     // Triplets are two thirds of their straight sibling — three of them fill the
     // span of two. They were twice that, which made every triplet grid *coarser*
-    // than the straight option it is named after (1/4T snapped wider than 1/4).
-    { value: '1/4T', label: '1/4T', beats: (2 / 3) * 0.25 },
-    { value: '1/8T', label: '1/8T', beats: (2 / 3) * 0.125 },
-    { value: '1/16T', label: '1/16T', beats: (2 / 3) * 0.0625 },
-    { value: '1/4D', label: '1/4D', beats: 0.375 },
-    { value: '1/8D', label: '1/8D', beats: 0.1875 },
+    // than the straight option it is named after (stored `1/4T` snapped wider
+    // than stored `1/4`).
+    { value: '1/4T', label: '1/16T', beats: (2 / 3) * 0.25 },
+    { value: '1/8T', label: '1/32T', beats: (2 / 3) * 0.125 },
+    { value: '1/16T', label: '1/64T', beats: (2 / 3) * 0.0625 },
+    { value: '1/4D', label: '1/16D', beats: 0.375 },
+    { value: '1/8D', label: '1/32D', beats: 0.1875 },
     { value: 'off', label: 'Off', beats: 0 },
 ];
 

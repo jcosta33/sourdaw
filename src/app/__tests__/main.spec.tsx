@@ -86,6 +86,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
+    projectClipControllerEvents: vi.fn(),
+    projectClipControllerRestore: vi.fn(),
     adaptGrooveTemplateForConsumer: vi.fn(),
     addChordEvent: vi.fn(),
     appendMidiNotes: vi.fn(),
@@ -103,6 +105,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiInputTrackOwnerId: vi.fn(),
     getMidiInputTrackRevision: vi.fn(),
     getMidiStoreState: vi.fn(),
+    getNotesForClip: vi.fn(() => []),
     getScopedGrooveAssignment: vi.fn(),
     getScopedGrooveConsumerId: vi.fn(),
     getStraightGrooveTemplateId: vi.fn(),

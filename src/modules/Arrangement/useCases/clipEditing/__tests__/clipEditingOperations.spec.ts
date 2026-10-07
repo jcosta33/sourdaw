@@ -8,7 +8,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.updateClip }));
 vi.mock('#/modules/Automation/useCases', () => ({ shiftClipAutomation: mocks.shiftClipAutomation }));
-vi.mock('#/modules/MIDI/useCases', () => ({ shiftClipMidiNotes: mocks.shiftClipMidiNotes }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    getNotesForClip: vi.fn(() => []),
+    setNotesForClip: vi.fn(),
+    shiftClipMidiNotes: mocks.shiftClipMidiNotes,
+}));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';

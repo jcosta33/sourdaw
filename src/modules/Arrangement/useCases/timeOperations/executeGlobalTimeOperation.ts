@@ -11,8 +11,11 @@ import {
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
+import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { createTakeLaneTransitionPlan } from './createTakeLaneTransitionPlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
@@ -675,6 +678,36 @@ function collectClipIdentityTransition(
 
 function collectRetiredClipIds(transition: ClipSatelliteTransition): readonly string[] {
     return [...transition.removedClipIds, ...transition.migrations.map((migration) => migration.sourceClipId)];
+}
+
+/**
+ * The take-lane half of a delete that re-keys instead of removes (#4841): only
+ * owners that accept clip updates take part, and the re-key targets come from
+ * the delete-right identities, including the spanning clip's, whose own id
+ * stays on the left half. Captured alongside the retirement, before any handle
+ * publishes, so the inverse plan replays the exact facets — including the take
+ * ids a split minted, which a replayed redo re-mints identically. The
+ * projection and capture are `captureTrackTakeReKeyTransitions`.
+ */
+function captureDeleteTakeReKeyTransitions(
+    owners: readonly NormalizedOwner[],
+    operation: DeleteGlobalTimeOperation,
+    nextTrackState: TrackState,
+    identities: readonly ClipReplayIdentity[],
+    removedClipIds: readonly string[]
+): readonly TakeReKeyLaneTransition[] {
+    return captureTrackTakeReKeyTransitions({
+        owners: owners.filter((owner) => owner.acceptsClipUpdate),
+        afterTracks: nextTrackState.tracks,
+        reKeyTargets: new Map(
+            identities
+                .filter((identity) => identity.role === 'delete-right')
+                .map((identity) => [identity.sourceClipId, identity.targetClipId])
+        ),
+        removedClipIds: new Set(removedClipIds),
+        deleteStartBeat: operation.startBeat,
+        deleteEndBeat: operation.endBeat,
+    });
 }
 
 function collectTrackStateClipIds(state: TrackState): ReadonlySet<string> {
@@ -1596,6 +1629,19 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     // them (#4520). Captured here, before any handle publishes, so the inverse
     // plan restores exactly what the sweep below retires.
     const retiredTakeLanes = captureRetiredTakeLanes(clipIdentityTransition.removedClipIds);
+    // A clip the delete re-keys, splits, trims, or shifts keeps its material,
+    // so its takes and comp regions follow the surviving fragments instead of
+    // retiring (#4841) — the other half of the same sweep.
+    const reKeyedTakeLanes =
+        validatedInput.operation.type === 'delete'
+            ? captureDeleteTakeReKeyTransitions(
+                  owners,
+                  validatedInput.operation,
+                  local.trackState,
+                  clipIdentities,
+                  clipIdentityTransition.removedClipIds
+              )
+            : [];
 
     const inversePlan = createCombinedInversePlan({
         expectedTrackState: local.trackState,
@@ -1615,7 +1661,11 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
                   }
                 : null,
         },
-        takeLanes: createTakeLaneTransitionPlan(clipIdentityTransition.removedClipIds, retiredTakeLanes),
+        takeLanes: createTakeLaneTransitionPlan(
+            clipIdentityTransition.removedClipIds,
+            retiredTakeLanes,
+            reKeyedTakeLanes
+        ),
     });
     if (!inversePlan) {
         return rejectResult();
@@ -1656,8 +1706,10 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         // the span fully removed is a comp no resolver can play, and its orphan
         // region keeps advancing the comp cursor over the freed span, silencing
         // whatever clip shifts into it. Only the fully-removed ids retire — a
-        // re-keyed clip's material is still in the arrangement.
+        // re-keyed clip's material is still in the arrangement, so those takes
+        // and regions follow their clips' surviving fragments instead (#4841).
         removeTakesForClips(clipIdentityTransition.removedClipIds);
+        applyTakeReKeyTransitions(reKeyedTakeLanes);
         return true;
     });
 

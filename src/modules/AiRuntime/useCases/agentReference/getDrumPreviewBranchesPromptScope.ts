@@ -5,8 +5,6 @@ import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 import { type DrumPreviewBranchesCapability } from '../../models/DrumPreviewBranchesCapability';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
-import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
-
 type DrumPreviewRoleEntry = {
     trackId: string;
     trackName: string;
@@ -49,10 +47,9 @@ function getRoleEntry(
     role: 'kick' | 'snare' | 'hi-hat',
     section: { startBeat: number; endBeat: number }
 ): DrumPreviewRoleEntry | null {
-    const matches = tracks.filter((track) => {
-        const projected = projectCanonicalTrackRole(track);
-        return projected.classification === 'drum' && projected.role === role;
-    });
+    const matches = tracks.filter(
+        (track) => (track.kind === 'audio' || track.kind === 'midi') && track.canonicalRole?.role === role
+    );
     if (matches.length !== 1) {
         return null;
     }

@@ -1535,7 +1535,10 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
+        // The budget now exceeds the five mandatory tools plus the 30 tools the prompt selector
+        // hands over (#4371 raised it from 31 to 36), so the selector's cap binds here.
+        expect(advertisedTools).toHaveLength(5 + 30);
+        expect(advertisedTools.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
             expect.arrayContaining([
                 'project.query',
@@ -1612,9 +1615,9 @@ describe('generateToolPlanningOutcome', () => {
             'object'
         );
 
-        // The mandatory set (workflow selector, the application tools, every workflow action tool)
-        // leaves one free slot under the WebLLM budget, and it goes to the first non-mandatory
-        // catalog tool.
+        // The mandatory set (workflow selector, the application tools including the five planning
+        // tools #4371 made mandatory, every workflow action tool) leaves one free slot under the
+        // WebLLM budget, and it goes to the first non-mandatory catalog tool.
         expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
@@ -1624,6 +1627,11 @@ describe('generateToolPlanningOutcome', () => {
                 'agent.command-index.search',
                 'command.batch.propose',
                 'command.batch.decline',
+                'analysis.measure',
+                'recipe.discover',
+                'recipe.expand',
+                'device.factory-manifest.read',
+                'transform.compile',
                 'removeTrack',
                 'muteTrack',
                 'soloTrack',
@@ -1683,29 +1691,33 @@ describe('generateToolPlanningOutcome', () => {
         'show the command history',
         'the bass is muddy, clean it up',
         'compile a transform for each selected MIDI clip',
-    ])('never advertises recipe.discover, recipe.expand or analysis.measure to WebLLM for "%s"', async (prompt) => {
-        mocks.backendChain.value = ['webllm'];
-        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+    ])(
+        'always advertises recipe.discover, recipe.expand, analysis.measure and transform.compile to WebLLM for "%s"',
+        async (prompt) => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-        const schemas = getPlanningProviderToolSchemas();
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+            const schemas = getPlanningProviderToolSchemas();
+            const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
 
-        await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
-            status: 'complete',
-        });
+            await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
+                status: 'complete',
+            });
 
-        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+            const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+            const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
-        // recipe.discover must never cost the local tier the planning tools it had before it existed:
-        // the advertised list stays identical to the pre-recipe.discover contract for every prompt.
-        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
-        expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
-        expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
-        expect(advertisedNames).not.toContain(RECIPE_EXPANSION_TOOL_NAME);
-        expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
-        expect(advertisedNames).not.toContain('transform.compile');
-    });
+            // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
+            // the one prompt-selected slot, which keeps project.discover for these prompts.
+            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+            expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
+            expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+            expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
+            expect(advertisedNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
+            expect(advertisedNames).toContain(AGENT_DEVICE_MANIFEST_TOOL_NAME);
+            expect(advertisedNames).toContain('transform.compile');
+        }
+    );
 
     // Red when the WebLLM list stops excluding the reference comparison, or the hosted list stops carrying it while loaded.
     it('never advertises analysis.compareReference to WebLLM with a reference loaded, and advertises it to a hosted backend', async () => {

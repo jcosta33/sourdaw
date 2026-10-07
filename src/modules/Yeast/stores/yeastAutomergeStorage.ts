@@ -465,6 +465,13 @@ function rebasePendingYeastState({
     };
 }
 
+/** The adapter's closure state a command-preview scope must swap out, never share with the live document. */
+type YeastDecoderState = {
+    readonly decodedRacks: Map<string, RackCrdtState>;
+    readonly reconciledSlotState: YeastSlotCrdtState | null;
+    readonly projectedDeviceId: string | null | undefined;
+};
+
 export type YeastAutomergeStorageInput = {
     /** The owning store's current view — read to carry session-only fields across a decode. */
     getLocalState: () => YeastState | null;
@@ -685,6 +692,15 @@ export function createYeastAutomergeStorage(input: YeastAutomergeStorageInput): 
     // The slot stays a literal: the projection-completeness guard finds CRDT root slots by scanning
     // for literal keys, and it must equal `YEAST_SLOT_KEY`.
     const storage = createAutomergeStorage<YeastState>('root', 'yeast', {
+        // All three are replaced, never mutated, so a captured snapshot stays valid.
+        decoderState: {
+            capture: () => ({ decodedRacks, reconciledSlotState, projectedDeviceId }),
+            restore: (state: YeastDecoderState) => {
+                decodedRacks = state.decodedRacks;
+                reconciledSlotState = state.reconciledSlotState;
+                projectedDeviceId = state.projectedDeviceId;
+            },
+        },
         fromCrdt: (value) => {
             decodedRacks = parseSlot(value);
             reconciledSlotState = null;

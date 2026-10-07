@@ -8,7 +8,7 @@ import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError
 import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
+import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -50,11 +50,7 @@ import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
-    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-    RECIPE_DISCOVERY_TOOL_NAME,
-    RECIPE_EXPANSION_TOOL_NAME,
-    TRANSFORM_COMPILE_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
@@ -65,9 +61,19 @@ import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategori
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// The mandatory planning contract (workflow selector, six application tools, the workflow action
-// tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
-export const WEBLLM_TOOL_BUDGET = 31;
+// What WebLLM advertises on every request: the eight mandatory planning tools, the command-index
+// search, catalog discovery and the creative interpretation tool.
+const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
+    ...MANDATORY_PLANNING_TOOL_NAMES,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    CREATIVE_INTERPRETATION_TOOL_NAME,
+]);
+
+// The mandatory planning contract (workflow selector, eleven application tools, the 23 workflow
+// action tools: 35) plus one prompt-selected slot; the budget bounds browser prompt size, not a
+// provider limit. Raise it with the mandatory set, never below it plus one free slot.
+export const WEBLLM_TOOL_BUDGET = 36;
 
 /** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
 type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
@@ -439,32 +445,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const workflowSelectionTools = toolSchemas.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
-                    const applicationTools = toolSchemas.filter(
-                        (tool) =>
-                            tool.function.name === PROJECT_QUERY_TOOL_NAME ||
-                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME ||
-                            tool.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME ||
-                            tool.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME ||
-                            tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
-                            tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
+                    const applicationTools = toolSchemas.filter((tool) =>
+                        WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
                     );
-                    // #4371 owns mandatory transform availability on WebLLM. Until its budget route
-                    // lands, keep new catalog tools out of this single optional slot so the local
-                    // planning contract retains project.discover; hosted backends see the full catalog.
+                    // The reference comparison is not mandatory and is never offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
-                            tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
-                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
-                            tool.function.name !== COMMAND_BATCH_DECLINE_TOOL_NAME &&
-                            tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
-                            tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
-                            tool.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME &&
-                            tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME &&
-                            tool.function.name !== RECIPE_EXPANSION_TOOL_NAME &&
-                            tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME &&
-                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
-                            tool.function.name !== TRANSFORM_COMPILE_TOOL_NAME
+                            !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
+                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,

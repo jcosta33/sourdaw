@@ -1,9 +1,10 @@
-import { change, clone, from, merge, type Doc } from '@automerge/automerge';
+import { change, clone, from, getConflicts, merge, type Doc } from '@automerge/automerge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
     getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
@@ -456,6 +457,60 @@ describe('groove template collaboration storage', () => {
         expect(finalState.templates.map((template) => template.id)).toEqual(
             expect.arrayContaining(['collapse-write', 'stale-unrelated-write'])
         );
+    });
+
+    it('keeps the live collapsed conflict when a command-preview scope decodes a document without one', () => {
+        const legacyBaseline = from<RootDocument>({
+            grooveTemplates: {
+                templates: [...createBuiltinGrooveTemplates(), createTemplate('stale-delete-me')],
+                assignments: [],
+            },
+        });
+        const deletingPeer = createPeer(clone(legacyBaseline));
+        const concurrentPeer = createPeer(clone(legacyBaseline));
+        const deletingStorage = createGrooveTemplateAutomergeStorage();
+        const concurrentStorage = createGrooveTemplateAutomergeStorage();
+
+        configureAutomergeStoragePort(deletingPeer.port);
+        deletingStorage.hydrate?.();
+        deletingStorage.set({
+            templates: deletingStorage.get()!.templates.filter((template) => template.id !== 'stale-delete-me'),
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(concurrentPeer.port);
+        concurrentStorage.hydrate?.();
+        concurrentStorage.set({
+            templates: [...concurrentStorage.get()!.templates, createTemplate('first-concurrent-write')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        const previewDocument = createBaseline({ templates: createBuiltinGrooveTemplates(), assignments: [] });
+        const collapsedPeer = createPeer(merge(deletingPeer.getDoc(), concurrentPeer.getDoc()));
+        const collapsedStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(collapsedPeer.port);
+        expect(collapsedStorage.hydrate?.()).toBe(true);
+
+        const preview = createAutomergeStoragePreview(new Map([['root', previewDocument]]));
+        preview.scope(() => collapsedStorage.get());
+        preview.release();
+
+        collapsedStorage.set({
+            templates: [...collapsedStorage.get()!.templates, createTemplate('collapse-write')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        expect(getConflicts(collapsedPeer.getDoc(), 'grooveTemplates')).toBeUndefined();
+        const reopenedPeer = createPeer(clone(collapsedPeer.getDoc()));
+        const reopenedStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(reopenedPeer.port);
+        reopenedStorage.hydrate?.();
+        const templateIds = reopenedStorage.get()!.templates.map((template) => template.id);
+        expect(templateIds).toEqual(expect.arrayContaining(['first-concurrent-write', 'collapse-write']));
+        expect(templateIds).not.toContain('stale-delete-me');
     });
 
     it('refuses to hydrate or overwrite an unsupported CRDT schema', () => {

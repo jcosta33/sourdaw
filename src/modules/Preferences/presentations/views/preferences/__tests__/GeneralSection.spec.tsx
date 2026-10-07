@@ -21,7 +21,9 @@ describe('GeneralSection', () => {
         const update = vi.fn();
         render(<GeneralSection prefs={{ ...defaultPreferences, gridSubdivision: '1/4' }} update={update} />);
 
-        fireEvent.click(screen.getByRole('button', { name: '1/8' }));
+        // Note-value labels (#4848): the button `1/32` is the 0.125-beat grid,
+        // persisted as the beat-fraction value `1/8`.
+        fireEvent.click(screen.getByRole('button', { name: '1/32' }));
 
         expect(update).toHaveBeenCalledWith({ gridSubdivision: '1/8' });
     });

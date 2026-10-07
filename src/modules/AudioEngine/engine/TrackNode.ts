@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
+import { clampFaderGain, configureDualMonoPannerInput, toStereoPan } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
@@ -185,6 +185,7 @@ export class TrackNode {
 
         const postFaderGain = context.createGain();
         postFaderGain.gain.value = 1;
+        configureDualMonoPannerInput(postFaderGain);
 
         const panNode = context.createStereoPanner();
         panNode.pan.value = 0;

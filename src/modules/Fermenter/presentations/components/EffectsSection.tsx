@@ -62,6 +62,14 @@ const TAB_ITEMS: Array<{ id: FxTab; label: string; color: string }> = [
     { id: 'master', label: 'Master', color: '#fff' },
 ];
 
+/**
+ * The engine compressor's auto-makeup law (crates/daw-dsp/src/fermenter/effects.rs):
+ * half the gain reduction a 0 dBFS signal would receive, applied as a boost. The
+ * drawn curve must add the same amount or it understates the engine's output level.
+ */
+const compressorAutoMakeupDb = (threshold: number, ratio: number): number =>
+    ratio > 1 ? ((1 - 1 / ratio) * -threshold) / 2 : 0;
+
 type EffectsKnobProps = {
     value: number;
     onChange: (v: number) => void;
@@ -169,7 +177,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             threshold={props.compThreshold}
                             ratio={props.compRatio}
                             knee={6}
-                            makeup={0}
+                            makeup={compressorAutoMakeupDb(props.compThreshold, props.compRatio)}
                             width={200}
                             height={120}
                             onParamChange={(id, v) => {

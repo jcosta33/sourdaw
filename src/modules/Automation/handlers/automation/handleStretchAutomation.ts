@@ -4,10 +4,16 @@ import { stretchAutomationTime } from '../../useCases/automation/stretchAutomati
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
+import { findFollowerLaneRefusal } from './followerLaneRefusal';
 
 export const handleStretchAutomation = createHandler<'stretchAutomation'>({
     execute: (alpha) => {
+        const followerRefusal = findFollowerLaneRefusal(alpha.payload.laneId);
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
+        }
         stretchAutomationTime(alpha.payload.laneId, alpha.payload.factor, alpha.payload.anchorBeat);
+        return undefined;
     },
     isNoop: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);

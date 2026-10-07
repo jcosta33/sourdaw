@@ -5,6 +5,7 @@ import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRan
 
 import { type MidiNote } from '../../models/MidiNote';
 import { humanizeNotes } from '../../useCases/midiNoteTransforms/humanizeNotes';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -52,6 +53,9 @@ function prepareHumanizeNotes(action: HumanizeNotesAction) {
 
 export const handleHumanizeNotes = createHandler<'humanizeNotes'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         // Capture the RNG seed into the action payload on first execute so the
         // same action object — which executeAppAction stores in the undo entry
         // and replays verbatim on redo — reproduces identical timing/velocity

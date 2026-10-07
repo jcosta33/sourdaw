@@ -1,4 +1,7 @@
-import { type DeviceNoteExpressionRequest } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
+import {
+    type DeviceControllerRequest,
+    type DeviceNoteExpressionRequest,
+} from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 
 type PendingWorkletEventAddress = {
@@ -48,11 +51,28 @@ export type PendingExpressionWorkletEvent = PendingWorkletEventAddress & {
 };
 
 /**
+ * A pending stored controller move (a pedal, a mod wheel) for a worklet
+ * instrument whose engine honours one. It carries its own dispatcher for the
+ * reason expression does: a controller reaches a device through the strategy's
+ * optional surface, so an event of this kind exists only for an instrument that
+ * takes it. It has no pitch: a controller is addressed to the device, not a voice.
+ */
+export type PendingControlWorkletEvent = {
+    /** Seconds into the render at which the move applies. */
+    time: number;
+    type: 'control';
+    controller: number;
+    /** The 7-bit wire value the recording carries. */
+    value: number;
+    dispatch: (request: DeviceControllerRequest) => void;
+};
+
+/**
  * A pending event for a worklet instrument. Collected across all tracks, then
  * dispatched frame-addressed on the OfflineAudioContext as a single ordered
  * pass.
  */
-export type PendingWorkletEvent = PendingNoteWorkletEvent | PendingExpressionWorkletEvent;
+export type PendingWorkletEvent = PendingNoteWorkletEvent | PendingExpressionWorkletEvent | PendingControlWorkletEvent;
 
 /**
  * What a render actually put into the graph, accumulated as it schedules.

@@ -125,6 +125,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
+    getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),

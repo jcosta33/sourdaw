@@ -4116,6 +4116,40 @@ mod tests {
         );
     }
 
+    /// The reference level the Web Audio strip matches (#4686): a mono source
+    /// plays to both outputs, then the stereo-input law folds it, so a centred
+    /// mono clip is unity in each ear rather than 3.01 dB down.
+    #[test]
+    fn a_mono_clip_plays_dual_mono_through_the_stereo_pan_law() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4]);
+        assert_eq!(right, vec![1.0; 4]);
+
+        graph.automate(
+            AutomationTarget::TrackPan(1),
+            AutomationWrite::Append(AutomationEvent {
+                at_frame: 0,
+                duration_frames: 0,
+                value: 0.5,
+                shape: RampShape::Step,
+            }),
+        );
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        let angle = 0.5 * std::f32::consts::FRAC_PI_2;
+        for frame in 0..4 {
+            assert!((left[frame] - angle.cos()).abs() < 1e-6, "{left:?}");
+            assert!(
+                (right[frame] - (1.0 + angle.sin())).abs() < 1e-6,
+                "{right:?}"
+            );
+        }
+    }
+
     #[test]
     fn bus_strip_solo_gate_silences_like_a_track() {
         let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);

@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { retrogradeMidiNotes } from '../../transformers/retrogradeMidiNotes';
 import { retrogradeNotes } from '../../useCases/midiNoteTransforms/retrogradeNotes';
+import { getWritableMidiClipReplayGuardForBatch } from '../getWritableMidiClipReplayGuard';
 
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
@@ -16,6 +17,9 @@ function prepareRetrogradeNotes(action: Extract<AppAction, { type: 'retrogradeNo
 
 export const handleRetrogradeNotes = createHandler<'retrogradeNotes'>({
     execute: (action) => {
+        if (!getWritableMidiClipReplayGuardForBatch(action.payload.clipId)) {
+            return { status: 'conflict' };
+        }
         const written = retrogradeNotes(action.payload.clipId);
         return { status: written ? 'written' : 'no-write' };
     },

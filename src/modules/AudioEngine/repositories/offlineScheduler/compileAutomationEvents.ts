@@ -155,16 +155,21 @@ function beatAtTime(firstBeat: number, secondBeat: number, time: number, project
     return (lower + upper) / 2;
 }
 
+/**
+ * Sort by beat, keeping ties.
+ *
+ * Two points on one beat are how this codebase writes a hard automation jump,
+ * not a duplicate: the array-earlier point is the value held *approaching* the
+ * jump, the array-later one takes over *at and after* it
+ * (`transformAutomationPoints`). The sort is stable, so the tie's array order —
+ * which carries that contract — survives, and the segment loop below emits the
+ * jump where the live lookup (`getAutomationValueAtBeat`'s last-point-at-or-
+ * before search) reads one. Collapsing a tie to its later point erases the
+ * ramp into the jump and turns bounce, freeze and the native engine's segments
+ * into one glide straight to the jump's target (#4654).
+ */
 function normalizePoints(points: AutomationPoint[]): AutomationPoint[] {
-    const normalized: AutomationPoint[] = [];
-    for (const point of [...points].sort((alpha, beta) => alpha.beat - beta.beat)) {
-        if (normalized.at(-1)?.beat === point.beat) {
-            normalized[normalized.length - 1] = point;
-        } else {
-            normalized.push(point);
-        }
-    }
-    return normalized;
+    return [...points].sort((alpha, beta) => alpha.beat - beta.beat);
 }
 
 function appendEvent(events: CompiledAutomationEvent[], event: CompiledAutomationEvent): void {
@@ -343,6 +348,21 @@ export function compileAutomationEvents(
         }
         if (current.time > windowEnd) {
             break;
+        }
+
+        // A zero-width segment is one half of a hard automation jump (#4654):
+        // `current` is the array-earlier tied point, whose value the previous
+        // segment's ramp already reached, and `next` is the array-later one
+        // that takes over at and after the tie — exactly where the live
+        // lookup's last-point-at-or-before search lands. There is no span to
+        // interpolate, so the segment's whole output is the jump itself.
+        if (current.time === next.time) {
+            appendEvent(events, {
+                type: 'set',
+                timeSeconds: next.time - regionStartSeconds,
+                value: bound(next.point.value, current.point.value, next.point.value),
+            });
+            continue;
         }
 
         const visibleStart = Math.max(current.time, windowStart);

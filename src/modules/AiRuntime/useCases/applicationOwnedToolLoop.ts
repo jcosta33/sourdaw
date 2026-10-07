@@ -1,4 +1,8 @@
-import { getAgentBuiltinDeviceFactoryManifest, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import {
+    getAgentBuiltinDeviceFactoryManifest,
+    getMixRecipeCatalog,
+    getPlatformPlugins,
+} from '#/modules/Arrangement/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
@@ -731,7 +735,31 @@ function executeDeviceManifestPage(input: {
     });
 }
 
+/**
+ * The device catalogue a full context carries as `availableDeviceTypes`, as identity only. A delta
+ * turn omits that list, so a call with no arguments is how the planner asks for it again; the
+ * parameters of one type stay behind the typed, paged manifest read, which keeps this receipt far
+ * under the per-call receipt budget however many devices are installed.
+ */
+function executeDeviceCatalogue(callId: string, turn: number): ApplicationToolReceipt {
+    const availableDeviceTypes = getPlatformPlugins().map((plugin) => ({ id: plugin.id, name: plugin.name }));
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: {
+            schema: 'sourdaw.agent-device-catalogue',
+            schemaVersion: 1,
+            availableDeviceTypes,
+        },
+        summary: `${String(availableDeviceTypes.length)} available device type(s)`,
+        warnings: [],
+    });
+}
+
 function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    if (Object.keys(call.arguments).length === 0) {
+        return executeDeviceCatalogue(callId, turn);
+    }
     const typeValues = call.arguments.types;
     if (
         Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page') ||
@@ -1550,10 +1578,15 @@ function buildFinalReceiptList(
 }
 
 /**
- * Turns a `turn`-classified refusal into the non-retryable `run` form wherever its lone retry —
- * issued a turn later — could not fit either the turn cap or what the run leaves once this turn's
- * final list is charged. An instructed retry that the run cannot honour is worse than no retry at
- * all, so this closes that gap after the walk below has picked each refusal's starting cap.
+ * Turns a `turn`-classified refusal into the non-retryable `run` form wherever its retry — issued
+ * a turn later — could not fit either the turn cap or what the run leaves once this turn's final
+ * list is charged. Kept retries are charged jointly: a planner that follows every receipt retries
+ * all of them in one later turn, so each kept retry must fit the remainder alongside the retries
+ * kept before it, not alone. The charges accumulate in the map's insertion order — the walk's call
+ * order — so the kept set is deterministic: earlier calls hold their retry, later ones that would
+ * overflow the shared remainder are demoted. An instructed retry that the run cannot honour is
+ * worse than no retry at all, so this closes that gap after the walk below has picked each
+ * refusal's starting cap.
  *
  * Reclassification only ever moves `turn` to `run`, never back, and each pass recomputes the
  * remainder from the current final list before testing every still-`turn` refusal against it, so
@@ -1581,12 +1614,14 @@ function reclassifyUnfittingRetries(input: {
         changed = false;
         const remainder =
             maxTotalReceiptBytes - totalReceiptBytesSoFar - byteLength(serializeReceiptContext(finalList, turn));
+        let keptRetryBytes = 0;
         for (const [index, classification] of classifications.entries()) {
             if (classification !== 'turn') {
                 continue;
             }
             const retryBytes = byteLength(serializeReceiptContext([realReceipts[index]!], turn + 1));
-            if (retryBytes <= remainder && retryBytes <= maxReceiptBytesPerTurn) {
+            if (keptRetryBytes + retryBytes <= remainder && retryBytes <= maxReceiptBytesPerTurn) {
+                keptRetryBytes += retryBytes;
                 continue;
             }
             classifications.set(index, 'run');
@@ -1617,9 +1652,9 @@ function reclassifyUnfittingRetries(input: {
  * grows, so a candidate that overflowed it starts (and stays) the non-retryable
  * `run-receipt-budget-spent` failure, while a candidate that overflowed only the turn's own budget
  * starts the retryable `turn-receipt-budget-spent` failure. `reclassifyUnfittingRetries` then
- * demotes a `turn` refusal to `run` wherever its own lone retry could not fit what the run leaves
- * after this turn, so a refusal is never left retryable when the retry it instructs cannot be
- * honoured.
+ * demotes a `turn` refusal to `run` wherever the retries it and the refusals kept before it
+ * instruct would not together fit what the run leaves after this turn, so a refusal is never left
+ * retryable when the retry it instructs cannot be honoured.
  */
 function admitTurnReadReceipts(input: {
     realReceipts: readonly ApplicationToolReceipt[];

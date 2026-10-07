@@ -46,6 +46,22 @@ describe('createOfflineTrackStrip', () => {
         expect(strip.postFaderGain.gain.value).toBe(1);
     });
 
+    it('up-mixes to dual-mono at the node that feeds the panner, so a mono source takes the stereo pan law like native', async () => {
+        const strip = await createOfflineTrackStrip(makeOfflineCtx(), {
+            id: 'mono-track',
+            name: 'Mono track',
+            gain: 0.8,
+            muted: false,
+            pan: 0,
+            devices: [],
+        });
+
+        expect(strip.postFaderGain.connect).toHaveBeenCalledWith(strip.panNode);
+        expect(strip.postFaderGain.channelCount).toBe(2);
+        expect(strip.postFaderGain.channelCountMode).toBe('explicit');
+        expect(strip.postFaderGain.channelInterpretation).toBe('speakers');
+    });
+
     it('bakes mute into the strip on the mixdown path (default)', async () => {
         const strip = await createOfflineTrackStrip(makeOfflineCtx(), {
             id: 'mixdown-track',

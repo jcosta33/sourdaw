@@ -206,6 +206,21 @@ describe('automateParameterRange', () => {
         expectSameSamples(sampleLane(GAIN_LANE_ID, outsideBeats), outsideBefore);
     });
 
+    it('(r) admits the +6 dB fader ceiling as a decibel target on a lane bounded at the fader maximum', async () => {
+        // #4964: the lane law derived its ceiling by round-tripping FADER_MAX_GAIN through
+        // gainToDb, which reads 5.999999999999998 and refused the top of the fader's own travel.
+        seed({ lanes: [gainLane([])] });
+
+        await executeAppAction(rangeAction({ parameterId: 'gain', range: { section: 'Verse' }, valueDb: 6 }));
+
+        expect(pointShapes(laneFor('gain'))).toEqual([
+            { beat: 0, value: 1, curve: 'linear' },
+            { beat: 0, value: FADER_MAX_GAIN, curve: 'linear' },
+            { beat: 16, value: FADER_MAX_GAIN, curve: 'linear' },
+            { beat: 16, value: 1, curve: 'linear' },
+        ]);
+    });
+
     it('(b) places a pan range on the bars of a 4/4 to 7/8 meter change', async () => {
         // Bars 1–2 are 4/4 (4 beats); from beat 8 the 7/8 bars are 3.5 beats: bar 3 opens at 8, bar 5 at 15.
         timeSignatureMapStore.set({ changes: [{ id: 'seven-eight', beat: 8, numerator: 7, denominator: 8 }] });
@@ -405,6 +420,12 @@ describe('automateParameterRange', () => {
                 name: 'a level above the fader ceiling',
                 setup: () => seed({ lanes: [gainLane()] }),
                 payload: { parameterId: 'gain', range: { section: 'Verse' }, valueDb: 12 },
+                refusal: 'outside-law',
+            },
+            {
+                name: 'a level a hair above the fader ceiling',
+                setup: () => seed({ lanes: [gainLane()] }),
+                payload: { parameterId: 'gain', range: { section: 'Verse' }, valueDb: 6.01 },
                 refusal: 'outside-law',
             },
             {

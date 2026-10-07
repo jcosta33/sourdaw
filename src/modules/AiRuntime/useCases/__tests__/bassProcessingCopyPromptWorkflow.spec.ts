@@ -34,6 +34,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -44,7 +45,9 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { getBassProcessingCopyPromptScope } from '../agentReference/getBassProcessingCopyPromptScope';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
@@ -612,6 +615,46 @@ function createTrack(id: string, name: string): Track {
     };
 }
 
+function renameBassTrack(name: string): void {
+    const trackState = trackStore.value;
+    if (!trackState) {
+        throw new TypeError('Expected track state');
+    }
+    trackStore.set({
+        ...trackState,
+        tracks: trackState.tracks.map((track) => (track.id === 'track-bass' ? { ...track, name } : track)),
+    });
+}
+
+/** Adds a track and one reverb layer on it, `layer-<trackId>`, with one region over the given beats. */
+function addLayerOnNewTrack(trackId: string, name: string, startBeat: number, endBeat: number): void {
+    const trackState = trackStore.value;
+    const layerState = adjustmentLayerStore.value;
+    if (!trackState || !layerState) {
+        throw new TypeError('Expected project state');
+    }
+    trackStore.set({ ...trackState, tracks: [...trackState.tracks, createTrack(trackId, name)] });
+    adjustmentLayerStore.set({
+        layers: [
+            ...layerState.layers,
+            createLayer({
+                id: `layer-${trackId}`,
+                name: `Layer ${trackId}`,
+                effectType: 'reverb',
+                affectedTrackIds: [trackId],
+                region: {
+                    id: `region-${trackId}`,
+                    startBeat,
+                    endBeat,
+                    blend: 1,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                },
+            }),
+        ],
+    });
+}
+
 function createLayer(input: {
     id: string;
     name: string;
@@ -1029,6 +1072,124 @@ describe('bass-processing section copy workflow', () => {
                 { id: 'layer-bass-drum-eq', name: 'Bass Drum Chorus EQ' },
             ])
         );
+    });
+
+    it('refuses the scope when a layer on a Chorus One section touches a track whose role is unknown', async () => {
+        const trackState = trackStore.value;
+        const layerState = adjustmentLayerStore.value;
+        if (!trackState || !layerState) {
+            throw new TypeError('Expected project state');
+        }
+        trackStore.set({ ...trackState, tracks: [...trackState.tracks, createTrack('track-bass-fx', 'Bass FX')] });
+        adjustmentLayerStore.set({
+            layers: [
+                ...layerState.layers,
+                createLayer({
+                    id: 'layer-bass-fx-reverb',
+                    name: 'Bass FX Chorus Reverb',
+                    effectType: 'reverb',
+                    affectedTrackIds: ['track-bass-fx'],
+                    region: {
+                        id: 'region-bass-fx-chorus-one',
+                        startBeat: 16,
+                        endBeat: 32,
+                        blend: 1,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                    },
+                }),
+            ],
+        });
+
+        expect(getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-03 track role is ambiguous: track-bass-fx',
+        });
+        await sendChatMessage(PROMPT);
+        expect(getConfirmationId()).toBe('');
+    });
+
+    it('refuses the scope for an unplaced bass track whose layer sits only on Chorus Two', async () => {
+        addLayerOnNewTrack('track-bass-fx', 'Bass FX', 48, 64);
+
+        expect(getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test')).toEqual({
+            status: 'invalid',
+            reason: 'EX-03 track role is ambiguous: track-bass-fx',
+        });
+    });
+
+    it('protects a Violin track and its Chorus One layer instead of refusing, as for any non-bass track', async () => {
+        addLayerOnNewTrack('track-violin', 'Violin', 16, 32);
+
+        const scope = getBassProcessingCopyPromptScope(getProjectContext(), 'revision-test');
+        expect(scope.status).toBe('request');
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                { id: 'track-violin', name: 'Violin' },
+                { id: 'layer-track-violin', name: 'Layer track-violin' },
+            ])
+        );
+    });
+
+    it('protects the Chorus One layer of a Bass Strings track, an orchestral part, instead of copying it', async () => {
+        addLayerOnNewTrack('track-bass-strings', 'Bass Strings', 16, 32);
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([{ id: 'layer-track-bass-strings', name: 'Layer track-bass-strings' }])
+        );
+    });
+
+    it('targets a bass named String Bass, which a strings word must not turn into an unknown role', async () => {
+        renameBassTrack('String Bass');
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+    });
+
+    it('targets a bass the user set to bass in the inspector although its name does not say bass', async () => {
+        renameBassTrack('Low End');
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            productionBrief: {
+                ...structuredClone(defaultProjectStoreState.productionBrief),
+                trackRoles: [{ id: 'role-track-bass', trackId: 'track-bass', role: 'bass', createdAt: 0 }],
+            },
+        });
+
+        try {
+            await sendChatMessage(PROMPT);
+
+            const confirmation = getPendingActionConfirmation(getConfirmationId());
+            expect(
+                confirmation?.actions.flatMap((action) =>
+                    action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+                )
+            ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        } finally {
+            projectStore.set(structuredClone(defaultProjectStoreState));
+        }
     });
 
     it('copies multiple source regions from one layer as one atomic batch', async () => {

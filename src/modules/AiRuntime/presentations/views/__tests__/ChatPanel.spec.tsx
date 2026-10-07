@@ -453,6 +453,38 @@ describe('ChatPanel', () => {
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
+    it('shows an answer as an ordinary assistant reply with a collapsed evidence block that expands on activation', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'assistant-answer',
+                    role: 'assistant',
+                    content: 'The mix peaks at -1.2 dBFS.',
+                    timestamp: 1,
+                    answerEvidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Peak -1.2 dBFS.' }],
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'chat',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText('The mix peaks at -1.2 dBFS.')).toBeInTheDocument();
+        expect(screen.getByText('Assistant')).toBeInTheDocument();
+        expect(screen.queryByText('Action')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm pending actions' })).not.toBeInTheDocument();
+        const toggle = screen.getByRole('button', { name: /Evidence/ });
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByText('analysis.measure')).not.toBeInTheDocument();
+
+        fireEvent.click(toggle);
+
+        expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('analysis.measure')).toBeInTheDocument();
+    });
+
     it('offers one accessible retry for receipt-bound missing render artifacts', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             messages: [
