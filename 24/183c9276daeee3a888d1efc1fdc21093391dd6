@@ -1,0 +1,78 @@
+src/modules/AudioRendering/AGENTS.md
+  s_1c08b47ac3792f::t_49fa0d20a06f1b 32
+src/modules/AudioEngine/useCases/offlineRender/acquireRenderLockFromAgentRender.ts
+  s_1c08b47ac3792f::t_50df0ed8e6d54b 1-65
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_1c08b47ac3792f::t_9a5671fc54f1db 55
+  s_1c08b47ac3792f::t_3dfd8b67964938 38,42,44-45
+  s_1c08b47ac3792f::t_a83c6828abdd1a 29-31
+  s_1c08b47ac3792f::t_1a094952ee9d67 97-101
+  s_1c08b47ac3792f::t_cfb32cbf586422 5-6,9
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_1c08b47ac3792f::t_5981fca080a5e9 763-777
+src/utils/agentRenderReceipt.ts
+  s_1c08b47ac3792f::t_4e1e8a9fd246b5 29-35
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_1c08b47ac3792f::t_176217c0f67998 245-303
+  s_1c08b47ac3792f::t_a25f4f493ddb69 3,5
+  s_1c08b47ac3792f::t_639e04a8278813 96
+src/modules/AudioEngine/errors/RenderBusyError.ts
+  s_1c08b47ac3792f::t_06342d07c5fbb4 3
+src/modules/AudioEngine/useCases/offlineRender/canPreemptAgentRender.ts
+  s_1c08b47ac3792f::t_5abcedba36ab7a 1-9
+src/modules/AudioEngine/useCases/offlineRender/constants.ts
+  s_1c08b47ac3792f::t_775fd16858ef0a 107
+  s_1c08b47ac3792f::t_01709cc0d69bc1 94-95
+  s_1c08b47ac3792f::t_50ce677e8d997c 99-105
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_1c08b47ac3792f::t_6734ea12a26c7b 17,19
+  s_1c08b47ac3792f::t_312540398ef551 130-133
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_1c08b47ac3792f::t_1229698610ccf8 19
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_1c08b47ac3792f::t_b28bb378f15e8b 160-161
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_1c08b47ac3792f::t_aaa8f9afe5723a 1
+  s_1c08b47ac3792f::t_3a69bc2e8fd208 301-307
+  s_1c08b47ac3792f::t_64782e93d62a1c 239-240
+src/modules/AudioEngine/useCases/offlineRender/agentRenderNoun.ts
+  s_1c08b47ac3792f::t_7487dceae1d6e7 1-6
+src/modules/AudioEngine/useCases/offlineRender/exportCancellationState.ts
+  s_1c08b47ac3792f::t_35e550823366b0 16-20,22-24,28
+  s_1c08b47ac3792f::t_abc527b2215a63 38
+src/modules/AudioEngine/AGENTS.md
+  s_1c08b47ac3792f::t_f5699aff59cb10 44
+src/modules/AudioRendering/useCases/__tests__/rebindAgentProjectSectionArtifactRevisions.spec.ts
+  s_1c08b47ac3792f::t_2c6068e3e01203 19
+src/modules/AudioEngine/useCases/offlineRender/__tests__/exportCancellation.spec.ts
+  s_1c08b47ac3792f::t_cf33fe7ac9922c 75-97,99-104,106-108
+src/modules/AudioEngine/useCases/offlineRender/__tests__/executeOfflineRenderLockPriority.spec.ts
+  s_1c08b47ac3792f::t_fd8d9e86947d94 5,268
+  s_1c08b47ac3792f::t_37bf51dc9a7a23 277-278
+  s_1c08b47ac3792f::t_1b430e4cb31913 309-450
+  s_1c08b47ac3792f::t_205d8bf70f95ca 135
+src/modules/AudioEngine/useCases/offlineRender/isExportActive.ts
+  s_1c08b47ac3792f::t_229ee8cfc88530 6
+src/modules/AudioEngine/useCases/offlineRender/isRenderBusyError.ts
+  s_1c08b47ac3792f::t_082eadcf27fffc 5
+src/modules/AudioEngine/useCases/offlineRender/acquireRenderLock.ts
+  s_1c08b47ac3792f::t_165ca7335d8ea3 15-17,20
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_2933658dca7af4 647
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24183c9276daeee3a888d1efc1fdc21093391dd6",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
