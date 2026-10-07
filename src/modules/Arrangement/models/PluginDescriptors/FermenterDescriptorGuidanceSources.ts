@@ -146,7 +146,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         1,
         ['Heard only when noiseLevel is above 0.'],
         [
-            'Brown noise is hard-clamped at ±1 after a tenfold gain, so its loud excursions are flattened rather than passed through.',
+            'Brown noise is multiplied by 10 before the ±1 clamp, and its integrator’s standard deviation of about 0.29 puts roughly 70 % of its samples on the clamp.',
         ],
         noExternalModulation
     ),
@@ -165,11 +165,11 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     // ── Time-domain warp ──────────────────────────────────────────────────
     warpMode: parameterGuidance(
         'Waveform warp algorithm',
-        'Selects 0 off, 1 sync, 2 sample-and-bit reduction, 3 squeeze, 4 bend, 5 formant comb or 6 fold; the window stops at 4 because fold can return up to 3.4 × full scale and formant reads a phase that moves only on engines 0 and 1.',
+        'Selects 0 off, 1 sync, 2 sample-and-bit reduction, 3 squeeze, 4 bend, 5 formant comb or 6 fold; the window stops at 4 because fold can return up to 3.4 × full scale and formant reads a phase that moves only on engine 0 and on engine 1 with unisonVoices at 1.',
         0,
         4,
         [
-            'Does nothing until warpAmount is above 0.001; sync and formant read the oscillator phase, which does not advance on oscEngine 2 to 6, so there they act as fixed gain or offset changes rather than timbral ones.',
+            'Does nothing until warpAmount is above 0.001; sync and formant read an oscillator phase that does not advance on oscEngine 2 to 6, nor on engine 1 with unisonVoices above 1 (the unison bank renders while the analog phase they read stays frozen), so there they act as fixed gain or offset changes rather than timbral ones.',
         ],
         [
             'Squeeze adds a DC bias of 2 × warpAmount − 1, so low amounts push the waveform toward −1 and leave an offset the low-pass filter passes.',
@@ -178,7 +178,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     ),
     warpAmount: parameterGuidance(
         'Warp intensity',
-        'Scales the chosen warp: at 0.5 reduction keeps 9 bits and holds each value for about 17 samples, squeeze is unbiased, and fold’s four folds still return inside its threshold.',
+        'Scales the chosen warp: at 0.5 reduction keeps 9 bits and holds each value for about 8.5 samples (16 at 1, because the left and right calls share one hold counter), squeeze is unbiased, and fold’s four folds still return inside its threshold.',
         0,
         0.5,
         ['Acts only through warpMode; at 0 every mode passes the oscillator unchanged.'],
@@ -215,7 +215,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
     ),
     audioModTarget: parameterGuidance(
         'Audio-rate modulation destination',
-        'Selects 0 off, 1 pitch (FM), 2 amplitude (AM and ring) or 3 filter cutoff; the window stops at 2 because the filter route adds ±2 × depth to the cutoff multiplier.',
+        'Selects 0 off, 1 pitch (FM), 2 amplitude modulation (a 1 ± depth gain that stays between 0 and 2) or 3 filter cutoff; the window stops at 2 because the filter route adds ±2 × depth to the cutoff multiplier.',
         0,
         2,
         ['audioModDepth and audioModRate do nothing while this is 0.'],
