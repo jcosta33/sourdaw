@@ -210,7 +210,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 35,
+            "run": "for attempt in 1 2 3; do\n  if timeout --kill-after=30s 10m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",

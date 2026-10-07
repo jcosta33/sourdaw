@@ -54,9 +54,10 @@ jobs:
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
       - name: Install Playwright browsers
+        timeout-minutes: 35
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            if timeout --kill-after=30s 10m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

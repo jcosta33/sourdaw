@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -707,6 +707,38 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
+    }
+}
+
+function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
+    const e2e = jobAt(candidate, 'e2e');
+    const install = stepNamed(e2e, 'Install Playwright browsers');
+    const run = stringAt(install, 'run');
+    const stepTimeoutMinutes = install['timeout-minutes'];
+    if (e2e['timeout-minutes'] !== 60 || stepTimeoutMinutes !== 35) {
+        throw new Error('the Playwright install step must be bounded below the 60-minute E2E job limit');
+    }
+    if (
+        !run.includes('for attempt in 1 2 3') ||
+        !run.includes('timeout --kill-after=30s 10m pnpm exec playwright install --with-deps chromium') ||
+        !run.includes('sleep $((attempt * 5))') ||
+        !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')
+    ) {
+        throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
+    }
+    const maximumSeconds = 3 * (10 * 60 + 30) + 15;
+    if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= maximumSeconds) {
+        throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
+    }
+    const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
+    const installIndex = steps.indexOf(install);
+    const runShard = stepNamed(e2e, 'Run shard');
+    if (
+        steps.indexOf(runShard) !== installIndex + 1 ||
+        runShard.if !== undefined ||
+        runShard['continue-on-error'] !== undefined
+    ) {
+        throw new Error('a failed Playwright install must prevent the heavy E2E shard from running');
     }
 }
 
@@ -3100,6 +3132,92 @@ describe('health gates workflow contract', () => {
         expect(() => assertPullRequestSecretScan(headControlledScanner)).toThrow(
             'pull-request scanner config must come from the trusted base and retain no credentials'
         );
+    });
+
+    it('bounds a stalled heavy E2E browser install and keeps its retry failure fatal', () => {
+        const e2e = jobAt(heavyWorkflow, 'e2e');
+        const installRun = stringAt(stepNamed(e2e, 'Install Playwright browsers'), 'run');
+        expect(() => assertBoundedHeavyE2eInstall(heavyWorkflow)).not.toThrow();
+
+        const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
+        stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
+            'timeout --kill-after=30s 10m ',
+            ''
+        );
+        expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
+            'the heavy E2E install must retry three bounded attempts and fail after the third'
+        );
+
+        const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
+        stepNamed(jobAt(overlongInstall.heavy, 'e2e'), 'Install Playwright browsers')['timeout-minutes'] = 60;
+        expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
+            'the Playwright install step must be bounded below the 60-minute E2E job limit'
+        );
+
+        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-install-timeout-'));
+        const timeoutProbePath = join(probeDirectory, 'timeout-probe.cjs');
+        const attemptedInstallsPath = join(probeDirectory, 'attempts.log');
+        writeFileSync(
+            timeoutProbePath,
+            [
+                "const { spawn } = require('node:child_process');",
+                'const child = spawn(process.argv[2], process.argv.slice(3), { stdio: ["ignore", "pipe", "inherit"] });',
+                'let termTimer;',
+                'let killTimer;',
+                'child.stdout.setEncoding("utf8");',
+                'child.stdout.on("data", (chunk) => {',
+                '  if (termTimer === undefined && chunk.includes("ready\\n")) {',
+                '    termTimer = setTimeout(() => child.kill("SIGTERM"), 25);',
+                '    killTimer = setTimeout(() => child.kill("SIGKILL"), 50);',
+                '  }',
+                '});',
+                'child.once("exit", (code, signal) => {',
+                '  clearTimeout(termTimer);',
+                '  clearTimeout(killTimer);',
+                '  process.exitCode = signal === null ? (code ?? 1) : 124;',
+                '});',
+                '',
+            ].join('\n')
+        );
+        writeFileSync(
+            join(probeDirectory, 'pnpm'),
+            [
+                '#!/usr/bin/env node',
+                "require('node:fs').appendFileSync(process.env.ATTEMPT_LOG, 'attempt\\n');",
+                'process.on("SIGTERM", () => {});',
+                'process.stdout.write("ready\\n");',
+                'setInterval(() => {}, 1_000);',
+                '',
+            ].join('\n'),
+            { mode: 0o755 }
+        );
+
+        try {
+            const probeRun = installRun
+                .replace('timeout --kill-after=30s 10m', 'node "$TIMEOUT_PROBE"')
+                .replace('sleep $((attempt * 5))', 'sleep 0');
+            expect(probeRun).not.toBe(installRun);
+            const result = spawnSync('bash', ['-c', probeRun], {
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    ATTEMPT_LOG: attemptedInstallsPath,
+                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                    TIMEOUT_PROBE: timeoutProbePath,
+                },
+                timeout: 5_000,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).toBe(1);
+            expect(existsSync(attemptedInstallsPath), result.stderr).toBe(true);
+            expect(readFileSync(attemptedInstallsPath, 'utf8').trim().split('\n')).toEqual([
+                'attempt',
+                'attempt',
+                'attempt',
+            ]);
+        } finally {
+            rmSync(probeDirectory, { force: true, recursive: true });
+        }
     });
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
