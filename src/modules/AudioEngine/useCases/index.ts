@@ -154,6 +154,7 @@ export { clearReportedLatency } from './latencyCompensation/compensation/clearRe
 
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
+export { isRenderBusyError } from './offlineRender/isRenderBusyError';
 export { checkCancel } from './offlineRender/checkCancel';
 export { endExportCancellationScope } from './offlineRender/endExportCancellationScope';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
