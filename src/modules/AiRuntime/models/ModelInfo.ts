@@ -12,15 +12,20 @@ export type ModelInfo = {
 };
 
 // -- WebLLM model options (browser) --
+//
+// Each `ramUsage` is the release manifest's VRAM figure, web-llm's published requirement at its
+// recorded 4,096-token window, plus the KV cache for every token up to the window the model loads
+// with (`WEBLLM_CONTEXT_WINDOW_TOKENS`), rounded up to the next half gigabyte.
 
 export const WEBLLM_MODELS: ModelInfo[] = [
     {
         id: 'Qwen3-1.7B-q4f16_1-MLC',
         displayName: 'Light',
         parameterCount: '1.7B',
-        description: 'Fast responses, low resource usage. Best for simple edits.',
+        description:
+            'Fast local chat and MIDI ideas. Cannot plan project edits: use the Standard local model or a hosted model.',
         downloadSize: '~0.99 GB',
-        ramUsage: '~1.8 GB',
+        ramUsage: '~2.5 GB',
     },
     {
         id: 'Qwen3-4B-q4f16_1-MLC',
@@ -29,16 +34,14 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         description:
             'The local model that can plan project edits: its context window holds a planning request. Recommended.',
         downloadSize: '~2.28 GB',
-        // The release manifest's VRAM figure, web-llm's published requirement at its recorded
-        // 4,096-token window, plus the KV cache for every token up to the window below, rounded up
-        // to the next half gigabyte.
         ramUsage: '~6.5 GB',
     },
     {
         id: 'Qwen3-8B-q4f16_1-MLC',
         displayName: 'Pro',
         parameterCount: '8B',
-        description: 'Best quality. Needs a capable GPU with 8 GB+ VRAM.',
+        description:
+            'Best-quality local chat and MIDI ideas; needs a capable GPU with 8 GB+ VRAM. Cannot plan project edits: use the Standard local model or a hosted model.',
         downloadSize: '~4.63 GB',
         ramUsage: '~6.5 GB',
     },

@@ -337,19 +337,21 @@ describe('WebLLM provider artifact admission', () => {
 
     // The manifest records web-llm's published VRAM figure at its own window; every token the model
     // loads beyond that window adds its KV cache: two tensors of 8 KV heads × 128 dimensions at
-    // 2 bytes for each of Qwen3-4B's 36 layers.
-    it("publishes the 4B's memory need for the window it loads with", () => {
-        const kvCacheMbPerToken = (2 * 8 * 128 * 2 * 36) / (1024 * 1024);
-        const model = getWebLlmArtifactManifestModel('Qwen3-4B-q4f16_1-MLC');
-        const loadedWindow = getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC');
-        const vramMb =
+    // 2 bytes for each layer (28 in Qwen3-1.7B, 36 in Qwen3-4B and Qwen3-8B).
+    it.each([
+        { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMb: 2_484.66 },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMb: 6_311.59 },
+        { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMb: 6_271.78 },
+    ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMb }) => {
+        const kvCacheMbPerToken = (2 * 8 * 128 * 2 * layers) / (1024 * 1024);
+        const model = getWebLlmArtifactManifestModel(modelId);
+        const loadedWindow = getWebLlmContextWindowSize(modelId);
+        const derivedMb =
             model.engine.vramRequiredMb + (loadedWindow - model.engine.contextWindowSize) * kvCacheMbPerToken;
-        const halfGigabytes = Math.ceil(vramMb / 500) / 2;
+        const halfGigabytes = Math.ceil(derivedMb / 500) / 2;
 
-        expect(vramMb).toBeCloseTo(6_311.59, 2);
-        expect(WEBLLM_MODELS.find((entry) => entry.id === model.modelId)?.ramUsage).toBe(
-            `~${halfGigabytes.toFixed(1)} GB`
-        );
+        expect(derivedMb).toBeCloseTo(vramMb, 2);
+        expect(WEBLLM_MODELS.find((entry) => entry.id === modelId)?.ramUsage).toBe(`~${halfGigabytes.toFixed(1)} GB`);
     });
 
     it('cryptographically binds every release artifact-set digest to its exact manifest entries', async () => {

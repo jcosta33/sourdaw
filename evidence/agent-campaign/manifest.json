@@ -383,7 +383,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
-                    "digest": "c7f31dd32e147f1e28c5764fb63a5419670cc3a15362318ee783016e24ae15e7"
+                    "digest": "f9649c1702fa06e8846c78c94ab2a5b20cd9a16185f6063d36163007d3302085"
                 }
             ]
         },
