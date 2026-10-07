@@ -32,11 +32,17 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
-import { storedControllerDeviceKey } from '../../services/storedControllerEngagement';
+import {
+    forgetStoredControllersWithheld,
+    hasStoredControllersWithheld,
+    noteStoredControllersWithheld,
+    storedControllerDeviceKey,
+} from '../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
+import { mutesStoredControllersInWindow } from './mutesStoredControllersInWindow';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
@@ -787,7 +793,9 @@ function getSourceOccurrenceOffset({
  * continuation of the previous window. It additionally restores every stored
  * controller to the value in force at `fromBeat` and lifts those left engaged
  * that nothing is in force for there, at the frame `fromBeat` lands on. A
- * transport start or a user seek is not a relocation in this sense.
+ * transport start or a user seek is not a relocation in this sense. A track that
+ * schedules again after a track or clip mute withheld its stored controllers gets
+ * the same restore in that window.
  */
 export async function scheduleMidiNotes(
     fromBeat: number,
@@ -887,15 +895,34 @@ export async function scheduleMidiNotes(
     };
     // A relocation that lands where a track has no clip playing still carries what its earlier clips
     // left, as continuous playback does, on the device the window would route stored controllers to; a
-    // posted device the scheduler no longer routes to is left to the release sweep.
-    const restoreStoredControllersAtGap = (track: SchedulerTrack): void => {
-        const target = opensAtRelocation ? resolveStoredControllerDevice(track, tracks) : null;
+    // posted device the scheduler no longer routes to is left to the release sweep. A track resuming
+    // after a mute is owed the same restore wherever it resumes.
+    const restoreStoredControllersAtGap = (track: SchedulerTrack, resumesAfterMute: boolean): void => {
+        const target = opensAtRelocation || resumesAfterMute ? resolveStoredControllerDevice(track, tracks) : null;
         if (!target) {
             return;
         }
         const queue = createSameFramePostQueue();
         restoreStoredControllersOnTrack(track, target, queue);
         queue.flush(isCurrent);
+    };
+    // Whether this window is the one a track schedules again in after a mute kept its stored controllers
+    // from earlier windows of this playback: the device still holds what it last received, so the window
+    // restores the value in force at its start, the chase a relocation runs. A muted clip with stored
+    // controllers in this window still withholds them, so the resume waits for a window without one. The
+    // record is forgotten as the window decides, because the restore it queues is the chase the mute owed.
+    const takeResumeAfterMute = (track: SchedulerTrack): boolean => {
+        if (
+            mutesStoredControllersInWindow({ clips: track.clips, fromBeat, toBeat, ccByClipId: midiState.ccByClipId })
+        ) {
+            noteStoredControllersWithheld(track.id);
+            return false;
+        }
+        if (!hasStoredControllersWithheld(track.id)) {
+            return false;
+        }
+        forgetStoredControllersWithheld(track.id);
+        return true;
     };
     for (const track of tracks) {
         if (!isCurrent()) {
@@ -905,6 +932,7 @@ export async function scheduleMidiNotes(
             continue;
         }
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
+            noteStoredControllersWithheld(track.id);
             continue;
         }
 
@@ -933,9 +961,10 @@ export async function scheduleMidiNotes(
             continue;
         }
 
+        const resumesAfterMute = takeResumeAfterMute(track);
         const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
         if (windowMidiClips.length === 0) {
-            restoreStoredControllersAtGap(track);
+            restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
 
@@ -944,7 +973,7 @@ export async function scheduleMidiNotes(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
-            restoreStoredControllersAtGap(track);
+            restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
 
@@ -1532,7 +1561,7 @@ export async function scheduleMidiNotes(
                 }
             }
         }
-        if (opensAtRelocation && storedControllerTarget) {
+        if ((opensAtRelocation || resumesAfterMute) && storedControllerTarget) {
             restoreStoredControllersOnTrack(track, storedControllerTarget, posts);
         }
         posts.flush(isCurrent);

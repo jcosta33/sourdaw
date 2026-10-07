@@ -2102,6 +2102,7 @@ describe('scheduleMidiNotes', () => {
                     'audio-clip': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }],
                     'muted-clip': [{ id: 'n2', pitch: 61, startBeat: 0, duration: 0.25, velocity: 100 }],
                 },
+                ccByClipId: {},
             };
 
             await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
@@ -3293,6 +3294,186 @@ describe('scheduleMidiNotes', () => {
 
                     expect(posted).toEqual(['sustain 1 @0']);
                 });
+            });
+        });
+
+        // A mute withholds a track's stored moves without releasing anything, so the window the track
+        // schedules again in restores the value in force at its start, as a relocation does. Each window is
+        // one beat on an absolute clock, so a beat's frame is its beat times BEAT_FRAMES.
+        describe('a track that schedules again after a mute', () => {
+            const sustainLane = [storedController('down', 64, 127, 1), storedController('up', 64, 0, 3)];
+            const notesOnEveryBeat = Array.from({ length: 8 }, (_, beat) => ({
+                id: `n${beat}`,
+                pitch: 60,
+                startBeat: beat,
+                duration: 0.5,
+                velocity: 100,
+            }));
+
+            function recordGrandBoule(): string[] {
+                const posted: string[] = [];
+                stripWith({
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: {
+                        noteOn: vi.fn((note: number, _velocity: number, frame?: number) => {
+                            posted.push(`on ${note} @${frame}`);
+                        }),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        setSustain: vi.fn((position: number, frame?: number) => {
+                            posted.push(`sustain ${position} @${frame}`);
+                        }),
+                        setSostenuto: vi.fn(),
+                        setUnaCorda: vi.fn(),
+                    },
+                });
+                return posted;
+            }
+
+            /** Replace the track the way the store does, with a fresh clip list, so every per-list cache sees the edit. */
+            function loadMutedState(
+                { trackMuted = false, clipMuted = false }: { trackMuted?: boolean; clipMuted?: boolean },
+                clip: Record<string, unknown> = { startBeat: 0, endBeat: 8 }
+            ) {
+                (trackStore as { value: unknown }).value = {
+                    tracks: [
+                        midiTrack({
+                            muted: trackMuted,
+                            clips: [midiClip({ ...clip, muted: clipMuted })],
+                            devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                        }),
+                    ],
+                };
+            }
+
+            async function playBeats(fromBeat: number, toBeat: number) {
+                for (let beat = fromBeat; beat < toBeat; beat++) {
+                    await scheduleMidiNotes(beat, beat + 1, 0, new Set<string>(), [], defaultTransportState, 120);
+                }
+            }
+
+            beforeEach(() => {
+                useRealProjections();
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': notesOnEveryBeat },
+                    ccByClipId: { 'clip-1': sustainLane },
+                };
+            });
+
+            it('lifts the sustain a track mute kept it from lifting, at the resume frame before its notes', async () => {
+                const posted = recordGrandBoule();
+                loadMutedState({});
+                await playBeats(0, 2);
+                loadMutedState({ trackMuted: true });
+                await playBeats(2, 4);
+                loadMutedState({});
+                await playBeats(4, 6);
+
+                expect(posted).toEqual([
+                    'on 60 @0',
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `sustain 0 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${5 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('presses at the resume frame the sustain a track mute kept it from pressing, with no lift first', async () => {
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': notesOnEveryBeat },
+                    ccByClipId: { 'clip-1': [storedController('down', 64, 127, 1), storedController('up', 64, 0, 6)] },
+                };
+                const posted = recordGrandBoule();
+                loadMutedState({});
+                await playBeats(0, 1);
+                loadMutedState({ trackMuted: true });
+                await playBeats(1, 3);
+                loadMutedState({});
+                await playBeats(3, 5);
+
+                expect(posted).toEqual([
+                    'on 60 @0',
+                    `sustain 1 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${4 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('lifts the sustain a clip mute kept it from lifting, at the resume frame before its notes', async () => {
+                const posted = recordGrandBoule();
+                loadMutedState({});
+                await playBeats(0, 2);
+                loadMutedState({ clipMuted: true });
+                await playBeats(2, 4);
+                loadMutedState({});
+                await playBeats(4, 6);
+
+                expect(posted).toEqual([
+                    'on 60 @0',
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `sustain 0 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${5 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('restores the value in force when the track resumes past the end of its clip', async () => {
+                const posted = recordGrandBoule();
+                const clipEndingAtFour = { startBeat: 0, endBeat: 4 };
+                loadMutedState({}, clipEndingAtFour);
+                await playBeats(0, 2);
+                loadMutedState({ trackMuted: true }, clipEndingAtFour);
+                await playBeats(2, 5);
+                loadMutedState({}, clipEndingAtFour);
+                await playBeats(5, 7);
+
+                expect(posted).toEqual([
+                    'on 60 @0',
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `sustain 0 @${5 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('posts only the windows own moves when nothing was muted', async () => {
+                const posted = recordGrandBoule();
+                loadMutedState({});
+                await playBeats(0, 6);
+
+                expect(posted).toEqual([
+                    'on 60 @0',
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `on 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 0 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${5 * BEAT_FRAMES}`,
+                ]);
+            });
+
+            it('owes nothing to the next playback once a stop ends the muted one', async () => {
+                const posted = recordGrandBoule();
+                loadMutedState({});
+                await playBeats(0, 2);
+                loadMutedState({ trackMuted: true });
+                await playBeats(2, 3);
+
+                releaseStoredControllers();
+                loadMutedState({});
+                posted.length = 0;
+                await playBeats(2, 4);
+
+                // Playback restarted at 2 under the held press: a start does not chase, so the new playback
+                // posts only its own windows, never a stale resume restore of the press at 2.
+                expect(posted).toEqual([
+                    `on 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 0 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${3 * BEAT_FRAMES}`,
+                ]);
             });
         });
     });
