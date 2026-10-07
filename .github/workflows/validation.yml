@@ -583,11 +583,14 @@ jobs:
       # `--with-deps` shells out to apt-get for the browser library set, and a
       # transient mirror outage (apt exiting 100) red this job and Gate on an
       # otherwise-green head (#4085). Three attempts with a 5s then 10s
-      # backoff; the last failure still fails the step.
+      # backoff; the last failure still fails the step. Each attempt is capped
+      # at five minutes (a healthy install takes under 40s and a degraded one
+      # 161s) so a stalled download costs one attempt, not the job's hour; a
+      # timed-out attempt is a failed one.
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

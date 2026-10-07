@@ -52,11 +52,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Without this the suite cannot start: nothing else in the repository
-      # installs a browser, and there is no postinstall hook that would.
+      # installs a browser, and there is no postinstall hook that would. Each
+      # attempt is capped at five minutes (a healthy install takes under 40s and
+      # a degraded one 161s) so a stalled download costs one attempt, not the
+      # job's hour; a timed-out attempt is a failed one.
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

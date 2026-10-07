@@ -210,7 +210,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -788,7 +788,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -1693,7 +1693,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",

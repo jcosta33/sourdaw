@@ -705,6 +705,9 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (!installRun.includes('for attempt in 1 2 3')) {
         throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
     }
+    if (!installRun.includes('timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium')) {
+        throw new Error('the offline smoke job must bound each browser install attempt so a stalled download retries');
+    }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -3060,6 +3063,13 @@ describe('health gates workflow contract', () => {
             'pnpm exec playwright install --with-deps chromium';
         expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
             'the offline smoke job must retry browser and dependency installation against mirror outages'
+        );
+
+        const unboundedInstall = asRecord(structuredClone(validationWorkflow), 'unbounded install validationWorkflow');
+        const unboundedInstallStep = stepNamed(jobAt(unboundedInstall, 'smoke'), 'Install Playwright browsers');
+        unboundedInstallStep.run = stringAt(unboundedInstallStep, 'run').replace('timeout --kill-after=15s 5m ', '');
+        expect(() => assertOfflineSmokeJob(unboundedInstall)).toThrow(
+            'the offline smoke job must bound each browser install attempt so a stalled download retries'
         );
 
         const missingDepsInstall = asRecord(
