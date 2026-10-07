@@ -1,0 +1,27 @@
+.agents/skills/review-stances/nightly-failure-observation.md
+  s_97ab82e0b4f10c::t_977b0dc332971b 1-30
+.github/workflows/nightly.yml
+  s_97ab82e0b4f10c::t_be878d1efdc3d5 9-13,1068-1071,1085
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_97ab82e0b4f10c::t_056e218b5466a7 3607-3608,3610-3642
+  s_97ab82e0b4f10c::t_d77546193f04ab 239
+  s_97ab82e0b4f10c::t_8807c7c0ad08a6 3609
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_97ab82e0b4f10c::t_08487d38246268 2060
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f91e03de630aecab7bff682dd789403e8283605",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
