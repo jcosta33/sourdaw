@@ -1,0 +1,20 @@
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_4c8cd08893b364::t_891f9dfb627e65 3-8
+  s_4c8cd08893b364::t_d000fcab95c958 193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c93b606dc45388832ec0229985f3c046015c6a7",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
