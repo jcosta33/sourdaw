@@ -544,6 +544,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
+    projectClipControllerEvents: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,

@@ -113,6 +113,7 @@ function createLevainResult(): LevainNodeResult {
         allNotesOff: vi.fn(),
         setParam: vi.fn(),
         handleCc: vi.fn(),
+        discardStoredCc: vi.fn(),
         setBypass: vi.fn(),
         connect: vi.fn(),
         disconnect: vi.fn(),

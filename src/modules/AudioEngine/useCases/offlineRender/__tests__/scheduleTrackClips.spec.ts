@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+// The real projection, as the composition root injects it: a controller's
+// placement is the behaviour under test and it carries no store or groove state.
+import { projectClipControllerEvents } from '#/modules/MIDI/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { makeCeilingClipCurve } from '../../../repositories/devices/dynamics/makeCeilingClipCurve';
@@ -23,6 +26,11 @@ import { type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types
 
 function isPendingNoteWorkletEvent(event: PendingWorkletEvent): event is PendingNoteWorkletEvent {
     return event.type === 'on' || event.type === 'off';
+}
+
+/** The events that address a voice (notes and their expression), which carry a pitch; a controller does not. */
+function voiceEvents(events: readonly PendingWorkletEvent[]): Exclude<PendingWorkletEvent, { type: 'control' }>[] {
+    return events.filter((event) => event.type !== 'control');
 }
 
 // Local, field-identical replica of Arrangement's TrackDummy fixture — foreign
@@ -683,7 +691,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             deviceEntriesByTrack: new Map([[track.id, [entry]]]),
         });
 
-        expect(pendingWorkletEvents.map((event) => [event.type, event.channel])).toEqual([
+        expect(voiceEvents(pendingWorkletEvents).map((event) => [event.type, event.channel])).toEqual([
             ['on', 3],
             ['off', 3],
         ]);
@@ -727,7 +735,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             deviceEntriesByTrack: new Map([[track.id, [entry]]]),
         });
 
-        expect(pendingWorkletEvents.map((event) => event.channel)).toEqual([0, 0]);
+        expect(voiceEvents(pendingWorkletEvents).map((event) => event.channel)).toEqual([0, 0]);
     });
 
     it('threads a nonzero render-region offset into automation scheduling', async () => {
@@ -812,7 +820,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(pendingWorkletEvents.filter(isPendingNoteWorkletEvent).map((event) => event.toasterPadIndex)).toEqual([
             0, 0,
         ]);
-        expect(pendingWorkletEvents.map((event) => event.pitch)).toEqual([60, 60]);
+        expect(voiceEvents(pendingWorkletEvents).map((event) => event.pitch)).toEqual([60, 60]);
         expect(pendingWorkletEvents.map((event) => event.type)).toEqual(['on', 'on']);
     });
 
@@ -1030,7 +1038,11 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         const events = await runSchedule({ probabilityCorpus: true });
 
-        expect(events.filter((event) => event.type === 'on').map((event) => event.pitch)).toEqual([60]);
+        expect(
+            voiceEvents(events)
+                .filter((event) => event.type === 'on')
+                .map((event) => event.pitch)
+        ).toEqual([60]);
         expect(mocks.shouldPlayMidiEvent).toHaveBeenCalledWith({
             projectProbabilitySeed: 0xdecafbad,
             clipId: 'clip-1',
@@ -1142,8 +1154,8 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         const direct = await runSchedule({ followChordTrack: true });
         const yeast = await runSchedule({ followChordTrack: true, withYeast: true });
 
-        expect(direct.find((event) => event.type === 'on')?.pitch).toBe(61);
-        expect(yeast.find((event) => event.type === 'on')?.pitch).toBe(61);
+        expect(voiceEvents(direct).find((event) => event.type === 'on')?.pitch).toBe(61);
+        expect(voiceEvents(yeast).find((event) => event.type === 'on')?.pitch).toBe(61);
         expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1 });
     });
 
@@ -1662,6 +1674,271 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         );
 
         expect(arrivals.expression).toEqual([]);
+    });
+});
+
+describe('scheduleTrackClips — stored controllers for offline worklet instruments', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+    });
+
+    // At 120 BPM and 48 kHz a beat is 24 000 frames.
+    const BEAT_FRAMES = 24_000;
+
+    type Schedule = { arrivals: string[]; events: PendingWorkletEvent[] };
+
+    function storedController(id: string, controller: number, value: number, beat: number) {
+        return { id, controller, value, beat, channel: 0 };
+    }
+
+    /**
+     * Schedules the default one-note clip (note on beat 1) with a Grand Boule
+     * pedal lane, then runs the real dispatcher over the scheduler's output, so
+     * what is asserted is what the instrument's own surfaces received and in
+     * which order.
+     */
+    async function scheduleWithPedalLane(
+        options: {
+            controlChanges?: ReturnType<typeof storedController>[];
+            regionStartBeat?: number;
+            /** Reshapes the fixture (clips, notes, lanes) before it is scheduled. */
+            shape?: (fixtures: { track: Track; midi: NonNullable<MidiStoreState> }) => void;
+        } = {}
+    ): Promise<Schedule> {
+        const {
+            controlChanges = [storedController('down', 64, 127, 1), storedController('up', 64, 0, 2)],
+            regionStartBeat = 0,
+            shape,
+        } = options;
+        const arrivals: string[] = [];
+        const strategy: DeviceNodeEntry['strategy'] = {
+            node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+            acceptsNotes: true,
+            setParam: () => {},
+            resolveOfflineAutomation: () => null,
+            controlChange: ({ controller, value, sampleFrame }) =>
+                arrivals.push(`control ${controller}=${value} @${sampleFrame}`),
+        };
+        const entry: DeviceNodeEntry = {
+            deviceId: 'inst-1',
+            deviceType: 'grand-boule',
+            contributesAudio: true,
+            node: strategy.node,
+            strategy,
+            instrumentControls: {
+                noteOn: ({ sampleFrame }) => arrivals.push(`noteOn @${sampleFrame}`),
+                noteOff: ({ sampleFrame }) => arrivals.push(`noteOff @${sampleFrame}`),
+            },
+        };
+        const track = makeMidiTrack();
+        track.devices[0] = {
+            id: 'inst-1',
+            name: 'Grand Boule',
+            type: 'grand-boule',
+            bypassed: false,
+            parameterValues: {},
+        };
+        const midi = makeMidi();
+        midi.ccByClipId['clip-1'] = controlChanges;
+        shape?.({ track, midi });
+        const events: PendingWorkletEvent[] = [];
+        const offlineCtx = makeOfflineCtx();
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                projectClipControllers: projectClipControllerEvents,
+            },
+            pendingWorkletEvents: events,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+            regionStartBeat,
+        });
+
+        schedulePendingSuspends(offlineCtx, events, 60);
+        return { arrivals, events };
+    }
+
+    it('queues each pedal move as a control event at the frame a note on that beat gets', async () => {
+        const { events } = await scheduleWithPedalLane();
+
+        expect(
+            events
+                .filter((event) => event.type === 'control')
+                .map(({ time, controller, value }) => ({ time, controller, value }))
+        ).toEqual([
+            { time: 0.5, controller: 64, value: 127 },
+            { time: 1, controller: 64, value: 0 },
+        ]);
+    });
+
+    it('dispatches the pedal ahead of the note struck on its frame and behind the note released there', async () => {
+        const { arrivals } = await scheduleWithPedalLane();
+
+        expect(arrivals).toEqual([
+            `control 64=127 @${BEAT_FRAMES}`,
+            `noteOn @${BEAT_FRAMES}`,
+            // The lift and the note's release share beat 2: the release leads, as
+            // it does in live playback, so the pedal never catches that note.
+            `noteOff @${2 * BEAT_FRAMES}`,
+            `control 64=0 @${2 * BEAT_FRAMES}`,
+        ]);
+    });
+
+    it('sorts the release of a note before the pedal pressed on the frame it ends', async () => {
+        const { events } = await scheduleWithPedalLane({ controlChanges: [storedController('down', 64, 127, 2)] });
+
+        const atBeatTwo = events.filter((event) => event.time === 1).map((event) => event.type);
+
+        expect(atBeatTwo).toEqual(['off', 'control']);
+    });
+
+    it('drops a move that falls before the region start, as it drops a note that ends before it', async () => {
+        const { arrivals } = await scheduleWithPedalLane({ regionStartBeat: 1.5 });
+
+        // Region starts at 0.75 s. The press at beat 1 is before it and is dropped; the
+        // note it sounded under is still held at the start, so it enters at frame 0;
+        // the note's release at beat 2 lands 0.25 s in, ahead of the lift on that frame.
+        expect(arrivals).toEqual(['noteOn @0', `noteOff @${BEAT_FRAMES / 2}`, `control 64=0 @${BEAT_FRAMES / 2}`]);
+    });
+
+    it('releases the last note of a looped pass before the pedal its next pass opens with', async () => {
+        const { arrivals } = await scheduleWithPedalLane({
+            controlChanges: [storedController('down', 64, 127, 0)],
+            shape: ({ track }) => {
+                track.clips[0] = { ...track.clips[0]!, loopEnabled: true, loopLength: 2 };
+            },
+        });
+
+        // The note runs beat 1 to 2 in each pass; the second pass opens at beat 2
+        // with the lane's press.
+        expect(arrivals).toEqual([
+            `control 64=127 @0`,
+            `noteOn @${BEAT_FRAMES}`,
+            `noteOff @${2 * BEAT_FRAMES}`,
+            `control 64=127 @${2 * BEAT_FRAMES}`,
+            `noteOn @${3 * BEAT_FRAMES}`,
+            `noteOff @${4 * BEAT_FRAMES}`,
+        ]);
+    });
+
+    it('releases the last note of one clip before the carry its successor on the track opens with', async () => {
+        const { arrivals } = await scheduleWithPedalLane({
+            controlChanges: [],
+            shape: ({ track, midi }) => {
+                const first = { ...track.clips[0]!, id: 'clip-a', endBeat: 2 };
+                const second = { ...track.clips[0]!, id: 'clip-b', startBeat: 2, endBeat: 4 };
+                track.clips = [second, first];
+                midi.notesByClipId = {
+                    'clip-a': [{ id: 'note-a', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                    'clip-b': [],
+                };
+                midi.ccByClipId = { 'clip-b': [storedController('down', 64, 127, 0)] };
+            },
+        });
+
+        expect(arrivals).toEqual([
+            `noteOn @${BEAT_FRAMES}`,
+            `noteOff @${2 * BEAT_FRAMES}`,
+            `control 64=127 @${2 * BEAT_FRAMES}`,
+        ]);
+    });
+
+    it('opens each loop pass with the value carried into it, through the real projection', async () => {
+        const { arrivals } = await scheduleWithPedalLane({
+            controlChanges: [storedController('held', 64, 127, 0.5)],
+            shape: ({ track, midi }) => {
+                track.clips[0] = { ...track.clips[0]!, loopEnabled: true, loopLength: 2, midiOffsetBeats: 1 };
+                midi.notesByClipId = { 'clip-1': [] };
+            },
+        });
+
+        expect(arrivals).toEqual([`control 64=127 @0`, `control 64=127 @${2 * BEAT_FRAMES}`]);
+    });
+
+    it('moves a grooved note but keeps its controller at the ungrooved frame', async () => {
+        mocks.projection.startOffset = 0.25;
+        try {
+            const { arrivals } = await scheduleWithPedalLane({
+                controlChanges: [storedController('down', 64, 127, 1)],
+            });
+
+            expect(arrivals).toEqual([
+                `control 64=127 @${BEAT_FRAMES}`,
+                `noteOn @${BEAT_FRAMES + BEAT_FRAMES / 4}`,
+                `noteOff @${2 * BEAT_FRAMES + BEAT_FRAMES / 4}`,
+            ]);
+        } finally {
+            mocks.projection.startOffset = 0;
+        }
+    });
+
+    it('queues nothing for an instrument whose strategy has no controller surface', async () => {
+        const strategy: DeviceNodeEntry['strategy'] = {
+            node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+            acceptsNotes: true,
+            setParam: () => {},
+            resolveOfflineAutomation: () => null,
+        };
+        const entry: DeviceNodeEntry = {
+            deviceId: 'inst-1',
+            deviceType: 'fermenter',
+            contributesAudio: true,
+            node: strategy.node,
+            strategy,
+            instrumentControls: { noteOn: vi.fn(), noteOff: vi.fn() },
+        };
+        const track = makeMidiTrack();
+        const midi = makeMidi();
+        midi.ccByClipId['clip-1'] = [storedController('down', 64, 127, 1)];
+        const events: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                projectClipControllers: projectClipControllerEvents,
+            },
+            pendingWorkletEvents: events,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(events.filter((event) => event.type === 'control')).toEqual([]);
     });
 });
 

@@ -323,6 +323,31 @@ describe('submitAdmittedPromptRequest', () => {
         );
     });
 
+    it('shows an answer outcome as its text, completes the run, and creates no confirmation', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'How loud is the mix?',
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'answer',
+                    text: 'The mix peaks at -1.2 dBFS.',
+                    evidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Peak -1.2 dBFS.' }],
+                },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'How loud is the mix?', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith('The mix peaks at -1.2 dBFS.', []);
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+    });
+
     it('says a searched-for capability is unsupported instead of the generic no-match advice', async () => {
         mocks.planPromptActions.mockResolvedValue({
             context: { tracks: [] },

@@ -120,6 +120,20 @@ export type DeviceNoteExpressionRequest = {
     readonly sampleFrame?: number;
 };
 
+/**
+ * One stored MIDI controller move for an instrument, in wire units.
+ *
+ * The 7-bit `value` is what the recording carries; a strategy maps it onto its
+ * engine's own surface (a pedal position or latch, a raw controller byte), so
+ * the scheduler never needs to know which instrument takes it.
+ */
+export type DeviceControllerRequest = {
+    readonly controller: number;
+    readonly value: number;
+    /** Frame within the render at which the move must apply. Omitted means "now". */
+    readonly sampleFrame?: number;
+};
+
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
     /** Rejects if an initialized processor dies while an offline render is active. */
@@ -163,6 +177,13 @@ export type AudioDeviceStrategy = {
      * truthy on devices that have no such surface at all.
      */
     noteExpression?(request: DeviceNoteExpressionRequest): void;
+    /**
+     * Present only on an instrument whose engine honours stored controllers
+     * (Grand Boule's pedals, Levain's controllers), for the same reason as
+     * `noteExpression`: absence answers "does a recorded controller reach this
+     * device?" where a forwarding method on the prototype would claim it for all.
+     */
+    controlChange?(request: DeviceControllerRequest): void;
     connectPadOutput?(pad: number, destination: AudioNode): void;
     disconnectPadOutput?(pad: number, destination: AudioNode): void;
     setPadDryRouted?(pad: number, routed: boolean): void;

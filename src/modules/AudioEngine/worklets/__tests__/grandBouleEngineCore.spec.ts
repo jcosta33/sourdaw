@@ -953,3 +953,102 @@ describe('the order Grand Boule control messages reach the engine', () => {
         });
     });
 });
+
+describe('a pedal move that stored clip playback posted', () => {
+    const block = { startFrame: 0, endFrame: 128 };
+    const pushedSustains = (calls: readonly EngineCall[]) => calls.filter((call) => call.method === 'push_sustain');
+
+    it('is dropped while queued by discardStoredPedals, so a lift for the old timeline never applies', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // The look-ahead holds the lift for frame 5 000; playback is relocated and
+        // the destination's press follows at frame 200.
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 5_000, stored: true }, block);
+        receive(instance, queue, { type: 'discardStoredPedals' }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 200, stored: true }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls)).toEqual([{ method: 'push_sustain', args: [1, 200] }]);
+    });
+
+    it('would apply after the destination press without the discard (the lift outlives it)', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 5_000, stored: true }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 200, stored: true }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls).map((call) => call.args[0])).toEqual([1, 0]);
+    });
+
+    it('leaves a pedal move a performer played, framed or not, queued', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 5_000 }, block);
+        receive(instance, queue, { type: 'sostenuto', engaged: true, sampleFrame: 6_000, stored: true }, block);
+        receive(instance, queue, { type: 'discardStoredPedals' }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(calls).toEqual([{ method: 'push_sustain', args: [1, 5_000] }]);
+    });
+
+    it('leaves a performer pedal queued through the whole sequence a relocation sends the worker', () => {
+        // The worker's relocation: allNotesOff (which pulls every queued pedal back to the
+        // audible frame), the discard, then the destination's stored press.
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 0.3, sampleFrame: 5_000 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, sampleFrame: 3_000, stored: true }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.capPendingFrames(100);
+        receive(instance, queue, { type: 'discardStoredPedals' }, block);
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 200, stored: true }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls)).toEqual([
+            { method: 'push_sustain', args: [0.3, 100] },
+            { method: 'push_sustain', args: [1, 200] },
+        ]);
+    });
+
+    it('leaves queued notes and parameters alone, as it is not a panic', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'discardStoredPedals' }, block);
+        queue.drain(instance, 384, 640);
+
+        expect(calls).toEqual([{ method: 'push_note_on', args: [60, 1, 0, 116] }]);
+    });
+
+    it('does not supersede a performer move queued for the same pedal when it is frameless', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 5_000 }, block);
+        receive(instance, queue, { type: 'sustain', position: 0, stored: true }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls)).toEqual([
+            { method: 'push_sustain', args: [0, 0] },
+            { method: 'push_sustain', args: [1, 5_000] },
+        ]);
+    });
+
+    it('still lets a frameless performer move supersede a queued stored one of the same pedal', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        receive(instance, queue, { type: 'sustain', position: 1, sampleFrame: 5_000, stored: true }, block);
+        receive(instance, queue, { type: 'sustain', position: 0 }, block);
+        queue.drain(instance, 0, 10_000);
+
+        expect(pushedSustains(calls)).toEqual([{ method: 'push_sustain', args: [0, 0] }]);
+    });
+});

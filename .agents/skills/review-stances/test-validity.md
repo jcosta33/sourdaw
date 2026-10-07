@@ -574,6 +574,19 @@ For a point-command change, dispatch through real Command and CRDT-backed Automa
 document, owning projection, undo history, and `getAutomationValueAtBeat`. A handler-call or stored-value assertion
 cannot prove the sampler will use the point.
 
+## Lesson from the PR #645 projection-identity oracle escape
+
+PR #645's selected-range Undo fixture treated a value-equal shallow copy as a stale conflict while successful fixtures
+kept the original projection reference. That oracle accepted a guard which rejected ordinary CRDT settlement. Retained
+evidence of a real post-settlement Undo probe is missing; historical stance dispatch is unverified.
+
+Flush the production CRDT write and prove equal canonical values with replaced projection identity before actual Command
+Undo. Assert raw/projected state, resolved comp coverage, buffer-retention metadata and history through Undo/Redo. Use a
+changed clip value as the rejection control; a copied object alone is not conflicting project truth. Replacing fresh
+semantic preparation with the retained handle must fail the settled replay case, while weakening intra-publication
+guards must fail reentrancy or compensation controls. Include an initially empty lane with later peer fragment facets,
+and a write-then-throw after their retirement, so empty captures and rollback cannot disappear behind helper-only proof.
+
 ### 2026-09-28 — disposable Git fixtures inherited asynchronous Trace2 writes (escaped via PR #4854)
 
 PR #4854 added disposable Git fixtures whose child commands inherited `GIT_TRACE2_EVENT`; its event writer could
@@ -594,3 +607,26 @@ The EDM status-bar E2E cases asserted rate and latency text but did not observe 
 Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
+
+### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
+
+PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
+exercised handlers through direct execution before a replay guard contract existed. The checks were
+not extended when commit `64b9d77c01a` added guarded compensation preflight or when PR #2747
+(`06fb56e3897`) restricted restore replay to guarded actions. They therefore preserved snapshot shape
+and ordinary undo while never entering the atomic admission that now rejected the family. No
+pull-request number is recorded in Git history for `64b9d77c01a`.
+
+Parameterize every handler registered by the shared transform map through the real atomic executor,
+with one undo entry and concrete full-note poststate, undo, and redo oracles. Include deterministic
+seed control for humanize. Delete `noteTransformReplayGuard` from the inverse and redo to prove the
+case turns red. Separate cases must show invalid initial topology rejects both atomic and direct
+execution without notes or history changing, and that stale topology or notes leaves committed undo
+pending. A helper-level payload assertion alone is not caller admission proof.
+
+Make the direct-dispatch topology oracle individually load-bearing for every registered transform:
+cross each transform with missing, wrong-kind, frozen, locked, and duplicate-ID targets through the
+real dispatcher, and assert notes plus both history stacks stay unchanged. One representative action
+cannot carry the family-wide claim. For replay, duplicate the clip ID on the same track and on another
+track after commit for undo, then again after undo for redo; assert the live notes remain exact and the
+blocked history entry stays on its original stack.

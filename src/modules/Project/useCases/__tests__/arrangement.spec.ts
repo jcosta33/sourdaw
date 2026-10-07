@@ -184,6 +184,7 @@ vi.mock('#/modules/Automation/useCases', async () => {
         applyModulationToEngine: vi.fn(),
         captureAutomationRecordingRollback: vi.fn(),
         clipAutomationMoveStateMatches: vi.fn(),
+        cloneClipAutomationLanes: vi.fn(),
         duplicateClipAutomation: vi.fn(),
         duplicateClipAutomationBatch: vi.fn(),
         getAutomationLanes: vi.fn(),
@@ -210,6 +211,8 @@ vi.mock('#/modules/Automation/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        projectClipControllerEvents: vi.fn(),
+        projectClipControllerRestore: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         appendMidiNotes: vi.fn(),
         arpeggiate: vi.fn(),

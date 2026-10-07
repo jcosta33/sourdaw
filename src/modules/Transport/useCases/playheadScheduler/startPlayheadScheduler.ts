@@ -34,6 +34,7 @@ import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAut
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
+import { discardStaleStoredMoves } from '../scheduling/discardStaleStoredMoves';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
@@ -359,6 +360,10 @@ export function startPlayheadScheduler(): void {
         // and the wrap replaced the scanned position before the punch checks
         // below.
         let lateWrap = false;
+        // Set when an edit's teardown cuts the look-ahead: the window that
+        // re-emits it opens where playback stands (or at the loop start), and
+        // like a jump's it must restore the stored controllers in force there.
+        let reemitAfterEdit = false;
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
@@ -367,6 +372,15 @@ export function startPlayheadScheduler(): void {
             // the device read must not map back across it (#4784).
             schedulerSession.lastLoopSeamAudioTime = null;
             stopAllScheduled();
+            // The teardown stops notes, not pedals or controllers (a controller
+            // is state), so the stored moves still queued for the cut look-ahead
+            // would apply at their old frames after the re-emitted window: drop
+            // them on every device stored playback posted to. The re-emitted
+            // window restores the values in force where it opens and lifts a
+            // pedal only where nothing is in force, so a pedal the lane holds
+            // down is never lifted and pressed again.
+            discardStaleStoredMoves();
+            reemitAfterEdit = true;
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -532,6 +546,10 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the loop start restores what is in force there.
+            discardStaleStoredMoves();
             // Fenced at the seam, each source by its own compensation: the
             // loop-end tail a compensated source is still due outlives the seam
             // instant (#4784). An uncompensated source is cut at the seam
@@ -637,6 +655,10 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the destination restores what is in force there.
+            discardStaleStoredMoves();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -919,7 +941,10 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                // Only an edit's re-emit makes this window a relocation (it opens
+                // where the cut look-ahead began); an ordinary seam tick continues.
+                reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -972,6 +997,10 @@ export function startPlayheadScheduler(): void {
             // physical instant.
             resetMetronomeBeat(current.loopStart);
             scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current);
+            // The incoming pass opens at the loop start: a relocation, so the
+            // stored controllers are restored to what is in force there. The
+            // dying window above already posted everything up to the seam, which
+            // is why this path lifts nothing frameless.
             await scheduleMidiNotes(
                 current.loopStart,
                 seam.wrappedUpTo,
@@ -980,7 +1009,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                true
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -1014,6 +1044,9 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.accumulatedPosition,
                 current
             );
+            // A late wrap, a follow-action jump and an edit's re-emit open this
+            // window at their destination, so it restores the stored controllers
+            // there too.
             await scheduleMidiNotes(
                 schedulerSession.lastScheduledBeat,
                 scheduleUpTo,
@@ -1022,7 +1055,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                lateWrap || jumpToPosition !== null || reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;

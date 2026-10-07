@@ -29,7 +29,10 @@ export type LevainNodeResult = {
     ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
-    handleCc: (cc: number, value: number, sampleFrame?: number) => void;
+    /** `stored` marks a move stored clip playback posts, so `discardStoredCc` can drop it while it is queued. */
+    handleCc: (cc: number, value: number, sampleFrame?: number, stored?: boolean) => void;
+    /** Drop every queued controller move stored playback posted; a performer's queued moves stay. */
+    discardStoredCc: () => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -179,8 +182,12 @@ export async function createLevainNode(
         node.port.postMessage({ type: 'param', name, value });
     };
 
-    const handleCc = (cc: number, value: number, sampleFrame?: number): void => {
-        node.port.postMessage({ type: 'cc', cc, value, sampleFrame });
+    const handleCc = (cc: number, value: number, sampleFrame?: number, stored?: boolean): void => {
+        node.port.postMessage({ type: 'cc', cc, value, sampleFrame, stored });
+    };
+
+    const discardStoredCc = (): void => {
+        node.port.postMessage({ type: 'discardStoredCc' });
     };
 
     const setBypass = (b: boolean): void => {
@@ -223,6 +230,7 @@ export async function createLevainNode(
         allNotesOff,
         setParam,
         handleCc,
+        discardStoredCc,
         setBypass,
         connect,
         disconnect,

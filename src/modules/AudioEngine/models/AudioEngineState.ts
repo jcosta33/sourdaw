@@ -327,9 +327,12 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         setParam: (name: string, value: number, sampleFrame?: number) => void;
-        setSustain: (position: number, sampleFrame?: number) => void;
-        setUnaCorda: (engaged: boolean, sampleFrame?: number) => void;
-        setSostenuto: (engaged: boolean, sampleFrame?: number) => void;
+        /** `stored` marks a move stored clip playback posts, so `discardStoredPedals` can drop it while it is queued. */
+        setSustain: (position: number, sampleFrame?: number, stored?: boolean) => void;
+        setUnaCorda: (engaged: boolean, sampleFrame?: number, stored?: boolean) => void;
+        setSostenuto: (engaged: boolean, sampleFrame?: number, stored?: boolean) => void;
+        /** Drop every queued pedal move stored playback posted; a performer's queued moves stay. */
+        discardStoredPedals?: () => void;
         noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
         setTemperament: (index: number) => void;
         allNotesOff: () => void;
@@ -377,7 +380,10 @@ export type BuiltinDeviceNode = {
             sampleFrame?: number
         ) => void;
         allNotesOff: () => void;
-        handleCc: (cc: number, value: number, sampleFrame?: number) => void;
+        /** `stored` marks a move stored clip playback posts, so `discardStoredCc` can drop it while it is queued. */
+        handleCc: (cc: number, value: number, sampleFrame?: number, stored?: boolean) => void;
+        /** Drop every queued controller move stored playback posted; a performer's queued moves stay. */
+        discardStoredCc?: () => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;

@@ -1,4 +1,5 @@
 import { type NativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
+import { resolvePianoPedalMove } from '#/utils/pianoPedalController';
 
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode } from '../../engine/CrumbsNode';
@@ -16,6 +17,7 @@ import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
 
 import {
+    type DeviceControllerRequest,
     type DeviceNoteOffRequest,
     type DeviceNoteOnRequest,
     type OfflineAutomationSegment,
@@ -29,6 +31,8 @@ export type NativeDspNode = {
     setBypass?: (bypassed: boolean) => void;
     noteOn?: (request: DeviceNoteOnRequest) => void;
     noteOff?: (request: DeviceNoteOffRequest) => void;
+    /** Set only by the factories whose engine honours stored controllers; see `AudioDeviceStrategy.controlChange`. */
+    controlChange?: (request: DeviceControllerRequest) => void;
     connectPadOutput?: (pad: number, destination: AudioNode) => void;
     disconnectPadOutput?: (pad: number, destination: AudioNode) => void;
     setPadDryRouted?: (pad: number, routed: boolean) => void;
@@ -169,7 +173,12 @@ async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<Native
 async function createLevainOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
     const runtimeFailure = createRuntimeFailureChannel();
     const node = await createLevainNode(ctx, undefined, runtimeFailure.report);
-    return { ...bindArticulatedMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
+    return {
+        ...bindArticulatedMelodicNotes(node),
+        // The raw wire byte, as live input sends it: the engine reads a controller number and a 7-bit value.
+        controlChange: ({ controller, value, sampleFrame }) => node.handleCc(controller, value, sampleFrame),
+        runtimeFailure: runtimeFailure.promise,
+    };
 }
 
 async function createCrumbsOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
@@ -183,6 +192,19 @@ async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<Nativ
     const node = await createGrandBouleNode(ctx, undefined, runtimeFailure.report);
     return {
         ...bindReleaseVelocityMelodicNotes(node),
+        controlChange: ({ controller, value, sampleFrame }) => {
+            const move = resolvePianoPedalMove(controller, value);
+            if (move === null) {
+                return;
+            }
+            if (move.pedal === 'sustain') {
+                node.setSustain(move.position, sampleFrame);
+            } else if (move.pedal === 'sostenuto') {
+                node.setSostenuto(move.engaged, sampleFrame);
+            } else {
+                node.setUnaCorda(move.engaged, sampleFrame);
+            }
+        },
         runtimeFailure: runtimeFailure.promise,
         runtimeHealthCheck: node.runtimeHealthCheck,
     };

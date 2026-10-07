@@ -1,9 +1,10 @@
-import { change, from, type Doc } from '@automerge/automerge';
+import { change, clone, from, getConflicts, merge, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
@@ -17,7 +18,13 @@ import {
     withArpPatternParams,
 } from '../../models/ArpPattern';
 import { hydrateYeastState } from '../../useCases/hydrateYeastState';
-import { readYeastRack, setActiveYeastDevice, yeastStore, type YeastProcessorInfo } from '../yeastStore';
+import {
+    readAllYeastRacks,
+    readYeastRack,
+    setActiveYeastDevice,
+    yeastStore,
+    type YeastProcessorInfo,
+} from '../yeastStore';
 
 // Rack state is scoped per device instance (issue #2422): every write below
 // lands in `racks[DEVICE_ID]`, and the active device resolves through the
@@ -207,6 +214,112 @@ describe('yeastStore', () => {
 
         foreignStorage.flushPendingUnscopedWrite();
         expect(document.foreign).toEqual({ marker: 'foreign-pending' });
+    });
+
+    describe('inside a command-preview scope', () => {
+        function readYeastInPreview(editPreviewDocument: (draft: TestDocument) => void): YeastProcessorInfo[] {
+            const previewDocument = change(clone(document), editPreviewDocument);
+            const preview = createAutomergeStoragePreview(new Map([['root', previewDocument]]));
+            try {
+                return preview.scope(() => yeastStore.value?.processors ?? []);
+            } finally {
+                preview.release();
+            }
+        }
+
+        /**
+         * A preview whose project no longer holds the live selection's track
+         * resolves its active device to the first remaining track instead.
+         */
+        function readYeastWithoutTrackInPreview(removedTrackId: string): YeastProcessorInfo[] {
+            return readYeastInPreview((draft) => {
+                const slot = (draft as { tracks?: { tracks: { id: string }[] } }).tracks;
+                if (!slot) {
+                    throw new Error('Expected the seeded tracks slot');
+                }
+                slot.tracks.splice(
+                    slot.tracks.findIndex((track) => track.id === removedTrackId),
+                    1
+                );
+            });
+        }
+
+        it('keeps a pending rack edit on its own device when the preview selects another device', () => {
+            seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+            setActiveYeastDevice(null);
+            yeastStore.set({ processors: [processor('base-on-a')], uiLevel: 1 });
+            flushAutomergeStorageWrites();
+            yeastStore.set({ processors: [processor('base-on-a'), processor('pending-on-a')], uiLevel: 1 });
+
+            expect(readYeastWithoutTrackInPreview('track-yeast')).toEqual([]);
+            setActiveYeastDevice(DEVICE_ID);
+            flushAutomergeStorageWrites();
+
+            expect(Object.keys(persistedRack(DEVICE_ID)).sort()).toEqual(['base-on-a', 'pending-on-a']);
+            expect(persistedRackOrUndefined(SECOND_DEVICE_ID)).toBeUndefined();
+            expect(yeastStore.value?.processors.map((entry) => entry.id)).toEqual(['base-on-a', 'pending-on-a']);
+            expect(readYeastRack(SECOND_DEVICE_ID).processors).toEqual([]);
+        });
+
+        it('keeps the live conflict-merged slot for the next live write after a preview decodes an unconflicted one', () => {
+            function slotWithRack(deviceId: string, processorId: string): TestDocument['yeast'] {
+                return {
+                    schemaVersion: 2,
+                    racks: {
+                        [deviceId]: {
+                            schemaVersion: 1,
+                            processors: {
+                                [processorId]: { deleted: false, order: 0, value: processor(processorId) },
+                            },
+                        },
+                    },
+                };
+            }
+            seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+            setActiveYeastDevice(null);
+            flushAutomergeStorageWrites();
+            const left = change(clone(document), (draft) => {
+                draft.yeast = slotWithRack(DEVICE_ID, 'on-a');
+            });
+            const right = change(clone(document), (draft) => {
+                draft.yeast = slotWithRack(SECOND_DEVICE_ID, 'on-b');
+            });
+            const unconflicted = clone(left);
+            document = merge(left, right);
+            expect(getConflicts(document, 'yeast')).toBeDefined();
+            yeastStore.hydrate();
+            expect(yeastStore.value?.processors.map((entry) => entry.id)).toEqual(['on-a']);
+
+            const preview = createAutomergeStoragePreview(new Map([['root', unconflicted]]));
+            preview.scope(() => yeastStore.value);
+            preview.release();
+            yeastStore.set({ processors: [processor('on-a'), processor('added-on-a')], uiLevel: 1 });
+            flushAutomergeStorageWrites();
+
+            expect(Object.keys(persistedRack(DEVICE_ID)).sort()).toEqual(['added-on-a', 'on-a']);
+            expect(Object.keys(persistedRack(SECOND_DEVICE_ID))).toEqual(['on-b']);
+            expect(getConflicts(document, 'yeast')).toBeUndefined();
+        });
+
+        it('keeps the live decoded racks when the preview document holds none', () => {
+            seedYeastDevices(DEVICE_ID, SECOND_DEVICE_ID);
+            setActiveYeastDevice(null);
+            yeastStore.set({ processors: [processor('base-on-a')], uiLevel: 1 });
+            flushAutomergeStorageWrites();
+            setActiveYeastDevice(SECOND_DEVICE_ID);
+            yeastStore.set({ processors: [processor('base-on-b')], uiLevel: 1 });
+            flushAutomergeStorageWrites();
+
+            expect(
+                readYeastInPreview((draft) => {
+                    delete draft.yeast;
+                })
+            ).toEqual([]);
+
+            expect(readYeastRack(DEVICE_ID).processors.map((entry) => entry.id)).toEqual(['base-on-a']);
+            expect(readYeastRack(SECOND_DEVICE_ID).processors.map((entry) => entry.id)).toEqual(['base-on-b']);
+            expect(readAllYeastRacks().map((rack) => rack.processors.length)).toEqual([1, 1]);
+        });
     });
 
     it('keeps a processor added on one device out of the other device rack', () => {

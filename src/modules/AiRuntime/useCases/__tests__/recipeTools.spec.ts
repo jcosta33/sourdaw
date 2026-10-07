@@ -58,6 +58,8 @@ const CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE: Readonly<Record<CanonicalRole, Rec
     tom: 'drums',
     cymbal: 'drums',
     percussion: 'drums',
+    overhead: 'drums',
+    room: 'drums',
     drums: 'drums',
     'lead vocal': 'vocal',
     'backing vocal': 'vocal',
@@ -66,9 +68,12 @@ const CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE: Readonly<Record<CanonicalRole, Rec
     keys: 'keys',
     synth: 'keys',
     pad: 'keys',
+    strings: 'keys',
+    brass: 'keys',
     bus: 'bus',
     master: 'master',
     fx: null,
+    utility: null,
     unknown: null,
 };
 

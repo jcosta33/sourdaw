@@ -164,6 +164,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
+            projectClipControllers,
         } = renderContext;
         const stems = new Map<string, AudioBuffer>();
         // FX-9 — read once; each stem then plans only the routes that key a device
@@ -366,6 +367,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -404,6 +406,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             projectChordPitch,
                             evaluateAutomationValue,
                             resolveArticulationId,
+                            projectClipControllers,
                         },
                         onWarning,
                         pendingWorkletEvents,
