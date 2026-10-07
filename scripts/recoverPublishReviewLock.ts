@@ -477,6 +477,23 @@ function assertNoUnauthorizedLandedEvidence(
     }
 }
 
+/**
+ * The ids of the actor's reviews at the head that exactly match the retained document. Thread
+ * replies — review:confirm's included — mint their own COMMENTED reviews under the same actor and
+ * head, so the actor's review count says nothing about whether the publication landed; only
+ * exactness identifies it (#5008).
+ */
+function exactLandedReviewIds(
+    inspection: RecoveryInspection,
+    document: ReviewDocument,
+    expectedHead: string,
+    expectedActorNodeId: string
+): number[] {
+    return inspection.reviews
+        .filter((review) => exactPublishedReview(review, document, expectedHead, expectedActorNodeId))
+        .map((review) => review.id);
+}
+
 function assertSingleExactLandedReview(
     inspection: RecoveryInspection,
     document: ReviewDocument,
@@ -484,9 +501,8 @@ function assertSingleExactLandedReview(
     expectedActorNodeId: string
 ): void {
     if (
-        inspection.reviews.length > 1 ||
-        (inspection.reviews.length === 1 &&
-            !exactPublishedReview(inspection.reviews[0]!, document, expectedHead, expectedActorNodeId))
+        inspection.reviews.length > 0 &&
+        exactLandedReviewIds(inspection, document, expectedHead, expectedActorNodeId).length !== 1
     ) {
         fail('review-publication recovery found ambiguous or non-exact remote review evidence');
     }
@@ -554,7 +570,10 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     );
     assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     assertReconciliationStable(first, second, document, attestation.expectedHead, attestation.expectedActorNodeId);
-    const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
+    const outcome =
+        exactLandedReviewIds(second, document, attestation.expectedHead, attestation.expectedActorNodeId).length === 1
+            ? 'landed'
+            : 'absent';
     const absentReleaseAuthorizedByJournal =
         attestation.journaledOwner?.mutation.phase === 'prepared' ||
         attestation.legacyIncident?.definitiveNoMutationHttpStatus === 422 ||
@@ -592,12 +611,14 @@ function assertReconciliationStable(
     expectedHead: string,
     expectedActorNodeId: string
 ): void {
+    const firstLanded = exactLandedReviewIds(first, document, expectedHead, expectedActorNodeId);
+    const secondLanded = exactLandedReviewIds(second, document, expectedHead, expectedActorNodeId);
     if (
         second.state !== first.state ||
         second.head !== first.head ||
         second.reviews.length !== first.reviews.length ||
-        (second.reviews.length === 1 &&
-            !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
+        secondLanded.length !== firstLanded.length ||
+        secondLanded.some((id, index) => id !== firstLanded[index])
     ) {
         fail('review-publication recovery remote state changed during reconciliation');
     }
