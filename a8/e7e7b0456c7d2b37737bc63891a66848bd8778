@@ -1,0 +1,33 @@
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_2bfd55a4393d7c::t_2795af886917fe 18-19
+  s_2bfd55a4393d7c::t_7df26d49738f8d 559
+  s_2bfd55a4393d7c::t_8e9ad08c4154c5 528-539
+src/modules/MIDI/useCases/__tests__/exportMidiFile.spec.ts
+  s_2bfd55a4393d7c::t_a774449335df3f 329
+  s_2bfd55a4393d7c::t_c2da7dd2b25792 306-316,319-328,330-373
+  s_2bfd55a4393d7c::t_08b8edf862eec5 317-318
+  s_2bfd55a4393d7c::t_bce28710a9865c 22-37
+src/modules/MIDI/useCases/exportMidiFile.ts
+  s_2bfd55a4393d7c::t_caf43805135ca8 134-137
+  s_2bfd55a4393d7c::t_18f31b46e6ecef 182-184
+  s_2bfd55a4393d7c::t_4a41b49f2cb60d 198
+  s_2bfd55a4393d7c::t_90d470acf3c981 94,97,100
+  s_2bfd55a4393d7c::t_9719c76682f4f0 69-70
+  s_2bfd55a4393d7c::t_4343688986fb2a 114-115,118-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8e7e7b0456c7d2b37737bc63891a66848bd8778",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
