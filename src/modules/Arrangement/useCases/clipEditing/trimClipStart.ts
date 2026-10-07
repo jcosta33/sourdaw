@@ -1,6 +1,58 @@
+import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+
+import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
+
+/**
+ * A looped clip reads its notes at `note.startBeat - midiOffsetBeats` wrapped by
+ * the loop length, so scheduling only sees the offset's phase inside
+ * `[0, loopLength)` — but the piano roll, splitting, and glue all read the raw
+ * figure. Wrap the trim's advance into that range so every consumer stays
+ * inside the loop the clip plays.
+ */
+function loopedMidiOffsetBeats(clip: Clip, offset: number): number {
+    const loopEnabled = clip.loopEnabled ?? false;
+    if (!loopEnabled) {
+        return offset;
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled,
+    });
+    return ((offset % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+}
+
+/**
+ * The scheduler's drop gates compare the raw figure `note.startBeat -
+ * midiOffsetBeats` against the loop length (selectMidiNotesForLoopWindow,
+ * getGrooveProjection, and scheduleMidiNotes' admission test), so wrapping the
+ * offset down by `k * loopLength` moves that boundary and silently drops notes
+ * the raw advance keeps. Shifting each stored note by exactly the distance the
+ * wrap moved the offset keeps `note.startBeat - midiOffsetBeats` at the raw
+ * advance's figure — phase, audible window position, and drop set unchanged.
+ * Kept notes hold that relative inside `[0, loopLength)`, so the shift cannot
+ * move a sounding note's media below zero.
+ */
+function shiftNotesWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrappedOffsetBeats: number): void {
+    const shiftBeats = wrappedOffsetBeats - rawOffsetBeats;
+    if (shiftBeats === 0) {
+        return;
+    }
+    const notes = getNotesForClip(clip.id);
+    if (notes.length === 0) {
+        return;
+    }
+    setNotesForClip(
+        clip.id,
+        notes.map((note) => {
+            return { ...note, startBeat: note.startBeat + shiftBeats };
+        })
+    );
+}
 
 export function trimClipStart(clipId: string, newStartBeat: number): boolean {
     if (!Number.isFinite(newStartBeat)) {
@@ -29,10 +81,10 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
                 audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
             };
             if (context.type === 'midi') {
-                return {
-                    ...updated,
-                    midiOffsetBeats: (context.midiOffsetBeats ?? 0) + delta,
-                };
+                const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
+                const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
+                shiftNotesWithOffsetWrap(updated, rawOffsetBeats, midiOffsetBeats);
+                return { ...updated, midiOffsetBeats };
             }
             return updated;
         }

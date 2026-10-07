@@ -34,6 +34,15 @@ function drawsLinearGain(lane: AutomationLaneTarget): boolean {
 }
 
 /**
+ * A linked follower plays its source lane's points, so a lane transform aimed
+ * at the follower's own array cannot change what is heard. The point-write
+ * guards refuse followers the same way through `admitsAutomationLevel`.
+ */
+function isLinkedFollower(lane: AutomationLaneTarget): boolean {
+    return lane.linkedLaneId !== undefined;
+}
+
+/**
  * Whether a lane can honour the level the call states.
  *
  * Decibels describe a gain amplitude, so every other lane takes the linear form
@@ -260,6 +269,7 @@ const coreAutomationStrategyDefinitions = [
             if (
                 !hasExactKeys(args, ['laneId', 'factor']) ||
                 !lane ||
+                isLinkedFollower(lane) ||
                 lane.points.length === 0 ||
                 !isFiniteNumber(args.factor) ||
                 args.factor <= 0 ||
@@ -284,6 +294,7 @@ const coreAutomationStrategyDefinitions = [
             if (
                 !hasExactKeys(args, ['laneId', 'factor']) ||
                 !lane ||
+                isLinkedFollower(lane) ||
                 lane.points.length < 2 ||
                 !isFiniteNumber(args.factor) ||
                 args.factor <= 0 ||
@@ -304,7 +315,7 @@ const coreAutomationStrategyDefinitions = [
         transform: ({ call, context, index }) => {
             const args = call.arguments;
             const lane = findAutomationLane(context, args.laneId);
-            if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length === 0) {
+            if (!hasExactKeys(args, ['laneId']) || !lane || isLinkedFollower(lane) || lane.points.length === 0) {
                 return rejection(index, call.name, 'Expected a populated automation lane');
             }
             return { type: 'invertAutomation', payload: { laneId: lane.id } };
@@ -315,7 +326,7 @@ const coreAutomationStrategyDefinitions = [
         transform: ({ call, context, index }) => {
             const args = call.arguments;
             const lane = findAutomationLane(context, args.laneId);
-            if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length < 2) {
+            if (!hasExactKeys(args, ['laneId']) || !lane || isLinkedFollower(lane) || lane.points.length < 2) {
                 return rejection(index, call.name, 'Expected an automation lane with at least two points');
             }
             return { type: 'reverseAutomation', payload: { laneId: lane.id } };
@@ -332,6 +343,7 @@ const coreAutomationStrategyDefinitions = [
             if (
                 !hasValidKeys ||
                 !lane ||
+                isLinkedFollower(lane) ||
                 lane.points.length <= 2 ||
                 !isFiniteNumber(tolerance) ||
                 tolerance <= 0 ||
@@ -359,6 +371,7 @@ const coreAutomationStrategyDefinitions = [
             if (
                 !hasExactKeys(args, ['laneId', 'gridSize']) ||
                 !lane ||
+                isLinkedFollower(lane) ||
                 lane.points.length === 0 ||
                 !isFiniteNumber(gridSize) ||
                 gridSize <= 0 ||
