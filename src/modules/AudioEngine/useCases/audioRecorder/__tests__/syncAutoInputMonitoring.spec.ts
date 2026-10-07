@@ -253,6 +253,20 @@ describe('syncAutoInputMonitoring', () => {
         expect(harness.startInputMonitoring).toHaveBeenCalledWith('track-1', 'input-1');
     });
 
+    it('settles the state held at subscription time before any further publication', () => {
+        unsubscribe();
+        setTracks();
+        harness.monitored.clear();
+        harness.startInputMonitoring.mockClear();
+        setTracks(audioTrack());
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+
+        unsubscribe = syncAutoInputMonitoring();
+
+        expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
+        expect(harness.monitored.has('track-1')).toBe(true);
+    });
+
     it('stops reacting once unsubscribed', () => {
         setTracks(audioTrack());
         unsubscribe();

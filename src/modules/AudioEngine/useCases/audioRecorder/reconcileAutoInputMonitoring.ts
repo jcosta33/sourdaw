@@ -9,15 +9,32 @@ import { startInputMonitoring } from './startInputMonitoring';
 import { stopTrackInputMonitoring } from './stopTrackInputMonitoring';
 
 type OpenRequest = { inputId: string | null; refused: boolean };
+type TransportFlags = { isPlaying: boolean; isRecording: boolean };
 
 /**
  * Tracks this owner holds an edge for, whether it opened the edge or adopted
  * one the user's On mode had already made live. A refused open stays recorded
  * so a denied microphone is not re-requested on every store publication; the
- * entry is dropped when the edge is next closed, so the next record or stop
- * retries.
+ * refusal is forgiven when the edge is next closed and when the transport next
+ * starts recording or comes to rest, so the next record or stop retries.
  */
 const openRequests = new Map<string, OpenRequest>();
+
+let previousTransport: TransportFlags = { isPlaying: false, isRecording: false };
+
+function forgiveRefusalsAtRecordStartOrStop(transport: TransportFlags): void {
+    const recordStarted = transport.isRecording && !previousTransport.isRecording;
+    const cameToRest = previousTransport.isPlaying && !transport.isPlaying;
+    previousTransport = { isPlaying: transport.isPlaying, isRecording: transport.isRecording };
+    if (!recordStarted && !cameToRest) {
+        return;
+    }
+    for (const [trackId, request] of openRequests) {
+        if (request.refused) {
+            openRequests.delete(trackId);
+        }
+    }
+}
 
 function closeEdge(trackId: string): void {
     openRequests.delete(trackId);
@@ -60,7 +77,8 @@ function openEdge(trackId: string, inputId: string | null): void {
  * edge from its arm state and the transport, and opens or closes it so that
  * repeating the call changes nothing. Only audio tracks open an edge: the
  * microphone belongs to the kinds recording admission captures audio for. On
- * and Off tracks belong to the user's own gesture and are never touched. Every
+ * and Off tracks belong to the user's own gesture and are never touched, except
+ * that an edge this owner held is released when its track turns Off. Every
  * transition that feeds the derivation — arm, mode change, record start/stop,
  * play, stop — reaches this through the track and transport stores, plus the
  * explicit calls where a rebuilt graph or a mode gesture needs the edge settled
@@ -70,6 +88,7 @@ export function reconcileAutoInputMonitoring(): void {
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
+    forgiveRefusalsAtRecordStartOrStop(transport);
 
     for (const track of tracks) {
         presentIds.add(track.id);
@@ -86,7 +105,12 @@ export function reconcileAutoInputMonitoring(): void {
             openEdge(track.id, track.inputId);
         } else if (edge === 'closed') {
             closeEdge(track.id);
+        } else if (track.inputMonitoring === 'off' && openRequests.has(track.id)) {
+            // A store-only write (a restored version, a collaborator) can turn
+            // an Auto track Off without a gesture that stops its edge.
+            closeEdge(track.id);
         } else {
+            // On keeps the edge the user asked for; it is no longer ours.
             openRequests.delete(track.id);
         }
     }

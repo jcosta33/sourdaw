@@ -84,6 +84,17 @@ function setTransport(patch: { isPlaying: boolean; isRecording: boolean }): void
     transportStore.set({ ...defaultTransportState, ...patch, playheadPosition: 4 });
 }
 
+/**
+ * Lets every promise reaction already queued run, which is when the owner
+ * learns the outcome of an open. A timer fires only after the microtask queue
+ * has drained, so this waits for completion rather than counting turns.
+ */
+function drainSettledOpens(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 describe('Auto input monitoring across the Stop gestures', () => {
     let unsubscribe: () => void;
 
@@ -160,6 +171,23 @@ describe('Auto input monitoring across the Stop gestures', () => {
 
         expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith(TRACK_ID, INPUT_ID);
         expect(harness.monitored.get(TRACK_ID)).toBe(INPUT_ID);
+    });
+
+    it('retries a refused open once at the start of a recording and once when Stop comes to rest', async () => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        harness.startInputMonitoring.mockClear();
+        harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
+        trackStore.set({ tracks: [armedAutoAudioTrack()], selectedTrackId: null, ghostClips: [] });
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(1);
+
+        setTransport({ isPlaying: true, isRecording: true });
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(2);
+
+        await stopPlayback();
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(3);
     });
 
     it('keeps the armed Auto edge untouched when Pause ends a recording', () => {
