@@ -11,6 +11,9 @@ import { NO_SOURCE_SPECIFIC_MODULATION } from './GuidanceProfiles';
  * `noise.rs`, `spectral.rs`, `additive.rs`, `physical.rs`, `granular.rs`,
  * `sampler.rs`, `fm.rs`). Every id here is per layer: `MasterSynth::set_param`
  * hands it to the layer `activeLayer` selects.
+ *
+ * The agent reads these in eight-parameter manifest pages that must each fit
+ * one tool receipt (`deviceManifestPaging.spec.ts`), so the text stays terse.
  */
 
 const noExternalModulation = NO_SOURCE_SPECIFIC_MODULATION;
@@ -18,518 +21,430 @@ const noExternalModulation = NO_SOURCE_SPECIFIC_MODULATION;
 export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
     // ── Oscillator ─────────────────────────────────────────────────────────
     oscEngine: parameterGuidance(
-        'Synthesis engine selector for the active layer',
-        'Selects 0 wavetable, 1 band-limited analog, 2 four-operator FM, 3 plucked string, 4 granular, 5 additive or 6 sampler; the window stops at 5 because the sampler plays only its built-in one-second 440 Hz decaying tone.',
+        'Synthesis engine',
+        'Selects 0 wavetable, 1 analog, 2 FM, 3 string, 4 granular, 5 additive or 6 sampler; the window stops at 5: the sampler plays only a built-in 440 Hz tone.',
         0,
         5,
         [
-            'Decides which engine controls are heard: oscWaveform and unisonVoices act on engines 0 and 1, the fm* controls on 2, ks* on 3, grain* on 4, additive* on 5 and sampler* on 6.',
+            'oscWaveform and unisonVoices act on engines 0 and 1, fm* on 2, ks* on 3, grain* on 4, additive* on 5, sampler* on 6.',
         ],
-        [
-            'The plucked string is excited only at note-on, so switching a held note onto engine 3 silences it until the next note.',
-        ],
+        ['The string is excited only at note-on, so switching a held note to engine 3 silences it.'],
         noExternalModulation
     ),
     oscWaveform: parameterGuidance(
-        'Oscillator waveform: sine, saw, square or triangle',
-        'Picks 0 sine, 1 saw, 2 square or 3 triangle for the wavetable, analog and unison oscillators; saw and square are the two whose harmonics fall only as 1/n, while sine has one harmonic and triangle falls as 1/n².',
+        'Oscillator waveform',
+        'Selects 0 sine, 1 saw, 2 square or 3 triangle on engines 0 and 1; saw and square harmonics fall as 1/n, triangle’s as 1/n².',
         1,
         2,
         [
-            'On engine 1 the square reads pulseWidth; FM, plucked string, granular, additive and sampler ignore it, and the grains always read the saw table.',
+            'Engine 1’s square reads pulseWidth; other engines ignore the waveform, and grains always read the saw table.',
         ],
-        [
-            'Moving it rewrites notes already sounding on the next block, so automating it mid-note switches the timbre abruptly.',
-        ],
+        ['It rewrites sounding notes on the next block, so automating it switches timbre abruptly.'],
         noExternalModulation
     ),
     oscLevel: parameterGuidance(
-        'Oscillator level before noise and filter',
-        'Multiplies the engine output, whose tables peak at 1, before noise is added and before the filter; 0.5 to 1 spans −6 dB to full scale.',
+        'Oscillator level',
+        'Scales the engine output (tables peak at 1) before noise and the filter; 0.5 to 1 is −6 dB to full scale.',
         0.5,
         1,
-        [
-            'noiseLevel is added after this gain, so oscLevel also sets the oscillator-to-noise balance, and it sets how hard filterDrive and voiceDrive are driven.',
-        ],
-        ['At 0 the engine is silent and only the noise from noiseLevel reaches the filter.'],
+        ['noiseLevel is added after it, and it sets how hard filterDrive and voiceDrive are driven.'],
+        ['At 0 only noise reaches the filter.'],
         noExternalModulation
     ),
     oscCoarse: parameterGuidance(
         'Coarse transpose in semitones',
-        'Shifts every engine’s pitch by whole semitones (coarse + fine/100); the window reaches two octaves down but one up because the band-limited tables halve their harmonic count per octave and additive partials at or above Nyquist are dropped.',
+        'Transposes every engine in semitones; the window reaches two octaves down but one up because the tables halve their harmonics per octave and partials past Nyquist drop.',
         -24,
         12,
-        [
-            'Adds to oscFine and to every pitch modulation; the plucked string, granular, additive and sampler engines all follow it.',
-        ],
-        [
-            'The plucked string’s delay buffer holds only 1/20 s, so a transposition that takes a low note under 20 Hz is clamped to 20 Hz instead.',
-        ],
+        ['Adds to oscFine and every pitch modulation.'],
+        ['The string’s 1/20 s buffer clamps any pitch below 20 Hz to 20 Hz.'],
         noExternalModulation
     ),
     oscFine: parameterGuidance(
         'Fine tune in cents',
-        'Offsets pitch continuously by up to ±100 cents; ±25 cents keeps a layer within a quarter-tone of the others for layer-against-layer detuning.',
+        'Offsets pitch by up to ±100 cents; ±25 keeps a layer within a quarter-tone of the others.',
         -25,
         25,
-        [
-            'Combines with oscCoarse as one offset in semitones, and is a per-layer value, so it detunes one layer against another when numLayers is above 1.',
-        ],
-        ['Past ±50 cents the layer sits nearer the neighbouring semitone, which oscCoarse reaches exactly.'],
+        ['Adds to oscCoarse; per layer, so it detunes layers when numLayers is above 1.'],
+        ['Past ±50 cents the layer sits nearer the next semitone, which oscCoarse reaches exactly.'],
         noExternalModulation
     ),
     pulseWidth: parameterGuidance(
-        'Pulse duty cycle of the analog square',
-        'Sets the high fraction of the analog pulse (0.05 to 0.95); widths w and 1 − w have the same harmonic magnitudes, so 0.1 to 0.5 covers every distinct tone.',
+        'Analog pulse width',
+        'Sets the analog pulse duty (0.05 to 0.95); widths w and 1 − w share harmonic magnitudes, so 0.1 to 0.5 covers every tone.',
         0.1,
         0.5,
-        [
-            'Heard only with oscEngine at 1, oscWaveform at 2 and unisonVoices at 1; with more unison voices engine 1 renders the wavetable bank and drops the pulse width.',
-        ],
-        ['On every other engine or waveform it changes nothing, so automating it there has no audible result.'],
+        ['Heard only with oscEngine 1, oscWaveform 2 and unisonVoices 1.'],
+        ['Elsewhere, including engine 1 with unison, it does nothing.'],
         noExternalModulation
     ),
 
     // ── Unison ─────────────────────────────────────────────────────────────
     unisonVoices: parameterGuidance(
-        'Unison oscillator count per note',
-        'Stacks up to 16 detuned wavetable oscillators per note, scaled by 1/√count; each copy is another oscillator computed for every sounding note.',
+        'Unison copies per note',
+        'Stacks up to 16 detuned wavetable copies per note at gain 1/√count, each computed per sounding note.',
         1,
         8,
-        ['unisonDetune and unisonSpread act only above 1; FM (oscEngine 2) and engines 3 to 6 ignore the stack.'],
-        [
-            'On engine 1, any value above 1 replaces the analog oscillator with the wavetable bank, so the analog waveform and pulse width are lost.',
-        ],
+        ['unisonDetune and unisonSpread act only above 1; FM and engines 3 to 6 ignore it.'],
+        ['On engine 1 values above 1 render the wavetable bank instead of the analog oscillator.'],
         noExternalModulation
     ),
     unisonDetune: parameterGuidance(
-        'Total unison detune in cents',
-        'Spreads the copies evenly from −detune/2 to +detune/2 cents, so 50 puts the outermost copies 25 cents either side of the note.',
+        'Unison detune',
+        'Spreads copies evenly from −detune/2 to +detune/2 cents; 50 puts the outer copies 25 cents off the note.',
         0,
         50,
-        ['Needs unisonVoices above 1; unisonSpread pans the same copies that this detunes.'],
-        [
-            'At 100 the outer copies sit a full semitone apart (±50 cents), which reads as out of tune rather than thick on sustained notes.',
-        ],
+        ['Needs unisonVoices above 1; unisonSpread pans the same copies.'],
+        ['At 100 the outer copies sit a full semitone apart (±50 cents).'],
         noExternalModulation
     ),
     unisonSpread: parameterGuidance(
         'Unison stereo spread',
-        'Pans the copies evenly from −spread to +spread with an equal-power law; at 1 the outermost copies are hard left and right.',
+        'Pans copies evenly across ±spread with equal power; at 1 the outer copies are hard left and right.',
         0.5,
         1,
-        [
-            'Needs unisonVoices above 1, and stereoWidth then scales the side signal it creates for the whole instrument.',
-        ],
-        [
-            'The pan is restored after the mono filter as a level balance that is exact only while one copy dominates, so with many copies the stereo image is an approximation.',
-        ],
+        ['Needs unisonVoices above 1; stereoWidth scales its side.'],
+        ['The pan is restored after the mono filter as a balance, exact only while one copy dominates.'],
         noExternalModulation
     ),
 
     // ── Noise and drift ────────────────────────────────────────────────────
     noiseLevel: parameterGuidance(
-        'Noise mixed into the voice before the filter',
-        'Adds noise peaking at ±noiseLevel after oscLevel and before the filter, on every engine; 0.3 sets white-noise peaks about 10 dB under a full-scale oscillator.',
+        'Noise level',
+        'Adds noise peaking at ±level after oscLevel, before the filter; 0.3 is about 10 dB under a full-scale oscillator.',
         0,
         0.3,
-        [
-            'noiseColor picks the noise colour, and oscLevel does not scale it, so the two set their balance independently.',
-        ],
-        ['At 1 the noise peaks match a full-scale oscillator and can bury the pitched signal.'],
+        ['noiseColor sets its colour; oscLevel does not scale it.'],
+        ['At 1 noise peaks match a full-scale oscillator.'],
         noExternalModulation
     ),
     noiseColor: parameterGuidance(
-        'Noise colour: white, pink or brown',
-        'Selects 0 white, 1 pink (eight-row running sum ÷ 9) or 2 brown (a leaky integrator multiplied by 10 and hard-clamped to ±1).',
+        'Noise colour',
+        'Selects 0 white, 1 pink (eight-row sum ÷ 9) or 2 brown (leaky integrator ×10, clamped to ±1).',
         0,
         1,
         ['Heard only when noiseLevel is above 0.'],
-        [
-            'Brown noise is multiplied by 10 before the ±1 clamp, and its integrator’s standard deviation of about 0.29 puts roughly 70 % of its samples on the clamp.',
-        ],
+        ['Brown’s integrator spread (σ ≈ 0.29) puts about 70 % of samples on the ±1 clamp after ×10.'],
         noExternalModulation
     ),
     oscDrift: parameterGuidance(
-        'Slow random pitch drift amount',
-        'Wanders each voice’s pitch by up to ±5 cents × oscDrift through a slow 0.18 Hz and 0.51 Hz mixture; 0.5 stays within ±2.5 cents.',
+        'Pitch drift',
+        'Wanders pitch up to ±5 cents × amount at 0.18 and 0.51 Hz; 0.5 stays within ±2.5 cents.',
         0,
         0.5,
-        ['Multiplies the voice frequency on top of oscCoarse, oscFine and every pitch modulation.'],
-        [
-            'The amount is written into the voices that exist at the time rather than stored on the layer, so a voice swapped in from the steal-fade pool after a voice steal plays without it.',
-        ],
+        ['Multiplies the pitch set by oscCoarse, oscFine and the modulators.'],
+        ['Written into existing voices, not stored, so a voice swapped in from the steal-fade pool lacks it.'],
         noExternalModulation
     ),
 
     // ── Time-domain warp ──────────────────────────────────────────────────
     warpMode: parameterGuidance(
-        'Waveform warp algorithm',
-        'Selects 0 off, 1 sync, 2 sample-and-bit reduction, 3 squeeze, 4 bend, 5 formant comb or 6 fold; the window stops at 4 because fold can return up to 3.4 × full scale and formant reads a phase that moves only on engine 0 and on engine 1 with unisonVoices at 1.',
+        'Warp algorithm',
+        'Selects 0 off, 1 sync, 2 reduction, 3 squeeze, 4 bend, 5 formant or 6 fold; the window stops at 4: fold reaches 3.4 × full scale, and formant’s phase moves only on engine 0 and on engine 1 with unisonVoices at 1.',
         0,
         4,
         [
-            'Does nothing until warpAmount is above 0.001; sync and formant read an oscillator phase that does not advance on oscEngine 2 to 6, nor on engine 1 with unisonVoices above 1 (the unison bank renders while the analog phase they read stays frozen), so there they act as fixed gain or offset changes rather than timbral ones.',
+            'Needs warpAmount above 0.001; sync and formant read a phase frozen on oscEngine 2–6 and on engine 1 with unisonVoices above 1, where they only change gain or offset.',
         ],
-        [
-            'Squeeze adds a DC bias of 2 × warpAmount − 1, so low amounts push the waveform toward −1 and leave an offset the low-pass filter passes.',
-        ],
+        ['Squeeze adds a DC bias of 2 × amount − 1, offsetting low amounts toward −1.'],
         noExternalModulation
     ),
     warpAmount: parameterGuidance(
         'Warp intensity',
-        'Scales the chosen warp: at 0.5 reduction keeps 9 bits and holds each value for about 8.5 samples (16 at 1, because the left and right calls share one hold counter), squeeze is unbiased, and fold’s four folds still return inside its threshold.',
+        'At 0.5 reduction keeps 9 bits and holds each value about 8.5 samples (16 at 1; left and right share one counter), and squeeze is unbiased.',
         0,
         0.5,
-        ['Acts only through warpMode; at 0 every mode passes the oscillator unchanged.'],
-        [
-            'Above about 0.71 fold needs more than its four folds, so at 1 a full-scale input leaves at up to 3.4, far above the oscillator’s own peak.',
-        ],
+        ['Acts only through warpMode; 0 passes the oscillator unchanged.'],
+        ['Above about 0.71 fold outgrows its four folds, so at 1 a full-scale input leaves at up to 3.4.'],
         noExternalModulation
     ),
 
     // ── Audio-rate modulation ─────────────────────────────────────────────
     audioModRate: parameterGuidance(
-        'Audio-rate modulator frequency',
-        'Sets a fixed-Hz sine modulator (it does not follow the played note) from 0 to 5000 Hz; at 0 its phase never moves and it outputs nothing.',
+        'Audio-rate modulator rate',
+        'Sets a fixed-Hz sine modulator, 0–5000 Hz, independent of the note; 0 outputs nothing.',
         0,
         1000,
-        [
-            'Heard only when audioModDepth is above 0.001 and audioModTarget is not 0; the modulator restarts at every note-on.',
-        ],
-        [
-            'Because the rate is fixed in Hz rather than a ratio of the note, one setting gives harmonic sidebands on some notes and inharmonic ones on others.',
-        ],
+        ['Needs audioModDepth above 0.001 and a non-zero audioModTarget; restarts each note-on.'],
+        ['Fixed in Hz, one rate gives harmonic sidebands on some notes and inharmonic ones on others.'],
         noExternalModulation
     ),
     audioModDepth: parameterGuidance(
         'Audio-rate modulation depth',
-        'Scales the modulator: ±depth octaves of pitch, a 1 ± depth amplitude multiplier, or ±2 × depth on the cutoff multiplier, depending on the target.',
+        'Scales the modulator to ±depth octaves of pitch, a 1 ± depth gain, or ±2 × depth on the cutoff multiplier.',
         0,
         0.5,
-        ['audioModTarget chooses which of the three it scales and audioModRate sets its frequency.'],
-        [
-            'At 1 on the amplitude target the gain swings to 0 and 2 every cycle, and on the filter target the trough already reaches the 20 Hz clamp from 0.5.',
-        ],
+        ['audioModTarget picks the destination.'],
+        ['At 1 the amplitude target swings gain 0 to 2; from 0.5 the filter trough reaches 20 Hz.'],
         noExternalModulation
     ),
     audioModTarget: parameterGuidance(
         'Audio-rate modulation destination',
-        'Selects 0 off, 1 pitch (FM), 2 amplitude modulation (a 1 ± depth gain that stays between 0 and 2) or 3 filter cutoff; the window stops at 2 because the filter route adds ±2 × depth to the cutoff multiplier.',
+        'Selects 0 off, 1 pitch, 2 amplitude modulation (a 1 ± depth gain between 0 and 2) or 3 cutoff; the window stops at 2 because the filter route adds ±2 × depth to the cutoff multiplier.',
         0,
         2,
-        ['audioModDepth and audioModRate do nothing while this is 0.'],
-        [
-            'The filter route can pull the cutoff to its 20 Hz clamp on every modulator trough, which chops the note at the modulator rate.',
-        ],
+        ['audioModDepth and audioModRate do nothing while it is 0.'],
+        ['The filter route can pull the cutoff to 20 Hz on every modulator trough.'],
         noExternalModulation
     ),
 
     // ── Additive ───────────────────────────────────────────────────────────
     additivePartials: parameterGuidance(
         'Additive partial count',
-        'Sums up to 64 sine partials of a 1/n series and divides by √count, so fewer partials are louder: 8 peak near 0.59 and 32 near 0.32 of full scale.',
+        'Sums up to 64 sines of a 1/n series divided by √count, so fewer are louder: 8 peak near 0.59, 32 near 0.32.',
         8,
         32,
+        ['Engine 5 only; additiveTilt, additiveOdd and additiveInharm reshape the same partials.'],
         [
-            'Heard on oscEngine 5; additiveTilt, additiveOdd and additiveInharm reshape the same partials, and partials at or above Nyquist are dropped.',
-        ],
-        [
-            'Partials above 32 only add content to notes whose 33rd partial is still below Nyquist (fundamentals under about 727 Hz at 48 kHz), while their extra √count division lowers every note.',
+            'Above 32, partials add content only to fundamentals under about 727 Hz at 48 kHz, while √count lowers every note.',
         ],
         noExternalModulation
     ),
     additiveTilt: parameterGuidance(
         'Additive spectral tilt',
-        'Multiplies partial n by (n − 1)^(tilt/6), about tilt dB per doubling; at +6 the upper partials approach equal amplitude and the peak rises from about 0.32 to 3.9 of full scale.',
+        'Multiplies partial n by (n − 1)^(tilt/6), about tilt dB per doubling; +6 lifts the peak from about 0.32 to 3.9.',
         -6,
         2,
-        ['Shapes the partials additivePartials enables; additiveOdd attenuates the even ones on top of this tilt.'],
-        [
-            'Positive tilt raises level steeply as well as brightness, so a sweep toward +6 can add over 20 dB at the engine output.',
-        ],
+        ['Combines with additiveOdd on the partials additivePartials enables.'],
+        ['A sweep toward +6 can add over 20 dB at the engine output.'],
         noExternalModulation
     ),
     additiveOdd: parameterGuidance(
         'Even-partial attenuation',
-        'Scales even partials by 1 − amount: 0.5 lowers them 6 dB, 0.9 lowers them 20 dB and 1 removes them for a square-like odd series.',
+        'Scales even partials by 1 − amount: 0.5 is −6 dB, 0.9 is −20 dB, and 1 removes them.',
         0,
         0.9,
-        ['Applies to the partials additivePartials enables, after additiveTilt.'],
-        ['Removing the even partials hollows the tone and lowers its level, since half the series drops out.'],
+        ['Combines with additiveTilt on the same partials.'],
+        ['Removing even partials also lowers level, since half the series drops out.'],
         noExternalModulation
     ),
     additiveInharm: parameterGuidance(
         'Additive inharmonicity',
-        'Moves partial n to n × (1 + B × n²) of the fundamental; by 0.01 the tenth partial already sits where the twentieth harmonic would.',
+        'Moves partial n to n × (1 + B·n²); at 0.01 the tenth partial sits on the twentieth harmonic.',
         0,
         0.01,
         [
-            'Stretches the partials additivePartials enables; even the first partial rises by a factor of 1 + amount, about 17 cents at 0.01, while the upper series spreads as n².',
+            'Stretches the partials additivePartials enables; even the first rises by 1 + amount, about 17 cents at 0.01.',
         ],
-        [
-            'Stretched partials reach Nyquist sooner, and the engine stops at the first partial past it, so high values also cut the partial count on upper notes.',
-        ],
+        ['The engine stops at the first partial past Nyquist, so high values cut the partial count on upper notes.'],
         noExternalModulation
     ),
 
     // ── Plucked string ─────────────────────────────────────────────────────
     ksDamping: parameterGuidance(
         'String loop damping',
-        'Sets the loop low-pass coefficient to 1 − 0.5 × damping on every block; at 0 the loop has no loss filter, and at 0.99 the coefficient falls to about 0.5.',
+        'Sets the loop low-pass coefficient to 1 − 0.5 × damping each block; 0 has no loss filter, 0.99 gives about 0.5.',
         0.1,
         0.9,
-        ['Heard on oscEngine 3; ksBrightness sets the initial excitation, and this sets how fast it dies.'],
-        [
-            'Near 0 the string barely decays on its own, so the ampSustain and ampRelease envelope alone decide when the note ends.',
-        ],
+        ['Engine 3 only; ksBrightness sets the excitation this decays.'],
+        ['Near 0 the string barely decays, leaving ampSustain and ampRelease to end the note.'],
         noExternalModulation
     ),
     ksBrightness: parameterGuidance(
         'String excitation brightness',
-        'Low-passes the noise burst that excites the string at note-on with coefficient 0.1 to 1; 1 is an unfiltered burst.',
+        'Low-passes the note-on noise burst with coefficient 0.1 to 1; 1 is unfiltered.',
         0.3,
         1,
-        ['Heard on oscEngine 3; ksDamping then darkens the string as it rings.'],
-        ['It is read only at note-on, so changing it while a note rings has no effect on that note.'],
+        ['Engine 3 only; ksDamping sets how fast it decays.'],
+        ['Read only at note-on, so changes do not reach a ringing note.'],
         noExternalModulation
     ),
 
     // ── Granular ───────────────────────────────────────────────────────────
     grainDensity: parameterGuidance(
         'Grains started per second',
-        'Starts one grain every 1/density seconds; at the default 50 ms grain size, 20 per second is the first density with no gaps between grains.',
+        'Starts a grain every 1/density s; at the default 50 ms size, 20 per second is the first density without gaps.',
         20,
         80,
-        [
-            'grainSize sets how long each grain lasts, so density × size is the number overlapping; heard on oscEngine 4.',
-        ],
-        ['Only 32 grains can sound at once, so when density × grainSize exceeds 32 new grains are silently skipped.'],
+        ['Overlap is density × grainSize; engine 4 only.'],
+        ['At most 32 grains sound, so beyond that overlap new grains are skipped.'],
         noExternalModulation
     ),
     grainSize: parameterGuidance(
         'Grain length in milliseconds',
-        'Sets each grain’s Hann-windowed length; short grains leave gaps at low density, and long overlapping grains blur the stereo pan.',
+        'Sets each grain’s Hann-windowed length in milliseconds.',
         20,
         200,
-        [
-            'grainDensity × grainSize sets the overlap; grainPanSpread positions are restored less accurately as grains overlap.',
-        ],
-        [
-            'The pan is restored after the mono filter as a balance, measured at 14.6 % error at 20 grains/s and 200 ms and 48.3 % at 100 grains/s and 500 ms.',
-        ],
+        ['grainDensity × grainSize sets the overlap that degrades the grainPanSpread restore.'],
+        ['Measured pan-restore error is 14.6 % at 20 grains/s and 200 ms, and 48.3 % at 100 grains/s and 500 ms.'],
         noExternalModulation
     ),
     grainPosition: parameterGuidance(
         'Grain start phase within the saw cycle',
-        'Sets the phase (0 to 1) of the single saw cycle each grain starts reading from; it does not scan through any sample, so 0 and 1 are the same start.',
+        'Sets the start phase (0 to 1) within the single saw cycle grains read; it scans no sample, so 0 and 1 are the same.',
         0,
         0.5,
-        ['grainSpray randomises each grain’s start around this phase.'],
-        [
-            'Every grain repeats the same saw cycle from this phase, so moving it changes only where each grain’s window opens on the cycle, not the material heard.',
-        ],
+        ['grainSpray randomises the start around it.'],
+        ['Grains repeat one saw cycle, so it moves only where each window opens on the cycle.'],
         noExternalModulation
     ),
     grainSpray: parameterGuidance(
         'Random spread of grain start phase',
-        'Adds a random ±spray to each grain’s start phase, clamped to 0 to 1 rather than wrapped.',
+        'Adds a random ±spray to each grain’s start phase, clamped to 0–1, not wrapped.',
         0,
         0.5,
-        ['Spreads around grainPosition; heard on oscEngine 4.'],
-        [
-            'Because the phase is clamped rather than wrapped, with grainPosition at 0 every negative draw lands on 0 and the spread is one-sided.',
-        ],
+        ['Spreads around grainPosition.'],
+        ['With grainPosition at 0 every negative draw lands on 0, so the spread is one-sided.'],
         noExternalModulation
     ),
     grainPitchVar: parameterGuidance(
         'Random grain pitch spread in semitones',
-        'Detunes each grain by a uniform random ±pitchVar semitones at its start; ±2 keeps every grain within a whole tone of the note.',
+        'Detunes each grain by a random ±value semitones at its start; ±2 stays within a whole tone.',
         0,
         2,
-        [
-            'Each grain keeps the pitch it started with, so glide from portamentoTime and LFO pitch from lfoPitchAmount reach only grains started afterwards.',
-        ],
-        ['At 12 grains land anywhere in a two-octave band and the note loses a clear pitch.'],
+        ['Grains keep their start pitch, so portamentoTime and lfoPitchAmount reach only later grains.'],
+        ['At 12 grains land anywhere in a two-octave band.'],
         noExternalModulation
     ),
     grainPanSpread: parameterGuidance(
         'Random grain pan spread',
-        'Pans each grain to a random position within ±spread using a linear law; the pair is then restored as a balance after the mono filter.',
+        'Pans each grain randomly within ±spread with a linear law, restored as a balance after the mono filter.',
         0,
         0.8,
-        ['Overlap from grainDensity × grainSize degrades how faithfully the pan survives the filter.'],
-        [
-            'Grain pans are random, so even at full spread a passage can lean to one side until enough grains average it out.',
-        ],
+        ['Overlap from grainDensity × grainSize degrades the restore.'],
+        ['Pans are random, so a passage can lean to one side until grains average out.'],
         noExternalModulation
     ),
 
     // ── Sampler ────────────────────────────────────────────────────────────
     samplerMode: parameterGuidance(
         'Sampler playback mode',
-        'Selects 0 one-shot (64-sample fade at the end), 1 loop (64-sample crossfade at the loop point) or 2 ping-pong (reverses at both ends with no crossfade).',
+        'Selects 0 one-shot (64-sample end fade), 1 loop (64-sample crossfade) or 2 ping-pong (no crossfade).',
         0,
         1,
-        ['samplerStart and samplerEnd set the region played or looped; heard on oscEngine 6.'],
-        [
-            'The source is the built-in one-second 440 Hz tone, and middle C plays it at 440 Hz, so the sampler sounds nine semitones above the note played.',
-        ],
+        ['samplerStart and samplerEnd set the region; engine 6 only.'],
+        ['The source is a built-in 1 s 440 Hz tone that middle C plays at 440 Hz, nine semitones above the note.'],
         noExternalModulation
     ),
     samplerStart: parameterGuidance(
         'Sample start point',
-        'Sets where playback starts, and the loop start, as a fraction of the one-second source, which decays as e^(−8t): by 0.5 it is about 35 dB down.',
+        'Sets the start and loop start as a fraction of the 1 s source, which decays as e^(−8t): about −35 dB by 0.5.',
         0,
         0.5,
-        ['samplerEnd is kept at least 0.01 after it; in loop and ping-pong it is also the loop start.'],
-        ['Late start points begin in the quiet tail of the decaying source, so the note can be barely audible.'],
+        ['samplerEnd stays at least 0.01 after it.'],
+        ['Late starts begin in the quiet tail of the source.'],
         noExternalModulation
     ),
     samplerEnd: parameterGuidance(
         'Sample end point',
-        'Sets where one-shot playback stops and loops turn, as a fraction of the source; it is forced at least 0.01 past samplerStart.',
+        'Sets where one-shots stop and loops turn, at least 0.01 past samplerStart.',
         0.25,
         1,
-        ['Works with samplerStart and samplerMode to set the played region.'],
-        [
-            'A one-shot that reaches its end goes silent while the amp envelope still holds the voice, so a note held past the end leaves ampRelease nothing to shape.',
-        ],
+        ['Sets the region with samplerStart and samplerMode.'],
+        ['A one-shot past its end is silent while the amp envelope still holds the voice.'],
         noExternalModulation
     ),
 
     // ── Per-voice drive ───────────────────────────────────────────────────
     voiceDrive: parameterGuidance(
-        'Per-voice saturation after the filter',
-        'Multiplies each voice’s filtered signal by 1 + drive into a rational tanh curve that reaches 1 at an input of 3, so up to 2 a full-scale voice lands at the curve’s knee.',
+        'Per-voice drive',
+        'Drives each filtered voice by 1 + drive into a rational tanh reaching 1 at an input of 3; up to 2, full scale lands at that knee.',
         0,
         2,
-        ['Follows filterDrive, which saturates at the filter; oscLevel sets the level reaching both.'],
-        [
-            'The curve is not a ceiling: past an input of 3 it keeps rising (about 1.46 at drive 10 with a full-scale voice), so high drive raises level as well as distortion.',
-        ],
+        ['Follows filterDrive; oscLevel sets the level reaching both.'],
+        ['The curve rises past 3 (about 1.46 at drive 10, full scale), so drive also adds level.'],
         noExternalModulation
     ),
 
     // ── FM ─────────────────────────────────────────────────────────────────
     fmAlgorithm: parameterGuidance(
         'FM operator routing',
-        'Selects one of eight routings: 0 stack 4→3→2→1, 1 pairs 2→1 and 4→3, 2 Y 3→1 and 4→2→1, 3 all carriers, 4 fork, 5 and 6 with fixed operator-4 feedback, 7 one pair plus two carriers; 0 to 2 use at most two carriers and no fixed feedback.',
+        'Selects 0 stack 4→3→2→1, 1 pairs 2→1 and 4→3, 2 Y, 3 all carriers, 4 fork, 5–6 with fixed operator-4 feedback, or 7 one pair plus two carriers; 0 to 2 have at most two carriers and no fixed feedback.',
         0,
         2,
-        [
-            'Decides which of fmLevel1 to fmLevel4 are carrier volumes and which are modulation depths; changing it also rebuilds the routing fmModAmount scales.',
-        ],
-        ['Algorithm 3 sums all four operators, 2.6 at the default levels, so switching to it raises level sharply.'],
+        ['Decides which of fmLevel1 to fmLevel4 are volumes or depths, and rebuilds the routing fmModAmount scales.'],
+        ['Algorithm 3 sums all four operators, 2.6 at default levels.'],
         noExternalModulation
     ),
     fmRatio1: parameterGuidance(
         'Operator 1 frequency ratio',
-        'Sets operator 1’s frequency as a multiple of the note; operator 1 is a carrier in every algorithm, so 0.5 sounds an octave down and 4 two octaves up.',
+        'Sets operator 1’s frequency multiple; it is a carrier in every algorithm, so 0.5 is an octave down and 4 two up.',
         0.5,
         4,
-        ['Pitch relationships with fmRatio2 to fmRatio4 decide whether the sidebands are harmonic.'],
-        [
-            'Because operator 1 is always heard, a non-integer ratio moves the perceived pitch away from the note played.',
-        ],
+        ['Ratios against fmRatio2 to fmRatio4 decide whether sidebands are harmonic.'],
+        ['A non-integer ratio moves the sounding pitch off the note.'],
         noExternalModulation
     ),
     fmRatio2: parameterGuidance(
         'Operator 2 frequency ratio',
-        'Sets operator 2’s frequency multiple; it modulates operator 1 in every algorithm except 3, where it is a carrier.',
+        'Sets operator 2’s multiple; it modulates operator 1 in every algorithm but 3, where it is a carrier.',
         0.5,
         8,
-        [
-            'fmLevel2 and fmModAmount set how deeply it modulates; integer ratios against fmRatio1 keep the sidebands harmonic.',
-        ],
-        [
-            'Operators are plain sines with no band-limiting, so high ratios push sidebands of upper notes past Nyquist where they fold back inharmonically.',
-        ],
+        ['fmLevel2 and fmModAmount set its depth.'],
+        ['Operators are unband-limited sines, so high ratios push sidebands of upper notes past Nyquist.'],
         noExternalModulation
     ),
     fmRatio3: parameterGuidance(
         'Operator 3 frequency ratio',
-        'Sets operator 3’s frequency multiple; it modulates operator 2 or 1 in algorithms 0, 2, 4, 5 and 6 and is a carrier in 1, 3 and 7.',
+        'Sets operator 3’s multiple: a modulator in algorithms 0, 2, 4, 5 and 6, a carrier in 1, 3 and 7.',
         0.5,
         8,
-        [
-            'fmLevel3 scales it; in algorithm 1 it is heard directly beside operator 1, so its ratio against fmRatio1 sets an interval.',
-        ],
-        ['In the carrier algorithms a non-integer ratio adds a second, inharmonic pitch rather than a sideband.'],
+        ['fmLevel3 scales it; as a carrier its ratio against fmRatio1 sets an interval.'],
+        ['As a carrier a non-integer ratio adds a second, inharmonic pitch.'],
         noExternalModulation
     ),
     fmRatio4: parameterGuidance(
         'Operator 4 frequency ratio',
-        'Sets operator 4’s frequency multiple; it heads the modulation chain in algorithms 0, 1, 2, 4 and 6 and is a carrier in 3, 5 and 7.',
+        'Sets operator 4’s multiple: the top modulator in algorithms 0, 1, 2, 4 and 6, a carrier in 3, 5 and 7.',
         0.5,
         8,
-        ['fmLevel4 scales it, and in algorithms 5 and 6 it also feeds back on itself at a fixed 0.5 or 0.7.'],
-        [
-            'As a carrier in algorithms 3, 5 and 7 a non-integer ratio sounds as a separate inharmonic tone beside the note.',
-        ],
+        ['fmLevel4 scales it; algorithms 5 and 6 add fixed self-feedback of 0.5 or 0.7.'],
+        ['As a carrier a non-integer ratio sounds as a separate inharmonic tone.'],
         noExternalModulation
     ),
     fmLevel1: parameterGuidance(
         'Operator 1 output level',
-        'Scales operator 1, which is a carrier in all eight algorithms, so it is always an output volume; it also scales the signal fmFeedback feeds back.',
+        'Scales operator 1, a carrier in all eight algorithms, so it is always a volume.',
         0.5,
         1,
-        ['fmFeedback multiplies this operator’s own output, so lowering fmLevel1 also weakens the feedback.'],
-        ['At 0 algorithms 0, 2, 4 and 6, whose only carrier is operator 1, go silent.'],
+        ['fmFeedback multiplies this operator’s output, so fmLevel1 also scales the feedback.'],
+        ['At 0 algorithms 0, 2, 4 and 6 go silent.'],
         noExternalModulation
     ),
     fmLevel2: parameterGuidance(
         'Operator 2 level (mostly modulation depth)',
-        'Scales operator 2; as a modulator its depth is level × fmModAmount × 2π radians, so 0.1 to 0.8 spans about 0.6 to 5 radians at fmModAmount 1.',
+        'Scales operator 2; as a modulator its depth is level × fmModAmount × 2π rad, so 0.1 to 0.8 is about 0.6 to 5 rad.',
         0.1,
         0.8,
-        ['fmModAmount multiplies its depth; in algorithm 3 it is a carrier and sets volume instead.'],
-        [
-            'Raising it adds upper sidebands quickly, so at full level with fmModAmount above 1 the tone turns harsh and aliases on high notes.',
-        ],
+        ['fmModAmount multiplies its depth; in algorithm 3 it is a volume.'],
+        ['With unband-limited operators, high depths push sidebands of high notes past Nyquist.'],
         noExternalModulation
     ),
     fmLevel3: parameterGuidance(
         'Operator 3 level',
-        'Scales operator 3: a modulation depth in algorithms 0, 2, 4, 5 and 6, a carrier volume in 1, 3 and 7.',
+        'Scales operator 3: a depth in algorithms 0, 2, 4, 5 and 6, a volume in 1, 3 and 7.',
         0,
         0.6,
-        ['fmAlgorithm decides its role, and fmModAmount scales it only where it modulates.'],
-        [
-            'The same value means depth in one algorithm and volume in another, so changing fmAlgorithm can make operator 3 jump from timbre to loudness.',
-        ],
+        ['fmAlgorithm sets its role; fmModAmount scales it only as a modulator.'],
+        ['Changing fmAlgorithm can turn the same value from a depth into a volume.'],
         noExternalModulation
     ),
     fmLevel4: parameterGuidance(
         'Operator 4 level',
-        'Scales operator 4: the top modulator in algorithms 0, 1, 2, 4 and 6, a carrier in 3, 5 and 7.',
+        'Scales operator 4: the top modulator in algorithms 0, 1, 2, 4 and 6, a volume in 3, 5 and 7.',
         0,
         0.5,
-        ['fmRatio4 sets its frequency; in algorithms 5 and 6 its fixed self-feedback scales with this level.'],
-        [
-            'In algorithms 5 and 7 it is heard directly, so the low default that works as a modulator can be too quiet or too loud as a carrier.',
-        ],
+        ['fmRatio4 sets its frequency; in algorithms 5 and 6 its fixed self-feedback scales with it.'],
+        ['In algorithms 3, 5 and 7 the low default becomes an output volume.'],
         noExternalModulation
     ),
     fmFeedback: parameterGuidance(
         'Operator 1 self-feedback',
-        'Feeds operator 1’s previous output back into its own phase, in radians scaled by its level; it reaches only operator 1, not the fixed operator-4 feedback.',
+        'Feeds operator 1’s previous output back into its phase, in radians scaled by its level; operator 4’s fixed feedback is separate.',
         0,
         0.5,
-        ['fmLevel1 scales the signal fed back; fmAlgorithm 5 and 6 add their own fixed feedback on operator 4.'],
-        [
-            'Feedback turns the carrier’s sine toward a saw-like, noisier tone that is heard directly on every algorithm.',
-        ],
+        ['fmLevel1 scales what is fed back.'],
+        ['Operator 1 is a carrier in every algorithm, so the feedback always reaches the output.'],
         noExternalModulation
     ),
     fmModAmount: parameterGuidance(
         'Global FM modulation depth',
-        'Rescales every active routing in the algorithm to this amount, multiplying each modulator’s depth; keep it above 0 because 0 latches the routing off.',
+        'Rescales every active routing to this amount; keep it above 0, which latches the routing off.',
         0.25,
         2,
-        ['Multiplies the depth set by fmLevel2, fmLevel3 and fmLevel4 wherever they modulate.'],
+        ['Multiplies the depths of fmLevel2, fmLevel3 and fmLevel4 wherever they modulate.'],
         [
-            'At 0 each voice configured there loses its routing entries, and raising fmModAmount again restores no modulation in those voices until fmAlgorithm changes.',
+            'At 0 each voice configured then loses its routing, and raising fmModAmount restores none until fmAlgorithm changes.',
         ],
         noExternalModulation
     ),

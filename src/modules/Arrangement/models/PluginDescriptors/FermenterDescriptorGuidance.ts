@@ -18,20 +18,18 @@ import { instrumentGuidance } from './GuidanceProfiles';
  * modulator waveform are fixed in the engine, and the sampler has no
  * sample-loading path: it plays its built-in one-second 440 Hz tone
  * (`sampler.rs`). The parameter entries are split by stage across the three
- * `FermenterDescriptorGuidance*.ts` companions.
+ * `FermenterDescriptorGuidance*.ts` companions. The agent reads them in
+ * eight-parameter manifest pages that each carry this device guidance and must
+ * fit one tool receipt (`deviceManifestPaging.spec.ts`), so all of it stays terse.
  */
 export const FERMENTER_GUIDANCE = instrumentGuidance(
-    'Play a layered voice: choose an engine per layer, shape it with the filter, envelopes and modulation, then set the shared effects chain and master gain.',
+    'Pick an engine per layer, shape it with the filter, envelopes and modulation, then set the shared effects and masterGain.',
     [
-        'Per-layer controls write only the layer activeLayer selects at the moment of the write, so set activeLayer before editing a layer other than the first.',
-        'masterGain and the effect mixes act on the sum of every layer; balance layers with layerLevel before raising masterGain above 1.',
+        'Per-layer controls write only the layer activeLayer selects; set it before editing layers 1 to 3.',
+        'masterGain and the effects act on the layer sum; balance with layerLevel before raising masterGain above 1.',
     ],
-    [
-        'The shared chain runs distortion, compressor, reverb, delay, chorus, phaser, EQ, stereoWidth and masterGain in that order, after every layer is summed.',
-    ],
-    [
-        'Each note takes one voice per playable layer from one shared voice ceiling, so raising numLayers lowers how many notes can sound at once.',
-    ]
+    ['After the layers sum: distortion, compressor, reverb, delay, chorus, phaser, EQ, stereoWidth, masterGain.'],
+    ['Each note takes one voice per layer from a shared ceiling, so raising numLayers lowers polyphony.']
 );
 
 export const FERMENTER_PARAMETER_GUIDANCE: Readonly<Record<string, DeviceParameterGuidance>> = {
