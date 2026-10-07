@@ -174,6 +174,9 @@ const {
     setAgentSectionRenderArtifactsClearerMock,
     cancelActiveAgentRunsMock,
     setActiveAgentRunsCancellerMock,
+    setCrumbsEventBusMock,
+    initCrumbsModePushMock,
+    initDeviceStateReconciliationMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -255,6 +258,13 @@ const {
         setAgentSectionRenderArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
         cancelActiveAgentRunsMock: vi.fn(),
         setActiveAgentRunsCancellerMock: vi.fn<(canceller: () => void) => void>(),
+        // Distinguishable from the shared noop like the other seam pins: the
+        // Crumbs wiring assertions pin these by reference, so deleting the
+        // composition-root registration or handing the seam another function
+        // fails here.
+        setCrumbsEventBusMock: vi.fn(),
+        initCrumbsModePushMock: vi.fn(),
+        initDeviceStateReconciliationMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -496,10 +506,16 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
-    // The real Crumbs barrel is not mocked, so its new reconciliation
-    // subscription loads and registers against this seam. A noop unsubscribe
-    // is all it needs: no document change fires under this fixture.
+    // The Crumbs device-state reconciliation is pinned by reference in its own
+    // mock below, so this stands in for the document-change listeners the
+    // collaboration bridge registers at session start. A noop unsubscribe is
+    // all any of them need here: no document change fires under this fixture.
     subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crumbs/stores')>()),
+    setCrumbsEventBus: setCrumbsEventBusMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -717,6 +733,14 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
+}));
+
+vi.mock('../initCrumbsModePush', () => ({
+    initCrumbsModePush: initCrumbsModePushMock,
+}));
+
+vi.mock('../initDeviceStateReconciliation', () => ({
+    initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
 
 // Side-effect import: this is what runs the composition root under test.
@@ -1319,6 +1343,33 @@ describe('bootstrap', () => {
         // document without re-running any app action; without this registration
         // the per-device store sits in the stale-mirror window #4894 describes.
         expect(initGrandBouleDocumentReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers Crumbs device-state reconciliation as an explicit boot step', () => {
+        // The same document-origin trigger, one module over: a peer's Crumbs
+        // sample/mode commit, an undo, or a bulk load rewrites the document
+        // without re-running any app action. Without this registration a loaded
+        // Crumbs keeps its stale deviceState until reload, and its next local
+        // edit commits that stale store over the peer's change (#4764). Pinned
+        // by reference like the Grand Boule registration above.
+        expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('wires the Crumbs mode push to the shared event bus', () => {
+        // The strip half of every Crumbs mode change rides the
+        // `crumbs.modeChanged` signal (#4764): without this registration a
+        // mid-session mode change moves the panel and the persisted document
+        // and leaves the audio alone. Pinned by reference so dropping the
+        // registration fails here instead of at the first silent mode change.
+        expect(initCrumbsModePushMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+    });
+
+    it('wires the Crumbs module event bus in the composition root', () => {
+        // The mode signal's emitter is injected, not imported: the Crumbs
+        // module cannot reach the app's event bus itself. Dropping the
+        // registration leaves every `crumbs.modeChanged` emit silent — the
+        // mode push above included. Pinned by reference.
+        expect(setCrumbsEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 
     it('recovers interrupted AI runs as an explicit boot step', () => {

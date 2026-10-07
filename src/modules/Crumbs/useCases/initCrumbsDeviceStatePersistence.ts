@@ -1,4 +1,5 @@
 import { crumbsStore, type CrumbsState } from '../stores/crumbsStore';
+import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
 import { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
 
@@ -38,6 +39,16 @@ export function initCrumbsDeviceStatePersistence(): () => void {
         for (const [deviceId, state] of Object.entries(instances)) {
             const previous = committed.get(deviceId);
             const current = playbackKey(state);
+            if (previous !== undefined && previous !== current && hasUnsettledCrumbsPairedReconcile(deviceId)) {
+                // #4764: this edit is a reconcile-initiated mode apply whose
+                // paired sample load is still unsettled, so the activeSample
+                // beside the new mode is still the stale local one. Committing
+                // it would mirror the stale sample over the peer's document
+                // reference. Leave the baseline at the last committed key: the
+                // paired load's own completion commits the settled state, and
+                // a failed decode commits nothing.
+                continue;
+            }
             committed.set(deviceId, current);
 
             if (previous === undefined || previous === current) {

@@ -215,4 +215,56 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(commit?.payload.state.data.mode).toBe('drum');
         expect(commit?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');
     });
+
+    // The finding's mirror shape: the paired reconcile applies the mode
+    // synchronously while the sample is still decoding, so the persistence
+    // subscriber reads the new mode beside the store's stale activeSample.
+    // Committing that state writes {mode, staleSample} over the peer's
+    // reference — and because the local machine cannot read the peer's file,
+    // the stale sample never leaves the store: the reference is gone
+    // cross-session.
+    it('does not mirror the stale local sample while the paired load is unsettled, even when it fails', async () => {
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        mocks.nativeLoadSample.mockRejectedValue(new Error('unreadable file'));
+        // A pre-reconcile store edit seeds the persistence baseline at
+        // {quick, a.wav}; without it the subscriber's first sight of the
+        // reconcile's own mode apply would record without committing and the
+        // case could not tell suppression from absence.
+        setMode(DEVICE_ID, 'quick');
+
+        reconcileCrumbsDeviceStatesFromProject();
+        await flushLoad();
+        await flushLoad();
+
+        const commits = mocks.executeAppAction.mock.calls.map((call) => call[0]).filter(isSetDeviceStateAction);
+        expect(commits).toEqual([]);
+        // The mode applied to the session; the unloadable peer sample did not
+        // displace the local one, and neither edit reached the document.
+        expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('slice');
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/a.wav');
+    });
+
+    it('converges a paired reconcile that settles successfully without ever mirroring the stale sample', async () => {
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        setMode(DEVICE_ID, 'quick');
+
+        reconcileCrumbsDeviceStatesFromProject();
+        await flushLoad();
+        await flushLoad();
+
+        // The document already carried the peer's state, so the window owes it
+        // no commit at all — suppressing the whole pair keeps the stale local
+        // sample out of the document on the mode apply and on the settle alike.
+        const commits = mocks.executeAppAction.mock.calls.map((call) => call[0]).filter(isSetDeviceStateAction);
+        expect(commits).toEqual([]);
+        expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('slice');
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/b.wav');
+
+        // A later local edit still commits, carrying the settled sample.
+        setMode(DEVICE_ID, 'drum');
+        const commit = mocks.executeAppAction.mock.calls.map((call) => call[0]).findLast(isSetDeviceStateAction);
+        expect(commit).toBeDefined();
+        expect(commit?.payload.state.data.mode).toBe('drum');
+        expect(commit?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');
+    });
 });

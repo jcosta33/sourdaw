@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { fromCrumbsDeviceState } from '../models/CrumbsDeviceState';
 import { crumbsStore } from '../stores/crumbsStore';
+import { beginCrumbsPairedReconcile, endCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
 import { loadSampleFromPath } from './loadSample';
 import { switchCrumbsMode } from './setCrumbsMode';
@@ -60,12 +61,30 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
         return;
     }
 
+    // A reconcile carrying both a mode and a sample change applies them as one
+    // pair, so the mirror must not run mid-pair: the mode lands synchronously
+    // beside the store's still-stale activeSample, and a persistence commit of
+    // that state would write {mode, staleSample} over the peer's document
+    // reference — a failed or slow decode then erases the reference
+    // cross-session. Hold the mirror until the paired load settles; the load's
+    // own completion or the next unsuppressed edit commits the settled state,
+    // and a failed decode commits nothing (#4764).
+    const paired = modeChanged && filePath !== null && sampleChanged;
+    if (paired) {
+        beginCrumbsPairedReconcile(deviceId);
+    }
     if (modeChanged) {
         void switchCrumbsMode(deviceId, playback.mode);
     }
     if (filePath !== null && sampleChanged) {
-        loadSampleFromPath(deviceId, filePath).catch((error: unknown) => {
-            logger.warn(`[Crumbs] could not reconcile sample "${filePath}" for ${deviceId}: ${String(error)}`);
-        });
+        loadSampleFromPath(deviceId, filePath)
+            .catch((error: unknown) => {
+                logger.warn(`[Crumbs] could not reconcile sample "${filePath}" for ${deviceId}: ${String(error)}`);
+            })
+            .finally(() => {
+                if (paired) {
+                    endCrumbsPairedReconcile(deviceId);
+                }
+            });
     }
 }
