@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_fcfff41da2c9d7::t_62a0da8691ba0e 48,89,160-164,232-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb9fab4cdddb93ad888e8f6f04485fe98732bcc0",
+  "prompts": {},
+  "sessions": {
+    "s_fcfff41da2c9d7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_fcfff41da2c9d7",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
