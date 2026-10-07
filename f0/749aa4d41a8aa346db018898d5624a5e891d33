@@ -1,0 +1,18 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  h_beb54bf43b47b7 583-620
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  h_beb54bf43b47b7 48-54
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  h_beb54bf43b47b7 8,10,90-95,474-494,497-500,527-528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0749aa4d41a8aa346db018898d5624a5e891d33",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
