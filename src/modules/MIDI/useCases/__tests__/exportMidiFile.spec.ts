@@ -19,6 +19,22 @@ function permutations<T>(items: T[]): T[][] {
     );
 }
 
+function cc(id: string, controller: number, value: number, beat: number): MidiCC {
+    return { id, controller, value, beat, channel: 0 };
+}
+
+function exportedHex(notes: MidiNote[], ccs: MidiCC[]): string {
+    downloadMidiFile({ clipName: 'C', clipStartBeat: 0, notes, ccs });
+    return toHex(lastDownloadedBytes());
+}
+
+function exportedRowsHex(rows: (MidiNote | MidiCC)[]): string {
+    return exportedHex(
+        rows.filter((row): row is MidiNote => 'pitch' in row),
+        rows.filter((row): row is MidiCC => 'controller' in row)
+    );
+}
+
 function toHex(bytes: Uint8Array): string {
     let out = '';
     for (const byte of bytes) {
@@ -285,6 +301,74 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(files[0]).toContain('8360903c6401803c0000ff2f00');
         expect(files[0]!.match(/903c/g)).toHaveLength(1);
         expect(files[0]!.match(/803c/g)).toHaveLength(1);
+    });
+
+    it('keeps the stored order of controllers on one beat, as playback posts them', () => {
+        // Pedal down then up ends the pedal up; up then down ends it down. The same
+        // controller and the same beat, so only the stored order tells them apart.
+        expect(exportedHex([], [cc('down', 64, 127, 1), cc('up', 64, 0, 1)])).toContain('8360b0407f00b04000');
+        expect(exportedHex([], [cc('up', 64, 0, 1), cc('down', 64, 127, 1)])).toContain('8360b0400000b0407f');
+    });
+
+    it('keeps an RPN select-then-data sequence in its stored order on one beat', () => {
+        const rpn = [cc('msb', 101, 0, 1), cc('lsb', 100, 0, 1), cc('data', 6, 12, 1), cc('fine', 38, 5, 1)];
+
+        // 101, 100, 6, 38 as stored: data bytes alone would order them 6, 38, 100, 101.
+        expect(exportedHex([], rpn)).toContain('8360b0650000b0640000b0060c00b02605');
+        expect(exportedHex([], [...rpn].reverse())).toContain('8360b0260500b0060c00b0640000b06500');
+    });
+
+    it('writes a chord struck on one beat as the same bytes whatever order its notes are stored in', () => {
+        const c: MidiNote = { id: 'c', pitch: 60, startBeat: 1, duration: 1, velocity: 100 };
+        const e: MidiNote = { id: 'e', pitch: 64, startBeat: 1, duration: 1, velocity: 100 };
+
+        const files = [exportedHex([c, e], []), exportedHex([e, c], [])];
+
+        expect(files[1]).toBe(files[0]);
+        // Strikes then releases, each pair by data bytes: pitch 60 ahead of pitch 64.
+        expect(files[0]).toContain('8360903c64009040648360803c0000804000');
+    });
+
+    it('releases, moves a controller, then strikes a key on rising beats of one tick', () => {
+        // Note a ends at 1.0, the pedal moves at 1.0002 and note b strikes the key at
+        // 1.0004: the strike keeps the later of its own beat and its release's.
+        const a: MidiNote = { id: 'a', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+        const b: MidiNote = { id: 'b', pitch: 60, startBeat: 1.0004, duration: 1, velocity: 100 };
+        const pedal = cc('pedal', 64, 127, 1.0002);
+
+        const files = permutations<MidiNote | MidiCC>([a, b, pedal]).map((rows) => exportedRowsHex(rows));
+
+        expect(new Set(files).size).toBe(1);
+        expect(files[0]).toContain('8360803c0000b0407f00903c64');
+    });
+
+    it('strikes a key after both releases of it on the strike tick', () => {
+        // Notes a and c release pitch 60 at 1.0001 and 1.0004, and b strikes it at 1.0
+        // on tick 480: the strike takes the later release's beat and follows both.
+        const a: MidiNote = { id: 'a', pitch: 60, startBeat: 0, duration: 1.0001, velocity: 100 };
+        const c: MidiNote = { id: 'c', pitch: 60, startBeat: 0.5, duration: 0.5004, velocity: 100 };
+        const b: MidiNote = { id: 'b', pitch: 60, startBeat: 1, duration: 1, velocity: 100 };
+
+        const files = permutations([a, b, c]).map((notes) => exportedHex(notes, []));
+
+        expect(new Set(files).size).toBe(1);
+        expect(files[0]).toContain('803c0000803c0000903c64');
+    });
+
+    it('collapses sub-tick notes that tie on start to the shorter, then the softer one, in any stored order', () => {
+        const loud: MidiNote = { id: 'loud', pitch: 60, startBeat: 1, duration: 0.0001, velocity: 110 };
+        const soft: MidiNote = { id: 'soft', pitch: 60, startBeat: 1, duration: 0.0001, velocity: 90 };
+        const long: MidiNote = { id: 'long', pitch: 60, startBeat: 1, duration: 0.0002, velocity: 90 };
+
+        // Same start and end: the softer is written (velocity 90 = 0x5a).
+        const byVelocity = [exportedHex([loud, soft], []), exportedHex([soft, loud], [])];
+        expect(byVelocity[1]).toBe(byVelocity[0]);
+        expect(byVelocity[0]).toContain('8360903c5a01803c00');
+
+        // Same start, different end: the shorter is written, whatever the velocities (loud = 0x6e).
+        const byEnd = [exportedHex([loud, long], []), exportedHex([long, loud], [])];
+        expect(byEnd[1]).toBe(byEnd[0]);
+        expect(byEnd[0]).toContain('8360903c6e01803c00');
     });
 
     it('does not write a note of no duration, which playback does not sound', () => {

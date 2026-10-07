@@ -66,6 +66,8 @@ type MidiEvent = {
 type SortableEvent = MidiEvent & {
     /** The beat on a grid of tolerance size, so beats a float apart compare equal. */
     sortBeat: number;
+    /** Where the event came in the projection order the rows were given in. */
+    sequence: number;
 };
 
 function snapToBeatGrid(beat: number): number {
@@ -89,13 +91,13 @@ function toSortableEvents(events: MidiEvent[]): SortableEvent[] {
             Math.max(sortBeat, latestReleaseByKeyAndTick.get(releaseId) ?? sortBeat)
         );
     }
-    return events.map((event) => {
+    return events.map((event, sequence) => {
         const sortBeat = snapToBeatGrid(event.beat);
         if (event.kind !== 'on' || event.noteKey === undefined) {
-            return { ...event, sortBeat };
+            return { ...event, sortBeat, sequence };
         }
         const releaseSortBeat = latestReleaseByKeyAndTick.get(`${event.tick}|${event.noteKey}`);
-        return { ...event, sortBeat: Math.max(sortBeat, releaseSortBeat ?? sortBeat) };
+        return { ...event, sortBeat: Math.max(sortBeat, releaseSortBeat ?? sortBeat), sequence };
     });
 }
 
@@ -109,12 +111,15 @@ function compareDataBytes(left: number[], right: number[]): number {
 }
 
 /**
- * A total order on (tick, sort beat, kind, data bytes), so the same events write the
- * same bytes whatever order they were stored in. Playback keeps time order across
+ * A total order on (tick, sort beat, kind, then a final key), so the same notes write
+ * the same bytes whatever order they were stored in. Playback keeps time order across
  * sample frames and applies its release, controller, note-on order only within one
  * frame, so events a tick apart keep their time order whatever their kinds; sort
- * beats on the tolerance grid make beats a float apart one instant, and the data
- * bytes settle events equal on everything else.
+ * beats on the tolerance grid make beats a float apart one instant. Events equal on
+ * all of that are settled last: two controllers keep the order the projection gave
+ * them, as playback posts them (a pedal pressed then released at one beat ends up,
+ * and an RPN select-then-data sequence stays in sequence); any other pair is ordered
+ * by its data bytes, then by that order.
  */
 function compareEvents(left: SortableEvent, right: SortableEvent): number {
     if (left.tick !== right.tick) {
@@ -126,7 +131,10 @@ function compareEvents(left: SortableEvent, right: SortableEvent): number {
     if (left.kind !== right.kind) {
         return SAME_FRAME_EVENT_ORDER[left.kind] - SAME_FRAME_EVENT_ORDER[right.kind];
     }
-    return compareDataBytes(left.data, right.data);
+    if (left.kind === 'control') {
+        return left.sequence - right.sequence;
+    }
+    return compareDataBytes(left.data, right.data) || left.sequence - right.sequence;
 }
 
 type TickedNote = {
@@ -171,8 +179,9 @@ function collapseSubTickNotes(subTick: TickedNote[]): TickedNote[] {
 }
 
 /**
- * The notes playback sounds, on the tick grid. Only a note of no duration is not
- * played; a note shorter than a tick still is, so it keeps one tick of length.
+ * The notes playback sounds, on the tick grid. A note of no duration is not played,
+ * nor is a float-noise remainder of a loop wrap, no longer than the tolerance; a note
+ * shorter than a tick still is, so it keeps one tick of length.
  *
  * Its one-tick release would cut a note of the same pitch and channel that is
  * sounding at its start tick or struck on it, as the sliver a looped pass leaves
@@ -186,7 +195,7 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
     const sounded: TickedNote[] = [];
     const subTick: TickedNote[] = [];
     for (const note of notes) {
-        if (!(note.duration > 0)) {
+        if (!(note.duration > SAME_BEAT_TOLERANCE)) {
             continue;
         }
         const startBeat = clipStartBeat + note.startBeat;

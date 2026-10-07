@@ -15,6 +15,8 @@ const SMF_NOTE_OFF = 0x80;
 const SMF_NOTE_ON = 0x90;
 const SMF_CONTROL_CHANGE = 0xb0;
 const SUSTAIN_PEDAL = 64;
+// A wrap remainder of float noise (around 1e-16 to 1e-15 beats) is no hit; the export writes none.
+const FLOAT_NOISE_BEATS = 1e-9;
 
 const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
@@ -523,6 +525,18 @@ describe('exportMidiClip writes what the clip plays', () => {
         ]);
     });
 
+    it('writes only the real hits of a looped slipped clip, not the float-noise remainder its wrap leaves', () => {
+        const events = exportClip(
+            { startBeat: 4, endBeat: 20, midiOffsetBeats: 1 / 3, loopEnabled: true, loopLength: 8 },
+            [{ id: 'n', pitch: 60, startBeat: 4, duration: 0.5, velocity: 90 }],
+            []
+        );
+
+        // A remainder of about 1e-15 beats at each pass head would write a one-tick note there.
+        expect(ticks(events, 'on')).toEqual([3680, 7520]);
+        expect(ticks(events, 'off')).toEqual([3920, 7760]);
+    });
+
     describe('in the coordinates the scheduler projects in', () => {
         type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
 
@@ -542,7 +556,7 @@ describe('exportMidiClip writes what the clip plays', () => {
                 })
             )
                 .flat()
-                .filter((segment) => segment.duration > 0);
+                .filter((segment) => segment.duration > FLOAT_NOISE_BEATS);
         }
 
         it('writes a loop pass of a clip not at beat 0 once, without a rounding sliver of its wrap', () => {
