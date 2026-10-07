@@ -116,6 +116,7 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
 const measuredScriptBudgets = new Map<string, number>([
+    ['format', 1024 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
     // The focused batch that touched seven spec files at once peaked at 4423 MiB.
     ['test:run', 6144 * 1024 ** 2],
