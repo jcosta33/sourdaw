@@ -1,0 +1,26 @@
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_2bfd55a4393d7c::t_d852fda82c537e 1-187,189-323
+  s_2bfd55a4393d7c::t_966708e97df7be 188
+  s_2bfd55a4393d7c::t_f575ebef762394 324-325
+scripts/recoverPublishReviewLock.ts
+  s_2bfd55a4393d7c::t_10004cc1d019d7 573-576
+  s_2bfd55a4393d7c::t_4102ef5e7e0322 480-496,504-505
+  s_2bfd55a4393d7c::t_446ef424adcb17 615,620-621
+  s_2bfd55a4393d7c::t_c8214d914a6c91 614
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4087ced2e01d44457579857573d8e6f812074cbd",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
