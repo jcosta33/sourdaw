@@ -13,13 +13,12 @@ import { clipMediaOriginBeat } from './clipMediaOriginBeat';
  * the rest of the content, and a trim leaves it where it was. A take without an
  * offset plays the clip's media as the clip places it.
  *
- * `earliestBeat` is the first beat the take can sound. A pass never sounds
- * before its own material. A clip still starting on its media's first sample
- * hides none of it, so a pass recorded ahead of that sample — recording started
- * inside the loop — plays across the loop; once the clip starts inside its media
- * its start bounds every pass, as it bounds any other take. A pass recorded
- * before `passStartBeats` existed sounds from the media origin and is bounded by
- * its clip alone.
+ * `earliestBeat` is the first beat the take can sound. Every take is bounded by
+ * its clip's start, so no take sounds outside its clip; a recording that began
+ * inside the loop commits a clip opening at the loop start for exactly that
+ * reason. A placed pass also never sounds before its own material, so the first
+ * pass of such a recording waits for the record point. A pass recorded before
+ * `passStartBeats` existed is bounded by its clip alone.
  * `sourceStartBeat` carries the loop-occurrence count for probability rolls.
  */
 export function resolveTakeMedia(
@@ -32,20 +31,10 @@ export function resolveTakeMedia(
     }
     const passStartBeats = take.passStartBeats ?? 0;
     const passShiftBeats = take.sourceOffsetBeats - passStartBeats;
+    const passStartBeat = take.passStartBeats === undefined ? clip.startBeat : clipOriginBeat + passStartBeats;
     return {
         originBeat: clipOriginBeat - passShiftBeats,
-        earliestBeat: passEarliestBeat(take.passStartBeats, clipOriginBeat, clip.startBeat),
+        earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: clip.startBeat - passShiftBeats,
     };
-}
-
-function passEarliestBeat(passStartBeats: number | undefined, clipOriginBeat: number, clipStartBeat: number): number {
-    if (passStartBeats === undefined) {
-        return clipStartBeat;
-    }
-    const passStartBeat = clipOriginBeat + passStartBeats;
-    if (clipStartBeat > clipOriginBeat) {
-        return Math.max(passStartBeat, clipStartBeat);
-    }
-    return passStartBeat;
 }

@@ -21,7 +21,9 @@ export type Take = {
      * never the timeline, so moving, nudging, slipping or trimming the clip
      * carries the pass with it. Negative when the pass sounds before the media
      * begins, which a recording started inside the loop gives every pass after
-     * the first. Only meaningful beside `sourceOffsetBeats`; absent means a pass
+     * the first; its clip then opens at the loop start with a negative media
+     * offset, so the pass still sounds inside it. Only meaningful beside
+     * `sourceOffsetBeats`; absent means a pass
      * recorded before the field existed, which sounds from the media origin and
      * is bounded by its clip alone.
      */

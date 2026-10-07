@@ -11,6 +11,7 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
+import { placeRecordingClipOnMedia } from './placeRecordingClipOnMedia';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -34,6 +35,20 @@ function completedLoopPassEndBeat(lanes: readonly TakeLane[], clipId: string): n
         }
     }
     return furthest;
+}
+
+/**
+ * Open a MIDI recording clip where its passes require, keeping its media origin
+ * — and with it every note stored against that origin — where it is. Read
+ * before the takes are rebased.
+ */
+function placeMidiClipOnMedia(clip: Clip): Clip {
+    const mediaOriginBeat = clip.startBeat - (clip.midiOffsetBeats ?? 0);
+    const placement = placeRecordingClipOnMedia(clip.id, mediaOriginBeat);
+    if (placement.startBeat === clip.startBeat) {
+        return clip;
+    }
+    return { ...clip, startBeat: placement.startBeat, midiOffsetBeats: placement.mediaOffsetBeats };
 }
 
 function closeTakeAt(take: Take, endBeat: number): Take {
@@ -85,6 +100,9 @@ export async function stopRecording(atBeat?: number): Promise<void> {
     const clipIdSet = new Set(clipIds);
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
+    // A MIDI clip opened on its record point, which is its media origin: the
+    // notes are stored against that origin and the takes were minted from it.
+    const midiAnchorBeats = new Map<string, number>();
 
     setTrackState({
         ...trackState,
@@ -99,15 +117,17 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                     ...context,
                     endBeat: Math.max(minEnd, endBeat, completedLoopPassEndBeat(lanes, context.id)),
                 };
-                if (finalized.type === 'midi') {
-                    finalizedMidiClips.push(finalized);
+                if (finalized.type !== 'midi') {
+                    return finalized;
                 }
-                return finalized;
+                midiAnchorBeats.set(context.id, context.startBeat);
+                const placed = placeMidiClipOnMedia(finalized);
+                finalizedMidiClips.push(placed);
+                return placed;
             }),
         })),
     });
 
-    const midiAnchorBeats = new Map(finalizedMidiClips.map((clip) => [clip.id, clip.startBeat]));
     const tlState = takeLaneStore.value;
     if (tlState) {
         takeLaneStore.set({

@@ -54,6 +54,12 @@ const mocks = vi.hoisted(() => {
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
         rebaseRecordingTakes:
             vi.fn<(input: { clipId: string; provisionalStartBeat: number; shiftBeats: number }) => void>(),
+        // A punched take has no loop pass: the clip opens on its media origin,
+        // clamped to beat 0.
+        placeRecordingClipOnMedia: vi.fn((_clipId: string, mediaOriginBeat: number) => {
+            const startBeat = Math.max(0, mediaOriginBeat);
+            return { startBeat, mediaOffsetBeats: startBeat - mediaOriginBeat };
+        }),
         startPlayback: vi.fn<() => void>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
@@ -92,6 +98,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     updateClip: mocks.updateClip,
     startRecording: mocks.startRecording,
     commitRecording: mocks.commitRecording,
+    placeRecordingClipOnMedia: mocks.placeRecordingClipOnMedia,
     rebaseRecordingTakes: mocks.rebaseRecordingTakes,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({

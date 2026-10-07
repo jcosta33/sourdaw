@@ -18,6 +18,7 @@ type TestRecordingClip = {
     startBeat: number;
     endBeat: number;
     audioBufferId?: string;
+    audioOffsetBeats?: number;
 };
 
 type TestTrack = {
@@ -50,6 +51,12 @@ const mocks = vi.hoisted(() => {
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
         rebaseRecordingTakes:
             vi.fn<(input: { clipId: string; provisionalStartBeat: number; shiftBeats: number }) => void>(),
+        // A recording with no loop pass: the clip opens on its media origin,
+        // clamped to beat 0.
+        placeRecordingClipOnMedia: vi.fn((_clipId: string, mediaOriginBeat: number) => {
+            const startBeat = Math.max(0, mediaOriginBeat);
+            return { startBeat, mediaOffsetBeats: startBeat - mediaOriginBeat };
+        }),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
@@ -99,6 +106,7 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
+    placeRecordingClipOnMedia: mocks.placeRecordingClipOnMedia,
     rebaseRecordingTakes: mocks.rebaseRecordingTakes,
     startRecording: mocks.startRecording,
     discardRecording: mocks.discardRecording,
@@ -475,6 +483,52 @@ describe('toggleRecording', () => {
         expect(rebase?.shiftBeats).toBeCloseTo(0.2, 9);
         expect(mocks.rebaseRecordingTakes.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.commitRecording.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('commits a loop recording begun inside the loop where its passes place it, before rebasing them', async () => {
+        // Record point 12 inside loop [8,16), 0.1 s of latency at 120 BPM: the
+        // media begins at 11.8. The placement opens the clip at the loop start
+        // with the media offset that keeps that origin.
+        const recordingClip = { id: 'clip-recording', trackId: 'track-audio', startBeat: 12, endBeat: 12 };
+        mocks.placeRecordingClipOnMedia.mockImplementationOnce((_clipId: string, mediaOriginBeat: number) => ({
+            startBeat: 8,
+            mediaOffsetBeats: 8 - mediaOriginBeat,
+        }));
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.1;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ kind: 'completed', buffer: { duration: 6 } });
+        await Promise.resolve();
+
+        const [placedClipId, mediaOriginBeat] = mocks.placeRecordingClipOnMedia.mock.calls[0] ?? [];
+        expect(placedClipId).toBe('clip-recording');
+        expect(mediaOriginBeat).toBeCloseTo(11.8, 9);
+        const committed = mocks.commitRecording.mock.calls[0]?.[0];
+        expect(committed?.startBeat).toBe(8);
+        expect(committed?.audioOffsetBeats).toBeCloseTo(-3.8, 9);
+        expect(committed?.endBeat).toBeCloseTo(23.8, 9);
+        expect(mocks.placeRecordingClipOnMedia.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.rebaseRecordingTakes.mock.invocationCallOrder[0]!
         );
     });
 

@@ -106,6 +106,7 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
         { name: 'moved', clip: recording(5, 14) },
         { name: 'slipped', clip: recording(1, 10, 0.5) },
         { name: 'start trimmed past a region', clip: recording(2.5, 10, 1.5) },
+        { name: 'content slipped later', clip: recording(2, 10, -2) },
     ])('plays every comped pass exactly as main did when the clip is $name', ({ clip }) => {
         const loaded = sanitize_take_lane_store_state(savedByMain);
         expect(loaded).toEqual(savedByMain);
@@ -146,6 +147,18 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
                 { startBeat: 2.5, endBeat: 3, audioOffsetBeats: 2.5, sourceStartBeat: 1.5 },
                 { startBeat: 3, endBeat: 6, audioOffsetBeats: 7, sourceStartBeat: -2.5 },
                 { startBeat: 6, endBeat: 10, audioOffsetBeats: 5, sourceStartBeat: 2.5 },
+            ],
+        },
+        {
+            // A negative offset starts the content two beats after the clip,
+            // so its media origin sits inside the clip: main still sounded each
+            // comped pass from the clip start, its head as leading silence.
+            name: 'content slipped later',
+            clip: recording(2, 10, -2),
+            asMain: [
+                { startBeat: 2, endBeat: 3, audioOffsetBeats: -1, sourceStartBeat: 1 },
+                { startBeat: 3, endBeat: 6, audioOffsetBeats: 4, sourceStartBeat: -3 },
+                { startBeat: 6, endBeat: 10, audioOffsetBeats: 2, sourceStartBeat: 2 },
             ],
         },
     ])('resolves every fragment main resolved when the clip is $name', ({ clip, asMain }) => {

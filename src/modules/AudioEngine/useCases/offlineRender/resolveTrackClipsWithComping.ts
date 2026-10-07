@@ -26,9 +26,9 @@ function clipMediaOriginBeat(clip: TrackClip): number {
 /**
  * A take naming `sourceOffsetBeats` sounds that material `passStartBeats` after
  * the clip's media origin, so it follows every edit that moves the clip's
- * media. It never sounds before its own material, and a clip starting inside its
- * media bounds it by that start. A take without an offset plays the clip's media
- * as the clip places it.
+ * media. Every take is bounded by its clip's start, and a placed pass never
+ * sounds before its own material. A take without an offset plays the clip's
+ * media as the clip places it.
  */
 function resolveTakeMedia(
     take: Take,
@@ -40,22 +40,12 @@ function resolveTakeMedia(
     }
     const passStartBeats = take.passStartBeats ?? 0;
     const passShiftBeats = take.sourceOffsetBeats - passStartBeats;
+    const passStartBeat = take.passStartBeats === undefined ? clip.startBeat : clipOriginBeat + passStartBeats;
     return {
         originBeat: clipOriginBeat - passShiftBeats,
-        earliestBeat: passEarliestBeat(take.passStartBeats, clipOriginBeat, clip.startBeat),
+        earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: clip.startBeat - passShiftBeats,
     };
-}
-
-function passEarliestBeat(passStartBeats: number | undefined, clipOriginBeat: number, clipStartBeat: number): number {
-    if (passStartBeats === undefined) {
-        return clipStartBeat;
-    }
-    const passStartBeat = clipOriginBeat + passStartBeats;
-    if (clipStartBeat > clipOriginBeat) {
-        return Math.max(passStartBeat, clipStartBeat);
-    }
-    return passStartBeat;
 }
 
 /**

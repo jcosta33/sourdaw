@@ -287,6 +287,16 @@ describe('recording gesture commit (issue #4439)', () => {
         // module's own actions, which this slice leaves alone.
         await stopRecording(8);
         flushAutomergeStorageWrites();
+        // The wrap take spans [0,4), before the record point, so the clip opens
+        // there with its media origin, and every note stored against it, kept
+        // on the record point.
+        const committedMidiClip = {
+            id: provisional.id,
+            startBeat: 0,
+            endBeat: 8,
+            midiOffsetBeats: -4,
+            type: 'midi',
+        };
 
         const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(1);
@@ -295,7 +305,7 @@ describe('recording gesture commit (issue #4439)', () => {
             throw new Error('expected exactly one action history entry');
         }
         expect(entry.action.type).toBe('commitRecording');
-        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+        expect(findClip(provisional.id)).toMatchObject(committedMidiClip);
 
         await undo();
         flushAutomergeStorageWrites();
@@ -305,7 +315,7 @@ describe('recording gesture commit (issue #4439)', () => {
 
         await redo();
         flushAutomergeStorageWrites();
-        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+        expect(findClip(provisional.id)).toMatchObject(committedMidiClip);
         expect(takeRefs().map((take) => take.id)).toEqual(recordedTakeIds);
     });
 

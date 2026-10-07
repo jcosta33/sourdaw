@@ -5,6 +5,7 @@ import {
     startRecording,
     discardRecording,
     commitRecording,
+    placeRecordingClipOnMedia,
     rebaseRecordingTakes,
 } from '#/modules/Arrangement/useCases';
 import {
@@ -104,18 +105,9 @@ async function beginActualRecording(
                     // the roll the capture waited through).
                     const originSeconds = anchorSeconds - offsetSeconds;
                     const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
-                    // A take recorded from the top of the song has its origin
-                    // before beat 0. Clamping the clip to the timeline must not
-                    // take the media with it: the clip starts at 0 and its
-                    // content offset skips the pre-origin samples, so
-                    // `startBeat - audioOffsetBeats` stays on the capture's
-                    // true origin — the media-origin law #2050 introduced for
-                    // punched takes (#4662).
-                    const startBeat = Math.max(0, originBeat);
-                    const audioOffsetBeats = startBeat - originBeat;
                     const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
                     // A capture shorter than the offset that precedes it ends
-                    // before the timeline begins: `startBeat` clamps to 0 and
+                    // before the timeline begins: the clip clamps to 0 and
                     // nothing audible remains. Committing it would write an
                     // inverted clip (`endBeat < startBeat`) — the shape every
                     // clip writer refuses and playback skips — with a take-lane
@@ -125,7 +117,7 @@ async function beginActualRecording(
                     // the provisional clip — and with it the staged take and the
                     // lane it would leave empty — is discarded before anything
                     // is cached or committed.
-                    if (exactEndBeat <= startBeat) {
+                    if (exactEndBeat <= Math.max(0, originBeat)) {
                         notifyUser(
                             'Recording discarded — the take was shorter than its latency offset, so nothing audible was captured.',
                             'warning'
@@ -137,16 +129,24 @@ async function beginActualRecording(
                     const bufferId = `rec-${crypto.randomUUID()}`;
                     cacheAudioBuffer({ buffer, bufferId });
 
+                    // The clip keeps `startBeat - audioOffsetBeats` on the
+                    // capture's true origin (the media-origin law #2050
+                    // introduced for punched takes, #4662). A take recorded from
+                    // the top of the song clamps to beat 0 and skips the
+                    // pre-origin samples; a loop recording that began inside the
+                    // loop opens at the loop's first pass with leading silence.
+                    // Placed before the rebase below, which moves that first pass.
+                    const placement = placeRecordingClipOnMedia(recClip.id, originBeat);
                     const recordedClip = {
                         ...recClip,
                         audioBufferId: bufferId,
-                        startBeat,
+                        startBeat: placement.startBeat,
                         endBeat: exactEndBeat,
                     };
-                    // Absent when the origin is on or after beat 0, so an
-                    // ordinary take commits without an offset field.
-                    if (audioOffsetBeats > 0) {
-                        recordedClip.audioOffsetBeats = audioOffsetBeats;
+                    // Absent when the clip starts on its origin, so an ordinary
+                    // take commits without an offset field.
+                    if (placement.mediaOffsetBeats !== 0) {
+                        recordedClip.audioOffsetBeats = placement.mediaOffsetBeats;
                     }
                     // The recorder minted every take's source offset against the
                     // provisional anchor; the media actually begins this much

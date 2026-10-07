@@ -82,8 +82,12 @@ function seedRecording(clip: Pick<TrackClip, 'type' | 'startBeat' | 'endBeat'>, 
     };
 }
 
+function writtenClip(): TrackClip {
+    return mocks.setTrackState.mock.calls[0]![0].tracks[0]!.clips[0]!;
+}
+
 function writtenClipEnd(): number {
-    return mocks.setTrackState.mock.calls[0]![0].tracks[0]!.clips[0]!.endBeat;
+    return writtenClip().endBeat;
 }
 
 function writtenTakes(): Take[] {
@@ -176,6 +180,29 @@ describe('stopRecording during a loop recording', () => {
         expect(placements).toEqual([0, -4]);
     });
 
+    it('opens a MIDI clip recorded inside the loop at the loop start, its media origin on the record point', () => {
+        seedRecording({ type: 'midi', startBeat: 12, endBeat: 12 }, [
+            loopPassTake('pass-1', 8, 16, 0),
+            loopPassTake('pass-2', 8, 16, 4),
+        ]);
+
+        void stopRecording(14);
+
+        expect(writtenClip()).toMatchObject({ startBeat: 8, endBeat: 16, midiOffsetBeats: -4 });
+        expect(mocks.commitRecording).toHaveBeenCalledWith(
+            expect.objectContaining({ startBeat: 8, endBeat: 16, midiOffsetBeats: -4 })
+        );
+    });
+
+    it('keeps a MIDI clip whose passes all begin inside it where it opened', () => {
+        seedRecording({ type: 'midi', startBeat: 1, endBeat: 1 }, [loopPassTake('pass-1', 2, 6, 1)]);
+
+        void stopRecording(3);
+
+        expect(writtenClip()).toMatchObject({ startBeat: 1, endBeat: 6 });
+        expect(writtenClip()).not.toHaveProperty('midiOffsetBeats');
+    });
+
     it('does not rebase the takes of an audio recording, which its capture terminal owns', () => {
         seedRecording({ type: 'audio', startBeat: 12, endBeat: 12 }, [loopPassTake('pass-1', 8, 16, 0)]);
 
@@ -184,5 +211,7 @@ describe('stopRecording during a loop recording', () => {
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0]);
         expect(writtenTakes()[0]?.passStartBeats).toBeUndefined();
+        // Its capture terminal places the clip as well.
+        expect(writtenClip().startBeat).toBe(12);
     });
 });

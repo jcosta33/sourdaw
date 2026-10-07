@@ -58,7 +58,27 @@ const cases: readonly { name: string; state: TakeLaneStoreState; clip: Clip }[] 
     {
         name: 'recorded inside the loop',
         state: lane([pass('pass-2', [8, 16], 4, -4)], 'pass-2', 8, 16),
+        clip: recording(8, 24, -4),
+    },
+    {
+        name: 'recorded inside the loop, first pass comped',
+        state: lane([pass('pass-1', [12, 16], 0, 0)], 'pass-1', 8, 16),
+        clip: recording(8, 24, -4),
+    },
+    {
+        name: 'recorded inside the loop, then slipped',
+        state: lane([pass('pass-2', [8, 16], 4, -4)], 'pass-2', 8, 16),
+        clip: recording(8, 24, -3),
+    },
+    {
+        name: 'placed before a clip opening on the record point',
+        state: lane([pass('pass-2', [8, 16], 4, -4)], 'pass-2', 8, 16),
         clip: recording(12, 24),
+    },
+    {
+        name: 'saved before pass placement existed, content slipped later',
+        state: lane(loopPasses(), 'pass-2', 0, 4),
+        clip: recording(0, 12, -2),
     },
     {
         name: 'recorded inside the loop, then trimmed',

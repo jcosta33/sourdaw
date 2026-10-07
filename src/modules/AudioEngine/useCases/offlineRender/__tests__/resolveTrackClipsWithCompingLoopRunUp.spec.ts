@@ -96,12 +96,15 @@ describe('resolveTrackClipsWithComping — loop takes of a recording that did no
     });
 
     it('plays pass 2 across the whole loop when recording started inside it', () => {
+        // Recorded from beat 12 inside loop [8,16): the clip commits at the loop
+        // start with its media origin kept on the record point.
         compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
 
-        const out = resolveTrackClipsWithComping('t1', [recording(12, 24)]);
+        const out = resolveTrackClipsWithComping('t1', [recording(8, 24, -4)]);
 
         expect(bufferBeatAt(out, 8)).toBe(4);
         expect(bufferBeatAt(out, 12)).toBe(8);
+        expect(bufferBeatAt(out, 15)).toBe(11);
     });
 
     it('keeps pass 1 silent until the record point when recording started inside the loop', () => {
@@ -109,11 +112,24 @@ describe('resolveTrackClipsWithComping — loop takes of a recording that did no
         // point, so it sounds from the media origin.
         compPass([passTake('pass-1', 12, 16, 0, 0)], 'pass-1', 8, 16);
 
-        const out = resolveTrackClipsWithComping('t1', [recording(12, 24)]);
+        const out = resolveTrackClipsWithComping('t1', [recording(8, 24, -4)]);
 
         expect(bufferBeatAt(out, 8)).toBeNull();
+        expect(bufferBeatAt(out, 11)).toBeNull();
         expect(bufferBeatAt(out, 12)).toBe(0);
         expect(bufferBeatAt(out, 15)).toBe(3);
+    });
+
+    it('sounds no pass before its clip starts, wherever the pass was placed', () => {
+        // A clip opening on the record point, as one committed before the loop
+        // start rule did: the pass placed before it is cut at the clip start.
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
+
+        const out = resolveTrackClipsWithComping('t1', [recording(12, 24)]);
+
+        expect(out.every((clip) => clip.startBeat >= 12)).toBe(true);
+        expect(bufferBeatAt(out, 8)).toBeNull();
+        expect(bufferBeatAt(out, 12)).toBe(8);
     });
 
     it('stays silent before a clip start trimmed into the media', () => {
@@ -209,10 +225,30 @@ describe('resolveTrackClipsWithComping — a comped pass follows edits to its cl
         // Recorded inside loop [8,16) from beat 12, then the clip moved 8 beats later.
         compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 16, 24);
 
-        const out = resolveTrackClipsWithComping('t1', [recording(20, 32)]);
+        const out = resolveTrackClipsWithComping('t1', [recording(16, 32, -4)]);
 
         expect(bufferBeatAt(out, 16)).toBe(4);
         expect(bufferBeatAt(out, 20)).toBe(8);
+    });
+
+    it('shifts a pass recorded ahead of its media with content slipped inside its clip', () => {
+        // Recorded inside loop [8,16) from beat 12, then the content slipped one
+        // beat later into the media: pass 2 still fills the loop, a beat deeper.
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
+
+        const out = resolveTrackClipsWithComping('t1', [recording(8, 24, -3)]);
+
+        expect(bufferBeatAt(out, 8)).toBe(5);
+        expect(bufferBeatAt(out, 15)).toBe(12);
+    });
+
+    it('hides what a start trim hides of a pass recorded ahead of its media', () => {
+        compPass([passTake('pass-2', 8, 16, 4, -4)], 'pass-2', 8, 16);
+
+        const out = resolveTrackClipsWithComping('t1', [recording(10, 24, -2)]);
+
+        expect(bufferBeatAt(out, 9)).toBeNull();
+        expect(bufferBeatAt(out, 10)).toBe(6);
     });
 
     it('shifts the comped pass with content slipped inside the clip', () => {
