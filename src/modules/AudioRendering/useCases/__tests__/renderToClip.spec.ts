@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    defaultTransportState,
+    tempoMapStore,
+    type TempoMapStoreState,
+    transportStore,
+} from '#/modules/Transport/stores';
 
 import { renderToClip, type RenderToClipInput } from '../renderToClip';
 
@@ -185,7 +190,7 @@ function setFlatTempo(tempo: number): void {
     tempoMapStore.set({ changes: [] });
 }
 
-function setTempoMap(changes: Parameters<typeof tempoMapStore.set>[0]['changes']): void {
+function setTempoMap(changes: TempoMapStoreState['changes']): void {
     tempoMapStore.set({ changes });
 }
 
