@@ -1,0 +1,81 @@
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_4c8cd08893b364::t_a1f62c47d012a6 103-105,120-121,123-126
+  s_4c8cd08893b364::t_0cf1ab2cf11758 40-53
+  s_4c8cd08893b364::t_1f7d0cd9aeb3bb 14
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingMainProjectCompatibility.spec.ts
+  s_4c8cd08893b364::t_55a4e3f904e911 1-104
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_4c8cd08893b364::t_1fa0503cb9b529 16-21,34,37
+src/modules/Arrangement/useCases/__tests__/resolveCompingMainProjectCompatibility.spec.ts
+  s_4c8cd08893b364::t_7d56c95614e51f 109
+  s_4c8cd08893b364::t_16d7fa57740384 152-161
+  s_4c8cd08893b364::t_1f89010279330e 162-163
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_4c8cd08893b364::t_c715e8e78caf34 85-88,90
+  s_4c8cd08893b364::t_cc989aa8df13f6 183-205,214-215
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_4c8cd08893b364::t_4ef56759679a60 29-31,43,46
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_4c8cd08893b364::t_58ad188718cfaa 110
+  s_4c8cd08893b364::t_db2a0ce0a91004 132-139,143,146-149
+  s_4c8cd08893b364::t_20c704daff73bc 8
+  s_4c8cd08893b364::t_873e9eb6d1290b 120
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingLoopRunUp.spec.ts
+  s_4c8cd08893b364::t_6b2534fdab1f7d 99-100,103,107,115,118,123-132
+  s_4c8cd08893b364::t_86d2874c362eb8 133,228,234-252
+  s_4c8cd08893b364::t_3a53521f2bbd80 134
+  s_4c8cd08893b364::t_230df37dd6e61d 253
+src/modules/Arrangement/models/TakeLane.ts
+  s_4c8cd08893b364::t_41447fdec20c14 24-26
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_4c8cd08893b364::t_5a73fed1397a72 156
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_4c8cd08893b364::t_09b92bd720567f 61-75,78-82
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_4c8cd08893b364::t_24aa71c2eb21d0 32
+src/modules/Arrangement/useCases/__tests__/resolveCompingLoopRunUp.spec.ts
+  s_4c8cd08893b364::t_8374f1dea98558 100-101,104,108,116,119,124-133
+  s_4c8cd08893b364::t_8eb85f7fe16dcd 134,229,235-253
+  s_4c8cd08893b364::t_6f5660b296f995 135
+  s_4c8cd08893b364::t_bf140f9e809046 254
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_4c8cd08893b364::t_cab47bd2f52f2b 54-59
+  s_4c8cd08893b364::t_1b042c78f54068 21
+  s_4c8cd08893b364::t_acc64e3319ab92 489-531
+  s_4c8cd08893b364::t_483133f892978c 109
+  s_4c8cd08893b364::t_5a63777b566aff 532-534
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_4c8cd08893b364::t_92e4934e79d588 231
+  s_4c8cd08893b364::t_143470dda214d8 212
+  s_4c8cd08893b364::t_09485bcd1824c8 125-129,132
+  s_4c8cd08893b364::t_d51312fc15ab0a 249
+  s_4c8cd08893b364::t_373f4cd0d4ae53 1-124,130-131,133-198,200-211,213-230,232-248,250-260,262-264
+  s_4c8cd08893b364::t_336773eb8019e7 261
+  s_4c8cd08893b364::t_a14f44f7b71b56 199
+  s_4c8cd08893b364::t_6ca565c6b5f6d8 265-267
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_4c8cd08893b364::t_d795e4db2894ff 290-299
+  s_4c8cd08893b364::t_1cd34c54e8c2f7 308,318
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_4c8cd08893b364::t_e8031c7b61f242 49-54
+  s_4c8cd08893b364::t_5ab25ab3519b30 104
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_4c8cd08893b364::t_d53f81d9f286dc 101
+  s_4c8cd08893b364::t_652c34b1799454 57-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38d07628ea3e7714888572383be4da40b35d7a48",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
