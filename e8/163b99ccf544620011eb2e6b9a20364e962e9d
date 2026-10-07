@@ -1,0 +1,78 @@
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1f0dcd815e8946::t_dd94f6aaf84d3c 236-240
+  s_1f0dcd815e8946::t_313cb5ef41f95c 4,216
+  s_1f0dcd815e8946::t_3b8b02df1c2963 1,174-184,211
+  s_1f0dcd815e8946::t_b76f214637c26c 2-3,5-29,39-41,71-78,80-152,154,156-173,185-202,205-208,212-215,217-235,241-249
+  s_1f0dcd815e8946::t_8af3d0c033d520 30-38,153,155,203-204,209-210
+  s_1f0dcd815e8946::t_9f95e7f83dc8fc 42-70,79
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  s_1f0dcd815e8946::t_3399f7e683b6cf 9-10,29
+src/modules/Arrangement/handlers/clip/handleDeleteTime.ts
+  s_1f0dcd815e8946::t_6263f394836973 7-8,45
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_1f0dcd815e8946::t_8943559295d7fc 306
+  s_1f0dcd815e8946::t_4cadb4121b770e 7,22,34,47,281,283-294,299-305,307-319
+  s_1f0dcd815e8946::t_fba381b0e20031 23,282
+  s_1f0dcd815e8946::t_89b102920bc9a0 325,327-350,355-372
+  s_1f0dcd815e8946::t_8a09a57a289aeb 48,295
+  s_1f0dcd815e8946::t_4ad01a1648ca5c 296-298
+  s_1f0dcd815e8946::t_7f8b25f416223e 9-13,37-46,61,320-323,351-354
+  s_4c8cd08893b364::t_deee391e51e094 324,326
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_1f0dcd815e8946::t_eb5eb7cffe9d6e 13-15,18-19,63-65,69
+  s_1f0dcd815e8946::t_f7ecbb09fd2a1b 28,33-34
+  s_1f0dcd815e8946::t_b1e8bc6fb97dc5 52-58
+  s_1f0dcd815e8946::t_3b2336c43c2b87 29-32
+  s_1f0dcd815e8946::t_bdc1713f1f599c 46-48
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_db59820626afa7 142-157
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_1f0dcd815e8946::t_553b7a2f1a0b87 14,60
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_1f0dcd815e8946::t_bc9220a48edb03 266,272
+  s_1f0dcd815e8946::t_313cb5ef41f95c 267-271
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_1f0dcd815e8946::t_78f5a93ce9e17e 9-10,80
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_1f0dcd815e8946::t_908f90c62a2294 13-14,59
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_1f0dcd815e8946::t_61111f2d0028d8 9-10,33
+src/modules/Arrangement/handlers/clip/handleRestoreTimeOperationState.ts
+  s_1f0dcd815e8946::t_02e5f45d13b5f1 5-6,17
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_1f0dcd815e8946::t_af70a7624d0cfa 9,57
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_761875f24ed8fd 358-361,365-369,374-378,383-384
+  s_1f0dcd815e8946::t_c3164a86d04f15 362,370,379
+  s_1f0dcd815e8946::t_e9a3ae7043107c 18,336,351,363-364,371-373,380-382,389-391,398-400,403-421
+  s_1f0dcd815e8946::t_f61e5b23ab34c1 385-388,392-397,401-402
+  s_1f0dcd815e8946::t_b614b49adb0cd4 9-15,317-335,340-350
+  s_1f0dcd815e8946::t_0783d4486ca997 352-355
+  s_1f0dcd815e8946::t_1758d2bb985d05 357
+  s_1f0dcd815e8946::t_6ae3c6dbf0a7c7 1,337-339
+  s_4c8cd08893b364::t_e54eb8035801b9 8,356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8163b99ccf544620011eb2e6b9a20364e962e9d",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
