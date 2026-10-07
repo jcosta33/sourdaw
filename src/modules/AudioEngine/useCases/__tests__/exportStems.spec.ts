@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
+import { acquireRenderLock } from '../offlineRender/acquireRenderLock';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
+import { isExportActive } from '../offlineRender/isExportActive';
 
 const offlineRenderMocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => unknown>(() => null),
@@ -723,6 +725,9 @@ describe('exportStems', () => {
 describe('exportStems — option parsing, validation & control flow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // A row that fails while holding the lock must not fail every row after it.
+        exportCancellationState.renderLock = null;
+        exportCancellationState.queuedMusicianExport = null;
         offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(null));
         configureOfflineMidiEventProjection({
             createProjector:
@@ -753,6 +758,29 @@ describe('exportStems — option parsing, validation & control flow', () => {
         await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
         await expect(exportStems(-4)).rejects.toThrow(/Invalid export duration/);
         await expect(exportStems(Number.NaN)).rejects.toThrow(/Invalid export duration/);
+    });
+
+    it('stops an agent measurement holding the render lock and takes the lock after its release (#4768)', async () => {
+        let releaseMeasurement: () => void = () => undefined;
+        const stopMeasurement = vi.fn(() => queueMicrotask(releaseMeasurement));
+        releaseMeasurement = acquireRenderLock('agent-measurement', stopMeasurement);
+
+        // Reaching the duration check means the export got past lock admission.
+        await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
+
+        expect(stopMeasurement).toHaveBeenCalledTimes(1);
+        expect(isExportActive()).toBe(false);
+        acquireRenderLock('musician-export')();
+    });
+
+    it('still refuses a stem export while another musician export holds the lock', async () => {
+        const release = acquireRenderLock('musician-export');
+
+        await expect(exportStems(4)).rejects.toThrow(
+            'An export is already in progress. Cancel the current export before starting a new one.'
+        );
+
+        release();
     });
 
     it('parses the OfflineRenderOptions object form (sampleRate, startBeat, tailSeconds, callbacks)', async () => {

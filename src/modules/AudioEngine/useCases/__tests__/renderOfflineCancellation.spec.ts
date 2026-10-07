@@ -184,7 +184,7 @@ describe('renderOffline — cancelling an in-flight render', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         exportCancellationState.cancelFlag = false;
-        exportCancellationState.isRenderingActive = false;
+        exportCancellationState.renderLock = null;
         SuspendableOfflineContext.latest = null;
         vi.stubGlobal('OfflineAudioContext', SuspendableOfflineContext);
         mocks.sidechainStore.value.routes = [];

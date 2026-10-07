@@ -1,6 +1,7 @@
 import { renderAgentMeasurementTarget, type resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
 import {
     captureOfflineRenderInput,
+    isRenderBusyError,
     renderOffline,
     renderOfflineInput,
     type captureOfflineRenderProjectSource,
@@ -51,13 +52,16 @@ type RenderedMeasurementTarget = {
 
 type TargetRefusal = {
     status: 'refused';
-    code: 'stale-revision' | 'empty-render' | 'render-failed';
+    code: 'stale-revision' | 'empty-render' | 'render-failed' | 'render-busy';
     targetId: string;
     contributorId: null;
 };
 
 type TargetRenderOutcome =
-    { status: 'buffer'; buffer: AudioBuffer | null } | { status: 'failed' } | { status: 'cancelled' };
+    | { status: 'buffer'; buffer: AudioBuffer | null }
+    | { status: 'failed' }
+    | { status: 'busy' }
+    | { status: 'cancelled' };
 
 type MeasuredTargetOutcome =
     { status: 'rendered'; target: RenderedMeasurementTarget } | TargetRefusal | { status: 'cancelled' };
@@ -91,6 +95,8 @@ function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<Audio
             tailSeconds: 0,
             onWarning: input.onWarning,
             abortSignal: input.signal,
+            // A musician's export outranks this render: it stops it, and the target reports `render-busy`.
+            lockHolder: 'agent-measurement',
         },
         input.project
     );
@@ -114,8 +120,12 @@ async function renderTarget(
             source: input.project === undefined ? undefined : { project: input.project },
         });
         return { status: 'buffer', buffer };
-    } catch {
-        return input.signal?.aborted ? { status: 'cancelled' } : { status: 'failed' };
+    } catch (error) {
+        if (input.signal?.aborted) {
+            return { status: 'cancelled' };
+        }
+        // Another render held the lock, or a musician's export took it from this measurement.
+        return isRenderBusyError(error) ? { status: 'busy' } : { status: 'failed' };
     }
 }
 
@@ -134,6 +144,9 @@ async function renderMeasurementTarget(
     const outcome = await renderTarget(target, input);
     if (outcome.status === 'cancelled' || input.signal?.aborted) {
         return { status: 'cancelled' };
+    }
+    if (outcome.status === 'busy') {
+        return refused('render-busy', target.targetId);
     }
     if (outcome.status === 'failed') {
         return refused('render-failed', target.targetId);

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createAppError } from '#/infra/errors/createAppError';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { cancelExport, checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
@@ -136,5 +137,55 @@ describe('renderAgentMeasurementScope — export cancel flag', () => {
         // The isolated-subgraph route never touches the process-wide export
         // cancellation state, so nothing here should require a reset.
         expect(() => checkCancel()).not.toThrow();
+    });
+});
+
+describe('renderAgentMeasurementScope — a musician export outranks the measurement (#4768)', () => {
+    const masterInput = { scope: { kind: 'master' }, startBeat: 0, endBeat: 4, sourceRevision: 'rev-1' } as const;
+
+    it('renders the master mixdown as an agent measurement, which a musician export may stop', async () => {
+        await renderAgentMeasurementScope(masterInput);
+
+        expect(engine.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ lockHolder: 'agent-measurement' }));
+    });
+
+    it('refuses with render-busy, not cancelled, when a musician export stopped the render', async () => {
+        const onRenderStart = vi.fn();
+        engine.renderOffline.mockRejectedValue(createAppError('RenderBusy', 'stopped for an export'));
+
+        const result = await renderAgentMeasurementScope({ ...masterInput, onRenderStart });
+
+        expect(result).toEqual({ status: 'refused', code: 'render-busy', targetId: 'master', contributorId: null });
+        // The render began, so the caller still counts it.
+        expect(onRenderStart).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports its own stop as cancelled even when the render also ended busy', async () => {
+        const controller = new AbortController();
+        engine.renderOffline.mockImplementation(() => {
+            controller.abort();
+            return Promise.reject(createAppError('RenderBusy', 'stopped for an export'));
+        });
+
+        const result = await renderAgentMeasurementScope({ ...masterInput, signal: controller.signal });
+
+        expect(result).toEqual({ status: 'cancelled' });
+    });
+
+    it('keeps an unrelated render failure a render-failed refusal', async () => {
+        engine.renderOffline.mockRejectedValue(new Error('device chain failed'));
+
+        const result = await renderAgentMeasurementScope(masterInput);
+
+        expect(result).toEqual({ status: 'refused', code: 'render-failed', targetId: 'master', contributorId: null });
+    });
+
+    it('still refuses before rendering while a musician export runs', async () => {
+        engine.isExportActive.mockReturnValue(true);
+
+        const result = await renderAgentMeasurementScope(masterInput);
+
+        expect(result).toEqual({ status: 'refused', code: 'render-busy', targetId: null, contributorId: null });
+        expect(engine.renderOffline).not.toHaveBeenCalled();
     });
 });
