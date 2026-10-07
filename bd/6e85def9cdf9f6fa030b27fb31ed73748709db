@@ -1,0 +1,41 @@
+src/modules/Transport/useCases/transportControls/__tests__/stopPlaybackAutoMonitoring.integration.spec.ts
+  s_4c8cd08893b364::t_f32652248e39b3 1-174
+  s_4c8cd08893b364::t_eddb6ad6847d09 175-177
+  s_4c8cd08893b364::t_714dc18f316084 178-179
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_4c8cd08893b364::t_848ffe8bc58bd2 1,5,14-18,33-37,42-47,50,53,61-65
+  s_4c8cd08893b364::t_2a18808a558680 66-67,76-78,80
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.graphReset.spec.ts
+  s_4c8cd08893b364::t_3f95e79fad6d9a 1-162
+  s_4c8cd08893b364::t_780dfefe3675fc 163-166
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_3b3efdaac50bdb 42
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession.ts
+  s_4c8cd08893b364::t_46d1d3c7cf2c8b 25-26,33-34,39
+src/modules/AudioEngine/repositories/audioRecorder/readMonitorTeardownEpoch.ts
+  s_4c8cd08893b364::t_a1c7fbbea1f010 1-10
+src/modules/AudioEngine/repositories/audioRecorder/stopInputMonitoring.ts
+  s_4c8cd08893b364::t_3b47539b84277b 11-13,16
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/syncAutoInputMonitoring.spec.ts
+  s_4c8cd08893b364::t_4d21570e9771d0 10,36-38,42,187-190,193,231-244
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_4c8cd08893b364::t_652b620bb9ef8d 2,27,87-98
+src/modules/Transport/AGENTS.md
+  s_4c8cd08893b364::t_94103b88de3034 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd6e85def9cdf9f6fa030b27fb31ed73748709db",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
