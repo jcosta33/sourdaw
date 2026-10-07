@@ -310,6 +310,12 @@ function rebasePendingGrooveState({
 export function createGrooveTemplateAutomergeStorage() {
     let reconciledConflictState: GrooveTemplateCrdtState | null = null;
     return createAutomergeStorage<GrooveTemplateState>(DOC_PREFIX_ROOT, 'grooveTemplates', {
+        decoderState: {
+            capture: () => reconciledConflictState,
+            restore: (state: GrooveTemplateCrdtState | null) => {
+                reconciledConflictState = state;
+            },
+        },
         fromCrdt: (value) => {
             reconciledConflictState = null;
             return decodeState(value);
