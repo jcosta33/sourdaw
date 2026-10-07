@@ -5,9 +5,15 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
+    type GhSession,
+} from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
 import {
+    parseAcceptanceDocument,
     parseReviewDocument,
     publishReview,
     renderReviewDocumentBody,
@@ -28,6 +34,11 @@ import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier }
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import { deliveryAuthorization, publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
 import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
+import {
+    REASSESSMENT_FILE_NAME,
+    REVIEW_REASSESSMENT_FORMAT,
+    REVIEW_ROUND_ESCALATION_THRESHOLD,
+} from '../reviewRoundEscalation.ts';
 
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -360,7 +371,8 @@ function writeOwner(
     root: string,
     payloadDigest: string,
     phase: 'prepared' | 'remote-mutation-attempted',
-    token = '11111111-1111-4111-8111-111111111111'
+    token = '11111111-1111-4111-8111-111111111111',
+    actorNodeId = REVIEWER_BOT_NODE_ID
 ): string {
     const ownerOid = writePullRequestMutationLockOwner(
         root,
@@ -372,7 +384,7 @@ function writeOwner(
             number,
             expectedHead: head,
             payloadDigest,
-            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+            reviewerActorNodeId: actorNodeId,
             ownerFence: { kind: 'pgid', pgid: 999_999, leaderStartedAt: 'Tue Oct  6 19:46:37 2026' },
             mutation: { phase, epoch: 1 },
         },
@@ -427,6 +439,7 @@ function recoverWith(root: string, ownerOid: string, gh: Gh, inspectionGh?: (ins
     return runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
         primaryRoot: () => root,
         authenticateReviewer: async () => ({ minted: { actorNodeId: REVIEWER_BOT_NODE_ID }, session }),
+        authenticateOrchestrator: async () => ({ minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID }, session }),
         repositoryName: () => 'jcosta33/sourdaw',
         inspect: (pr, actorNodeId, expectedHead) => {
             inspections += 1;
@@ -540,19 +553,29 @@ describe('review-publication recovery of a landed review among thread-reply revi
 
     it.each([
         {
-            shape: 'a non-empty body over reply-only comments',
+            shape: 'a COMMENTED state and a non-empty body over reply-only comments',
             review: restReview(5433790002, 'COMMENTED', 'A reply note.', REVIEWER_BOT_NODE_ID),
             comments: [restComment(5433790002, 4199790010, 670, 'Replying.', { inReplyTo: landedCommentIds[0]! })],
         },
         {
-            shape: 'an empty body over one reply and one top-level comment',
+            shape: 'a CHANGES_REQUESTED state over an empty body and reply-only comments',
+            review: restReview(5433790004, 'CHANGES_REQUESTED', '', REVIEWER_BOT_NODE_ID),
+            comments: [restComment(5433790004, 4199790013, 670, 'Replying.', { inReplyTo: landedCommentIds[0]! })],
+        },
+        {
+            shape: 'a COMMENTED state, an empty body and no comments',
+            review: restReview(5433790005, 'COMMENTED', '', REVIEWER_BOT_NODE_ID),
+            comments: [],
+        },
+        {
+            shape: 'a COMMENTED state and an empty body over one reply and one top-level comment',
             review: restReview(5433790003, 'COMMENTED', '', REVIEWER_BOT_NODE_ID),
             comments: [
                 restComment(5433790003, 4199790011, 670, 'Replying.', { inReplyTo: landedCommentIds[0]! }),
                 restComment(5433790003, 4199790012, 64, 'A new top-level note.'),
             ],
         },
-    ])('retains the owner beside a reviewer COMMENTED review with $shape', async ({ review, comments }) => {
+    ])('retains the owner beside a reviewer review with $shape', async ({ review, comments }) => {
         const fixture = fixtureFor();
         const remote = fakeGitHub({
             posted: true,
@@ -720,6 +743,97 @@ describe('review-publication recovery of a landed review among thread-reply revi
         const dossier = readDossier(fixture.root);
         expect(publishedReviewId(dossier)).toBe(landedReviewId);
         expect(dossier.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+    });
+
+    it('hands the consumed reassessment to the recovered binding when the prior rounds met the threshold', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const reassessment = {
+            format: REVIEW_REASSESSMENT_FORMAT,
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            roundsObserved: 3,
+            threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+            action: 'continue',
+            reason: 'The remaining findings are narrow wording repairs inside one rule.',
+        };
+        writeFileSync(join(bundlePath(fixture.root), REASSESSMENT_FILE_NAME), JSON.stringify(reassessment));
+        const remote = fakeGitHub({
+            posted: false,
+            priorReviews: [
+                restReview(5433500000, 'CHANGES_REQUESTED', 'An older round.', REVIEWER_BOT_NODE_ID, base),
+                restReview(5433500001, 'CHANGES_REQUESTED', 'Another older round.', REVIEWER_BOT_NODE_ID, base),
+            ],
+        });
+        crashAfterPost(fixture.root, remote);
+        expect(readDossier(fixture.root).events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+
+        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
+
+        const reassessed = readDossier(fixture.root).events.filter((event) => event.kind === 'review-reassessed');
+        expect(reassessed).toHaveLength(1);
+        expect(reassessed[0]).toMatchObject({
+            kind: 'review-reassessed',
+            roundsObserved: 3,
+            threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+            action: 'continue',
+            reason: reassessment.reason,
+        });
+        expect(lockOid(fixture.root)).toBeUndefined();
+    });
+
+    it('binds nothing into the dossier when the recovered publication is an orchestrator acceptance', async () => {
+        const fixture = fixtureFor({ planCarrying: true, landing: 'approve' });
+        const bundle = bundlePath(fixture.root);
+        const acceptance = parseAcceptanceDocument({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'Accepted after the independent approval; delivery may proceed.',
+            evidence: {
+                headSha: head,
+                claims: [
+                    {
+                        observable: 'the stacking rule matches the stack procedure',
+                        verification: 'read AGENTS.md against the delivery skill',
+                        observed: 'one consistent rule',
+                    },
+                ],
+            },
+        });
+        writeFileSync(join(bundle, 'acceptance.json'), JSON.stringify(acceptance));
+        const acceptanceBody = renderReviewDocumentBody(acceptance);
+        const ownerOid = writeOwner(
+            fixture.root,
+            reviewPublicationPayloadDigest(
+                reviewPublicationPayload({
+                    commitId: head,
+                    event: acceptance.event,
+                    body: acceptanceBody,
+                    comments: [],
+                })
+            ),
+            'remote-mutation-attempted',
+            '33333333-3333-4333-8333-333333333333',
+            ORCHESTRATOR_USER_NODE_ID
+        );
+        const remote = fakeGitHub({
+            posted: true,
+            reviews: [
+                ...incidentReviews('approve'),
+                restReview(5433800000, 'APPROVED', acceptanceBody, ORCHESTRATOR_USER_NODE_ID),
+            ],
+            comments: prePublicationComments(),
+        });
+        const before = dossierText(fixture.root);
+
+        await expect(recoverWith(fixture.root, ownerOid, remote.gh)).resolves.toBe(0);
+
+        const dossier = readDossier(fixture.root);
+        expect(publishedReviewId(dossier)).toBeUndefined();
+        expect(publishedFindings(dossier)).toEqual([]);
+        expect(dossierText(fixture.root)).toBe(before);
+        expect(lockOid(fixture.root)).toBeUndefined();
+        expect(readPullRequestMutationLockReceipt(fixture.root, number, ownerOid)).toMatchObject({ outcome: 'landed' });
     });
 
     it('releases a recovered approval on a moved head as landed and binds no delivery authorization', async () => {
