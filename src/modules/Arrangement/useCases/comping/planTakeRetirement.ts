@@ -15,8 +15,8 @@ export type TakeRetirementPlan = {
  * A lane that loses no take is carried through untouched. A lane that keeps
  * takes keeps its own comp regions except those naming a take this call
  * actually removed — a region that named a take this removal did not touch
- * stays, dangling or not. A lane whose last take named a retiring clip is
- * retired whole. `retiredLanes` holds each touched lane exactly as it was
+ * stays, dangling or not. By default, a lane whose last take named a retiring
+ * clip is retired whole. `retiredLanes` holds each touched lane exactly as it was
  * before the removal, with the index it held and the take ids this call
  * retired, so an undo can put back exactly those takes and no others.
  *
@@ -24,10 +24,13 @@ export type TakeRetirementPlan = {
  * names a retiring clip.
  * A joined re-key transition can preserve its captured identities here so
  * that it remains their sole owner, including when they are a lane's last takes.
+ * Time replay can preserve empty lane hosts when it owns only disappearing
+ * clip facets, rather than the live lane itself.
  */
 export function planTakeRetirement(
     clipIds: readonly string[],
-    preservedTakeIds?: ReadonlySet<string>
+    preservedTakeIds?: ReadonlySet<string>,
+    options?: { readonly preserveEmptyLanes: boolean }
 ): TakeRetirementPlan | null {
     const state = takeLaneStore.value;
     if (!state || clipIds.length === 0) {
@@ -55,8 +58,7 @@ export function planTakeRetirement(
         retiredLanes.push({ lane: structuredClone(lane), laneIndex: index, retiredTakeIds: [...removedTakeIds] });
 
         const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
-        // The lane lost its last take to a retiring clip: retire the lane too.
-        if (takes.length === 0) {
+        if (takes.length === 0 && !options?.preserveEmptyLanes) {
             continue;
         }
         nextLanes.push({

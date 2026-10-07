@@ -678,7 +678,7 @@ function prepareDisappearingClipTakeRetirement(
             (takeLanes?.appliedEffect === 'restore' ? lane.takesAfter : lane.takesBefore).map((take) => take.id)
         )
     );
-    const retirement = planTakeRetirement(disappearingClipIds, reKeyedTakeIds);
+    const retirement = planTakeRetirement(disappearingClipIds, reKeyedTakeIds, { preserveEmptyLanes: true });
     if (!retirement) {
         return null;
     }

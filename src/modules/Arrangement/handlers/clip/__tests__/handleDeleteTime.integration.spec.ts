@@ -437,14 +437,71 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         }
     );
 
+    it.each(['global', 'selected'] as const)(
+        '%s undo retains an initially empty lane after retiring its sole peer fragment take',
+        async (route) => {
+            arrangeComp(0, 10);
+            const emptyLane = { ...lane(), takes: [], activeCompRegions: [] };
+            takeLaneStore.set({ lanes: [emptyLane] });
+            flushAutomergeStorageWrites();
+            const originalClips = structuredClone(clips());
+            await removeTime(route, 2, 6);
+            const right = clips().find((clip) => clip.id !== 'source');
+            if (!right) {
+                throw new Error('Expected the minted right fragment');
+            }
+            await peerComp(
+                createTake(right.id, 'Only peer fragment take', right.startBeat, right.endBeat),
+                right.startBeat + 1,
+                right.endBeat - 1
+            );
+            const deletedClips = structuredClone(clips());
+            const entry = undoStore.value?.past[0];
+
+            await undo();
+            expectAuthority();
+
+            expect(clips()).toEqual(originalClips);
+            expect(takeLaneStore.value?.lanes).toEqual([emptyLane]);
+            expect(getCrdtDoc<Project>('root')?.takeLanes.lanes).toEqual([emptyLane]);
+            expect(coverage()).toEqual([[0, 10]]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual([entry]);
+
+            await redo();
+            expectAuthority();
+
+            expect(clips()).toEqual(deletedClips);
+            expect(takeLaneStore.value?.lanes).toEqual([emptyLane]);
+            expect(getCrdtDoc<Project>('root')?.takeLanes.lanes).toEqual([emptyLane]);
+            let expectedCoverage = [
+                [0, 2],
+                [6, 10],
+            ];
+            if (route === 'global') {
+                expectedCoverage = [
+                    [0, 2],
+                    [2, 6],
+                ];
+            }
+            expect(coverage()).toEqual(expectedCoverage);
+            expect(undoStore.value?.past).toEqual([entry]);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
+
     it.each([
-        ['global', false],
-        ['selected', false],
-        ['global', true],
-        ['selected', true],
+        ['global', false, false],
+        ['selected', false, false],
+        ['global', true, false],
+        ['selected', true, false],
+        ['global', false, true],
+        ['selected', false, true],
+        ['global', true, true],
+        ['selected', true, true],
     ] as const)(
-        '%s compensates live-facet retirement after Arrangement publication fails (published=%s)',
-        async (route, publishBeforeThrow) => {
+        '%s compensates live-facet retirement after Arrangement publication fails (published=%s, sole take=%s)',
+        async (route, publishBeforeThrow, soleTake) => {
             arrangeComp(0, 10);
             takeLaneStore.set({ lanes: [{ ...lane(), takes: [], activeCompRegions: [] }] });
             flushAutomergeStorageWrites();
@@ -459,7 +516,9 @@ describe('Delete Time take ownership through Command and CRDT', () => {
                 right.endBeat - 1
             );
             const survivor = { ...createTake('source', 'Peer survivor', 0, 2), selected: true };
-            await peerComp(survivor, 0.5, 1.5);
+            if (!soleTake) {
+                await peerComp(survivor, 0.5, 1.5);
+            }
             const before = structuredClone(getCrdtDoc<Project>('root'));
             const beforeClips = structuredClone(clips());
             const beforeLane = structuredClone(lane());
@@ -474,7 +533,11 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             });
             await expect(undo()).rejects.toThrow();
             expect(takeWrites.mock.calls.length).toBeGreaterThanOrEqual(2);
-            expect(takeWrites.mock.calls[0]?.[0]?.lanes[0]?.takes).toEqual([survivor]);
+            expect(takeWrites.mock.calls[0]?.[0]?.lanes[0]).toEqual({
+                ...beforeLane,
+                takes: soleTake ? [] : [survivor],
+                activeCompRegions: soleTake ? [] : [{ startBeat: 0.5, endBeat: 1.5, takeId: survivor.id }],
+            });
             expect(clips()).toEqual(beforeClips);
             expect(lane()).toEqual(beforeLane);
             expect(undoStore.value).toBe(history);
