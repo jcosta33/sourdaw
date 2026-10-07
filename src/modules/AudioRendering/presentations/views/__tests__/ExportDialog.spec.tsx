@@ -7,6 +7,7 @@ import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/h
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 
 import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
+import { renderToClip } from '../../../useCases/renderToClip';
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
@@ -414,6 +415,22 @@ function setProjectTracks(tracks: TestTrack[]): void {
     };
 }
 
+async function startRenderToClip(): Promise<number> {
+    vi.mocked(renderToClip).mockReturnValue({ trackId: 'track-1', clipId: 'clip-new', audioBufferId: 'rendered-1' });
+    fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+
+    await waitFor(() => {
+        expect(renderToClip).toHaveBeenCalledTimes(1);
+    });
+    const renderedWith: { tailSeconds?: unknown } | undefined = mocks.renderOffline.mock.calls[0]?.[0];
+    const renderedTail = renderedWith?.tailSeconds;
+    if (typeof renderedTail !== 'number') {
+        throw new TypeError('expected renderOffline to receive a numeric tailSeconds');
+    }
+    return renderedTail;
+}
+
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -535,6 +552,27 @@ describe('ExportDialog', () => {
         await waitFor(() => {
             expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 60 }));
         });
+    });
+
+    it('hands Render to Clip the manual tail the render carried', async () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('checkbox', { name: /auto-detect/i }));
+        fireEvent.change(screen.getByRole('spinbutton', { name: /tail seconds/i }), { target: { value: '7.5' } });
+
+        const renderedTail = await startRenderToClip();
+
+        expect(renderedTail).toBeGreaterThan(0);
+        expect(renderToClip).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: renderedTail }));
+    });
+
+    it('hands Render to Clip the auto-detected tail the render carried', async () => {
+        mocks.getAutoDetectedTailSeconds.mockReturnValue({ seconds: 9.25, uncappedSeconds: 9.25, clamped: false });
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        const renderedTail = await startRenderToClip();
+
+        expect(renderedTail).toBeGreaterThan(0);
+        expect(renderToClip).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: renderedTail }));
     });
 
     it('should pass undefined buffer ids when no clips reference audio buffers', async () => {
