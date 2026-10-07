@@ -63,10 +63,11 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Transport/stores', async () => {
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const { createStore: create } = await import('#/infra/store/createStore');
     stores.transportStore = create<TestTransport>();
     return {
+        ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
         transportStore: stores.transportStore,
         defaultTransportState: { isPlaying: false, isRecording: false },
     };

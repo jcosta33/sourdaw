@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { reconcileAutoInputMonitoring, syncAutoInputMonitoring } from '#/modules/AudioEngine/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { stopPlayback, togglePlayback, toggleRecording } from '#/modules/Transport/useCases';
 
-import { defaultTransportState, transportStore } from '../../../stores/transportStore';
-import { pausePlayback } from '../pausePlayback';
-import { stopActiveRecording } from '../stopActiveRecording';
-import { stopPlayback } from '../stopPlayback';
+import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
+import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
 
 const TRACK_ID = 'track-armed-auto';
 const INPUT_ID = 'input-1';
@@ -18,14 +17,11 @@ const harness = vi.hoisted(() => ({
 }));
 
 // Only the monitor edge leaves and the audio side effects of a stop are replaced.
-// The owner, the subscriptions, both transport use cases and the stores are real.
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring', () => ({
-    startInputMonitoring: harness.startInputMonitoring,
-}));
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopTrackInputMonitoring', () => ({
-    stopTrackInputMonitoring: harness.stopTrackInputMonitoring,
-}));
-vi.mock('#/modules/AudioEngine/repositories/audioRecorder/isTrackInputMonitored', () => ({
+// The owner, its subscriptions, the real Stop, Pause and Record use cases and
+// the stores are real.
+vi.mock('../startInputMonitoring', () => ({ startInputMonitoring: harness.startInputMonitoring }));
+vi.mock('../stopTrackInputMonitoring', () => ({ stopTrackInputMonitoring: harness.stopTrackInputMonitoring }));
+vi.mock('../../../repositories/audioRecorder/isTrackInputMonitored', () => ({
     isTrackInputMonitored: (trackId: string, inputId: string | null) =>
         harness.monitored.has(trackId) && harness.monitored.get(trackId) === inputId,
 }));
@@ -45,7 +41,6 @@ vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
     yeastPanic: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadScheduler: vi.fn() }));
 
 /** Field-identical replica of Arrangement's TrackDummy fixture; specs keep their own copy. */
 function armedAutoAudioTrack(): Track {
@@ -139,10 +134,10 @@ describe('Auto input monitoring across the Stop gestures', () => {
         expect(harness.monitored.get(TRACK_ID)).toBe(INPUT_ID);
     });
 
-    it('closes the edge when a punch-out ends the recording while playback continues', async () => {
+    it('closes the edge when a punch-out ends the recording while playback continues', () => {
         startRecordingRoll();
 
-        await stopActiveRecording();
+        toggleRecording();
 
         expect(transportStore.value).toMatchObject({ isPlaying: true, isRecording: false });
         expect(harness.stopTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith(TRACK_ID);
@@ -161,7 +156,7 @@ describe('Auto input monitoring across the Stop gestures', () => {
     it('opens the edge when Pause ends plain playback', () => {
         startPlainPlaybackRoll();
 
-        pausePlayback();
+        togglePlayback();
 
         expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith(TRACK_ID, INPUT_ID);
         expect(harness.monitored.get(TRACK_ID)).toBe(INPUT_ID);
@@ -170,7 +165,7 @@ describe('Auto input monitoring across the Stop gestures', () => {
     it('keeps the armed Auto edge untouched when Pause ends a recording', () => {
         startRecordingRoll();
 
-        pausePlayback();
+        togglePlayback();
 
         expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
         expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
