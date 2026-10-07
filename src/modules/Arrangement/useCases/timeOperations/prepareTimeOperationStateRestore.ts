@@ -683,14 +683,15 @@ function prepareDisappearingClipTakeRetirement(
         return null;
     }
     const nextState = { lanes: retirement.lanes };
+    const retiredLanes = retirement.retiredLanes;
     let publicationAttempted = false;
 
     function restore(): boolean {
         if (!publicationAttempted) {
             return true;
         }
-        restoreTakesForClip(retirement.retiredLanes);
-        for (const snapshot of retirement.retiredLanes) {
+        restoreTakesForClip(retiredLanes);
+        for (const snapshot of retiredLanes) {
             const live = takeLaneStore.value?.lanes.find(
                 (lane) => lane.id === snapshot.lane.id || lane.trackId === snapshot.lane.trackId
             );
