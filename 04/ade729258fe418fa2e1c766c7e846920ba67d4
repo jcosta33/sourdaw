@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_4c8cd08893b364::t_0223374b6d8a01 47-48,51
+  s_4c8cd08893b364::t_393b20c3dc54fc 14
+src/modules/Arrangement/useCases/recording/placeRecordingClipStart.ts
+  s_4c8cd08893b364::t_3a175c45fb82b8 4-5,7-12,18-19
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingClipStart.spec.ts
+  s_4c8cd08893b364::t_7a58c002f88d97 5-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04ade729258fe418fa2e1c766c7e846920ba67d4",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
