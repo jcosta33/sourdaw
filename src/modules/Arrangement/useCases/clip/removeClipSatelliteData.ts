@@ -1,7 +1,6 @@
 import { getAutomationLanes, removeAutomationLane } from '#/modules/Automation/useCases';
 
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
-import { clipboardStore } from '../../stores/clipboardStore';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { removeEnvelope } from '../../stores/gainEnvelopeStore';
 import { removeWarpState } from '../../stores/warpStates';
@@ -23,6 +22,11 @@ import { removeWarpState } from '../../stores/warpStates';
  * MIDI clip data is not covered: it is owned by MIDI's `removeMidiClipData`,
  * which callers invoke directly (`removeClip`) or through their own transaction
  * (the global time operation's MIDI owner handle).
+ *
+ * The clipboard is deliberately not touched: a clipboard entry is a
+ * self-contained snapshot (clip fields, notes, and satellites captured at copy
+ * time), so deleting the source must not invalidate it — copy, delete the
+ * source, paste has to land what the copy captured.
  */
 export function removeClipSatelliteData(clipIds: readonly string[]): void {
     if (clipIds.length === 0) {
@@ -42,16 +46,6 @@ export function removeClipSatelliteData(clipIds: readonly string[]): void {
     for (const lane of getAutomationLanes()) {
         if (lane.clipId !== undefined && retiredIds.has(lane.clipId)) {
             removeAutomationLane(lane.id);
-        }
-    }
-
-    // Clipboard: drop any copied entry that points at a retired clip so a later
-    // paste can't resurrect a clip whose backing data is gone.
-    const clipboard = clipboardStore.value;
-    if (clipboard) {
-        const filtered = clipboard.clipClipboard.filter((entry) => !retiredIds.has(entry.clip.id));
-        if (filtered.length !== clipboard.clipClipboard.length) {
-            clipboardStore.set({ ...clipboard, clipClipboard: filtered });
         }
     }
 

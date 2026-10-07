@@ -35,6 +35,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/Automation/useCases', () => ({
     captureAutomationRecordingRollback: vi.fn(),
     clipAutomationMoveStateMatches: vi.fn(),
+    cloneClipAutomationLanes: vi.fn(),
     duplicateClipAutomation: vi.fn(),
     duplicateClipAutomationBatch: vi.fn(),
     getAutomationLaneCeiling: vi.fn(),

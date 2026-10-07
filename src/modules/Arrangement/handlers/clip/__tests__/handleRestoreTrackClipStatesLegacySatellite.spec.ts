@@ -37,6 +37,7 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    removeMidiClipData: vi.fn(),
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
