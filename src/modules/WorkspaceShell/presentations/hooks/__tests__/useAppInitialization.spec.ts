@@ -6,6 +6,7 @@ import {
     initializeAudioEngine,
     resumeEngine,
     requestMicPermission,
+    syncAutoInputMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
@@ -321,6 +322,41 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         unmount();
 
         expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('subscribes Auto input monitoring at boot and unsubscribes it on unmount', async () => {
+        // Without the boot subscription no track or transport publication ever
+        // reaches the Auto monitoring owner, so an armed Auto track would never
+        // be heard; without the cleanup its subscribers accumulate on every
+        // remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncAutoInputMonitoring).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncAutoInputMonitoring).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes Auto input monitoring that lands after the hook has already unmounted', async () => {
+        const unsubscribe = vi.fn();
+        vi.mocked(syncAutoInputMonitoring).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+        unmount();
+
+        await waitFor(() => {
+            expect(syncAutoInputMonitoring).toHaveBeenCalledTimes(1);
+        });
+        await waitFor(() => {
+            expect(unsubscribe).toHaveBeenCalledTimes(1);
+        });
     });
 });
 
