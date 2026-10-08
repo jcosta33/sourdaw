@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.spec.ts
+  s_1f0dcd815e8946::t_0e60177ae8cb98 15-16
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1f0dcd815e8946::t_0e60177ae8cb98 230-231,239-242,247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d66d682a285bded4056d7169f007cd2af8b84942",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
