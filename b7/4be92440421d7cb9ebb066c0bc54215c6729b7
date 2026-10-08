@@ -1,0 +1,125 @@
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_1f0dcd815e8946::t_8b80f882da4766 22-24
+  s_1f0dcd815e8946::t_95aa951b6a29f3 67-76,122-129
+  s_1f0dcd815e8946::t_4c9eaa1e87b310 66,130-132
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_1f0dcd815e8946::t_2625984566386d 461,467-474,585-592,594-595,653,659-664,667-671
+  s_1f0dcd815e8946::t_be5672e53cf371 604,608-612,665-666
+  s_1f0dcd815e8946::t_b52863c4d8cb75 672-675
+src/modules/Arrangement/useCases/timelineInteractions/snapToZeroCrossing.ts
+  s_1f0dcd815e8946::t_65b75397ca764b 2,23-24
+src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts
+  s_1f0dcd815e8946::t_65b75397ca764b 1-3,33-34,40-62,65-71
+  s_1f0dcd815e8946::t_60fe2303275d9b 4
+  s_1f0dcd815e8946::t_97f596491dbb49 5-8,18-19,72-74
+src/modules/Transport/useCases/__tests__/beatAtSeconds.spec.ts
+  s_1f0dcd815e8946::t_c158bfdc050a46 8-11
+  s_1f0dcd815e8946::t_f47a7610bf0a6d 1-7,12-24
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_1f0dcd815e8946::t_a7d866442e4b76 193
+  s_1f0dcd815e8946::t_56cb19aad2dfb3 290-291
+src/modules/Transport/useCases/index.ts
+  s_1f0dcd815e8946::t_f47a7610bf0a6d 20
+src/modules/Arrangement/stores/clipDragPreviewRef.ts
+  s_1f0dcd815e8946::t_0fcf8028a56e0d 16
+src/modules/Arrangement/models/TimelineRenderModel.ts
+  s_1f0dcd815e8946::t_5c7bf2a9f0c204 65
+  s_1f0dcd815e8946::t_0fcf8028a56e0d 15-16,61-62,67
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_1f0dcd815e8946::t_09bfe196e1108e 27-28,292-316
+  s_1f0dcd815e8946::t_61b11db90fe2b3 74,280-286
+  s_1f0dcd815e8946::t_23e5abd8f0fd15 21-22
+  s_97ab82e0b4f10c::t_78c0ca62c1d394 317-318
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_1f0dcd815e8946::t_32a2dc7cb90106 329
+  s_1f0dcd815e8946::t_f5992d05648e55 339
+  s_1f0dcd815e8946::t_d711103bd77678 344,352-354
+  s_1f0dcd815e8946::t_9139d4a25111a7 81,88-91,330
+  s_1f0dcd815e8946::t_f041b8dfa8834c 314-315,324-328,335-338,340-343,345-351,355-363
+  s_1f0dcd815e8946::t_ef2f436be7a22f 331-334
+  s_1f0dcd815e8946::t_4ef326fcd7cf66 2-4,28,32-34,36,43-44,47-76,78-80,82-87,258-259,265-267
+src/modules/Arrangement/presentations/renderers/audioWaveformSpan.ts
+  s_1f0dcd815e8946::t_26eecab1670ff1 1-10,17-21,24,27,32-35,38,43-46,48-127,182-230,233,239,244,246-281
+  s_1f0dcd815e8946::t_bfaa03298d6802 128-181,231-232,234-238,240-243,245
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_1f0dcd815e8946::t_df8235db955b0b 7,595-618,622,624
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_1f0dcd815e8946::t_5455482a01f8a6 11,485-492,513-535
+src/modules/Arrangement/services/__tests__/snapSplitBeatToZeroCrossing.spec.ts
+  s_1f0dcd815e8946::t_0cf23559cac6f1 86-91
+  s_1f0dcd815e8946::t_a4988ca752611a 116-197
+  s_1f0dcd815e8946::t_9300b7c694eb61 20-29,41,58,78
+  s_1f0dcd815e8946::t_e85eaeae3df742 3-10,83-85,92-115
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_1f0dcd815e8946::t_e93b1eb671748b 308-309
+  s_1f0dcd815e8946::t_abb725affe01b0 4-5,79,87-91,102,115,130-133,142-150,153,156-160,175,245-246,250-252,254,258-267
+  s_1f0dcd815e8946::t_be5886be4e824d 307
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_1f0dcd815e8946::t_5ba0bf8b8cc810 596
+  s_1f0dcd815e8946::t_cf60e96cafc460 611,618-665
+  s_1f0dcd815e8946::t_81f39926e24b76 612-617
+  s_1f0dcd815e8946::t_ef2f436be7a22f 590-595,597,603-607
+  s_1f0dcd815e8946::t_76181bb5ffbb99 555,560
+  s_97ab82e0b4f10c::t_bc3376bc096a06 666
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_1f0dcd815e8946::t_726f50d4fd83e5 201-206,266-271
+  s_1f0dcd815e8946::t_ad32d4d61bb397 231-263
+  s_1f0dcd815e8946::t_50731e27ba70ef 139-172
+  s_1f0dcd815e8946::t_2ac463603ed41b 296-326
+  s_1f0dcd815e8946::t_4217bcad52bce0 293
+  s_1f0dcd815e8946::t_ae3a9fabdb7a8b 199-200,207-230,264-265,272-292,294-295
+  s_1f0dcd815e8946::t_77df2f3174651f 173-198
+  s_1f0dcd815e8946::t_e008eac286f60d 367-376,477,541,603
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_1f0dcd815e8946::t_78cf92d4b38b44 162-164
+  s_1f0dcd815e8946::t_8cdad68fdfe852 3-7,133-161,165
+  s_1f0dcd815e8946::t_04b677db6882a9 92-95
+  s_1f0dcd815e8946::t_9927d33e4e1725 9,83-91,96-132
+  s_1f0dcd815e8946::t_5ee39954bb8735 8,166-214
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_1f0dcd815e8946::t_1dc6a7e7f75072 381-397,411-412
+  s_1f0dcd815e8946::t_7629c0ec9088cb 413,418,423,428
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_1f0dcd815e8946::t_a1eebb5ef64694 1999-2018
+  s_1f0dcd815e8946::t_d419030650eb2b 30-31,1875,1909-1912,1926,1929,1986-1998,2019-2027
+  s_1f0dcd815e8946::t_88b43c391a92a2 72,830,856,860,1891,1893-1897
+  s_1f0dcd815e8946::t_b2dee3e540460b 1872-1874,1883,1957-1963
+  s_1f0dcd815e8946::t_595666f5b998e3 22-23
+  s_1f0dcd815e8946::t_d3101afc9e8841 1876-1882,1884-1889,1892,1898,1907-1908,1927,1964-1985
+  s_1f0dcd815e8946::t_0864dc54d670a1 3,1890
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_1f0dcd815e8946::t_6a69829f64feb9 272-277,304-309
+  s_1f0dcd815e8946::t_a0b93541ddfc25 302-303,310-333
+  s_1f0dcd815e8946::t_11ebe932f34950 334-364
+  s_1f0dcd815e8946::t_1869b0abb0fde2 42,270-271,278-300
+  s_1f0dcd815e8946::t_739e9bb62f0de2 365-389
+  s_1f0dcd815e8946::t_7b35f4dc09aadf 301,390
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_1f0dcd815e8946::t_0fcf8028a56e0d 247,251,282,286,328,332,364,426
+src/modules/Transport/useCases/beatAtSeconds.ts
+  s_1f0dcd815e8946::t_f47a7610bf0a6d 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b74be92440421d7cb9ebb066c0bc54215c6729b7",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
