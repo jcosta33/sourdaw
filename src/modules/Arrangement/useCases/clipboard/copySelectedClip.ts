@@ -4,6 +4,7 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { captureMidiClipRows } from './captureMidiClipRows';
@@ -49,8 +50,12 @@ export function copySelectedClip(): boolean {
         if (!found) {
             return false;
         }
+        const clip = { ...found.clip };
+        if (clip.type === 'audio' && (clip.audioOffsetSeconds !== undefined || clip.audioOffsetBeats !== undefined)) {
+            clip.audioOffsetSeconds = audioSourceAtBeat(found.clip, found.clip.startBeat).audioOffsetSeconds;
+        }
         entries.push({
-            clip: { ...found.clip },
+            clip,
             ...captureMidiClipRows(found.clip),
             // The payload must be self-contained: the source clip may be deleted
             // before the paste, so the clip-id-keyed satellites are read here,

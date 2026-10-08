@@ -4,6 +4,16 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type FollowAction, type StretchMode } from '../../stores/trackStore';
 
+function hasValidPlacement(input: Pick<Clip, 'startBeat' | 'endBeat' | 'audioOffsetSeconds'>): boolean {
+    return (
+        Number.isFinite(input.startBeat) &&
+        Number.isFinite(input.endBeat) &&
+        input.startBeat >= 0 &&
+        input.endBeat > input.startBeat &&
+        (input.audioOffsetSeconds === undefined || Number.isFinite(input.audioOffsetSeconds))
+    );
+}
+
 export function addClip(input: {
     id?: string;
     trackId: string;
@@ -16,6 +26,7 @@ export function addClip(input: {
     isGhost?: boolean;
     /** Optional source-clip properties to preserve (e.g. when duplicating). */
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
     midiOffsetBeats?: number;
     fadeInBeats?: number;
     fadeOutBeats?: number;
@@ -34,14 +45,8 @@ export function addClip(input: {
         return null;
     }
 
-    // Validate the requested span before touching the store. A clip with a
-    // non-positive duration or a negative start position is never valid and
-    // would otherwise produce a degenerate clip that downstream renderers and
-    // the engine cannot reason about.
-    if (!Number.isFinite(input.startBeat) || !Number.isFinite(input.endBeat)) {
-        return null;
-    }
-    if (input.startBeat < 0 || input.endBeat <= input.startBeat) {
+    // Reject invalid geometry and source time before creating a clip.
+    if (!hasValidPlacement(input)) {
         return null;
     }
 
@@ -78,6 +83,7 @@ export function addClip(input: {
         audioBufferId: input.audioBufferId,
         assetHash: input.assetHash,
         audioOffsetBeats: input.audioOffsetBeats,
+        audioOffsetSeconds: input.audioOffsetSeconds,
         midiOffsetBeats: input.midiOffsetBeats,
         fadeInBeats: input.fadeInBeats ?? 0,
         fadeOutBeats: input.fadeOutBeats ?? 0,

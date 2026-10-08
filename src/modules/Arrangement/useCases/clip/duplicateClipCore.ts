@@ -1,5 +1,6 @@
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -7,6 +8,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 
 import { addClip } from './addClip';
 import { isClipDropCompatible } from './isClipDropCompatible';
@@ -75,6 +77,12 @@ export function duplicateClipCore(
 
     const duration = clip.endBeat - clip.startBeat;
     const startBeat = computeStartBeat(clip);
+    let audioOffsetSeconds: number | undefined;
+    let audioOffsetBeats = clip.audioOffsetBeats;
+    if (clip.type === 'audio') {
+        audioOffsetSeconds = audioSourceAtBeat(clip, clip.startBeat).audioOffsetSeconds;
+        audioOffsetBeats = (audioOffsetSeconds * readTempoAtBeat({ beat: startBeat })) / 60;
+    }
     const newClip = addClip({
         id: effectiveTargetClipId,
         trackId: effectiveDestinationTrackId,
@@ -84,7 +92,8 @@ export function duplicateClipCore(
         type: clip.type,
         audioBufferId: clip.audioBufferId,
         assetHash: clip.assetHash,
-        audioOffsetBeats: clip.audioOffsetBeats,
+        audioOffsetBeats,
+        audioOffsetSeconds,
         midiOffsetBeats: clip.midiOffsetBeats,
         fadeInBeats: clip.fadeInBeats,
         fadeOutBeats: clip.fadeOutBeats,

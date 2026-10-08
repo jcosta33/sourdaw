@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
+import { type Clip } from '../../../models/Track';
 import { type ClipSatelliteEntry } from '../../../stores/clipSatelliteState';
+import { audioSourceAtBeat } from '../../clipEditing/audioSourceAtBeat';
 import { copySelectedClip } from '../copySelectedClip';
 
 const mocks = vi.hoisted(() => ({
@@ -59,6 +63,8 @@ vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
 describe('copySelectedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(defaultTransportState);
         mocks.clipSelectionStore.value = null;
         mocks.midiStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
@@ -67,6 +73,48 @@ describe('copySelectedClip', () => {
             clipId: input.clipId,
             trackId: 'track-1',
         }));
+    });
+
+    afterEach(() => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(defaultTransportState);
+    });
+
+    it.each([
+        { name: 'canonical zero over a stale alias', seconds: 0, beats: 9, expectedSeconds: 0 },
+        { name: 'signed pre-roll', seconds: -0.5, beats: 9, expectedSeconds: -0.5 },
+        { name: 'positive canonical depth', seconds: 1.25, beats: 9, expectedSeconds: 1.25 },
+        { name: 'legacy beat depth', seconds: undefined, beats: 2, expectedSeconds: 1 },
+    ])('freezes $name at copy time before a tempo edit', ({ seconds, beats, expectedSeconds }) => {
+        const source: Clip = {
+            id: 'clip-1',
+            trackId: 'track-1',
+            name: 'Trimmed take',
+            startBeat: 4,
+            endBeat: 8,
+            type: 'audio',
+            audioOffsetBeats: beats,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        if (seconds !== undefined) {
+            source.audioOffsetSeconds = seconds;
+        }
+        const original = structuredClone(source);
+        mocks.clipSelectionStore.value = { selectedClipId: 'clip-1', selectedClipIds: ['clip-1'] };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', clips: [source] }] });
+
+        expect(copySelectedClip()).toBe(true);
+
+        const captured: Clip | undefined = mocks.setClipClipboard.mock.calls[0]?.[0]?.[0]?.clip;
+        expect(captured?.audioOffsetSeconds).toBe(expectedSeconds);
+        tempoMapStore.set({ changes: [{ id: 'slower', beat: 0, tempo: 60, curve: 'instant' }] });
+        expect(captured && audioSourceAtBeat(captured, captured.startBeat).audioOffsetSeconds).toBe(expectedSeconds);
+        expect(source).toEqual(original);
     });
 
     it('returns early when workspace is unavailable', () => {
