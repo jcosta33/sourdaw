@@ -383,6 +383,27 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(hex.match(/803c/g)).toHaveLength(1);
     });
 
+    it('writes a sub-tick note of another pitch struck while a note is held', () => {
+        const held: MidiNote = { id: 'held', pitch: 60, startBeat: 0, duration: 2, velocity: 100 };
+        const other: MidiNote = { id: 'other', pitch: 62, startBeat: 1, duration: 0.0004, velocity: 100 };
+
+        const hex = exportedHex([held, other], []);
+
+        // Pitch 62 on at tick 480 and off one tick later: its own key is not held.
+        expect(hex).toContain('903e64');
+        expect(hex).toContain('803e00');
+    });
+
+    it('writes a sub-tick note of another channel struck while a note is held', () => {
+        const held: MidiNote = { id: 'held', pitch: 60, startBeat: 0, duration: 2, velocity: 100 };
+        const other: MidiNote = { id: 'other', pitch: 60, startBeat: 1, duration: 0.0004, velocity: 100, channel: 1 };
+
+        const hex = exportedHex([held, other], []);
+
+        expect(hex).toContain('913c64');
+        expect(hex).toContain('813c00');
+    });
+
     it('writes a note of 5e-5 beats with one tick of length, as playback sounds it', () => {
         const hex = exportedHex([{ id: 'short', pitch: 60, startBeat: 1, duration: 5e-5, velocity: 100 }], []);
 

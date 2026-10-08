@@ -537,6 +537,64 @@ describe('exportMidiClip writes what the clip plays', () => {
         expect(ticks(events, 'off')).toEqual([3920, 7760]);
     });
 
+    describe('with beats a float apart across a half tick', () => {
+        // s sits on a half tick (5.5), so a beat a float either side of s + d would round to different ticks.
+        const s = 11 / 960;
+        const d = 1 / 6;
+        const clip = { startBeat: 4, endBeat: 8 };
+
+        it('releases a note before the same pitch is struck again at the instant it ends', () => {
+            const events = exportClip(clip, [note('a', s, d), note('b', s + d, 0.5)], []);
+
+            const [strikeA, releaseA, strikeB] = events;
+            expect([strikeA?.kind, releaseA?.kind, strikeB?.kind]).toEqual(['on', 'off', 'on']);
+            expect(releaseA?.tick).toBe(strikeB?.tick);
+            expect(ticks(events, 'on')).toHaveLength(2);
+            expect(ticks(events, 'off')).toHaveLength(2);
+        });
+
+        it('writes a pedal pressed at the instant a note ends behind that release', () => {
+            const events = exportClip(clip, [note('a', s, d, 64)], [sustain('pedal', s + d, 127)]);
+
+            expect(events.map((event) => event.kind)).toEqual(['on', 'off', 'cc']);
+            expect(events[1]?.tick).toBe(events[2]?.tick);
+        });
+    });
+
+    describe('far from the start of the project', () => {
+        it('writes only the real hits of a looped slipped clip whose wrap leaves float noise', () => {
+            const events = exportClip(
+                { startBeat: 1012, endBeat: 1028, midiOffsetBeats: 1 / 3, loopEnabled: true, loopLength: 8 },
+                [{ id: 'n', pitch: 60, startBeat: 4, duration: 0.5, velocity: 90 }],
+                []
+            );
+
+            expect(ticks(events, 'on')).toHaveLength(2);
+        });
+
+        it('writes a controller ahead of a note projected a float apart from it', () => {
+            const events = exportClip(
+                { startBeat: 1028.1, endBeat: 1032.1, midiOffsetBeats: 1 / 3 },
+                [note('n', 0.9, 0.25)],
+                [sustain('pedal', 0.9, 127)]
+            );
+
+            expect(events.map((event) => event.kind)).toEqual(['cc', 'on', 'off']);
+            expect(events[0]?.tick).toBe(events[1]?.tick);
+        });
+    });
+
+    it('writes two pitches clipped to a sliver at the clip end, each once', () => {
+        const events = exportClip(
+            { startBeat: 0, endBeat: 4 },
+            [note('c', 3.9995, 0.25, 60), note('e', 3.9995, 0.25, 64)],
+            []
+        );
+
+        expect(events.filter((event) => event.kind === 'on').map((event) => event.data1)).toEqual([60, 64]);
+        expect(events.filter((event) => event.kind === 'off').map((event) => event.data1)).toEqual([60, 64]);
+    });
+
     describe('in the coordinates the scheduler projects in', () => {
         type SchedulerClip = { startBeat: number; endBeat: number; loopLength: number };
 

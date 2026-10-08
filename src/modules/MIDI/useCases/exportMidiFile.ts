@@ -74,6 +74,11 @@ function snapToBeatGrid(beat: number): number {
     return Math.round(beat / SAME_BEAT_TOLERANCE);
 }
 
+/** From the snapped beat, so beats that sort as one instant never straddle a half tick. */
+function beatToTick(beat: number): number {
+    return Math.round(snapToBeatGrid(beat) * SAME_BEAT_TOLERANCE * TICKS_PER_BEAT);
+}
+
 /**
  * A file never strikes a key it releases on the same tick, whatever the beats: the
  * strike takes the sort beat of the latest such release, so the release goes first.
@@ -115,7 +120,8 @@ function compareDataBytes(left: number[], right: number[]): number {
  * the same bytes whatever order they were stored in. Playback keeps time order across
  * sample frames and applies its release, controller, note-on order only within one
  * frame, so events a tick apart keep their time order whatever their kinds; sort
- * beats on the tolerance grid make beats a float apart one instant. Events equal on
+ * beats on the tolerance grid make beats a float apart one instant, with one tick
+ * (both come from the snapped beat). Events equal on
  * all of that are settled last: two controllers keep the order the projection gave
  * them, as playback posts them (a pedal pressed then released at one beat ends up,
  * and an RPN select-then-data sequence stays in sequence); any other pair is ordered
@@ -200,8 +206,8 @@ function toTickedNotes(notes: MidiNote[], clipStartBeat: number): TickedNote[] {
         }
         const startBeat = clipStartBeat + note.startBeat;
         const endBeat = clipStartBeat + note.startBeat + note.duration;
-        const startTick = Math.round(startBeat * TICKS_PER_BEAT);
-        const endTick = Math.round(endBeat * TICKS_PER_BEAT);
+        const startTick = beatToTick(startBeat);
+        const endTick = beatToTick(endBeat);
         const writtenEndTick = Math.max(endTick, startTick + 1);
         const ticked = {
             startBeat,
@@ -256,7 +262,7 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         const controller = clampMidiData7(cc.controller);
         const value = clampMidiData7(Math.round(cc.value));
         events.push({
-            tick: Math.round(beat * TICKS_PER_BEAT),
+            tick: beatToTick(beat),
             beat,
             kind: 'control',
             data: [SMF_CONTROL_CHANGE_STATUS | ((cc.channel ?? 0) & 0x0f), controller, value],
