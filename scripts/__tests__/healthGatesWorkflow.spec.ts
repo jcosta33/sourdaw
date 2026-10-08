@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -720,13 +729,13 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     }
     if (
         !run.includes('for attempt in 1 2 3') ||
-        !run.includes('timeout --kill-after=30s 10m pnpm exec playwright install --with-deps chromium') ||
+        !run.includes('timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium') ||
         !run.includes('sleep $((attempt * 5))') ||
         !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')
     ) {
         throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
     }
-    const maximumSeconds = 3 * (10 * 60 + 30) + 15;
+    const maximumSeconds = 3 * (10 * 60) + 15;
     if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= maximumSeconds) {
         throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
     }
@@ -3141,7 +3150,7 @@ describe('health gates workflow contract', () => {
 
         const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
         stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'timeout --kill-after=30s 10m ',
+            'timeout --signal=KILL 10m ',
             ''
         );
         expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
@@ -3153,72 +3162,102 @@ describe('health gates workflow contract', () => {
         expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
             'the Playwright install step must be bounded below the 60-minute E2E job limit'
         );
-
-        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-install-timeout-'));
-        const timeoutProbePath = join(probeDirectory, 'timeout-probe.cjs');
-        const attemptedInstallsPath = join(probeDirectory, 'attempts.log');
-        writeFileSync(
-            timeoutProbePath,
-            [
-                "const { spawn } = require('node:child_process');",
-                'const child = spawn(process.argv[2], process.argv.slice(3), { stdio: ["ignore", "pipe", "inherit"] });',
-                'let termTimer;',
-                'let killTimer;',
-                'child.stdout.setEncoding("utf8");',
-                'child.stdout.on("data", (chunk) => {',
-                '  if (termTimer === undefined && chunk.includes("ready\\n")) {',
-                '    termTimer = setTimeout(() => child.kill("SIGTERM"), 25);',
-                '    killTimer = setTimeout(() => child.kill("SIGKILL"), 50);',
-                '  }',
-                '});',
-                'child.once("exit", (code, signal) => {',
-                '  clearTimeout(termTimer);',
-                '  clearTimeout(killTimer);',
-                '  process.exitCode = signal === null ? (code ?? 1) : 124;',
-                '});',
-                '',
-            ].join('\n')
-        );
-        writeFileSync(
-            join(probeDirectory, 'pnpm'),
-            [
-                '#!/usr/bin/env node',
-                "require('node:fs').appendFileSync(process.env.ATTEMPT_LOG, 'attempt\\n');",
-                'process.on("SIGTERM", () => {});',
-                'process.stdout.write("ready\\n");',
-                'setInterval(() => {}, 1_000);',
-                '',
-            ].join('\n'),
-            { mode: 0o755 }
-        );
-
-        try {
-            const probeRun = installRun
-                .replace('timeout --kill-after=30s 10m', 'node "$TIMEOUT_PROBE"')
-                .replace('sleep $((attempt * 5))', 'sleep 0');
-            expect(probeRun).not.toBe(installRun);
-            const result = spawnSync('bash', ['-c', probeRun], {
-                encoding: 'utf8',
-                env: {
-                    ...process.env,
-                    ATTEMPT_LOG: attemptedInstallsPath,
-                    PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
-                    TIMEOUT_PROBE: timeoutProbePath,
-                },
-                timeout: 5_000,
-            });
-            expect(result.error).toBeUndefined();
-            expect(result.status).toBe(1);
-            expect(existsSync(attemptedInstallsPath), result.stderr).toBe(true);
-            expect(readFileSync(attemptedInstallsPath, 'utf8').trim().split('\n')).toEqual([
-                'attempt',
-                'attempt',
-                'attempt',
-            ]);
-        } finally {
-            rmSync(probeDirectory, { force: true, recursive: true });
-        }
     });
+
+    const gnuTimeout = process.env.SOURDAW_GNU_TIMEOUT ?? (process.platform === 'linux' ? 'timeout' : 'gtimeout');
+    const timeoutVersion = spawnSync(gnuTimeout, ['--version'], { encoding: 'utf8' });
+    const hasGnuTimeout = timeoutVersion.status === 0 && timeoutVersion.stdout.startsWith('timeout (GNU coreutils)');
+
+    it.runIf(process.platform === 'linux' || hasGnuTimeout)(
+        'kills a stalled installer before retry even when pnpm exits on TERM',
+        () => {
+            expect(hasGnuTimeout, 'the Ubuntu runner must use GNU timeout').toBe(true);
+            const psProbe = spawnSync('ps', ['-o', 'stat=', '-p', String(process.pid)], { encoding: 'utf8' });
+            expect(psProbe.status).toBe(0);
+            expect(psProbe.stdout.trim()).not.toBe('');
+            const installRun = stringAt(stepNamed(jobAt(heavyWorkflow, 'e2e'), 'Install Playwright browsers'), 'run');
+            const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-process-group-'));
+            const pidLog = join(probeDirectory, 'pids.log');
+            const overlapLog = join(probeDirectory, 'overlap.log');
+            const attemptLog = join(probeDirectory, 'attempts.log');
+            const installer = join(probeDirectory, 'installer.py');
+            writeFileSync(
+                installer,
+                [
+                    'import os, signal, time',
+                    'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
+                    'with open(os.environ["STALL_PID_LOG"], "a") as log:',
+                    '    log.write(str(os.getpid()) + "\\n")',
+                    '    log.flush()',
+                    'time.sleep(20)',
+                ].join('\n')
+            );
+            writeFileSync(
+                join(probeDirectory, 'pnpm'),
+                [
+                    '#!/usr/bin/env bash',
+                    'trap "exit 143" TERM',
+                    'printf "attempt\\n" >> "$ATTEMPT_LOG"',
+                    'if [ -f "$STALL_PID_LOG" ]; then',
+                    '  while read -r pid; do',
+                    '    state=$(ps -o stat= -p "$pid" 2>/dev/null || true)',
+                    '    case "$state" in ""|Z*) ;; *) printf "%s\\n" "$pid" >> "$OVERLAP_LOG" ;; esac',
+                    '  done < "$STALL_PID_LOG"',
+                    'fi',
+                    'python3 "$STALL_INSTALLER" &',
+                    'wait "$!"',
+                ].join('\n'),
+                { mode: 0o755 }
+            );
+            if (gnuTimeout !== 'timeout') {
+                const resolvedTimeout = spawnSync('which', [gnuTimeout], { encoding: 'utf8' });
+                expect(resolvedTimeout.status).toBe(0);
+                symlinkSync(resolvedTimeout.stdout.trim(), join(probeDirectory, 'timeout'));
+            }
+
+            try {
+                const probeRun = installRun
+                    .replace('10m pnpm exec', '0.2s pnpm exec')
+                    .replace('--kill-after=30s', '--kill-after=0.05s')
+                    .replace('sleep $((attempt * 5))', 'sleep 0');
+                expect(probeRun).not.toBe(installRun);
+                const result = spawnSync('bash', ['-c', probeRun], {
+                    env: {
+                        ...process.env,
+                        ATTEMPT_LOG: attemptLog,
+                        OVERLAP_LOG: overlapLog,
+                        STALL_INSTALLER: installer,
+                        STALL_PID_LOG: pidLog,
+                        PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                    },
+                    stdio: 'ignore',
+                    timeout: 5_000,
+                });
+                expect(result.error).toBeUndefined();
+                expect(result.status).toBe(1);
+                expect(readFileSync(attemptLog, 'utf8').trim().split('\n')).toHaveLength(3);
+                expect(readFileSync(pidLog, 'utf8').trim().split('\n')).toHaveLength(3);
+                expect(existsSync(overlapLog)).toBe(false);
+                for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
+                    const state = spawnSync('ps', ['-o', 'stat=', '-p', pid], { encoding: 'utf8' }).stdout.trim();
+                    expect(state === '' || state.startsWith('Z'), `installer ${pid} survived`).toBe(true);
+                }
+            } finally {
+                if (existsSync(pidLog)) {
+                    for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
+                        if (pid) {
+                            try {
+                                process.kill(Number(pid), 'SIGKILL');
+                            } catch {
+                                /* already exited */
+                            }
+                        }
+                    }
+                }
+                rmSync(probeDirectory, { force: true, recursive: true });
+            }
+        }
+    );
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();

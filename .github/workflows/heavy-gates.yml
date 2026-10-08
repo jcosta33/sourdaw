@@ -57,7 +57,9 @@ jobs:
         timeout-minutes: 35
         run: |
           for attempt in 1 2 3; do
-            if timeout --kill-after=30s 10m pnpm exec playwright install --with-deps chromium; then
+            # GNU timeout kills the whole process group at the deadline. A TERM
+            # grace period ends if pnpm exits while an installer child survives.
+            if timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
