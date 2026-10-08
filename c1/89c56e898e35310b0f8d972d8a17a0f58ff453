@@ -49,6 +49,8 @@ src/modules/Command/useCases/macro/playback.ts
   s_2bfd55a4393d7c::t_3a0f0a0a3cccdc 291-304
 src/modules/Arrangement/useCases/clip/keyMigratedAutomationLanes.ts
   s_2bfd55a4393d7c::t_092a511424c73e 1-32
+scripts/recoverPublishReviewLock.ts
+  s_1c08b47ac3792f::t_5dc7a195fe8000 487-489,557,599-600
 ---
 {
   "schema_version": "authorship/3.0.0",
