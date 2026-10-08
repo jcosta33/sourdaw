@@ -1,0 +1,25 @@
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_40151138831542 119-126
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_1f0dcd815e8946::t_ef499b879aa4a4 1-171
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_1f0dcd815e8946::t_f3ce1c49a147b9 4-9,151,171
+tests/e2e/smoke.spec.ts
+  s_1f0dcd815e8946::t_1f41eb5c57fd07 4-10,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3708a1adb0465ce7580ba2d311b91add0a242e6",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
