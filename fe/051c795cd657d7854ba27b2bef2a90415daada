@@ -1,0 +1,28 @@
+scripts/checkStancesRecord.ts
+  s_97ab82e0b4f10c::t_b2ce92f9c307de 50,70-71,86,121-127,136-137,143,146,182,184-189,191
+.agents/skills/review-stances/provider-egress.md
+  s_97ab82e0b4f10c::t_18e54ba9bba431 1-33
+scripts/__tests__/checkStancesRecord.spec.ts
+  s_97ab82e0b4f10c::t_912753990afd54 1-5,25-41,43-48,200-231
+  s_97ab82e0b4f10c::t_cd820a14f1c960 65-66,99,183
+  s_97ab82e0b4f10c::t_93bed3623b8739 70-98,164-182,186-190,194
+  s_97ab82e0b4f10c::t_ec75993c7901bb 184-185
+  s_97ab82e0b4f10c::t_e52010e794c933 42
+  s_97ab82e0b4f10c::t_41a7c0b6ee2be6 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe051c795cd657d7854ba27b2bef2a90415daada",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
