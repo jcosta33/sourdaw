@@ -205,6 +205,31 @@ describe('prepared TypeSafe JSON', () => {
 });
 
 describe('installed SDK prepared handoff', () => {
+    it.each(['function', 'accessor'])(
+        'refuses an inherited %s serialization hook above Array.prototype before SDK fetch',
+        async (kind) => {
+            const fetch = vi.fn<Fetch>(async () => response());
+            const hook = vi.fn(() => ['rewritten']);
+            const ancestor = Object.create(Object.prototype);
+            Object.defineProperty(ancestor, 'toJSON', kind === 'accessor' ? { get: hook } : { value: hook });
+            const previous = Object.getPrototypeOf(Array.prototype);
+            let failure: unknown;
+            try {
+                Object.setPrototypeOf(Array.prototype, ancestor);
+                const prepared = prepare(body(['ordinary', 'copied state[1]']));
+                await sendTypeSafeRequest({ prepared, apiKey: KEY, signal: signal(), timeoutMs: 1000, fetch });
+            } catch (error) {
+                failure = error;
+            } finally {
+                Object.setPrototypeOf(Array.prototype, previous);
+            }
+            expect(failure).toBeInstanceOf(SemanticFailure);
+            expect(failure).toMatchObject({ code: 'invalid_response' });
+            expect(hook).not.toHaveBeenCalled();
+            expect(fetch).not.toHaveBeenCalled();
+        }
+    );
+
     it('keeps overlapping SDK handoffs bound to their own body', async () => {
         const first = prepare(body('first'));
         const second = prepare(body('second'));

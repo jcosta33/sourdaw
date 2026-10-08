@@ -165,7 +165,11 @@ function sumUsage(runs: readonly MeasurementRun[]): RunUsage {
             throw new RangeError('aggregate actualInputTokens must remain a non-negative safe integer');
         }
         usage.actualInputTokens = actualInputTokens;
-        usage.estimatedInputTokens += run.usage.estimatedInputTokens;
+        const estimatedInputTokens = usage.estimatedInputTokens + run.usage.estimatedInputTokens;
+        if (!Number.isSafeInteger(estimatedInputTokens)) {
+            throw new RangeError('aggregate estimatedInputTokens must remain a non-negative safe integer');
+        }
+        usage.estimatedInputTokens = estimatedInputTokens;
         usage.attemptsWithUnknownUsage += run.usage.attemptsWithUnknownUsage;
         usage.estimatedCostUsd += run.usage.estimatedCostUsd;
         usage.cacheHits += run.usage.cacheHits;

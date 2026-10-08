@@ -88,8 +88,17 @@ function readContainerPrototype(value: object, array: boolean): object | null {
     if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) {
         invalidShape();
     }
-    // Even a prototype modified by another caller must not supply an executable serialization hook.
-    const inheritedToJson = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, 'toJSON');
+    // Bound inherited lookup to the standard JSON container prototypes without invoking hooks.
+    if (array && Object.getPrototypeOf(Array.prototype) !== Object.prototype) {
+        invalidShape();
+    }
+    let inheritedToJson: PropertyDescriptor | undefined;
+    if (prototype !== null) {
+        inheritedToJson = Object.getOwnPropertyDescriptor(prototype, 'toJSON');
+    }
+    if (array && inheritedToJson === undefined) {
+        inheritedToJson = Object.getOwnPropertyDescriptor(Object.prototype, 'toJSON');
+    }
     if (
         inheritedToJson !== undefined &&
         (!('value' in inheritedToJson) || typeof inheritedToJson.value === 'function')
@@ -297,6 +306,7 @@ export function prepareTypeSafeRequest(input: {
         refuse('request_too_large', 'TypeSafe request exceeds the encoded request limits');
     }
     screen(serializedBody);
+    assertTypeSafeActive(input.signal);
     const prepared = Object.freeze({ payload, serializedBody, bodyBytes, stateQuestionsBytes });
     preparedRequests.add(prepared);
     return prepared;

@@ -5657,6 +5657,47 @@ describe('complete transport admission', () => {
         expect(input.budget.totals().networkAttempts).toBe(0);
     });
 
+    it('refuses cancellation during synchronous JSON inspection before hashing or cache read', async () => {
+        const controller = new AbortController();
+        let reads = 0;
+        let calls = 0;
+        let inspections = 0;
+        const state = new Proxy(
+            { evidence: 'ordinary text' },
+            {
+                getPrototypeOf: (target) => {
+                    inspections += 1;
+                    controller.abort();
+                    return Object.getPrototypeOf(target);
+                },
+            }
+        );
+        const input = request({
+            state,
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+                write: () => {
+                    throw new Error('unexpected cache write');
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        expect(inspections).toBe(1);
+        expect(reads).toBe(0);
+        expect(calls).toBe(0);
+        expect(input.budget.totals()).toMatchObject({ networkAttempts: 0, cacheHits: 0 });
+    });
+
     it('does not accept a cache answer after its read cancels the request', async () => {
         const controller = new AbortController();
         const input = request({
