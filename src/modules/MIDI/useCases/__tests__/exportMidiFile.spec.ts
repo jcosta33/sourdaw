@@ -371,6 +371,25 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(byEnd[0]).toContain('8360903c6e01803c00');
     });
 
+    it('drops a sub-tick note that starts while a same-pitch note is held, which would cut it', () => {
+        const held: MidiNote = { id: 'held', pitch: 60, startBeat: 0, duration: 2, velocity: 100 };
+        const sliver: MidiNote = { id: 'sliver', pitch: 60, startBeat: 1, duration: 0.0004, velocity: 100 };
+
+        const hex = exportedHex([held, sliver], []);
+
+        // One strike at tick 0 and one release at tick 960 (var-len 87 40); the sliver at tick 480 is not written.
+        expect(hex).toContain('00903c648740803c00');
+        expect(hex.match(/903c/g)).toHaveLength(1);
+        expect(hex.match(/803c/g)).toHaveLength(1);
+    });
+
+    it('writes a note of 5e-5 beats with one tick of length, as playback sounds it', () => {
+        const hex = exportedHex([{ id: 'short', pitch: 60, startBeat: 1, duration: 5e-5, velocity: 100 }], []);
+
+        // On at tick 480 (delta 83 60), off one tick later at 481.
+        expect(hex).toContain('8360903c6401803c00');
+    });
+
     it('does not write a note of no duration, which playback does not sound', () => {
         downloadMidiFile({
             clipName: 'C',
