@@ -2058,6 +2058,7 @@
           "native-windows",
           "desktop-measure",
           "e2e",
+          "e2e-report",
           "browser-ai-webgpu",
           "codeql",
           "secrets",

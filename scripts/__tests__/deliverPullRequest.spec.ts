@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -40,6 +49,7 @@ import {
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
+import { reviewBundlePath } from '../reviewBundleLocator.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -381,12 +391,28 @@ function acceptanceReview() {
     };
 }
 
-function stackedDeliveryPort(finalSettings: MergeSettings) {
+function writeLegacyReviewBundleManifest(primaryRoot: string, number: number, head: string): void {
+    const bundle = reviewBundlePath(primaryRoot, number, head);
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(
+        join(bundle, 'manifest.json'),
+        JSON.stringify({
+            pr: number,
+            baseRefName: 'main',
+            baseSha: 'base',
+            headSha: head,
+            generated: ['manifest.json', 'review-size.json'],
+        })
+    );
+}
+
+function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) {
     const captures: Array<{ command: string; args: string[] }> = [];
+    const mergeCaptures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
     let deliveryReceipt: DeliveryReceiptComment | undefined;
     let primaryMerged = false;
-    const port = shellPort('jcosta33/sourdaw', {
+    const shell: ShellRunner = {
         capture: (command, args) => {
             captures.push({ command, args });
             const joined = args.join(' ');
@@ -417,6 +443,24 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                 comments: {
                                     totalCount: deliveryReceipt === undefined ? 0 : 1,
                                     nodes: deliveryReceipt === undefined ? [] : [{ id: deliveryReceipt.id }],
+                                },
+                            },
+                        },
+                    },
+                });
+            }
+            if (joined.includes('comments(first:') && joined.includes('lastEditedAt')) {
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                comments: {
+                                    totalCount: deliveryReceipt === undefined ? 0 : 1,
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                    nodes:
+                                        deliveryReceipt === undefined
+                                            ? []
+                                            : [{ id: deliveryReceipt.id, lastEditedAt: null }],
                                 },
                             },
                         },
@@ -471,7 +515,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 ]);
             }
             if (joined.includes('.delete_branch_on_merge')) {
-                return String(finalSettings.delete_branch_on_merge);
+                return 'false';
             }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
@@ -530,8 +574,15 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 child = { ...child, baseRefName: 'main' };
             }
         },
+    };
+    const port = shellPort('jcosta33/sourdaw', shell, {
+        primaryRoot,
+        mergeCapture: (command, args) => {
+            mergeCaptures.push({ command, args });
+            return shell.capture(command, args);
+        },
     });
-    return { captures, port };
+    return { captures, mergeCaptures, port };
 }
 
 function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -10675,6 +10726,7 @@ describe('delivery shell boundary', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        writeLegacyReviewBundleManifest(primaryRoot, 42, 'head');
         const hostileAuthority = {
             phase: 'terminal',
             receiptId: 'IC_hostile',
@@ -10818,6 +10870,7 @@ describe('delivery shell boundary', () => {
             );
 
             expect(() => deliverPullRequest(42, port)).toThrow(/delivery receipt authority could not be verified/i);
+            expect(existsSync(join(wrapperRoot, 'post-cas-swapped'))).toBe(true);
             expect(captures).not.toContain('merge-attempted');
         } finally {
             process.env.PATH = previousPath;
@@ -11878,17 +11931,29 @@ describe('delivery shell boundary', () => {
     });
 
     it('rejects stacked delivery when merged-branch deletion is enabled before the final merge', () => {
-        const { captures, port } = stackedDeliveryPort({
-            allow_merge_commit: false,
-            allow_rebase_merge: false,
-            allow_squash_merge: true,
-            delete_branch_on_merge: true,
-        });
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        writeLegacyReviewBundleManifest(primaryRoot, 42, 'head');
+        try {
+            const { captures, mergeCaptures, port } = stackedDeliveryPort(
+                {
+                    allow_merge_commit: false,
+                    allow_rebase_merge: false,
+                    allow_squash_merge: true,
+                    delete_branch_on_merge: true,
+                },
+                primaryRoot
+            );
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/automatic merged-branch deletion/);
-        expect(captures).not.toContainEqual(
-            expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
-        );
+            expect(() => deliverPullRequest(42, port)).toThrow(/automatic merged-branch deletion/);
+            expect(captures).toContainEqual({ command: 'gh', args: ['api', 'repos/jcosta33/sourdaw'] });
+            expect(mergeCaptures).toHaveLength(0);
+            expect(captures).not.toContainEqual(
+                expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
     });
 
     it('rejects malformed repository merge settings', () => {

@@ -10,6 +10,7 @@ import { getCrumbsDroppedSampleWrites } from '../repositories/crumbsBridge/getCr
 import { getWaveformPeaks } from '../repositories/crumbsBridge/getWaveformPeaks';
 import { loadSample } from '../repositories/crumbsBridge/loadSample';
 import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
+import { beginCrumbsSampleLoad, isLatestCrumbsSampleLoad } from '../stores/sampleLoadGate';
 
 import type { SampleCategory, SampleMeta } from '../models/CrumbsTypes';
 
@@ -76,10 +77,21 @@ export async function loadSampleFromPath(
     filePath: string,
     targetWidth: number = DEFAULT_WAVEFORM_WIDTH
 ): Promise<void> {
+    const sequence = beginCrumbsSampleLoad(instanceId);
     setLoading(instanceId, true);
 
     try {
         const result = await loadSample(instanceId, filePath);
+        // Last-started-wins, the Levain bridge's load-sequence law: a decode
+        // that finishes after a newer load for this device started must not
+        // win the store or the document — otherwise a peer's long file landing
+        // after the local user's short pick silently reverts the pick. The
+        // superseded load bows out quietly; its successor already owns the
+        // loading flag, the store and the persistence commit.
+        if (!isLatestCrumbsSampleLoad(instanceId, sequence)) {
+            return;
+        }
+
         if (result.decodeWarningCount > 0) {
             const packetLabel = result.decodeWarningCount === 1 ? 'packet' : 'packets';
             logger.warn(
@@ -136,7 +148,11 @@ export async function loadSampleFromPath(
 
         setLoading(instanceId, false);
     } catch (error) {
-        setLoading(instanceId, false);
+        // A superseded load's failure leaves the loading flag to its
+        // successor, which is still in flight.
+        if (isLatestCrumbsSampleLoad(instanceId, sequence)) {
+            setLoading(instanceId, false);
+        }
         throw error;
     }
 }

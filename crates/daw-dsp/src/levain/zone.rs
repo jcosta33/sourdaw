@@ -68,6 +68,17 @@ impl SamplePool {
         self.decoded_bytes = 0;
     }
 
+    /// Free up to `max_entries` entries, newest first, and return how many remain.
+    /// Bounds the work one retired-bank release step does.
+    pub fn release_entries(&mut self, max_entries: usize) -> usize {
+        for _ in 0..max_entries.max(1) {
+            if self.entries.pop().is_none() {
+                break;
+            }
+        }
+        self.entries.len()
+    }
+
     /// Add a sample and return its SampleId.
     pub fn add(
         &mut self,

@@ -47,6 +47,24 @@ function handwritten(path: string, added: number, deleted: number): ReviewChange
     return changed(path, 'handwritten', added, deleted);
 }
 
+function renamed(
+    path: string,
+    previousPath: string,
+    added: number,
+    deleted: number,
+    group: ReviewChangedPath['group'] = 'handwritten',
+    previousGroup: ReviewChangedPath['group'] = 'handwritten'
+): ReviewChangedPath {
+    return {
+        path,
+        group,
+        added,
+        deleted,
+        binary: false,
+        previous: { path: previousPath, group: previousGroup },
+    };
+}
+
 function reviewPlan(paths: readonly ReviewChangedPath[]): ReviewRiskPlan {
     return planReviewRisk({ pr: 2999, headSha: 'head', baseSha: 'base', paths });
 }
@@ -338,6 +356,109 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toContain('native-security:electron/');
         expect(result.triggers).toContain('native-security:crates/');
         expect(result.triggers).toContain('realtime-audio:crates/daw-dsp/');
+    });
+
+    it("should earn a rename record's specialist classes from its source alone, as the delete+add form does", () => {
+        const result = reviewPlan([
+            renamed('src/utils/Mixdown.ts', 'src/modules/AudioEngine/engine/Mixdown.ts', 24, 16),
+        ]);
+
+        expect(result.riskClasses).toEqual(['cross-domain', 'realtime-audio']);
+        expect(result.requiredStances).toEqual(['correctness', 'module-boundaries', 'realtime-audio', 'test-validity']);
+        expect(result.triggers).toContain('realtime-audio:src/modules/AudioEngine/');
+        expect(result.triggers).toContain('cross-domain:multiple-surfaces');
+        expect(result.riskClasses).toEqual(
+            reviewPlan([
+                handwritten('src/modules/AudioEngine/engine/Mixdown.ts', 0, 40),
+                handwritten('src/utils/Mixdown.ts', 40, 0),
+            ]).riskClasses
+        );
+    });
+
+    it('should classify a record with no previous from its own path alone', () => {
+        const result = reviewPlan([handwritten('src/utils/Mixdown.ts', 40, 0)]);
+
+        expect(result.riskClasses).toEqual(['small']);
+        expect(result.requiredStances).toEqual(['correctness', 'test-validity']);
+    });
+
+    it("should earn undo from a rename record's persistence-path source, naming the source in the trigger", () => {
+        const result = reviewPlan([
+            renamed(
+                'src/utils/saveProject.ts',
+                'src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts',
+                10,
+                10
+            ),
+        ]);
+
+        expect(result.riskClasses).toEqual(['cross-domain', 'undo']);
+        expect(result.requiredStances).toEqual([
+            'correctness',
+            'module-boundaries',
+            'project-integrity-undo',
+            'test-validity',
+        ]);
+        expect(result.triggers).toContain(
+            'undo:src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts'
+        );
+    });
+
+    it("should earn native-security from a rename record's exact-path source", () => {
+        const result = reviewPlan([renamed('src/utils/desktopBridgeV2.ts', 'src/utils/desktopBridge.ts', 6, 1)]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.requiredStances).toEqual(['correctness', 'security-platform', 'test-validity']);
+        expect(result.triggers).toContain('native-security:src/utils/desktopBridge.ts');
+    });
+
+    it('should keep a rename whose both sides are outside specialist trees small', () => {
+        const result = reviewPlan([
+            renamed('src/components/MarkdownView.tsx', 'src/components/SafeMarkdown.tsx', 12, 4),
+        ]);
+
+        expect(result.riskClasses).toEqual(['small']);
+        expect(result.requiredStances).toEqual(['correctness', 'test-validity']);
+        expect(result.triggers).toEqual(['small:handwritten-lines<=200']);
+    });
+
+    it("should earn a rename-into-test-path record's specialist classes from its handwritten source, as the delete+add form does", () => {
+        const result = reviewPlan([
+            renamed(
+                'src/modules/AudioEngine/__tests__/Mixdown.spec.ts',
+                'src/modules/AudioEngine/engine/Mixdown.ts',
+                40,
+                0,
+                'tests'
+            ),
+        ]);
+
+        expect(result.riskClasses).toEqual(['realtime-audio']);
+        expect(result.requiredStances).toEqual(['correctness', 'realtime-audio', 'test-validity']);
+        expect(result.triggers).toContain('realtime-audio:src/modules/AudioEngine/');
+        expect(result.riskClasses).toEqual(
+            reviewPlan([
+                handwritten('src/modules/AudioEngine/engine/Mixdown.ts', 0, 40),
+                changed('src/modules/AudioEngine/__tests__/Mixdown.spec.ts', 'tests', 40, 0),
+            ]).riskClasses
+        );
+    });
+
+    it('should keep a rename whose both sides are tests test-only, so genuinely all-tests records never gain a specialist class', () => {
+        const result = reviewPlan([
+            renamed(
+                'src/modules/AudioEngine/__tests__/Bus.spec.ts',
+                'src/modules/AudioEngine/engine/Bus.spec.ts',
+                12,
+                2,
+                'tests',
+                'tests'
+            ),
+        ]);
+
+        expect(result.riskClasses).toEqual(['test-only']);
+        expect(result.requiredStances).toEqual(['test-validity']);
+        expect(result.triggers).toEqual(['test-only:all-paths-are-tests']);
     });
 
     it('should call a docs-only change small, since docs never trigger a specialist class', () => {
