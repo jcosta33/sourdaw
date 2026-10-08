@@ -63,6 +63,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     removeBusStrip: mocks.removeBusStrip,
     removeTrackStrip: mocks.removeTrackStrip,
+    stopTrackInputMonitoring: vi.fn(),
     reportLatency: mocks.reportLatency,
     getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
