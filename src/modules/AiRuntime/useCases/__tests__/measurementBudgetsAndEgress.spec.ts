@@ -12,7 +12,7 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
-import { checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
+import { endExportCancellationScope } from '#/modules/AudioEngine/useCases';
 import {
     clearAgentMeasurementArtifacts,
     getAgentMeasurementArtifacts,
@@ -89,6 +89,8 @@ const engine = vi.hoisted(() => ({
     renderOfflineInput: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
     updateDeviceParam: vi.fn(),
+    // Wraps the real `cancelExport`, so a row can see whether a measurement's stop reaches it.
+    cancelExport: vi.fn(),
 }));
 const backend = vi.hoisted(() => ({
     chain: { value: [] as ('cloud' | 'webllm')[] },
@@ -96,13 +98,18 @@ const backend = vi.hoisted(() => ({
     generateCloudToolCalls: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    renderOffline: engine.renderOffline,
-    renderOfflineInput: engine.renderOfflineInput,
-    renderTrackSubgraphOffline: engine.renderTrackSubgraphOffline,
-    updateDeviceParam: engine.updateDeviceParam,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    engine.cancelExport.mockImplementation(actual.cancelExport);
+    return {
+        ...actual,
+        renderOffline: engine.renderOffline,
+        renderOfflineInput: engine.renderOfflineInput,
+        renderTrackSubgraphOffline: engine.renderTrackSubgraphOffline,
+        updateDeviceParam: engine.updateDeviceParam,
+        cancelExport: engine.cancelExport,
+    };
+});
 
 // The real reductions run; the wrapper only lets a row act between two of them.
 vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
@@ -430,6 +437,7 @@ beforeEach(() => {
     engine.renderOfflineInput.mockReset().mockResolvedValue(sineBuffer(0.5));
     engine.renderTrackSubgraphOffline.mockReset().mockImplementation(renderSubgraph);
     engine.updateDeviceParam.mockReset();
+    engine.cancelExport.mockClear();
     vi.mocked(measureAgentScopeRender).mockReset();
     vi.mocked(previewVersionedCommandBatchEnvelope).mockReset();
     vi.mocked(getAudioBufferContentAddress).mockReset();
@@ -969,8 +977,12 @@ describe('a measurement that does not report leaves the shared state as it found
         }
     );
 
-    // Red when a measurement's own stop raises the export flag a musician's export or mixdown beside it reads.
-    it('times a master measurement out while a render reading the export cancel flag carries on', async () => {
+    // `cancelExport` raises the shared export flag only while a musician's export holds the render
+    // lock, and also aborts a musician's export that is queued behind an agent render. A measurement's
+    // stop routed through it would therefore cancel a musician's export, so this pins that the stop
+    // never calls it. It pins the call, not the flag: with no export holding the lock the flag stays
+    // down whichever way the stop travels. Red when the measurement's abort calls `cancelExport`.
+    it('stops a timed-out master measurement on its own signal without calling cancelExport', async () => {
         configureAgentResourceLimits({ measurementWallClockMs: 50 });
         engine.renderOffline.mockImplementation(
             (options: { abortSignal?: AbortSignal }) =>
@@ -987,26 +999,11 @@ describe('a measurement that does not report leaves the shared state as it found
                     );
                 })
         );
-        let measuring = true;
-        const freezeFailures: unknown[] = [];
-        const freeze = (async () => {
-            while (measuring) {
-                try {
-                    checkCancel();
-                } catch (error) {
-                    freezeFailures.push(error);
-                }
-                await new Promise((resolve) => setTimeout(resolve, 5));
-            }
-        })();
-
         const read = await measure('project', MASTER, SHORT_RANGE, { signal: new AbortController().signal });
-        measuring = false;
-        await freeze;
 
         expect(receiptCode(read)).toBe('measurement-timed-out');
-        expect(freezeFailures).toEqual([]);
-        expect(() => checkCancel()).not.toThrow();
+        expect(engine.renderOffline).toHaveBeenCalledTimes(1);
+        expect(engine.cancelExport).not.toHaveBeenCalled();
     });
 });
 

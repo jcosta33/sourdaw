@@ -76,9 +76,16 @@ type TestMidiState = {
 
 type TestToasterPatternOutsideArrangement = { trackId: string; trackName: string; deviceName: string };
 
+type EncodeWav = (
+    buffer: unknown,
+    depth: unknown,
+    onProgress: ((fraction: number) => void) | undefined,
+    dither: unknown
+) => Promise<Uint8Array>;
+
 type ExportDialogMocks = {
     audioContext: BaseAudioContext | null;
-    encodeWav: ReturnType<typeof vi.fn>;
+    encodeWav: ReturnType<typeof vi.fn<EncodeWav>>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
     getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
     isExportActive: ReturnType<typeof vi.fn<() => boolean>>;
@@ -123,7 +130,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
 
     return {
         audioContext: null,
-        encodeWav: vi.fn(),
+        encodeWav: vi.fn<EncodeWav>(),
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
         getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
         isExportActive: vi.fn(() => false),
@@ -442,6 +449,29 @@ function createDeferred<TValue>(): { promise: Promise<TValue>; resolve: (value: 
     return { promise, resolve: settle };
 }
 
+/** A WAV encoder that finishes its pass: real encoders end by reporting progress 1. */
+function encodeWavReportingDone(): void {
+    mocks.encodeWav.mockImplementation((_buffer, _depth, onProgress) => {
+        onProgress?.(1);
+        return Promise.resolve(new Uint8Array([1, 2, 3]));
+    });
+}
+
+/** A cancelled export reads cancelled, never finished, and hands the dialog back for a new export. */
+async function expectCancelledExportState(): Promise<void> {
+    await waitFor(() => {
+        expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+    });
+    expect(Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))).toBeLessThan(100);
+    await waitFor(
+        () => {
+            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        },
+        { timeout: 4000 }
+    );
+    expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
+}
+
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -732,6 +762,7 @@ describe('ExportDialog', () => {
 
     it('aborts the browser save instead of committing it when Cancel is pressed while the file is being opened', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        encodeWavReportingDone();
         const opening = createDeferred<void>();
         const writable = {
             write: vi.fn(() => Promise.resolve()),
@@ -756,12 +787,7 @@ describe('ExportDialog', () => {
                 opening.resolve();
             });
 
-            await waitFor(
-                () => {
-                    expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
-                },
-                { timeout: 4000 }
-            );
+            await expectCancelledExportState();
             expect(writable.abort).toHaveBeenCalledTimes(1);
             expect(writable.write).not.toHaveBeenCalled();
             expect(writable.close).not.toHaveBeenCalled();
@@ -771,6 +797,63 @@ describe('ExportDialog', () => {
             vi.unstubAllGlobals();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
         }
+    });
+
+    it('aborts the browser save instead of closing it when Cancel is pressed while the file is being written', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        encodeWavReportingDone();
+        const writing = createDeferred<void>();
+        const writable = {
+            write: vi.fn(() => writing.promise),
+            close: vi.fn(() => Promise.resolve()),
+            abort: vi.fn(() => Promise.resolve()),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi.fn().mockResolvedValue({ createWritable: vi.fn(() => Promise.resolve(writable)) })
+        );
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(writable.write).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                writing.resolve();
+            });
+
+            await expectCancelledExportState();
+            expect(writable.abort).toHaveBeenCalledTimes(1);
+            expect(writable.close).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+        } finally {
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('ends cancelled, not finished, when Cancel is pressed while the last format is being written', async () => {
+        encodeWavReportingDone();
+        const writing = createDeferred<void>();
+        mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            writing.resolve();
+        });
+
+        await expectCancelledExportState();
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
     });
 
     it('still writes every format when no Cancel is pressed', async () => {
