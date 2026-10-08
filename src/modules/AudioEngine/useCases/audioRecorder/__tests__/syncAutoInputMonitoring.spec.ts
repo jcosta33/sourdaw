@@ -97,6 +97,8 @@ describe('syncAutoInputMonitoring', () => {
     });
 
     afterEach(() => {
+        // The owner's open requests outlive a test; removing every track releases them.
+        setTracks();
         unsubscribe();
     });
 
@@ -263,6 +265,33 @@ describe('syncAutoInputMonitoring', () => {
         setTracks();
 
         expect(harness.stopTrackInputMonitoring).toHaveBeenCalledWith('track-1');
+        expect(harness.monitored.has('track-1')).toBe(false);
+    });
+
+    it('reopens an edge adopted from On after a graph reset released it', () => {
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        harness.monitored.set('track-1', 'input-1');
+        setTracks(audioTrack({ inputMonitoring: 'auto' }));
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+
+        // resetGraph releases every capture, then rearms through the owner.
+        harness.monitored.clear();
+        reconcileAutoInputMonitoring();
+
+        expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
+        expect(harness.monitored.get('track-1')).toBe('input-1');
+    });
+
+    it('releases an edge adopted from On when a store-only write passes the track through On to Off', () => {
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        harness.monitored.set('track-1', 'input-1');
+        setTracks(audioTrack({ inputMonitoring: 'auto' }));
+
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
+        setTracks(audioTrack({ inputMonitoring: 'off' }));
+
+        expect(harness.stopTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1');
         expect(harness.monitored.has('track-1')).toBe(false);
     });
 
