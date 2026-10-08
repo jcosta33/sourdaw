@@ -1,0 +1,29 @@
+src/modules/Transport/useCases/scheduling/listMutedMidiClips.ts
+  s_2bfd55a4393d7c::t_c6f5e343c1403c 9-13
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_2f5fdaba901484 3532-3642
+src/modules/Transport/services/storedControllerEngagement.ts
+  s_2bfd55a4393d7c::t_24c2359b4a7cd1 149-158,160-176,178-185,188-190,193-199,202,204-205,212-213
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_fc656c274730f4 961
+  s_2bfd55a4393d7c::t_197016b32246ff 36-41,48
+  s_2bfd55a4393d7c::t_fe7772867bcffb 915-930,932-935,937-944,946-949,951
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_6b754709dd23c5 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b9d002f1a1bb568800979b0e811e4bad7b084b7",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
