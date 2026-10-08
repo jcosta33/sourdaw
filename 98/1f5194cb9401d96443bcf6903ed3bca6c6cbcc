@@ -1,0 +1,22 @@
+scripts/offlineAudioWorkletTrace.ts
+  s_2bfd55a4393d7c::t_a8bea2de0131bd 239,245-246
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_2bfd55a4393d7c::t_d7cc829e0a3777 175-208
+  s_2bfd55a4393d7c::t_12274226e66455 312-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "981f5194cb9401d96443bcf6903ed3bca6c6cbcc",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
