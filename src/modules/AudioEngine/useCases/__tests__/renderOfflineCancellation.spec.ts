@@ -269,6 +269,25 @@ describe('renderOffline — cancelling an in-flight render', () => {
         expect(context.renderCompleted).toBe(false);
     });
 
+    // Red when a musician's Cancel raises the export flag while an assistant render holds the lock.
+    it.each(['agent-measurement', 'agent-section-render'] as const)(
+        "runs an assistant render (%s) through the segment boundaries after a musician's Cancel",
+        async (lockHolder) => {
+            const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE, lockHolder });
+
+            await reachCheckpoint(1);
+            const context = SuspendableOfflineContext.latest!;
+            cancelExport();
+            await reachCheckpoint(2);
+            await reachCheckpoint(3);
+            context.finishRendering();
+
+            await expect(rendering).resolves.toBe(renderedBuffer);
+            expect(context.resumeCount).toBeGreaterThan(1);
+            expect(exportCancellationState.cancelFlag).toBe(false);
+        }
+    );
+
     // Red when the track loops stop reading the render's own abort signal.
     it('fails before scheduling on an abort signal already raised, leaving the export flag down', async () => {
         const controller = new AbortController();

@@ -210,7 +210,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --kill-after=15s 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 35,
+            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -789,7 +790,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --kill-after=15s 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -1694,7 +1695,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --kill-after=15s 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",

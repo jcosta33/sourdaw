@@ -22,6 +22,7 @@ type TrackStoreSubscribeReact = (typeof import('../../stores/trackStore'))['trac
 const {
     trackStoreMock,
     transportStoreMock,
+    tempoMapStoreMock,
     timelineViewStoreMock,
     midiStoreMock,
     clipSelectionStoreMock,
@@ -62,6 +63,9 @@ const {
         return mock;
     })(),
     transportStoreMock: { value: null as Partial<TransportState> | null, set: vi.fn() },
+    tempoMapStoreMock: {
+        value: { changes: [] as Array<{ id: string; beat: number; tempo: number; curve: 'instant' }> },
+    },
     timelineViewStoreMock: { value: null as Partial<TimelineViewState> | null, set: vi.fn() },
     midiStoreMock: { value: null as MidiStoreState | null, set: vi.fn() },
     clipSelectionStoreMock: {
@@ -77,7 +81,16 @@ vi.mock('../../stores/trackStore', async (importOriginal) => {
 });
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
-    return { ...actual, transportStore: transportStoreMock, playheadPositionRef: { current: 0 } };
+    return {
+        ...actual,
+        transportStore: transportStoreMock,
+        tempoMapStore: tempoMapStoreMock,
+        readTempoAtBeat: ({ beat }: { beat: number }) =>
+            tempoMapStoreMock.value.changes.findLast((change) => change.beat <= beat)?.tempo ??
+            transportStoreMock.value?.tempo ??
+            120,
+        playheadPositionRef: { current: 0 },
+    };
 });
 vi.mock('../../stores/timelineViewStore', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
@@ -337,6 +350,7 @@ function seedStores(overrides: {
     view?: Partial<TimelineViewState>;
     ghostClips?: NonNullable<TrackStoreState['ghostClips']>;
 }): void {
+    tempoMapStoreMock.value = { changes: [] };
     trackStoreMock.value = {
         tracks: overrides.tracks ?? [],
         selectedTrackId: null,
@@ -361,6 +375,40 @@ function seedStores(overrides: {
     playheadPositionRef.current = 0;
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 800 });
 }
+
+describe('buildTimelineRenderModel — clip-start tempo', () => {
+    it('projects normal, ghost, and variation clips and invalidates a cached model on a map-only edit', () => {
+        const audioClip = clip({ id: 'audio', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
+        const ghost = clip({ id: 'ghost', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
+        const alternative = clip({ id: 'alternative', type: 'audio', startBeat: 4, audioOffsetBeats: 1 });
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [audioClip],
+                    alternatives: [{ id: 'alt', name: 'Alt', clips: [alternative] }],
+                    showVariationLanes: true,
+                },
+            ],
+            ghostClips: [{ ...ghost, trackId: 't' }],
+        });
+        const first = buildTimelineRenderModel();
+        expect(first.tracks[0]!.clips[0]!.clipStartTempo).toBe(120);
+
+        tempoMapStoreMock.value = { changes: [{ id: 'slow', beat: 4, tempo: 90, curve: 'instant' }] };
+        const second = buildTimelineRenderModel();
+        expect(second.tracks).not.toBe(first.tracks);
+        expect(second.tracks[0]!.clips.map((item) => item.clipStartTempo)).toEqual([90, 90]);
+        expect(second.tracks[0]!.variationLanes![0]!.clips[0]!.clipStartTempo).toBe(90);
+
+        clipDragPreviewRef.current = {
+            positions: new Map([['audio', { trackId: 't', startBeat: 2, endBeat: 6 }]]),
+            originals: new Map(),
+        };
+        const preview = buildTimelineRenderModel();
+        expect(preview.tracks[0]!.clips[0]!.clipStartTempo).toBe(120);
+    });
+});
 
 describe('buildTimelineRenderModel — track visibility', () => {
     it('hides master tracks from the rendered list', () => {

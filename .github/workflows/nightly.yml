@@ -586,7 +586,10 @@ jobs:
       # run as the runner user cannot signal it and would leave apt holding its
       # lock for the next attempt. So the system dependencies run under
       # `sudo timeout` and the browser download under its own `timeout`; a
-      # timed-out attempt is a failed one and the loop continues.
+      # timed-out attempt is a failed one and the loop continues. GNU timeout
+      # signals its whole process group, but its TERM grace period ends when
+      # the direct child exits while a grandchild survives, so the browser
+      # download is killed outright and apt gets a TERM first.
       #
       # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
       # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
@@ -602,13 +605,13 @@ jobs:
       # seconds after the downloads finish, can leave dpkg holding its lock
       # and fail the next attempt; the attempt after that retries.
       #
-      # Three timed-out attempts take 35 minutes, which this job's limit holds
+      # Three timed-out attempts take 34 minutes, which this job's limit holds
       # together with the longest observed shard.
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
             if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
-              timeout --kill-after=15s 3m pnpm exec playwright install chromium; then
+              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

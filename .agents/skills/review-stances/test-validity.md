@@ -6,6 +6,20 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-07 — a retryable Playwright install could hang forever (introduced by PR #4228; tracked by #5047)
+
+PR #4228 added three attempts and backoff around `playwright install --with-deps`, but only a returned
+failure advanced the loop. A stalled download never returned, so the E2E shard spent its full hour
+installing and ran no tests.
+
+Blind spot: the workflow contract proved retries existed but did not require an attempt deadline,
+prove the overall install step fit below its job budget, or exercise a blocked child through the loop.
+
+Probe that would have caught it: execute the workflow's extracted loop with a fake install process that
+signals readiness, ignores TERM, and remains blocked; apply short TERM/KILL bounds and prove three
+attempts reach the final nonzero exit. Separately pin each real attempt and the maximum aggregate
+attempt-plus-backoff time below both the install-step and E2E-job budgets.
+
 ## Standing probes
 
 - For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).

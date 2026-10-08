@@ -75,13 +75,17 @@ jobs:
       # seconds after the downloads finish, can leave dpkg holding its lock
       # and fail the next attempt; the attempt after that retries.
       #
-      # Three timed-out attempts take 35 minutes, which this job's limit holds
+      # Three timed-out attempts take 34 minutes, inside this step's 35, which this job's limit holds
       # together with the longest observed shard.
       - name: Install Playwright browsers
+        timeout-minutes: 35
         run: |
           for attempt in 1 2 3; do
+            # GNU timeout kills the whole process group at the deadline. A TERM
+            # grace period ends if pnpm exits while an installer child survives,
+            # so the browser download is killed outright; apt gets a TERM first.
             if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
-              timeout --kill-after=15s 3m pnpm exec playwright install chromium; then
+              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

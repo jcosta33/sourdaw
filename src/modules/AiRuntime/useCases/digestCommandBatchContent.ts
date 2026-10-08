@@ -18,12 +18,28 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 const DRAWN_ID_PATTERN = /^[a-z]+(?:-[a-z]+)*-[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/u;
 
 /**
+ * The ids the state guards draw for a section render's jobs. A job is not a project entity, so the
+ * assigned-id record never names it, yet every admission draws its id afresh.
+ */
+function readRenderJobIds(command: CommandBatchEnvelope['commands'][number]): string[] {
+    if (command.operation !== 'renderProjectSections' || !Array.isArray(command.arguments.jobs)) {
+        return [];
+    }
+    return command.arguments.jobs.flatMap((job: unknown) =>
+        isRecord(job) && typeof job.jobId === 'string' ? [job.jobId] : []
+    );
+}
+
+/**
  * Every id the batch drew for an object it creates, among the ids the application assigned each
- * command and the value each batch-local binding's producer carries. Each compilation draws them
- * afresh; a supplied literal those records also name stays as it is.
+ * command, the render job ids and the value each batch-local binding's producer carries. Each
+ * compilation draws them afresh; a supplied literal those records also name stays as it is.
  */
 function readMintedIds(envelope: CommandBatchEnvelope): ReadonlySet<string> {
-    const candidates = envelope.commands.flatMap((command) => command.applicationAssignedIds.map(({ value }) => value));
+    const candidates = envelope.commands.flatMap((command) => [
+        ...command.applicationAssignedIds.map(({ value }) => value),
+        ...readRenderJobIds(command),
+    ]);
     for (const binding of envelope.batchLocalBindings) {
         const producer = envelope.commands.find((command) => command.commandId === binding.producerCommandId);
         const value = producer?.arguments[binding.producerArgument];
