@@ -428,8 +428,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setProgress(0);
         setStatusText('Heating the offline oven...');
 
-        // Set once the browser save's commit has started. From then on the export has succeeded and a
-        // Cancel no longer decides its outcome, so the export ends in exactly one of the two states.
+        // Set once the export's last file is being committed: the browser save's close, or the
+        // dispatch of the final native write. From then on the export has succeeded and a Cancel no
+        // longer decides its outcome, so the export ends in exactly one of the two states.
         let committed = false;
         const endedCancelled = (): boolean => cancelledRef.current && !committed;
 
@@ -482,7 +483,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 buffer: AudioBuffer,
                 name: string,
                 fractionOffset: number,
-                fractionRange: number
+                fractionRange: number,
+                isFinalBuffer: boolean
             ) => {
                 // Normalize once, before the format loop, so every
                 // requested format is encoded from identical audio.
@@ -536,14 +538,20 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
                     const finalFileName = `${name}.${freq}`;
 
+                    // The export's last file: once its write is dispatched nothing is left to stop, and a
+                    // native write cannot be recalled, so the export has succeeded whatever Cancel does next.
+                    const isFinalFile = isFinalBuffer && currentPass === formatList.length - 1;
+
                     if (isNativeProjectRuntimeAvailable()) {
                         if (mode === 'stems' && nativeDirPath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioStemFile({
                                 bytes: uint8Data,
                                 directoryPath: nativeDirPath,
                                 fileName: finalFileName,
                             });
                         } else if (nativeFilePath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioMixdownFile({
                                 bytes: uint8Data,
                                 format: freq,
@@ -671,7 +679,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const stemOffset = 50 + (doneStems / totalStems) * 50;
                     const stemRange = 50 / totalStems;
 
-                    await serializeAudio(buffer, safeTName, stemOffset, stemRange);
+                    await serializeAudio(buffer, safeTName, stemOffset, stemRange, doneStems === totalStems - 1);
                     doneStems++;
                 }
             } else {
@@ -708,10 +716,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
 
                 // We map the remaining 40% of the progress bar to encoding the mixdown
-                await serializeAudio(buffer, baseName, 60, 40);
+                await serializeAudio(buffer, baseName, 60, 40, true);
             }
 
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
                 return;
             }
 
@@ -783,7 +791,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             if (endedCancelled()) {
                 // Every Cancel exit before the commit ends here, whether it threw or returned: the
                 // export is reported as cancelled, so the bar must not keep the encoder's last
-                // figure, and 100 would show the finished state.
+                // figure, and 100 would show the finished state. Native files written before the
+                // Cancel stay on disk; the Cancel only stops the formats or stems after them.
                 setProgress(0);
                 setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);

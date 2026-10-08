@@ -439,14 +439,37 @@ async function startRenderToClip(): Promise<number> {
     return renderedTail;
 }
 
-function createDeferred<TValue>(): { promise: Promise<TValue>; resolve: (value: TValue) => void } {
+function createDeferred<TValue>(): {
+    promise: Promise<TValue>;
+    resolve: (value: TValue) => void;
+    reject: (error: Error) => void;
+} {
     let settle: (value: TValue) => void = () => {
         throw new Error('Deferred was not initialised');
     };
-    const promise = new Promise<TValue>((resolve) => {
+    let fail: (error: Error) => void = () => {
+        throw new Error('Deferred was not initialised');
+    };
+    const promise = new Promise<TValue>((resolve, reject) => {
         settle = resolve;
+        fail = reject;
     });
-    return { promise, resolve: settle };
+    return { promise, resolve: settle, reject: fail };
+}
+
+/** A committed export reads finished, once, and nothing re-reports it as cancelled. */
+async function expectSucceededExportState(): Promise<void> {
+    await waitFor(() => {
+        expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+    expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
+    // Outlast the cancelled-state unlock delay: a late reset would land here.
+    await new Promise((resolve) => setTimeout(resolve, 1700));
+    expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
 }
 
 /** A WAV encoder that finishes its pass: real encoders end by reporting progress 1. */
@@ -881,7 +904,8 @@ describe('ExportDialog', () => {
         }
     });
 
-    it('ends cancelled, not finished, when Cancel is pressed while the last format is being written', async () => {
+    // A native write cannot be recalled: the file lands at the chosen path, so the export succeeded.
+    it('ends succeeded when Cancel is pressed while the last native format is being written', async () => {
         encodeWavReportingDone();
         const writing = createDeferred<void>();
         mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
@@ -897,8 +921,122 @@ describe('ExportDialog', () => {
             writing.resolve();
         });
 
+        await expectSucceededExportState();
+    });
+
+    describe('stem export Cancel during a native write', () => {
+        const startTwoStemExport = async (): Promise<void> => {
+            encodeWavReportingDone();
+            setProjectTracks([
+                { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
+                { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
+            ]);
+            const stemBuffer = MockAudioBuffer.create(2, 128, 44100);
+            mocks.exportStems.mockResolvedValue(
+                new Map([
+                    ['track-bass', stemBuffer],
+                    ['track-lead', stemBuffer],
+                ])
+            );
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        };
+
+        it('ends succeeded when it lands during the last stem file', async () => {
+            const writingLast = createDeferred<void>();
+            mocks.writeNativeAudioStemFile.mockResolvedValueOnce(undefined).mockReturnValueOnce(writingLast.promise);
+            await startTwoStemExport();
+            await waitFor(() => {
+                expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                writingLast.resolve();
+            });
+
+            await expectSucceededExportState();
+        });
+
+        it('stops the later stems and ends cancelled when it lands during an earlier stem file', async () => {
+            const writingFirst = createDeferred<void>();
+            mocks.writeNativeAudioStemFile.mockReturnValueOnce(writingFirst.promise);
+            await startTwoStemExport();
+            await waitFor(() => {
+                expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                writingFirst.resolve();
+            });
+
+            await expectCancelledExportState();
+            expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        });
+    });
+
+    it('reports a render stopped by the Cancel as cancelled, not as a failed export', async () => {
+        const rendering = createDeferred<AudioBuffer>();
+        mocks.renderOffline.mockReturnValue(rendering.promise);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            rendering.reject(new Error('Export cancelled'));
+        });
+
         await expectCancelledExportState();
-        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        expect(screen.queryByText('Export cancelled')).not.toBeInTheDocument();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(mocks.loggerError).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed browser save as an error even when Cancel was pressed while it was closing', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        encodeWavReportingDone();
+        const closing = createDeferred<void>();
+        const writable = {
+            write: vi.fn(() => Promise.resolve()),
+            close: vi.fn(() => closing.promise),
+            abort: vi.fn(() => Promise.resolve()),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi.fn().mockResolvedValue({ createWritable: vi.fn(() => Promise.resolve(writable)) })
+        );
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(writable.close).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                closing.reject(new Error('Disk full'));
+            });
+
+            await waitFor(() => {
+                expect(screen.getByText('Disk full')).toBeInTheDocument();
+            });
+            expect(mocks.loggerError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Export failed' }));
+            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        } finally {
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
     });
 
     it('still writes every format when no Cancel is pressed', async () => {
