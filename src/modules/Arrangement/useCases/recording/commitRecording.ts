@@ -1,7 +1,9 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
+import { clipEntrySeconds } from '../../models/TempoTimeline';
 import { type Clip } from '../../stores/trackStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
@@ -67,7 +69,9 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
         clipId: clip.id,
         recordPointBeat: capture.provisionalStartBeat,
         mediaOriginSeconds: capture.mediaOriginSeconds,
-        clipMediaOriginBeat: placed.startBeat - (placed.audioOffsetBeats ?? 0),
+        clipMediaOriginSeconds:
+            readSecondsAtBeat({ beat: placed.startBeat }) -
+            clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
     await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
 }

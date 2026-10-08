@@ -174,11 +174,15 @@ describe('writeTakeReKeyTransitions', () => {
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
-    it('moves a pass whose placement alone the transition changed, both ways', () => {
+    it.each([
+        { field: 'anchor', moved: { passAnchorSeconds: -2 } },
+        { field: 'depth', moved: { passDepthSeconds: 3 } },
+    ])('moves a pass whose placement $field alone the transition changed, both ways', ({ moved }) => {
         // The two facets differ only in where the pass sounds against its
-        // clip's media, so that field alone must mark the take as moved.
-        const pass = { ...createTake('clip-1', 'Pass 2', 0, 4, 4), passStartBeats: 0 };
-        const placedPass = { ...pass, passStartBeats: -4 };
+        // clip's media, or what it plays, so that field alone must mark the
+        // take as moved.
+        const pass = { ...createTake('clip-1', 'Pass 2', 0, 4, 4), passAnchorSeconds: 0, passDepthSeconds: 2 };
+        const placedPass = { ...pass, ...moved };
         const lane: TakeLane = { ...createTakeLane('track-1'), takes: [pass] };
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
         const transition: TakeReKeyLaneTransition = {

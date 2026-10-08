@@ -11,55 +11,117 @@ export type ResolvedClip = Track['clips'][number] & {
     sourceStartBeat: number;
 };
 
-/**
- * Mirrors `Arrangement/useCases/resolveComping.ts` (`resolveTakeMedia`,
- * `clipMediaOffsetAt`, `clipMediaOriginBeat`, `withMediaOffsetBeats`) so both
- * renderers read the same material for the same fragment (#2225). The law is
- * kept as a copy because the Arrangement `useCases` barrel pulls the whole
- * Arrangement graph, which cycles back through AudioEngine, into this pure
- * resolver.
+type TakeMedia = { earliestBeat: number; sourceStartBeat: number; offsetAt: (beat: number) => number };
+
+/*
+ * Everything below mirrors `Arrangement/useCases/resolveComping.ts` and the
+ * helpers it reads (`resolveTakeMedia`, `clipMediaOffsetAt`,
+ * `withMediaOffsetBeats`, `models/TempoTimeline`) so both renderers read the
+ * same material for the same fragment (#2225). The law is kept as a copy
+ * because the Arrangement `useCases` barrel pulls the whole Arrangement graph,
+ * which cycles back through AudioEngine, into this pure resolver.
  */
-function clipMediaOriginBeat(clip: TrackClip): number {
-    if (clip.type === 'audio') {
-        return clip.startBeat - (clip.audioOffsetBeats ?? 0);
+
+/** A render places beats on whole samples, so a constant span may be off by up to a sample. */
+const CONSTANT_TEMPO_TOLERANCE_SECONDS = 1e-4;
+
+function isTempoConstantBetween(timeline: ResolutionTempoTimeline, fromBeat: number, toBeat: number): boolean {
+    const tempo = timeline.tempoAtBeat(fromBeat);
+    if (timeline.tempoAtBeat(toBeat) !== tempo) {
+        return false;
     }
-    return clip.startBeat - (clip.midiOffsetBeats ?? 0);
+    const spanSeconds = timeline.secondsAtBeat(toBeat) - timeline.secondsAtBeat(fromBeat);
+    return Math.abs(spanSeconds - ((toBeat - fromBeat) * 60) / tempo) <= CONSTANT_TEMPO_TOLERANCE_SECONDS;
+}
+
+function clipEntrySeconds(timeline: ResolutionTempoTimeline, startBeat: number, mediaOffsetBeats: number): number {
+    return (mediaOffsetBeats * 60) / timeline.tempoAtBeat(startBeat);
+}
+
+function clipOwnMediaOffset(clip: TrackClip): number {
+    return clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0);
 }
 
 /**
  * The offset a fragment of `clip` starting at `beat` carries to enter the
- * clip's own media at what sounds there: for audio, the clip's media seconds at
- * `beat` converted at that beat's tempo, the unit the reader seeks in; for
- * MIDI, beats from the media origin. At the clip's own start it is the clip's
- * own offset, exactly.
+ * clip's own media at what sounds there: beats added to the clip's own offset
+ * for MIDI and across a span no tempo change lies in, and otherwise the clip's
+ * media seconds at `beat` converted at that beat's tempo.
  */
 function clipMediaOffsetAt(clip: TrackClip, beat: number, timeline: ResolutionTempoTimeline): number {
-    if (beat === clip.startBeat) {
-        return clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0);
+    const displacementBeats = beat - clip.startBeat;
+    if (displacementBeats === 0) {
+        return clipOwnMediaOffset(clip);
     }
-    if (clip.type !== 'audio') {
-        return beat - clipMediaOriginBeat(clip);
+    if (clip.type !== 'audio' || isTempoConstantBetween(timeline, clip.startBeat, beat)) {
+        return clipOwnMediaOffset(clip) + displacementBeats;
     }
-    const entrySeconds = ((clip.audioOffsetBeats ?? 0) * 60) / timeline.tempoAtBeat(clip.startBeat);
-    const mediaSeconds = entrySeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(clip.startBeat);
+    const mediaSeconds =
+        clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0) +
+        timeline.secondsAtBeat(beat) -
+        timeline.secondsAtBeat(clip.startBeat);
     return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
 }
 
-/**
- * A take naming `sourceOffsetBeats` sounds that material `passStartBeats` after
- * the clip's media origin, so it follows every edit that moves the clip's
- * media. Every take is bounded by its clip's start, and a placed pass never
- * sounds before its own material. A take without an offset plays the clip's
- * media as the clip places it. `offsetAt` writes an audio fragment's offset
- * from the media seconds the pass sounds at its start beat, converted at that
- * beat's tempo.
- */
-function resolveTakeMedia(
-    take: Take,
+/** A pass saved before placement existed, or any MIDI pass: main's law. */
+function legacyPassMedia(clip: TrackClip, sourceOffsetBeats: number, timeline: ResolutionTempoTimeline): TakeMedia {
+    const mediaOriginBeat = clip.startBeat - sourceOffsetBeats;
+    return {
+        earliestBeat: clip.startBeat,
+        sourceStartBeat: mediaOriginBeat,
+        offsetAt: (beat) => {
+            const displacementBeats = beat - mediaOriginBeat;
+            if (displacementBeats === 0) {
+                return clipOwnMediaOffset(clip);
+            }
+            if (clip.type !== 'audio' || isTempoConstantBetween(timeline, clip.startBeat, beat)) {
+                return clipOwnMediaOffset(clip) + displacementBeats;
+            }
+            const passSeconds = clipEntrySeconds(
+                timeline,
+                clip.startBeat,
+                (clip.audioOffsetBeats ?? 0) + sourceOffsetBeats
+            );
+            const mediaSeconds = passSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(clip.startBeat);
+            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+    };
+}
+
+/** The beat a clip's media reaches `anchorSeconds` on. */
+function beatAtClipMediaSeconds(clip: TrackClip, anchorSeconds: number, timeline: ResolutionTempoTimeline): number {
+    const entrySeconds = clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0);
+    const constantTempoBeat =
+        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / 60;
+    if (isTempoConstantBetween(timeline, clip.startBeat, constantTempoBeat)) {
+        return constantTempoBeat;
+    }
+    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) - entrySeconds + anchorSeconds);
+}
+
+/** A placed audio pass, held in media seconds. */
+function placedPassMedia(
     clip: TrackClip,
+    anchorSeconds: number,
+    depthSeconds: number,
     timeline: ResolutionTempoTimeline
-): { earliestBeat: number; sourceStartBeat: number; offsetAt: (beat: number) => number } {
-    const clipOriginBeat = clipMediaOriginBeat(clip);
+): TakeMedia {
+    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
+    const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
+    return {
+        earliestBeat: Math.max(clip.startBeat, passStartBeat),
+        sourceStartBeat: passStartBeat - depthBeats,
+        offsetAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthBeats + (beat - passStartBeat);
+            }
+            const mediaSeconds = depthSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
+            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+    };
+}
+
+function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
     if (take.sourceOffsetBeats === undefined) {
         return {
             earliestBeat: clip.startBeat,
@@ -67,26 +129,10 @@ function resolveTakeMedia(
             offsetAt: (beat) => clipMediaOffsetAt(clip, beat, timeline),
         };
     }
-    const sourceOffsetBeats = take.sourceOffsetBeats;
-    const passShiftBeats = sourceOffsetBeats - (take.passStartBeats ?? 0);
-    const passStartBeat = take.passStartBeats === undefined ? clip.startBeat : clipOriginBeat + take.passStartBeats;
-    const earliestBeat = Math.max(clip.startBeat, passStartBeat);
-    const sourceStartBeat = clip.startBeat - passShiftBeats;
-    if (clip.type !== 'audio') {
-        return { earliestBeat, sourceStartBeat, offsetAt: (beat) => beat - (clipOriginBeat - passShiftBeats) };
+    if (clip.type !== 'audio' || take.passAnchorSeconds === undefined || take.passDepthSeconds === undefined) {
+        return legacyPassMedia(clip, take.sourceOffsetBeats, timeline);
     }
-    const passStartOffsetBeats =
-        take.passStartBeats === undefined ? (clip.audioOffsetBeats ?? 0) + sourceOffsetBeats : sourceOffsetBeats;
-    const passStartSeconds = (passStartOffsetBeats * 60) / timeline.tempoAtBeat(passStartBeat);
-    return {
-        earliestBeat,
-        sourceStartBeat,
-        offsetAt: (beat) => {
-            const mediaSeconds =
-                passStartSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
-            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
-        },
-    };
+    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, timeline);
 }
 
 /**

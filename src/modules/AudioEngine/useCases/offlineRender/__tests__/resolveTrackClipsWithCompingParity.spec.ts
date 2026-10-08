@@ -31,13 +31,34 @@ function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number
     return clip;
 }
 
-function pass(id: string, loop: readonly [number, number], sourceOffsetBeats: number, passStartBeats?: number): Take {
+/**
+ * A pass given in beats of the session's flat 120 BPM: its media depth, and,
+ * when commit placed it, where it sounds from the clip's media origin. Commit
+ * holds a placement in media seconds, two beats to the second.
+ */
+function pass(id: string, loop: readonly [number, number], depthBeats: number, anchorBeats?: number): Take {
     const take: Take = { id, clipId: 'rec', name: id, startBeat: loop[0], endBeat: loop[1], selected: false };
-    take.sourceOffsetBeats = sourceOffsetBeats;
-    if (passStartBeats !== undefined) {
-        take.passStartBeats = passStartBeats;
+    take.sourceOffsetBeats = depthBeats;
+    if (anchorBeats !== undefined) {
+        take.passAnchorSeconds = anchorBeats / 2;
+        take.passDepthSeconds = depthBeats / 2;
     }
     return take;
+}
+
+/** A pass as commit places it, in media seconds. */
+function placedPass(id: string, loop: readonly [number, number], anchorSeconds: number, depthSeconds: number): Take {
+    return {
+        id,
+        clipId: 'rec',
+        name: id,
+        startBeat: loop[0],
+        endBeat: loop[1],
+        selected: false,
+        sourceOffsetBeats: 0,
+        passAnchorSeconds: anchorSeconds,
+        passDepthSeconds: depthSeconds,
+    };
 }
 
 function lane(takes: Take[], takeId: string, startBeat: number, endBeat: number): TakeLaneStoreState {
@@ -46,9 +67,9 @@ function lane(takes: Take[], takeId: string, startBeat: number, endBeat: number)
     };
 }
 
-const loopPasses = (passStartBeats?: number) => [
-    pass('pass-1', [0, 4], 0, passStartBeats),
-    pass('pass-2', [0, 4], 4, passStartBeats),
+const loopPasses = (anchorBeats?: number) => [
+    pass('pass-1', [0, 4], 0, anchorBeats),
+    pass('pass-2', [0, 4], 4, anchorBeats),
 ];
 
 const cases: readonly { name: string; state: TakeLaneStoreState; clip: Clip }[] = [
@@ -144,7 +165,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // pass 2 began 14.02 s into the capture, read at 60 BPM.
             name: 'a run-up pass across the drop',
             tempoChanges: dropTo60At(12),
-            state: lane([pass('pass-2', [16, 24], 14.02, 6.02)], 'pass-2', 16, 24),
+            state: lane([placedPass('pass-2', [16, 24], 6.02, 14.02)], 'pass-2', 16, 24),
             clip: recording(12, 32, 2.02),
             entry: { startBeat: 16, audioOffsetBeats: 14.02 },
         },
@@ -152,7 +173,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // Pass 2 began 4.02 s into the capture, read at 120 BPM.
             name: 'pass 2 of a recording begun inside the loop',
             tempoChanges: dropTo60At(10),
-            state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 8, 16),
+            state: lane([placedPass('pass-2', [8, 16], -2.98, 4.02)], 'pass-2', 8, 16),
             clip: insideLoop,
             entry: { startBeat: 8, audioOffsetBeats: 8.04 },
         },
@@ -160,7 +181,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // Its first pass sounds from the record point, 0.02 s in at 60 BPM.
             name: 'pass 1 of a recording begun inside the loop',
             tempoChanges: dropTo60At(10),
-            state: lane([pass('pass-1', [12, 16], 0.02, -1.96)], 'pass-1', 8, 16),
+            state: lane([placedPass('pass-1', [12, 16], 0.02, 0.02)], 'pass-1', 8, 16),
             clip: insideLoop,
             entry: { startBeat: 12, audioOffsetBeats: 0.02 },
         },
@@ -168,7 +189,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // Pass 3 began 11.02 s into the capture, read at 120 BPM.
             name: 'pass 3 of a recording begun inside the loop',
             tempoChanges: dropTo60At(10),
-            state: lane([pass('pass-3', [8, 16], 22.04, -5.96)], 'pass-3', 8, 16),
+            state: lane([placedPass('pass-3', [8, 16], -2.98, 11.02)], 'pass-3', 8, 16),
             clip: insideLoop,
             entry: { startBeat: 8, audioOffsetBeats: 22.04 },
         },
@@ -177,7 +198,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // capture had run 0.02 s, read at 60 BPM.
             name: 'the clip filling in after a comp ending past the drop',
             tempoChanges: dropTo60At(10),
-            state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 8, 12),
+            state: lane([placedPass('pass-2', [8, 16], -2.98, 4.02)], 'pass-2', 8, 12),
             clip: insideLoop,
             entry: { startBeat: 12, audioOffsetBeats: 0.02 },
         },
@@ -185,7 +206,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // Comped from 12, pass 2 enters at 7.02 s, read at 60 BPM.
             name: 'pass 2 comped from after the drop',
             tempoChanges: dropTo60At(10),
-            state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 12, 16),
+            state: lane([placedPass('pass-2', [8, 16], -2.98, 4.02)], 'pass-2', 12, 16),
             clip: insideLoop,
             entry: { startBeat: 12, audioOffsetBeats: 7.02 },
         },
@@ -195,7 +216,7 @@ describe('live and offline comp resolution across a tempo change', () => {
             // from 13, pass 2 enters at 9.02 s, read at 60 BPM.
             name: 'pass 2 of a recording begun at the loop start, comped from after the drop',
             tempoChanges: dropTo60At(12),
-            state: lane([pass('pass-2', [8, 16], 12.04, 0.04)], 'pass-2', 13, 16),
+            state: lane([placedPass('pass-2', [8, 16], 0.02, 6.02)], 'pass-2', 13, 16),
             clip: recording(7.96, 24),
             entry: { startBeat: 13, audioOffsetBeats: 9.02 },
         },
@@ -213,7 +234,7 @@ describe('live and offline comp resolution across a tempo change', () => {
 
     it('leaves a fragment on its clip’s own offset byte-identical to the clip', () => {
         tempoMapStore.set({ changes: dropTo60At(10) });
-        const state = lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 12, 16);
+        const state = lane([placedPass('pass-2', [8, 16], -2.98, 4.02)], 'pass-2', 12, 16);
         takeLaneStore.set(state);
 
         const live = resolveClipsWithComping('t1', [insideLoop]);
@@ -224,5 +245,74 @@ describe('live and offline comp resolution across a tempo change', () => {
         expect([regionStartBeat, regionEndBeat, sourceStartBeat]).toEqual([8, 12, 8]);
         expect({ ...gap, endBeat: insideLoop.endBeat }).toStrictEqual(insideLoop);
         expect(offline[0]?.audioOffsetBeats).toBe(insideLoop.audioOffsetBeats);
+    });
+
+    // Pass 1 of the recording begun inside the loop sounds from the record
+    // point, 0.02 s into the clip's media. Whatever moves or slips the clip's
+    // content carries the pass with it, so it starts where the content reaches
+    // 0.02 s and enters there.
+    it.each([
+        {
+            // Slipped a beat later into the media at 120 BPM: the content now
+            // reaches 0.02 s half a second sooner, at 11.5.
+            name: 'slipped',
+            clip: recording(8, 30, -4.96),
+            entry: { startBeat: 11.5, audioOffsetBeats: 0.02 },
+        },
+        {
+            // Moved to 6: the content reaches 0.02 s at 11, one second sooner
+            // at 60 BPM, two beats sooner at 120.
+            name: 'moved',
+            clip: recording(6, 28, -5.96),
+            entry: { startBeat: 11, audioOffsetBeats: 0.02 },
+        },
+    ])('carries a placed pass with its $name clip across the drop', ({ clip, entry }) => {
+        tempoMapStore.set({ changes: dropTo60At(10) });
+        const state = lane([placedPass('pass-1', [12, 16], 0.02, 0.02)], 'pass-1', 8, 16);
+        takeLaneStore.set(state);
+
+        const live = resolveClipsWithComping('t1', [clip]);
+        const offline = resolveTrackClipsWithComping('t1', [clip], state);
+
+        expect(offline).toEqual(live);
+        // The region claims [8,16), so the pass is the first thing that sounds in it.
+        const entered = offline.find((fragment) => fragment.startBeat >= 8);
+        expect(entered?.startBeat).toBeCloseTo(entry.startBeat, 9);
+        expect(entered?.audioOffsetBeats).toBeCloseTo(entry.audioOffsetBeats, 9);
+    });
+
+    describe('for a MIDI clip, whose notes are placed in beats', () => {
+        const midi: Clip = {
+            id: 'rec',
+            trackId: 't1',
+            name: 'Recording',
+            startBeat: 8,
+            endBeat: 24,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#000',
+            locked: false,
+            muted: false,
+        };
+
+        it('adds beats to its offsets across the drop', () => {
+            tempoMapStore.set({ changes: dropTo60At(10) });
+            const state = lane([pass('pass-2', [8, 16], 4)], 'pass-2', 12, 16);
+            takeLaneStore.set(state);
+
+            const live = resolveClipsWithComping('t1', [midi]);
+            const offline = resolveTrackClipsWithComping('t1', [midi], state);
+
+            expect(offline).toEqual(live);
+            // Main's law: the pass enters 4 beats deep plus its 4 from the clip
+            // start; the clip shows through from 16, 8 beats into its notes.
+            expect(live.map((fragment) => [fragment.startBeat, fragment.midiOffsetBeats ?? 0])).toStrictEqual([
+                [8, 0],
+                [12, 8],
+                [16, 8],
+            ]);
+        });
     });
 });

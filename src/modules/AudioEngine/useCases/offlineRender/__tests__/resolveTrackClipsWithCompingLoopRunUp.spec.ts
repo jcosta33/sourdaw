@@ -38,8 +38,12 @@ function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number
     return clip;
 }
 
-/** A pass as commit leaves it: its media depth, and where it sounds from the clip's media origin. */
-function passTake(id: string, loopStart: number, loopEnd: number, sourceOffsetBeats: number, passStartBeats: number) {
+/**
+ * A pass as commit leaves it, given in beats of the session's flat 120 BPM:
+ * its media depth, and where it sounds from the clip's media origin. Commit
+ * holds both in media seconds, two beats to the second.
+ */
+function passTake(id: string, loopStart: number, loopEnd: number, depthBeats: number, anchorBeats: number) {
     return {
         id,
         clipId: 'rec',
@@ -47,8 +51,9 @@ function passTake(id: string, loopStart: number, loopEnd: number, sourceOffsetBe
         startBeat: loopStart,
         endBeat: loopEnd,
         selected: false,
-        sourceOffsetBeats,
-        passStartBeats,
+        sourceOffsetBeats: depthBeats,
+        passAnchorSeconds: anchorBeats / 2,
+        passDepthSeconds: depthBeats / 2,
     };
 }
 

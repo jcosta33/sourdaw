@@ -468,17 +468,17 @@ describe('sanitize_take_lane_store_state', () => {
         });
     });
 
-    it('should preserve a pass placement, negative included, and drop takes carrying a malformed one', () => {
-        const pass = (id: string, passStartBeats: unknown) => ({
+    it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
+        const take = (id: string, fields: Record<string, unknown>) => ({
             id,
             clipId: 'clip-1',
             name: id,
             startBeat: 8,
             endBeat: 16,
             selected: false,
-            sourceOffsetBeats: 4,
-            passStartBeats,
+            ...fields,
         });
+        const placed = take('ahead-of-media', { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 });
 
         expect(
             sanitize_take_lane_store_state({
@@ -487,16 +487,32 @@ describe('sanitize_take_lane_store_state', () => {
                         id: 'lane-1',
                         trackId: 'track-1',
                         takes: [
-                            pass('ahead-of-media', -4),
-                            pass('non-numeric', '-4'),
-                            pass('infinite', Number.NEGATIVE_INFINITY),
+                            placed,
+                            take('non-numeric-anchor', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: '-2',
+                                passDepthSeconds: 2,
+                            }),
+                            take('infinite-anchor', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: Number.NEGATIVE_INFINITY,
+                                passDepthSeconds: 2,
+                            }),
+                            take('negative-depth', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: -1,
+                            }),
+                            take('anchor-alone', { sourceOffsetBeats: 4, passAnchorSeconds: -2 }),
+                            take('depth-alone', { sourceOffsetBeats: 4, passDepthSeconds: 2 }),
+                            take('placed-without-depth-beats', { passAnchorSeconds: -2, passDepthSeconds: 2 }),
                         ],
                         activeCompRegions: [],
                     },
                 ],
             })
         ).toEqual({
-            lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [pass('ahead-of-media', -4)], activeCompRegions: [] }],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [placed], activeCompRegions: [] }],
         });
     });
 });

@@ -1,39 +1,110 @@
-import { type Take, type TempoTimeline } from '../models/TakeLane';
+import { type Take } from '../models/TakeLane';
+import { clipEntrySeconds, isTempoConstantBetween, type TempoTimeline } from '../models/TempoTimeline';
 import { type Clip } from '../stores/trackStore';
 
 import { clipMediaOffsetAt } from './clipMediaOffsetAt';
-import { clipMediaOriginBeat } from './clipMediaOriginBeat';
+
+type TakeMedia = {
+    /** The first beat the take can sound. */
+    earliestBeat: number;
+    /** Carries the loop-occurrence count for probability rolls. */
+    sourceStartBeat: number;
+    /** The media offset a fragment of the take starting at `beat` carries. */
+    offsetAt: (beat: number) => number;
+};
+
+/** A clip's own media offset, in the field its readers read. */
+function clipOwnMediaOffset(clip: Clip): number {
+    return clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0);
+}
+
+/**
+ * A pass saved before placement existed, or any MIDI pass: main's law. Its
+ * material, `sourceOffsetBeats` deep into the media, sounds from its clip's
+ * start, bounded by the clip alone, and beats are added to the clip's own
+ * offset. An audio fragment across a tempo change takes that depth at the
+ * clip's start in media seconds instead, as the clip's own media does.
+ */
+function legacyPassMedia(clip: Clip, sourceOffsetBeats: number, timeline: TempoTimeline): TakeMedia {
+    const mediaOriginBeat = clip.startBeat - sourceOffsetBeats;
+    return {
+        earliestBeat: clip.startBeat,
+        sourceStartBeat: mediaOriginBeat,
+        offsetAt: (beat) => {
+            const displacementBeats = beat - mediaOriginBeat;
+            if (displacementBeats === 0) {
+                return clipOwnMediaOffset(clip);
+            }
+            if (clip.type !== 'audio' || isTempoConstantBetween(timeline, clip.startBeat, beat)) {
+                return clipOwnMediaOffset(clip) + displacementBeats;
+            }
+            const passSeconds = clipEntrySeconds(
+                timeline,
+                clip.startBeat,
+                (clip.audioOffsetBeats ?? 0) + sourceOffsetBeats
+            );
+            const mediaSeconds = passSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(clip.startBeat);
+            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+    };
+}
+
+/**
+ * The beat a clip's media reaches `anchorSeconds` on: the song time its media
+ * begins, its start less its entry seconds, plus the anchor. Across a span no
+ * tempo change lies in it is plain beat arithmetic from the clip's start.
+ */
+function beatAtClipMediaSeconds(clip: Clip, anchorSeconds: number, timeline: TempoTimeline): number {
+    const entrySeconds = clipEntrySeconds(timeline, clip.startBeat, clip.audioOffsetBeats ?? 0);
+    const constantTempoBeat =
+        clip.startBeat + ((anchorSeconds - entrySeconds) * timeline.tempoAtBeat(clip.startBeat)) / 60;
+    if (isTempoConstantBetween(timeline, clip.startBeat, constantTempoBeat)) {
+        return constantTempoBeat;
+    }
+    return timeline.beatAtSeconds(timeline.secondsAtBeat(clip.startBeat) - entrySeconds + anchorSeconds);
+}
+
+/**
+ * A placed audio pass: it starts on the beat its clip's media reaches
+ * `passAnchorSeconds`, and a fragment at a later beat seeks `passDepthSeconds`
+ * plus the song time since, converted at that beat's tempo.
+ */
+function placedPassMedia(clip: Clip, anchorSeconds: number, depthSeconds: number, timeline: TempoTimeline): TakeMedia {
+    const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline);
+    const passStartTempo = timeline.tempoAtBeat(passStartBeat);
+    const depthBeats = (depthSeconds * passStartTempo) / 60;
+    return {
+        earliestBeat: Math.max(clip.startBeat, passStartBeat),
+        sourceStartBeat: passStartBeat - depthBeats,
+        offsetAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthBeats + (beat - passStartBeat);
+            }
+            const mediaSeconds = depthSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
+            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+    };
+}
 
 /**
  * The media a take plays, as one law for every consumer.
  *
- * A take that names `sourceOffsetBeats` is a loop-recorded pass: the material
- * that deep into the recording sounds `passStartBeats` after the clip's media
- * origin. Both are measured against the clip's media, so the pass follows every
- * edit that moves that media — a move or nudge carries it, a slip shifts it with
- * the rest of the content, and a trim leaves it where it was. A take without an
- * offset plays the clip's media as the clip places it.
+ * A take with no `sourceOffsetBeats` plays its clip's media as the clip places
+ * it. A loop pass plays its own material: placed at commit, an audio pass holds
+ * where it sounds and what it plays in media seconds, so it follows every edit
+ * that moves or slips its clip's content exactly as that content does, across
+ * any tempo change. Every other pass keeps main's law.
  *
- * `offsetAt(beat)` is the media offset a fragment starting at `beat` carries.
- * An audio reader converts it at the tempo of the fragment's own first beat,
- * so it is written from the media seconds the pass sounds at that beat — its
- * depth at its own start, plus the song time since — never by adding timeline
- * beats to a depth read at another tempo. A MIDI pass is placed in beats.
- *
- * `earliestBeat` is the first beat the take can sound. Every take is bounded by
- * its clip's start, so no take sounds outside its clip; a recording that began
- * inside the loop commits a clip opening at the loop start for exactly that
- * reason. A placed pass also never sounds before its own material, so the first
- * pass of such a recording waits for the record point. A pass recorded before
- * `passStartBeats` existed is bounded by its clip alone.
- * `sourceStartBeat` carries the loop-occurrence count for probability rolls.
+ * `earliestBeat` bounds every take by its clip's start, so no take sounds
+ * outside its clip, and a placed pass never sounds before its own material.
+ * `offsetAt(beat)` is written for a reader that converts a fragment's offset at
+ * the tempo of the fragment's own first beat.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'passStartBeats'>,
+    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds'>,
     clip: Clip,
     timeline: TempoTimeline
-): { earliestBeat: number; sourceStartBeat: number; offsetAt: (beat: number) => number } {
-    const clipOriginBeat = clipMediaOriginBeat(clip);
+): TakeMedia {
     if (take.sourceOffsetBeats === undefined) {
         return {
             earliestBeat: clip.startBeat,
@@ -41,28 +112,8 @@ export function resolveTakeMedia(
             offsetAt: (beat) => clipMediaOffsetAt(clip, beat, timeline),
         };
     }
-    const sourceOffsetBeats = take.sourceOffsetBeats;
-    const passShiftBeats = sourceOffsetBeats - (take.passStartBeats ?? 0);
-    const passStartBeat = take.passStartBeats === undefined ? clip.startBeat : clipOriginBeat + take.passStartBeats;
-    const earliestBeat = Math.max(clip.startBeat, passStartBeat);
-    const sourceStartBeat = clip.startBeat - passShiftBeats;
-    if (clip.type !== 'audio') {
-        return { earliestBeat, sourceStartBeat, offsetAt: (beat) => beat - (clipOriginBeat - passShiftBeats) };
+    if (clip.type !== 'audio' || take.passAnchorSeconds === undefined || take.passDepthSeconds === undefined) {
+        return legacyPassMedia(clip, take.sourceOffsetBeats, timeline);
     }
-    // The seconds into the media the pass sounds at its start, both read in
-    // reader units at that beat: a placed pass holds its depth there; a pass
-    // saved before placement existed starts at its clip's start, its depth
-    // added to the clip's own offset.
-    const passStartOffsetBeats =
-        take.passStartBeats === undefined ? (clip.audioOffsetBeats ?? 0) + sourceOffsetBeats : sourceOffsetBeats;
-    const passStartSeconds = (passStartOffsetBeats * 60) / timeline.tempoAtBeat(passStartBeat);
-    return {
-        earliestBeat,
-        sourceStartBeat,
-        offsetAt: (beat) => {
-            const mediaSeconds =
-                passStartSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat);
-            return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
-        },
-    };
+    return placedPassMedia(clip, take.passAnchorSeconds, take.passDepthSeconds, timeline);
 }

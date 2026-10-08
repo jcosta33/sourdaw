@@ -25,7 +25,7 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats', 'passStartBeats'] as const;
+const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats', 'passAnchorSeconds', 'passDepthSeconds'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 
 type HasExactKeysInput = {
@@ -89,9 +89,28 @@ function is_valid_take(value: unknown): value is Take {
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
         (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
-        // A pass recorded ahead of its media sounds before the media origin, so
-        // its placement may be negative.
-        (!('passStartBeats' in value) || is_finite_number(value.passStartBeats))
+        is_valid_pass_placement(value)
+    );
+}
+
+/**
+ * A placed pass carries its anchor and its depth together, and only beside the
+ * media depth that marks it a pass. A pass recorded ahead of its media sounds
+ * before the media begins, so its anchor may be negative; its material lies
+ * inside the recording, so its depth may not.
+ */
+function is_valid_pass_placement(value: object): boolean {
+    const hasAnchor = 'passAnchorSeconds' in value;
+    const hasDepth = 'passDepthSeconds' in value;
+    if (!hasAnchor && !hasDepth) {
+        return true;
+    }
+    return (
+        hasAnchor &&
+        hasDepth &&
+        'sourceOffsetBeats' in value &&
+        is_finite_number(value.passAnchorSeconds) &&
+        is_finite_non_negative_number(value.passDepthSeconds)
     );
 }
 
@@ -113,8 +132,9 @@ function normalize_take(take: Take): Take {
     if (take.sourceOffsetBeats !== undefined) {
         sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
     }
-    if (take.passStartBeats !== undefined) {
-        sanitized.passStartBeats = take.passStartBeats;
+    if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
+        sanitized.passAnchorSeconds = take.passAnchorSeconds;
+        sanitized.passDepthSeconds = take.passDepthSeconds;
     }
     return sanitized;
 }

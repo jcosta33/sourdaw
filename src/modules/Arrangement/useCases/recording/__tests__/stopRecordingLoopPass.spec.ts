@@ -177,7 +177,9 @@ describe('stopRecording during a loop recording', () => {
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0, 4]);
         // A MIDI pass sounds from its clip's start, bounded by it, so none is placed.
-        expect(writtenTakes().every((take) => !('passStartBeats' in take))).toBe(true);
+        expect(writtenTakes().every((take) => !('passAnchorSeconds' in take) && !('passDepthSeconds' in take))).toBe(
+            true
+        );
     });
 
     it('keeps a MIDI clip recorded inside the loop on its record point, with no media offset', () => {
@@ -200,7 +202,7 @@ describe('stopRecording during a loop recording', () => {
 
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0]);
-        expect(writtenTakes()[0]?.passStartBeats).toBeUndefined();
+        expect(writtenTakes()[0]?.passAnchorSeconds).toBeUndefined();
         // Its capture terminal places the clip as well.
         expect(writtenClip().startBeat).toBe(12);
     });

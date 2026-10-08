@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    placeTakeOnClipMedia,
-    startFirstPassAtRecordPoint,
-    type Take,
-    type TempoTimeline,
-} from '../../../models/TakeLane';
+import { placeTakeOnClipMedia, startFirstPassAtRecordPoint, type Take } from '../../../models/TakeLane';
+import { type TempoTimeline } from '../../../models/TempoTimeline';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { placeRecordingTakes } from '../placeRecordingTakes';
 
@@ -27,6 +23,7 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     readSecondsAtBeat: ({ beat }: { beat: number }) => beat / 2,
+    readBeatAtSamples: ({ samples }: { samples: number }) => samples * 2,
     readTempoAtBeat: () => 120,
 }));
 
@@ -38,13 +35,22 @@ function take(id: string, clipId: string, startBeat: number, endBeat: number, so
     return result;
 }
 
-const flat120: TempoTimeline = { secondsAtBeat: (beat) => beat / 2, tempoAtBeat: () => 120 };
+const flat120: TempoTimeline = {
+    secondsAtBeat: (beat) => beat / 2,
+    beatAtSeconds: (seconds) => seconds * 2,
+    tempoAtBeat: () => 120,
+};
 
 /** 120 BPM up to beat 10, 60 BPM after it. */
 const slowingAt10: TempoTimeline = {
     secondsAtBeat: (beat) => (beat <= 10 ? beat / 2 : 5 + (beat - 10)),
+    beatAtSeconds: (seconds) => (seconds <= 5 ? seconds * 2 : 10 + (seconds - 5)),
     tempoAtBeat: (beat) => (beat < 10 ? 120 : 60),
 };
+
+function placement(take: Take): [number, number | undefined, number | undefined] {
+    return [take.startBeat, take.passAnchorSeconds, take.passDepthSeconds];
+}
 
 describe('startFirstPassAtRecordPoint', () => {
     it('starts the first pass of a recording begun inside the loop at the record point', () => {
@@ -62,73 +68,74 @@ describe('startFirstPassAtRecordPoint', () => {
 });
 
 describe('placeTakeOnClipMedia', () => {
-    it('places a run-up pass at the loop start, its material the capture of that beat', () => {
+    it('anchors a run-up pass at the loop start, its material the capture of that beat', () => {
         // Loop [2,6) recorded from beat 1, the capture beginning 0.25 s (half a
-        // beat) earlier on a clip opening on its origin, 0.5.
+        // beat) earlier on a clip opening on that origin.
         const placed = placeTakeOnClipMedia(take('pass-2', 'rec', 2, 6, 5), {
             recordPointBeat: 1,
             mediaOriginSeconds: 0.25,
-            clipMediaOriginBeat: 0.5,
+            clipMediaOriginSeconds: 0.25,
             timeline: flat120,
         });
 
-        expect(placed.passStartBeats).toBe(1.5);
-        expect(placed.sourceOffsetBeats).toBe(5.5);
+        // Beat 2 sounds 0.75 s into the clip's media; the lap began 2.75 s in.
+        expect(placement(placed)).toEqual([2, 0.75, 2.75]);
+        // The minted depth stays as the recorder wrote it.
+        expect(placed.sourceOffsetBeats).toBe(5);
     });
 
-    it('places the passes of a recording begun inside the loop against a clip opening at the loop start', () => {
+    it('anchors the passes of a recording begun inside the loop against a clip opening at the loop start', () => {
         // Loop [8,16) recorded from beat 12 with no latency: the clip opens at 8
-        // with a media offset of -4, so its media origin is 12.
-        const input = { recordPointBeat: 12, mediaOriginSeconds: 6, clipMediaOriginBeat: 12, timeline: flat120 };
+        // with a media offset of -4, so its media begins at 6 s, on beat 12.
+        const input = { recordPointBeat: 12, mediaOriginSeconds: 6, clipMediaOriginSeconds: 6, timeline: flat120 };
 
-        const pass1 = placeTakeOnClipMedia(take('pass-1', 'rec', 8, 16, 0), input);
-        const pass2 = placeTakeOnClipMedia(take('pass-2', 'rec', 8, 16, 4), input);
-        const pass3 = placeTakeOnClipMedia(take('pass-3', 'rec', 8, 16, 12), input);
-
-        expect([pass1.startBeat, pass1.sourceOffsetBeats, pass1.passStartBeats]).toEqual([12, 0, 0]);
-        expect([pass2.startBeat, pass2.sourceOffsetBeats, pass2.passStartBeats]).toEqual([8, 4, -4]);
-        expect([pass3.startBeat, pass3.sourceOffsetBeats, pass3.passStartBeats]).toEqual([8, 12, -4]);
+        expect(placement(placeTakeOnClipMedia(take('pass-1', 'rec', 8, 16, 0), input))).toEqual([12, 0, 0]);
+        expect(placement(placeTakeOnClipMedia(take('pass-2', 'rec', 8, 16, 4), input))).toEqual([8, -2, 2]);
+        expect(placement(placeTakeOnClipMedia(take('pass-3', 'rec', 8, 16, 12), input))).toEqual([8, -2, 6]);
     });
 
-    it('measures both terms in the clip’s offset unit across a tempo change', () => {
+    it('measures anchor and depth in seconds across a tempo change', () => {
         // Loop [8,16), recorded from beat 12 at 60 BPM with 20 ms of latency,
-        // the tempo having dropped from 120 at beat 10. The capture began at
-        // 6.98 s; the clip opens at 8, entering its media at
-        // (4 − 6.98) s × 120/60 = −5.96, so its media origin reads 13.96.
+        // the tempo having dropped from 120 at beat 10: the capture and the
+        // clip's media both begin at 6.98 s.
         const input = {
             recordPointBeat: 12,
             mediaOriginSeconds: 6.98,
-            clipMediaOriginBeat: 13.96,
+            clipMediaOriginSeconds: 6.98,
             timeline: slowingAt10,
         };
 
-        const pass1 = placeTakeOnClipMedia(take('pass-1', 'rec', 8, 16, 0), input);
-        const pass2 = placeTakeOnClipMedia(take('pass-2', 'rec', 8, 16, 4), input);
+        const [pass1Start, pass1Anchor, pass1Depth] = placement(
+            placeTakeOnClipMedia(take('pass-1', 'rec', 8, 16, 0), input)
+        );
+        const [pass2Start, pass2Anchor, pass2Depth] = placement(
+            placeTakeOnClipMedia(take('pass-2', 'rec', 8, 16, 4), input)
+        );
 
-        // Pass 1 sounds from the record point, 0.02 s into the media at 60 BPM.
-        expect(pass1.startBeat).toBe(12);
-        expect(pass1.passStartBeats).toBeCloseTo(-1.96, 9);
-        expect(pass1.sourceOffsetBeats).toBeCloseTo(0.02, 9);
-        // Pass 2 sounds from the loop start, at 120 BPM, on what was captured
-        // when the playhead wrapped: 4 s of 60 BPM after the record point.
-        expect(pass2.startBeat).toBe(8);
-        expect(pass2.passStartBeats).toBeCloseTo(-5.96, 9);
-        expect(pass2.sourceOffsetBeats).toBeCloseTo(4.02 * 2, 9);
+        // Pass 1 sounds from the record point, 0.02 s into the media.
+        expect(pass1Start).toBe(12);
+        expect(pass1Anchor).toBeCloseTo(0.02, 9);
+        expect(pass1Depth).toBeCloseTo(0.02, 9);
+        // Pass 2 sounds from the loop start, 2.98 s before the media begins,
+        // on what was captured when the playhead wrapped: 4 s of 60 BPM after
+        // the record point.
+        expect(pass2Start).toBe(8);
+        expect(pass2Anchor).toBeCloseTo(-2.98, 9);
+        expect(pass2Depth).toBeCloseTo(4.02, 9);
     });
 
     it('walks whole loops through the tempo change inside the loop', () => {
         // Pass 3 of the same recording: the 4 s first lap, then one whole lap
-        // of 1 s at 120 BPM and 6 s at 60 BPM, 11.02 s into the media, read at
-        // the loop start's 120 BPM.
+        // of 1 s at 120 BPM and 6 s at 60 BPM, 11.02 s into the media.
         const placed = placeTakeOnClipMedia(take('pass-3', 'rec', 8, 16, 12), {
             recordPointBeat: 12,
             mediaOriginSeconds: 6.98,
-            clipMediaOriginBeat: 13.96,
+            clipMediaOriginSeconds: 6.98,
             timeline: slowingAt10,
         });
 
-        expect(placed.sourceOffsetBeats).toBeCloseTo(22.04, 9);
-        expect(placed.passStartBeats).toBeCloseTo(-5.96, 9);
+        expect(placed.passDepthSeconds).toBeCloseTo(11.02, 9);
+        expect(placed.passAnchorSeconds).toBeCloseTo(-2.98, 9);
     });
 
     it('measures a later pass through whole loops of the tempo map', () => {
@@ -137,21 +144,21 @@ describe('placeTakeOnClipMedia', () => {
         const placed = placeTakeOnClipMedia(take('pass-3', 'rec', 16, 24, 20), {
             recordPointBeat: 12,
             mediaOriginSeconds: 3.98,
-            clipMediaOriginBeat: 9.98,
+            clipMediaOriginSeconds: 3.98,
             timeline: slowingAt10,
         });
 
-        expect(placed.sourceOffsetBeats).toBeCloseTo(4 + 16 + 3.02, 9);
-        expect(placed.passStartBeats).toBeCloseTo(6.02, 9);
+        expect(placed.passDepthSeconds).toBeCloseTo(4 + 16 + 3.02, 9);
+        expect(placed.passAnchorSeconds).toBeCloseTo(7.02, 9);
     });
 
-    it('places no take that plays its clip’s own media on a capture with no lead', () => {
+    it('places no take that plays its clip’s own media', () => {
         const opening = take('take-1', 'rec', 1, 5);
         expect(
             placeTakeOnClipMedia(opening, {
                 recordPointBeat: 1,
-                mediaOriginSeconds: 0.5,
-                clipMediaOriginBeat: 1,
+                mediaOriginSeconds: 0.25,
+                clipMediaOriginSeconds: 0.25,
                 timeline: flat120,
             })
         ).toBe(opening);
@@ -163,7 +170,7 @@ describe('placeRecordingTakes', () => {
         vi.clearAllMocks();
     });
 
-    it('places only the takes of the recording clip', () => {
+    it('places only the passes of the recording clip', () => {
         mocks.takeLaneStoreValue.value = {
             lanes: [
                 {
@@ -177,13 +184,18 @@ describe('placeRecordingTakes', () => {
 
         // The capture began half a beat before the record point, on a clip
         // opening on that origin.
-        placeRecordingTakes({ clipId: 'rec', recordPointBeat: 1, mediaOriginSeconds: 0.25, clipMediaOriginBeat: 0.5 });
+        placeRecordingTakes({
+            clipId: 'rec',
+            recordPointBeat: 1,
+            mediaOriginSeconds: 0.25,
+            clipMediaOriginSeconds: 0.25,
+        });
 
         const written = mocks.set.mock.calls[0]![0].lanes[0]!.takes;
-        expect(written.map((entry) => [entry.id, entry.sourceOffsetBeats, entry.passStartBeats])).toEqual([
-            ['first', 0.5, 0.5],
-            ['pass-1', 1.5, 1.5],
-            ['other', 3, undefined],
+        expect(written.map((entry) => [entry.id, entry.passAnchorSeconds, entry.passDepthSeconds])).toEqual([
+            ['first', undefined, undefined],
+            ['pass-1', 0.75, 0.75],
+            ['other', undefined, undefined],
         ]);
     });
 });

@@ -550,7 +550,7 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(clipIds().filter((id) => id === provisional.id)).toHaveLength(1);
     });
 
-    it('commits the placed take offsets in the one entry and replays them on redo', async () => {
+    it('commits the placed passes in the one entry and replays them on redo', async () => {
         transportStore.set({ ...transportStore.value!, tempo: 120 });
         const [provisional] = startRecording(4);
         if (!provisional) {
@@ -565,30 +565,34 @@ describe('recording gesture commit (issue #4439)', () => {
             sourceOffsetBeats: 0,
         });
         flushAutomergeStorageWrites();
-        const recordedOffsets = (): (number | undefined)[] =>
-            (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.sourceOffsetBeats));
-        const recordedPlacements = (): (number | undefined)[] =>
-            (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.passStartBeats));
+        const recordedPlacements = (): (number | undefined)[][] =>
+            (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
+                lane.takes.map((take) => [take.passAnchorSeconds, take.passDepthSeconds])
+            );
 
         // The capture began a quarter second (half a beat at 120 BPM) before the
-        // record point, and the clip opens on that origin.
+        // record point, and the clip opens on that origin. The take opened with
+        // the recording plays the clip's own media and is not placed; the pass
+        // starts a quarter second into the clip's media and into the recording.
         await commitRecording(
             { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 },
             { provisionalStartBeat: 4, mediaOriginSeconds: 1.75 }
         );
         flushAutomergeStorageWrites();
+        const placed = [
+            [undefined, undefined],
+            [0.25, 0.25],
+        ];
 
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
-        expect(recordedOffsets()).toEqual([0.5, 0.5]);
-        expect(recordedPlacements()).toEqual([0.5, 0.5]);
+        expect(recordedPlacements()).toEqual(placed);
 
         await undo();
         flushAutomergeStorageWrites();
-        expect(recordedOffsets()).toEqual([]);
+        expect(recordedPlacements()).toEqual([]);
 
         await redo();
         flushAutomergeStorageWrites();
-        expect(recordedOffsets()).toEqual([0.5, 0.5]);
-        expect(recordedPlacements()).toEqual([0.5, 0.5]);
+        expect(recordedPlacements()).toEqual(placed);
     });
 });

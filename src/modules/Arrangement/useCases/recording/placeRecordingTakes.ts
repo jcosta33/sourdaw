@@ -1,7 +1,6 @@
-import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
-
 import { placeTakeOnClipMedia } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
 type PlaceRecordingTakesInput = {
     clipId: string;
@@ -9,17 +8,12 @@ type PlaceRecordingTakesInput = {
     recordPointBeat: number;
     /** The song time the capture's first sample sounds on. */
     mediaOriginSeconds: number;
-    /** The committed clip's media origin: its start less its media offset. */
-    clipMediaOriginBeat: number;
-};
-
-const timeline = {
-    secondsAtBeat: (beat: number) => readSecondsAtBeat({ beat }),
-    tempoAtBeat: (beat: number) => readTempoAtBeat({ beat }),
+    /** The song time the committed clip's media begins on, as the readers read the clip. */
+    clipMediaOriginSeconds: number;
 };
 
 /**
- * Place every take of an audio recording against its committed clip before the
+ * Place every pass of an audio recording against its committed clip before the
  * commit, without a history entry. The takes are still provisional; the commit
  * captures the live lane state into its redo, so the placed takes land in the
  * same single entry the clip does.
@@ -29,7 +23,7 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
     if (!state) {
         return;
     }
-    const placement = { ...input, timeline };
+    const placement = { ...input, timeline: liveTempoTimeline };
     takeLaneStore.set({
         lanes: state.lanes.map((lane) => ({
             ...lane,

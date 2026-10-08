@@ -45,9 +45,14 @@ function registerAndHydrateProductionHandlers(): void {
     registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
 }
 
-/** A loop pass as commit leaves it, placed against its clip's media origin. */
-function passTake(id: string, startBeat: number, endBeat: number, sourceOffsetBeats: number, passStartBeats: number) {
-    return { ...createTake('clip-1', id, startBeat, endBeat, sourceOffsetBeats), id, passStartBeats };
+/** A loop pass as commit leaves it, held in its clip's media seconds; the minted depth is two beats a second. */
+function passTake(id: string, startBeat: number, endBeat: number, depthSeconds: number, anchorSeconds: number) {
+    return {
+        ...createTake('clip-1', id, startBeat, endBeat, depthSeconds * 2),
+        id,
+        passAnchorSeconds: anchorSeconds,
+        passDepthSeconds: depthSeconds,
+    };
 }
 
 /** Loop [0,4) recorded from beat 0 for three passes, the first four beats comped to pass 2. */
@@ -56,8 +61,9 @@ function seedCompedLoopRecording(): void {
     const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     const takes: Take[] = [
+        // At the session's 120 BPM a loop lap of 4 beats is 2 s.
         passTake('pass-1', 0, 4, 0, 0),
-        passTake('pass-2', 0, 4, 4, 0),
+        passTake('pass-2', 0, 4, 2, 0),
         { ...createTake('clip-1', 'manual', 0, 12), id: 'manual' },
     ];
     takeLaneStore.set({

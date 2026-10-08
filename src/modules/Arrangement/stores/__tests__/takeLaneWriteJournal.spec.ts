@@ -79,7 +79,13 @@ describe('takeLaneWriteJournal', () => {
                     automationLaneId: undefined,
                     takes: firstLane.takes.map((take) => {
                         if (take.id === 'take-a') {
-                            return { ...take, name: 'A local', sourceOffsetBeats: 2, passStartBeats: -3 };
+                            return {
+                                ...take,
+                                name: 'A local',
+                                sourceOffsetBeats: 2,
+                                passAnchorSeconds: -1.5,
+                                passDepthSeconds: 1,
+                            };
                         }
                         return structuredClone(take);
                     }),
@@ -116,7 +122,8 @@ describe('takeLaneWriteJournal', () => {
         expect(replay.value?.lanes[0]?.takes[0]).toMatchObject({
             name: 'A local',
             sourceOffsetBeats: 2,
-            passStartBeats: -3,
+            passAnchorSeconds: -1.5,
+            passDepthSeconds: 1,
         });
         expect(replay.value?.lanes[0]?.activeCompRegions).toEqual(authority.lanes[0]?.activeCompRegions);
         expect(replay.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');

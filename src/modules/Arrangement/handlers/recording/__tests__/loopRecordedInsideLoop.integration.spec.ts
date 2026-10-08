@@ -196,7 +196,8 @@ describe('MIDI loop recordings under Delete Time', () => {
 
             expect(recordedClip()).toMatchObject({ startBeat: 4, endBeat: 32 });
             expect(recordedClip()).not.toHaveProperty('midiOffsetBeats');
-            expect(passTake('Take 3')).not.toHaveProperty('passStartBeats');
+            expect(passTake('Take 3')).not.toHaveProperty('passAnchorSeconds');
+            expect(passTake('Take 3')).not.toHaveProperty('passDepthSeconds');
         });
 
         it('keeps the comped pass sounding its material when time inside the loop is deleted', async () => {

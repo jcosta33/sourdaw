@@ -49,6 +49,7 @@ import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { renderTempoTimeline } from './renderTempoTimeline';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
@@ -222,7 +223,7 @@ export async function scheduleTrackClips({
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
     // The map comp resolution writes each fragment's offset against.
-    const tempoTimeline = { secondsAtBeat: projectBeatToSeconds, tempoAtBeat: resolveClipTempo };
+    const tempoTimeline = renderTempoTimeline(projectBeatToSeconds, resolveClipTempo);
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = captured
         ? getCompensationDelay(track.id, undefined, undefined, captured.latency)

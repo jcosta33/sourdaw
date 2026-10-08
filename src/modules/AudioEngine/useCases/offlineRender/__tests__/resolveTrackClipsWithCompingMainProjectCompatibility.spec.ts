@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
@@ -100,5 +101,50 @@ describe('resolveTrackClipsWithComping on a project saved before pass placement 
         );
 
         expect(resolved).toEqual(asMain);
+    });
+});
+
+describe('resolveTrackClipsWithComping off the beat grid at a constant tempo', () => {
+    afterEach(() => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+    });
+
+    it('returns main’s offsets to the last bit, and the clip itself where nothing is displaced', () => {
+        transportStore.set({ ...transportStore.value!, tempo: 140 });
+        const clip = recording(3.3, 10, 0.1);
+        const mainTake = (id: string, sourceOffsetBeats: number) => ({
+            id,
+            clipId: 'rec',
+            name: id,
+            startBeat: 3.3,
+            endBeat: 10,
+            selected: false,
+            sourceOffsetBeats,
+        });
+        const state: TakeLaneStoreState = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [mainTake('from-start', 0), mainTake('deeper', 0.25)],
+                    activeCompRegions: [
+                        { startBeat: 3.3, endBeat: 4, takeId: 'from-start' },
+                        { startBeat: 4, endBeat: 5, takeId: 'deeper' },
+                    ],
+                },
+            ],
+        };
+
+        const [fromStart, deeper, gap] = resolveTrackClipsWithComping('t1', [clip], state);
+
+        expect(fromStart?.audioOffsetBeats).toBe(0.1);
+        expect({ ...fromStart, endBeat: clip.endBeat }).toStrictEqual({
+            ...clip,
+            regionStartBeat: 3.3,
+            regionEndBeat: 4,
+            sourceStartBeat: 3.3,
+        });
+        expect(deeper?.audioOffsetBeats).toBe(0.1 + (4 - (3.3 - 0.25)));
+        expect(gap?.audioOffsetBeats).toBe(0.1 + (5 - 3.3));
     });
 });

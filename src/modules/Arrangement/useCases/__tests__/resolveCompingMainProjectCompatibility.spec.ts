@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { type Clip } from '../../models/Track';
@@ -41,7 +43,7 @@ function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number
     return clip;
 }
 
-/** The comp fragments a take lane resolved to before `passStartBeats` existed, as main's resolver computed them. */
+/** The comp fragments a take lane resolved to before pass placement existed, as main's resolver computed them. */
 function resolveCompFragmentsAsMain(lane: TakeLane, clip: Clip) {
     return lane.activeCompRegions.flatMap((region) => {
         const take = lane.takes.find((candidate) => candidate.id === region.takeId);
@@ -174,5 +176,52 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
         );
 
         expect(resolved).toEqual(asMain);
+    });
+});
+
+describe('resolveClipsWithComping off the beat grid at a constant tempo', () => {
+    afterEach(() => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+    });
+
+    it('returns main’s offsets to the last bit, and the clip itself where nothing is displaced', () => {
+        transportStore.set({ ...transportStore.value!, tempo: 140 });
+        const clip = recording(3.3, 10, 0.1);
+        const mainTake = (id: string, sourceOffsetBeats: number) => ({
+            id,
+            clipId: 'rec',
+            name: id,
+            startBeat: 3.3,
+            endBeat: 10,
+            selected: false,
+            sourceOffsetBeats,
+        });
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [mainTake('from-start', 0), mainTake('deeper', 0.25)],
+                    activeCompRegions: [
+                        { startBeat: 3.3, endBeat: 4, takeId: 'from-start' },
+                        { startBeat: 4, endBeat: 5, takeId: 'deeper' },
+                    ],
+                },
+            ],
+        };
+
+        const [fromStart, deeper, gap] = resolveClipsWithComping('t1', [clip]);
+
+        // Main's arithmetic: the clip's own offset plus the displacement from
+        // the media origin, `clip.startBeat - sourceOffsetBeats`.
+        expect(fromStart?.audioOffsetBeats).toBe(0.1);
+        expect({ ...fromStart, endBeat: clip.endBeat }).toStrictEqual({
+            ...clip,
+            regionStartBeat: 3.3,
+            regionEndBeat: 4,
+            sourceStartBeat: 3.3,
+        });
+        expect(deeper?.audioOffsetBeats).toBe(0.1 + (4 - (3.3 - 0.25)));
+        expect(gap?.audioOffsetBeats).toBe(0.1 + (5 - 3.3));
     });
 });

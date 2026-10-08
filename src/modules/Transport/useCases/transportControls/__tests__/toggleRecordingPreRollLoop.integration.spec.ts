@@ -19,6 +19,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
@@ -473,6 +474,45 @@ describe('a loop recording across a tempo change', () => {
 
             expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 1), 9);
             expect(fileSecondsAt(scenario, 15)).toBeCloseTo(capturedOnLap(15, 1), 9);
+        });
+
+        // Pass 1 is the clip's own material from the record point on, so once
+        // the clip is slipped or moved, comping it must sound exactly what the
+        // uncomped clip sounds there — silence where the content has not yet
+        // reached the pass.
+        it.each([
+            {
+                name: 'its content slipped a beat later into the media',
+                edit: (clipId: string): AppAction => ({
+                    type: 'slipClipContent',
+                    payload: { clipId, clipType: 'audio', offset: -5.96 + 1 },
+                }),
+            },
+            {
+                name: 'the clip moved two beats earlier',
+                edit: (clipId: string): AppAction => ({
+                    type: 'moveClip',
+                    payload: { clipId, trackId: TRACK_ID, startBeat: 6 },
+                }),
+            },
+        ])('plays pass 1 with the clip’s own content once $name', async ({ edit }) => {
+            await recordLoopAcrossTempoChange(scenario);
+            await executeAppAction(edit(recordedClip().id));
+            flushAutomergeStorageWrites();
+            const beats = [11, 11.5, 12, 14, 15.5];
+            const uncomped = beats.map((beat) => fileSecondsAt(scenario, beat));
+
+            await compLoop(scenario, 'Take 2');
+
+            for (const [index, beat] of beats.entries()) {
+                const content = uncomped[index]!;
+                if (content < 0) {
+                    expect(fileSecondsAt(scenario, beat)).toBeNull();
+                } else {
+                    expect(fileSecondsAt(scenario, beat)).toBeCloseTo(content, 9);
+                }
+            }
+            expect(uncomped.filter((content) => content !== null && content >= 0).length).toBeGreaterThanOrEqual(4);
         });
     });
 

@@ -1,12 +1,13 @@
-import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
 /**
- * The tempo map comp resolution reads: song seconds at a beat, and the flat
- * tempo governing it. It is the map the readers convert each resolved offset
- * against, so a render hands in its own.
+ * The tempo map comp resolution reads: song seconds at a beat, its inverse,
+ * and the flat tempo governing a beat. It is the map the readers convert each
+ * resolved offset against, so a render hands in its own.
  */
 export type ResolutionTempoTimeline = {
     secondsAtBeat: (beat: number) => number;
+    beatAtSeconds: (seconds: number) => number;
     tempoAtBeat: (beat: number) => number;
 };
 
@@ -16,5 +17,6 @@ export type ResolutionTempoTimeline = {
  */
 export const liveTempoTimeline: ResolutionTempoTimeline = {
     secondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+    beatAtSeconds: (seconds) => readBeatAtSamples({ samples: seconds, sampleRate: 1 }),
     tempoAtBeat: (beat) => readTempoAtBeat({ beat }),
 };

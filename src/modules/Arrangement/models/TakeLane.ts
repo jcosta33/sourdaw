@@ -1,3 +1,5 @@
+import { type TempoTimeline } from './TempoTimeline';
+
 export type Take = {
     id: string;
     clipId: string;
@@ -7,37 +9,38 @@ export type Take = {
     selected: boolean;
     /**
      * Where this take's material begins inside its source clip's recorded
-     * media, from the media's first sample. Loop recording writes every pass
-     * into one continuous clip, so each wrap take names its own pass's offset
-     * and comp resolution reads that pass's material instead of the first pass
-     * again. Absent means the clip's own origin — flat recordings, manual takes,
-     * and takes predating the field.
+     * media, in beats from the clip's media origin. Loop recording writes every
+     * pass into one continuous clip, so each wrap take names its own pass's
+     * offset and comp resolution reads that pass's material instead of the first
+     * pass again. Absent means the clip's own origin — flat recordings, manual
+     * takes, and takes predating the field.
      *
-     * An audio pass placed at commit (one carrying `passStartBeats`) holds it in
-     * the unit the readers seek in, like a clip's `audioOffsetBeats`: the media
-     * seconds before its material, converted at the tempo governing the beat
-     * the pass begins sounding on, so a fragment entering there seeks to exactly
-     * that material whatever the tempo map does. Any other pass holds beats
-     * from the media's first sample.
+     * An audio pass placed at commit keeps the depth the recorder minted, in
+     * unwrapped beats from the record point, and sounds by its two seconds
+     * fields instead.
      */
     sourceOffsetBeats?: number;
     /**
-     * Where a pass begins sounding, from its clip's media origin
-     * (`clipMediaOriginBeat`: the clip start less its media offset): the
-     * material at `sourceOffsetBeats` plays there. It is measured at commit
-     * against the committed clip's own media origin, in the same unit, so the
-     * pass starts exactly where it was recorded, and it is relative to the
-     * clip's media, never the timeline, so moving, nudging, slipping or
-     * trimming the clip carries the pass with it. Negative when the pass sounds
-     * before the media begins, which a recording started inside the loop gives
-     * every pass after the first; its clip then opens at the loop start with a
-     * negative media offset, so the pass still sounds inside it.
-     *
-     * Only audio loop recordings carry it, and only beside `sourceOffsetBeats`.
-     * Absent means a MIDI pass or a pass recorded before the field existed,
-     * which sounds from its clip's start, bounded by its clip alone.
+     * Where a placed audio pass starts sounding, as a second of its clip's own
+     * media: the beat it starts on is the beat the clip's media reaches this
+     * second. Measured against the clip's media, never the timeline, so a move,
+     * a nudge or a slip of the clip carries the pass exactly as it carries the
+     * clip's own content, across any tempo change. Negative when the pass
+     * sounds before the media begins, which a recording begun inside the loop
+     * gives every pass after the first; its clip then opens at the loop start
+     * with a negative media offset, so the pass still sounds inside it.
      */
-    passStartBeats?: number;
+    passAnchorSeconds?: number;
+    /**
+     * The second of the recording at which a placed audio pass's material
+     * begins: what sounds at `passAnchorSeconds`.
+     *
+     * The two seconds fields come together, only on audio loop passes placed
+     * at commit and only beside `sourceOffsetBeats`. Absent means a MIDI pass
+     * or a pass recorded before placement existed, which keeps main's law: its
+     * material sounds from its clip's start, bounded by its clip alone.
+     */
+    passDepthSeconds?: number;
 };
 
 export type TakeLane = {
@@ -91,19 +94,16 @@ export function startFirstPassAtRecordPoint(take: Take, recordPointBeat: number)
     return { ...take, startBeat: recordPointBeat };
 }
 
-/** The tempo map as pass placement and comp resolution read it: song seconds at a beat, and the flat tempo governing it. */
-export type TempoTimeline = {
-    secondsAtBeat: (beat: number) => number;
-    tempoAtBeat: (beat: number) => number;
-};
-
 type PassPlacementInput = {
     /** The beat the recorder opened the clip on, which every staged take was minted against. */
     recordPointBeat: number;
     /** The song time the capture's first sample sounds on. */
     mediaOriginSeconds: number;
-    /** The committed clip's media origin: its start less its media offset. */
-    clipMediaOriginBeat: number;
+    /**
+     * The song time the committed clip's media begins on, read the way the
+     * readers read the clip: its start, less its offset at its start's tempo.
+     */
+    clipMediaOriginSeconds: number;
     timeline: TempoTimeline;
 };
 
@@ -134,34 +134,31 @@ function secondsIntoRecording(take: Take, recordPointBeat: number, timeline: Tem
 }
 
 /**
- * Place an audio recording take against its committed clip's media.
+ * Place an audio loop pass against its committed clip's media, in seconds.
  *
- * The take is given the beat it starts sounding on, `passStartBeats` from the
- * clip's media origin, and the media its material begins at, `sourceOffsetBeats`.
- * Both are written in the clip's own offset unit, the one the readers seek in:
- * the placement is measured against `clipMediaOriginBeat` of the clip as it
- * commits, and the media depth is the seconds the capture had run when the
- * pass began, converted at the tempo governing the beat it sounds on. A comp
- * fragment entering the pass at its start therefore seeks to exactly the
- * material recorded there, across any tempo change.
+ * The pass is given the second of the clip's own media at which it starts
+ * sounding, `passAnchorSeconds`, and the second of the recording at which its
+ * material begins, `passDepthSeconds`: the time the capture had run when that
+ * lap began. Both are media time, so whatever later moves or slips the clip's
+ * content, or whatever tempo the beats between sound at, the pass stays on the
+ * material the clip holds there.
  *
- * A take with no media depth on a capture that began exactly at the record
- * point plays the clip's own media and is returned as it is.
+ * A take that names no media depth is not a pass: it plays the clip's own
+ * media as the clip places it and is returned as it is.
  */
 export function placeTakeOnClipMedia(take: Take, input: PassPlacementInput): Take {
-    const { recordPointBeat, mediaOriginSeconds, clipMediaOriginBeat, timeline } = input;
-    const placed = startFirstPassAtRecordPoint(take, recordPointBeat);
-    const mediaSeconds =
-        secondsIntoRecording(take, recordPointBeat, timeline) +
-        timeline.secondsAtBeat(recordPointBeat) -
-        mediaOriginSeconds;
-    if (placed.sourceOffsetBeats === undefined && mediaSeconds === 0) {
-        return placed;
+    const { recordPointBeat, mediaOriginSeconds, clipMediaOriginSeconds, timeline } = input;
+    if (take.sourceOffsetBeats === undefined) {
+        return take;
     }
+    const placed = startFirstPassAtRecordPoint(take, recordPointBeat);
     return {
         ...placed,
-        sourceOffsetBeats: (mediaSeconds * timeline.tempoAtBeat(placed.startBeat)) / 60,
-        passStartBeats: placed.startBeat - clipMediaOriginBeat,
+        passAnchorSeconds: timeline.secondsAtBeat(placed.startBeat) - clipMediaOriginSeconds,
+        passDepthSeconds:
+            secondsIntoRecording(take, recordPointBeat, timeline) +
+            timeline.secondsAtBeat(recordPointBeat) -
+            mediaOriginSeconds,
     };
 }
 

@@ -1,18 +1,10 @@
-import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
-
-import { type TempoTimeline } from '../models/TakeLane';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
 import { clipMediaOffsetAt } from './clipMediaOffsetAt';
+import { liveTempoTimeline } from './liveTempoTimeline';
 import { resolveTakeMedia } from './resolveTakeMedia';
 import { withMediaOffsetBeats } from './withMediaOffsetBeats';
-
-/** The live tempo map, which the Web Audio scheduler converts every offset against. */
-const liveTempoTimeline: TempoTimeline = {
-    secondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
-    tempoAtBeat: (beat) => readTempoAtBeat({ beat }),
-};
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;
