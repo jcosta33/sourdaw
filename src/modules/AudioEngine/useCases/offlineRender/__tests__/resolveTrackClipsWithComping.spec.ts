@@ -47,9 +47,13 @@ describe('resolveTrackClipsWithComping', () => {
             ],
         };
         const source = { ...testClip({ id: 'src', endBeat: 12, audioOffsetBeats: 0 }), audioOffsetSeconds: 0 };
-        const tail = resolveTrackClipsWithComping('t1', [source]).find((clip) => clip.startBeat === 8);
-        expect(tail).toBeDefined();
         const beatToSeconds = (beat: number): number => (beat <= 4 ? beat / 2 : 2 + beat - 4);
+        const resolveTempoAtBeat = (beat: number): number => (beat < 4 ? 120 : 60);
+        const tail = resolveTrackClipsWithComping('t1', [source], undefined, {
+            projectBeatToSeconds: beatToSeconds,
+            resolveTempoAtBeat,
+        }).find((clip) => clip.startBeat === 8);
+        expect(tail).toBeDefined();
         const playbacks = projectOfflineAudioClipPlaybacks({
             clip: tail!,
             bufferDurationSeconds: 20,
@@ -58,7 +62,7 @@ describe('resolveTrackClipsWithComping', () => {
             durationSeconds: 20,
             compensationDelay: 0,
             projectBeatToSeconds: beatToSeconds,
-            resolveTempoAtBeat: (beat) => (beat < 4 ? 120 : 60),
+            resolveTempoAtBeat,
         });
         expect(playbacks[0]?.bufferOffsetSec).toBe(6);
     });

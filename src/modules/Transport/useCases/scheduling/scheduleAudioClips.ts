@@ -10,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import {
     MICRO_FADE_SECONDS,
     clampClipFadeInDurationSeconds,
@@ -208,7 +209,6 @@ export function scheduleAudioClips(
             // the export prints the right one.
             const clipGain = clip.gain;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
-            const clipBeatsPerSecond = clipTempo / 60;
 
             // Single source of truth for beat → audio-context time on the timeline.
             // Every timeline quantity — iteration start, iteration length, fade
@@ -217,8 +217,8 @@ export function scheduleAudioClips(
             // dividing by the tempo at the playhead: with a tempo change inside
             // the look-ahead the flat rate placed the clip at the wrong instant
             // and sized it wrongly, drifting against MIDI, which converts through
-            // the map. Buffer-*content* offsets stay on `clipBeatsPerSecond`, the
-            // rate the audio itself was rendered at.
+            // the map. Source entry uses canonical seconds, or converts a
+            // legacy beat alias at this clip's start tempo.
             function beatToAudioTime(beat: number): number {
                 return (
                     getCurrentTime() +
@@ -311,8 +311,7 @@ export function scheduleAudioClips(
 
                 const iterStartTime = beatToAudioTime(iterStartBeat);
                 const now = getCurrentTime();
-                const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-                const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
+                const clipAudioOffsetSeconds = resolveAudioSourceOffsetSeconds(clip, clipTempo);
                 // A negative offset — reachable and unfloored from both write
                 // paths, `slipClipContent` and a leftward left-edge drag in
                 // `trimClipStart` — puts the clip's head before the start of

@@ -1,9 +1,23 @@
-import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 
 export type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
     sourceStartBeat: number;
+};
+
+type SourceTime = {
+    projectBeatToSeconds: (beat: number) => number;
+    resolveTempoAtBeat: (beat: number) => number;
+};
+
+type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
+
+const liveSourceTime: SourceTime = {
+    projectBeatToSeconds: (beat) => readSecondsAtBeat({ beat }),
+    resolveTempoAtBeat: (beat) => readTempoAtBeat({ beat }),
 };
 
 /**
@@ -26,12 +40,31 @@ export type ResolvedClip = Track['clips'][number] & {
  * Mirrors the web resolver (`Arrangement/useCases/resolveComping.ts`) so both
  * renderers read the same material for the same fragment (#2225).
  */
-function withFragmentOffset(clip: Track['clips'][number], displacement: number): Track['clips'][number] {
-    if (displacement === 0) {
+function withFragmentOffset(
+    clip: Track['clips'][number],
+    displacement: number,
+    fragmentStartBeat: number,
+    time: SourceTime,
+    take?: Take
+): Track['clips'][number] {
+    if (displacement === 0 && (take?.sourceOffsetSeconds ?? take?.sourceOffsetBeats ?? 0) === 0) {
         return clip;
     }
     if (clip.type === 'audio') {
-        return { ...clip, audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement };
+        const tempoAtStart = time.resolveTempoAtBeat(clip.startBeat);
+        const entrySeconds = resolveAudioSourceOffsetSeconds(clip, tempoAtStart);
+        const takeDepthSeconds = resolveAudioSourceOffsetSeconds(
+            { audioOffsetSeconds: take?.sourceOffsetSeconds, audioOffsetBeats: take?.sourceOffsetBeats },
+            tempoAtStart
+        );
+        const elapsedSeconds = time.projectBeatToSeconds(fragmentStartBeat) - time.projectBeatToSeconds(clip.startBeat);
+        const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
+        return {
+            ...clip,
+            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement,
+            audioOffsetSeconds:
+                getAudioSourcePositionSeconds(entrySeconds, elapsedSeconds, stretchRatio) + takeDepthSeconds,
+        };
     }
     return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
 }
@@ -49,7 +82,8 @@ function withFragmentOffset(clip: Track['clips'][number], displacement: number):
 export function resolveTrackClipsWithComping(
     trackId: string,
     clips: Track['clips'],
-    laneState = takeLaneStore.value
+    laneState = takeLaneStore.value,
+    time: SourceTime = liveSourceTime
 ): ResolvedClip[] {
     if (!laneState) {
         return clips.map((clip) => ({
@@ -93,7 +127,7 @@ export function resolveTrackClipsWithComping(
         const mediaOriginBeat = sourceClip.startBeat - passOffsetBeats;
 
         resolvedClips.push({
-            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat),
+            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat, overlapStart, time, take),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -124,7 +158,7 @@ export function resolveTrackClipsWithComping(
 
         for (const gap of gaps) {
             resolvedClips.push({
-                ...withFragmentOffset(clip, gap.start - clip.startBeat),
+                ...withFragmentOffset(clip, gap.start - clip.startBeat, gap.start, time),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,

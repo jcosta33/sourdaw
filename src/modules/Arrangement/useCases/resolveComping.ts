@@ -1,3 +1,7 @@
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+
+import { type Take } from '../models/TakeLane';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
@@ -25,12 +29,26 @@ export type ResolvedClip = Clip & {
  * A fragment sitting exactly on the media origin leaves the clip's fields
  * untouched, so an unshifted region stays byte-identical to its source.
  */
-function withFragmentOffset(clip: Clip, displacement: number): Clip {
-    if (displacement === 0) {
+function withFragmentOffset(clip: Clip, displacement: number, fragmentStartBeat: number, take?: Take): Clip {
+    if (displacement === 0 && (take?.sourceOffsetSeconds ?? take?.sourceOffsetBeats ?? 0) === 0) {
         return clip;
     }
     if (clip.type === 'audio') {
-        return { ...clip, audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement };
+        const tempoAtStart = readTempoAtBeat({ beat: clip.startBeat });
+        const entrySeconds = resolveAudioSourceOffsetSeconds(clip, tempoAtStart);
+        const takeDepthSeconds = resolveAudioSourceOffsetSeconds(
+            { audioOffsetSeconds: take?.sourceOffsetSeconds, audioOffsetBeats: take?.sourceOffsetBeats },
+            tempoAtStart
+        );
+        const elapsedSeconds =
+            readSecondsAtBeat({ beat: fragmentStartBeat }) - readSecondsAtBeat({ beat: clip.startBeat });
+        const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
+        return {
+            ...clip,
+            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement,
+            audioOffsetSeconds:
+                getAudioSourcePositionSeconds(entrySeconds, elapsedSeconds, stretchRatio) + takeDepthSeconds,
+        };
     }
     return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
 }
@@ -79,7 +97,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         const mediaOriginBeat = sourceClip.startBeat - passOffsetBeats;
 
         resolved.push({
-            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat),
+            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat, overlapStart, take),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -114,7 +132,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
 
         for (const gap of gaps) {
             resolved.push({
-                ...withFragmentOffset(clip, gap.start - clip.startBeat),
+                ...withFragmentOffset(clip, gap.start - clip.startBeat, gap.start),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,

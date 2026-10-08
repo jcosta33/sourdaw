@@ -375,7 +375,10 @@ export async function renderOfflineWithNativeEngine(
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, input.captured?.scheduling.takeLanes)) {
+        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, input.captured?.scheduling.takeLanes, {
+            projectBeatToSeconds,
+            resolveTempoAtBeat: resolveClipTempo,
+        })) {
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }

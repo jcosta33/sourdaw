@@ -371,7 +371,8 @@ export async function scheduleTrackClips({
     }
 
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
-    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes)) {
+    const compTime = { projectBeatToSeconds, resolveTempoAtBeat: resolveClipTempo };
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes, compTime)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
@@ -401,7 +402,12 @@ export async function scheduleTrackClips({
             if (!childTrack || (honorMuted && childTrack.muted) || childTrack.disabled) {
                 continue;
             }
-            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips, captured?.takeLanes);
+            const childClips = resolveTrackClipsWithComping(
+                childTrack.id,
+                childTrack.clips,
+                captured?.takeLanes,
+                compTime
+            );
             clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }
     }
