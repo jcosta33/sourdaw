@@ -797,6 +797,8 @@ src/modules/Arrangement/useCases/__tests__/exportMidiClip.spec.ts
   s_2bfd55a4393d7c::t_854dbfa58e49a2 143,170
   s_2bfd55a4393d7c::t_d5f8e0ce2686d2 73,76-78
   s_2bfd55a4393d7c::t_e6d349b616b3ec 179
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1c08b47ac3792f::t_8474ebabe138a5 930,933-934,939
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -849,6 +851,14 @@ src/modules/Arrangement/useCases/__tests__/exportMidiClip.spec.ts
         "tool": "claude",
         "id": "s_9222b5ec71dea8",
         "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
