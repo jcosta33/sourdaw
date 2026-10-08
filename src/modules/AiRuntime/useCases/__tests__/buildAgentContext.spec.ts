@@ -1139,6 +1139,7 @@ describe('buildAgentContext', () => {
 
         // A capability the request itself asked for stands ahead of every capability the project's
         // shape merely offers: the sidechain scope exists only because the request's wording matched it.
+        // The request entry is the costlier of the two, so cost ordering alone would keep the other.
         it('keeps the capability the request asked for ahead of one the project offers', () => {
             const prompt = 'reduce kick bass masking without replacing either basic sound';
             // The bass carries a compressor with a sidechain input, the one device the scope routes to.
@@ -1162,14 +1163,19 @@ describe('buildAgentContext', () => {
             if (sidechain.status !== 'request' || sidechain.capability === undefined) {
                 throw new Error('Expected the request to scope the sidechain routing workflow.');
             }
-            // Alone it fits; beside the sidechain entry it cannot.
-            const offered = padTo(drumAndVibeSession(0).vibeMix, 8_146);
+            // Each fits alone; together they cannot, and the requested entry costs more.
+            const requested = padTo(sidechain.capability, 5_500);
+            const offered = padTo(drumAndVibeSession(0).vibeMix, 2_750);
+            const requestedCost = JSON.stringify({ sidechainRoutingCapability: requested }).length;
+            const offeredCost = JSON.stringify({ wholeProjectVibeMixCapability: offered }).length;
+            expect(requestedCost).toBeLessThanOrEqual(8_192);
+            expect(offeredCost).toBeLessThanOrEqual(8_192);
+            expect(requestedCost + offeredCost - 1).toBeGreaterThan(8_192);
+            expect(requestedCost).toBeGreaterThan(offeredCost);
             const capabilities = {
-                sidechainRoutingCapability: sidechain.capability,
+                sidechainRoutingCapability: requested,
                 wholeProjectVibeMixCapability: offered,
             };
-            expect(JSON.stringify({ wholeProjectVibeMixCapability: offered }).length).toBeLessThanOrEqual(8_192);
-            expect(JSON.stringify(capabilities).length).toBeGreaterThan(8_192);
 
             const built = buildAgentContext({
                 fixedPolicy: 'policy',
@@ -1178,9 +1184,7 @@ describe('buildAgentContext', () => {
                 capabilityData: capabilities,
             });
 
-            expect(keptCapabilitiesOf(built.localMessage)).toEqual({
-                sidechainRoutingCapability: sidechain.capability,
-            });
+            expect(keptCapabilitiesOf(built.localMessage)).toEqual({ sidechainRoutingCapability: requested });
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
                 expect.stringContaining('leaves out wholeProjectVibeMixCapability, which did not fit')
             );
