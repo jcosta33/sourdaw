@@ -123,6 +123,24 @@ describe('renderToClip', () => {
             expect(ends.redo).toBeCloseTo(13.3, 5);
         });
 
+        it('spans the buffer from a start after beat zero at a tempo other than 120', () => {
+            setFlatTempo(133);
+
+            // The buffer begins where beat 16 sounds and holds 6 s, which at
+            // 133 BPM is 6 * 133 / 60 = 13.3 beats: it ends at beat 29.3. Beat 16
+            // sits at a fractional sample, so the placement rounds it to the nearest
+            // one; that moves the end by under a thousandth of a beat.
+            const ends = placeRender({
+                startBeat: 16,
+                endBeat: 24,
+                tailSeconds: 2,
+                buffer: createRenderedBuffer(6 * SAMPLE_RATE),
+            });
+
+            expect(ends.first).toBeCloseTo(29.3, 4);
+            expect(ends.redo).toBeCloseTo(29.3, 4);
+        });
+
         it('spans the buffer across a tempo change from a start after beat zero', () => {
             setTempoMap([
                 { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
