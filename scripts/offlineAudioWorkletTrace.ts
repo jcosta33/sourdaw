@@ -125,7 +125,13 @@ function intervalEnd(event: TraceEvent): number {
 }
 
 // Trace timestamps are whole microseconds; an enclosing interval and the
-// interval it encloses can begin or end in the same tick.
+// interval it encloses can begin or end in the same tick. Chrome truncates ts
+// and dur independently, so an exported end is floor(start) + floor(duration)
+// and a properly nested child can end exactly one microsecond after its parent.
+// Starts keep their order, so only end comparisons carry this tolerance.
+
+// The exporter truncates ts and dur independently, shifting an end by up to 1 us.
+const EXPORT_END_TRUNCATION_US = 1;
 
 function hasTimestampTie(events: readonly TraceEvent[]): boolean {
     return events.some((event, index) => index > 0 && event.ts === events[index - 1]?.ts);
@@ -199,7 +205,11 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
             handlerIndex++;
         }
         const handler = handlers[handlerIndex];
-        if (!handler || handler.ts > callback.ts || intervalEnd(handler) < intervalEnd(callback)) {
+        if (
+            !handler ||
+            handler.ts > callback.ts ||
+            intervalEnd(handler) + EXPORT_END_TRUNCATION_US < intervalEnd(callback)
+        ) {
             return 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler';
         }
         const pointer = handler.args.this;
@@ -231,7 +241,7 @@ function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEve
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
             author.ts < callback.ts ||
-            intervalEnd(author) > intervalEnd(callback)
+            intervalEnd(author) > intervalEnd(callback) + EXPORT_END_TRUNCATION_US
         ) {
             return 'outer callback lacks one unambiguous contained author execution';
         }

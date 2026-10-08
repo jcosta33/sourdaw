@@ -126,6 +126,29 @@ function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEven
     ];
 }
 
+// Observed in CI: the exporter's independent ts/dur truncation ended the author slice one microsecond after its outer callback.
+function observedExporterTruncationTrace(): FixtureEvent[] {
+    const pid = 5100;
+    const tid = 5108;
+    const handlerThis = '0x2c4800724100';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 673_500_805,
+            dur: 25,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 673_500_806, dur: 23, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 673_500_823, dur: 7, pid, tid, args: {} },
+        ...callback(673_500_850, 3, pid, tid, handlerThis),
+        ...callback(673_500_870, 8, pid, tid, handlerThis),
+        ...callback(673_500_900, 12, pid, tid, handlerThis),
+    ];
+}
+
 // Principle-derived, not observed: equal author start with unique enclosure.
 function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
     const pid = 1;
@@ -164,7 +187,21 @@ describe('offline AudioWorklet trace admission', () => {
         });
     });
 
-    it('admits the observed equal author/outer endpoint and refuses a one-microsecond overrun', () => {
+    it('admits an author slice that exporter truncation ends a microsecond after its callback', () => {
+        expect(admission(observedExporterTruncationTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 5100,
+            tid: 5108,
+            handlerThis: '0x2c4800724100',
+            warmupDurationsUs: [23],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+    });
+
+    it('admits the observed equal author/outer endpoint and a one-microsecond overrun, and refuses a two-microsecond overrun', () => {
         expect(admission(observedEqualEndpointTrace())).toEqual({
             status: 'admitted',
             outerCallbacks: 4,
@@ -176,13 +213,14 @@ describe('offline AudioWorklet trace admission', () => {
             terminalDurationUs: 14,
             bareHandlers: 0,
         });
-        expect(admission(observedEqualEndpointTrace(11))).toEqual({
+        expect(admission(observedEqualEndpointTrace(11)).status).toBe('admitted');
+        expect(admission(observedEqualEndpointTrace(12))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
         });
     });
 
-    it('admits the observed equal handler/outer endpoint and refuses a one-microsecond overrun', () => {
+    it('admits the observed equal handler/outer endpoint and a handler one microsecond short, and refuses two microseconds short', () => {
         expect(admission(observedEqualHandlerEndpointTrace())).toEqual({
             status: 'admitted',
             outerCallbacks: 4,
@@ -194,7 +232,8 @@ describe('offline AudioWorklet trace admission', () => {
             terminalDurationUs: 14,
             bareHandlers: 0,
         });
-        expect(admission(observedEqualHandlerEndpointTrace(11))).toEqual({
+        expect(admission(observedEqualHandlerEndpointTrace(11)).status).toBe('admitted');
+        expect(admission(observedEqualHandlerEndpointTrace(10))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
         });
