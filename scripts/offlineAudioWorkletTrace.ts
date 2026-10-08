@@ -128,7 +128,9 @@ function intervalEnd(event: TraceEvent): number {
 // interval it encloses can begin or end in the same tick. Chrome truncates ts
 // and dur independently, so an exported end is floor(start) + floor(duration)
 // and a properly nested child can end exactly one microsecond after its parent.
-// Starts keep their order, so only end comparisons carry this tolerance.
+// Starts keep their order, so only end comparisons carry this tolerance, and
+// the tolerances never stack: every nested end is also bounded by the start of
+// the next handler, and an author end by its own handler end plus one.
 
 // The exporter truncates ts and dur independently, shifting an end by up to 1 us.
 const EXPORT_END_TRUNCATION_US = 1;
@@ -183,7 +185,11 @@ function validateHandlerIntervals(handlers: readonly TraceEvent[], pid: number, 
     return null;
 }
 
-type HandlerBinding = { handlerThis: string; bareHandlers: number };
+// A truncated exported end never passes the start of a slice that truly begins after it, so a
+// nested slice ends no later than the next handler starts; Infinity marks the last handler.
+type HandlerEnclosure = { end: number; nextStart: number };
+
+type HandlerBinding = { handlerThis: string; bareHandlers: number; enclosures: HandlerEnclosure[] };
 
 function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceEvent[]): HandlerBinding | string {
     const firstOuter = outer[0];
@@ -199,19 +205,23 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
     let handlerIndex = 0;
     let bareHandlers = 0;
     let handlerThis = '';
+    const enclosures: HandlerEnclosure[] = [];
     for (const callback of outer) {
         while (handlerIndex < handlers.length && intervalEnd(handlers[handlerIndex]!) <= callback.ts) {
             bareHandlers++;
             handlerIndex++;
         }
         const handler = handlers[handlerIndex];
+        const nextStart = handlers[handlerIndex + 1]?.ts ?? Number.POSITIVE_INFINITY;
         if (
             !handler ||
             handler.ts > callback.ts ||
-            intervalEnd(handler) + EXPORT_END_TRUNCATION_US < intervalEnd(callback)
+            intervalEnd(handler) + EXPORT_END_TRUNCATION_US < intervalEnd(callback) ||
+            intervalEnd(callback) > nextStart
         ) {
             return 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler';
         }
+        enclosures.push({ end: intervalEnd(handler), nextStart });
         const pointer = handler.args.this;
         if (typeof pointer !== 'string') {
             return 'AudioWorkletNode handler has no trace pointer';
@@ -223,10 +233,14 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
         handlerIndex++;
     }
     bareHandlers += handlers.length - handlerIndex;
-    return { handlerThis, bareHandlers };
+    return { handlerThis, bareHandlers, enclosures };
 }
 
-function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEvent[]): string | null {
+function bindAuthors(
+    outer: readonly TraceEvent[],
+    enclosures: readonly HandlerEnclosure[],
+    allAuthors: readonly TraceEvent[]
+): string | null {
     const authors = allAuthors.toSorted(byTimestamp);
     if (authors.length !== outer.length) {
         return `expected ${String(outer.length)} author executions, received ${String(authors.length)}`;
@@ -236,14 +250,16 @@ function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEve
     }
     for (const [index, callback] of outer.entries()) {
         const author = authors[index];
-        const next = outer[index + 1];
+        const enclosure = enclosures[index];
         if (
             !author ||
+            !enclosure ||
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
             author.ts < callback.ts ||
             intervalEnd(author) > intervalEnd(callback) + EXPORT_END_TRUNCATION_US ||
-            (next && intervalEnd(author) > next.ts)
+            intervalEnd(author) > enclosure.end + EXPORT_END_TRUNCATION_US ||
+            intervalEnd(author) > enclosure.nextStart
         ) {
             return 'outer callback lacks one unambiguous contained author execution';
         }
@@ -286,7 +302,7 @@ export function admitOfflineAudioWorkletTrace({
     if (typeof handlerBinding === 'string') {
         return { status: 'refused', reason: handlerBinding };
     }
-    const authorFailure = bindAuthors(outer, parsed.authors);
+    const authorFailure = bindAuthors(outer, handlerBinding.enclosures, parsed.authors);
     if (authorFailure) {
         return { status: 'refused', reason: authorFailure };
     }
