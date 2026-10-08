@@ -1,0 +1,14 @@
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  h_beb54bf43b47b7 407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "113037a3091db792a4ddb2035d5247914b05d584",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
