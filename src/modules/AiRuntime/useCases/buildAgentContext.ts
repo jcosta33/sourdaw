@@ -38,51 +38,78 @@ const MAX_CAPABILITY_DATA_LENGTH = 8_192;
  */
 const PROJECT_SECTION_OMISSIONS = `untrusted_project_data lists at most ${String(MAX_CONTEXT_TARGETS)} tracks, ${String(MAX_SELECTED_CLIPS)} clips and ${String(MAX_CONTEXT_TARGETS)} sends on each, and ${String(MAX_CONTEXT_TARGETS)} sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.`;
 /**
- * The order the local message keeps whole capability entries in when they do not all fit. The
- * creative interpretation catalog comes first: every request may need it, and the creative
- * interpretation tool admits only its candidates. The workflow capabilities, each present only
- * when the request reaches its workflow, follow in a fixed order. Every key ranks, so a new
- * capability cannot be added without a place in the order.
+ * How a capability entry comes to be in the request, which decides its place when the entries do
+ * not all fit. A `request` capability exists only because the request asked for its workflow: the
+ * sidechain routing scope matches the request's own wording, and the stem import scope exists only
+ * after the planner asked to prepare an import. A `project` capability is derived from the project
+ * alone whenever its shape fits the workflow, so the request may or may not need it. The
+ * `creative` catalog interprets a request no workflow covers. Every key has a kind, so a new
+ * capability cannot be added without one.
  */
-const LOCAL_CAPABILITY_RANK = {
-    creativeInterpretationCatalog: 0,
-    articulationTransferCapability: 1,
-    backingVocalPlateCapability: 2,
-    bassProcessingCopyCapability: 3,
-    drumRoutingCapability: 4,
-    drumRenderComparisonCapability: 5,
-    drumPreviewBranchesCapability: 6,
-    midiOverlapTransformCapability: 7,
-    sidechainRoutingCapability: 8,
-    sharedVocalFxBusesCapability: 9,
-    stemImportCapability: 10,
-    syncopatedArpeggioCapability: 11,
-    wholeProjectVibeMixCapability: 12,
-} satisfies Record<keyof LlmActionCapabilityData, number>;
+const LOCAL_CAPABILITY_KIND = {
+    sidechainRoutingCapability: 'request',
+    stemImportCapability: 'request',
+    articulationTransferCapability: 'project',
+    backingVocalPlateCapability: 'project',
+    bassProcessingCopyCapability: 'project',
+    drumRoutingCapability: 'project',
+    drumRenderComparisonCapability: 'project',
+    drumPreviewBranchesCapability: 'project',
+    midiOverlapTransformCapability: 'project',
+    sharedVocalFxBusesCapability: 'project',
+    syncopatedArpeggioCapability: 'project',
+    wholeProjectVibeMixCapability: 'project',
+    creativeInterpretationCatalog: 'creative',
+} as const satisfies Record<keyof LlmActionCapabilityData, 'request' | 'project' | 'creative'>;
 
-function isRankedCapability(key: string): key is keyof typeof LOCAL_CAPABILITY_RANK {
-    return Object.hasOwn(LOCAL_CAPABILITY_RANK, key);
+type LocalCapabilityKey = keyof typeof LOCAL_CAPABILITY_KIND;
+
+function isLocalCapabilityKey(key: string): key is LocalCapabilityKey {
+    return Object.hasOwn(LOCAL_CAPABILITY_KIND, key);
 }
 
 /**
- * The capability data a local message carries: whole entries, in rank order, while the serialized
- * object stays within the capability budget. An entry that does not fit is left out whole and
- * named, never cut mid-value, and smaller entries after it may still fit.
+ * Where an entry stands: workflow capabilities the request asked for, then the workflow
+ * capabilities the project offers, then the creative catalog, which a workflow covering the
+ * request makes the wrong tool. With no workflow capability present the catalog stands alone.
+ */
+function capabilityTier(key: LocalCapabilityKey): number {
+    const kind = LOCAL_CAPABILITY_KIND[key];
+    if (kind === 'request') {
+        return 0;
+    }
+    if (kind === 'project') {
+        return 1;
+    }
+    return 2;
+}
+
+/**
+ * The capability data a local message carries: whole entries, by tier and then smallest first
+ * within a tier, while the serialized object stays within the capability budget. Smallest first
+ * means a workflow capability is never left out while a larger one of its tier is kept. An entry
+ * that does not fit the budget left after the entries kept before it is left out whole and named,
+ * never cut mid-value, and the entries after it are still tried.
  */
 function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
     serialized: string;
     omitted: string[];
 } {
-    const rankedKeys = Object.keys(LOCAL_CAPABILITY_RANK)
-        .filter(isRankedCapability)
-        .sort((left, right) => LOCAL_CAPABILITY_RANK[left] - LOCAL_CAPABILITY_RANK[right]);
+    const capabilityKeys = Object.keys(LOCAL_CAPABILITY_KIND).filter(isLocalCapabilityKey);
+    const present = capabilityKeys
+        .flatMap((key) => {
+            const value = capabilityData?.[key];
+            return value === undefined ? [] : [{ key, value, length: stableJson(value).length }];
+        })
+        .sort(
+            (left, right) =>
+                capabilityTier(left.key) - capabilityTier(right.key) ||
+                left.length - right.length ||
+                left.key.localeCompare(right.key)
+        );
     const kept: Record<string, unknown> = {};
     const omitted: string[] = [];
-    for (const key of rankedKeys) {
-        const value = capabilityData?.[key];
-        if (value === undefined) {
-            continue;
-        }
+    for (const { key, value } of present) {
         if (stableJson({ ...kept, [key]: value }).length <= MAX_CAPABILITY_DATA_LENGTH) {
             kept[key] = value;
         } else {
@@ -93,7 +120,7 @@ function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undef
 }
 
 function describeOmittedCapabilities(omitted: readonly string[]): string {
-    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, too large for the local window; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
+    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, which did not fit what the ${String(MAX_CAPABILITY_DATA_LENGTH)}-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
 }
 
 function isRelevantLock(

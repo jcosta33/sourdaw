@@ -3,9 +3,11 @@ import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 
 import { createPlanningProject, planningFixtureIds } from './planningProjectFixture';
 
@@ -972,7 +974,9 @@ describe('buildAgentContext', () => {
             return { ...capabilityData, wholeProjectVibeMixCapability: scope.capability };
         }
 
-        it('keeps whole capability entries and names the one too large for the local window', () => {
+        // A smaller entry after one that did not fit is still tried: the oversized vibe mix is left
+        // out, and the creative catalog after it in the order is kept.
+        it('keeps a smaller entry after one that did not fit, and names the one left out', () => {
             const project = vibeMixProject(250);
             const capabilities = capabilitiesFor(project);
             expect(JSON.stringify(capabilities.wholeProjectVibeMixCapability).length).toBeGreaterThan(8_192);
@@ -990,11 +994,78 @@ describe('buildAgentContext', () => {
             const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
             expect(kept).toEqual({ creativeInterpretationCatalog: capabilities.creativeInterpretationCatalog });
             expect(contextOmissionsOf(built.localMessage)).toContain(
-                'capability_schemas.availableCapabilities leaves out wholeProjectVibeMixCapability, too large for the local window; no tool returns capability data, so plan without it or ask for a hosted model.'
+                'capability_schemas.availableCapabilities leaves out wholeProjectVibeMixCapability, which did not fit what the 8192-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without it or ask for a hosted model.'
             );
         });
 
-        it('keeps every capability entry, in rank order, when they all fit', () => {
+        // The session the review reproduced: drum routing and the vibe mix are both offered by the
+        // project, with the creative catalog beside them, and together they overflow the budget.
+        // The vibe mix carries the only targets and gain grounding admits for this request, so the
+        // smaller workflow entry must not lose its place to a larger one or to the catalog.
+        it('keeps the smaller workflow capability a request can use ahead of larger entries', () => {
+            const prompt = 'make the second chorus hit harder';
+            const base = createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 16);
+            const baseSections = base.sections ?? [];
+            const busTemplate = base.tracks[0]!;
+            const bus = (index: number, name: string, kind = 'bus') => ({
+                ...busTemplate,
+                id: planningFixtureIds.track(index),
+                name,
+                kind,
+                clips: [],
+                clipCount: 0,
+            });
+            const project: ProjectContext = {
+                ...base,
+                sections: [
+                    ...baseSections,
+                    { id: planningFixtureIds.section(5), name: 'Chorus 2', startBeat: 112, endBeat: 144 },
+                ],
+                tracks: [
+                    ...base.tracks,
+                    bus(90, 'Drum Bus'),
+                    bus(91, 'Parallel Compression'),
+                    bus(92, 'Bass Bus'),
+                    bus(93, 'Master', 'master'),
+                ],
+            };
+            const drumRouting = getDrumRoutingPromptScope(project, 'revision-1');
+            const vibeMix = getWholeProjectVibeMixScope(project, 'revision-1');
+            if (drumRouting.status !== 'request' || vibeMix === null) {
+                throw new Error('Expected the session to offer both drum routing and the vibe mix.');
+            }
+            const capabilities = {
+                creativeInterpretationCatalog: prepareCreativeInterpretationCatalog({
+                    prompt,
+                    context: project,
+                    projectRevision: 'revision-1',
+                }),
+                drumRoutingCapability: drumRouting.capability,
+                wholeProjectVibeMixCapability: vibeMix.capability,
+            };
+            expect(JSON.stringify(capabilities).length).toBeGreaterThan(8_192);
+
+            const built = buildAgentContext({
+                fixedPolicy: 'policy',
+                prompt,
+                context: project,
+                capabilityData: capabilities,
+            });
+
+            const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
+                availableCapabilities: string;
+            };
+            const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
+            expect(kept.wholeProjectVibeMixCapability).toEqual(vibeMix.capability);
+            const omitted = Object.keys(capabilities).filter((key) => !(key in kept));
+            expect(omitted.length).toBeGreaterThan(0);
+            expect(omitted).not.toContain('wholeProjectVibeMixCapability');
+            expect(contextOmissionsOf(built.localMessage)).toContainEqual(
+                expect.stringContaining(`leaves out ${omitted.join(', ')}, which did not fit`)
+            );
+        });
+
+        it('keeps every capability entry, workflow capabilities before the creative catalog, when they all fit', () => {
             const project = vibeMixProject(3);
             const capabilities = capabilitiesFor(project);
 
@@ -1012,7 +1083,7 @@ describe('buildAgentContext', () => {
                 availableCapabilities: string;
             };
             const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
-            expect(Object.keys(kept)).toEqual(['creativeInterpretationCatalog', 'wholeProjectVibeMixCapability']);
+            expect(Object.keys(kept)).toEqual(['wholeProjectVibeMixCapability', 'creativeInterpretationCatalog']);
             expect(kept).toEqual(capabilities);
             expect(contextOmissionsOf(built.localMessage)).toEqual([]);
         });
