@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { getCanonicalTrackRole } from '#/modules/Project/useCases';
+
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
@@ -1027,21 +1029,31 @@ describe('buildAgentContext', () => {
                     })),
                 ],
             };
+            const tracks = [
+                ...base.tracks.slice(0, 4),
+                lockedPad,
+                ...base.tracks.slice(5),
+                bus(90, 'Drum Bus'),
+                bus(91, 'Parallel Compression'),
+                bus(92, 'Bass Bus'),
+                bus(93, 'Master', 'master'),
+            ];
+            // Drum routing reads each track's canonical role and refuses a track without one, so
+            // every track carries the role getProjectContext derives through Project's one
+            // classifier. Each fixture name or kind carries its role, so the classifier settles it
+            // before it would consult clip content or instruments.
             const project: ProjectContext = {
                 ...base,
                 sections: [
                     ...baseSections,
                     { id: planningFixtureIds.section(5), name: 'Chorus 2', startBeat: 112, endBeat: 144 },
                 ],
-                tracks: [
-                    ...base.tracks.slice(0, 4),
-                    lockedPad,
-                    ...base.tracks.slice(5),
-                    bus(90, 'Drum Bus'),
-                    bus(91, 'Parallel Compression'),
-                    bus(92, 'Bass Bus'),
-                    bus(93, 'Master', 'master'),
-                ],
+                tracks: tracks.map((track) => ({
+                    ...track,
+                    canonicalRole: getCanonicalTrackRole({
+                        track: { id: track.id, name: track.name, kind: track.kind, clips: [], devices: [] },
+                    }),
+                })),
             };
             const drumRouting = getDrumRoutingPromptScope(project, 'revision-1');
             const vibeMix = getWholeProjectVibeMixScope(project, 'revision-1');
