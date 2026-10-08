@@ -175,7 +175,7 @@
         "name": "Affected end-to-end ${{ matrix.id }}",
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": "${{ fromJSON(inputs.matrix) }}"
@@ -1644,7 +1644,7 @@
         "needs": "decide",
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": {

@@ -71,11 +71,23 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
-const ROOT_DEPENDENCY_INSTALL_COMMAND =
-    'sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium';
-const USER_BROWSER_INSTALL_COMMAND = 'timeout --kill-after=15s 3m pnpm exec playwright install chromium';
-// Three attempts at the 8m dependency and 3m download caps, plus backoff.
-const BROWSER_INSTALL_WORST_CASE_MINUTES = 34;
+const BROWSER_INSTALL_ATTEMPTS = 3;
+const ROOT_DEPENDENCY_CAP_MINUTES = 8;
+const USER_BROWSER_CAP_MINUTES = 3;
+const INSTALL_KILL_AFTER_SECONDS = 15;
+// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
+const INSTALL_BACKOFF_SECONDS = 5 + 10;
+const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m node_modules/.bin/playwright install-deps chromium`;
+const USER_BROWSER_INSTALL_COMMAND = `timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
+// Every attempt times out at its cap and then at its kill-after, so a job must
+// hold this plus the time its other steps have been measured to take.
+const BROWSER_INSTALL_WORST_CASE_SECONDS =
+    BROWSER_INSTALL_ATTEMPTS *
+        ((ROOT_DEPENDENCY_CAP_MINUTES + USER_BROWSER_CAP_MINUTES) * 60 + 2 * INSTALL_KILL_AFTER_SECONDS) +
+    INSTALL_BACKOFF_SECONDS;
+// Longest observed time of every step except the browser install, per job.
+const SMOKE_NON_INSTALL_SECONDS = 480;
+const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // A cancelled upstream job must still reach the required assertion. GitHub
@@ -697,11 +709,15 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
     }
 }
 
+function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
+    return Math.ceil((BROWSER_INSTALL_WORST_CASE_SECONDS + nonInstallSeconds) / 60);
+}
+
 // apt-get runs as root through sudo, where a timeout owned by the runner user
 // cannot signal it: the stalled apt would survive as an orphan holding its lock
 // and every later attempt would fail on it. The root half is therefore bounded
 // from the root side, and the user-side browser download separately.
-function assertBoundedBrowserInstall(job: UnknownRecord, label: string): void {
+function assertBoundedBrowserInstall(job: UnknownRecord, label: string, nonInstallSeconds: number): void {
     const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
     if (!installRun.includes('for attempt in 1 2 3')) {
         throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
@@ -716,8 +732,10 @@ function assertBoundedBrowserInstall(job: UnknownRecord, label: string): void {
         throw new Error(`${label} must bound the browser download with its own timeout`);
     }
     const timeoutMinutes = job['timeout-minutes'];
-    if (typeof timeoutMinutes !== 'number' || timeoutMinutes <= BROWSER_INSTALL_WORST_CASE_MINUTES) {
-        throw new Error(`${label} must have a job limit that holds three bounded install attempts`);
+    if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
+        throw new Error(
+            `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+        );
     }
 }
 
@@ -726,7 +744,7 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    assertBoundedBrowserInstall(smoke, 'the offline smoke job');
+    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -3071,19 +3089,34 @@ describe('health gates workflow contract', () => {
 
     it('bounds both halves of every Linux browser install and keeps three attempts inside the job limit', () => {
         const installs = [
-            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
-            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
-            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
+            {
+                label: 'the offline smoke job',
+                workflow: validationWorkflow,
+                job: 'smoke',
+                nonInstallSeconds: SMOKE_NON_INSTALL_SECONDS,
+            },
+            {
+                label: 'the affected end-to-end job',
+                workflow: heavyWorkflow,
+                job: 'e2e',
+                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+            },
+            {
+                label: 'the nightly end-to-end job',
+                workflow: nightly,
+                job: 'e2e',
+                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+            },
         ];
         const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
-            'sudo env "PATH=$PATH" timeout --kill-after=15s 8m ',
+            `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m `,
             'sudo '
         );
         const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
 
-        for (const { label, workflow, job } of installs) {
+        for (const { label, workflow, job, nonInstallSeconds } of installs) {
             const check = (candidate: UnknownRecord): void => {
-                assertBoundedBrowserInstall(jobAt(candidate, job), label);
+                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds);
             };
             const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
                 const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
@@ -3137,12 +3170,18 @@ describe('health gates workflow contract', () => {
                 )
             ).toThrow(`${label} must retry browser and dependency installation against mirror outages`);
 
-            const shortLimit = mutate('short job limit', (target) => {
-                target['timeout-minutes'] = 20;
+            const requiredMinutes = requiredBrowserInstallJobMinutes(nonInstallSeconds);
+            expect(jobAt(workflow, job)['timeout-minutes']).toBeGreaterThanOrEqual(requiredMinutes);
+            const justBelowLimit = mutate('limit just below the requirement', (target) => {
+                target['timeout-minutes'] = requiredMinutes - 1;
             });
-            expect(() => check(shortLimit)).toThrow(
-                `${label} must have a job limit that holds three bounded install attempts`
+            expect(() => check(justBelowLimit)).toThrow(
+                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
             );
+            const exactLimit = mutate('limit at the requirement', (target) => {
+                target['timeout-minutes'] = requiredMinutes;
+            });
+            expect(() => check(exactLimit)).not.toThrow();
         }
     });
 
