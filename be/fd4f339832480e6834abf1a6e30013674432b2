@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_4a48b381760602 6
+  s_1c08b47ac3792f::t_5adb19c57f0469 997,1001-1007,1009-1020,1022-1063
+  s_1c08b47ac3792f::t_2a8cf0c2353fe9 977-979
+  s_1c08b47ac3792f::t_cbc1053fc8de25 1008
+  s_1c08b47ac3792f::t_5d20702efd87d5 1021
+  s_1c08b47ac3792f::t_5ecd7347a1293d 10
+  s_97ab82e0b4f10c::t_75c5b19c152e85 1064-1068,1086
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_d65f029d934d50 48
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_1c08b47ac3792f::t_c3d0c622a29195 98-99
+  s_1c08b47ac3792f::t_b327aff4bd17ab 41-47,49-63,65-84,88-92,100-109,112
+  s_1c08b47ac3792f::t_35a3eea96fbfb5 123
+evidence/agent-campaign/manifest.json
+  s_97ab82e0b4f10c::t_9c740a1f0fca5f 539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "befd4f339832480e6834abf1a6e30013674432b2",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
