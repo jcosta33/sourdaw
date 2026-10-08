@@ -33,8 +33,9 @@ vi.mock('../../repositories/crumbsBridge/getCrumbsDroppedSampleWrites', () => ({
 vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
 
 import { setCrumbsEventBus } from '../../stores/crumbsEventBus';
-import { crumbsStore, defaultCrumbsState, setMode } from '../../stores/crumbsStore';
+import { crumbsStore, defaultCrumbsState, setMode, setTune } from '../../stores/crumbsStore';
 import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
+import { loadSampleFromPath } from '../loadSample';
 import { reconcileCrumbsDeviceStatesFromProject } from '../reconcileCrumbsDeviceStatesFromProject';
 
 import type { SampleMeta } from '../../models/CrumbsTypes';
@@ -98,7 +99,7 @@ function crumbsDevice(deviceState: unknown): FixtureDevice {
 
 type SetDeviceStateAction = {
     type: 'setDeviceState';
-    payload: { state: { data: { mode: string; activeSample: { filePath: string } | null } } };
+    payload: { state: { data: { mode: string; activeSample: { filePath: string; sampleId?: number } | null } } };
 };
 
 function isSetDeviceStateAction(value: unknown): value is SetDeviceStateAction {
@@ -108,6 +109,25 @@ function isSetDeviceStateAction(value: unknown): value is SetDeviceStateAction {
 /** The sweep is synchronous; the sample route it triggers is async. */
 function flushLoad(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** A decode the case settles by hand, so a mid-window write has a window. */
+function deferredDecode(): {
+    promise: Promise<unknown>;
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+} {
+    let settleValue!: (value: unknown) => void;
+    let settleError!: (error: Error) => void;
+    const promise = new Promise<unknown>((resolve, reject) => {
+        settleValue = resolve;
+        settleError = reject;
+    });
+    return { promise, resolve: settleValue, reject: settleError };
+}
+
+function setDeviceStateCommits(): SetDeviceStateAction[] {
+    return mocks.executeAppAction.mock.calls.map((call) => call[0]).filter(isSetDeviceStateAction);
 }
 
 describe('reconcileCrumbsDeviceStatesFromProject', () => {
@@ -216,14 +236,14 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(commit?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');
     });
 
-    // The finding's mirror shape: the paired reconcile applies the mode
-    // synchronously while the sample is still decoding, so the persistence
-    // subscriber reads the new mode beside the store's stale activeSample.
-    // Committing that state writes {mode, staleSample} over the peer's
-    // reference — and because the local machine cannot read the peer's file,
-    // the stale sample never leaves the store: the reference is gone
-    // cross-session.
-    it('does not mirror the stale local sample while the paired load is unsettled, even when it fails', async () => {
+    // Finding 1's erasure shape: the paired load fails, and the hold's release
+    // used to leave the baseline at the pre-pair key with the store still
+    // holding the stale local sample — so the first later write of any kind
+    // committed that stale sample over the peer's document reference. The
+    // release must instead converge: restore the document's own reference into
+    // the store's undecided sample leaf and commit it, so the later write
+    // commits nothing and the peer's key survives.
+    it('converges a failed pair at release, so a later unrelated write erases nothing', async () => {
         projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
         mocks.nativeLoadSample.mockRejectedValue(new Error('unreadable file'));
         // A pre-reconcile store edit seeds the persistence baseline at
@@ -235,16 +255,105 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         reconcileCrumbsDeviceStatesFromProject();
         await flushLoad();
         await flushLoad();
+        // The reviewer's reproducing write: an unrelated knob after the failed
+        // pair. It must not reopen the stale sample.
+        setTune(DEVICE_ID, 3);
+        await flushLoad();
 
-        const commits = mocks.executeAppAction.mock.calls.map((call) => call[0]).filter(isSetDeviceStateAction);
-        expect(commits).toEqual([]);
-        // The mode applied to the session; the unloadable peer sample did not
-        // displace the local one, and neither edit reached the document.
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('slice');
+        // The commit carries the peer's sample leaf — the chunk's own reference,
+        // peer-local sampleId included — never the stale local one.
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');
+        expect(commits[0]?.payload.state.data.activeSample?.sampleId).toBe(7);
         expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('slice');
-        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/a.wav');
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/b.wav');
     });
 
-    it('converges a paired reconcile that settles successfully without ever mirroring the stale sample', async () => {
+    // The collapsed-pair leak: two paired reconciles for one device used to
+    // collapse into one hold, so the first settle released the mirror while the
+    // second decode was still in flight and a write in that window mirrored the
+    // mid-pair state. The hold must last until the LAST settle, and the final
+    // release converges the settled store.
+    it('holds the mirror until the last settle of a collapsed pair, then converges', async () => {
+        const firstDecode = deferredDecode();
+        const secondDecode = deferredDecode();
+        mocks.nativeLoadSample
+            .mockImplementationOnce(() => firstDecode.promise)
+            .mockImplementationOnce(() => secondDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        projectWith(crumbsDevice(peerChunk({ mode: 'warp', filePath: '/samples/c.wav', sampleId: 8 })));
+        reconcileCrumbsDeviceStatesFromProject();
+
+        // The first pair settles while the second decode is still in flight.
+        firstDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+        // A write inside the window must commit nothing mid-pair.
+        setTune(DEVICE_ID, 3);
+        await flushLoad();
+        expect(setDeviceStateCommits()).toEqual([]);
+
+        secondDecode.resolve({ ...LOCAL_DECODE_OF_B, sampleId: 43 });
+        await flushLoad();
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('warp');
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/c.wav');
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/a.wav')).toBe(
+            false
+        );
+    });
+
+    // Finding 2's swallowed edit: a user drop that supersedes the reconcile
+    // load lands in the store while the mirror is held, and the suppression
+    // used to discard the pass silently — nothing replayed it at release, so
+    // quitting persisted the peer's sample and lost the user's pick. The
+    // release (or the pick's own settled write) must carry the pick.
+    it('commits a user drop that supersedes the reconcile load instead of swallowing it', async () => {
+        const peerDecode = deferredDecode();
+        const userDecode = deferredDecode();
+        mocks.nativeLoadSample
+            .mockImplementationOnce(() => peerDecode.promise)
+            .mockImplementationOnce(() => userDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        // The user drops their own pick while the paired load is unsettled: a
+        // newer load epoch that will win the store.
+        const userPick = loadSampleFromPath(DEVICE_ID, '/samples/mine.wav');
+
+        // The peer load settles superseded; the release converges the store as
+        // it stands (the pick has not applied yet) instead of swallowing.
+        peerDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+        expect(setDeviceStateCommits()).toHaveLength(1);
+
+        // The pick settles: its own write must reach the document.
+        userDecode.resolve({ ...LOCAL_DECODE_OF_B, sampleId: 43 });
+        await userPick;
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(2);
+        expect(commits[1]?.payload.state.data.mode).toBe('slice');
+        expect(commits[1]?.payload.state.data.activeSample?.filePath).toBe('/samples/mine.wav');
+        // No commit ever carried the stale local sample.
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/a.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/mine.wav');
+    });
+
+    it('commits the converged store at a paired settle and never the stale sample', async () => {
         projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
         setMode(DEVICE_ID, 'quick');
 
@@ -252,17 +361,19 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         await flushLoad();
         await flushLoad();
 
-        // The document already carried the peer's state, so the window owes it
-        // no commit at all — suppressing the whole pair keeps the stale local
-        // sample out of the document on the mode apply and on the settle alike.
-        const commits = mocks.executeAppAction.mock.calls.map((call) => call[0]).filter(isSetDeviceStateAction);
-        expect(commits).toEqual([]);
+        // The suppression kept every mid-pair pass quiet, and the release is
+        // the pair's convergence point: exactly one commit, carrying the
+        // settled store. The stale local sample never reaches the document.
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('slice');
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');
         expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('slice');
         expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/b.wav');
 
         // A later local edit still commits, carrying the settled sample.
         setMode(DEVICE_ID, 'drum');
-        const commit = mocks.executeAppAction.mock.calls.map((call) => call[0]).findLast(isSetDeviceStateAction);
+        const commit = setDeviceStateCommits().at(-1);
         expect(commit).toBeDefined();
         expect(commit?.payload.state.data.mode).toBe('drum');
         expect(commit?.payload.state.data.activeSample?.filePath).toBe('/samples/b.wav');

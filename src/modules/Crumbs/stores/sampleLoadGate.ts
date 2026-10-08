@@ -19,17 +19,19 @@
  *   reference, and a failed or slow decode then erases the reference
  *   cross-session (#4764).
  *
- * Concurrent paired reconciles for one device collapse: the Set holds the
- * device id until the first settle releases it. That is safe because the
- * load-sequence guard above orders the store writes (only the latest load
- * applies) and the persistence baseline stays at the last committed key, so
- * the next unsuppressed pass commits the full settled state.
+ * Concurrent paired reconciles for one device nest: the hold is a per-device
+ * count and releases only when the LAST of them settles, so the first settle
+ * of a collapsed pair cannot expose the second's mid-pair state to the mirror.
+ * The last release is the pair's convergence point: the reconciler ends the
+ * hold and replays the persistence comparison against the settled store
+ * (`replayCrumbsDeviceStateCommit`), so the settled state reaches the document
+ * even when no further store write ever comes.
  */
 
 const latestSampleLoadSequences = new Map<string, number>();
 let nextSampleLoadSequence = 0;
 
-const unsettledPairedReconciles = new Set<string>();
+const unsettledPairedReconciles = new Map<string, number>();
 
 /** Begin a sample load for a device and return its start-order sequence. */
 export function beginCrumbsSampleLoad(instanceId: string): number {
@@ -43,13 +45,25 @@ export function isLatestCrumbsSampleLoad(instanceId: string, sequence: number): 
     return latestSampleLoadSequences.get(instanceId) === sequence;
 }
 
-/** Hold the persistence mirror for a reconcile's paired mode+sample apply. */
+/**
+ * Hold the persistence mirror for a reconcile's paired mode+sample apply.
+ * Concurrent holds for one device nest.
+ */
 export function beginCrumbsPairedReconcile(instanceId: string): void {
-    unsettledPairedReconciles.add(instanceId);
+    unsettledPairedReconciles.set(instanceId, (unsettledPairedReconciles.get(instanceId) ?? 0) + 1);
 }
 
-/** Release the hold once the paired load has settled (resolved or rejected). */
+/**
+ * Release one hold once its paired load has settled (resolved or rejected).
+ * The mirror stays held while a younger paired reconcile for the device is
+ * still unsettled.
+ */
 export function endCrumbsPairedReconcile(instanceId: string): void {
+    const remaining = (unsettledPairedReconciles.get(instanceId) ?? 0) - 1;
+    if (remaining > 0) {
+        unsettledPairedReconciles.set(instanceId, remaining);
+        return;
+    }
     unsettledPairedReconciles.delete(instanceId);
 }
 
