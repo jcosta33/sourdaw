@@ -1,0 +1,69 @@
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRollLoop.integration.spec.ts
+  s_4c8cd08893b364::t_b33874e89853cb 412-416
+  s_4c8cd08893b364::t_ebd87c204a73bd 308,312
+  s_4c8cd08893b364::t_f69e871be17d44 276-277
+  s_4c8cd08893b364::t_9d1675db696166 452-506
+  s_4c8cd08893b364::t_a0e5e0ca79802e 327-331,338
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_4c8cd08893b364::t_c6b09f96751989 254
+  s_4c8cd08893b364::t_2e596118f543fd 186-187
+src/modules/Arrangement/models/TakeLane.ts
+  s_4c8cd08893b364::t_8c201033dd77cb 94-95
+  s_4c8cd08893b364::t_4251097eb6c214 107
+  s_4c8cd08893b364::t_ca97bb2010beae 117
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_4c8cd08893b364::t_3fac5bc34a092f 220
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingTakes.spec.ts
+  s_4c8cd08893b364::t_84b6a9764f38bd 119-127,133
+  s_4c8cd08893b364::t_c6a38e4dc14c9a 7,41,44,128-132
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_4c8cd08893b364::t_d35b107221f352 199
+  s_4c8cd08893b364::t_0a3a36031aba1e 3
+  s_4c8cd08893b364::t_10597dd386089d 118-120,125-126
+  s_4c8cd08893b364::t_067485bf398877 4
+  s_4c8cd08893b364::t_e7727028801d3f 16-20,29-47,53-55,59-61,64-76,78-80,82-88
+  s_4c8cd08893b364::t_2cc4241ff4cbf0 160,168
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_4c8cd08893b364::t_0d72381823cfdb 406-408,411
+  s_4c8cd08893b364::t_3f0a5b9593d19e 376
+  s_4c8cd08893b364::t_6dfda85b68ec62 224-225
+  s_4c8cd08893b364::t_8e7fcb534207f4 409-410
+src/modules/AudioEngine/useCases/livePlayback/liveTempoTimeline.ts
+  s_4c8cd08893b364::t_0c211006072fd1 1-2,12-13,16-20
+  s_4c8cd08893b364::t_c174385e539a4c 3-11,14-15
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_4c8cd08893b364::t_b2b5b6c1cbd34d 1-3,7,11-15
+  s_4c8cd08893b364::t_5bfb112c6d3847 100
+  s_4c8cd08893b364::t_e85f5882710f4c 57,65
+  s_4c8cd08893b364::t_e412095593bb01 16
+src/modules/Arrangement/useCases/clipMediaOffsetAt.ts
+  s_4c8cd08893b364::t_6d061eb8c849cd 1-18,22-23,27-33
+  s_4c8cd08893b364::t_080a5ea346ef62 19-21,24-26
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_4c8cd08893b364::t_9ea51e82204895 382-385,388
+  s_4c8cd08893b364::t_9522d31201d490 386-387
+src/modules/Arrangement/useCases/resolveTakeMedia.ts
+  s_4c8cd08893b364::t_eeb81dbca3668b 1,4,17-22,33-35,38-50,60-66
+  s_4c8cd08893b364::t_f00401bb3d378a 52-58
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_4c8cd08893b364::t_0db1da9fa73370 10
+  s_4c8cd08893b364::t_cec216daa94b81 117-138,142-146,152-154,156,160-162,164-181,184-203,213-226
+  s_4c8cd08893b364::t_a99535ede11655 5
+  s_4c8cd08893b364::t_8750b70a33745d 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04fa0a16c6678776b326857faeac9f21c6983cf7",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
