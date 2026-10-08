@@ -1,0 +1,27 @@
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  s_97ab82e0b4f10c::t_7ea93ecfead1c1 40-47,51,64,81,126,129,135-137
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_97ab82e0b4f10c::t_69c76173d36591 73-74,76,79-84,160-164,168-169,171-172,237,275-278,285,292-296,304-305
+  s_97ab82e0b4f10c::t_a3eb817aecf951 15
+  s_97ab82e0b4f10c::t_cd6c6f4daa3cee 297-303
+  s_97ab82e0b4f10c::t_6a31ec27dc4cf6 170
+release/open-source-inventory.json
+  s_97ab82e0b4f10c::t_4c4d21382be779 2241-2244
+  s_97ab82e0b4f10c::t_fe92b9d06fc6fa 2239-2240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "798fb6f4d602c02b8363f64e14bd554555173618",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
