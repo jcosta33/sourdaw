@@ -166,6 +166,14 @@ invoke real Undo. Require hydration to drop the entry and both raw authority and
 unchanged. Keep a valid gain-and-warp remove/reload/Undo/Redo control and the legacy warp alias and
 default-collapse controls; an array check or general finite-number sweep cannot prove shape safety.
 
+The same #5064 removal capture admitted `clipAutomationLanes` when it was merely an array. In a real
+two-lane removal, changing one persisted point value to a string let fresh history hydration keep the
+entry; Undo restored the clip, while Automation rejected the entire lane batch and history advanced.
+For saved clip-removal inverses, compare each lane with Automation's exact snapshot contract before
+admission. Keep a valid producer-capture/reload/Undo/Redo control with two clip lanes and an unrelated
+lane, then corrupt one nested lane field in the saved sibling entry. Hydration must drop that entry,
+and real Undo must leave raw document, track, MIDI, gain, Automation projections and history unchanged.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

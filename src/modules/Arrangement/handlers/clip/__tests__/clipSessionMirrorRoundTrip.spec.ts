@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
 import {
@@ -91,6 +92,26 @@ function persistedInverse(entryIndex = 0): { type: string; payload: Record<strin
 const clipOnTrack = (trackId: string, clipId: string): Clip | undefined =>
     trackStore.value?.tracks.find((track) => track.id === trackId)?.clips.find((clip) => clip.id === clipId);
 
+function automationLane(id: string, clipId?: string): AutomationLane {
+    const lane: AutomationLane = {
+        id,
+        trackId: TRACK_ID,
+        parameterId: `parameter-${id}`,
+        parameterName: id,
+        points: [{ beat: 0.5, value: 0.25, curve: 'linear', tension: 0 }],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+    if (clipId !== undefined) {
+        lane.clipId = clipId;
+    }
+    return lane;
+}
+
 /** The production hydration path: every registered descriptor's forward contract plus the internal-replay contracts. */
 function hydrateProductionContracts(): void {
     clearHandlerRegistry();
@@ -137,6 +158,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        automationStore.set({ lanes: [] });
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
         hydrateProductionContracts();
     });
@@ -146,6 +168,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        automationStore.set({ lanes: [] });
         workspaceStore.set({ ...defaultWorkspaceState });
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         configureAutomergeStoragePort(null);
@@ -271,6 +294,118 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }>('root')
         ).toMatchObject({ gainEnvelopes: { envelopes: {} }, warpStates: { states: {} } });
     });
+
+    it('restores every removed clip automation lane from real persisted capture through Undo and Redo', async () => {
+        const removedLanes = [automationLane('clip-lane-a', 'clip-a'), automationLane('clip-lane-b', 'clip-a')];
+        removedLanes[1]!.points[0]!.value = 0.75;
+        const unrelatedLane = automationLane('unrelated-lane');
+        automationStore.set({ lanes: [...removedLanes, unrelatedLane] });
+        setEnvelope('clip-a', {
+            clipId: 'clip-a',
+            enabled: true,
+            points: [{ id: 'gain-a', beatOffset: 0, gainDb: -6 }],
+        });
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { 'clip-a': [{ id: 'note-a', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        expect(persistedInverse().payload.ripplePlan).toMatchObject({ clipAutomationLanes: removedLanes });
+        const shiftedUnrelatedLane = structuredClone(automationStore.value?.lanes[0]);
+        expect(automationStore.value?.lanes).toEqual([shiftedUnrelatedLane]);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+        expect(automationStore.value?.lanes).toEqual([unrelatedLane, ...removedLanes]);
+        expect(getCrdtDoc<{ automation: { lanes: AutomationLane[] } }>('root')?.automation.lanes).toEqual([
+            unrelatedLane,
+            ...removedLanes,
+        ]);
+        expect(midiStore.value?.notesByClipId['clip-a']).toHaveLength(1);
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']?.points[0]?.gainDb).toBe(-6);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+        expect(automationStore.value?.lanes).toEqual([shiftedUnrelatedLane]);
+        expect(getCrdtDoc<{ automation: { lanes: AutomationLane[] } }>('root')?.automation.lanes).toEqual([
+            shiftedUnrelatedLane,
+        ]);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it.each([
+        {
+            name: 'point value',
+            corrupt: (lane: Record<string, unknown>) => {
+                (lane.points as { value: unknown }[])[0]!.value = 'bad';
+            },
+        },
+        {
+            name: 'point curve',
+            corrupt: (lane: Record<string, unknown>) => {
+                (lane.points as { curve: unknown }[])[0]!.curve = 'bad';
+            },
+        },
+    ])(
+        'rejects a persisted removeClip with malformed automation $name before real Undo writes',
+        async ({ corrupt }) => {
+            const removedLanes = [automationLane('clip-lane-a', 'clip-a'), automationLane('clip-lane-b', 'clip-a')];
+            const unrelatedLane = automationLane('unrelated-lane');
+            automationStore.set({ lanes: [...removedLanes, unrelatedLane] });
+            setEnvelope('clip-a', {
+                clipId: 'clip-a',
+                enabled: true,
+                points: [{ id: 'gain-a', beatOffset: 0, gainDb: -6 }],
+            });
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: { 'clip-a': [{ id: 'note-a', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            flushAutomergeStorageWrites();
+
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entries = persisted.past as {
+                inverseAction: { payload: { ripplePlan: { clipAutomationLanes: Record<string, unknown>[] } } };
+            }[];
+            expect(entries[0]!.inverseAction.payload.ripplePlan.clipAutomationLanes).toHaveLength(2);
+            corrupt(entries[0]!.inverseAction.payload.ripplePlan.clipAutomationLanes[0]!);
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+
+            const beforeRaw = structuredClone(getCrdtDoc('root'));
+            const beforeTrack = structuredClone(trackStore.value);
+            const beforeMidi = structuredClone(midiStore.value);
+            const beforeGain = structuredClone(gainEnvelopeStore.value);
+            const beforeAutomation = structuredClone(automationStore.value);
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(0);
+            await undo();
+            expect(getCrdtDoc('root')).toEqual(beforeRaw);
+            expect(trackStore.value).toEqual(beforeTrack);
+            expect(midiStore.value).toEqual(beforeMidi);
+            expect(gainEnvelopeStore.value).toEqual(beforeGain);
+            expect(automationStore.value).toEqual(beforeAutomation);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(0);
+        }
+    );
 
     it('drawClip: the recorded entry serializes, rehydrates, and its discard inverse still replays', async () => {
         const action = {
