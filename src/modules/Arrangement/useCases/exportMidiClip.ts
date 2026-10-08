@@ -1,4 +1,4 @@
-import { downloadMidiFile, getMidiStoreState, projectMidiClipWindow } from '#/modules/MIDI/useCases';
+import { downloadMidiFile, getMidiStoreState, projectMidiClipPlayback } from '#/modules/MIDI/useCases';
 
 import { getAllTracks } from './getAllTracks';
 
@@ -9,33 +9,34 @@ export function exportMidiClip(clipId: string): void {
         return;
     }
 
-    let clipName = 'export';
-    let clipStartBeat = 0;
-    let midiOffsetBeats = 0;
-    let visibleBeats = Number.POSITIVE_INFINITY;
     for (const track of tracks) {
         const clip = track.clips.find((candidateClip) => candidateClip.id === clipId);
-        if (clip) {
-            clipName = clip.name || track.name;
-            clipStartBeat = clip.startBeat;
-            midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-            visibleBeats = clip.endBeat - clip.startBeat;
-            break;
+        if (!clip) {
+            continue;
         }
+        // The file holds what the clip plays from its start to its end, every loop
+        // pass included. Pitch-bend lanes are not exported.
+        const { notes, controlChanges } = projectMidiClipPlayback({
+            notes: midi.notesByClipId[clipId] ?? [],
+            controlChanges: midi.ccByClipId[clipId] ?? [],
+            clip: {
+                id: clipId,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                midiOffsetBeats: clip.midiOffsetBeats,
+                loopEnabled: clip.loopEnabled,
+                loopLength: clip.loopLength,
+            },
+        });
+        downloadMidiFile({
+            clipName: clip.name || track.name,
+            // The projection already places events on the timeline.
+            clipStartBeat: 0,
+            notes,
+            ccs: controlChanges,
+        });
+        return;
     }
 
-    // The file holds what the clip plays for one pass: the visible window of the
-    // content, slipped by the offset so the window's first beat lands on the clip start.
-    const { notes, controlChanges } = projectMidiClipWindow({
-        notes: midi.notesByClipId[clipId] ?? [],
-        controlChanges: midi.ccByClipId[clipId] ?? [],
-        pitchBends: midi.pitchBendByClipId[clipId] ?? [],
-        window: {
-            beatOffset: -midiOffsetBeats,
-            visibleStartBeat: midiOffsetBeats,
-            visibleEndBeat: midiOffsetBeats + visibleBeats,
-        },
-    });
-
-    downloadMidiFile({ clipName, clipStartBeat, notes, ccs: controlChanges });
+    downloadMidiFile({ clipName: 'export', clipStartBeat: 0, notes: [], ccs: [] });
 }

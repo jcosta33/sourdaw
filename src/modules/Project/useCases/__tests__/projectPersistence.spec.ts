@@ -147,6 +147,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
     projectMidiClipWindow: vi.fn(),
+    projectMidiClipPlayback: vi.fn(),
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(),
     projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
