@@ -31,6 +31,7 @@ import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../git
 import {
     confirmClientMutationId,
     parseReviewRepairReply,
+    renderReviewRepairConfirmationMarker,
     renderReviewRepairReply,
     selectEligibleRepairs,
     type ReviewRepairRecord,
@@ -58,6 +59,11 @@ const MOVED_LINE = 367;
 const ORIGINAL_LINE = 358;
 const OUTDATED_LINE = 174;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
+const EVIDENCE = {
+    observable: 'the confirmation identifies the accepted repair record',
+    verification: 'pnpm test:run scripts/__tests__/confirmReviewRepairs.spec.ts',
+    observed: 'one digest covers the populated author record',
+};
 const REFUSED_MESSAGE = `refusing to confirm 1 review thread(s) on PR #${PR}`;
 
 function recordFor(overrides: Partial<ReviewRepairRecord> = {}): ReviewRepairRecord {
@@ -68,7 +74,7 @@ function recordFor(overrides: Partial<ReviewRepairRecord> = {}): ReviewRepairRec
         finding: { commentId: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
         commit: COMMIT,
         summary: SUMMARY,
-        evidence: [],
+        evidence: [EVIDENCE],
         head: HEAD,
         ...overrides,
     };
@@ -266,12 +272,13 @@ describe('confirmClientMutationIds', () => {
 });
 
 describe('renderConfirmationReply', () => {
-    it('should carry a human sentence and the contract record the author marker reads back', () => {
+    it('should carry a compact whole-record binding without copying the author evidence payload', () => {
         const body = renderConfirmationReply(recordFor());
         expect(body).toContain('Confirmed against the current head');
-        // The canonical form is the contract's own rendering, not a second one this module invents.
-        expect(body).toContain(renderReviewRepairReply(recordFor()));
-        expect(parseReviewRepairReply(body)).toEqual(recordFor());
+        expect(body).toContain('sourdaw-repair-confirmation-v1');
+        expect(body).not.toContain('sourdaw-repair-v1');
+        expect(body).not.toContain(EVIDENCE.observed);
+        expect(body).not.toContain('"evidence"');
     });
 });
 
@@ -451,22 +458,16 @@ describe('confirmReviewRepairs', () => {
         expect(logs).toEqual([`repair-confirmed:${PR}:${THREAD}`, `repair-confirmed:${PR}:${SECOND_THREAD}`]);
     });
 
-    it('should post the confirmation reply the author marker parses back to the confirmed record', () => {
+    it('should post a compact confirmation without repeating either author evidence payload', () => {
         const { port, mutations } = fakePort();
         confirmReviewRepairs(PR, HEAD, port);
         const posted = mutations.filter((entry) => entry.kind === 'post');
-        expect(posted.map((entry) => parseReviewRepairReply(entry.body ?? ''))).toEqual([
-            recordFor(),
-            recordFor({
-                thread: SECOND_THREAD,
-                finding: {
-                    commentId: SECOND_ROOT_COMMENT_ID,
-                    path: SECOND_FINDING_PATH,
-                    line: FINDING_LINE,
-                    side: 'RIGHT',
-                },
-            }),
-        ]);
+        expect(posted).toHaveLength(2);
+        for (const entry of posted) {
+            expect(entry.body).toContain('sourdaw-repair-confirmation-v1');
+            expect(entry.body).not.toContain('sourdaw-repair-v1');
+            expect(entry.body).not.toContain(EVIDENCE.observed);
+        }
     });
 
     it('should resolve nothing on a rerun of a clean batch', () => {
@@ -503,6 +504,37 @@ describe('confirmReviewRepairs', () => {
 
         const posted = mutations.filter((entry) => entry.kind === 'post');
         expect(posted.map((entry) => entry.thread)).toEqual([THREAD, SECOND_THREAD]);
+    });
+
+    it('should replay a post after resolve failure on a descendant head without posting a second reply', () => {
+        let liveHead = HEAD;
+        let resolveFails = true;
+        let resolveAttempts = 0;
+        const descendantHistory = (commit: string, target: string) =>
+            (target === MOVED_HEAD && [HEAD, COMMIT, REVIEWED_HEAD].includes(commit)) ||
+            (target === HEAD && [HEAD, COMMIT, REVIEWED_HEAD].includes(commit)) ||
+            (commit === REVIEWED_HEAD && target === COMMIT);
+        const { port: base, mutations, logs } = fakePort(HEAD, [subjectThread()], descendantHistory);
+        const port: ConfirmReviewRepairsPort = {
+            ...base,
+            pullRequestHead: () => liveHead,
+            resolve: (thread, clientMutationId) => {
+                resolveAttempts += 1;
+                if (resolveFails) {
+                    resolveFails = false;
+                    throw new Error(`resolve exploded on ${thread}`);
+                }
+                base.resolve(thread, clientMutationId);
+            },
+        };
+
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(`resolve exploded on ${THREAD}`);
+        liveHead = MOVED_HEAD;
+        expect(confirmReviewRepairs(PR, MOVED_HEAD, port)).toEqual({ resolved: [THREAD] });
+        expect(mutations.filter((entry) => entry.kind === 'post')).toHaveLength(1);
+        expect(resolveAttempts).toBe(2);
+        expect(mutations.filter((entry) => entry.kind === 'resolve')).toHaveLength(1);
+        expect(logs).toContain(`repair-confirmation-replayed:${PR}:${THREAD}`);
     });
 
     it('should not post a second confirmation when the thread already carries the bare record marker', () => {
@@ -744,6 +776,68 @@ describe('confirmReviewRepairs', () => {
             { thread: THREAD, reason: 'thread already carries 2 identical confirmations' },
         ]);
 
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+        expect(mutations).toEqual([]);
+    });
+
+    it('should refuse a mixed legacy and compact duplicate before any mutation', () => {
+        const record = recordFor();
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                { id: 9_101, body: authorRecordReply(record), authorNodeId: REVIEWER_BOT_NODE_ID },
+                {
+                    id: 9_102,
+                    body: renderReviewRepairConfirmationMarker(record, HEAD),
+                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                },
+            ],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+        expect(mutations).toEqual([]);
+    });
+
+    it('should refuse doubled admitted markers in one reviewer reply before any mutation', () => {
+        const record = recordFor();
+        const marker = renderReviewRepairConfirmationMarker(record, HEAD);
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                { id: 9_101, body: `${marker}\n${marker}`, authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(/ambiguous or duplicate confirmation markers/u);
+        expect(mutations).toEqual([]);
+    });
+
+    it('should refuse a malformed admitted compact marker before any mutation', () => {
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                { id: 9_101, body: 'sourdaw-repair-confirmation-v1 {not json', authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(/confirmation marker line is not valid JSON/u);
+        expect(mutations).toEqual([]);
+    });
+
+    it('should refuse a compact marker with a changed source-record digest before any mutation', () => {
+        const record = recordFor();
+        const edited = recordFor({ summary: 'a superseding record with the same commit' });
+        const thread = subjectThread({
+            replies: [
+                { id: 9_001, body: authorRecordReply(edited), authorNodeId: AUTHOR_BOT_NODE_ID },
+                {
+                    id: 9_102,
+                    body: renderReviewRepairConfirmationMarker(record, HEAD),
+                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                },
+            ],
+        });
         const { port, mutations } = fakePort(HEAD, [thread]);
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
         expect(mutations).toEqual([]);

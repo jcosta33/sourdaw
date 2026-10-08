@@ -65,3 +65,20 @@ the persisted finding path verbatim. A canonical path `scripts/first.ts\nforged`
 contract. The required probe preserves the whole-batch refusal while asserting one prefixed physical
 record with the escaped separator and retained cause; rejecting the persisted path would hide the
 logging defect and change the repair-record contract.
+
+## Escape: reviewer confirmations copy and reconstruct the repair as a second record
+
+[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced reviewer confirmation replies
+with the complete `sourdaw-repair-v1` payload. [PR #4565](https://github.com/jcosta33/sourdaw/pull/4565)
+introduced cold reconstruction that admitted both the immutable author and reviewer into the same
+repair collection; [PR #5078](https://github.com/jcosta33/sourdaw/pull/5078) later preserved actor
+identity without separating those roles. The public result duplicated the full evidence bytes and
+reported a reviewer confirmation as another author repair. This is an observable wire and
+reconstruction cost, not a preference about shorter prose.
+
+The missed probe uses a populated, safe V1 record and proves that a new reviewer marker carries a
+digest of the canonical whole record without copying its evidence, while cold reconstruction retains
+one author repair and a separate confirmation linked to that digest. It also replays a posted
+confirmation after a resolve failure and refuses mixed or doubled confirmations before any remote
+mutation. The historical final-head bundles for #4411 and #4565 are unavailable, so their precise
+stance and reviewer tier cannot be established; no historical tier is inferred here.

@@ -7,8 +7,11 @@ import {
     REVIEW_REPAIR_SUMMARY_MAX_BYTES,
     assertReviewRepairRecord,
     confirmClientMutationId,
+    parseReviewRepairReplyForRole,
     parseReviewRepairReply,
+    renderReviewRepairConfirmationMarker,
     renderReviewRepairReply,
+    reviewRepairRecordDigest,
     selectEligibleRepairs,
 } from '../reviewRepair.ts';
 
@@ -225,6 +228,51 @@ describe('review repair reply round trip', () => {
         expect(canonicalJson(parsed)).toBe(payload);
         expect(sortedKeysEverywhere(parsed)).toBe(true);
         expect(whitespaceOutsideStrings(payload)).toEqual([]);
+    });
+});
+
+describe('compact repair confirmation binding', () => {
+    it('should digest every canonical author-record field, including populated evidence', () => {
+        const digest = reviewRepairRecordDigest(VALID_RECORD);
+        expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+        for (const changed of [
+            repairRecord({ summary: 'a different summary' }),
+            repairRecord({ evidence: [{ ...EVIDENCE_ENTRY, observed: 'different evidence' }] }),
+            repairRecord({ finding: { ...VALID_RECORD.finding, line: FINDING_LINE + 1 } }),
+            repairRecord({ commit: 'c'.repeat(40) }),
+            repairRecord({ head: 'd'.repeat(40) }),
+        ]) {
+            expect(reviewRepairRecordDigest(changed)).not.toBe(digest);
+        }
+    });
+
+    it('should render one canonical compact reviewer marker bound to the entire author record', () => {
+        const marker = renderReviewRepairConfirmationMarker(VALID_RECORD, HEAD);
+        const prefix = 'sourdaw-repair-confirmation-v1 ';
+        expect(marker.startsWith(prefix)).toBe(true);
+        const payload = marker.slice(prefix.length);
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+        expect(canonicalJson(parsed)).toBe(payload);
+        expect(parsed).toEqual({
+            confirmationHead: HEAD,
+            format: 'repair-confirmation-v1',
+            pr: PR,
+            recordDigest: reviewRepairRecordDigest(VALID_RECORD),
+            thread: THREAD,
+        });
+        expect(marker).not.toContain(EVIDENCE_ENTRY.observed);
+    });
+
+    it('should admit compact content only on the reviewer route and refuse doubled reviewer markers', () => {
+        const marker = renderReviewRepairConfirmationMarker(VALID_RECORD, HEAD);
+        expect(parseReviewRepairReplyForRole(marker, 'author')).toBeUndefined();
+        expect(parseReviewRepairReplyForRole(marker, 'reviewer')).toMatchObject({
+            kind: 'confirmation',
+            confirmation: { pr: PR, thread: THREAD, confirmationHead: HEAD },
+        });
+        expect(() => parseReviewRepairReplyForRole(`${marker}\n${marker}`, 'reviewer')).toThrow(
+            /ambiguous or duplicate/u
+        );
     });
 });
 
