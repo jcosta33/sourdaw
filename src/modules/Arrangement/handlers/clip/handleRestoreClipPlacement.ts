@@ -5,6 +5,7 @@ import { type AppAction, type ClipMoveActionSnapshot, type HandlerValidationCont
 import { moveClip } from '../../useCases/clip/moveClip';
 import { audioSourceStateMatches } from '../../useCases/clipEditing/audioSourceStateMatches';
 import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
+import { takeSourceDepthsMatch } from '../../useCases/comping/takeSourceDepthsMatch';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
@@ -48,6 +49,9 @@ function expectedPlacementMatches(action: RestoreClipPlacementAction): boolean {
         current !== null &&
         placementsMatch({ ...current, automationLanes: [] }, { ...action.payload.expected, automationLanes: [] }) &&
         current.sourceMatches(action.payload.expected) &&
+        (action.payload.expected.takeSources === undefined ||
+            (Array.isArray(action.payload.expected.takeSources) &&
+                takeSourceDepthsMatch(action.payload.clipId, action.payload.expected.takeSources))) &&
         clipAutomationMoveStateMatches(action.payload.clipId, action.payload.expected.automationLanes)
     );
 }
@@ -84,6 +88,9 @@ function expectedPlacementMatchesProjected(
         (action.payload.expected.audioSource === undefined ||
             (isAudioSourceStateSnapshot(action.payload.expected.audioSource) &&
                 audioSourceStateMatches(located.clip, action.payload.expected.audioSource))) &&
+        (action.payload.expected.takeSources === undefined ||
+            (Array.isArray(action.payload.expected.takeSources) &&
+                takeSourceDepthsMatch(action.payload.clipId, action.payload.expected.takeSources))) &&
         expectedMoveStateMatches(action, projected)
     );
 }
@@ -128,6 +135,12 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
         if (action.payload.replacement.audioSource) {
             moveOptions.historicalAudioSource = action.payload.replacement.audioSource;
         }
+        if (action.payload.replacement.takeSources !== undefined) {
+            if (!Array.isArray(action.payload.replacement.takeSources)) {
+                return { status: 'conflict' };
+            }
+            moveOptions.historicalTakeSources = action.payload.replacement.takeSources;
+        }
         const moved = moveClip(
             action.payload.clipId,
             action.payload.replacement.trackId,
@@ -153,6 +166,9 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
                   { ...action.payload.replacement, automationLanes: [] }
               ) &&
                   current.sourceMatches(action.payload.replacement) &&
+                  (action.payload.replacement.takeSources === undefined ||
+                      (Array.isArray(action.payload.replacement.takeSources) &&
+                          takeSourceDepthsMatch(action.payload.clipId, action.payload.replacement.takeSources))) &&
                   clipAutomationMoveStateMatches(action.payload.clipId, action.payload.replacement.automationLanes)
             : false;
     },

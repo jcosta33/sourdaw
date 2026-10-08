@@ -182,11 +182,18 @@ export type ClipMoveActionSnapshot = {
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
     readonly audioSource?: AudioSourceStateSnapshot;
+    readonly takeSources?: readonly TakeSourceDepthSnapshot[];
 };
 /** Optional clip-source field presence in an inverse action; null means absent. */
 export type AudioSourceStateSnapshot = {
     audioOffsetSeconds: number | null;
     audioOffsetBeats: number | null;
+};
+export type TakeSourceDepthSnapshot = {
+    readonly laneId: string;
+    readonly takeId: string;
+    readonly sourceOffsetSeconds: number | null;
+    readonly sourceOffsetBeats: number | null;
 };
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
