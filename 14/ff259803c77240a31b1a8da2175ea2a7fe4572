@@ -1,0 +1,33 @@
+scripts/__tests__/vitestCollectionPatterns.spec.ts
+  s_97ab82e0b4f10c::t_a8f99f553a4a96 9-10
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_72bc7c4cf06a92 512
+  s_97ab82e0b4f10c::t_a8f99f553a4a96 428-440,466,510-511,513-527,616-622
+  s_1c08b47ac3792f::t_bfd8db3b313a47 623
+scripts/vitestCollectionPatterns.ts
+  s_97ab82e0b4f10c::t_72fc10d23fffd8 37,39,63,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14ff259803c77240a31b1a8da2175ea2a7fe4572",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
