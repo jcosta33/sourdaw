@@ -353,6 +353,57 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/mine.wav');
     });
 
+    // The superseded corner of the withdrawal shape: the user pick has started
+    // but not applied when the peer withdraws the pick and the paired decode
+    // settles superseded. Restoring the undecided leaf and then converging the
+    // withdrawal as two separate store writes used to commit the withdrawn
+    // pick first and supersede it a transaction later — a peer observing the
+    // first transaction decodes the withdrawn pick with nothing to supersede
+    // it. The release must commit the document's leaf once, before the pick's
+    // own commit.
+    it('commits the document leaf once before a superseded unapplied pair hands the store to the user pick', async () => {
+        const peerDecode = deferredDecode();
+        const userDecode = deferredDecode();
+        mocks.nativeLoadSample
+            .mockImplementationOnce(() => peerDecode.promise)
+            .mockImplementationOnce(() => userDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        // The user drops their own pick while the paired load is unsettled: a
+        // newer load epoch that will win the store once it applies.
+        const userPick = loadSampleFromPath(DEVICE_ID, '/samples/mine.wav');
+
+        // The peer withdraws the pick mid-window; the re-sweep finds the
+        // document matching the store's leaf and starts nothing.
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        expect(mocks.nativeLoadSample).toHaveBeenCalledTimes(2);
+
+        // The paired decode settles superseded while the pick is unapplied:
+        // the release converges the store to the document's leaf in one write.
+        peerDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+        expect(setDeviceStateCommits()).toHaveLength(1);
+        expect(setDeviceStateCommits()[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/a.wav');
+
+        // The pick settles: its own write is the release's only successor.
+        userDecode.resolve({ ...LOCAL_DECODE_OF_B, sampleId: 43 });
+        await userPick;
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(2);
+        expect(commits[1]?.payload.state.data.mode).toBe('slice');
+        expect(commits[1]?.payload.state.data.activeSample?.filePath).toBe('/samples/mine.wav');
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/b.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/mine.wav');
+    });
+
     // The reviewer's withdrawal shape: while a paired decode is in flight the
     // peer reverts the document's sample to the very path the store already
     // holds. The re-sweep finds no change and starts nothing, so nothing
@@ -384,6 +435,43 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(commits[0]?.payload.state.data.mode).toBe('slice');
         // The commit is the document's own truth, never the withdrawn pick.
         expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/a.wav');
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/b.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/a.wav');
+    });
+
+    // The failed corner of the withdrawal shape: the decode fails AFTER the
+    // peer withdrew the pick, so the release finds an undecided store under a
+    // document that no longer holds the pair's pick. Restoring the undecided
+    // leaf and then converging the withdrawal as two separate store writes
+    // used to commit the withdrawn pick first — a peer observing that
+    // transaction decodes it with nothing to supersede. The release must
+    // decide the leaf once and commit once: the document's own reference,
+    // never the withdrawn pick.
+    it('commits the document leaf once when a failed pair meets a withdrawn document', async () => {
+        const peerDecode = deferredDecode();
+        mocks.nativeLoadSample.mockImplementationOnce(() => peerDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+
+        // The peer withdraws the pick mid-window; the re-sweep finds the
+        // document matching the store's leaf and starts nothing.
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        expect(mocks.nativeLoadSample).toHaveBeenCalledTimes(1);
+
+        peerDecode.reject(new Error('unreadable file'));
+        await flushLoad();
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('slice');
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/a.wav');
+        // The withdrawn pick never reaches the document, not even transiently.
         expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/b.wav')).toBe(
             false
         );
