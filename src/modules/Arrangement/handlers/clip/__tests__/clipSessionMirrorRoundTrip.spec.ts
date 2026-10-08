@@ -22,6 +22,8 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     getDrumPreviewBranchHandlers,
+    mutateCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -147,6 +149,54 @@ function seedAudioMoveSource(canonicalSeconds?: number): void {
             },
         ],
     });
+}
+
+function receiveClipAudioSourceEdit(clipId: string, seconds: number | null): void {
+    flushAutomergeStorageWrites();
+    mutateCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>({
+        id: 'root',
+        changeFn: (project) => {
+            let clip: Clip | undefined;
+            for (const track of project.tracks.tracks) {
+                clip = track.clips.find((candidate) => candidate.id === clipId);
+                if (clip) {
+                    break;
+                }
+            }
+            if (!clip) {
+                throw new Error(`Expected clip ${clipId} in the document`);
+            }
+            if (seconds === null) {
+                delete clip.audioOffsetSeconds;
+            } else {
+                clip.audioOffsetSeconds = seconds;
+            }
+        },
+    });
+    projectCrdtToStores();
+}
+
+function receiveTakeSourceDepthEdit(takeId: string, seconds: number): void {
+    flushAutomergeStorageWrites();
+    mutateCrdtDoc<{
+        takeLanes: { lanes: { takes: { id: string; sourceOffsetSeconds?: number }[] }[] };
+    }>({
+        id: 'root',
+        changeFn: (project) => {
+            let take: { id: string; sourceOffsetSeconds?: number } | undefined;
+            for (const lane of project.takeLanes.lanes) {
+                take = lane.takes.find((candidate) => candidate.id === takeId);
+                if (take) {
+                    break;
+                }
+            }
+            if (!take) {
+                throw new Error(`Expected take ${takeId} in the document`);
+            }
+            take.sourceOffsetSeconds = seconds;
+        },
+    });
+    projectCrdtToStores();
 }
 
 function automationLane(id: string, clipId?: string): AutomationLane {
@@ -922,28 +972,29 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             await undo();
             expect(undoStore.value?.future).toHaveLength(1);
             if (field === 'clip') {
-                const before = trackStore.value!;
-                trackStore.set({
-                    ...before,
-                    tracks: before.tracks.map((track) => ({
-                        ...track,
-                        clips: track.clips.map((clip) =>
-                            clip.id === 'clip-a' ? { ...clip, audioOffsetSeconds: 7 } : clip
-                        ),
-                    })),
-                });
+                receiveClipAudioSourceEdit('clip-a', 7);
             } else {
-                const before = takeLaneStore.value!;
-                takeLaneStore.set({
-                    lanes: before.lanes.map((lane) => ({
-                        ...lane,
-                        takes: lane.takes.map((take) =>
-                            take.id === 'take-1' ? { ...take, sourceOffsetSeconds: 7 } : take
-                        ),
-                    })),
-                });
+                receiveTakeSourceDepthEdit('take-1', 7);
             }
-            const rawPeer = structuredClone(getCrdtDoc('root'));
+            const rawPeer = structuredClone(
+                getCrdtDoc<{
+                    tracks: { tracks: { clips: Clip[] }[] };
+                    takeLanes: { lanes: { takes: { id: string; sourceOffsetSeconds?: number }[] }[] };
+                }>('root')
+            );
+            if (field === 'clip') {
+                expect(rawPeer?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')?.audioOffsetSeconds).toBe(
+                    7
+                );
+                expect(clipOnTrack(TRACK_ID, 'clip-a')?.audioOffsetSeconds).toBe(7);
+            } else {
+                expect(
+                    rawPeer?.takeLanes.lanes[0]?.takes.find((take) => take.id === 'take-1')?.sourceOffsetSeconds
+                ).toBe(7);
+                expect(
+                    takeLaneStore.value?.lanes[0]?.takes.find((take) => take.id === 'take-1')?.sourceOffsetSeconds
+                ).toBe(7);
+            }
             const trackPeer = structuredClone(trackStore.value);
             const takesPeer = structuredClone(takeLaneStore.value);
             const historyPeer = structuredClone(undoStore.value);
@@ -998,26 +1049,16 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             await undo();
             expect(clipOnTrack(TRACK_ID, 'clip-a')?.audioOffsetSeconds).toBe(0);
             expect(undoStore.value?.future).toHaveLength(1);
-            const before = trackStore.value!;
-            trackStore.set({
-                ...before,
-                tracks: before.tracks.map((track) => ({
-                    ...track,
-                    clips: track.clips.map((clip) => {
-                        if (clip.id !== 'clip-a') {
-                            return clip;
-                        }
-                        const edited = { ...clip };
-                        if (peerSource === 'absent') {
-                            delete edited.audioOffsetSeconds;
-                        } else {
-                            edited.audioOffsetSeconds = 7;
-                        }
-                        return edited;
-                    }),
-                })),
-            });
-            const rawPeer = structuredClone(getCrdtDoc('root'));
+            receiveClipAudioSourceEdit('clip-a', peerSource === 'absent' ? null : 7);
+            const rawPeer = structuredClone(getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root'));
+            const rawClip = rawPeer?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a');
+            if (peerSource === 'absent') {
+                expect(Object.hasOwn(rawClip ?? {}, 'audioOffsetSeconds')).toBe(false);
+                expect(Object.hasOwn(clipOnTrack(TRACK_ID, 'clip-a') ?? {}, 'audioOffsetSeconds')).toBe(false);
+            } else {
+                expect(rawClip?.audioOffsetSeconds).toBe(7);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')?.audioOffsetSeconds).toBe(7);
+            }
             const trackPeer = structuredClone(trackStore.value);
             const historyPeer = structuredClone(undoStore.value);
             await redo();

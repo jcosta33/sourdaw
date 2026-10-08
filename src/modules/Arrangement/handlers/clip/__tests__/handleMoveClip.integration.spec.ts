@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -16,6 +19,8 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -203,11 +208,26 @@ describe('handleMoveClip atomic integration', () => {
         await redo();
         expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.sourceOffsetSeconds)).toEqual([0, 1]);
 
-        const lane = takeLaneStore.value!.lanes[0]!;
-        takeLaneStore.set({
-            lanes: [{ ...lane, takes: [lane.takes[0]!, { ...lane.takes[1]!, sourceOffsetSeconds: 8 }] }],
+        flushAutomergeStorageWrites();
+        mutateCrdtDoc<{
+            takeLanes: { lanes: { takes: { id: string; sourceOffsetSeconds?: number }[] }[] };
+        }>({
+            id: 'root',
+            changeFn: (project) => {
+                const take = project.takeLanes.lanes[0]?.takes.find((candidate) => candidate.id === 'take-1');
+                if (!take) {
+                    throw new Error('Expected recorded take in the document');
+                }
+                take.sourceOffsetSeconds = 8;
+            },
         });
+        projectCrdtToStores();
         const peerRaw = structuredClone(getCrdtDoc('root'));
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: { takes: { id: string; sourceOffsetSeconds?: number }[] }[] } }>(
+                'root'
+            )?.takeLanes.lanes[0]?.takes.find((take) => take.id === 'take-1')?.sourceOffsetSeconds
+        ).toBe(8);
         const past = undoHistoryStore.value?.past;
         await undo();
         expect(takeLaneStore.value?.lanes[0]?.takes[1]?.sourceOffsetSeconds).toBe(8);
@@ -222,17 +242,27 @@ describe('handleMoveClip atomic integration', () => {
         });
         await undo();
 
-        const beforePeer = trackStore.value!;
-        const sourceTrack = beforePeer.tracks[0]!;
-        trackStore.set({
-            ...beforePeer,
-            tracks: [
-                { ...sourceTrack, clips: [{ ...sourceTrack.clips[0]!, audioOffsetSeconds: 7 }] },
-                beforePeer.tracks[1]!,
-            ],
+        flushAutomergeStorageWrites();
+        mutateCrdtDoc<{
+            tracks: { tracks: { clips: { id: string; audioOffsetSeconds?: number }[] }[] };
+        }>({
+            id: 'root',
+            changeFn: (project) => {
+                const clip = project.tracks.tracks[0]?.clips.find((candidate) => candidate.id === 'clip-1');
+                if (!clip) {
+                    throw new Error('Expected moved clip in the document');
+                }
+                clip.audioOffsetSeconds = 7;
+            },
         });
+        projectCrdtToStores();
         const peerState = trackStore.value;
         const peerRaw = structuredClone(getCrdtDoc('root'));
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: { id: string; audioOffsetSeconds?: number }[] }[] } }>(
+                'root'
+            )?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-1')?.audioOffsetSeconds
+        ).toBe(7);
         const future = undoHistoryStore.value?.future;
 
         await redo();
