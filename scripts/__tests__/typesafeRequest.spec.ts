@@ -34,7 +34,7 @@ function observedProxy<T extends object>(target: T) {
         getOwnPropertyDescriptor: vi.fn(Reflect.getOwnPropertyDescriptor),
         get: vi.fn(Reflect.get),
     };
-    return { proxy: new Proxy(target, traps), traps };
+    return { proxy: new Proxy<T>(target, traps), traps };
 }
 function response() {
     return new Response(
