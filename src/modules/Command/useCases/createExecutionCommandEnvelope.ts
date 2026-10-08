@@ -8,6 +8,7 @@ import { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 
 type CreateExecutionCommandEnvelopeInput = {
     action: AppAction;
@@ -57,6 +58,21 @@ function getPayloadRecord(action: AppAction): Readonly<Record<string, unknown>> 
     return action.payload;
 }
 
+/**
+ * The assigned ids `materializeCommandApplicationIds` drew before the handler ran, plus the ids the
+ * handler or the state guards drew into the arguments this command compiled.
+ */
+function withCompiledMintedIds(
+    operation: string,
+    argumentsValue: Readonly<Record<string, unknown>>,
+    assigned: readonly CommandApplicationAssignedId[]
+): readonly CommandApplicationAssignedId[] {
+    const minted = readHandlerMintedApplicationIds(operation, argumentsValue).filter(
+        (entry) => !assigned.some((existing) => existing.argument === entry.argument)
+    );
+    return [...assigned, ...minted];
+}
+
 export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnvelopeInput): {
     action: AppAction;
     envelope: VersionedCommandEnvelope;
@@ -70,7 +86,11 @@ export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnve
     const metadata = compileCommandArgumentMetadata(argumentsValue, materialized.action.type);
     const envelope = createVersionedCommandEnvelope({
         action: materialized.action,
-        applicationAssignedIds: identityMaterialized.applicationAssignedIds,
+        applicationAssignedIds: withCompiledMintedIds(
+            materialized.action.type,
+            argumentsValue,
+            identityMaterialized.applicationAssignedIds
+        ),
         availableDeviceVersions: commandDeviceVersionsPort.capture({
             argumentsValue,
             operation: materialized.action.type,
