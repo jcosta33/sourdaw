@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { batchStoreUpdates } from '#/infra/store/createStore';
+
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
+import { stopInputMonitoring } from '../stopInputMonitoring';
 import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
 
 import type { Store } from '#/infra/store/types';
@@ -231,6 +234,41 @@ describe('syncAutoInputMonitoring', () => {
         setTransport({ isPlaying: true, isRecording: false });
         setTransport({ isPlaying: false, isRecording: false });
         expect(harness.startInputMonitoring).toHaveBeenCalledTimes(2);
+    });
+
+    it('opens the edge for a track id and input a previous project had refused once a project load tears the graph down', async () => {
+        harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
+        setTracks(audioTrack());
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(1);
+        harness.startInputMonitoring.mockClear();
+
+        // The load's graph reset releases every capture and advances the teardown
+        // epoch; its one store batch then resets and hydrates the track store, so
+        // no publication ever shows the previous project's track absent.
+        stopInputMonitoring();
+        harness.monitored.clear();
+        batchStoreUpdates(() => {
+            stores.trackStore.set({ tracks: [] });
+            setTracks(audioTrack());
+        });
+
+        expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
+    });
+
+    it('still withholds a refused open from a batched republication of the same track within one teardown epoch', async () => {
+        harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
+        setTracks(audioTrack());
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(1);
+        harness.startInputMonitoring.mockClear();
+
+        batchStoreUpdates(() => {
+            stores.trackStore.set({ tracks: [] });
+            setTracks(audioTrack());
+        });
+
+        expect(harness.startInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('retries a refused open once the track has passed through On and back to Auto', async () => {

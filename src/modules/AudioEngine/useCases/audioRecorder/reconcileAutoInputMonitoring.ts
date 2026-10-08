@@ -22,6 +22,25 @@ const openRequests = new Map<string, OpenRequest>();
 
 let previousTransport: TransportFlags = { isPlaying: false, isRecording: false };
 
+let reconciledTeardownEpoch = readMonitorTeardownEpoch();
+
+/**
+ * A global teardown (a graph reset, a project load) releases every edge and
+ * capture, so a record made before it describes nothing that still exists. A
+ * project load also publishes its tracks in one batch, so the removed-track
+ * sweep never sees the previous project's track absent; without this, a refusal
+ * remembered for a track id and input in the old project would suppress the
+ * open for the same pair in the new one.
+ */
+function forgetRecordsFromBeforeTeardown(): void {
+    const epoch = readMonitorTeardownEpoch();
+    if (epoch === reconciledTeardownEpoch) {
+        return;
+    }
+    reconciledTeardownEpoch = epoch;
+    openRequests.clear();
+}
+
 function forgiveRefusalsAtRecordStartOrStop(transport: TransportFlags): void {
     const recordStarted = transport.isRecording && !previousTransport.isRecording;
     const cameToRest = previousTransport.isPlaying && !transport.isPlaying;
@@ -88,6 +107,7 @@ export function reconcileAutoInputMonitoring(): void {
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
+    forgetRecordsFromBeforeTeardown();
     forgiveRefusalsAtRecordStartOrStop(transport);
 
     for (const track of tracks) {
