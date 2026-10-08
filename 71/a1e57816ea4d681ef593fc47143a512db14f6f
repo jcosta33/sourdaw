@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_97ab82e0b4f10c::t_96738b431de906 245-251,257
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_4c8cd08893b364::t_4dc2f1a7879e08 435-436,439-440
+src/modules/AiRuntime/useCases/__tests__/deviceManifestParameterSelection.spec.ts
+  s_97ab82e0b4f10c::t_a5d432aa85a435 1-249
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_beb54bf43b47b7 2228-2231
+evidence/agent-campaign/manifest.json
+  s_97ab82e0b4f10c::t_bc4bfa1e03b789 527
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_97ab82e0b4f10c::t_865cc309111c0f 327,329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71a1e57816ea4d681ef593fc47143a512db14f6f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

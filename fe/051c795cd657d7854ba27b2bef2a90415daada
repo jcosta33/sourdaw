@@ -15,6 +15,11 @@ scripts/__tests__/checkStancesRecord.spec.ts
   "git_ai_version": "1.7.5",
   "base_commit_sha": "fe051c795cd657d7854ba27b2bef2a90415daada",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_1c08b47ac3792f": {
       "agent_id": {
