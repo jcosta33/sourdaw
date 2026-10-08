@@ -158,8 +158,7 @@ function ruleLimitations(rule: JsonValue): string[] {
     if (type === 'required_status_checks') {
         const checks = parameters.required_status_checks;
         if (
-            (parameters.strict_required_status_checks_policy !== undefined &&
-                typeof parameters.strict_required_status_checks_policy !== 'boolean') ||
+            typeof parameters.strict_required_status_checks_policy !== 'boolean' ||
             (parameters.do_not_enforce_on_create !== undefined &&
                 typeof parameters.do_not_enforce_on_create !== 'boolean') ||
             !jsonArray(checks) ||

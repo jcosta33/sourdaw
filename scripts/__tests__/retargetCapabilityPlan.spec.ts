@@ -253,10 +253,11 @@ describe('inactive retarget capability plan', () => {
     });
 
     it.each([
+        { required_status_checks: [] },
         { strict_required_status_checks_policy: 'false', required_status_checks: [] },
         { strict_required_status_checks_policy: false, required_status_checks: [{}] },
         { strict_required_status_checks_policy: false, required_status_checks: [null] },
-        { do_not_enforce_on_create: 'false', required_status_checks: [] },
+        { strict_required_status_checks_policy: false, do_not_enforce_on_create: 'false', required_status_checks: [] },
     ])('marks an unreadable present required-check value incomplete', (parameters) => {
         const input = observed();
         requiredRuleset(input).rules = [{ type: 'required_status_checks', parameters }];
