@@ -30,7 +30,21 @@ function prepareAction(action: SplitClipAction) {
 }
 
 export const handleSplitClip = createHandler<'splitClip'>({
-    validateSessionEntry: isSplitClipSessionEntry,
+    validateSessionEntry: (entry) => {
+        if (!isSplitClipSessionEntry(entry)) {
+            return false;
+        }
+        // The undo leg fills this owner capture after a later take lands on the
+        // right fragment. JSON separates the paired arrays, so restore their
+        // shared identity after validating both captures before replay.
+        if (
+            entry.inverseAction?.type === 'restoreClipSplitState' &&
+            entry.redoAction?.type === 'restoreClipSplitState'
+        ) {
+            entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
+        }
+        return true;
+    },
     validate: (action) =>
         prepareClipSplit({
             clipId: action.payload.clipId,
