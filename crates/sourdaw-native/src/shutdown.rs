@@ -112,6 +112,16 @@ pub fn shutdown(
     app_state: &AppState,
     windows: Option<&dyn PluginWindowHost>,
 ) -> ShutdownReport {
+    shutdown_with_wait(collab, midi, app_state, windows, sleep_one_poll)
+}
+
+fn shutdown_with_wait(
+    collab: &CollabState,
+    midi: &MidiState,
+    app_state: &AppState,
+    windows: Option<&dyn PluginWindowHost>,
+    mut wait: impl FnMut(Duration) -> Duration,
+) -> ShutdownReport {
     shutdown_discovery(collab);
 
     // The MIDI step runs before the plugin passes: it is quick, bounded by the
@@ -138,7 +148,7 @@ pub fn shutdown(
     // could not run is exactly the case where reclamation still matters.
     app_state.sweep_retired_engine_plugins();
 
-    destroy_live_plugin_instances(app_state, editor_thread, &mut report);
+    destroy_live_plugin_instances(app_state, editor_thread, &mut report, &mut wait);
 
     report
 }
@@ -175,6 +185,7 @@ fn destroy_live_plugin_instances(
     app_state: &AppState,
     editor_thread: &dyn PluginWindowHost,
     report: &mut ShutdownReport,
+    wait: &mut impl FnMut(Duration) -> Duration,
 ) {
     let instances = app_state.take_live_plugin_instances(editor_thread);
     report
@@ -188,7 +199,7 @@ fn destroy_live_plugin_instances(
 
     let runtimes = remove_runtimes_from_scheduler(app_state, instances.engine_owned);
     let retired = retire_for_reclamation(app_state, runtimes);
-    reclaim_until_waiting_budget_is_spent(app_state);
+    reclaim_until_waiting_budget_is_spent(app_state, wait);
     record_reclamation(app_state, retired, report);
 }
 
@@ -276,7 +287,10 @@ fn retire_for_reclamation(
 /// on the machine, because every sleep is charged what it measured. Teardown
 /// inside a sweep is not waiting and is not charged, so it is bounded by the
 /// plugins themselves and by the shell's force-exit behind them.
-fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
+fn reclaim_until_waiting_budget_is_spent(
+    app_state: &AppState,
+    wait: &mut impl FnMut(Duration) -> Duration,
+) {
     let mut remaining_budget = SCHEDULER_RELEASE_BUDGET;
 
     loop {
@@ -294,7 +308,8 @@ fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
             return;
         }
 
-        remaining_budget = remaining_budget.saturating_sub(sleep_one_poll(remaining_budget));
+        let poll = SCHEDULER_RELEASE_POLL.min(remaining_budget);
+        remaining_budget = remaining_budget.saturating_sub(wait(poll));
     }
 }
 
@@ -307,8 +322,7 @@ fn reclaim_until_waiting_budget_is_spent(app_state: &AppState) {
 /// clock the budget exists to bound grows without limit — seconds against a
 /// half-second budget, with the shell's force-exit as the only thing left
 /// stopping it.
-fn sleep_one_poll(remaining_budget: Duration) -> Duration {
-    let poll = SCHEDULER_RELEASE_POLL.min(remaining_budget);
+fn sleep_one_poll(poll: Duration) -> Duration {
     let started = Instant::now();
     thread::sleep(poll);
     started.elapsed()
@@ -828,35 +842,43 @@ mod tests {
     /// sweep as it waits or that plugin's `destroy` never runs.
     ///
     /// Sweeping *as* it waits, specifically: a pass that slept its whole budget
-    /// and swept once at the end would reclaim this runtime too, and quit a
-    /// half-second later than it had any reason to. The elapsed bound is what
-    /// separates the two.
+    /// and swept once at the end would reclaim this runtime too. The requested
+    /// polls and the release after the first one distinguish those paths without
+    /// timing the other synchronous work in the cascade.
     #[test]
     fn a_runtime_released_during_the_pass_is_still_reclaimed() {
         let state = Arc::new(AppState::default());
         let processing = insert_live_engine_plugin(&state, "engine-instance");
-        let scheduler_reference = engine_runtime(&state, "engine-instance");
+        let mut scheduler_reference = Some(engine_runtime(&state, "engine-instance"));
+        let mut requested_polls = Vec::new();
 
-        let releasing_state = Arc::clone(&state);
-        let release = thread::spawn(move || {
-            // Long enough that the first sweep cannot see the release, short
-            // enough to land inside the waiting budget — the scheduler
-            // acknowledging a queued removal a few callbacks late.
-            thread::sleep(Duration::from_millis(50));
-            drop(scheduler_reference);
-            drop(releasing_state);
-        });
-
-        let started = Instant::now();
-        let report = shutdown(
+        let report = shutdown_with_wait(
             &CollabState::default(),
             &MidiState::default(),
             &state,
             Some(&NoWindowHost),
+            |requested| {
+                requested_polls.push(requested);
+                assert!(
+                    retirement_vec_holds(
+                        &state,
+                        scheduler_reference
+                            .as_ref()
+                            .expect("the scheduler must still hold the runtime"),
+                    ),
+                    "the first sweep must leave a still-held runtime retired"
+                );
+                assert_eq!(
+                    processing.off_audio_thread_stops(),
+                    0,
+                    "the runtime must not be destroyed before the scheduler releases it"
+                );
+                drop(scheduler_reference.take());
+                Duration::from_nanos(252_790_917)
+            },
         );
-        let elapsed = started.elapsed();
-        release.join().expect("the releasing thread should finish");
 
+        assert_eq!(requested_polls, [SCHEDULER_RELEASE_POLL]);
         assert_eq!(
             processing.off_audio_thread_stops(),
             1,
@@ -865,10 +887,33 @@ mod tests {
         assert_eq!(report.destroyed_instances, 1);
         assert!(report.abandoned_instances.is_empty());
         assert_eq!(report.unreclaimed_retirements, 0);
-        assert!(
-            elapsed < SCHEDULER_RELEASE_BUDGET / 2,
-            "the pass must return on the release at 50ms, not sleep out its budget first, took {elapsed:?}"
+    }
+
+    #[test]
+    fn a_still_held_runtime_spends_the_measured_waiting_budget() {
+        let state = AppState::default();
+        let processing = insert_live_engine_plugin(&state, "engine-instance");
+        let scheduler_reference = engine_runtime(&state, "engine-instance");
+        let mut requested_polls = Vec::new();
+
+        let report = shutdown_with_wait(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+            |requested| {
+                requested_polls.push(requested);
+                Duration::from_millis(502)
+            },
         );
+
+        assert_eq!(requested_polls, [SCHEDULER_RELEASE_POLL]);
+        assert_eq!(processing.off_audio_thread_stops(), 0);
+        assert_eq!(report.destroyed_instances, 0);
+        assert_eq!(report.abandoned_instances, ["Live Fixture"]);
+        assert_eq!(report.unreclaimed_retirements, 1);
+        assert_eq!(Arc::strong_count(&scheduler_reference), 2);
+        assert!(retirement_vec_holds(&state, &scheduler_reference));
     }
 
     /// The MIDI step is the one place the open input device is ever released
