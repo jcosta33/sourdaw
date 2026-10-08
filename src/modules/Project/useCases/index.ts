@@ -31,6 +31,8 @@ export {
     doesProductionBriefAllowActionBatch,
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
+export { collectProtectedScopes } from './collectProtectedScopes';
+export { isProjectWideScope } from './isProjectWideScope';
 export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';
 export { repairProjectData } from './repairProjectData';
 export { unlockProjectScopedBrief } from './unlockProjectScopedBrief';
