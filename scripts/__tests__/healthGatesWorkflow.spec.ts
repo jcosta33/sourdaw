@@ -3584,6 +3584,47 @@ describe('health gates workflow contract', () => {
         }
     });
 
+    it('keeps a failed or missing E2E shadow artifact outside every required result', () => {
+        const health = workflowSet().health;
+        const shadow = jobAt(health, 'selection-shadow');
+        expect(shadow.needs).toBe('scope');
+        expect(shadow.outputs).toBeUndefined();
+        expect(shadow['continue-on-error']).toBeUndefined();
+        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        expect(jobAt(health, 'validation').needs).toBe('scope');
+        expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
+        expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
+            ref: '${{ github.event.pull_request.head.sha }}',
+            'fetch-depth': 0,
+            'persist-credentials': false,
+        });
+        expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
+            name: 'pr-validation-scope',
+            path: 'shadow-scope',
+        });
+        expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
+            name: 'e2e-selection-shadow',
+            'if-no-files-found': 'error',
+        });
+        expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
+        expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
+            'node scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
+        );
+        const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
+        const required = JSON.stringify({
+            scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
+            validation: { result: 'success' },
+            affected: { result: 'success' },
+            codeql: { result: 'skipped' },
+        });
+        expect(runResultsGuard(gateScript, required)).toBe(0);
+        const diagnosticAsNeed = structuredClone(health);
+        arrayAt(jobAt(diagnosticAsNeed, 'gate'), 'needs').push('selection-shadow');
+        expect(() => assertJobGraph({ ...workflowSet(), health: diagnosticAsNeed })).toThrow(
+            'gate must depend on exactly the pinned member list'
+        );
+    });
+
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
