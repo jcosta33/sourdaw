@@ -385,24 +385,18 @@ export function isRestoreTimeOperationSessionPayload(value: unknown): boolean {
     return isRecord(value) && timeOperationRestorePlan.isValid(value.plan);
 }
 
-export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+function hasPairedGlobalTimeRestorePlans(entry: HandlerSessionActionEntry): boolean {
     if (
-        entry.action.type !== 'deleteTime' ||
         entry.inverseAction?.type !== 'restoreTimeOperationState' ||
         entry.redoAction?.type !== 'restoreTimeOperationState'
     ) {
         return false;
     }
-    const action = entry.action.payload;
     const inverse = entry.inverseAction.payload;
     const redo = entry.redoAction.payload;
     const inversePlan: unknown = inverse.plan;
     const redoPlan: unknown = redo.plan;
     if (
-        !Number.isFinite(action.startBeat) ||
-        !Number.isFinite(action.endBeat) ||
-        action.startBeat < 0 ||
-        action.endBeat <= action.startBeat ||
         !isRestoreTimeOperationSessionPayload(inverse) ||
         !isRestoreTimeOperationSessionPayload(redo) ||
         !isRecord(inversePlan) ||
@@ -417,4 +411,46 @@ export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): bool
     } catch {
         return false;
     }
+}
+
+export function isInsertTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'insertTime') {
+        return false;
+    }
+    const { atBeat, durationBeats } = entry.action.payload;
+    return (
+        Number.isFinite(atBeat) &&
+        atBeat >= 0 &&
+        Number.isFinite(durationBeats) &&
+        durationBeats > 0 &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
+}
+
+export function isDuplicateTimeRangeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'duplicateTimeRange') {
+        return false;
+    }
+    const { startBeat, endBeat } = entry.action.payload;
+    return (
+        Number.isFinite(startBeat) &&
+        startBeat >= 0 &&
+        Number.isFinite(endBeat) &&
+        endBeat > startBeat &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
+}
+
+export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'deleteTime') {
+        return false;
+    }
+    const { startBeat, endBeat } = entry.action.payload;
+    return (
+        Number.isFinite(startBeat) &&
+        startBeat >= 0 &&
+        Number.isFinite(endBeat) &&
+        endBeat > startBeat &&
+        hasPairedGlobalTimeRestorePlans(entry)
+    );
 }

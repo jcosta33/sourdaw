@@ -511,8 +511,116 @@ describe('Time operation take ownership through Command and CRDT', () => {
                 targetTake
             );
             expectAuthority();
+
+            mutateCrdtDoc<Project>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.tracks.tracks[0]!.clips.find((clip) => clip.id === target?.id)!.endBeat -= 0.25;
+                },
+            });
+            const peerRaw = structuredClone(getCrdtDoc<Project>('root'));
+            const peerTracks = structuredClone(trackStore.value);
+            const peerLanes = structuredClone(takeLaneStore.value);
+            const history = undoStore.value;
+            expect((await undo()).headConsumed).toBe(false);
+            expect(getCrdtDoc<Project>('root')).toEqual(peerRaw);
+            expect(trackStore.value).toEqual(peerTracks);
+            expect(takeLaneStore.value).toEqual(peerLanes);
+            expect(undoStore.value).toBe(history);
         }
     );
+
+    it.each([
+        { name: 'insert', action: { type: 'insertTime' as const, payload: { atBeat: 1, durationBeats: 4 } } },
+        { name: 'duplicate', action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } } },
+    ])('$name drops malformed saved global-time captures without project writes', async ({ action }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        const original = arrangeComp(2, 4);
+        takeLaneStore.set({ lanes: [{ ...lane(), takes: [{ ...original, sourceOffsetBeats: 2 }] }] });
+        flushAutomergeStorageWrites();
+        await executeAppAction(action);
+        expectAuthority();
+        await vi.waitFor(() => {
+            expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+        });
+        const saved = sessionStorage.getItem('sourdaw-undo-session');
+        if (!saved) {
+            throw new Error('Expected a saved producer entry');
+        }
+        for (const corruption of ['scope', 'reverse', 'nested-source', 'forward'] as const) {
+            const stored = JSON.parse(saved) as {
+                past: {
+                    action: { payload: { atBeat?: number; startBeat?: number; endBeat?: number } };
+                    inverseAction: {
+                        payload: {
+                            plan: {
+                                scope: string;
+                                local: { expected: { trackState: unknown } };
+                                takeLanes: { reKeyedLanes: { takesAfter: Take[] }[] };
+                            };
+                        };
+                    };
+                    redoAction: { payload: { plan: { local: { expected: { trackState: unknown } } } } };
+                }[];
+            };
+            const entry = stored.past[0]!;
+            if (corruption === 'scope') {
+                entry.inverseAction.payload.plan.scope = 'selected-range';
+            } else if (corruption === 'reverse') {
+                entry.redoAction.payload.plan.local.expected.trackState = structuredClone(
+                    entry.inverseAction.payload.plan.local.expected.trackState
+                );
+            } else if (corruption === 'nested-source') {
+                const source = entry.inverseAction.payload.plan.takeLanes.reKeyedLanes[0]!.takesAfter.find((take) =>
+                    Object.hasOwn(take, 'sourceOffsetSeconds')
+                );
+                if (!source) {
+                    throw new Error('Expected the captured canonical take source');
+                }
+                Object.assign(source, { sourceOffsetSeconds: 'malformed' });
+            } else if (action.type === 'insertTime') {
+                entry.action.payload.atBeat = -1;
+            } else {
+                entry.action.payload.endBeat = entry.action.payload.startBeat;
+            }
+            sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(stored));
+            const beforeRaw = structuredClone(getCrdtDoc<Project>('root'));
+            const beforeTracks = structuredClone(trackStore.value);
+            const beforeLanes = structuredClone(takeLaneStore.value);
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            expect(undoStore.value?.past, corruption).toEqual([]);
+            expect(undoStore.value?.future, corruption).toEqual([]);
+            expect(getCrdtDoc<Project>('root'), corruption).toEqual(beforeRaw);
+            expect(trackStore.value, corruption).toEqual(beforeTracks);
+            expect(takeLaneStore.value, corruption).toEqual(beforeLanes);
+            expectAuthority();
+        }
+    });
 
     it.each([
         { name: 'bogus inverse scope', leg: 'inverseAction', scope: 'other-scope' },

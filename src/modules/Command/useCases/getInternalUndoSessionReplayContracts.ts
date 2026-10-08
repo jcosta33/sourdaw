@@ -50,6 +50,20 @@ function createInternalReplayContract(
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
         {
+            actionType: 'insertTime',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('insertTime', payload),
+            validateEntry: (entry) => getHandlerByType('insertTime')?.validateSessionEntry?.(entry) === true,
+        },
+        {
+            actionType: 'duplicateTimeRange',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('duplicateTimeRange', payload),
+            validateEntry: (entry) => getHandlerByType('duplicateTimeRange')?.validateSessionEntry?.(entry) === true,
+        },
+        {
             actionType: 'deleteTime',
             operationVersion: 1,
             role: 'forward',
