@@ -22,6 +22,11 @@ author reviews governed rounds.
   `repair-refused:<pr>:<thread>:<reason>` diagnostic before the aggregate failure, preserve ignored
   diagnostics, and assert zero confirmation and resolution calls for the whole refused batch.
   Checking only an exception or a refusal count does not observe the operator's recovery evidence.
+- Persist a finding path containing LF, CR, CRLF, U+2028, or U+2029 in a canonical repair record.
+  Require its full refusal cause on one physical prefixed diagnostic line, alongside zero confirmation
+  and resolution calls even when another repair is eligible. Escape separators only when logging;
+  legitimate Git paths and canonical repair bytes must still parse unchanged. Check ignored thread IDs
+  containing those separators at the same logging boundary.
 - Retain the ordinary eligible and idempotent flows. Use offline injected ports for these probes;
   they establish local admission and mutation ordering, not live GitHub behavior or repair truth.
 
@@ -50,3 +55,13 @@ selection, paging, author handling, and refusal checks; the final-head bundle is
 The missing diagnostic probe supplied two refused threads and checked their exact IDs and causes
 alongside the zero-mutation guarantee. An exception-only check preserved safety while leaving the
 operator unable to identify the records to repair.
+
+## Escape: a persisted path splits a refusal diagnostic
+
+[PR #5078](https://github.com/jcosta33/sourdaw/pull/5078) added refusal causes but interpolated
+the persisted finding path verbatim. A canonical path `scripts/first.ts\nforged` against root
+`scripts/actual.ts` split one cause across physical lines, leaving the continuation without its
+`repair-refused` prefix. Ordinary-path exact assertions and zero-mutation checks missed the line
+contract. The required probe preserves the whole-batch refusal while asserting one prefixed physical
+record with the escaped separator and retained cause; rejecting the persisted path would hide the
+logging defect and change the repair-record contract.

@@ -276,6 +276,56 @@ describe('renderConfirmationReply', () => {
 });
 
 describe('confirmReviewRepairs', () => {
+    it.each(
+        [
+            { label: 'LF', separator: '\n', escaped: '\\n' },
+            { label: 'CR', separator: '\r', escaped: '\\r' },
+            { label: 'CRLF', separator: '\r\n', escaped: '\\r\\n' },
+            { label: 'line separator', separator: '\u2028', escaped: '\\u2028' },
+            { label: 'paragraph separator', separator: '\u2029', escaped: '\\u2029' },
+        ].flatMap((entry) => [false, true].map((withEligible) => ({ ...entry, withEligible })))
+    )(
+        'keeps persisted $label paths in one refusal line before aborting (eligible included: $withEligible)',
+        ({ separator, escaped, withEligible }) => {
+            const record = recordFor({
+                finding: {
+                    commentId: ROOT_COMMENT_ID,
+                    path: `scripts/first.ts${separator}forged`,
+                    line: FINDING_LINE,
+                    side: 'RIGHT',
+                },
+            });
+            const reply = authorRecordReply(record);
+            const refused = subjectThread({
+                rootPath: 'scripts/actual.ts',
+                replies: [{ id: 9_001, body: reply, authorNodeId: AUTHOR_BOT_NODE_ID }],
+            });
+            const ignoredThread = `PRRT_ignored${separator}continued`;
+            const ignored = subjectThread({ thread: ignoredThread, resolved: true });
+            const batch = withEligible ? [cleanThreads()[1]!, refused, ignored] : [refused, ignored];
+            const { port, logs, mutations } = fakePort(HEAD, batch);
+            const postConfirmation = vi.fn(port.postConfirmation);
+            const resolve = vi.fn(port.resolve);
+
+            expect(parseReviewRepairReply(reply)).toEqual(record);
+            expect(() => confirmReviewRepairs(PR, HEAD, { ...port, postConfirmation, resolve })).toThrow(
+                REFUSED_MESSAGE
+            );
+            expect(postConfirmation).not.toHaveBeenCalled();
+            expect(resolve).not.toHaveBeenCalled();
+            expect(mutations).toEqual([]);
+            const refusalLines = logs.filter((line) => line.startsWith('repair-refused:'));
+            expect(refusalLines.join('\n').split(/[\r\n\u2028\u2029]/u)).toEqual([
+                `repair-refused:${PR}:${THREAD}:finding path scripts/first.ts${escaped}forged does not match the thread root scripts/actual.ts`,
+            ]);
+            expect(logs).toEqual([
+                `repair-ignored:${PR}:PRRT_ignored${escaped}continued:already resolved`,
+                ...refusalLines,
+            ]);
+            expect(parseReviewRepairReply(reply)).toEqual(record);
+        }
+    );
+
     it.each([false, true])(
         'logs every refusal before aborting the whole batch (eligible included: %s)',
         (withEligible) => {
