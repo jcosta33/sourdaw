@@ -1,0 +1,25 @@
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_97ab82e0b4f10c::t_bd18d1e1e226d8 449-460,462-478,485-513,515-536,541-543
+  s_97ab82e0b4f10c::t_3b338178df3670 256,259,266
+  s_97ab82e0b4f10c::t_b9eed0adcaeef0 255,257-258,260-265,267-298
+  s_97ab82e0b4f10c::t_e11500c2236a5d 448,461,544
+  s_97ab82e0b4f10c::t_a51417c9aea179 479-484,514,537-540
+scripts/reconstructReviewRounds.ts
+  s_97ab82e0b4f10c::t_49cb1a9293f5f6 292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1a2760dd69fa7fb2433220ddd7f21879c62fa0b",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
