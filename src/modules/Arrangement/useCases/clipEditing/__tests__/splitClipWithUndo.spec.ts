@@ -76,9 +76,8 @@ describe('splitClipWithUndo prepared callback replay', () => {
         expect(undoStore.value?.past).toEqual([]);
         expect(clips()).toHaveLength(1);
     });
-    it('rejects an ineligible owner without changing history or clips', () => {
-        const original = seed();
-        trackStore.set({ ...trackStore.value!, tracks: [{ ...trackStore.value!.tracks[0]!, kind: 'vca' }] });
+    it('rejects a clip whose recorded owner differs from its track without changing history or clips', () => {
+        const original = seed({ trackId: 'other-track' });
         splitClipWithUndo('c1', 4);
         expect(clips()).toStrictEqual([original]);
         expect(undoStore.value?.past).toEqual([]);

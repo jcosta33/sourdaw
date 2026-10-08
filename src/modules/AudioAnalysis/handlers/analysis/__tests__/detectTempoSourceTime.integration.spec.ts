@@ -214,8 +214,12 @@ describe('detected tempo source-time write path', () => {
         expect(raw?.takeLanes).toEqual(takeLaneStore.value);
         expect(raw?.tempoMap).toEqual(tempoMapStore.value);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
-        expect(undoHistoryStore.value?.past[0]?.action.type).toBe('setTempo');
-        expect(undoHistoryStore.value?.past[0]?.inverseAction).toMatchObject({
+        const historyEntry = undoHistoryStore.value?.past[0];
+        if (historyEntry?.kind !== 'action') {
+            throw new Error('Expected action history for detected tempo');
+        }
+        expect(historyEntry.action.type).toBe('setTempo');
+        expect(historyEntry.inverseAction).toMatchObject({
             type: 'setTempo',
             payload: {
                 tempoChangeId: null,
@@ -267,7 +271,11 @@ describe('detected tempo source-time write path', () => {
         expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
         expect(raw?.takeLanes).toEqual(takeLaneStore.value);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
-        expect(undoHistoryStore.value?.past[0]?.inverseAction).toMatchObject({
+        const historyEntry = undoHistoryStore.value?.past[0];
+        if (historyEntry?.kind !== 'action') {
+            throw new Error('Expected action history for detected tempo');
+        }
+        expect(historyEntry.inverseAction).toMatchObject({
             type: 'setTempo',
             payload: { tempoChangeId: null },
         });

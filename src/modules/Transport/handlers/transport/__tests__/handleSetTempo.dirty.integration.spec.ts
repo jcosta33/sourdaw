@@ -222,7 +222,11 @@ describe('setTempo project dirty integration', () => {
         expect(current?.audioOffsetSeconds).toBe(1);
         expect(getCrdtDoc<{ tracks: { tracks: Track[] } }>('root')?.tracks.tracks[0]?.clips[0]).toEqual(current);
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.past[0]?.inverseAction).toMatchObject({
+        const historyEntry = undoStore.value?.past[0];
+        if (historyEntry?.kind !== 'action') {
+            throw new Error('Expected action history for setTempo');
+        }
+        expect(historyEntry.inverseAction).toMatchObject({
             type: 'setTempo',
             payload: { sourceTransition: { version: 1, direction: 'restore', clips: [{ audioOffsetSeconds: 1 }] } },
         });
