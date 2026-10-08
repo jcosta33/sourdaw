@@ -16,6 +16,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
         clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
         getAutomationLanes: mocks.getAutomationLanes,
         isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
     };
 });

@@ -1,4 +1,4 @@
-import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
+import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import {
     type AppAction,
     type ClipSplitActionSnapshot,
@@ -271,7 +271,7 @@ function isPlacement(value: unknown): value is Record<string, unknown> {
         typeof value.endBeat === 'number' &&
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
-        Array.isArray(value.automationLanes) &&
+        isExactClipAutomationMoveSnapshots(value.automationLanes) &&
         hasFiniteNumbers(value.automationLanes) &&
         (!Object.hasOwn(value, 'audioSource') || isAudioSourceStateSnapshot(value.audioSource)) &&
         (!Object.hasOwn(value, 'takeSources') || isTakeSourceDepthSnapshots(value.takeSources))

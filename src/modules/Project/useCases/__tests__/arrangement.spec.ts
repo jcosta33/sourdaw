@@ -192,6 +192,7 @@ vi.mock('#/modules/Automation/useCases', async () => {
         getClipAutomationMoveState: vi.fn(),
         getSendAutomationBusId: vi.fn(),
         isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         isRecordingAutomation: vi.fn(),
         recordAutomationValue: vi.fn(),
         removeAutomationLane: vi.fn(),

@@ -25,6 +25,7 @@ export { prepareClipAutomationShiftTransaction } from './automation/prepareClipA
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
 export { isExactAutomationLaneSnapshots } from './automation/isExactAutomationLaneSnapshots';
+export { isExactClipAutomationMoveSnapshots } from './automation/isExactClipAutomationMoveSnapshots';
 export { restoreClipAutomationMoveState } from './automation/restoreClipAutomationMoveState';
 export { restoreAutomationSnapshot } from './restoreAutomationSnapshot';
 export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat';
