@@ -1,0 +1,46 @@
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_480602431bdf3e 48
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_1c08b47ac3792f::t_0c3ae3d37b536d 496
+  s_1c08b47ac3792f::t_9ed961c9d8d127 32-33,39-75,79-80,86-91,93-97
+  s_1c08b47ac3792f::t_9feae98a5bbe67 517-519,521-525,528,530-532,539-540
+  s_1c08b47ac3792f::t_f03356526657f9 533-538
+  s_1c08b47ac3792f::t_b2525c10eb7e13 92
+  s_1c08b47ac3792f::t_c0bfbf54dacae4 76-78,81-85
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1c08b47ac3792f::t_1c34d7d7c56396 1213
+  s_1c08b47ac3792f::t_903f94f376dd38 1248-1251,1253
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_1c08b47ac3792f::t_f5727c8e36338b 338-342,344-349,352-354,356-358
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_6dff8d33397470 808-810,813-846,858-859,868-869,871,875,882,888-908,917-942,944-946,948-950,960-993,997-999,1001-1006,1008-1017
+  s_1c08b47ac3792f::t_d76da613db08bb 847-857,860-867
+  s_1c08b47ac3792f::t_685ee8288f7c1c 943,947,951-959
+  s_1c08b47ac3792f::t_9293bfcf63f7ad 5
+  s_1c08b47ac3792f::t_af7e89e1a861c4 6
+  s_1c08b47ac3792f::t_4279f55f13db03 705
+  s_1c08b47ac3792f::t_e8446bb475087d 1007
+src/modules/AiRuntime/models/ModelInfo.ts
+  s_1c08b47ac3792f::t_a56f9e1aa48ce3 39
+  s_1c08b47ac3792f::t_452f76c91eb205 30
+  s_1c08b47ac3792f::t_57e49969285baf 48
+  s_1c08b47ac3792f::t_2bd16997ea50db 16-20
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_62e642b7ef4fb6 386,539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "861a28da557fc0444426e5979e44bc9fba17ba0f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
