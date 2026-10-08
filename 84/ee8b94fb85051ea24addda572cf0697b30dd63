@@ -1,0 +1,36 @@
+scripts/resourceGuard.ts
+  s_441e828df58f9e::t_4e660e03bdd1fe 1225-1246,1248
+  s_441e828df58f9e::t_9278f025b2f569 9
+  s_441e828df58f9e::t_d29d9cf7e5b03a 921-962,964-968,970-1075
+  s_441e828df58f9e::t_87564484df0af2 1357
+  s_441e828df58f9e::t_075296c0515358 1427
+  s_441e828df58f9e::t_4a0626202ed965 2042-2046
+  s_441e828df58f9e::t_6284b6db0f00f9 1224,1247
+  s_441e828df58f9e::t_44487bd536a769 963,969
+  s_441e828df58f9e::t_e457daebabf3f4 1269
+scripts/__tests__/resourceGuard.spec.ts
+  s_441e828df58f9e::t_6418c4c39d38ac 388-392,394-395,397-404,407-422,424-429
+  s_441e828df58f9e::t_cf8705a19c4173 393,396
+  s_441e828df58f9e::t_1963257d8cdd87 13
+  s_441e828df58f9e::t_cf68affc07fd94 35
+  s_441e828df58f9e::t_728952b650d402 459-482
+  s_441e828df58f9e::t_7049e6bea961ac 423
+  s_441e828df58f9e::t_7a88604aef91e6 483-508
+  s_441e828df58f9e::t_a1adfd3a1f5a37 405-406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84ee8b94fb85051ea24addda572cf0697b30dd63",
+  "prompts": {},
+  "sessions": {
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
