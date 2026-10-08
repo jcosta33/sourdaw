@@ -1,0 +1,33 @@
+scripts/testInstructionVocabulary.ts
+  s_1c08b47ac3792f::t_08557bc40d4ebf 521-529
+scripts/testInstructions.ts
+  s_97ab82e0b4f10c::t_38ae3466791ead 25,712-715,719-720,728-729,766-778,808
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_1c08b47ac3792f::t_2e6f8d3de97a17 799-803,837,1306
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1c08b47ac3792f::t_8474ebabe138a5 863-903
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "973d2d26ace25671c0cd4ef1cfd09a49c5ad7397",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
