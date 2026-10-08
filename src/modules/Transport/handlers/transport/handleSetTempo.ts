@@ -1,8 +1,12 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
+import { type AppAction, type HandlerExecutionResult, type TempoAudioSourceTransition } from '#/utils/handlerContract';
 
+import { getTempoAtBeat } from '../../models/TempoMap';
+import { tempoMapStore } from '../../stores/tempoMapStore';
+import { transportStore } from '../../stores/transportStore';
 import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { setTempo } from '../../useCases/setTempo';
+import { tempoSourceDependencies } from '../../useCases/tempoSourceDependencies';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
@@ -18,18 +22,96 @@ type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
  * clobbered.) Both the inverse and the redo therefore name the change the
  * original write landed on.
  */
-function buildTargetedAction(bpm: number, tempoChangeId: string | null, expectedBpm: number): SetTempoAction {
-    return { type: 'setTempo', payload: { bpm, expectedBpm, tempoChangeId } };
+function buildTargetedAction(
+    bpm: number,
+    tempoChangeId: string | null,
+    expectedBpm: number,
+    sourceTransition?: TempoAudioSourceTransition
+): SetTempoAction {
+    const payload = { bpm, expectedBpm, tempoChangeId };
+    if (sourceTransition) {
+        return { type: 'setTempo', payload: { ...payload, sourceTransition } };
+    }
+    return {
+        type: 'setTempo',
+        payload,
+    };
+}
+
+function nextTempoAtBeat(action: SetTempoAction, tempoChangeId: string | null): (beat: number) => number {
+    const changes = tempoMapStore.value?.changes ?? [];
+    const baseTempo = transportStore.value?.tempo ?? action.payload.bpm;
+    if (tempoChangeId === null) {
+        return (beat) => getTempoAtBeat(changes, beat, action.payload.bpm);
+    }
+    const nextChanges = changes.map((change) =>
+        change.id === tempoChangeId ? { ...change, tempo: action.payload.bpm } : change
+    );
+    return (beat) => getTempoAtBeat(nextChanges, beat, baseTempo);
+}
+
+function prepareSourceChange(action: SetTempoAction, tempoChangeId: string | null) {
+    if (!tempoSourceDependencies.available()) {
+        return null;
+    }
+    if (action.payload.expectedBpm !== undefined && action.payload.sourceTransition === undefined) {
+        // Entries saved before source captures existed retain their tempo-only replay shape.
+        return null;
+    }
+    return tempoSourceDependencies.prepare({
+        nextTempoAtBeat: nextTempoAtBeat(action, tempoChangeId),
+        replay: action.payload.sourceTransition,
+    });
 }
 
 export const handleSetTempo = createHandler<'setTempo'>({
     previewExecution: 'isolated-project',
+    validateSessionEntry: (entry) => {
+        if (
+            entry.action.type !== 'setTempo' ||
+            entry.inverseAction?.type !== 'setTempo' ||
+            entry.redoAction?.type !== 'setTempo'
+        ) {
+            return false;
+        }
+        const forward = entry.action.payload;
+        const inverse = entry.inverseAction.payload;
+        const redo = entry.redoAction.payload;
+        if (
+            forward.sourceTransition !== undefined ||
+            inverse.expectedBpm !== forward.bpm ||
+            redo.bpm !== forward.bpm ||
+            redo.expectedBpm !== inverse.bpm ||
+            inverse.tempoChangeId !== redo.tempoChangeId
+        ) {
+            return false;
+        }
+        if (inverse.sourceTransition === undefined || redo.sourceTransition === undefined) {
+            return inverse.sourceTransition === undefined && redo.sourceTransition === undefined;
+        }
+        return (
+            tempoSourceDependencies.isTransition(inverse.sourceTransition) &&
+            tempoSourceDependencies.isTransition(redo.sourceTransition) &&
+            inverse.sourceTransition.direction === 'restore' &&
+            redo.sourceTransition.direction === 'apply' &&
+            JSON.stringify({ ...inverse.sourceTransition, direction: 'apply' }) ===
+                JSON.stringify(redo.sourceTransition)
+        );
+    },
     canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
     validate: (action) => {
         const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
-        return (
+        const targetMatches =
+            (action.payload.sourceTransition === undefined || action.payload.expectedBpm !== undefined) &&
             target?.writable === true &&
-            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm)
+            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm);
+        if (!targetMatches || !target) {
+            return false;
+        }
+        return (
+            !tempoSourceDependencies.available() ||
+            (action.payload.expectedBpm !== undefined && action.payload.sourceTransition === undefined) ||
+            prepareSourceChange(action, target.tempoChangeId) !== null
         );
     },
     execute: (alpha): HandlerExecutionResult | void => {
@@ -39,6 +121,22 @@ export const handleSetTempo = createHandler<'setTempo'>({
                 return { status: 'conflict' };
             }
         }
+        const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
+        if (!target) {
+            return { status: 'no-write' };
+        }
+        if (!target.writable) {
+            setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
+            return { status: 'no-write' };
+        }
+        const sourceChange = prepareSourceChange(alpha, target.tempoChangeId);
+        if (
+            tempoSourceDependencies.available() &&
+            (alpha.payload.expectedBpm === undefined || alpha.payload.sourceTransition !== undefined) &&
+            sourceChange === null
+        ) {
+            return { status: 'conflict' };
+        }
         const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
         if (result.status === 'no-write') {
             // There was nothing to write to — no transport state, or a named
@@ -47,6 +145,9 @@ export const handleSetTempo = createHandler<'setTempo'>({
             // inside a ramp throws out of `setTempo` instead, so it reaches the
             // caller rather than vanishing into the same silent abort.
             return { status: 'no-write' };
+        }
+        if (sourceChange && !sourceChange.apply()) {
+            return { status: 'conflict' };
         }
         return {
             status: 'written',
@@ -84,10 +185,27 @@ export const handleSetTempo = createHandler<'setTempo'>({
             return { label, inverseAction: null };
         }
 
+        let source: TempoAudioSourceTransition | undefined;
+        if (tempoSourceDependencies.available()) {
+            source = tempoSourceDependencies.prepare({
+                nextTempoAtBeat: nextTempoAtBeat(alpha, target.tempoChangeId),
+            })?.transition;
+        }
+
         return {
             label,
-            inverseAction: buildTargetedAction(target.tempo, target.tempoChangeId, alpha.payload.bpm),
-            redoAction: buildTargetedAction(alpha.payload.bpm, target.tempoChangeId, target.tempo),
+            inverseAction: buildTargetedAction(
+                target.tempo,
+                target.tempoChangeId,
+                alpha.payload.bpm,
+                source ? { ...source, direction: 'restore' } : undefined
+            ),
+            redoAction: buildTargetedAction(
+                alpha.payload.bpm,
+                target.tempoChangeId,
+                target.tempo,
+                source ? { ...source, direction: 'apply' } : undefined
+            ),
         };
     },
     undoable: true,

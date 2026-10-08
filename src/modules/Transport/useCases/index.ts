@@ -14,6 +14,7 @@ export { disableLooping } from './setLooping';
 export { setMasterGain } from './setMasterGain';
 export { replaceMasterGain } from './replaceMasterGain';
 export { setTempo } from './setTempo';
+export { tempoSourceDependencies } from './tempoSourceDependencies';
 export { setTimeSignature } from './setTimeSignature';
 export { secondsBetweenBeats } from './secondsBetweenBeats';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';

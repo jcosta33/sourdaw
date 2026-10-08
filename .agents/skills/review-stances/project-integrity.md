@@ -114,6 +114,10 @@ the outer write. A stale continuation settles its published claim against the re
 order cannot replace actual publication order. Treat `null` from an inbound projector as an accepted value, not as a
 missing callback result, and keep ambiguous publish-then-throw outcomes on the committed terminal path.
 
+## Lesson from PR #1109 tempo-source escape
+
+PR #1109 (`65f56a73aa`) made the tempo field edit either the transport base or a named map event, but its target and undo tests did not observe legacy audio source entry. A clip or comp take stored only as a beat offset can then seek a different media second when the tempo governing its clip start changes. For a tempo-write review, seed legacy clip and take offsets at the affected beat, execute the typed command, and compare the real comp resolver and offline buffer seek before and after the edit. Require exact source-field presence and media position through production save/hydration, Undo, and Redo; an inbound new legacy source or a changed captured media owner must refuse replay without changing raw truth or history. Keep no-op, missing target, conflict, ramp refusal, and isolated preview free of live source writes.
+
 ## Lesson from the comp-interval escape
 
 A comp selection over `[start, end)` edits only that musical interval. Removing every intersecting

@@ -195,6 +195,41 @@ export type TakeSourceDepthSnapshot = {
     readonly sourceOffsetSeconds: number | null;
     readonly sourceOffsetBeats: number | null;
 };
+/** An absent canonical field resolved under the pre-edit tempo, for targeted setTempo replay. */
+export type TempoAudioSourceTransition = {
+    readonly version: 1;
+    readonly direction: 'apply' | 'restore';
+    readonly clips: readonly {
+        readonly trackId: string;
+        readonly alternativeId: string | null;
+        readonly clipId: string;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly audioBufferId: string | null;
+        readonly fileId: string | null;
+        readonly assetHash: string | null;
+        readonly originalTempo: number;
+        readonly audioOffsetBeats: number;
+        readonly audioOffsetSeconds: number;
+    }[];
+    readonly takes: readonly {
+        readonly laneId: string;
+        readonly trackId: string;
+        readonly takeId: string;
+        readonly clipId: string;
+        readonly alternativeId: string | null;
+        readonly clipStartBeat: number;
+        readonly clipEndBeat: number;
+        readonly audioBufferId: string | null;
+        readonly fileId: string | null;
+        readonly assetHash: string | null;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly originalTempo: number;
+        readonly sourceOffsetBeats: number;
+        readonly sourceOffsetSeconds: number;
+    }[];
+};
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
 export type ClipMoveTarget = {
@@ -1268,6 +1303,8 @@ export type AppAction =
               tempoChangeId?: string | null;
               /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
               expectedBpm?: number;
+              /** Arrangement-owned canonical source capture for targeted tempo Undo/Redo. */
+              sourceTransition?: TempoAudioSourceTransition;
           };
       }
     | {

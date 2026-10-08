@@ -5,10 +5,15 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, type Track, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setTimeOperationDependencies } from '#/modules/Arrangement/useCases';
+import {
+    getArrangementHandlers,
+    isTempoAudioSourceTransition,
+    prepareAudioSourcesForTempoChange,
+    setTimeOperationDependencies,
+} from '#/modules/Arrangement/useCases';
 import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, resetActionReplayAuthority, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -19,8 +24,13 @@ import {
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
-import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
-import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
+import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    getTransportHandlers,
+    prepareTimelineMapStateRestore,
+    prepareTimelineMapTimeOperation,
+    tempoSourceDependencies,
+} from '#/modules/Transport/useCases';
 
 import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
@@ -96,6 +106,11 @@ describe('offline projection of inserted audio source', () => {
         projectCrdtToStores();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getTransportHandlers());
+        tempoSourceDependencies.set({
+            prepare: prepareAudioSourcesForTempoChange,
+            isTransition: isTempoAudioSourceTransition,
+        });
         clearUndoHistory();
         resetActionReplayAuthority();
         setTimeOperationDependencies({
@@ -115,7 +130,76 @@ describe('offline projection of inserted audio source', () => {
         stopProjectionBridge();
         configureAutomergeStoragePort(null);
         setTimeOperationDependencies(null);
+        tempoSourceDependencies.set(null);
         removeCrdtDoc('root');
+    });
+
+    it('keeps the operation-produced comp media seek through base tempo Undo/Redo', async () => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const { audioOffsetSeconds: _removed, ...legacy } = sourceClip;
+        trackStore.set({
+            tracks: [{ ...sourceTrack, clips: [{ ...legacy, audioOffsetBeats: 2 }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'source',
+                            name: 'Take',
+                            startBeat: 2,
+                            endBeat: 8,
+                            selected: true,
+                            sourceOffsetBeats: 2,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 8, takeId: 'take-1' }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        const projectedSeek = (): number | undefined => {
+            flushAutomergeStorageWrites();
+            const raw = getCrdtDoc<Project>('root');
+            expect(raw?.tracks.tracks[0]?.clips).toEqual(trackStore.value?.tracks[0]?.clips);
+            expect(raw?.takeLanes).toEqual(takeLaneStore.value);
+            const beatToSeconds = (beat: number): number => readSecondsAtBeat({ beat });
+            const tempoAtBeat = (beat: number): number => readTempoAtBeat({ beat });
+            const clip = resolveTrackClipsWithComping('track-1', raw!.tracks.tracks[0]!.clips, raw!.takeLanes, {
+                projectBeatToSeconds: beatToSeconds,
+                resolveTempoAtBeat: tempoAtBeat,
+            })[0];
+            expect(clip).toBeDefined();
+            return projectOfflineAudioClipPlaybacks({
+                clip: clip!,
+                bufferDurationSeconds: 20,
+                regionStartBeat: 0,
+                regionStartSec: 0,
+                durationSeconds: 20,
+                compensationDelay: 0,
+                projectBeatToSeconds: beatToSeconds,
+                resolveTempoAtBeat: tempoAtBeat,
+            })[0]?.bufferOffsetSec;
+        };
+
+        expect(projectedSeek()).toBe(2);
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } });
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.sourceOffsetSeconds).toBe(1);
+        expect(projectedSeek()).toBe(2);
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+        expect(projectedSeek()).toBe(2);
+        await redo();
+        expect(projectedSeek()).toBe(2);
     });
 
     it.each([

@@ -36,6 +36,8 @@ import {
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
     setTimeOperationDependencies,
+    prepareAudioSourcesForTempoChange,
+    isTempoAudioSourceTransition,
     setVcaRuntimeProjectionDependencies,
     getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds,
@@ -186,6 +188,7 @@ import {
     readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
+    tempoSourceDependencies,
     reconcileVcaRuntimeGain,
     stopPlayback,
     repairRuntimeGraphFromProject,
@@ -392,6 +395,7 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
+tempoSourceDependencies.set({ prepare: prepareAudioSourcesForTempoChange, isTransition: isTempoAudioSourceTransition });
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
