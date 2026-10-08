@@ -1,0 +1,39 @@
+src/modules/Command/AGENTS.md
+  s_2bfd55a4393d7c::t_34031e1bbdb822 29
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_97ab82e0b4f10c::t_8ab4c62dbc58c3 277-320
+src/modules/Command/useCases/__tests__/parseVersionedCommandEnvelopeHandlerMintedIds.spec.ts
+  s_2bfd55a4393d7c::t_9bd7d03fd12e08 79-109,190-265
+src/modules/Command/useCases/getVersionedCommandReferencedTargets.ts
+  s_2bfd55a4393d7c::t_f0b2d63509f299 1-29
+src/modules/Command/useCases/getVersionedCommandTargetReferences.ts
+  s_2bfd55a4393d7c::t_ae091438900d7f 3,9
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_2bfd55a4393d7c::t_625cdf263b6bdb 14,236-248,364-365
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipSplit.ts
+  s_2bfd55a4393d7c::t_99b23db2c8ae4b 52-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b263a971dd0b03b6877d5926a7f0b2f2901ad74",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
