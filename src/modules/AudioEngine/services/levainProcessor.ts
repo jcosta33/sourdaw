@@ -24,10 +24,11 @@
  *
  * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
  * commits with a call that allocates and frees nothing: the bank it replaces
- * waits in the engine's retired slot. The host frees it with
- * `releaseRetiredBank` messages of its own, one bounded step each, answered by
+ * waits in the engine's retired slot. Aborting a staged bank does the same with
+ * the staged bank. The host frees it with `releaseRetiredBank` messages of its
+ * own, one bounded step each, answered by
  * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
- * commit or `process()`.
+ * commit, the abort or `process()`.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -280,7 +281,8 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
 
         this._leaveBankLoad(new Error('Levain sample bank load was superseded'));
-        // Begins by freeing any retired bank, so none is left to release.
+        // Begins by freeing any retired bank, the one the leave above just
+        // retired included, so none is left to release.
         inst.begin_sample_bank(instrumentId);
         this._retiredBankToken = null;
         this._bankKey = bankKey;
@@ -435,6 +437,7 @@ class LevainProcessor extends AudioWorkletProcessor {
 
     _leaveBankLoad(error: unknown): void {
         const bankKey = this._bankKey;
+        const loadToken = this._bankLoadToken;
         const inFlight = bankKey ? inFlightBanks.get(bankKey) : undefined;
         this._bankKey = null;
         this._bankRole = null;
@@ -453,7 +456,11 @@ class LevainProcessor extends AudioWorkletProcessor {
             inFlight?.followers.delete(this);
         }
         try {
-            this._instance?.abort_sample_bank();
+            // The abort retires the staged bank instead of freeing it, so the
+            // host's release loop for this load's token frees it in steps.
+            if (this._instance?.abort_sample_bank()) {
+                this._retiredBankToken = loadToken;
+            }
         } catch (abortError) {
             console.error('LevainProcessor sample-bank abort failed:', abortError);
         }

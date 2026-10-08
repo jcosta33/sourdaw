@@ -69,10 +69,11 @@ impl PendingSampleBank {
     }
 }
 
-/// What a commit displaced: the previous bank's storage, plus the committed
-/// bank's leftover instrument id. A commit only moves these into the engine's
-/// single retired slot, so it neither allocates nor frees; `release_retired_bank`
-/// (or the next `begin_sample_bank`) frees them off the commit path.
+/// A bank waiting to be freed: what a commit displaced (the previous bank's
+/// storage, plus the committed bank's leftover instrument id) or a staged bank
+/// an abort discarded. Retiring only moves these into the engine's single
+/// retired slot, so it neither allocates nor frees; `release_retired_bank`
+/// (or the next `begin_sample_bank`) frees them off the render path.
 ///
 /// The underscored fields are never read: they exist so their storage is
 /// freed when the slot empties, not when the commit runs.
@@ -87,6 +88,17 @@ struct RetiredBank {
 }
 
 impl RetiredBank {
+    /// Take a staged bank's storage, whole, without allocating or freeing.
+    fn from_pending(pending: PendingSampleBank) -> Self {
+        Self {
+            _zone_map: pending.zone_map,
+            sample_pool: Some(pending.sample_pool),
+            draining: None,
+            _legato_transitions: pending.legato_transitions,
+            _instrument_id: pending.instrument_id,
+        }
+    }
+
     /// Free up to `max_entries` PCM entries. Returns true once nothing PCM-sized remains.
     ///
     /// A pool a sibling instance still holds is only released by decrementing
@@ -270,12 +282,27 @@ impl LevainEngine {
         self.pending_sample_bank = Some(PendingSampleBank::new(instrument_id));
     }
 
-    pub fn abort_sample_bank(&mut self) {
-        self.pending_sample_bank = None;
+    /// Discard the staged bank without changing the sounding one. Runs on the
+    /// audio thread in the worklet, so it neither allocates nor frees: the
+    /// staged bank moves into the retired slot, whole, for
+    /// `release_retired_bank` to free. Returns true when it retired a bank.
+    ///
+    /// `begin_sample_bank` empties the slot and a commit consumes the staged
+    /// bank, so the slot is empty here unless a host skipped its release. Then
+    /// the older bank is freed in this call, as `begin_sample_bank` would.
+    pub fn abort_sample_bank(&mut self) -> bool {
+        let Some(pending) = self.pending_sample_bank.take() else {
+            return false;
+        };
+        self.retired_bank = None;
+        self.retired_bank = Some(RetiredBank::from_pending(pending));
+        true
     }
 
     /// Attach immutable PCM already published by another instance in this
     /// rendering thread. Zones, voices, parameters, and realism stay local.
+    /// Refuses once the staged bank holds PCM of its own, so attaching can
+    /// never drop staged samples in one call.
     pub fn attach_sample_bank(&mut self, bank_key: &str) -> bool {
         let shared = SHARED_SAMPLE_BANKS.with(|banks| {
             let mut banks = banks.borrow_mut();
@@ -289,6 +316,9 @@ impl LevainEngine {
         let Some(pending) = self.pending_sample_bank.as_mut() else {
             return false;
         };
+        if pending.sample_pool.len() > 0 {
+            return false;
+        }
         pending.sample_pool = shared;
         true
     }
@@ -354,13 +384,7 @@ impl LevainEngine {
         self.expression
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
-        self.retired_bank = Some(RetiredBank {
-            _zone_map: pending.zone_map,
-            sample_pool: Some(pending.sample_pool),
-            draining: None,
-            _legato_transitions: pending.legato_transitions,
-            _instrument_id: pending.instrument_id,
-        });
+        self.retired_bank = Some(RetiredBank::from_pending(pending));
         true
     }
 
@@ -2046,6 +2070,80 @@ mod tests {
         assert!(engine.release_retired_bank(1));
         assert!(engine.commit_sample_bank());
         assert_ne!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+    }
+
+    #[test]
+    fn an_abort_with_the_retired_slot_full_frees_the_older_bank_and_retires_the_staged_one() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("violin");
+        for _ in 0..3 {
+            engine
+                .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+                .expect("sample should fit the staging bank");
+        }
+        // `begin_sample_bank` empties the slot and a commit consumes the staged
+        // bank, so only a host that skipped its release can leave one here:
+        // stand one in directly, with nothing PCM-sized left to free.
+        engine.retired_bank = Some(RetiredBank {
+            _zone_map: ZoneMap::new(),
+            sample_pool: None,
+            draining: None,
+            _legato_transitions: LegatoTransitionStore::new(),
+            _instrument_id: String::new(),
+        });
+
+        assert!(engine.abort_sample_bank());
+
+        assert!(engine.pending_sample_bank.is_none());
+        let retired = engine
+            .retired_bank
+            .as_ref()
+            .expect("the staged bank should now be retired");
+        assert_eq!(
+            retired.sample_pool.as_ref().map(|pool| pool.len()),
+            Some(3),
+            "the slot should hold the staged bank, not the older one"
+        );
+        assert!(
+            !engine.release_retired_bank(1),
+            "three staged entries cannot be freed in one single-entry step"
+        );
+        while !engine.release_retired_bank(1) {}
+        assert!(!engine.has_retired_bank());
+    }
+
+    #[test]
+    fn an_abort_with_nothing_staged_retires_nothing() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+        assert!(!engine.abort_sample_bank());
+        assert!(!engine.has_retired_bank());
+    }
+
+    #[test]
+    fn attaching_a_shared_bank_refuses_once_the_staged_bank_holds_pcm() {
+        let mut owner = LevainEngine::new(SAMPLE_RATE, 8);
+        owner.begin_sample_bank("violin");
+        owner
+            .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        assert!(owner.publish_sample_bank("levain-test-attach-guard-bank"));
+
+        let mut follower = LevainEngine::new(SAMPLE_RATE, 8);
+        follower.begin_sample_bank("violin");
+        follower
+            .add_sample(vec![0.5; 64], 64, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+
+        assert!(!follower.attach_sample_bank("levain-test-attach-guard-bank"));
+        assert_eq!(
+            follower
+                .pending_sample_bank
+                .as_ref()
+                .map(|pending| pending.sample_pool.len()),
+            Some(1),
+            "a refused attach must leave the staged PCM in place"
+        );
     }
 
     #[test]

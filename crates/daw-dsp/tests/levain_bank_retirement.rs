@@ -1,10 +1,11 @@
 //! A Levain bank commit hands the displaced bank to a retired slot instead of
-//! dropping it, and `release_retired_bank` frees it later in bounded steps.
+//! dropping it, an abort does the same with the staged bank, and
+//! `release_retired_bank` frees it later in bounded steps.
 //!
-//! `device_process_rt.rs` proves the commit trips no allocation guard. This
-//! file proves the other half of the claim, that the frees did not vanish:
-//! a counting allocator sees none during the commit and sees them during the
-//! release, one bounded step at a time.
+//! `device_process_rt.rs` proves the commit and the abort trip no allocation
+//! guard. This file proves the other half of the claim, that the frees did not
+//! vanish: a counting allocator sees none during the commit or abort and sees
+//! them during the release, one bounded step at a time.
 //!
 //! The counters are per thread, so tests running in parallel do not see each
 //! other's allocations.
@@ -113,20 +114,10 @@ fn committed_instance() -> LevainInstance {
     instance
 }
 
-#[test]
-fn a_commit_frees_nothing_and_the_release_steps_free_the_bank_in_bounded_pieces() {
-    let mut instance = committed_instance();
-    stage_bank(&mut instance, "cello");
-
-    let commit = counted(|| instance.commit_sample_bank());
-    assert!(commit.value, "the staged bank should commit");
-    assert_eq!(
-        (commit.allocations, commit.deallocations),
-        (0, 0),
-        "a commit must neither allocate nor free"
-    );
-    assert!(instance.has_retired_bank());
-
+/// Release the retired bank to done, one bounded step at a time, and assert
+/// each step stays inside its budget and allocates nothing. Returns the number
+/// of steps taken and the allocations they freed between them.
+fn release_in_bounded_steps(instance: &mut LevainInstance) -> (usize, usize) {
     let mut steps = 0;
     let mut total_frees = 0;
     loop {
@@ -143,9 +134,26 @@ fn a_commit_frees_nothing_and_the_release_steps_free_the_bank_in_bounded_pieces(
             step.deallocations
         );
         if step.value {
-            break;
+            return (steps, total_frees);
         }
     }
+}
+
+#[test]
+fn a_commit_frees_nothing_and_the_release_steps_free_the_bank_in_bounded_pieces() {
+    let mut instance = committed_instance();
+    stage_bank(&mut instance, "cello");
+
+    let commit = counted(|| instance.commit_sample_bank());
+    assert!(commit.value, "the staged bank should commit");
+    assert_eq!(
+        (commit.allocations, commit.deallocations),
+        (0, 0),
+        "a commit must neither allocate nor free"
+    );
+    assert!(instance.has_retired_bank());
+
+    let (steps, total_frees) = release_in_bounded_steps(&mut instance);
 
     assert!(
         steps > 1,
@@ -160,6 +168,77 @@ fn a_commit_frees_nothing_and_the_release_steps_free_the_bank_in_bounded_pieces(
         instance.release_retired_bank(STEP_ENTRIES),
         "an empty slot is already released"
     );
+}
+
+#[test]
+fn an_abort_frees_nothing_and_the_release_steps_free_the_staged_bank() {
+    let mut instance = committed_instance();
+    stage_bank(&mut instance, "cello");
+
+    let abort = counted(|| instance.abort_sample_bank());
+    assert!(abort.value, "the staged bank should have been retired");
+    assert_eq!(
+        (abort.allocations, abort.deallocations),
+        (0, 0),
+        "an abort must neither allocate nor free"
+    );
+    assert!(instance.has_retired_bank());
+
+    let (steps, total_frees) = release_in_bounded_steps(&mut instance);
+
+    assert!(
+        steps > 1,
+        "the aborted bank should take several bounded steps to free, took {steps}"
+    );
+    assert!(
+        total_frees >= BANK_SAMPLES as usize,
+        "the release freed only {total_frees} allocations, so the aborted PCM was not freed"
+    );
+    assert!(!instance.has_retired_bank());
+
+    let begin = counted(|| instance.begin_sample_bank("viola"));
+    assert_eq!(
+        begin.deallocations, 0,
+        "begin_sample_bank freed {} allocations after the aborted bank was fully released",
+        begin.deallocations
+    );
+}
+
+#[test]
+fn an_abort_whose_follower_holds_the_last_reference_to_the_pool_drains_in_steps() {
+    let mut owner = LevainInstance::new(SAMPLE_RATE, 8);
+    stage_bank(&mut owner, "violin-1");
+    assert!(owner.publish_sample_bank("levain-retirement-abort-shared-bank"));
+    assert!(owner.commit_sample_bank());
+
+    let mut follower = LevainInstance::new(SAMPLE_RATE, 8);
+    follower.begin_sample_bank("violin-1");
+    assert!(follower.attach_sample_bank("levain-retirement-abort-shared-bank"));
+    assert!(follower.build_zone_map(0, 0));
+    drop(owner);
+
+    let abort = counted(|| follower.abort_sample_bank());
+    assert!(
+        abort.value,
+        "the follower's staged bank should have been retired"
+    );
+    assert_eq!(
+        (abort.allocations, abort.deallocations),
+        (0, 0),
+        "an abort holding the last reference to the pool must neither allocate nor free"
+    );
+
+    let (steps, total_frees) = release_in_bounded_steps(&mut follower);
+
+    assert!(
+        steps > 1,
+        "the last reference to the pool should drain in several bounded steps, took {steps}"
+    );
+    assert!(
+        total_frees >= BANK_SAMPLES as usize,
+        "the release freed only {total_frees} allocations, so the pool's PCM was not freed"
+    );
+    assert!(!follower.has_retired_bank());
 }
 
 #[test]

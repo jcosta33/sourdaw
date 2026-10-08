@@ -230,14 +230,17 @@ function portLoadsOf(nodePort: MessagePort): PortLoads {
 }
 
 /**
- * Ask the worklet to free the bank this load's commit displaced, one bounded
- * step per message, re-asking while it answers that more is left, then call
- * `onOver`. The commit itself frees nothing, and the load that started this
- * does not wait on the loop: it has already resolved. A closed port, or a
- * processor that ends, stops the loop too; the next load sees which in
- * `PortLoads`.
+ * Ask the worklet to free the bank this load retired, one bounded step per
+ * message, re-asking while it answers that more is left, then call `onOver`.
+ * The retired bank is the one a commit displaced, or the staged bank an abort
+ * discarded; neither the commit nor the abort frees anything, and the load
+ * that started this does not wait on the loop: it has already settled. The
+ * port delivers this after any `abortSampleBank` the load posted, so the
+ * request always finds the bank retired. A closed port, or a processor that
+ * has ended or ends meanwhile, stops the loop too: it drops every message, so
+ * no answer would come and every later load on the port would wait for it.
  */
-function releaseRetiredBank(nodePort: MessagePort, loadToken: number, onOver: () => void): void {
+function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: number, onOver: () => void): void {
     function stop(): void {
         nodePort.removeEventListener('message', onMessage);
         onOver();
@@ -268,6 +271,10 @@ function releaseRetiredBank(nodePort: MessagePort, loadToken: number, onOver: ()
         request();
     }
 
+    if (loads.processorEnded) {
+        onOver();
+        return;
+    }
     nodePort.addEventListener('message', onMessage);
     request();
 }
@@ -346,7 +353,9 @@ export async function loadInstrumentFromManifest({
     const previous = loads.tail;
     const over = Promise.withResolvers<void>();
     loads.tail = over.promise;
-    let beginPosted = false;
+    // Set once `beginSampleBank` is posted: from then on the worklet holds a
+    // bank for this token that someone must free, whether the load commits or not.
+    let postedLoadToken: number | null = null;
     let releaseStarted = false;
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
@@ -373,7 +382,7 @@ export async function loadInstrumentFromManifest({
             instrumentId: bank.instrumentId,
             loadToken,
         });
-        beginPosted = true;
+        postedLoadToken = loadToken;
 
         const uploadRequired = await handshake.uploadRequired;
         signal?.throwIfAborted();
@@ -491,17 +500,23 @@ export async function loadInstrumentFromManifest({
         await handshake.completed;
         completed = true;
         releaseStarted = true;
-        releaseRetiredBank(nodePort, loadToken, over.resolve);
+        releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
         if (handshake && !completed) {
             handshake.cancel();
         }
         if (!releaseStarted) {
-            // Nothing this load posted can still commit: either it never
-            // posted a begin (it is over once the loads before it are), or
-            // the worklet's terminal message for it has arrived.
-            over.resolve(beginPosted ? undefined : previous);
+            if (postedLoadToken === null) {
+                // It never posted a begin: it is over once the loads before it are.
+                over.resolve(previous);
+            } else {
+                // The worklet retired the bank this load staged when it aborted
+                // it, or committed it before the abort arrived. Either way the
+                // load is over only once that bank is freed, and the port
+                // delivers this request after the abort.
+                releaseRetiredBank(nodePort, loads, postedLoadToken, over.resolve);
+            }
         }
         lease.release();
     }
