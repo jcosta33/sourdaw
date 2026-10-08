@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
@@ -72,6 +72,7 @@ describe('prepareStripSilence', () => {
         vi.clearAllMocks();
         warpStates.clear();
         transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
+        tempoMapStore.set({ changes: [] });
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({
             status: 'eligible',
@@ -83,6 +84,7 @@ describe('prepareStripSilence', () => {
     afterEach(() => {
         warpStates.clear();
         transportStore.set(defaultTransportState);
+        tempoMapStore.set({ changes: [] });
     });
 
     it('returns null when track state is missing', () => {
@@ -154,6 +156,29 @@ describe('prepareStripSilence', () => {
         expect(plan!.next.clips.map((clip) => clip.id)).not.toContain('clip-1');
         expect(plan!.previous.clips).toEqual([expect.objectContaining({ id: 'clip-1' })]);
         expect(plan!.newClipIds).toHaveLength(2);
+    });
+
+    it('scans the clip-start-tempo source window and keeps its audible fragments in a flat region', () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [{ id: 'slow', beat: 4, tempo: 60, curve: 'instant' }] });
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 4,
+            endBeat: 6,
+            audioOffsetBeats: 0.5,
+        });
+        const channelData = new Float32Array(200);
+        channelData.fill(0.5, 60, 80);
+        channelData.fill(0.5, 130, 150);
+        mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
+
+        const plan = prepareStripSilence({ clipId: 'clip-1', minDuration: 0.2 });
+        expect(plan?.next.clips).toEqual([
+            expect.objectContaining({ startBeat: 4.1, endBeat: 4.3, audioOffsetBeats: 0.6 }),
+            expect.objectContaining({ startBeat: 4.8, endBeat: 5, audioOffsetBeats: 1.3 }),
+        ]);
     });
 
     it('merges adjacent regions whose silence gap is below minSilenceBeats', () => {

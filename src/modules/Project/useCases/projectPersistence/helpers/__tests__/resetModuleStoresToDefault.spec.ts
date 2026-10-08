@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
+import { agentMeasurementArtifactStore, agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
@@ -111,7 +111,9 @@ vi.mock('../../../../stores/arrangementStore', () => ({
 }));
 
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../../../stores/missingMediaStore';
+import { setActiveAgentRunsCanceller } from '../../setActiveAgentRunsCanceller';
 import { setAgentMeasurementArtifactsClearer } from '../../setAgentMeasurementArtifactsClearer';
+import { setAgentSectionRenderArtifactsClearer } from '../../setAgentSectionRenderArtifactsClearer';
 import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
@@ -262,5 +264,70 @@ describe('resetModuleStoresToDefault', () => {
 
         expect(clearer).toHaveBeenCalledTimes(1);
         expect(agentMeasurementArtifactStore.value).toEqual({ artifacts: [] });
+    });
+
+    it('should clear retained agent section renders so a closed project does not leak them', () => {
+        // agentSectionRenderArtifactStore is NOT mocked here: retain a real
+        // artifact the way an agent section render would, then assert the reset
+        // releases it — otherwise the render (and its expiry timer) outlives the
+        // project that produced it (#4767). The clearer itself is registered
+        // through the same composition-root seam bootstrap.ts uses (Project
+        // cannot import AudioRendering's barrel directly — see
+        // agentSectionRenderArtifactsClearingState.ts), so this spy stands in
+        // for `clearAgentSectionRenderArtifacts` and does what it does: empty
+        // the store, which also leaves the expiry scheduler no timer to keep.
+        const clearer = vi.fn(() => {
+            agentSectionRenderArtifactStore.set({ artifacts: [] });
+        });
+        setAgentSectionRenderArtifactsClearer(clearer);
+        agentSectionRenderArtifactStore.set({
+            artifacts: [
+                {
+                    owner: 'agent-section-render',
+                    retention: 'session',
+                    jobId: 'prior-project-render',
+                    sectionId: 'section-1',
+                    sectionName: 'Chorus',
+                    startBeat: 0,
+                    endBeat: 16,
+                    sampleRate: 48_000,
+                    tailSeconds: 0,
+                    sourceRevision: 'revision-1',
+                    renderedAt: Date.now(),
+                    durationSeconds: 2,
+                    frameCount: 96_000,
+                    channelCount: 2,
+                    byteSize: 768_000,
+                    contentAddress: 'prior-project-section-render',
+                    warnings: [],
+                    buffer: {} as AudioBuffer,
+                },
+            ],
+        });
+
+        resetModuleStoresToDefault();
+
+        expect(clearer).toHaveBeenCalledTimes(1);
+        expect(agentSectionRenderArtifactStore.value).toEqual({ artifacts: [] });
+    });
+
+    it('cancels the in-flight agent run before clearing the render artifacts it owns', () => {
+        // The canceller is registered through the same composition-root seam
+        // bootstrap.ts uses (Project cannot import AiRuntime's barrel — AiRuntime
+        // imports Project's). Ordering is the point (#4783): the run is cancelled
+        // first, so its renders abort through the run's own cancellation machinery
+        // and free the process-wide render lock before the reset tears the
+        // artifact stores down.
+        const calls: string[] = [];
+        setActiveAgentRunsCanceller(() => {
+            calls.push('cancel-runs');
+        });
+        setAgentSectionRenderArtifactsClearer(() => {
+            calls.push('clear-section-renders');
+        });
+
+        resetModuleStoresToDefault();
+
+        expect(calls).toEqual(['cancel-runs', 'clear-section-renders']);
     });
 });

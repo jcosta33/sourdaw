@@ -36,10 +36,13 @@ function prepareProviderUsageBudget(input: {
         return null;
     }
     // WebLLM has no provider usage wire, so unavailable counters cannot turn every local planning
-    // attempt's admission ceiling into permanent cumulative spend. Hosted attempts retain the
-    // ceiling until both provider-billed counters are known.
-    const canFinalizeUsage =
-        input.executor === 'webllm' || (input.usage.inputTokens !== null && input.usage.outputTokens !== null);
+    // attempt's admission ceiling into permanent cumulative spend. A hosted response reporting no
+    // billed counters settles the same way: holding every attempt's full ceiling as cumulative
+    // spend drains the run's remoteTokens budget before the tool loop's own turn limit ends the
+    // run (#4729). A partial report keeps the ceiling until a complete report settles it.
+    const usageComplete = input.usage.inputTokens !== null && input.usage.outputTokens !== null;
+    const usageAbsent = input.usage.inputTokens === null && input.usage.outputTokens === null;
+    const canFinalizeUsage = input.executor === 'webllm' || usageComplete || usageAbsent;
     const knownUsage = (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0);
     if (!existingAttempt) {
         agentRunLifecycle.reserveBudget({

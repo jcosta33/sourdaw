@@ -537,10 +537,8 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
                     },
                 },
             ],
-            // A hosted run finalizes a reserved token budget only once the provider reports both
-            // prompt_tokens and completion_tokens; omitting usage leaves every turn's full ceiling
-            // reserved, which starves a later turn in a multi-turn exchange.
-            usage: { prompt_tokens: 800, completion_tokens: 200, total_tokens: 1000 },
+            // #4729: a provider that omits usage entirely. A hosted run may not spend its
+            // remoteTokens budget on unreported estimates before the loop's own turn limit ends it.
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
     );

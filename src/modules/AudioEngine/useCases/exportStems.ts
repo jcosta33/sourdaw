@@ -14,9 +14,9 @@ import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/make
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
-import { acquireRenderLockFromMeasurement } from './offlineRender/acquireRenderLockFromMeasurement';
+import { acquireRenderLockFromAgentRender } from './offlineRender/acquireRenderLockFromAgentRender';
 import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
-import { canPreemptMeasurement } from './offlineRender/canPreemptMeasurement';
+import { canPreemptAgentRender } from './offlineRender/canPreemptAgentRender';
 import { checkCancel } from './offlineRender/checkCancel';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -127,10 +127,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
     optsOrBeats: OfflineRenderOptions | number,
     maybeSampleRate?: number
 ): Promise<Map<string, AudioBuffer>> {
-    // A stem export is always a musician's: it stops an agent measurement holding the lock and waits
-    // for it to release (#4768).
-    const releaseLock = canPreemptMeasurement()
-        ? await acquireRenderLockFromMeasurement()
+    // A stem export is always a musician's: it stops an agent render holding the lock and waits
+    // for it to release (#4768, #5036).
+    const releaseLock = canPreemptAgentRender()
+        ? await acquireRenderLockFromAgentRender()
         : acquireRenderLock('musician-export');
 
     try {

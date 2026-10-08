@@ -81,6 +81,7 @@ describe('renderToClip take restore', () => {
             targetTrackId: 'track-1',
             startBeat: 4,
             endBeat: 8,
+            tailSeconds: 0,
             buffer,
             name: 'Rendered',
         });
@@ -121,6 +122,7 @@ describe('renderToClip take restore', () => {
             targetTrackId: 'track-1',
             startBeat: 4,
             endBeat: 8,
+            tailSeconds: 0,
             buffer,
             name: 'Rendered',
         });

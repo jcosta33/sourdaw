@@ -36,10 +36,24 @@
  *   - **Clip gain envelopes** — the native wire has no envelope vocabulary
  *     (#2865), so a clip carrying one bounces through the Web Audio renderer
  *     that schedules the drawn curve.
- *   - **Bus-source sends** are not a gate: live and offline native producers
- *     drop a send whose source strip is a bus (the same drop as a send naming
- *     no built bus), so native export runs minus that send's contribution.
- *     Growing a bus send tap is engine work, not a reason to refuse native.
+ *   - **Bus-origin sends** — a send whose source strip is a bus (a reverb bus
+ *     feeding a parallel compressor bus). The native strip has no send tap on a
+ *     bus, so the native producer drops the `add-send` and the mix would print
+ *     minus that send's contribution while the Web Audio renderer wires it.
+ *     Export fidelity beats speed, so a bus-origin send that would contribute
+ *     sends the render to Web Audio with a reason naming both buses. "Would
+ *     contribute" is what the Web Audio build and its print reachability make
+ *     of the send (`busOriginSendGateReason`): the target is a bus this render
+ *     builds, and a post-fader send's source bus is not muted (a pre-fader tap
+ *     sits ahead of the mute and survives it). A send the Web Audio build
+ *     would skip, or a post-fader one off a muted bus, does not gate. A level
+ *     of 0 does not exempt a send: a `send:<busId>` automation lane can raise
+ *     it during the render, and selection does not read lanes. Whether the source or target bus itself reaches the print, and
+ *     solo gating, are not read here, so those shapes also go web: a wrong
+ *     web answer costs speed, a wrong native one drops audio. A native bus send
+ *     tap is the follow-up that retires this gate. Live native playback keeps
+ *     the drop (`projectLiveGraphTopology`): the engine refuses a bus-source
+ *     send by name, and a producer emitting it would decline the whole batch.
  *   - **Bus → track routing** — a bus routed at an ordinary (non-master)
  *     track is still gated here. A bus whose resolved target is the master
  *     track is a mapper-accepted edge into the master strip, so the default
@@ -107,6 +121,31 @@ function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>
     return null;
 }
 
+/**
+ * Why a bus-origin send keeps this render off the native engine, or `null`
+ * when none would contribute. Mirrors what the Web Audio build wires: its
+ * `add-send` needs a source strip and a target bus strip this render builds,
+ * and taps pre-fader ahead of the strip's mute or post-fader after it
+ * (`resolvePrintReachability`). The level is not read: a send at 0 can be
+ * raised by its `send:<busId>` automation lane, which selection does not see.
+ */
+function busOriginSendGateReason(renderableTracks: readonly Track[]): string | null {
+    const busesById = new Map(renderableTracks.filter((track) => track.kind === 'bus').map((bus) => [bus.id, bus]));
+    for (const source of busesById.values()) {
+        for (const send of source.sends) {
+            const target = busesById.get(send.busId);
+            if (target === undefined) {
+                continue;
+            }
+            if (source.muted && !send.preFader) {
+                continue;
+            }
+            return `bus "${source.name}" sends to bus "${target.name}", which the native engine has no bus send tap for`;
+        }
+    }
+    return null;
+}
+
 /** The first gate that holds, or `null` when the native engine can take it. */
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
@@ -154,7 +193,7 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             return `bus "${track.name}" routes into a track, which the native engine refuses`;
         }
     }
-    return null;
+    return busOriginSendGateReason(renderableTracks);
 }
 
 /**
