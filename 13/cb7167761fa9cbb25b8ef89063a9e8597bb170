@@ -1,0 +1,61 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorStopQueue.spec.ts
+  s_4c8cd08893b364::t_97c04bad310341 94,97
+  s_4c8cd08893b364::t_af8a29b6124fc3 108,113-115,119
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_4c8cd08893b364::t_2ebc7968241e12 113,118-120,124
+  s_4c8cd08893b364::t_7b4e5a469a5b39 37
+  s_4c8cd08893b364::t_b1b8451dd3e127 852-951
+  s_4c8cd08893b364::t_330a64a4fa036f 98-99,102,106
+  s_4c8cd08893b364::t_865d976b4c3d35 193
+  s_1f0dcd815e8946::t_d0c2ddef4a951e 952-953
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_4c90cd25e95920 35
+src/modules/AudioEngine/services/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_4c8cd08893b364::t_3338e26617fb60 28
+  s_4c8cd08893b364::t_ddc8f26a234f44 73-76,80-85
+  s_4c8cd08893b364::t_18a07eb50da4c7 121-144,150
+  s_4c8cd08893b364::t_045d318ec9c86d 11-12
+  s_1f0dcd815e8946::t_39c5f824b13cfe 86,145-149,151-153
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_4c8cd08893b364::t_e18dd086997810 88-92
+  s_4c8cd08893b364::t_b94b94b4b61035 47-52,56-71
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_4c8cd08893b364::t_1f167c0305909f 645,658
+  s_4c8cd08893b364::t_8fee2303ec562e 632-644,646-657,659-720
+  s_4c8cd08893b364::t_cd81592efd4c08 721
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_4c8cd08893b364::t_79f80d675f126b 356-358
+  s_4c8cd08893b364::t_39bd7d2b1a9297 233-241,243
+  s_4c8cd08893b364::t_d559baf5290f0e 274-277
+  s_4c8cd08893b364::t_92fcdd340d79d5 385
+  s_4c8cd08893b364::t_efb78c221b3229 503,510-519
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_4c8cd08893b364::t_81648dbaf9656b 27-29,31
+  s_4c8cd08893b364::t_10b9374d62b50c 284-285
+  s_4c8cd08893b364::t_7f6a567674533e 459-463
+  s_4c8cd08893b364::t_b2d80c7afa613f 440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13cb7167761fa9cbb25b8ef89063a9e8597bb170",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
