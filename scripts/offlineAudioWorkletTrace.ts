@@ -236,12 +236,14 @@ function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEve
     }
     for (const [index, callback] of outer.entries()) {
         const author = authors[index];
+        const next = outer[index + 1];
         if (
             !author ||
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
             author.ts < callback.ts ||
-            intervalEnd(author) > intervalEnd(callback) + EXPORT_END_TRUNCATION_US
+            intervalEnd(author) > intervalEnd(callback) + EXPORT_END_TRUNCATION_US ||
+            (next && intervalEnd(author) > next.ts)
         ) {
             return 'outer callback lacks one unambiguous contained author execution';
         }

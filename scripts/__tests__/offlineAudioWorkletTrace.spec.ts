@@ -172,6 +172,40 @@ function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
     ];
 }
 
+type Slice = { ts: number; dur: number };
+
+type AdjacentCallbackSlices = {
+    authorA: Slice;
+    authorB: Slice;
+    outerB: Slice;
+    handlerB: Slice;
+};
+
+// Callbacks A and B touch at tick 21: A's handler and outer slices end there, B's start there.
+function adjacentCallbackTrace(overrides: Partial<AdjacentCallbackSlices> = {}): FixtureEvent[] {
+    const slices: AdjacentCallbackSlices = {
+        authorA: { ts: 15, dur: 6 },
+        authorB: { ts: 23, dur: 5 },
+        outerB: { ts: 21, dur: 9 },
+        handlerB: { ts: 21, dur: 11 },
+        ...overrides,
+    };
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    const handlerArgs = { 'node type': 'AudioWorkletNode', this: handlerThis };
+    return [
+        { name: HANDLER, ph: 'X', ts: 10, dur: 11, pid, tid, args: handlerArgs },
+        { name: OUTER, ph: 'X', ts: 11, dur: 10, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...slices.authorA, pid, tid, args: {} },
+        { name: HANDLER, ph: 'X', ...slices.handlerB, pid, tid, args: handlerArgs },
+        { name: OUTER, ph: 'X', ...slices.outerB, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...slices.authorB, pid, tid, args: {} },
+        ...callback(50, 8, pid, tid, handlerThis),
+        ...callback(80, 12, pid, tid, handlerThis),
+    ];
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -272,6 +306,34 @@ describe('offline AudioWorklet trace admission', () => {
         expect(admission(equalAuthorStartTrace(100))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('admits an author ending where the next callback starts and refuses one that runs into it', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        const refused = {
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        };
+        expect(admission(adjacentCallbackTrace({ authorA: { ts: 15, dur: 7 } }))).toEqual(refused);
+        expect(admission(adjacentCallbackTrace({ authorA: { ts: 22, dur: 0 }, authorB: { ts: 24, dur: 4 } }))).toEqual(
+            refused
+        );
+    });
+
+    it('admits callbacks that touch at a boundary and refuses a one-microsecond outer overlap', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        expect(admission(adjacentCallbackTrace({ outerB: { ts: 20, dur: 10 } }))).toEqual({
+            status: 'refused',
+            reason: 'outer callbacks overlap',
+        });
+    });
+
+    it('admits handlers that touch at a boundary and refuses a one-microsecond handler overlap', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        expect(admission(adjacentCallbackTrace({ handlerB: { ts: 20, dur: 12 } }))).toEqual({
+            status: 'refused',
+            reason: 'AudioWorkletNode handler intervals overlap ambiguously',
         });
     });
 
