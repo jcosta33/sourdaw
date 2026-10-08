@@ -1,0 +1,21 @@
+scripts/typesafeRequest.ts
+  s_97ab82e0b4f10c::t_0a3341f63ee855 1-2,115-118
+scripts/__tests__/typesafeRequest.spec.ts
+  s_97ab82e0b4f10c::t_a57fe000682e9c 30-38,90-128,256-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64a1413e9426f406c790384fba17c13d5eca0466",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
