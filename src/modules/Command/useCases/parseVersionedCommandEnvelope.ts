@@ -11,6 +11,7 @@ import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { getVersionedCommandReferencedTargets } from './getVersionedCommandReferencedTargets';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { readHandlerMintedApplicationIds } from './readHandlerMintedApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
@@ -232,6 +233,19 @@ function recordsAllOrNoneOf(
     return recorded.length === 0 || recorded.length === handlerMintedArguments.length;
 }
 
+/**
+ * An id the command records as one it created may not also be an existing object it points at: the
+ * scope check sets assigned ids aside, so a record naming a protected target would hide it.
+ */
+function namesReferencedTarget(
+    operation: string,
+    objectReferences: readonly CommandObjectReference[],
+    applicationAssignedIds: readonly CommandApplicationAssignedId[]
+): boolean {
+    const assigned = new Set(applicationAssignedIds.map(({ value }) => value));
+    return getVersionedCommandReferencedTargets({ operation, objectReferences }).some(({ id }) => assigned.has(id));
+}
+
 function hasCanonicalArgumentMetadata(
     operation: string,
     argumentsValue: Record<string, unknown>,
@@ -347,7 +361,8 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
         ) ||
         requiredApplicationAssignedIdArguments.some(
             (argument) => applicationAssignedIds.filter((entry) => entry.argument === argument).length !== 1
-        )
+        ) ||
+        namesReferencedTarget(value.operation, value.objectReferences, applicationAssignedIds)
     ) {
         return { status: 'invalid', reason: 'Application-assigned command IDs are invalid' };
     }
