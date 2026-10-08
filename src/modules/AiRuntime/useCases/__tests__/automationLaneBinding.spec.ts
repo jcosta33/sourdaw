@@ -551,7 +551,21 @@ describe('automation lane binding in one agent batch', () => {
         },
     ])('refuses a point that $label', async ({ laneId, actions, confirmedRefusal }) => {
         const documentBefore = projectSnapshot();
-        const refusal = `Automation lane ${laneId} is neither in the project nor created earlier in this batch.`;
+        // #5096: a reference at or before the command assigning the id is a
+        // sequence violation refused at compile, so the proposal never forms
+        // and the execution-time "neither in the project nor created earlier"
+        // message only fires for ids nothing assigns.
+        const parseSequencedRefusal = laneId === LANE_ID;
+
+        if (parseSequencedRefusal) {
+            await expect(confirm(actions, 'refused-point')).rejects.toThrow(
+                `Assigned command id ${laneId} is targeted before the command that claims to create it`
+            );
+            expect(projectSnapshot()).toBe(documentBefore);
+            expect(automationStore.value?.lanes).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+            return;
+        }
 
         const result = await confirm(actions, 'refused-point');
 
@@ -560,7 +574,9 @@ describe('automation lane binding in one agent batch', () => {
         expect(automationStore.value?.lanes).toEqual([]);
         await expect(executeAppActionBatch(actions)).resolves.toMatchObject({
             status: 'conflicted',
-            reason: expect.stringContaining(refusal),
+            reason: expect.stringContaining(
+                `Automation lane ${laneId} is neither in the project nor created earlier in this batch.`
+            ),
         });
         expect(projectSnapshot()).toBe(documentBefore);
         expect(undoStore.value?.past).toEqual([]);

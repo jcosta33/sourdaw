@@ -904,14 +904,31 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+            }
+          },
+          {
             "name": "Test the audio crates",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           },
           {
             "name": "Test the native crate",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package sourdaw-native"
           }
         ]
@@ -933,10 +950,24 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+            }
+          },
+          {
             "name": "Test the audio crates",
+            "env": {
+              "CARGO_NET_OFFLINE": "${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+            },
             "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           }
         ]
@@ -958,7 +989,18 @@
           },
           {
             "name": "Cache cargo build",
+            "id": "rust-cache",
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Cache the cargo registry index",
+            "id": "cargo-index",
+            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "with": {
+              "path": "~/.cargo/registry/index",
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+            }
           },
           {
             "name": "Set up pnpm",

@@ -1,7 +1,7 @@
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { transportStore } from '#/modules/Transport/stores';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type ProjectSnapshot } from '../../../models/ProjectVersion';
 
@@ -25,6 +25,8 @@ export function captureSnapshot(): ProjectSnapshot | null {
         transport: transportStore.value,
         midi: midiStore.value,
         automation: automationStore.value,
+        tempoMap: tempoMapStore.value,
+        takeLanes: takeLaneStore.value,
         timestamp: Date.now(),
     });
     // `new Blob([data]).size` just to measure UTF-8 byte length allocates an

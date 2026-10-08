@@ -727,12 +727,44 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Even a full-match rust-cache restore does not keep these jobs off the
+      # registry index: the restored cache carries every .crate file (no
+      # "Downloading" lines) yet cargo still fetched index entries on every
+      # run — invisible while the network held, and fatal when a macOS runner
+      # could not reach index.crates.io and `cargo test` died resolving serde
+      # (#5094; run 37773587894, job 113299796465). This second layer caches
+      # ~/.cargo/registry/index under its own Cargo.lock key: restored after
+      # rust-cache it shadows whatever index state the job cache carried, and
+      # because post steps run in reverse order its save completes before
+      # rust-cache's registry cleanup touches the index, so it always
+      # archives a complete one.
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-
+
+      # Offline exactly when both layers matched their exact keys: rust-cache's
+      # `cache-hit` is true only on a full key match and actions/cache sets
+      # `cache-hit` only on a primary-key match, so together they prove every
+      # .crate file and index entry the locked build needs is on disk. A
+      # missing entry then fails fast and locally instead of hanging on runner
+      # connectivity; any miss keeps the run online so lockfile changes can
+      # still fetch, exactly as before (#5094).
       - name: Test the audio crates
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
       - name: Test the native crate
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package sourdaw-native
 
   native-windows:
@@ -759,9 +791,24 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # The same index-cache layer and offline gate `native-macos` records
+      # above: its full-match restore fetched the index too and only passed
+      # because the runner's network happened to hold (#5094).
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Test the audio crates
+        env:
+          CARGO_NET_OFFLINE: ${{ steps.rust-cache.outputs.cache-hit == 'true' && steps.cargo-index.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
   native-parity:
@@ -786,7 +833,20 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
+        id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Same registry-index layer `native-macos` records above: the addon
+      # build's cargo must not depend on runner connectivity to fetch index
+      # entries a restored cache should already cover (#5094).
+      - name: Cache the cargo registry index
+        id: cargo-index
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/registry/index
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
