@@ -22,8 +22,10 @@ import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { createTakeLaneTransitionPlan } from './createTakeLaneTransitionPlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
+import { prepareInsertedAudioSatellites } from './prepareInsertedAudioSatellites';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
+import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
 
 type InsertGlobalTimeOperation = {
     type: 'insert';
@@ -45,7 +47,7 @@ type DuplicateGlobalTimeOperation = {
 
 type GlobalTimeOperation = InsertGlobalTimeOperation | DeleteGlobalTimeOperation | DuplicateGlobalTimeOperation;
 
-type ClipIdentityRole = 'delete-right' | 'delete-discard' | 'duplicate-copy';
+type ClipIdentityRole = 'delete-right' | 'delete-discard' | 'duplicate-copy' | 'insert-right';
 
 type ClipIdentityRequest = {
     role: ClipIdentityRole;
@@ -61,7 +63,7 @@ type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTi
 type MidiReplayPlan = MidiPreparation['replayPlan'];
 
 type GlobalTimeReplayPlan = {
-    version: 1;
+    version: 1 | 2;
     operation: GlobalTimeOperation;
     clips: readonly ClipReplayIdentity[];
     midi: MidiReplayPlan;
@@ -345,7 +347,14 @@ function hasValidInsertedClipTimes(clip: Clip, operation: InsertGlobalTimeOperat
         }
         return isValidComputedTime(clip.endBeat + operation.durationBeats);
     }
-    return isValidComputedTime(clip.endBeat + operation.durationBeats);
+    if (!isValidComputedTime(clip.endBeat + operation.durationBeats)) {
+        return false;
+    }
+    if (clip.type !== 'audio') {
+        return true;
+    }
+    const rightSource = audioSourceAtBeat(clip, operation.atBeat);
+    return isValidComputedOffset(rightSource.audioOffsetSeconds) && isValidComputedOffset(rightSource.audioOffsetBeats);
 }
 
 function hasValidDeleteOffset(clip: Clip, operationEndBeat: number): boolean {
@@ -578,19 +587,29 @@ function toOwnerTimeOperation(operation: GlobalTimeOperation) {
 
 function createClipIdentityRequests(
     owners: readonly NormalizedOwner[],
-    operation: GlobalTimeOperation
+    operation: GlobalTimeOperation,
+    splitSpanningAudio: boolean
 ): readonly ClipIdentityRequest[] {
-    if (operation.type === 'insert') {
-        return [];
-    }
-
     const requests: ClipIdentityRequest[] = [];
+    const insertOperation = operation.type === 'delete' ? null : toOwnerTimeOperation(operation);
     for (const owner of owners) {
         if (!owner.acceptsClipUpdate) {
             continue;
         }
         for (const normalizedClip of owner.clips) {
             const clip = normalizedClip.source;
+            if (
+                splitSpanningAudio &&
+                insertOperation &&
+                clip.type === 'audio' &&
+                clip.startBeat < insertOperation.atBeat &&
+                clip.endBeat > insertOperation.atBeat
+            ) {
+                requests.push({ role: 'insert-right', sourceTrackId: owner.id, sourceClipId: clip.id });
+            }
+            if (operation.type === 'insert') {
+                continue;
+            }
             if (operation.type === 'duplicate') {
                 if (clip.startBeat >= operation.startBeat && clip.endBeat <= operation.endBeat) {
                     requests.push({
@@ -767,6 +786,56 @@ function clipIdentityTransitionMatchesPreparedState(
     return true;
 }
 
+function insertedClipIdentitiesMatchPreparedState(
+    operation: GlobalTimeOperation,
+    identities: readonly ClipReplayIdentity[],
+    owners: readonly NormalizedOwner[],
+    existingClipIds: ReadonlySet<string>,
+    nextTrackState: TrackState
+): boolean {
+    if (operation.type === 'delete') {
+        return true;
+    }
+    const expectedNewIds = new Set(identities.map((identity) => identity.targetClipId));
+    const actualNewIds: string[] = [];
+    for (const track of nextTrackState.tracks) {
+        for (const clip of track.clips) {
+            if (!existingClipIds.has(clip.id)) {
+                actualNewIds.push(clip.id);
+            }
+        }
+    }
+    if (actualNewIds.length !== expectedNewIds.size || actualNewIds.some((id) => !expectedNewIds.has(id))) {
+        return false;
+    }
+    const insertOperation = toOwnerTimeOperation(operation);
+    for (const identity of identities) {
+        const owner = owners.find((candidate) => candidate.id === identity.sourceTrackId);
+        const source = owner?.clips.find((candidate) => candidate.id === identity.sourceClipId)?.source;
+        const nextTrack = nextTrackState.tracks.find((candidate) => candidate.id === identity.sourceTrackId);
+        const targets = nextTrack?.clips.filter((clip) => clip.id === identity.targetClipId) ?? [];
+        if (!source || targets.length !== 1) {
+            return false;
+        }
+        if (identity.role !== 'insert-right') {
+            continue;
+        }
+        const left = nextTrack?.clips.find((clip) => clip.id === source.id);
+        const right = targets[0]!;
+        if (
+            source.type !== 'audio' ||
+            source.startBeat >= insertOperation.atBeat ||
+            source.endBeat <= insertOperation.atBeat ||
+            left?.endBeat !== insertOperation.atBeat ||
+            right.startBeat !== insertOperation.atBeat + insertOperation.durationBeats ||
+            right.endBeat !== source.endBeat + insertOperation.durationBeats
+        ) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function clipReplayMatchesRequest(value: unknown, request: ClipIdentityRequest): value is ClipReplayIdentity {
     if (!isPlainObject(value) || !hasExactKeys(value, CLIP_REPLAY_KEYS)) {
         return false;
@@ -785,7 +854,12 @@ function isValidSuppliedReplayPlan(
     requests: readonly ClipIdentityRequest[],
     existingClipIds: ReadonlySet<string>
 ): value is GlobalTimeReplayPlan {
-    if (!isPlainObject(value) || !hasExactKeys(value, REPLAY_KEYS) || value.version !== 1) {
+    if (
+        !isPlainObject(value) ||
+        !hasExactKeys(value, REPLAY_KEYS) ||
+        (value.version !== 1 && value.version !== 2) ||
+        (operation.type === 'delete' && value.version !== 1)
+    ) {
         return false;
     }
     const replayOperation = validateOperation(value.operation);
@@ -827,6 +901,9 @@ function allocateClipReplayPlan(
         if (request.role === 'duplicate-copy') {
             targetClipId = `clip-dup-${randomId}`;
         }
+        if (request.role === 'insert-right') {
+            targetClipId = `clip-insert-right-${randomId}`;
+        }
         if (existingClipIds.has(targetClipId) || targetIds.has(targetClipId)) {
             return null;
         }
@@ -857,29 +934,43 @@ function getClipIdentity(
     return identity;
 }
 
-function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation): Clip {
+function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation, rightClipId?: string): readonly Clip[] {
     if (clip.endBeat <= operation.atBeat) {
-        return clip;
+        return [clip];
     }
     const materialized = clipWithAudioSourceAtBeat(clip, clip.startBeat);
     if (clip.startBeat >= operation.atBeat) {
-        return {
-            ...materialized,
-            startBeat: clip.startBeat + operation.durationBeats,
-            endBeat: clip.endBeat + operation.durationBeats,
-        };
+        return [
+            {
+                ...materialized,
+                startBeat: clip.startBeat + operation.durationBeats,
+                endBeat: clip.endBeat + operation.durationBeats,
+            },
+        ];
     }
-    return {
-        ...materialized,
-        endBeat: clip.endBeat + operation.durationBeats,
-    };
+    if (clip.type !== 'audio' || rightClipId === undefined) {
+        return [{ ...materialized, endBeat: clip.endBeat + operation.durationBeats }];
+    }
+    return [
+        { ...materialized, endBeat: operation.atBeat, fadeOutBeats: 0 },
+        {
+            ...materialized,
+            ...audioSourceAtBeat(clip, operation.atBeat),
+            id: rightClipId,
+            startBeat: operation.atBeat + operation.durationBeats,
+            endBeat: clip.endBeat + operation.durationBeats,
+            fadeInBeats: 0,
+        },
+    ];
 }
 
 function prepareInsertedTracks(
     state: TrackState,
     owners: readonly NormalizedOwner[],
-    operation: InsertGlobalTimeOperation
+    operation: InsertGlobalTimeOperation,
+    identities: readonly ClipReplayIdentity[]
 ): TrackState {
+    const identityIndex = indexClipIdentities(identities);
     let changed = false;
     const tracks: Track[] = [];
     for (const owner of owners) {
@@ -890,11 +981,13 @@ function prepareInsertedTracks(
         let trackChanged = false;
         const clips: Clip[] = [];
         for (const normalizedClip of owner.clips) {
-            const clip = insertClipGeometry(normalizedClip.source, operation);
-            if (clip !== normalizedClip.source) {
+            const source = normalizedClip.source;
+            const rightClipId = identityIndex.get(`insert-right:${owner.id}:${source.id}`)?.targetClipId;
+            const inserted = insertClipGeometry(source, operation, rightClipId);
+            if (inserted.length !== 1 || inserted[0] !== source) {
                 trackChanged = true;
             }
-            clips.push(clip);
+            clips.push(...inserted);
         }
         if (!trackChanged) {
             tracks.push(owner.source);
@@ -1088,11 +1181,13 @@ function prepareDuplicatedTracks(
         let trackChanged = false;
         const clips: Clip[] = [];
         for (const normalizedClip of owner.clips) {
-            const shifted = insertClipGeometry(normalizedClip.source, insertOperation);
-            if (shifted !== normalizedClip.source) {
+            const source = normalizedClip.source;
+            const rightClipId = identityIndex.get(`insert-right:${owner.id}:${source.id}`)?.targetClipId;
+            const shifted = insertClipGeometry(source, insertOperation, rightClipId);
+            if (shifted.length !== 1 || shifted[0] !== source) {
                 trackChanged = true;
             }
-            clips.push(shifted);
+            clips.push(...shifted);
         }
         for (const normalizedClip of owner.clips) {
             const clip = normalizedClip.source;
@@ -1247,7 +1342,7 @@ function prepareLocalState(
 ): PlannedLocalState {
     if (operation.type === 'insert') {
         return {
-            trackState: prepareInsertedTracks(trackState, owners, operation),
+            trackState: prepareInsertedTracks(trackState, owners, operation, clipIdentities),
             markerState: prepareInsertedMarkerState(markerState, operation),
             clipIdentities,
             midiOperation: operation,
@@ -1540,7 +1635,11 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     }
 
     const existingClipIds = collectExistingClipIds(owners);
-    const clipRequests = createClipIdentityRequests(owners, validatedInput.operation);
+    const splitSpanningAudio =
+        validatedInput.operation.type !== 'delete' &&
+        (validatedInput.suppliedReplayPlan === undefined ||
+            (isPlainObject(validatedInput.suppliedReplayPlan) && validatedInput.suppliedReplayPlan.version === 2));
+    const clipRequests = createClipIdentityRequests(owners, validatedInput.operation, splitSpanningAudio);
     let clipIdentities: readonly ClipReplayIdentity[];
     let suppliedReplayPlan: GlobalTimeReplayPlan | null = null;
     if (validatedInput.suppliedReplayPlan === undefined) {
@@ -1568,26 +1667,73 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     const clipIdentityTransition = collectClipIdentityTransition(owners, validatedInput.operation, clipIdentities);
     if (
         !clipIdentityTransition ||
-        !clipIdentityTransitionMatchesPreparedState(clipIdentityTransition, existingClipIds, local.trackState)
+        !clipIdentityTransitionMatchesPreparedState(clipIdentityTransition, existingClipIds, local.trackState) ||
+        !insertedClipIdentitiesMatchPreparedState(
+            validatedInput.operation,
+            clipIdentities,
+            owners,
+            existingClipIds,
+            local.trackState
+        )
     ) {
         return rejectResult();
     }
     const retiredClipIds = collectRetiredClipIds(clipIdentityTransition);
+
+    const insertOperation =
+        validatedInput.operation.type === 'delete' ? null : toOwnerTimeOperation(validatedInput.operation);
+    const insertedSplits: { source: Clip; rightClipId: string }[] = [];
+    for (const identity of clipIdentities) {
+        if (identity.role !== 'insert-right') {
+            continue;
+        }
+        const source = owners
+            .find((owner) => owner.id === identity.sourceTrackId)
+            ?.clips.find((clip) => clip.id === identity.sourceClipId)?.source;
+        if (!source || source.type !== 'audio') {
+            return rejectResult();
+        }
+        insertedSplits.push({ source, rightClipId: identity.targetClipId });
+    }
+    const insertedSatellites =
+        insertOperation?.type === 'insert' && insertedSplits.length > 0
+            ? prepareInsertedAudioSatellites({
+                  splits: insertedSplits,
+                  seamBeat: insertOperation.atBeat,
+                  durationBeats: insertOperation.durationBeats,
+              })
+            : null;
+
+    const baseSatellitePlan = createClipSatelliteTransitionPlan(clipIdentityTransition);
+    if (!baseSatellitePlan) {
+        return rejectResult();
+    }
+    const clipSatellitePlan = insertedSatellites
+        ? {
+              version: 1 as const,
+              expected: {
+                  version: 1 as const,
+                  entries: [...baseSatellitePlan.expected.entries, ...insertedSatellites.plan.expected.entries],
+              },
+              replacement: {
+                  version: 1 as const,
+                  entries: [...baseSatellitePlan.replacement.entries, ...insertedSatellites.plan.replacement.entries],
+              },
+          }
+        : baseSatellitePlan;
 
     const automationPreparation = deps.prepareAutomationTimeOperation({
         operation: ownerOperation,
         owners: createAutomationOwners(owners),
         removedClipIds: clipIdentityTransition.removedClipIds,
         clipIdMigrations: clipIdentityTransition.migrations,
+        clipLaneCopies: insertedSatellites?.laneCopies,
+        preservedClipIds: insertedSatellites?.preservedClipIds,
     });
     if (automationPreparation.status !== 'ready') {
         return rejectResult();
     }
 
-    const clipSatellitePlan = createClipSatelliteTransitionPlan(clipIdentityTransition);
-    if (!clipSatellitePlan) {
-        return rejectResult();
-    }
     const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatellitePlan);
     if (clipSatellitePreparation.status !== 'ready') {
         return rejectResult();
@@ -1616,7 +1762,7 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         replayPlan = suppliedReplayPlan;
     } else {
         replayPlan = {
-            version: 1,
+            version: validatedInput.operation.type === 'delete' ? 1 : 2,
             operation: validatedInput.operation,
             clips: local.clipIdentities,
             midi: midiPreparation.replayPlan,
@@ -1688,7 +1834,23 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
                                     .map((identity) => [identity.sourceClipId, identity.targetClipId])
                             )
                           : undefined,
+                  rightTargets: new Map(
+                      clipIdentities
+                          .filter((identity) => identity.role === 'insert-right')
+                          .map((identity) => [identity.sourceClipId, identity.targetClipId])
+                  ),
               });
+    if (reKeyedTakeLanes === null) {
+        return rejectResult();
+    }
+    const takeLanePlan = createTakeLaneTransitionPlan(
+        clipIdentityTransition.removedClipIds,
+        retiredTakeLanes,
+        reKeyedTakeLanes
+    );
+    if (takeLanePlan !== null && validateTakeLaneTransitionPlan(takeLanePlan) === null) {
+        return rejectResult();
+    }
 
     const inversePlan = createCombinedInversePlan({
         expectedTrackState: local.trackState,
@@ -1708,11 +1870,7 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
                   }
                 : null,
         },
-        takeLanes: createTakeLaneTransitionPlan(
-            clipIdentityTransition.removedClipIds,
-            retiredTakeLanes,
-            reKeyedTakeLanes
-        ),
+        takeLanes: takeLanePlan,
     });
     if (!inversePlan) {
         return rejectResult();

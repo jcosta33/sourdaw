@@ -93,6 +93,8 @@ export type TimeOperationDependencies = {
         /** Whole clip-scoped lanes this operation adds for clips it mints in the
          *  same commit — a split fragment's inherited copy of the source lane. */
         clipLaneCopies?: readonly AutomationLaneValue[];
+        /** Left halves keep their original clip lanes; shifted right copies carry the inserted timeline. */
+        preservedClipIds?: readonly string[];
     }) => PreparedTimeOperationWithInversePlan;
     prepareAutomationTimeStateRestore: (plan: unknown) => PreparedTimeOperation;
     prepareMidiGlobalTimeTransaction: (input: {

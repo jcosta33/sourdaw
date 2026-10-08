@@ -531,6 +531,84 @@ describe('Time operation take ownership through Command and CRDT', () => {
     );
 
     it.each([
+        { name: 'insert', action: { type: 'insertTime' as const, payload: { atBeat: 4, durationBeats: 2 } } },
+        { name: 'duplicate', action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } } },
+    ])('$name splits a crossing audio comp around a silent gap with stable saved replay', async ({ action }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        const originalTake = arrangeComp(2, 8);
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({ ...clip, audioOffsetSeconds: 0, audioOffsetBeats: 99 })),
+            })),
+        });
+        const legacyTake = { ...originalTake, sourceOffsetBeats: 2 };
+        takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacyTake] }] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction(action);
+        expect(clips().map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
+            [2, 4],
+            [6, 10],
+        ]);
+        const right = clips()[1]!;
+        expect(right.id).not.toBe('source');
+        expect(right.audioOffsetSeconds).toBe(1);
+        const rightTake = lane().takes.find((take) => take.clipId === right.id);
+        expect(rightTake).toMatchObject({ startBeat: 6, endBeat: 10, sourceOffsetSeconds: 1 });
+        expect(lane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 4, takeId: originalTake.id },
+            { startBeat: 6, endBeat: 10, takeId: rightTake?.id },
+        ]);
+        expect(
+            resolveClipsWithComping('track-1', clips()).find((clip) => clip.startBeat === 6)?.audioOffsetSeconds
+        ).toBe(2);
+        expectAuthority();
+        const appliedClips = structuredClone(clips());
+        const appliedLane = structuredClone(lane());
+        await vi.waitFor(() => {
+            expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+        });
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ]);
+        await undo();
+        expect(clips()).toHaveLength(1);
+        expect(clips()[0]).toMatchObject({ id: 'source', startBeat: 2, endBeat: 8, audioOffsetSeconds: 0 });
+        expect(lane().takes).toEqual([legacyTake]);
+        expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+        expectAuthority();
+        await redo();
+        expect(clips()).toEqual(appliedClips);
+        expect(lane()).toEqual(appliedLane);
+        expectAuthority();
+    });
+
+    it.each([
         { name: 'insert', action: { type: 'insertTime' as const, payload: { atBeat: 1, durationBeats: 4 } } },
         { name: 'duplicate', action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } } },
     ])('$name drops malformed saved global-time captures without project writes', async ({ action }) => {

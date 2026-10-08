@@ -6,6 +6,7 @@ import {
     prepareAutomationTimeStateRestore,
     restoreAutomationSnapshot,
 } from '#/modules/Automation/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
@@ -163,6 +164,8 @@ describe('global time operations retire per-clip satellite data', () => {
         restoreAutomationSnapshot({ lanes: [] });
         setTimeOperationDependencies(null);
         setTracks([]);
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
     });
 
     it('leaves later global time operations working after deleting time over an automated clip', () => {
@@ -349,5 +352,72 @@ describe('global time operations retire per-clip satellite data', () => {
         expect(laneIds()).toEqual(['lane-keeper']);
         expect(getEnvelope('keeper')).toEqual(createGainEnvelope('keeper'));
         expect(warpStates.get('keeper')).toEqual(createWarpState());
+    });
+
+    it.each([
+        { operation: { type: 'insert' as const, atBeat: 4, durationBeats: 2 } },
+        { operation: { type: 'duplicate' as const, startBeat: 2, endBeat: 4 } },
+    ])('$operation.type preserves left and right audio satellites in the post-insert frame', ({ operation }) => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        setTracks([createClip({ id: 'source', startBeat: 2, endBeat: 8 })]);
+        const sourceLane = {
+            ...createLane({ id: 'lane-source', clipId: 'source', beat: 3 }),
+            points: [
+                { beat: 3, value: 0.2, curve: 'linear' as const, tension: 0 },
+                { beat: 7, value: 0.8, curve: 'linear' as const, tension: 0 },
+            ],
+            trimPoints: [{ beat: 4.5, value: 0.3, curve: 'linear' as const, tension: 0 }],
+            ghostPoints: [{ beat: 5, value: 0.7, curve: 'linear' as const, tension: 0 }],
+        };
+        restoreAutomationSnapshot({ lanes: [sourceLane] });
+        setEnvelope('source', createGainEnvelope('source'));
+        setWarpState('source', {
+            ...createWarpState(),
+            markers: [createWarpMarker(1, 1.5, { confidence: 1 }), createWarpMarker(3, 3.5, { confidence: 1 })],
+        });
+        const beforeEnvelope = getEnvelope('source');
+        const beforeWarp = warpStates.get('source');
+        registerRealAutomationDependencies();
+
+        const result = executeGlobalTimeOperation({ operation });
+        expect(result.status).toBe('applied');
+        if (result.status !== 'applied') {
+            throw new Error('Expected crossing audio insertion');
+        }
+        const clips = (mocks.trackState.value as { tracks: Array<{ clips: Array<{ id: string }> }> }).tracks[0]!.clips;
+        const rightId = clips.find((clip) => clip.id !== 'source')?.id;
+        expect(rightId).toBeDefined();
+        expect(getEnvelope('source')?.points.some((point) => point.beatOffset === 2)).toBe(true);
+        expect(getEnvelope(rightId!)?.points.some((point) => point.beatOffset === 0)).toBe(true);
+        expect(warpStates.get('source')?.markers.map((marker) => marker.originalBeat)).toEqual([1]);
+        expect(warpStates.get(rightId!)?.markers.map((marker) => marker.originalBeat)).toEqual([3]);
+        expect(getAutomationLanes().find((lane) => lane.id === 'lane-source')?.points).toEqual(sourceLane.points);
+        const rightLane = getAutomationLanes().find((lane) => lane.clipId === rightId);
+        expect(rightLane?.points.map((point) => point.beat)).toEqual([6, 9]);
+        expect(rightLane?.trimPoints?.map((point) => point.beat)).toEqual([6.5]);
+        expect(rightLane?.ghostPoints?.map((point) => point.beat)).toEqual([7]);
+        const afterEnvelope = getEnvelope('source');
+        const rightEnvelope = getEnvelope(rightId!);
+        const afterWarp = warpStates.get('source');
+        const rightWarp = warpStates.get(rightId!);
+
+        const transaction = createUndoableGlobalTimeOperation({ initialResult: result });
+        transaction.undo();
+        expect(getEnvelope('source')).toEqual(beforeEnvelope);
+        expect(getEnvelope(rightId!)).toBeUndefined();
+        expect(warpStates.get('source')).toEqual(beforeWarp);
+        expect(warpStates.has(rightId!)).toBe(false);
+        expect(getAutomationLanes()).toEqual([sourceLane]);
+        transaction.redo();
+        expect(getEnvelope('source')).toEqual(afterEnvelope);
+        expect(getEnvelope(rightId!)).toEqual(rightEnvelope);
+        expect(warpStates.get('source')).toEqual(afterWarp);
+        expect(warpStates.get(rightId!)).toEqual(rightWarp);
+        expect(getAutomationLanes().find((lane) => lane.clipId === rightId)).toEqual(rightLane);
     });
 });

@@ -208,6 +208,53 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         }
     );
 
+    it('partitions later-right takes and comp regions at an audio insert seam without losing canonical zero', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const { take } = setCompedClip({ clipId: 'source', startBeat: 2, endBeat: 8 });
+        const left = { ...take, endBeat: 4, sourceOffsetBeats: 2 };
+        const right = {
+            ...createTake('source', 'Later take', 4, 8),
+            sourceOffsetSeconds: 0,
+            sourceOffsetBeats: 99,
+        };
+        const beforeLane: TakeLane = {
+            ...liveLane(),
+            takes: [left, right],
+            activeCompRegions: [
+                { startBeat: 2, endBeat: 4, takeId: left.id },
+                { startBeat: 4, endBeat: 8, takeId: right.id },
+            ],
+        };
+        takeLaneStore.set({ lanes: [beforeLane] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 4, durationBeats: 2 } })
+        );
+        const rightClip = liveTrackClips().find((clip) => clip.id !== 'source');
+        const rightTake = liveLane().takes.find((candidate) => candidate.clipId === rightClip?.id);
+        expect(rightTake).toMatchObject({ startBeat: 6, endBeat: 10, sourceOffsetSeconds: 0, sourceOffsetBeats: 99 });
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 4, takeId: left.id },
+            { startBeat: 6, endBeat: 10, takeId: rightTake?.id },
+        ]);
+        expect(
+            resolveClipsWithComping('track-1', [...liveTrackClips()]).find((clip) => clip.startBeat === 6)
+                ?.audioOffsetSeconds
+        ).toBe(1);
+        const afterLane = structuredClone(liveLane());
+        const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
+        transaction.undo();
+        expect(liveLane()).toEqual(beforeLane);
+        transaction.redo();
+        expect(liveLane()).toEqual(afterLane);
+    });
+
     it('keeps canonical zero ahead of a stale take beat alias on the duplicated comp', () => {
         tempoMapStore.set({
             changes: [

@@ -534,7 +534,7 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
         expect(next.tracks[0]!.clips).toEqual([
-            { ...span, endBeat: 2, name: 'span (L)' },
+            { ...span, endBeat: 2, name: 'span (L)', audioOffsetSeconds: 0.5 },
             {
                 ...span,
                 id: 'clip-dt-aaaaaaaa',
@@ -542,6 +542,7 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
                 endBeat: 6,
                 name: 'span (R)',
                 audioOffsetBeats: 1 + (6 - 0),
+                audioOffsetSeconds: 3.5,
                 midiOffsetBeats: 0,
             },
         ]);
@@ -554,7 +555,7 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
-        expect(next.tracks[0]!.clips).toEqual([{ ...left, endBeat: 4 }]);
+        expect(next.tracks[0]!.clips).toEqual([{ ...left, endBeat: 4, audioOffsetBeats: 0, audioOffsetSeconds: 0 }]);
     });
 
     it('delete moves a tail audio clip left and preserves its audio offset', () => {
@@ -565,7 +566,7 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
         // After-range clips only shift start/end by the deleted duration; offset is unchanged.
-        expect(next.tracks[0]!.clips).toEqual([{ ...tail, startBeat: 6, endBeat: 16 }]);
+        expect(next.tracks[0]!.clips).toEqual([{ ...tail, startBeat: 6, endBeat: 16, audioOffsetSeconds: 1 }]);
     });
 
     it('delete removes a fully-inside clip without producing splits', () => {
@@ -608,7 +609,10 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         const result = executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 4, durationBeats: 2 } });
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
-        expect(next.tracks[0]!.clips).toEqual([before, { ...after, startBeat: 7, endBeat: 10 }]);
+        expect(next.tracks[0]!.clips).toEqual([
+            before,
+            { ...after, startBeat: 7, endBeat: 10, audioOffsetBeats: 0, audioOffsetSeconds: 0 },
+        ]);
     });
 });
 
@@ -781,14 +785,14 @@ describe('executeGlobalTimeOperation supplied replay plan validation', () => {
         expect(result).toEqual(REJECTED);
     });
 
-    it('rejects a supplied replay plan whose version is not 1', () => {
+    it('rejects a supplied replay plan with an unsupported version', () => {
         const inside = createClip({ id: 'inside', startBeat: 4, endBeat: 6 });
         setStates({ tracks: [createTrack('track-1', 'midi', [inside])] });
         registerDependencies();
         const result = executeGlobalTimeOperation({
             operation: { type: 'duplicate', startBeat: 4, endBeat: 6 },
             replayPlan: {
-                version: 2,
+                version: 3,
                 operation: { type: 'duplicate', startBeat: 4, endBeat: 6 },
                 clips: [],
                 midi: { version: 1, notes: [] },
@@ -887,6 +891,87 @@ describe('executeGlobalTimeOperation supplied replay plan validation', () => {
         });
         expect(result).toEqual(REJECTED);
     });
+
+    it.each([
+        { type: 'insert' as const, atBeat: 4, durationBeats: 2 },
+        { type: 'duplicate' as const, startBeat: 2, endBeat: 4 },
+    ])('accepts a genuine v1 $type replay without allocating a new right identity', (operation) => {
+        const source = createClip({ id: 'source', type: 'audio', startBeat: 2, endBeat: 8 });
+        setStates({ tracks: [createTrack('track-1', 'audio', [source])] });
+        const dependencies = registerDependencies();
+        const result = executeGlobalTimeOperation({
+            operation,
+            replayPlan: { version: 1, operation, clips: [], midi: dependencies.midi.replayPlan },
+        });
+        expect(result.status).toBe('applied');
+        const state = mocks.trackState.value as { tracks: Array<{ clips: Array<{ id: string; endBeat: number }> }> };
+        expect(state.tracks[0]?.clips).toHaveLength(1);
+        expect(state.tracks[0]?.clips[0]).toMatchObject({ id: 'source', endBeat: 10 });
+    });
+
+    it.each([
+        { type: 'insert' as const, atBeat: 4, durationBeats: 2 },
+        { type: 'duplicate' as const, startBeat: 2, endBeat: 4 },
+    ])(
+        'accepts ordered v2 $type right identities and refuses missing, reordered, duplicate or colliding ones before writes',
+        (operation) => {
+            const sources = [
+                createClip({ id: 'first', type: 'audio', startBeat: 2, endBeat: 8 }),
+                createClip({ id: 'second', type: 'audio', startBeat: 3, endBeat: 9 }),
+            ];
+            const identities = [
+                {
+                    role: 'insert-right' as const,
+                    sourceTrackId: 'track-1',
+                    sourceClipId: 'first',
+                    targetClipId: 'right-1',
+                },
+                {
+                    role: 'insert-right' as const,
+                    sourceTrackId: 'track-1',
+                    sourceClipId: 'second',
+                    targetClipId: 'right-2',
+                },
+            ];
+            setStates({ tracks: [createTrack('track-1', 'audio', sources)] });
+            const dependencies = registerDependencies();
+            const replayPlan = {
+                version: 2 as const,
+                operation,
+                clips: identities,
+                midi: dependencies.midi.replayPlan,
+            };
+            const beforeTracks = mocks.trackState.value;
+            const beforeMarkers = mocks.markerState.value;
+            for (const clips of [
+                identities.slice(0, 1),
+                [...identities].reverse(),
+                [
+                    { ...identities[0]!, targetClipId: 'right-1' },
+                    { ...identities[1]!, targetClipId: 'right-1' },
+                ],
+                [{ ...identities[0]!, targetClipId: 'first' }, identities[1]!],
+            ]) {
+                expect(executeGlobalTimeOperation({ operation, replayPlan: { ...replayPlan, clips } })).toEqual(
+                    REJECTED
+                );
+                expect(mocks.trackState.value).toBe(beforeTracks);
+                expect(mocks.markerState.value).toBe(beforeMarkers);
+                expect(mocks.writeDepths).toEqual([]);
+            }
+            const applied = executeGlobalTimeOperation({ operation, replayPlan });
+            expect(applied.status).toBe('applied');
+            const state = mocks.trackState.value as {
+                tracks: Array<{ clips: Array<{ id: string; startBeat: number }> }>;
+            };
+            expect(state.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat])).toEqual([
+                ['first', 2],
+                ['right-1', 6],
+                ['second', 3],
+                ['right-2', 6],
+            ]);
+        }
+    );
 });
 
 describe('executeGlobalTimeOperation main-flow rejection gates', () => {
