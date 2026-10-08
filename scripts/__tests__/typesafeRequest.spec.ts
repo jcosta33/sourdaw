@@ -27,6 +27,15 @@ function prepare(payload: unknown, maxRequestBytes = 2_000_000, maxStatePlusQues
 function body(state: unknown = { label: 'ordinary' }, questions: unknown = QUESTIONS) {
     return { state, questions, model: MODEL };
 }
+function observedProxy<T extends object>(target: T) {
+    const traps = {
+        getPrototypeOf: vi.fn(Reflect.getPrototypeOf),
+        ownKeys: vi.fn(Reflect.ownKeys),
+        getOwnPropertyDescriptor: vi.fn(Reflect.getOwnPropertyDescriptor),
+        get: vi.fn(Reflect.get),
+    };
+    return { proxy: new Proxy(target, traps), traps };
+}
 function response() {
     return new Response(
         JSON.stringify({
@@ -76,6 +85,45 @@ describe('prepared TypeSafe JSON', () => {
         }
         expect(getter).not.toHaveBeenCalled();
         expect(toJSON).not.toHaveBeenCalled();
+    });
+
+    const proxyCases: { name: string; target: object; payload: (proxy: object) => unknown }[] = [
+        { name: 'payload', target: body(), payload: (proxy) => proxy },
+        { name: 'state object', target: { label: 'ordinary' }, payload: (proxy) => body(proxy) },
+        { name: 'nested object', target: { label: 'ordinary' }, payload: (proxy) => body({ nested: proxy }) },
+        { name: 'state array', target: ['ordinary'], payload: (proxy) => body(proxy) },
+        { name: 'nested array', target: ['ordinary'], payload: (proxy) => body({ nested: proxy }) },
+        { name: 'questions', target: QUESTIONS, payload: (proxy) => body({}, proxy) },
+        { name: 'question', target: QUESTIONS.check, payload: (proxy) => body({}, { check: proxy }) },
+        {
+            name: 'instructions',
+            target: { label: 'ordinary' },
+            payload: (proxy) => body({}, { check: { type: 'noul', instructions: proxy } }),
+        },
+        {
+            name: 'criteria',
+            target: { yes: 'ordinary' },
+            payload: (proxy) => body({}, { check: { type: 'choice', criteria: proxy } }),
+        },
+    ];
+    it.each(proxyCases)('rejects a Proxy $name before invoking any inspection trap', ({ target, payload }) => {
+        const { proxy, traps } = observedProxy(target);
+        expect(() => prepare(payload(proxy))).toThrow(expect.objectContaining({ code: 'invalid_response' }));
+        for (const trap of Object.values(traps)) {
+            expect(trap).not.toHaveBeenCalled();
+        }
+    });
+
+    it.each(['object', 'array'])('returns a bounded local refusal for a revoked %s Proxy', (kind) => {
+        const target = kind === 'array' ? ['ordinary'] : { label: 'ordinary' };
+        const { proxy, revoke } = Proxy.revocable(target, {});
+        revoke();
+        expect(() => prepare(body(proxy))).toThrow(
+            expect.objectContaining({
+                code: 'invalid_response',
+                message: 'TypeSafe request must contain plain JSON and valid typed questions',
+            })
+        );
     });
 
     it.each([
@@ -205,6 +253,39 @@ describe('prepared TypeSafe JSON', () => {
 });
 
 describe('installed SDK prepared handoff', () => {
+    it.each(['state', 'questions'])('refuses a Proxy %s before cache, budget, provider, or fetch', async (position) => {
+        const state = observedProxy({ label: 'ordinary' });
+        const questions = observedProxy(QUESTIONS);
+        const fetch = vi.fn<Fetch>(async () => response());
+        const sdk = createSdkProviderPort({ apiKey: KEY, fetch });
+        const systemOne = vi.fn(sdk.systemOne);
+        const read = vi.fn(() => undefined);
+        const write = vi.fn(() => undefined);
+        const profile = SEMANTIC_BUDGET_PROFILES.ci;
+        const budget = createBudgetController(profile);
+        await expect(
+            assessUnit({
+                port: { systemOne },
+                cache: { read, write },
+                budget,
+                profile,
+                deadline: Date.now() + 60_000,
+                state: position === 'state' ? state.proxy : { label: 'ordinary' },
+                questions: position === 'questions' ? questions.proxy : QUESTIONS,
+                requestedModel: MODEL,
+                signal: signal(),
+            })
+        ).rejects.toMatchObject({ code: 'invalid_response' });
+        for (const trap of Object.values(position === 'state' ? state.traps : questions.traps)) {
+            expect(trap).not.toHaveBeenCalled();
+        }
+        expect(read).not.toHaveBeenCalled();
+        expect(write).not.toHaveBeenCalled();
+        expect(systemOne).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(budget.totals()).toMatchObject({ logicalRequests: 0, networkAttempts: 0, retries: 0, cacheHits: 0 });
+    });
+
     it.each(['function', 'accessor'])(
         'refuses an inherited %s serialization hook above Array.prototype before SDK fetch',
         async (kind) => {

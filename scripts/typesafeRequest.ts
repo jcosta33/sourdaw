@@ -1,3 +1,5 @@
+import { types } from 'node:util';
+
 import {
     TypeSafeClient,
     type EntryType,
@@ -110,6 +112,10 @@ function readContainerPrototype(value: object, array: boolean): object | null {
 
 /** Inspect descriptors before reading values: JSON.stringify must never get to invoke caller code. */
 function inspectContainer(value: object, budget: CopyBudget): JsonContainer {
+    // Descriptor and prototype inspection also executes Proxy traps; reject before any reflection.
+    if (types.isProxy(value)) {
+        invalidShape();
+    }
     const array = Array.isArray(value);
     const prototype = readContainerPrototype(value, array);
     const ownKeys = Reflect.ownKeys(value);
