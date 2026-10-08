@@ -227,6 +227,8 @@ export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): bool
     const action = entry.action.payload;
     const inverse = entry.inverseAction.payload;
     const redo = entry.redoAction.payload;
+    const inversePlan: unknown = inverse.plan;
+    const redoPlan: unknown = redo.plan;
     if (
         !Number.isFinite(action.startBeat) ||
         !Number.isFinite(action.endBeat) ||
@@ -234,15 +236,15 @@ export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): bool
         action.endBeat <= action.startBeat ||
         !isRestoreTimeOperationSessionPayload(inverse) ||
         !isRestoreTimeOperationSessionPayload(redo) ||
-        !isRecord(inverse.plan) ||
-        inverse.plan.scope !== 'global' ||
-        !isRecord(redo.plan) ||
-        redo.plan.scope !== 'global'
+        !isRecord(inversePlan) ||
+        inversePlan.scope !== 'global' ||
+        !isRecord(redoPlan) ||
+        redoPlan.scope !== 'global'
     ) {
         return false;
     }
     try {
-        return valuesEqual(reverseRestorePlan(inverse.plan), redo.plan);
+        return valuesEqual(reverseRestorePlan(inversePlan), redoPlan);
     } catch {
         return false;
     }
