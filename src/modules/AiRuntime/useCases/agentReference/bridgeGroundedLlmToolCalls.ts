@@ -2215,8 +2215,13 @@ function findStretchRatioNumbers(maskedScope: string, numbers: readonly PromptNu
     return matches;
 }
 
+/** Whether the figure is stated as a beat count, the arrangement duration unit no descriptor carries. */
+function isStatedBeatCount(maskedScope: string, number: PromptNumber): boolean {
+    return /^\s*beats?\b/iu.test(maskedScope.slice(number.end));
+}
+
 function findBeatDurationNumbers(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber[] {
-    return numbers.filter((number) => /^\s*beats?\b/iu.test(maskedScope.slice(number.end)));
+    return numbers.filter((number) => isStatedBeatCount(maskedScope, number));
 }
 
 function isBoundBeatDurationNumber(maskedScope: string, number: PromptNumber): boolean {
@@ -2421,9 +2426,16 @@ function getExpectedNumbers(
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
-    const numbers = findPromptNumbers(actionScope.masked).filter(
-        (number) => valueRule.descriptorUnitSource === undefined || !isRatioUnitDenominator(actionScope.masked, number)
-    );
+    const numbers = findPromptNumbers(actionScope.masked).filter((number) => {
+        if (valueRule.descriptorUnitSource === undefined) {
+            return true;
+        }
+        // A descriptor-backed parameter is read against whatever scope stands in for it, and on the
+        // creative route that is the whole request. A figure stated as a beat count is the duration
+        // its own clause gives the created content, and no descriptor unit is a beat count, so it is
+        // evidence about the creation and never about a treatment value on an existing track.
+        return !isRatioUnitDenominator(actionScope.masked, number) && !isStatedBeatCount(actionScope.masked, number);
+    });
     if (numbers.length === 0) {
         return [];
     }
@@ -5957,8 +5969,12 @@ export function bridgeGroundedLlmToolCalls({
             return providerRoute ? [providerRoute] : [];
         });
     }
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context);
+    // The scope resolves from project shape alone, so it is not admission
+    // authority (#4697): it is read only once the provider has typed the
+    // `automateTrackGainRange` selection, and a selection the project shape
+    // cannot admit still fails closed below.
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
+    const wholeProjectVibeMixScope = providerVibeMixCalls.length > 0 ? getWholeProjectVibeMixScope(context) : null;
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];
         const assertedTrackIds = providerCall?.arguments.trackIds;

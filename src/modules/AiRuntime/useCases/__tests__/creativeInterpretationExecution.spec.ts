@@ -432,10 +432,12 @@ function radioProviderTurns(input: {
  * The first clause carries the creation evidence the plan-created object route reads; the second
  * delegates a sound on an existing track, which only the admitted creative authority reaches.
  */
-const COMBINED_PROMPT = `${BLUES_PROMPT}, and make it sound like a radio`;
+/** The stated duration matches the phrase the fixture proposes (`BLUES_CLIP_END_BEAT`), so the numeric evidence is one the treatment proposal may legally carry. */
+const COMBINED_PROMPT = `${BLUES_PROMPT} for 16 beats, and make it sound like a radio`;
 
 const BEAT_AND_RADIO_PROMPT = 'create a beat on a new MIDI track and make Guitar sound like a radio';
-const JAZZ_AND_RADIO_PROMPT = 'create a jazz MIDI track and make Guitar sound like a radio';
+/** The stated duration matches the beat clip the fixture proposes (`endBeat: 4`). */
+const JAZZ_AND_RADIO_PROMPT = 'create a jazz MIDI track for 4 beats and make Guitar sound like a radio';
 const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
 function beatAndRadioProviderTurns(): ScriptedTurn[] {
