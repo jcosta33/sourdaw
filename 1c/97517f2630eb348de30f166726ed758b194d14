@@ -1,0 +1,25 @@
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.dirty.integration.spec.ts
+  s_1f0dcd815e8946::t_2a118aba41556a 225-229
+src/modules/AudioAnalysis/handlers/analysis/__tests__/detectTempoSourceTime.integration.spec.ts
+  s_1f0dcd815e8946::t_2a118aba41556a 217-222,274-278
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_1f0dcd815e8946::t_2a118aba41556a 79-80
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_1f0dcd815e8946::t_2a118aba41556a 96-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c97517f2630eb348de30f166726ed758b194d14",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
