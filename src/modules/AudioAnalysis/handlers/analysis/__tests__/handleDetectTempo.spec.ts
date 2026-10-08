@@ -11,10 +11,15 @@ const mocks = vi.hoisted(() => {
     return {
         detectTempoFromBuffer: vi.fn(),
         detectProjectTempo: vi.fn(),
+        executeAppAction: vi.fn(),
         trackStore,
         notifyUser: vi.fn(),
     };
 });
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
@@ -35,6 +40,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 describe('handleDetectTempo', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.executeAppAction.mockReset();
         mocks.trackStore.value = { tracks: [] };
     });
 
@@ -48,6 +54,7 @@ describe('handleDetectTempo', () => {
 
         expect(mocks.detectTempoFromBuffer).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 125 BPM');
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('should notify failure if buffer tempo detection returns null', () => {
@@ -61,22 +68,96 @@ describe('handleDetectTempo', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect tempo');
     });
 
-    it('should fall back to project tempo if clip buffer is missing', () => {
+    it('dispatches a base-tempo action before reporting a confident project result', async () => {
         mocks.trackStore.value = { tracks: [{ clips: [{ id: 'c1' }] }] };
-        mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.8 });
+        mocks.detectProjectTempo.mockReturnValue({
+            averageBpm: 128.4,
+            minBpm: 110,
+            maxBpm: 130,
+            confidence: 0.8,
+            normalizedBpm: 128,
+        });
+        let releaseWrite!: () => void;
+        mocks.executeAppAction.mockImplementation(() => new Promise<void>((resolve) => (releaseWrite = resolve)));
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        const execution = handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectProjectTempo).toHaveBeenCalledTimes(1);
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 120 BPM (110–130 range)', 'success');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setTempo', payload: { bpm: 128, tempoChangeId: null } },
+            expect.any(Object)
+        );
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        releaseWrite();
+        await execution;
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 128.4 BPM (110–130 range)', 'success');
     });
 
-    it('should warn if project tempo confidence is too low', () => {
+    it('clamps a confident detected base tempo without naming a map event or legacy replay expectation', async () => {
+        mocks.detectProjectTempo.mockReturnValue({
+            averageBpm: 401,
+            minBpm: 390,
+            maxBpm: 410,
+            confidence: 0.9,
+            normalizedBpm: 300,
+        });
+
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'missing' } });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setTempo', payload: { bpm: 300, tempoChangeId: null } },
+            expect.any(Object)
+        );
+    });
+
+    it('forwards the caller cancellation and work context to the child action', async () => {
+        const controller = new AbortController();
+        const onDeferredEffectAttempt = vi.fn();
+        mocks.detectProjectTempo.mockReturnValue({
+            averageBpm: 140,
+            minBpm: 140,
+            maxBpm: 140,
+            confidence: 1,
+            normalizedBpm: 140,
+        });
+        const action = { type: 'detectTempo', payload: { clipId: 'missing' } } as const;
+
+        await handleDetectTempo.execute(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: controller.signal,
+            onDeferredEffectAttempt,
+            workOwner: null,
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setTempo', payload: { bpm: 140, tempoChangeId: null } },
+            expect.objectContaining({
+                signal: controller.signal,
+                onDeferredEffectAttempt,
+                workOwner: null,
+                shouldExecute: expect.any(Function),
+            })
+        );
+        const options = mocks.executeAppAction.mock.calls[0]?.[1] as { shouldExecute: () => boolean };
+        expect(options.shouldExecute()).toBe(true);
+        controller.abort();
+        expect(options.shouldExecute()).toBe(false);
+    });
+
+    it('should warn without dispatching a write if project tempo confidence is too low', async () => {
         mocks.trackStore.value = { tracks: [{ clips: [{ id: 'c1' }] }] };
-        mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.3 });
+        mocks.detectProjectTempo.mockReturnValue({
+            averageBpm: 120,
+            minBpm: 110,
+            maxBpm: 130,
+            confidence: 0.3,
+            normalizedBpm: null,
+        });
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        await handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Could not confidently detect tempo — add more content first',
             'warning'
@@ -89,7 +170,11 @@ describe('handleDetectTempo', () => {
         expect(description.label).toBe('Detect tempo');
     });
 
-    it('is not undoable — it only reads tempo and notifies, mutating no state', () => {
+    it('does not add an outer undo entry for an admitted setTempo child', () => {
         expect(handleDetectTempo.undoable).toBe(false);
+    });
+
+    it('is a runtime orchestrator so its child project action owns the write and undo entry', () => {
+        expect(handleDetectTempo.executionKind).toBe('runtime');
     });
 });
