@@ -272,6 +272,41 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
         });
     });
 
+    describe('splitClip', () => {
+        beforeEach(() => {
+            const clip = createClip({ id: 'clip-m', trackId: 'track-m', type: 'midi', startBeat: 0, endBeat: 8 });
+            trackStore.set({
+                tracks: [createTrack({ id: 'track-m', kind: 'midi', clips: [clip] })],
+                selectedTrackId: 'track-m',
+                ghostClips: [],
+            });
+            midiStore.set({
+                notesByClipId: {
+                    'clip-m': [
+                        { id: 'note-x', pitch: 60, startBeat: 1, duration: 4, velocity: 100 },
+                        { id: 'note-y', pitch: 64, startBeat: 0, duration: 1, velocity: 100 },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+                migratedAbsoluteNoteClipIds: ['clip-m'],
+            });
+        });
+
+        // Red when the note a split cuts in two leaves the record: its right half's id hashes verbatim.
+        it('hashes two compilations alike though each draws its own right clip and cut note ids', () => {
+            const compilations = compileTwice(() => [{ type: 'splitClip', payload: { clipId: 'clip-m', beat: 3 } }]);
+
+            expectStableHashOverFreshIds(compilations, ['0.splitClip.rightClipId', '0.splitClip.targetNoteIds[0]']);
+        });
+
+        it('tells apart split batches that cut at different beats', () => {
+            const splitAt = (beat: number): AppAction[] => [{ type: 'splitClip', payload: { clipId: 'clip-m', beat } }];
+
+            expect(compileOnce(splitAt(3)).digest).not.toBe(compileOnce(splitAt(6)).digest);
+        });
+    });
+
     describe('stripSilence', () => {
         const SAMPLES_PER_BEAT = 10;
 

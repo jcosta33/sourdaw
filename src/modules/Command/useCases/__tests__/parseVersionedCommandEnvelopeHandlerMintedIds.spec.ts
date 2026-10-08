@@ -119,4 +119,41 @@ describe('parseVersionedCommandEnvelope over ids a handler drew while compiling'
         expect(parseWithAssignedIds(createGroup, [{ argument: 'vcaGroupId', value: 'vca-command-1' }])).toBe('valid');
         expect(parseWithAssignedIds(createGroup, [])).toBe('invalid');
     });
+
+    // Every duplicateClipAt envelope written before the copy id was recorded carries it in its
+    // arguments with an empty record. Red when the record is required again.
+    it('parses a duplicateClipAt envelope recorded before its copy id was named, and refuses a wrong record', () => {
+        const duplicate: AppAction = {
+            type: 'duplicateClipAt',
+            payload: {
+                clipId: 'clip-source',
+                destinationTrackId: 'track-destination',
+                startBeat: 8,
+                targetClipId: 'clip-copy',
+            },
+        };
+
+        expect(parseWithAssignedIds(duplicate, [])).toBe('valid');
+        expect(parseWithAssignedIds(duplicate, [{ argument: 'targetClipId', value: 'clip-copy' }])).toBe('valid');
+        expect(parseWithAssignedIds(duplicate, [{ argument: 'targetClipId', value: 'clip-other' }])).toBe('invalid');
+    });
+
+    it('parses a splitClip envelope recorded before its cut note ids were named, and refuses a partial record', () => {
+        const split: AppAction = {
+            type: 'splitClip',
+            payload: {
+                clipId: 'clip-m',
+                beat: 3,
+                rightClipId: 'clip-right',
+                targetNoteIds: ['note-one', 'note-two'],
+            },
+        };
+        const rightClip = { argument: 'rightClipId', value: 'clip-right' };
+        const noteOne = { argument: 'targetNoteIds[0]', value: 'note-one' };
+        const noteTwo = { argument: 'targetNoteIds[1]', value: 'note-two' };
+
+        expect(parseWithAssignedIds(split, [rightClip])).toBe('valid');
+        expect(parseWithAssignedIds(split, [rightClip, noteOne, noteTwo])).toBe('valid');
+        expect(parseWithAssignedIds(split, [rightClip, noteOne])).toBe('invalid');
+    });
 });

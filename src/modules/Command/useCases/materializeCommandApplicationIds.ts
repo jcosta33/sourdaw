@@ -41,7 +41,6 @@ export const COMMAND_APPLICATION_ID_RULES: Partial<Record<AppActionType, Applica
     createTrackAlternative: { argument: 'alternativeId', prefix: 'alternative-command-' },
     createVcaGroup: { argument: 'vcaGroupId', prefix: 'vca-command-' },
     duplicateClip: { argument: 'targetClipId', prefix: 'clip-command-' },
-    duplicateClipAt: { argument: 'targetClipId', prefix: 'clip-command-' },
     duplicateClipToNextBar: { argument: 'targetClipId', prefix: 'clip-command-' },
     duplicateTrack: { argument: 'targetTrackId', prefix: 'track-command-' },
     createCompGroup: { argument: 'groupId', prefix: 'comp-group-command-' },

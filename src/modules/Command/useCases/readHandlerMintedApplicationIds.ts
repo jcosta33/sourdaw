@@ -28,12 +28,21 @@ function readListedIds(source: unknown, prefix: string, list: string, field: str
 
 type CommandArguments = Readonly<Record<string, unknown>>;
 
+/** The id at each position of `source[list]`, named by its indexed argument path. */
+function readIdList(source: CommandArguments, list: string): CommandApplicationAssignedId[] {
+    const entries = source[list];
+    if (!Array.isArray(entries)) {
+        return [];
+    }
+    return entries.flatMap((entry: unknown, index) => readStringId({ id: entry }, 'id', `${list}[${String(index)}]`));
+}
+
 type HandlerMintedIdReader = (argumentsValue: CommandArguments) => CommandApplicationAssignedId[];
 
 /**
  * Commands whose arguments are derived from project state when they compile, so the ids they
  * create cannot be drawn before the handler or the state guards run: how many lanes a glue migrates
- * or segments a strip cuts is only known from the project. Each reader names, in the compiled
+ * or segments a strip cuts is only known from the project, and a copy's id is drawn by its handler. Each reader names, in the compiled
  * arguments, every id drawn for a project entity the command creates. A render job is not one: the
  * receipt links it under `links.render`, and the batch digest reads those ids itself.
  */
@@ -53,6 +62,8 @@ const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = ne
         ],
     ],
     ['arpeggiate', (argumentsValue) => readListedIds(argumentsValue, '', 'addedNotes', 'id')],
+    ['duplicateClipAt', (argumentsValue) => readStringId(argumentsValue, 'targetClipId', 'targetClipId')],
+    ['splitClip', (argumentsValue) => readIdList(argumentsValue, 'targetNoteIds')],
 ]);
 
 /**
