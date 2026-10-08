@@ -1,0 +1,76 @@
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_2bfd55a4393d7c::t_f0025cc00b767c 3,12-53,58-63,68,71,73,76-79,81,85-86,89
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_2bfd55a4393d7c::t_7bd94fae1dfb41 394-435,437-455,460-462,482-494,499-502
+  s_2bfd55a4393d7c::t_b52563eaa2296d 456-459,495-498
+  s_2bfd55a4393d7c::t_308bc3ed686995 28
+  s_2bfd55a4393d7c::t_e0780696f22bb8 436
+  s_2bfd55a4393d7c::t_391833ad55b960 14
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_2bfd55a4393d7c::t_a521c8c7d307cc 217-255,257,260,262-281,286-316,321-325
+  s_2bfd55a4393d7c::t_aefe382865b3ca 256,258-259,261
+  s_2bfd55a4393d7c::t_a12b913e0c8405 282-285,317-320
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_2bfd55a4393d7c::t_fb159d9d7a1c05 21-24
+  s_2bfd55a4393d7c::t_cabff909ca3768 7,12,15
+  s_2bfd55a4393d7c::t_4ce4ac8f03ac0f 275-280,282-295
+  s_2bfd55a4393d7c::t_2ffb85edb91f17 281
+  s_2bfd55a4393d7c::t_e99e7c7ff0e152 391-397
+  s_2bfd55a4393d7c::t_d791210ddaf1e4 304-310
+  s_2bfd55a4393d7c::t_3454aa49dc18b9 354-358,364-365
+  s_1c08b47ac3792f::t_27bd85b1e66f6f 274
+src/modules/AiRuntime/useCases/__tests__/compiledGlueClipsExecution.spec.ts
+  s_2bfd55a4393d7c::t_bc10b850c9e141 259
+  s_2bfd55a4393d7c::t_87e2cbf11944ac 231-233,236-239,245,247-253,256-258,260-271,277,280,282,289,299,302,305,307,309
+  s_2bfd55a4393d7c::t_6aecb79d01bf55 134-135,137
+  s_2bfd55a4393d7c::t_2c3e693a8a031b 1-10,12-15,17-18,20-21,23-78,95-133,136,138-172,174-177,180-181,197-207,209-230,234-235,240-244,246,254-255,272-276,278,283-288,290-298,300-301,303,308,310-312
+  s_2bfd55a4393d7c::t_b84b8482dd1a67 281,306
+  s_2bfd55a4393d7c::t_2030a48e9f8b70 79-94
+  s_2bfd55a4393d7c::t_f247c4462d63e2 279,304
+  s_2bfd55a4393d7c::t_c778bf0954f3b8 208
+  s_2bfd55a4393d7c::t_782ecc3ce8b337 11
+  s_2bfd55a4393d7c::t_f0ac47181c133e 173,178-179,182-196
+  s_2bfd55a4393d7c::t_a72bb0af27255b 16,19,22
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_2bfd55a4393d7c::t_bdd3edbbceb57e 97-99,102,105-110,114-115,117
+  s_2bfd55a4393d7c::t_8b253cf5ceebb7 3-4
+  s_2bfd55a4393d7c::t_b4a0132c442c22 52,58,60,65-66,68-81
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.spec.ts
+  s_2bfd55a4393d7c::t_e6516cc3a9dada 3-4
+  s_2bfd55a4393d7c::t_709e6513d2bf22 51,69,71,76-82,84-108
+  s_2bfd55a4393d7c::t_4e9af07f187ada 138-141,144,147-158,167-172
+src/modules/Arrangement/useCases/clipEditing/prepareClipGlue.ts
+  s_2bfd55a4393d7c::t_f83718cec582b6 10,21-22
+  s_2bfd55a4393d7c::t_3e29fc22ee6640 220-226
+  s_2bfd55a4393d7c::t_77b21521b7439d 83
+src/modules/Arrangement/handlers/clip/handleGlueClips.ts
+  s_2bfd55a4393d7c::t_cc1ee65c7e4690 3,12-51,53,58,66-71,73-75,78-79,82
+src/modules/Command/useCases/macro/playback.ts
+  s_2bfd55a4393d7c::t_3a0f0a0a3cccdc 291-304
+src/modules/Arrangement/useCases/clip/keyMigratedAutomationLanes.ts
+  s_2bfd55a4393d7c::t_092a511424c73e 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c189c56e898e35310b0f8d972d8a17a0f58ff453",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
