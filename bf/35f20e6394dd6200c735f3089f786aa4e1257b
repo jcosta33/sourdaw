@@ -1,0 +1,20 @@
+tests/e2e/monoModulationInput.spec.ts
+  s_1f0dcd815e8946::t_29447fa86886b6 7-13,18,22-24,30-32,51-70,76-78,86-92
+  s_1f0dcd815e8946::t_49706dbdb61e9f 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf35f20e6394dd6200c735f3089f786aa4e1257b",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
