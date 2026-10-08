@@ -1,0 +1,127 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_97ab82e0b4f10c::t_8a93ce82d4693c 1-29
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_67e678342f32da 1-17
+.agents/skills/review-stances/test-validity.md
+  s_97ab82e0b4f10c::t_2ede9120448926 9-22
+.github/workflows/heavy-gates.yml
+  s_97ab82e0b4f10c::t_30651d69f38d2d 57,60-62
+evidence/agent-campaign/manifest.json
+  s_97ab82e0b4f10c::t_8beb2c28ab6fc1 10,527
+release/open-source-inventory.json
+  s_4c8cd08893b364::t_86b25bf42cfb20 1210-1211
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_97ab82e0b4f10c::t_896bcbb20cf003 213-214
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_97ab82e0b4f10c::t_f901ef3711b05c 2-11,13,722-753,3146-3273
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_97ab82e0b4f10c::t_30daf667fcdc23 129-151,175-286,302-316,328-329,335,347-348,390-492
+scripts/__tests__/prContract.spec.ts
+  s_97ab82e0b4f10c::t_e629ccf9794b16 53-55,1331,1336-1410,1446,1462,1476,1489-1497,1505-1563,1571-1665,1677-1680,1719-1728,1742-1751,1808,1822-1824,1830-1839,1878-1926,2728-2729
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_d780a6092235da 404-529,578-580,587-623
+scripts/__tests__/publishLane.spec.ts
+  s_97ab82e0b4f10c::t_42cc2af5a735be 563-589,1463-1519,2522-2576
+scripts/__tests__/reviewDiffSummary.spec.ts
+  s_97ab82e0b4f10c::t_8185cead1b8255 7,81-126
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_97ab82e0b4f10c::t_e010380c4bf21f 50-67,361-463
+scripts/__tests__/vitestCollectionPatterns.spec.ts
+  s_97ab82e0b4f10c::t_ef99e683a15a0f 1-20
+scripts/offlineAudioWorkletTrace.ts
+  s_97ab82e0b4f10c::t_85f193c6d1fda0 128-144,196-200,216,223-229,232,244,247-251,261,264,268-270,313
+scripts/prValidationScope.ts
+  s_97ab82e0b4f10c::t_5b3ed1e16ed3ff 2-3,6-7,127-136,251,261-263
+scripts/publishLane.ts
+  s_97ab82e0b4f10c::t_eb97f949c2f165 56,552-553,555-558,562-563
+scripts/reviewDiffSummary.ts
+  s_97ab82e0b4f10c::t_8ceaf33c5c12fb 25-31,39,72-82,85-86,88-89,93,98-102,159-174
+scripts/reviewRiskPolicy.ts
+  s_97ab82e0b4f10c::t_879573df1aacd0 168-179,181,185-186,189,191-192,197,199-201,206-207,219,222-223,227,234-235,249,251-254,259-268,276
+scripts/testInstructionVocabulary.ts
+  s_97ab82e0b4f10c::t_96866d737ed7f1 477-483,497-498,500,503-505,507,510-513,515,525-552,554-601
+scripts/testInstructions.ts
+  s_97ab82e0b4f10c::t_8d9dc8ade1f696 25-27,673-676,679,712-736,740-744,748,755-759,766-781,786-796,828-839,855
+scripts/vitestCollectionPatterns.ts
+  s_97ab82e0b4f10c::t_90a329c6947578 37-40,42,63,70
+src/app/__tests__/main.spec.tsx
+  s_97ab82e0b4f10c::t_8165789f4b8ed5 124
+src/modules/AiRuntime/models/DeviceManifestPageLimits.ts
+  s_97ab82e0b4f10c::t_c8550c313c3068 5-12
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_97ab82e0b4f10c::t_2a4827ac81a468 1-119
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_97ab82e0b4f10c::t_e00db19a193096 407
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_97ab82e0b4f10c::t_cd6fe8d75724b8 245-251,257
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_97ab82e0b4f10c::t_2a1832b59ba3e4 435-436,439-452,1008-1010
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_97ab82e0b4f10c::t_374d12e21d98e1 132-171
+src/modules/AiRuntime/useCases/__tests__/deviceManifestParameterSelection.spec.ts
+  s_97ab82e0b4f10c::t_95844b87454345 1-249
+src/modules/AiRuntime/useCases/__tests__/digestCommandBatchContentCompileMintedIds.spec.ts
+  s_97ab82e0b4f10c::t_ea6722142f3413 1-458
+src/modules/AiRuntime/useCases/__tests__/planWholeProjectVibeRun.spec.ts
+  s_97ab82e0b4f10c::t_220bf9f2b9d4ce 1-849
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixAdmissionScoping.spec.ts
+  s_97ab82e0b4f10c::t_ad59def12f0c7f 1-133
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_97ab82e0b4f10c::t_995db0b86ca552 2218-2236,2238,2443-2456,5990-5993,5995
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_97ab82e0b4f10c::t_afafab733a2bbb 327-329,337-343,349
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_97ab82e0b4f10c::t_f5d78c5746bc19 550,561,571-572,576-579,584,666-761,774-776,870,900-949
+src/modules/AiRuntime/useCases/digestCommandBatchContent.ts
+  s_97ab82e0b4f10c::t_5c51342959d1fb 20-32,35-36,39-42
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_97ab82e0b4f10c::t_041d26459627bc 1-362
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_97ab82e0b4f10c::t_01fefefeb54791 277-320
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptor.ts
+  s_97ab82e0b4f10c::t_3e171ff999a894 12,210-211
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidance.ts
+  s_97ab82e0b4f10c::t_6ed5689907bbe7 1-39
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceOutput.ts
+  s_97ab82e0b4f10c::t_0c383cb16e8bce 1-356
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceShaping.ts
+  s_97ab82e0b4f10c::t_747206fe6a5701 1-267
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptorGuidanceSources.ts
+  s_97ab82e0b4f10c::t_21aeee86a84813 1-447
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_97ab82e0b4f10c::t_94bde9344045ae 124,141,243-246
+src/modules/Arrangement/models/TimelineRenderModel.ts
+  s_97ab82e0b4f10c::t_e9808790a1cdf4 59-60
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_97ab82e0b4f10c::t_36d08e5bdf750d 276-283
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_97ab82e0b4f10c::t_66acee586ac42d 844-863
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_97ab82e0b4f10c::t_348d303b8003d6 493
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_97ab82e0b4f10c::t_fd98fc96120dea 599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c1bb467b694b4dab1e6a6d39a491420433afc6c",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
