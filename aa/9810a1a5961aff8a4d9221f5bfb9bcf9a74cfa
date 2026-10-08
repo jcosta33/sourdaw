@@ -1,0 +1,27 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1c08b47ac3792f::t_61d7d8f3d761b0 700-775
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_1c08b47ac3792f::t_f3c7f3f56761be 168-169,172-176
+  s_1c08b47ac3792f::t_224132b9282f5f 190-192,200-201
+  s_1c08b47ac3792f::t_bf724d8a3d8820 1074-1131
+  s_1c08b47ac3792f::t_23479f65501d23 202
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_1c08b47ac3792f::t_73923c0c5a0cc5 88
+  s_1c08b47ac3792f::t_da516303fa6de2 737-742,744-747
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa9810a1a5961aff8a4d9221f5bfb9bcf9a74cfa",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
