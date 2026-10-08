@@ -14,7 +14,7 @@ import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
-import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+import { clipDragPreviewRef, type ClipPreviewPosition } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore } from '../stores/timelineViewStore';
@@ -181,6 +181,52 @@ function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineR
     }
 
     return { ...cachedModel, tracks, dataDirty: true };
+}
+
+type PreviewClipCacheEntry = {
+    position: ClipPreviewPosition;
+    clip: ClipRenderModel;
+};
+
+const previewClipCache = new WeakMap<ClipRenderModel, PreviewClipCacheEntry>();
+
+function projectPreviewClip(base: ClipRenderModel, position: ClipPreviewPosition): ClipRenderModel {
+    const prior = previewClipCache.get(base);
+    if (prior) {
+        const previousPosition = prior.position;
+        if (
+            previousPosition.trackId === position.trackId &&
+            previousPosition.startBeat === position.startBeat &&
+            previousPosition.endBeat === position.endBeat &&
+            previousPosition.audioOffsetBeats === position.audioOffsetBeats &&
+            previousPosition.audioOffsetSeconds === position.audioOffsetSeconds &&
+            previousPosition.midiOffsetBeats === position.midiOffsetBeats
+        ) {
+            return prior.clip;
+        }
+    }
+
+    const clip: ClipRenderModel = {
+        ...base,
+        startBeat: position.startBeat,
+        endBeat: position.endBeat,
+        audioOffsetBeats: position.audioOffsetBeats ?? base.audioOffsetBeats,
+        audioOffsetSeconds: position.audioOffsetSeconds ?? base.audioOffsetSeconds,
+        clipStartTempo: readTempoAtBeat({ beat: position.startBeat }),
+        midiOffsetBeats: position.midiOffsetBeats ?? base.midiOffsetBeats,
+    };
+    previewClipCache.set(base, {
+        position: {
+            trackId: position.trackId,
+            startBeat: position.startBeat,
+            endBeat: position.endBeat,
+            audioOffsetBeats: position.audioOffsetBeats,
+            audioOffsetSeconds: position.audioOffsetSeconds,
+            midiOffsetBeats: position.midiOffsetBeats,
+        },
+        clip,
+    });
+    return clip;
 }
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
@@ -418,15 +464,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             if (pos.trackId === track.id) {
                 const base = clipById.get(clipId);
                 if (base) {
-                    clips.push({
-                        ...base,
-                        startBeat: pos.startBeat,
-                        endBeat: pos.endBeat,
-                        audioOffsetBeats: pos.audioOffsetBeats ?? base.audioOffsetBeats,
-                        audioOffsetSeconds: pos.audioOffsetSeconds ?? base.audioOffsetSeconds,
-                        clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
-                        midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
-                    });
+                    clips.push(projectPreviewClip(base, pos));
                 }
             }
         }
