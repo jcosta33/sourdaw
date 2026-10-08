@@ -276,6 +276,43 @@ describe('renderConfirmationReply', () => {
 });
 
 describe('confirmReviewRepairs', () => {
+    it.each([false, true])(
+        'logs every refusal before aborting the whole batch (eligible included: %s)',
+        (withEligible) => {
+            const refused = [
+                { ...cleanThreads()[1]!, rootCommentId: SECOND_ROOT_COMMENT_ID + 100 },
+                subjectThread({
+                    thread: THIRD_THREAD,
+                    rootPath: 'scripts/other.ts',
+                    replies: [
+                        {
+                            id: 9_003,
+                            body: authorRecordReply(recordFor({ thread: THIRD_THREAD })),
+                            authorNodeId: AUTHOR_BOT_NODE_ID,
+                        },
+                    ],
+                }),
+            ];
+            const ignored = subjectThread({ thread: 'PRRT_ignored', resolved: true });
+            const initialThreads = withEligible ? [cleanThreads()[0]!, ...refused, ignored] : [...refused, ignored];
+            const { port, logs, mutations } = fakePort(HEAD, initialThreads);
+            const postConfirmation = vi.fn(port.postConfirmation);
+            const resolve = vi.fn(port.resolve);
+
+            expect(() => confirmReviewRepairs(PR, HEAD, { ...port, postConfirmation, resolve })).toThrow(
+                `refusing to confirm 2 review thread(s) on PR #${PR}: a refused repair makes the transaction unsafe`
+            );
+            expect(logs).toEqual([
+                `repair-ignored:${PR}:PRRT_ignored:already resolved`,
+                `repair-refused:${PR}:${SECOND_THREAD}:finding commentId ${SECOND_ROOT_COMMENT_ID} does not match the thread root ${SECOND_ROOT_COMMENT_ID + 100}`,
+                `repair-refused:${PR}:${THIRD_THREAD}:finding path ${FINDING_PATH} does not match the thread root scripts/other.ts`,
+            ]);
+            expect(postConfirmation).not.toHaveBeenCalled();
+            expect(resolve).not.toHaveBeenCalled();
+            expect(mutations).toEqual([]);
+        }
+    );
+
     it('should confirm and resolve a tip repair exactly once', () => {
         const record = recordFor({ commit: HEAD });
         const thread = subjectThread({
@@ -477,7 +514,7 @@ describe('confirmReviewRepairs', () => {
         ]);
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
         expect(mutations).toEqual([]);
-        expect(logs).toEqual([]);
+        expect(logs).toEqual([`repair-refused:${PR}:${THREAD}:author recorded 2 distinct repair records`]);
     });
 
     it('should fail closed on a record that binds another finding without resolving anything', () => {

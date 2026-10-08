@@ -176,6 +176,7 @@ export function confirmReviewRepairs(
         isAncestor: port.isAncestor,
     });
     logReasons('repair-ignored', number, selection.ignored, port.log);
+    logReasons('repair-refused', number, selection.refused, port.log);
     if (selection.refused.length > 0) {
         fail(
             `refusing to confirm ${selection.refused.length} review thread(s) on PR #${number}: a refused repair makes the transaction unsafe`
