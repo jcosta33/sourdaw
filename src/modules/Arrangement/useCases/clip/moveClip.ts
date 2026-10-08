@@ -26,10 +26,10 @@ function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): 
         return false;
     }
     const endBeat = options?.historicalEndBeat;
-    return (
-        endBeat === undefined ||
-        (options.historicalPlacement === true && Number.isFinite(endBeat) && endBeat > startBeat)
-    );
+    if (endBeat === undefined) {
+        return true;
+    }
+    return options?.historicalPlacement === true && Number.isFinite(endBeat) && endBeat > startBeat;
 }
 
 function isUnchangedPlacement(
