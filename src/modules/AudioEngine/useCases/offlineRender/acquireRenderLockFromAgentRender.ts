@@ -4,7 +4,6 @@ import { createExportInProgressError } from '../../errors/ExportInProgressError'
 import { acquireRenderLock } from './acquireRenderLock';
 import { agentRenderNoun } from './agentRenderNoun';
 import { RENDER_RELEASE_TIMEOUT_MS } from './constants';
-import { endExportCancellationScope } from './endExportCancellationScope';
 import { exportCancellationState, type AgentRenderHolder } from './exportCancellationState';
 
 function waitForRelease(released: Promise<void>, cancelled: AbortSignal, holder: AgentRenderHolder): Promise<void> {
@@ -52,12 +51,9 @@ export async function acquireRenderLockFromAgentRender(): Promise<() => void> {
     try {
         await waitForRelease(agentRender.released, queued.signal, agentRender.holder);
     } catch (error) {
+        // A Cancel pressed while waiting aborted only `queued`; the process-wide flag belongs to an
+        // export that holds the lock, and this one never did.
         exportCancellationState.queuedMusicianExport = null;
-        if (queued.signal.aborted) {
-            // A Cancel pressed while waiting raised the process-wide flag; this export never began a
-            // scope of its own to close it.
-            endExportCancellationScope();
-        }
         throw error;
     }
     exportCancellationState.queuedMusicianExport = null;

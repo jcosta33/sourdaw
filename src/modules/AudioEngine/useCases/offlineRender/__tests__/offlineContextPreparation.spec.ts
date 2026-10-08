@@ -34,7 +34,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { OUT_OF_BAND_OFFLINE_MODULE_DEVICE_TYPES, prepareOfflineContext } from '../prepareOfflineContext';
 
@@ -127,8 +127,17 @@ function findStripBuildingRenderRoutes(): StripBuildingRenderRoute[] {
 }
 
 describe('offline context preparation census', () => {
+    let cachedRenderRoutes: StripBuildingRenderRoute[] = [];
+
+    beforeAll(() => {
+        // Cache the expensive filesystem walk and import graph traversal once for
+        // both tests. The walk is O(files × graph_depth) and reaches 1300ms+ on
+        // parallel runner load; computing once halves the total cost.
+        cachedRenderRoutes = findStripBuildingRenderRoutes();
+    });
+
     it('finds every render path that builds a strip on a context it constructed', () => {
-        const renderRoutes = findStripBuildingRenderRoutes();
+        const renderRoutes = cachedRenderRoutes;
         const renderOwners = renderRoutes.map(({ owner }) => owner);
 
         // Pinned so the enumeration itself cannot go blind. A scan that matched
@@ -152,7 +161,7 @@ describe('offline context preparation census', () => {
         // first draft of this census green over a freeze path that prepared
         // nothing.
         const callsPrepare = /\bawait\s+prepareOfflineContext\s*\(/;
-        const offenders = findStripBuildingRenderRoutes()
+        const offenders = cachedRenderRoutes
             .filter(({ files: routeFiles }) =>
                 routeFiles.every((path) => !callsPrepare.test(readFileSync(path, 'utf8')))
             )

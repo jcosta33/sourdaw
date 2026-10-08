@@ -6,18 +6,24 @@ import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';
-import { getTrackState } from '../repositories/track/getTrackState';
+import { getTrackState, type TrackState } from '../repositories/track/getTrackState';
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 
+import { keyMigratedAutomationLanes } from './clip/keyMigratedAutomationLanes';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
 import { consumedStretchFactor } from './clipEditing/consumedStretchFactor';
+import { getClipIdCensus } from './clipEditing/getClipIdCensus';
 
 type PrepareStripSilenceInput = {
     clipId: string;
     threshold?: number;
     minDuration?: number;
+    /** The segments' clip ids a compiled strip recorded, in timeline order; drawn fresh when absent. */
+    segmentClipIds?: readonly string[];
+    /** The migrated lanes' ids a compiled strip recorded, in creation order; drawn fresh when absent. */
+    automationLaneIds?: readonly string[];
 };
 
 type Region = { startSample: number; endSample: number };
@@ -276,6 +282,28 @@ function mergeCloseRegions(
 }
 
 /**
+ * One clip id per segment: drawn fresh, or the ones a compiled strip recorded, which must match
+ * the segment count, be distinct, and name no clip the project already places anywhere.
+ */
+function resolveSegmentClipIds(
+    segmentCount: number,
+    segmentClipIds: readonly string[] | undefined,
+    state: TrackState
+): readonly string[] | null {
+    if (segmentClipIds === undefined) {
+        return Array.from({ length: segmentCount }, () => `clip-strip-${crypto.randomUUID()}`);
+    }
+    if (segmentClipIds.length !== segmentCount || new Set(segmentClipIds).size !== segmentClipIds.length) {
+        return null;
+    }
+    const census = getClipIdCensus({ clipIds: segmentClipIds, state });
+    if (segmentClipIds.some((segmentClipId) => segmentClipId.length === 0 || census.get(segmentClipId)!.length > 0)) {
+        return null;
+    }
+    return segmentClipIds;
+}
+
+/**
  * Compute the before/after snapshot for splitting one audio clip into
  * silence-trimmed segments, including the satellite transition (ledger
  * #2108): the target's gain envelope and warp state are copied and rebased
@@ -283,7 +311,13 @@ function mergeCloseRegions(
  * re-keyed, points verbatim, onto the segments whose windows still cover
  * them; the target id's own satellites never survive the split.
  */
-export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5 }: PrepareStripSilenceInput): {
+export function prepareStripSilence({
+    clipId,
+    threshold = -40,
+    minDuration = 0.5,
+    segmentClipIds,
+    automationLaneIds,
+}: PrepareStripSilenceInput): {
     previous: StripSilenceActionSnapshot;
     next: StripSilenceActionSnapshot;
     newClipIds: readonly string[];
@@ -316,16 +350,11 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
         return null;
     }
 
-    const targetSatelliteEntry = readClipSatelliteEntry(targetClip.id);
-    const targetAutomationLanes = readClipScopedAutomationLanes([targetClip.id]);
-
-    const newClips: Clip[] = [];
-    const newClipSatellites: ClipSatelliteEntry[] = [];
+    const fragments: { startBeat: number; endBeat: number; sourceStartSeconds: number }[] = [];
     for (const window of playedWindows) {
         const regions = detectSoundRegions(channelData, thresholdLinear, buffer.sampleRate, window);
         const mergedRegions = mergeCloseRegions(regions, minDuration, buffer.sampleRate, window);
         for (const region of mergedRegions) {
-            const newClipId = `clip-strip-${crypto.randomUUID()}`;
             // The floored first sample can begin before a fractional media entry.
             const sourceStartSeconds = Math.max(window.sourceOffsetSeconds, region.startSample / buffer.sampleRate);
             let startBeat = window.iterationStartBeat;
@@ -339,31 +368,50 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
             if (!(startBeat < endBeat)) {
                 continue;
             }
-            const clipStartTempo = readTempoAtBeat({ beat: startBeat });
-            const shift = startBeat - targetClip.startBeat;
-            const segment: Clip = {
-                ...targetClip,
-                id: newClipId,
-                startBeat,
-                endBeat,
-                audioOffsetSeconds: sourceStartSeconds,
-                audioOffsetBeats: (sourceStartSeconds * clipStartTempo) / 60,
-                loopEnabled: false,
-            };
-            delete segment.loopLength;
-            newClips.push(segment);
-            newClipSatellites.push({
-                clipId: newClipId,
-                gainEnvelope: rebaseGainEnvelope(targetSatelliteEntry.gainEnvelope, newClipId, shift),
-                warpState: copyWarpState(targetSatelliteEntry.warpState),
-            });
+            fragments.push({ startBeat, endBeat, sourceStartSeconds });
         }
     }
-    if (newClips.length <= 1) {
+    if (fragments.length <= 1) {
+        return null;
+    }
+    const resolvedSegmentClipIds = resolveSegmentClipIds(fragments.length, segmentClipIds, state);
+    if (!resolvedSegmentClipIds) {
         return null;
     }
 
-    const migratedAutomationLanes = migrateAutomationLanesToSegments(targetAutomationLanes, newClips);
+    const targetSatelliteEntry = readClipSatelliteEntry(targetClip.id);
+    const targetAutomationLanes = readClipScopedAutomationLanes([targetClip.id]);
+    const newClips: Clip[] = fragments.map(({ startBeat, endBeat, sourceStartSeconds }, index) => {
+        const clipStartTempo = readTempoAtBeat({ beat: startBeat });
+        const segment: Clip = {
+            ...targetClip,
+            id: resolvedSegmentClipIds[index]!,
+            startBeat,
+            endBeat,
+            audioOffsetSeconds: sourceStartSeconds,
+            audioOffsetBeats: (sourceStartSeconds * clipStartTempo) / 60,
+            loopEnabled: false,
+        };
+        delete segment.loopLength;
+        return segment;
+    });
+    const newClipSatellites: ClipSatelliteEntry[] = newClips.map((segment) => ({
+        clipId: segment.id,
+        gainEnvelope: rebaseGainEnvelope(
+            targetSatelliteEntry.gainEnvelope,
+            segment.id,
+            segment.startBeat - targetClip.startBeat
+        ),
+        warpState: copyWarpState(targetSatelliteEntry.warpState),
+    }));
+
+    const migratedAutomationLanes = keyMigratedAutomationLanes(
+        migrateAutomationLanesToSegments(targetAutomationLanes, newClips),
+        automationLaneIds
+    );
+    if (!migratedAutomationLanes) {
+        return null;
+    }
 
     const previousClipSatellites: ClipSatelliteEntry[] = [
         targetSatelliteEntry,

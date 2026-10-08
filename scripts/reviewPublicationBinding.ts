@@ -273,18 +273,22 @@ function hasRiskPlan(bundle: string, port: PublishReviewPort): boolean {
  * without the caller having to establish the risk plan first.
  */
 function bundleRecordsPublication(bundle: string, port: PublishReviewPort): boolean {
+    return bundleRecordedPublicationId(bundle, port) !== undefined;
+}
+
+function bundleRecordedPublicationId(bundle: string, port: PublishReviewPort): number | undefined {
     const dossierRead = readBundleFile(port, join(bundle, REVIEW_DOSSIER_NAME));
     if (!dossierRead.present) {
-        return false;
+        return undefined;
     }
     const value = dossierRead.value;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        return false;
+        return undefined;
     }
     if ((value as { format?: unknown }).format !== REVIEW_DOSSIER_FORMAT) {
-        return false;
+        return undefined;
     }
-    return publishedReviewId(parseReviewDossier(value)) !== undefined;
+    return publishedReviewId(parseReviewDossier(value));
 }
 
 /**
@@ -444,7 +448,8 @@ export function recordPublicationBindings(
     document: ReviewDocument,
     reviewId: number,
     port: PublishReviewPort,
-    reviewReassessment?: ReviewReassessment
+    reviewReassessment?: ReviewReassessment,
+    authorizeDelivery = true
 ): void {
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     if (readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present !== true) {
@@ -491,7 +496,7 @@ export function recordPublicationBindings(
     });
     let bound = appendReviewDossierEvents(dossier, [{ kind: 'review-published', reviewId }, ...bindings]);
     const postPublication: ReviewDossierEvent[] = [];
-    if (document.event === 'APPROVE') {
+    if (document.event === 'APPROVE' && authorizeDelivery) {
         if (port.reviewState === undefined) {
             fail(
                 `review ${reviewId} approved a plan-carrying bundle but the port has no review-state reader to bind its delivery authorization`
@@ -523,6 +528,49 @@ export function recordPublicationBindings(
         fail(`review publication cannot write ${dossierPath}: the port has no bundle writer`);
     }
     port.writeBundleText(dossierPath, serializeReviewDossier(bound));
+}
+
+/**
+ * Binds a publication that review:publish:recover found landed exactly after the posting run died
+ * before binding it (#5008), so a later review:publish on the head replays it instead of posting a
+ * duplicate. The events are the ones review:publish writes. The escalation gate re-runs with the
+ * landed review hidden from the public rounds, so it sees the count the posting run saw and yields
+ * the reassessment that run consumed. A dossier already binding this review is left unchanged.
+ * An approval recovered after the pull request's head moved binds no delivery authorization: the
+ * review-state read refuses a moved head, and an approval of a stale head can never authorize
+ * delivery. Every other step reads only the bundle and the review's own public record.
+ */
+export function recordRecoveredPublicationBindings(
+    publication: { number: number; head: string; liveHead: string; reviewId: number; actorNodeId: string },
+    document: ReviewDocument,
+    port: PublishReviewPort
+): void {
+    const { number, head, reviewId } = publication;
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    const recorded = bundleRecordedPublicationId(bundle, port);
+    if (recorded !== undefined && recorded !== reviewId) {
+        fail(`review dossier binds publication ${recorded}, not the recovered landed review ${reviewId}`);
+    }
+    if (recordedPublicationReplay(number, head, document, publication.actorNodeId, port) !== undefined) {
+        return;
+    }
+    if (!hasRiskPlan(bundle, port)) {
+        // A legacy bundle binds nothing; the binding itself refuses a plan its manifest records.
+        recordPublicationBindings(number, head, document, reviewId, port);
+        return;
+    }
+    const publicReviews = port.publicReviews;
+    if (publicReviews === undefined) {
+        fail('review publication recovery requires the port to read the pull request public reviews');
+    }
+    const reassessment = prepareReviewDossierPublication({
+        number,
+        head,
+        bundle,
+        document,
+        port: { ...port, publicReviews: (pr) => publicReviews(pr).filter((review) => review.id !== reviewId) },
+    });
+    recordPublicationBindings(number, head, document, reviewId, port, reassessment, publication.liveHead === head);
 }
 
 /**

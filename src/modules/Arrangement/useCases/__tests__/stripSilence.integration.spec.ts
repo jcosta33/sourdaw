@@ -11,6 +11,8 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -23,6 +25,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -386,6 +389,157 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             clipId: 'clip-1',
             points: originalPoints,
         });
+    });
+
+    describe('a strip carrying its plan', () => {
+        function planStrip(): Extract<AppAction, { type: 'stripSilence' }> {
+            const action: Extract<AppAction, { type: 'stripSilence' }> = {
+                type: 'stripSilence',
+                payload: { clipId: 'clip-1' },
+            };
+            handleStripSilence.materializeCommandArguments?.(action);
+            if (!action.payload.expected || !action.payload.replacement) {
+                throw new Error('Expected a planned strip');
+            }
+            return action;
+        }
+
+        // Red when materialize or describe plan again: each pass would draw new segment clip ids
+        // and new lane ids, so the arguments would drift from what the command recorded.
+        it('names the recorded segment and lane ids on every later materialize, describe and execute', async () => {
+            setClipAutomationLane('lane-split', [
+                { id: 'point-first', beat: 18, value: 0.25, curve: 'linear', tension: 0 },
+                { id: 'point-second', beat: 24, value: 0.75, curve: 'linear', tension: 0 },
+            ]);
+            const action = planStrip();
+            const recorded = structuredClone(action);
+            const recordedSegmentIds = recorded.payload.replacement!.clips.map((clip) => clip.id);
+            const recordedLaneIds = recorded.payload.replacement!.clipAutomationLanes.map((lane) => lane.id);
+            expect(recordedSegmentIds).toHaveLength(2);
+            expect(recordedLaneIds).toHaveLength(2);
+
+            handleStripSilence.materializeCommandArguments?.(action);
+            const firstDescription = handleStripSilence.describe(action);
+            handleStripSilence.materializeCommandArguments?.(action);
+            const secondDescription = handleStripSilence.describe(action);
+
+            expect(action).toEqual(recorded);
+            expect(secondDescription).toEqual(firstDescription);
+            expect(firstDescription.redoAction).toEqual({
+                type: 'restoreStripSilenceState',
+                payload: { expected: recorded.payload.expected, replacement: recorded.payload.replacement },
+            });
+
+            await executeAppAction(action);
+
+            expect(trackStore.value!.tracks[0]!.clips.map((clip) => clip.id)).toEqual(recordedSegmentIds);
+            expect(automationStore.value!.lanes.map((lane) => lane.id).toSorted()).toEqual(recordedLaneIds.toSorted());
+        });
+
+        // Red when the carried plan is applied without proving the project still yields it.
+        it('refuses a carried plan once the target clip changed after it was planned, leaving the project unchanged', async () => {
+            const action = planStrip();
+            const state = trackStore.value!;
+            trackStore.set({
+                ...state,
+                tracks: [
+                    {
+                        ...state.tracks[0]!,
+                        clips: state.tracks[0]!.clips.map((clip) => ({ ...clip, gain: 0.5 })),
+                    },
+                ],
+            });
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: stripSilence: The strip silence this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+        });
+
+        // Red when only the recorded previous state is compared: a replacement whose segments were
+        // renamed would commit under the approved command's name.
+        it('refuses a carried plan whose replacement was altered, leaving the project unchanged', async () => {
+            const action = planStrip();
+            action.payload.replacement = {
+                ...action.payload.replacement!,
+                clips: action.payload.replacement!.clips.map((clip) => ({ ...clip, name: 'Altered' })),
+            };
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: stripSilence: The strip silence this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+        });
+
+        it('refuses a carried plan whose segment id another clip took since it was planned', async () => {
+            const action = planStrip();
+            const takenId = action.payload.replacement!.clips[0]!.id;
+            const state = trackStore.value!;
+            const other = TrackDummy.create({
+                id: 'track-2',
+                clips: [ClipDummy.create({ id: takenId, trackId: 'track-2', startBeat: 0, endBeat: 4 })],
+            });
+            trackStore.set({ ...state, tracks: [...state.tracks, other] });
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: stripSilence: The strip silence this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+        });
+    });
+
+    // Red when macro replay keeps the recorded strip plan: the clip changed since recording, so the
+    // carried plan is stale and the replay would be refused instead of planned against the project.
+    it('re-plans a recorded strip macro against the clip as it now is', async () => {
+        registerHandlerMap(getMacroHandlers());
+        const recorded: Extract<AppAction, { type: 'stripSilence' }> = {
+            type: 'stripSilence',
+            payload: { clipId: 'clip-1' },
+        };
+        handleStripSilence.describe(recorded);
+        if (!recorded.payload.expected || !recorded.payload.replacement) {
+            throw new Error('Expected a planned strip');
+        }
+        const recordedSegmentIds = recorded.payload.replacement.clips.map((clip) => clip.id);
+        expect(recordedSegmentIds).toHaveLength(2);
+        macroStore.set({
+            macros: [{ id: 'strip-macro', name: 'Strip', actions: [structuredClone(recorded)], createdAt: 1 }],
+            recording: false,
+            currentRecording: [],
+        });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: [
+                {
+                    ...state.tracks[0]!,
+                    clips: state.tracks[0]!.clips.map((clip) => ({ ...clip, gain: 0.5 })),
+                },
+            ],
+        });
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'strip-macro' } });
+
+        const clips = trackStore.value!.tracks[0]!.clips;
+        expect(clips).toHaveLength(2);
+        expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
+        expect(clips.map((clip) => clip.id)).not.toEqual(recordedSegmentIds);
+        expect(clips).toMatchObject([
+            { startBeat: 17, endBeat: 19, gain: 0.5 },
+            { startBeat: expect.closeTo(23, 10), endBeat: 26, gain: 0.5 },
+        ]);
     });
 
     it('round-trips the full satellite transition through undo (regression #2108)', async () => {

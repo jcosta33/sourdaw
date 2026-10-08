@@ -715,6 +715,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
+        // Count provenance (#4764): new file entry, measured 2 — the
+        // `loadInstrument` named import and its single call; same law as the
+        // Toaster reconcile above.
+        'src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts': 2,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         // Count provenance: the helper declaration and the caller's import
         // identifier, import path, declaration, and invocation compile Faust
@@ -739,6 +743,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // store writes, none of which is a load/compile/hydration sink.
         // 'src/modules/Toaster/stores/toasterStore.ts': removed (0),
         'src/modules/Toaster/useCases/loadToasterKit.ts': 1,
+        // Count provenance (#4764): new file entry, measured 2 — the
+        // `loadToasterKitPreset` named import and its single call, the same
+        // re-apply door the loaded path uses; the reconcile itself writes no
+        // project store (it re-reads project truth and pushes to the engine).
+        'src/modules/Toaster/useCases/reconcileToasterKitFromProject.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — `audioDevice.loaded` in
         // the doc comment explaining why an offline path is needed: that event
         // never fires offline, so the live subscriber never runs. No load or

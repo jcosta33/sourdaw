@@ -8,7 +8,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
-import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
+    type GhSession,
+} from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
 import { readReviewBundleContext } from '../prepareReview.ts';
 import {
@@ -5735,6 +5740,68 @@ describe('fresh reviewer dossier publication', () => {
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
+    });
+
+    describe('repair actor admission below the escalation threshold', () => {
+        function malformedRepairFixture(actorNodeId: string | null) {
+            const root: PublicReviewComment = {
+                id: 100,
+                reviewId: 1,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                path: 'scripts/target.ts',
+                line: 5,
+                side: 'RIGHT',
+                body: 'blocking finding',
+            };
+            return dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                publicReviews: [
+                    {
+                        id: 1,
+                        state: 'CHANGES_REQUESTED',
+                        commitId: head,
+                        actorNodeId: REVIEWER_BOT_NODE_ID,
+                        body: 'round',
+                    },
+                ],
+                publicReviewComments: [
+                    root,
+                    { ...root, id: 101, actorNodeId, inReplyToId: root.id, body: 'sourdaw-repair-v1 {not json' },
+                ],
+            });
+        }
+
+        it.each(['BOT_foreign', ORCHESTRATOR_USER_NODE_ID, null])(
+            'publishes a fresh review despite malformed repair text from untrusted actor %s',
+            (actorNodeId) => {
+                const fixture = malformedRepairFixture(actorNodeId);
+                try {
+                    expect(publishReview(number, fixture.port)).toBe(99);
+                    expect(fixture.calls.filter((call) => call === 'post')).toEqual(['post']);
+                    const persisted = parseReviewDossier(fixture.readDossier());
+                    expect(persisted.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+                } finally {
+                    removeTemporaryDirectory(fixture.root);
+                }
+            }
+        );
+
+        it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+            'refuses malformed repair text from authorized actor %s before any publication POST or write',
+            (actorNodeId) => {
+                const fixture = malformedRepairFixture(actorNodeId);
+                try {
+                    expect(() => publishReview(number, fixture.port)).toThrow(/repair/u);
+                    expect(fixture.posted.review).toBeUndefined();
+                    expect(fixture.calls).not.toContain('post');
+                    expect(fixture.calls).not.toContain('approvalContext');
+                    expect(fixture.writes).toEqual([]);
+                } finally {
+                    removeTemporaryDirectory(fixture.root);
+                }
+            }
+        );
     });
 
     it('refuses at or above the escalation threshold without a reassessment, before any POST or write', () => {

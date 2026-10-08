@@ -6,6 +6,35 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-08 — a shutdown timing assertion measured more than its budget (introduced by PR #2976)
+
+A native CI run for PR #5064 completed plugin reclamation but failed the test's `elapsed < 250 ms`
+assertion at 252.790917 ms. The production budget charges only measured sleep during scheduler
+polling; the test timed the whole synchronous shutdown cascade and a separate releasing thread.
+The source of that run's extra wall time is unknown.
+
+Blind spot: a wall-clock bound on a larger operation cannot distinguish a slow unrelated cascade
+step or thread scheduling from a polling regression. Probe the private wait seam with a retained
+runtime: require the first requested poll to be exactly 2 ms, release the runtime in that callback,
+return a synthetic 252.790917 ms wait, and require reclamation with no second wait. Hold the runtime
+through a synthetic 502 ms wait in a companion case and require one poll plus an abandoned report.
+Mutating the request to the full budget, deferring the sweep until the end, or charging requested
+instead of measured time must turn the respective case red.
+
+### 2026-10-07 — a retryable Playwright install could hang forever (introduced by PR #4228; tracked by #5047)
+
+PR #4228 added three attempts and backoff around `playwright install --with-deps`, but only a returned
+failure advanced the loop. A stalled download never returned, so the E2E shard spent its full hour
+installing and ran no tests.
+
+Blind spot: the workflow contract proved retries existed but did not require an attempt deadline,
+prove the overall install step fit below its job budget, or exercise a blocked child through the loop.
+
+Probe that would have caught it: execute the workflow's extracted loop with a fake install process that
+signals readiness, ignores TERM, and remains blocked; apply short TERM/KILL bounds and prove three
+attempts reach the final nonzero exit. Separately pin each real attempt and the maximum aggregate
+attempt-plus-backoff time below both the install-step and E2E-job budgets.
+
 ## Standing probes
 
 - For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).

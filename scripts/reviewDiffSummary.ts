@@ -22,6 +22,13 @@ export type ReviewChangedPath = {
     added: number;
     deleted: number;
     binary: boolean;
+    /**
+     * The source path of a rename or copy record, classified like `path`, present only on rename
+     * records: one numstat record is one changed file, and every consumer counts it once, while
+     * scope decisions read both paths — the product-scope gate must see a file moved out of a
+     * product tree exactly as it sees that file deleted.
+     */
+    previous?: { path: string; group: ReviewDiffGroup };
 };
 
 type NumstatEntry = {
@@ -29,6 +36,7 @@ type NumstatEntry = {
     deleted: number;
     binary: boolean;
     path: string;
+    previousPath?: string;
 };
 
 const lockFiles = new Set(['Cargo.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']);
@@ -61,24 +69,37 @@ function parseNumstat(numstat: Buffer): NumstatEntry[] {
         }
         const addedText = record.slice(0, firstTab);
         const deletedText = record.slice(firstTab + 1, secondTab);
-        let path = record.slice(secondTab + 1);
-        if (path === '') {
-            const oldPath = fields[index];
-            const newPath = fields[index + 1];
-            if (oldPath === undefined || newPath === undefined || oldPath === '' || newPath === '') {
+        const pathText = record.slice(secondTab + 1);
+        // A rename or copy record carries its empty path slot, then the old and new paths as the
+        // next two NUL fields. Both name one changed file, so both must reach the consumers that
+        // classify paths; keeping only the destination hid a product-tree source from the scope
+        // gates (#4743).
+        let previousPath: string | undefined;
+        let path: string;
+        if (pathText === '') {
+            const source = fields[index];
+            const destination = fields[index + 1];
+            if (source === undefined || destination === undefined || source === '' || destination === '') {
                 throw new Error('invalid NUL-delimited numstat rename');
             }
-            path = newPath;
+            previousPath = source;
+            path = destination;
             index += 2;
+        } else {
+            path = pathText;
         }
         const added = parseCount(addedText, path);
         const deleted = parseCount(deletedText, path);
-        entries.push({
+        const entry: NumstatEntry = {
             added: added.count,
             deleted: deleted.count,
             binary: added.binary || deleted.binary,
             path,
-        });
+        };
+        if (previousPath !== undefined) {
+            entry.previousPath = previousPath;
+        }
+        entries.push(entry);
     }
     return entries;
 }
@@ -135,13 +156,22 @@ function addEntry(count: ReviewDiffCount, entry: { added: number; deleted: numbe
 
 export function changedReviewPaths(root: string, numstat: Buffer): ReviewChangedPath[] {
     const generatedPaths = new Set([...attributeGeneratedPaths(root), ...wasmGeneratedPaths()]);
-    return parseNumstat(numstat).map((entry) => ({
-        path: entry.path,
-        group: classifyPath(entry.path, generatedPaths),
-        added: entry.added,
-        deleted: entry.deleted,
-        binary: entry.binary,
-    }));
+    return parseNumstat(numstat).map((entry) => {
+        const changed: ReviewChangedPath = {
+            path: entry.path,
+            group: classifyPath(entry.path, generatedPaths),
+            added: entry.added,
+            deleted: entry.deleted,
+            binary: entry.binary,
+        };
+        if (entry.previousPath !== undefined) {
+            changed.previous = {
+                path: entry.previousPath,
+                group: classifyPath(entry.previousPath, generatedPaths),
+            };
+        }
+        return changed;
+    });
 }
 
 export function summarizeReviewDiff(root: string, numstat: Buffer): ReviewDiffSummary {

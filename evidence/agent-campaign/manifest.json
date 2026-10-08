@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "6e309c4ef4cc73cc9cb5aa9b004b0a4540e0828c18611d0d6e7e32ed8e6b896f"
+                    "digest": "7cbb9a828366118c12cfb6fac54f834577eecc99bd8c99de8c2abc4c05d3cf30"
                 }
             ]
         },
@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "bdf7990e2b76cb33c2e7dfced82ed12f468a8a4d27f3b3fd20641993075de023"
+                    "digest": "8f936ce0235a2069fe1d631e81f6135d877b7d000ff5fddac1c32fa0ccf29f5d"
                 }
             ]
         },
