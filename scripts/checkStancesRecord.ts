@@ -47,6 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { fail } from './prContract.ts';
 import { parseReviewStancesRecord } from './reviewDossierPublication.ts';
 import { TYPESAFE_MODEL } from './semanticReview/provider.ts';
+import { sensitiveContentReason } from './semanticReview/sensitive.ts';
 
 export const TYPESAFE_STANCES_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 /**
@@ -66,12 +67,10 @@ export type StanceAdmission = {
 };
 
 /**
- * What the checker consumes from one bundle: the raw parsed `stances.json` object, which travels
- * to the model verbatim as the request `state`, plus the per-stance admission lines lifted out of
- * it. The production parser owns the base shape; this type only names what this checker reads.
+ * Only the stance names and admission lines needed for the judgment. Bundle metadata and reviewer
+ * baseline evidence stay local; the production parser still owns the record's base shape.
  */
 export type StancesCheckRecord = {
-    state: unknown;
     admissions: StanceAdmission[];
 };
 
@@ -84,7 +83,7 @@ export type StancesQuestion = {
 export type StancesCheckQuestions = Record<string, StancesQuestion>;
 
 export type StancesCheckBody = {
-    state: unknown;
+    state: { stances: StanceAdmission[] };
     model: typeof TYPESAFE_STANCES_MODEL;
     questions: StancesCheckQuestions;
 };
@@ -119,6 +118,13 @@ function stanceKey(index: number): string {
     return `stance_${String(index)}`;
 }
 
+function screenAdmissionField(value: string, index: number, field: keyof StanceAdmission): void {
+    const reason = sensitiveContentReason(value);
+    if (reason !== undefined) {
+        fail(`refusing to call TypeSafe: stances[${String(index)}].${field} contains ${reason}`);
+    }
+}
+
 /**
  * Parses the bundle's `stances.json` through the production parser and lifts each entry's
  * admission line. A missing or blank `admittedBy` is refused here, before any request: the
@@ -126,21 +132,18 @@ function stanceKey(index: number): string {
  */
 export function readStancesCheckRecord(raw: unknown, path: string): StancesCheckRecord {
     const record = parseReviewStancesRecord(raw, path);
-    // The parser guarantees raw is a record whose stances entries align 1:1 with record.stances;
-    // the fallbacks below only satisfy the unknown typing and are unreachable after the parse.
-    const entries: readonly unknown[] = isRecord(raw) && Array.isArray(raw.stances) ? raw.stances : [];
     const admissions = record.stances.map((entry, index) => {
-        const rawEntry = entries[index];
-        const admittedBy =
-            isRecord(rawEntry) && typeof rawEntry.admittedBy === 'string' ? rawEntry.admittedBy : undefined;
+        screenAdmissionField(entry.stance, index, 'stance');
+        const admittedBy = entry.admittedBy;
         if (admittedBy === undefined || admittedBy.trim() === '') {
             fail(
                 `review stances record at ${path} stances[${String(index)}] (${entry.stance}) must carry a non-empty admittedBy string naming the failure mode that admits it`
             );
         }
+        screenAdmissionField(admittedBy, index, 'admittedBy');
         return { stance: entry.stance, admittedBy };
     });
-    return { state: raw, admissions };
+    return { admissions };
 }
 
 const CRITERIA_TRUE =
@@ -176,10 +179,16 @@ export function buildStancesCheckQuestions(record: StancesCheckRecord): StancesC
     return questions;
 }
 
-/** The single TypeSafe request body: the parsed record as state, the Jev model, one question per stance. */
+/** Project and screen the actual request state, including records constructed without the reader. */
 export function buildStancesCheckBody(record: StancesCheckRecord): StancesCheckBody {
+    const stances = record.admissions.map((admission, index) => {
+        const { stance, admittedBy } = admission;
+        screenAdmissionField(stance, index, 'stance');
+        screenAdmissionField(admittedBy, index, 'admittedBy');
+        return { stance, admittedBy };
+    });
     return {
-        state: record.state,
+        state: { stances },
         model: TYPESAFE_STANCES_MODEL,
         questions: buildStancesCheckQuestions(record),
     };

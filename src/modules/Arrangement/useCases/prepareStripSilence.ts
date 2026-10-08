@@ -1,21 +1,27 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';
-import { getTrackState } from '../repositories/track/getTrackState';
+import { getTrackState, type TrackState } from '../repositories/track/getTrackState';
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 
+import { keyMigratedAutomationLanes } from './clip/keyMigratedAutomationLanes';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
 import { consumedStretchFactor } from './clipEditing/consumedStretchFactor';
+import { getClipIdCensus } from './clipEditing/getClipIdCensus';
 
 type PrepareStripSilenceInput = {
     clipId: string;
     threshold?: number;
     minDuration?: number;
+    /** The segments' clip ids a compiled strip recorded, in timeline order; drawn fresh when absent. */
+    segmentClipIds?: readonly string[];
+    /** The migrated lanes' ids a compiled strip recorded, in creation order; drawn fresh when absent. */
+    automationLaneIds?: readonly string[];
 };
 
 type Region = { startSample: number; endSample: number };
@@ -57,7 +63,7 @@ function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
  * beat position.
  */
 function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow | null {
-    const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
+    const tempo = readTempoAtBeat({ beat: clip.startBeat });
     const samplesPerBufferBeat = (60 / tempo) * buffer.sampleRate;
     if (!Number.isFinite(samplesPerBufferBeat) || samplesPerBufferBeat <= 0) {
         return null;
@@ -266,6 +272,28 @@ function mergeCloseRegions(
 }
 
 /**
+ * One clip id per segment: drawn fresh, or the ones a compiled strip recorded, which must match
+ * the segment count, be distinct, and name no clip the project already places anywhere.
+ */
+function resolveSegmentClipIds(
+    segmentCount: number,
+    segmentClipIds: readonly string[] | undefined,
+    state: TrackState
+): readonly string[] | null {
+    if (segmentClipIds === undefined) {
+        return Array.from({ length: segmentCount }, () => `clip-strip-${crypto.randomUUID()}`);
+    }
+    if (segmentClipIds.length !== segmentCount || new Set(segmentClipIds).size !== segmentClipIds.length) {
+        return null;
+    }
+    const census = getClipIdCensus({ clipIds: segmentClipIds, state });
+    if (segmentClipIds.some((segmentClipId) => segmentClipId.length === 0 || census.get(segmentClipId)!.length > 0)) {
+        return null;
+    }
+    return segmentClipIds;
+}
+
+/**
  * Compute the before/after snapshot for splitting one audio clip into
  * silence-trimmed segments, including the satellite transition (ledger
  * #2108): the target's gain envelope and warp state are copied and rebased
@@ -273,7 +301,13 @@ function mergeCloseRegions(
  * re-keyed, points verbatim, onto the segments whose windows still cover
  * them; the target id's own satellites never survive the split.
  */
-export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5 }: PrepareStripSilenceInput): {
+export function prepareStripSilence({
+    clipId,
+    threshold = -40,
+    minDuration = 0.5,
+    segmentClipIds,
+    automationLaneIds,
+}: PrepareStripSilenceInput): {
     previous: StripSilenceActionSnapshot;
     next: StripSilenceActionSnapshot;
     newClipIds: readonly string[];
@@ -317,13 +351,18 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
         return null;
     }
 
+    const resolvedSegmentClipIds = resolveSegmentClipIds(mergedRegions.length, segmentClipIds, state);
+    if (!resolvedSegmentClipIds) {
+        return null;
+    }
+
     const targetSatelliteEntry = readClipSatelliteEntry(targetClip.id);
     const targetAutomationLanes = readClipScopedAutomationLanes([targetClip.id]);
 
     const newClips: Clip[] = [];
     const newClipSatellites: ClipSatelliteEntry[] = [];
-    for (const region of mergedRegions) {
-        const newClipId = `clip-strip-${crypto.randomUUID()}`;
+    for (const [index, region] of mergedRegions.entries()) {
+        const newClipId = resolvedSegmentClipIds[index]!;
         // The region is measured in the buffer's own beat frame; the segment's
         // timeline position is where that audio already played — source beats
         // over the stretch factor — so the clip's own offset comes back out
@@ -349,7 +388,13 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
         });
     }
 
-    const migratedAutomationLanes = migrateAutomationLanesToSegments(targetAutomationLanes, newClips);
+    const migratedAutomationLanes = keyMigratedAutomationLanes(
+        migrateAutomationLanesToSegments(targetAutomationLanes, newClips),
+        automationLaneIds
+    );
+    if (!migratedAutomationLanes) {
+        return null;
+    }
 
     const previousClipSatellites: ClipSatelliteEntry[] = [
         targetSatelliteEntry,

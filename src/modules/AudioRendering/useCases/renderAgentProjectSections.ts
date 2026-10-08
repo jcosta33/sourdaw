@@ -1,4 +1,4 @@
-import { renderOffline } from '#/modules/AudioEngine/useCases';
+import { isRenderBusyError, renderOffline } from '#/modules/AudioEngine/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import {
     cloneAgentWorkOwnerIdentity,
@@ -236,6 +236,8 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
                 tailSeconds: job.tailSeconds,
                 onWarning: (warning) => warnings.push(warning),
                 abortSignal: input.signal,
+                // A musician's export outranks this render: it stops it, and the section reports `render-busy`.
+                lockHolder: 'agent-section-render',
             });
             // Addressed before the attachment guards below so no await separates the last guard
             // from the store write it protects.
@@ -295,6 +297,13 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
                     receipts.emitCancelled();
                 }
                 throw createCancellationError();
+            }
+            if (isRenderBusyError(error)) {
+                // The render lock was not this batch's to hold. The sections after this one would meet
+                // the same lock, or render once it frees, so the batch stops here and a retry renders them.
+                receipts.emitFailure('render-busy');
+                failures.push(`${job.jobId}: ${failureReason(error)}`);
+                break;
             }
             if (!receipts.hasSettled()) {
                 receipts.emitFailure('render-error');

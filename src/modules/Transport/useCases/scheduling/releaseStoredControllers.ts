@@ -1,6 +1,7 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import {
+    forgetAllStoredControllersWithheld,
     storedControllerDeviceKey,
     takeStoredControllerEngagements,
     takeStoredControllerPostedDevices,
@@ -29,6 +30,8 @@ type DeviceRelease = { trackId: string; deviceId: string; deviceType: string; pe
  * and, being stored moves, supersede nothing a performer queued.
  */
 export function releaseStoredControllers(): void {
+    // A mute in the playback that is ending owes nothing to the next one, which starts without a chase.
+    forgetAllStoredControllersWithheld();
     const devices = new Map<string, DeviceRelease>();
     for (const posted of takeStoredControllerPostedDevices()) {
         devices.set(storedControllerDeviceKey(posted.trackId, posted.deviceId), posted);

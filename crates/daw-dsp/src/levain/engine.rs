@@ -49,8 +49,10 @@ struct PendingSampleBank {
     built: bool,
     /// Legato transition samples staged alongside the zone map so a bank
     /// reload can't have transitions from the new bank pointing at zones (or
-    /// sample ids) still belonging to the sounding one.
-    legato_transitions: Vec<LegatoTransition>,
+    /// sample ids) still belonging to the sounding one. Held as the store the
+    /// engine reads, so committing swaps storage instead of pushing into a
+    /// fresh `Vec` on the audio thread.
+    legato_transitions: LegatoTransitionStore,
 }
 
 impl PendingSampleBank {
@@ -62,7 +64,57 @@ impl PendingSampleBank {
             num_articulations: 0,
             num_mics: 0,
             built: false,
-            legato_transitions: Vec::new(),
+            legato_transitions: LegatoTransitionStore::new(),
+        }
+    }
+}
+
+/// A bank waiting to be freed: what a commit displaced (the previous bank's
+/// storage, plus the committed bank's leftover instrument id) or a staged bank
+/// an abort discarded. Retiring only moves these into the engine's single
+/// retired slot, so it neither allocates nor frees; `release_retired_bank`
+/// (or the next `begin_sample_bank`) frees them off the render path.
+///
+/// The underscored fields are never read: they exist so their storage is
+/// freed when the slot empties, not when the commit runs.
+struct RetiredBank {
+    _zone_map: ZoneMap,
+    /// `None` once the pool has been taken for release.
+    sample_pool: Option<Arc<SamplePool>>,
+    /// A uniquely owned pool being drained a bounded number of entries at a time.
+    draining: Option<SamplePool>,
+    _legato_transitions: LegatoTransitionStore,
+    _instrument_id: String,
+}
+
+impl RetiredBank {
+    /// Take a staged bank's storage, whole, without allocating or freeing.
+    fn from_pending(pending: PendingSampleBank) -> Self {
+        Self {
+            _zone_map: pending.zone_map,
+            sample_pool: Some(pending.sample_pool),
+            draining: None,
+            _legato_transitions: pending.legato_transitions,
+            _instrument_id: pending.instrument_id,
+        }
+    }
+
+    /// Free up to `max_entries` PCM entries. Returns true once nothing PCM-sized remains.
+    ///
+    /// A pool a sibling instance still holds is only released by decrementing
+    /// its count: the PCM stays alive for the sibling. A uniquely owned pool is
+    /// unwrapped first (a registry `Weak` does not block that, and once
+    /// unwrapped it can no longer be attached), then drained in steps.
+    fn release_step(&mut self, max_entries: usize) -> bool {
+        if let Some(shared) = self.sample_pool.take() {
+            match Arc::try_unwrap(shared) {
+                Ok(pool) => self.draining = Some(pool),
+                Err(still_shared) => drop(still_shared),
+            }
+        }
+        match self.draining.as_mut() {
+            Some(pool) => pool.release_entries(max_entries) == 0,
+            None => true,
         }
     }
 }
@@ -79,6 +131,8 @@ pub struct LevainEngine {
     /// Sample pool (in-memory PCM data).
     sample_pool: Arc<SamplePool>,
     pending_sample_bank: Option<PendingSampleBank>,
+    /// The one bank a commit displaced, waiting to be freed off the commit path.
+    retired_bank: Option<RetiredBank>,
     /// Member channel a channel-narrowed note-off is currently running for
     /// (audit MD-2). `note_off` has a long body — keyswitches, release
     /// triggers, pedal deferral — so `note_off_on_channel` sets this for the
@@ -154,6 +208,7 @@ impl LevainEngine {
             zone_map: ZoneMap::new(),
             sample_pool: Arc::new(SamplePool::new()),
             pending_sample_bank: None,
+            retired_bank: None,
             pending_note_off_channel: None,
             expression: ExpressionState::new(sample_rate, &config),
             articulation: ArticulationState::new(),
@@ -220,16 +275,34 @@ impl LevainEngine {
         Arc::get_mut(sample_pool)?.add(data, frame_count, channels, sample_rate)
     }
 
+    /// Start staging a replacement bank. Frees any bank a previous commit
+    /// retired, so the retired slot is empty again by the time this bank commits.
     pub fn begin_sample_bank(&mut self, instrument_id: &str) {
+        self.retired_bank = None;
         self.pending_sample_bank = Some(PendingSampleBank::new(instrument_id));
     }
 
-    pub fn abort_sample_bank(&mut self) {
-        self.pending_sample_bank = None;
+    /// Discard the staged bank without changing the sounding one. Runs on the
+    /// audio thread in the worklet, so it neither allocates nor frees: the
+    /// staged bank moves into the retired slot, whole, for
+    /// `release_retired_bank` to free. Returns true when it retired a bank.
+    ///
+    /// `begin_sample_bank` empties the slot and a commit consumes the staged
+    /// bank, so the slot is empty here unless a host skipped its release. Then
+    /// the older bank is freed in this call, as `begin_sample_bank` would.
+    pub fn abort_sample_bank(&mut self) -> bool {
+        let Some(pending) = self.pending_sample_bank.take() else {
+            return false;
+        };
+        self.retired_bank = None;
+        self.retired_bank = Some(RetiredBank::from_pending(pending));
+        true
     }
 
     /// Attach immutable PCM already published by another instance in this
     /// rendering thread. Zones, voices, parameters, and realism stay local.
+    /// Refuses once the staged bank holds PCM of its own, so attaching can
+    /// never drop staged samples in one call.
     pub fn attach_sample_bank(&mut self, bank_key: &str) -> bool {
         let shared = SHARED_SAMPLE_BANKS.with(|banks| {
             let mut banks = banks.borrow_mut();
@@ -243,6 +316,9 @@ impl LevainEngine {
         let Some(pending) = self.pending_sample_bank.as_mut() else {
             return false;
         };
+        if pending.sample_pool.len() > 0 {
+            return false;
+        }
         pending.sample_pool = shared;
         true
     }
@@ -268,8 +344,16 @@ impl LevainEngine {
         })
     }
 
+    /// Activate the staged bank. Runs on the audio thread in the worklet, so it
+    /// neither allocates nor frees: every piece of storage is swapped with the
+    /// staged bank's, and the displaced bank moves into the single retired slot
+    /// for `release_retired_bank` (or the next `begin_sample_bank`) to free.
+    /// Refuses, leaving the bank staged, while the slot is still occupied.
     pub fn commit_sample_bank(&mut self) -> bool {
-        let Some(pending) = self.pending_sample_bank.take() else {
+        if self.retired_bank.is_some() {
+            return false;
+        }
+        let Some(mut pending) = self.pending_sample_bank.take() else {
             return false;
         };
         if !pending.built || pending.sample_pool.len() == 0 {
@@ -281,8 +365,12 @@ impl LevainEngine {
             voice.active = false;
         }
         self.auto_divisi.clear();
-        self.zone_map = pending.zone_map;
-        self.sample_pool = pending.sample_pool;
+        std::mem::swap(&mut self.zone_map, &mut pending.zone_map);
+        std::mem::swap(&mut self.sample_pool, &mut pending.sample_pool);
+        std::mem::swap(
+            &mut self.legato.transitions,
+            &mut pending.legato_transitions,
+        );
         self.num_articulations = pending.num_articulations;
         // Mic position settings are left alone: hosts send them before the
         // bank loads, and a bank swap is not a mixer reset.
@@ -296,10 +384,27 @@ impl LevainEngine {
         self.expression
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
-        self.legato.transitions = LegatoTransitionStore::new();
-        for transition in pending.legato_transitions {
-            self.legato.transitions.add(transition);
+        self.retired_bank = Some(RetiredBank::from_pending(pending));
+        true
+    }
+
+    /// Whether a committed-over bank is still waiting to be freed.
+    pub fn has_retired_bank(&self) -> bool {
+        self.retired_bank.is_some()
+    }
+
+    /// Free the retired bank in bounded steps. Each call frees at most
+    /// `max_entries` PCM entries (at least one, so every call progresses) and
+    /// returns true once the slot is empty. A pool a sibling instance still
+    /// shares is only released by decrementing its count.
+    pub fn release_retired_bank(&mut self, max_entries: usize) -> bool {
+        let Some(retired) = self.retired_bank.as_mut() else {
+            return true;
+        };
+        if !retired.release_step(max_entries) {
+            return false;
         }
+        self.retired_bank = None;
         true
     }
 
@@ -323,7 +428,7 @@ impl LevainEngine {
     /// zones. Call from the main thread while loading, like `add_zone`.
     pub fn add_legato_transition(&mut self, transition: LegatoTransition) {
         if let Some(pending) = self.pending_sample_bank.as_mut() {
-            pending.legato_transitions.push(transition);
+            pending.legato_transitions.add(transition);
             return;
         }
         self.legato.transitions.add(transition);
@@ -1276,12 +1381,14 @@ fn cc1_to_dynamic(cc1: f32) -> Dynamic {
 mod tests {
     use std::sync::Arc;
 
-    use super::LevainEngine;
+    use super::{LevainEngine, RetiredBank};
+    use crate::levain::legato::LegatoTransitionStore;
     use crate::levain::types::{
         AdsrParams, Dynamic, KeyRange, LegatoTransition, LoopMode, SampleRef, TransitionType,
         VelRange, Zone, MAX_ARTICULATIONS,
     };
     use crate::levain::voice::crossfade_rate_for;
+    use crate::levain::zone::ZoneMap;
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const SAMPLE_FRAMES: u32 = 4_800;
@@ -1930,6 +2037,113 @@ mod tests {
         let mut fresh = LevainEngine::new(SAMPLE_RATE, 8);
         assert!(!fresh.attach_sample_bank("levain-test-weak-bank"));
         assert_eq!(fresh.sample_bank_bytes(), 0);
+    }
+
+    #[test]
+    fn a_commit_refuses_while_the_retired_slot_is_occupied_and_leaves_the_bank_staged() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("violin");
+        engine
+            .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+            .expect("sample should fit the staging bank");
+        engine
+            .build_zone_map(0, 0)
+            .expect("empty test zone map should build");
+        // `begin_sample_bank` always empties the slot, so only a bank retired
+        // after the begin can occupy it: stand one in directly.
+        engine.retired_bank = Some(RetiredBank {
+            _zone_map: ZoneMap::new(),
+            sample_pool: None,
+            draining: None,
+            _legato_transitions: LegatoTransitionStore::new(),
+            _instrument_id: String::new(),
+        });
+        let sounding_pool = Arc::as_ptr(&engine.sample_pool);
+
+        assert!(!engine.commit_sample_bank());
+        assert_eq!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+        assert!(
+            engine.pending_sample_bank.is_some(),
+            "a refused commit must leave the bank staged"
+        );
+
+        assert!(engine.release_retired_bank(1));
+        assert!(engine.commit_sample_bank());
+        assert_ne!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+    }
+
+    #[test]
+    fn an_abort_with_the_retired_slot_full_frees_the_older_bank_and_retires_the_staged_one() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("violin");
+        for _ in 0..3 {
+            engine
+                .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+                .expect("sample should fit the staging bank");
+        }
+        // `begin_sample_bank` empties the slot and a commit consumes the staged
+        // bank, so only a host that skipped its release can leave one here:
+        // stand one in directly, with nothing PCM-sized left to free.
+        engine.retired_bank = Some(RetiredBank {
+            _zone_map: ZoneMap::new(),
+            sample_pool: None,
+            draining: None,
+            _legato_transitions: LegatoTransitionStore::new(),
+            _instrument_id: String::new(),
+        });
+
+        assert!(engine.abort_sample_bank());
+
+        assert!(engine.pending_sample_bank.is_none());
+        let retired = engine
+            .retired_bank
+            .as_ref()
+            .expect("the staged bank should now be retired");
+        assert_eq!(
+            retired.sample_pool.as_ref().map(|pool| pool.len()),
+            Some(3),
+            "the slot should hold the staged bank, not the older one"
+        );
+        assert!(
+            !engine.release_retired_bank(1),
+            "three staged entries cannot be freed in one single-entry step"
+        );
+        while !engine.release_retired_bank(1) {}
+        assert!(!engine.has_retired_bank());
+    }
+
+    #[test]
+    fn an_abort_with_nothing_staged_retires_nothing() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+        assert!(!engine.abort_sample_bank());
+        assert!(!engine.has_retired_bank());
+    }
+
+    #[test]
+    fn attaching_a_shared_bank_refuses_once_the_staged_bank_holds_pcm() {
+        let mut owner = LevainEngine::new(SAMPLE_RATE, 8);
+        owner.begin_sample_bank("violin");
+        owner
+            .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        assert!(owner.publish_sample_bank("levain-test-attach-guard-bank"));
+
+        let mut follower = LevainEngine::new(SAMPLE_RATE, 8);
+        follower.begin_sample_bank("violin");
+        follower
+            .add_sample(vec![0.5; 64], 64, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+
+        assert!(!follower.attach_sample_bank("levain-test-attach-guard-bank"));
+        assert_eq!(
+            follower
+                .pending_sample_bank
+                .as_ref()
+                .map(|pending| pending.sample_pool.len()),
+            Some(1),
+            "a refused attach must leave the staged PCM in place"
+        );
     }
 
     #[test]

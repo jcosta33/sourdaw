@@ -20,7 +20,9 @@ import {
     renderReviewDocumentBody,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
+    shellPort,
     type PublishReviewAuthentication,
+    type PublishReviewPort,
     type ReviewDocument,
 } from './publishReview.ts';
 import {
@@ -38,6 +40,7 @@ import {
     type PullRequestMutationLockOwnerFence,
 } from './pullRequestMutationLock.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
+import { recordRecoveredPublicationBindings } from './reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
 import {
     OPERATOR_ABSENT_ATTESTATION,
@@ -76,6 +79,8 @@ export type RecoverPublishReviewDependencies = {
         session: GhSession,
         primaryRoot: string
     ) => RecoveryInspection;
+    /** The publication port a landed reviewer recovery binds the head's dossier through. */
+    publicationPort?: (session: GhSession, primaryRoot: string) => PublishReviewPort;
     isOwnerLive?: (owner: ReviewPublicationLockOwner) => boolean;
     currentOwnerFence?: () => PullRequestMutationLockOwnerFence;
     isLegacyOwnerLive?: (pid: number) => boolean;
@@ -566,6 +571,21 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
             'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
         );
     }
+    // The dossier binding precedes the receipt: a crash between them leaves the adopted owner, whose
+    // own recovery finds the binding already recorded and goes on to the receipt.
+    if (outcome === 'landed' && attestation.expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
+        recordRecoveredPublicationBindings(
+            {
+                number,
+                head: attestation.expectedHead,
+                liveHead: second.head,
+                reviewId: second.reviews[0]!.id,
+                actorNodeId: attestation.expectedActorNodeId,
+            },
+            document,
+            (dependencies.publicationPort ?? recoveryPublicationPort)(session, primaryRoot)
+        );
+    }
     const receipt = recoveryReceipt(
         number,
         ownerOid,
@@ -583,6 +603,10 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
     console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
     return 0;
+}
+
+function recoveryPublicationPort(session: GhSession, primaryRoot: string): PublishReviewPort {
+    return { ...shellPort(session, primaryRoot), primaryRoot: () => primaryRoot };
 }
 
 function assertReconciliationStable(

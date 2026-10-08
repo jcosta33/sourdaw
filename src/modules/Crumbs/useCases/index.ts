@@ -8,6 +8,7 @@ export { retractEveryCrumbsEngineAttachment } from './crumbsLifecycle/retractEve
 export { syncCrumbsNativeInstances } from './crumbsLifecycle/syncCrumbsNativeInstances';
 export { hydrateCrumbsStateFromProject } from './hydrateCrumbsStateFromProject';
 export { initCrumbsDeviceStatePersistence } from './initCrumbsDeviceStatePersistence';
+export { reconcileCrumbsDeviceStatesFromProject } from './reconcileCrumbsDeviceStatesFromProject';
 export { panicCrumbs } from './panicCrumbs';
 export { prepareCrumbsEngine } from './prepareCrumbsEngine';
 export { captureCrumbsEngine } from './captureCrumbsEngine';

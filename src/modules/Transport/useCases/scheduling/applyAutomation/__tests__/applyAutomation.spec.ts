@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -12,8 +12,14 @@ import {
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
+import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import {
+    applyModulationToEngine,
+    getAutomationValueAtBeat,
+    isRecordingAutomation,
+    resolveAutoMatchValue,
+    setModulationDependencies,
+} from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
@@ -777,9 +783,14 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
         });
 
-        it('records the compensated device-family read beat in deviceReadBeatByTrack, with no entry for a gain-only track', () => {
+        it('records the compensated read beat for every compensated track, gain-only or lane-less included (#4790)', () => {
             // #4684: this is the hand-off applyModulationToEngine reads so its
-            // own clip gate and curve read agree with this pass's clock.
+            // own clip gate and curve read agree with this pass's clock. #4790
+            // widened the seeding from "tracks with a device-family lane" to
+            // "tracks with device compensation", lane or no lane: a compensated
+            // track without a qualifying lane has no other source for its
+            // modulators' read beat, and a gain-only track's own devices still
+            // sit behind the same delay.
             mutableTrackStore.value = {
                 tracks: [
                     {
@@ -793,6 +804,15 @@ describe('applyAutomation', () => {
                     },
                     {
                         id: 'track-2',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        sends: [],
+                    },
+                    {
+                        id: 'track-3',
                         kind: 'audio',
                         automationMode: 'read',
                         clips: [],
@@ -820,14 +840,16 @@ describe('applyAutomation', () => {
                     },
                 ],
             };
-            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getCompensationDelay).mockImplementation((trackId: string) => (trackId === 'track-3' ? 0 : 0.25));
 
             // 4.25 beats @ 120 BPM = 2.125s, minus 0.25s compensation = 1.875s
             // -> 3.75 beat (same conversion as the case above).
             applyAutomation(4.25);
 
             expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
-            expect(deviceReadBeatByTrack.has('track-2')).toBe(false);
+            expect(deviceReadBeatByTrack.get('track-2')).toBeCloseTo(3.75);
+            // No compensation, no entry: the playhead beat is the right clock.
+            expect(deviceReadBeatByTrack.has('track-3')).toBe(false);
         });
 
         it('drops a track from deviceReadBeatByTrack on the tick its device lane stops driving', () => {
@@ -849,6 +871,102 @@ describe('applyAutomation', () => {
             applyAutomation(40);
 
             expect(deviceReadBeatByTrack.has('track-1')).toBe(false);
+        });
+    });
+
+    // #4790: the map was seeded only in applyAutomation's lane loop, so a
+    // track with device compensation but no qualifying automation lane — the
+    // issue's shape, an LFO with no automation beneath it — had no entry, and
+    // applyModulationToEngine evaluated its modulators on that track at the
+    // raw playhead, D beats ahead of the audio they shape. These cases run the
+    // real hand-off: applyAutomation seeds, applyModulationToEngine reads.
+    describe('#4790 a compensated track with no automation lane still times its modulators', () => {
+        const LFO_DEVICE = { id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+
+        function seedLanelessCompensatedTrack(): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [LFO_DEVICE],
+                        sends: [],
+                    },
+                ],
+            };
+            // No automation lanes anywhere: the old seeding never wrote an
+            // entry for this track.
+            mutableAutomationStore.value = { lanes: [] };
+        }
+
+        // Square LFO, period 4: high on [0, 2), low on [2, 4). With amount 0.5
+        // over the 0..1000 parameter range on the device's 0 base, the written
+        // value reads the phase directly: 500 on the high half, 0 on the low.
+        function seedSquareLfo(): void {
+            modulationStore.set({
+                modulators: [
+                    {
+                        id: 'lfo-4790',
+                        name: 'LFO',
+                        trackId: 'track-1',
+                        kind: 'lfo',
+                        config: { kind: 'lfo', waveform: 'square', rate: 4, sync: true, phase: 0, depth: 1 },
+                        mappings: [
+                            {
+                                targetTrackId: 'track-1',
+                                targetDeviceId: 'device-eq1',
+                                targetParamId: 'eq-low-gain',
+                                amount: 0.5,
+                            },
+                        ],
+                        enabled: true,
+                    },
+                ],
+            });
+            setModulationDependencies({
+                updateDeviceParam,
+                getPluginParamRange: (deviceType, paramId) => {
+                    if (deviceType === 'builtin-eq' && paramId === 'eq-low-gain') {
+                        return { min: 0, max: 1000, defaultValue: 0, automatable: true };
+                    }
+                    return null;
+                },
+                quantiseValue: ({ value }) => value,
+            });
+        }
+
+        afterEach(() => {
+            modulationStore.set({ modulators: [] });
+        });
+
+        it('seeds the compensated read beat for a lane-less track with device compensation', () => {
+            seedLanelessCompensatedTrack();
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+
+            // 2.5 beats @ 120 BPM = 1.25s, minus the 0.5s compensation = 0.75s
+            // → 1.5 beats.
+            applyAutomation(2.5);
+
+            expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(1.5);
+        });
+
+        it('lands a square LFO edge mapped onto that track at the compensated beat, not the playhead', () => {
+            seedLanelessCompensatedTrack();
+            seedSquareLfo();
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+
+            applyAutomation(2.5);
+            applyModulationToEngine(2.5, undefined, new Map(), deviceReadBeatByTrack);
+
+            // Playhead 2.5 is past the square's falling edge at beat 2 (low
+            // half); the compensated read beat 1.5 is still before it (high
+            // half) — the edge must land at the beat whose audio the device is
+            // actually fed.
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.closeTo(500));
         });
     });
 
