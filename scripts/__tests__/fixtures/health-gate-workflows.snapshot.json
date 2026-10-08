@@ -210,8 +210,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "timeout-minutes": 35,
-            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives.\n  if timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 10,
+            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives.\n  if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -789,7 +789,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 10,
+            "run": "for attempt in 1 2 3; do\n  # Each attempt is bounded so a hung download fails and retries\n  # rather than burning the job (#5072). GNU timeout kills the whole\n  # process group at the deadline; a TERM grace period would end if\n  # pnpm exited while an installer child survived.\n  if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -863,7 +864,8 @@
           {
             "name": "Install ALSA development headers",
             "shell": "bash",
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo apt-get update && sudo apt-get install -y libasound2-dev; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "timeout-minutes": 10,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  # `sudo timeout` so the deadline signal comes from root and reaches\n  # apt-get; an unprivileged timeout cannot signal root processes.\n  if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1448,7 +1450,9 @@
           },
           {
             "name": "Install ALSA development headers",
-            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+            "shell": "bash",
+            "timeout-minutes": 10,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  # `sudo timeout` so the deadline signal comes from root and reaches\n  # apt-get; an unprivileged timeout cannot signal root processes.\n  if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1694,7 +1698,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 10,
+            "run": "for attempt in 1 2 3; do\n  # Each attempt is bounded so a hung download fails and retries\n  # rather than burning the job (#5072). GNU timeout kills the whole\n  # process group at the deadline; a TERM grace period would end if\n  # pnpm exited while an installer child survived.\n  if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",

@@ -53,13 +53,17 @@ jobs:
 
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
+      #
+      # A healthy install takes 20 to 70 seconds, but one attempt has stalled
+      # for 10 minutes without exiting (#5072): each attempt is bounded at 3
+      # minutes and the step at 3 attempts plus backoff, rounded up.
       - name: Install Playwright browsers
-        timeout-minutes: 35
+        timeout-minutes: 10
         run: |
           for attempt in 1 2 3; do
             # GNU timeout kills the whole process group at the deadline. A TERM
             # grace period ends if pnpm exits while an installer child survives.
-            if timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium; then
+            if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

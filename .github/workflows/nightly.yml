@@ -307,8 +307,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
+      # Retried as in validation.yml: a healthy install takes 9 to 18 seconds,
+      # so each attempt is bounded at 3 minutes (#5072).
       - name: Install ALSA development headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            # `sudo timeout` so the deadline signal comes from root and reaches
+            # apt-get; an unprivileged timeout cannot signal root processes.
+            if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+              exit 0
+            fi
+            printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1
 
       # No version is pinned here on purpose: `rustup show` reads
       # rust-toolchain.toml, so the toolchain cannot drift from a local run.
@@ -580,10 +597,18 @@ jobs:
 
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
+      # A healthy install takes 20 to 70 seconds, but one attempt has stalled
+      # for 10 minutes without exiting (#5072): each attempt is bounded at 3
+      # minutes and the step at 3 attempts plus backoff, rounded up.
       - name: Install Playwright browsers
+        timeout-minutes: 10
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            # Each attempt is bounded so a hung download fails and retries
+            # rather than burning the job (#5072). GNU timeout kills the whole
+            # process group at the deadline; a TERM grace period would end if
+            # pnpm exited while an installer child survived.
+            if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

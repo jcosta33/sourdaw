@@ -583,11 +583,19 @@ jobs:
       # `--with-deps` shells out to apt-get for the browser library set, and a
       # transient mirror outage (apt exiting 100) red this job and Gate on an
       # otherwise-green head (#4085). Three attempts with a 5s then 10s
-      # backoff; the last failure still fails the step.
+      # backoff; the last failure still fails the step. A healthy install takes
+      # 20 to 70 seconds, but one attempt has stalled for 10 minutes without
+      # exiting (#5072), so each attempt is bounded at 3 minutes and the step
+      # at 3 attempts x 3 minutes plus 15 seconds of backoff, rounded up.
       - name: Install Playwright browsers
+        timeout-minutes: 10
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            # Each attempt is bounded so a hung download fails and retries
+            # rather than burning the job (#5072). GNU timeout kills the whole
+            # process group at the deadline; a TERM grace period would end if
+            # pnpm exited while an installer child survived.
+            if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -664,13 +672,19 @@ jobs:
       # apt-get update flakes on transient mirror outages (exit 100), reding
       # this job and Gate on an otherwise-green head (#4085), so the install
       # retries three times with a 15s then 30s backoff; the last failure
-      # still fails the step. Package list unchanged: libasound2-dev only.
+      # still fails the step. Package list unchanged: libasound2-dev only. A
+      # healthy install takes 9 to 18 seconds, but an apt run has hung until
+      # the job limit (#5072), so each attempt is bounded at 3 minutes and the
+      # step at 3 attempts x 3 minutes plus 45 seconds of backoff, rounded up.
       - name: Install ALSA development headers
         shell: bash
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+            # `sudo timeout` so the deadline signal comes from root and reaches
+            # apt-get; an unprivileged timeout cannot signal root processes.
+            if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
