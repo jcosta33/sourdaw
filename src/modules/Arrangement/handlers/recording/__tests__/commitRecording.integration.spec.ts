@@ -28,7 +28,6 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { commitRecording } from '../../../useCases/recording/commitRecording';
-import { rebaseRecordingTakes } from '../../../useCases/recording/rebaseRecordingTakes';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -331,16 +330,8 @@ describe('recording gesture commit (issue #4439)', () => {
         // module's own actions, which this slice leaves alone.
         await stopRecording(8);
         flushAutomergeStorageWrites();
-        // The wrap take spans [0,4), before the record point, so the clip opens
-        // there with its media origin, and every note stored against it, kept
-        // on the record point.
-        const committedMidiClip = {
-            id: provisional.id,
-            startBeat: 0,
-            endBeat: 8,
-            midiOffsetBeats: -4,
-            type: 'midi',
-        };
+        // A MIDI clip stays on its record point, whatever span its passes name.
+        const committedMidiClip = { id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' };
 
         const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(1);
@@ -559,7 +550,8 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(clipIds().filter((id) => id === provisional.id)).toHaveLength(1);
     });
 
-    it('commits the rebased take offsets in the one entry and replays them on redo', async () => {
+    it('commits the placed take offsets in the one entry and replays them on redo', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional recording clip');
@@ -578,8 +570,12 @@ describe('recording gesture commit (issue #4439)', () => {
         const recordedPlacements = (): (number | undefined)[] =>
             (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.passStartBeats));
 
-        rebaseRecordingTakes({ clipId: provisional.id, provisionalStartBeat: 4, shiftBeats: 0.5 });
-        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 });
+        // The capture began a quarter second (half a beat at 120 BPM) before the
+        // record point, and the clip opens on that origin.
+        await commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 },
+            { provisionalStartBeat: 4, mediaOriginSeconds: 1.75 }
+        );
         flushAutomergeStorageWrites();
 
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);

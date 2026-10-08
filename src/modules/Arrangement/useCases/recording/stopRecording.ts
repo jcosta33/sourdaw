@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { rebaseTakeOntoMedia, type Take, type TakeLane } from '../../models/TakeLane';
+import { startFirstPassAtRecordPoint, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
@@ -11,7 +11,6 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
-import { placeRecordingClipStart } from './placeRecordingClipStart';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -35,20 +34,6 @@ function completedLoopPassEndBeat(lanes: readonly TakeLane[], clipId: string): n
         }
     }
     return furthest;
-}
-
-/**
- * Open a MIDI recording clip where its passes require, keeping its media origin
- * — and with it every note stored against that origin — where it is. Read
- * before the takes are rebased.
- */
-function placeMidiClipOnMedia(clip: Clip): Clip {
-    const mediaOriginBeat = clip.startBeat - (clip.midiOffsetBeats ?? 0);
-    const startBeat = placeRecordingClipStart(clip.id, mediaOriginBeat);
-    if (startBeat === clip.startBeat) {
-        return clip;
-    }
-    return { ...clip, startBeat, midiOffsetBeats: startBeat - mediaOriginBeat };
 }
 
 function closeTakeAt(take: Take, endBeat: number): Take {
@@ -100,9 +85,6 @@ export async function stopRecording(atBeat?: number): Promise<void> {
     const clipIdSet = new Set(clipIds);
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
-    // A MIDI clip opened on its record point, which is its media origin: the
-    // notes are stored against that origin and the takes were minted from it.
-    const midiAnchorBeats = new Map<string, number>();
 
     setTrackState({
         ...trackState,
@@ -120,17 +102,19 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                     ...context,
                     endBeat: Math.max(minEnd, endBeat, completedLoopPassEndBeat(lanes, context.id)),
                 };
-                if (finalized.type !== 'midi') {
-                    return finalized;
+                if (finalized.type === 'midi') {
+                    finalizedMidiClips.push(finalized);
                 }
-                midiAnchorBeats.set(context.id, context.startBeat);
-                const placed = placeMidiClipOnMedia(finalized);
-                finalizedMidiClips.push(placed);
-                return placed;
+                return finalized;
             }),
         })),
     });
 
+    // A MIDI clip stays on its record point, and so do the notes stored against
+    // it; its passes sound from the clip's start, bounded by it, so only the
+    // first pass of a recording begun inside the loop is moved to where its
+    // material begins. An audio recording's capture terminal places its takes.
+    const midiRecordPointBeats = new Map(finalizedMidiClips.map((clip) => [clip.id, clip.startBeat]));
     const tlState = takeLaneStore.value;
     if (tlState) {
         takeLaneStore.set({
@@ -141,11 +125,11 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                         return take;
                     }
                     const closed = closeTakeAt(take, endBeat);
-                    const anchorBeat = midiAnchorBeats.get(take.clipId);
-                    if (anchorBeat === undefined) {
+                    const recordPointBeat = midiRecordPointBeats.get(take.clipId);
+                    if (recordPointBeat === undefined) {
                         return closed;
                     }
-                    return rebaseTakeOntoMedia(closed, anchorBeat, 0);
+                    return startFirstPassAtRecordPoint(closed, recordPointBeat);
                 }),
             })),
         });

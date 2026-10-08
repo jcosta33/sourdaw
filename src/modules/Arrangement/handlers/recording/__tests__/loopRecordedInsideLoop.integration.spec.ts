@@ -10,7 +10,6 @@ import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Co
 import {
     clearUndoHistory,
     executeAppAction,
-    redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -22,6 +21,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -38,6 +38,8 @@ import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
 
 const TRACK_ID = 'track-midi';
+const LOOP_START_BEAT = 8;
+const LOOP_END_BEAT = 16;
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -47,8 +49,12 @@ const noActionHistoryMetadataPort = {
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
+function recordedClips(): Clip[] {
+    return trackStore.value?.tracks[0]?.clips ?? [];
+}
+
 function recordedClip(): Clip {
-    const clip = trackStore.value?.tracks[0]?.clips[0];
+    const clip = recordedClips()[0];
     if (!clip) {
         throw new Error('Expected the committed recording clip');
     }
@@ -63,79 +69,84 @@ function passTake(name: string): Take {
     return take;
 }
 
-/**
- * Loop [8,16) recorded from beat 12 for two wraps, stopped at beat 24, exactly
- * as the playhead scheduler stages it: each wrap names the recording clip, the
- * loop slice, and how deep its pass sits in the media. `stopRecording` commits
- * the MIDI recording, placing the clip and rebasing the passes.
- */
-async function recordInsideLoop(): Promise<void> {
-    const [provisional] = startRecording(12);
-    if (!provisional) {
-        throw new Error('Expected a provisional recording clip');
-    }
-    for (const [name, sourceOffsetBeats] of [
-        ['Take 2', 0],
-        ['Take 3', 4],
-    ] as const) {
-        stageRecordingTake({
-            trackId: TRACK_ID,
-            clipId: provisional.id,
-            name,
-            startBeat: 8,
-            endBeat: 16,
-            sourceOffsetBeats,
-        });
-    }
-    await stopRecording(24);
-    flushAutomergeStorageWrites();
-}
-
 async function dispatch(action: AppAction): Promise<void> {
     await executeAppAction(action);
     flushAutomergeStorageWrites();
 }
 
-async function comp(takeName: string): Promise<void> {
+/**
+ * Loop [8,16) recorded on a MIDI track from `recordPointBeat` for two wraps,
+ * exactly as the playhead scheduler stages the passes, stopped at
+ * `stopBeat`; `stopRecording` commits it. One note is then written on every
+ * beat of the media, its pitch naming the beat, so what a comp plays reads as
+ * the media beats it sounds.
+ */
+async function recordLoop(recordPointBeat: number, passDepths: readonly [number, number], stopBeat: number) {
+    const [provisional] = startRecording(recordPointBeat);
+    if (!provisional) {
+        throw new Error('Expected a provisional recording clip');
+    }
+    for (const [name, sourceOffsetBeats] of [
+        ['Take 2', passDepths[0]],
+        ['Take 3', passDepths[1]],
+    ] as const) {
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name,
+            startBeat: LOOP_START_BEAT,
+            endBeat: LOOP_END_BEAT,
+            sourceOffsetBeats,
+        });
+    }
+    await stopRecording(stopBeat);
+    flushAutomergeStorageWrites();
+    const mediaBeats = Array.from({ length: stopBeat - recordPointBeat }, (_, beat) => beat);
     await dispatch({
-        type: 'setCompRegion',
-        payload: { trackId: TRACK_ID, takeId: passTake(takeName).id, startBeat: 8, endBeat: 16 },
+        type: 'addNotes',
+        payload: {
+            clipId: provisional.id,
+            notes: mediaBeats.map((beat) => ({ pitch: 40 + beat, startBeat: beat, duration: 0.5, velocity: 100 })),
+        },
     });
 }
 
-/** What the track sounds: each fragment's span and the media beat it enters at. */
-function resolvedComp(): { startBeat: number; endBeat: number; mediaBeat: number }[] {
-    return resolveClipsWithComping(TRACK_ID, trackStore.value?.tracks[0]?.clips ?? []).map((fragment) => ({
-        startBeat: fragment.startBeat,
-        endBeat: fragment.endBeat,
-        mediaBeat: fragment.midiOffsetBeats ?? 0,
-    }));
-}
-
-async function undoOnce(): Promise<void> {
-    await undo();
-    flushAutomergeStorageWrites();
-}
-
-async function redoOnce(): Promise<void> {
-    await redo();
-    flushAutomergeStorageWrites();
+async function compPass(takeName: string): Promise<void> {
+    await dispatch({
+        type: 'setCompRegion',
+        payload: {
+            trackId: TRACK_ID,
+            takeId: passTake(takeName).id,
+            startBeat: LOOP_START_BEAT,
+            endBeat: LOOP_END_BEAT,
+        },
+    });
 }
 
 /**
- * Pass 2 comped over the loop plays its own material, which begins 4 beats into
- * the media. Past the loop the clip plays its media as recorded: beat 16 sounds
- * what was captured there, 4 beats after the record point.
+ * The pitch heard on each whole beat of [fromBeat, toBeat), or null where the
+ * track sounds nothing: each resolved fragment sounds its clip's notes at
+ * `fragment start + note start − fragment MIDI offset`, inside its own span.
  */
-const pass2Comped = [
-    { startBeat: 8, endBeat: 16, mediaBeat: 4 },
-    { startBeat: 16, endBeat: 24, mediaBeat: 4 },
-];
+function heardPitches(fromBeat: number, toBeat: number): (number | null)[] {
+    const fragments = resolveClipsWithComping(TRACK_ID, recordedClips());
+    const heard: (number | null)[] = [];
+    for (let beat = fromBeat; beat < toBeat; beat++) {
+        const fragment = fragments.find((candidate) => candidate.startBeat <= beat && beat < candidate.endBeat);
+        const note = (midiStore.value?.notesByClipId[fragment?.id ?? ''] ?? []).find(
+            (candidate) =>
+                fragment !== undefined &&
+                fragment.startBeat + candidate.startBeat - (fragment.midiOffsetBeats ?? 0) === beat
+        );
+        heard.push(note?.pitch ?? null);
+    }
+    return heard;
+}
 
-describe('a loop recording begun inside the loop', () => {
+describe('MIDI loop recordings under Delete Time', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('loop recorded inside the loop integration');
+        resetCrdtProjectAuthority('MIDI loop recording delete time integration');
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
@@ -176,92 +187,74 @@ describe('a loop recording begun inside the loop', () => {
         removeCrdtDoc('root');
     });
 
-    it('commits the clip at the loop start with its media kept on the record point', async () => {
-        await recordInsideLoop();
+    describe('recorded with a run-up from beat 4', () => {
+        // Pass 1 starts 4 beats into the media, pass 2 a loop later.
+        const recordWithRunUp = () => recordLoop(4, [4, 12], 32);
 
-        expect(recordedClip()).toMatchObject({ startBeat: 8, endBeat: 24, midiOffsetBeats: -4 });
-        expect([passTake('Take 2').passStartBeats, passTake('Take 3').passStartBeats]).toEqual([0, -4]);
-    });
+        it('keeps a MIDI recording on its record point with no pass placed', async () => {
+            await recordWithRunUp();
 
-    it('plays pass 2 across the whole loop from its own material', async () => {
-        await recordInsideLoop();
-        await comp('Take 3');
-
-        expect(resolvedComp()).toEqual(pass2Comped);
-    });
-
-    it('plays pass 1 only from the record point', async () => {
-        await recordInsideLoop();
-        await comp('Take 2');
-
-        expect(resolvedComp()).toEqual([
-            { startBeat: 12, endBeat: 16, mediaBeat: 0 },
-            { startBeat: 16, endBeat: 24, mediaBeat: 4 },
-        ]);
-    });
-
-    it('shifts the whole comp left when time before it is deleted, and undoes and redoes exactly', async () => {
-        await recordInsideLoop();
-        await comp('Take 3');
-        const past = undoHistoryStore.value?.past.length ?? 0;
-
-        await dispatch({ type: 'deleteTime', payload: { startBeat: 0, endBeat: 4 } });
-        expect(undoHistoryStore.value?.past).toHaveLength(past + 1);
-        const shifted = [
-            { startBeat: 4, endBeat: 12, mediaBeat: 4 },
-            { startBeat: 12, endBeat: 20, mediaBeat: 4 },
-        ];
-        expect(resolvedComp()).toEqual(shifted);
-
-        await undoOnce();
-        expect(resolvedComp()).toEqual(pass2Comped);
-        await redoOnce();
-        expect(resolvedComp()).toEqual(shifted);
-    });
-
-    it('keeps pass 2 sounding across the loop when time after it is deleted, and undoes and redoes exactly', async () => {
-        await recordInsideLoop();
-        await comp('Take 3');
-        const past = undoHistoryStore.value?.past.length ?? 0;
-
-        await dispatch({ type: 'deleteTime', payload: { startBeat: 20, endBeat: 24 } });
-        expect(undoHistoryStore.value?.past).toHaveLength(past + 1);
-        const trimmed = [
-            { startBeat: 8, endBeat: 16, mediaBeat: 4 },
-            { startBeat: 16, endBeat: 20, mediaBeat: 4 },
-        ];
-        expect(resolvedComp()).toEqual(trimmed);
-
-        await undoOnce();
-        expect(resolvedComp()).toEqual(pass2Comped);
-        await redoOnce();
-        expect(resolvedComp()).toEqual(trimmed);
-    });
-
-    it('shifts pass 2 with content slipped inside the clip', async () => {
-        await recordInsideLoop();
-        await comp('Take 3');
-
-        await dispatch({
-            type: 'slipClipContent',
-            payload: { clipId: recordedClip().id, clipType: 'midi', offset: -3 },
+            expect(recordedClip()).toMatchObject({ startBeat: 4, endBeat: 32 });
+            expect(recordedClip()).not.toHaveProperty('midiOffsetBeats');
+            expect(passTake('Take 3')).not.toHaveProperty('passStartBeats');
         });
 
-        expect(resolvedComp()).toEqual([
-            { startBeat: 8, endBeat: 16, mediaBeat: 5 },
-            { startBeat: 16, endBeat: 24, mediaBeat: 5 },
-        ]);
+        it('keeps the comped pass sounding its material when time inside the loop is deleted', async () => {
+            await recordWithRunUp();
+            await compPass('Take 3');
+            const comped = heardPitches(LOOP_START_BEAT, LOOP_END_BEAT);
+            expect(comped).not.toContain(null);
+
+            await dispatch({ type: 'deleteTime', payload: { startBeat: 10, endBeat: 12 } });
+
+            // What sounded from 12 now sounds from 10, through the end of the
+            // comp. The fragment left of the cut keeps only the notes before
+            // it, which a MIDI split has always done, so it is not read here.
+            expect(heardPitches(10, 14)).toEqual(comped.slice(4));
+        });
+
+        it('keeps the comped pass sounding its material when time across its start is deleted', async () => {
+            await recordWithRunUp();
+            await compPass('Take 3');
+            const comped = heardPitches(LOOP_START_BEAT, LOOP_END_BEAT);
+
+            await dispatch({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 10 } });
+
+            // What sounded from 10 now sounds from 2.
+            expect(heardPitches(2, 8)).toEqual(comped.slice(2));
+        });
     });
 
-    it('hides what a start trim hides of pass 2', async () => {
-        await recordInsideLoop();
-        await comp('Take 3');
+    describe('begun inside the loop at beat 12', () => {
+        // Pass 1 is the short lap from the record point, pass 2 starts 4 beats into the media.
+        const recordInsideLoop = () => recordLoop(12, [0, 4], 24);
 
-        await dispatch({ type: 'trimClipStart', payload: { clipId: recordedClip().id, newStartBeat: 10 } });
+        it('keeps the clip on its record point with no negative media offset', async () => {
+            await recordInsideLoop();
 
-        expect(resolvedComp()).toEqual([
-            { startBeat: 10, endBeat: 16, mediaBeat: 6 },
-            { startBeat: 16, endBeat: 24, mediaBeat: 4 },
-        ]);
+            expect(recordedClip()).toMatchObject({ startBeat: 12, endBeat: 24 });
+            expect(recordedClip()).not.toHaveProperty('midiOffsetBeats');
+        });
+
+        it.each([
+            { name: 'before the clip', startBeat: 9, endBeat: 11, clipStartBeat: 10 },
+            { name: 'over its first bars', startBeat: 12, endBeat: 16, clipStartBeat: 12 },
+        ])('accepts Delete Time $name and undoes it', async ({ startBeat, endBeat, clipStartBeat }) => {
+            await recordInsideLoop();
+            await compPass('Take 3');
+            const past = undoHistoryStore.value?.past.length ?? 0;
+            const recorded = structuredClone(recordedClip());
+
+            await dispatch({ type: 'deleteTime', payload: { startBeat, endBeat } });
+
+            expect(undoHistoryStore.value?.past).toHaveLength(past + 1);
+            expect(recordedClip().startBeat).toBe(clipStartBeat);
+            expect(recordedClip().endBeat).toBe(recorded.endBeat - (endBeat - startBeat));
+            expect(heardPitches(clipStartBeat, clipStartBeat + 4)).not.toContain(null);
+
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(recordedClip()).toEqual(recorded);
+        });
     });
 });

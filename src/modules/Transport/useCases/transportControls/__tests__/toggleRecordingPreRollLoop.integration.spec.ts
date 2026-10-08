@@ -20,7 +20,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
-import { secondsBetweenBeats } from '../../../models/TempoMap';
+import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
@@ -180,56 +180,60 @@ async function comp(takeName: string): Promise<void> {
     flushAutomergeStorageWrites();
 }
 
-describe('a loop recording begun inside the loop with pre-roll', () => {
-    beforeEach(() => {
-        configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('pre-roll loop recording integration');
-        removeCrdtDoc('root');
-        createCrdtDoc('root');
-        registerCrdtStorageRuntime();
-        clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
-        clearUndoHistory();
-        resetActionReplayAuthority();
-        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
-        vi.clearAllMocks();
-        mocks.audioClock.currentTime = 0;
-        mocks.startAudioRecording.mockResolvedValue(true);
-        tempoMapStore.set({ changes: [] });
-        timeSignatureMapStore.set({ changes: [] });
-        transportStore.set({
-            ...defaultTransportState,
-            tempo: TEMPO_BPM,
-            playheadPosition: RECORD_POINT_BEAT,
-            isLooping: true,
-            loopStart: LOOP_START_BEAT,
-            loopEnd: LOOP_END_BEAT,
-            preRollEnabled: true,
-            preRollBars: 2,
-            countInEnabled: false,
-        });
-        trackStore.set({
-            tracks: [armedAudioTrack()],
-            selectedTrackId: TRACK_ID,
-            ghostClips: [],
-        });
-        takeLaneStore.set({ lanes: [] });
-        recordingLifecycle.cancelPendingRecordingStart();
-        flushAutomergeStorageWrites();
+function openRecordingProject(): void {
+    configureAutomergeStoragePort(null);
+    resetCrdtProjectAuthority('pre-roll loop recording integration');
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    clearHandlerRegistry();
+    registerHandlerMap(getArrangementHandlers());
+    clearUndoHistory();
+    resetActionReplayAuthority();
+    setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+    vi.clearAllMocks();
+    mocks.audioClock.currentTime = 0;
+    mocks.startAudioRecording.mockResolvedValue(true);
+    tempoMapStore.set({ changes: [] });
+    timeSignatureMapStore.set({ changes: [] });
+    transportStore.set({
+        ...defaultTransportState,
+        tempo: TEMPO_BPM,
+        playheadPosition: RECORD_POINT_BEAT,
+        isLooping: true,
+        loopStart: LOOP_START_BEAT,
+        loopEnd: LOOP_END_BEAT,
+        preRollEnabled: true,
+        preRollBars: 2,
+        countInEnabled: false,
     });
+    trackStore.set({
+        tracks: [armedAudioTrack()],
+        selectedTrackId: TRACK_ID,
+        ghostClips: [],
+    });
+    takeLaneStore.set({ lanes: [] });
+    recordingLifecycle.cancelPendingRecordingStart();
+    flushAutomergeStorageWrites();
+}
 
-    afterEach(() => {
-        recordingLifecycle.cancelPendingRecordingStart();
-        clearHandlerRegistry();
-        clearUndoHistory();
-        resetActionReplayAuthority();
-        transportStore.set(defaultTransportState);
-        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        takeLaneStore.set({ lanes: [] });
-        flushAutomergeStorageWrites();
-        configureAutomergeStoragePort(null);
-        removeCrdtDoc('root');
-    });
+function closeRecordingProject(): void {
+    recordingLifecycle.cancelPendingRecordingStart();
+    clearHandlerRegistry();
+    clearUndoHistory();
+    resetActionReplayAuthority();
+    tempoMapStore.set({ changes: [] });
+    transportStore.set(defaultTransportState);
+    trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    takeLaneStore.set({ lanes: [] });
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+}
+
+describe('a loop recording begun inside the loop with pre-roll', () => {
+    beforeEach(openRecordingProject);
+    afterEach(closeRecordingProject);
 
     it('opens the clip at the loop start, entering the media where beat 8 was captured', async () => {
         await recordLoopWithPreRoll();
@@ -261,5 +265,187 @@ describe('a loop recording begun inside the loop with pre-roll', () => {
 
         expect(soundingAt(LOOP_START_BEAT)).toBeNull();
         expect(soundingAt(RECORD_POINT_BEAT)).toBeCloseTo(capturedAt(RECORD_POINT_BEAT), 9);
+    });
+});
+
+type TempoChangeScenario = {
+    recordPointBeat: number;
+    loop: readonly [startBeat: number, endBeat: number];
+    preRollBars: number;
+    tempoChanges: TempoChange[];
+    /** How deep into the media the scheduler mints passes 1 and 2, in unwrapped beats from the record point. */
+    passDepths: readonly [number, number];
+    captureSeconds: number;
+};
+
+function songSecondsAt(scenario: TempoChangeScenario, beat: number): number {
+    return secondsBetweenBeats(scenario.tempoChanges, 0, beat, TEMPO_BPM);
+}
+
+/**
+ * Record a loop across a tempo change exactly as in production: the transport
+ * rolls from its pre-roll start (or the record point), the recorder opens the
+ * clip, the scheduler stages a pass at each of two wraps, and the capture's
+ * terminal commits it.
+ */
+async function recordLoopAcrossTempoChange(scenario: TempoChangeScenario): Promise<void> {
+    const [loopStartBeat, loopEndBeat] = scenario.loop;
+    tempoMapStore.set({ changes: scenario.tempoChanges });
+    transportStore.set({
+        ...defaultTransportState,
+        tempo: TEMPO_BPM,
+        playheadPosition: scenario.recordPointBeat,
+        isLooping: true,
+        loopStart: loopStartBeat,
+        loopEnd: loopEndBeat,
+        preRollEnabled: scenario.preRollBars > 0,
+        preRollBars: scenario.preRollBars,
+        countInEnabled: false,
+    });
+    toggleRecording();
+    await vi.waitFor(() => expect(mocks.startPlayback).toHaveBeenCalledOnce());
+    const provisional = recordedClip();
+    for (const [name, sourceOffsetBeats] of [
+        ['Take 2', scenario.passDepths[0]],
+        ['Take 3', scenario.passDepths[1]],
+    ] as const) {
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name,
+            startBeat: loopStartBeat,
+            endBeat: loopEndBeat,
+            sourceOffsetBeats,
+        });
+    }
+    const finishCapture = mocks.startAudioRecording.mock.calls[0]?.[1];
+    if (!finishCapture) {
+        throw new Error('Expected the recording callback to be registered');
+    }
+    finishCapture({ kind: 'completed', buffer: { duration: scenario.captureSeconds } });
+    await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
+    flushAutomergeStorageWrites();
+}
+
+async function compLoop(scenario: TempoChangeScenario, takeName: string): Promise<void> {
+    const take = takeLaneStore.value?.lanes[0]?.takes.find((candidate) => candidate.name === takeName);
+    if (!take) {
+        throw new Error(`Expected the ${takeName} pass`);
+    }
+    await executeAppAction({
+        type: 'setCompRegion',
+        payload: { trackId: TRACK_ID, takeId: take.id, startBeat: scenario.loop[0], endBeat: scenario.loop[1] },
+    });
+    flushAutomergeStorageWrites();
+}
+
+/**
+ * Seconds into the capture the track sounds at timeline `beat`, or null where
+ * nothing plays. A reader enters a fragment's file at its offset converted at
+ * the tempo of the fragment's first beat, then plays on in real time.
+ */
+function fileSecondsAt(scenario: TempoChangeScenario, beat: number): number | null {
+    const fragment = resolveClipsWithComping(TRACK_ID, trackStore.value?.tracks[0]?.clips ?? []).find(
+        (candidate) => candidate.startBeat <= beat && beat < candidate.endBeat
+    );
+    if (!fragment) {
+        return null;
+    }
+    const entrySeconds =
+        ((fragment.audioOffsetBeats ?? 0) * 60) / getTempoAtBeat(scenario.tempoChanges, fragment.startBeat, TEMPO_BPM);
+    return entrySeconds + songSecondsAt(scenario, beat) - songSecondsAt(scenario, fragment.startBeat);
+}
+
+describe('a loop recording across a tempo change', () => {
+    beforeEach(openRecordingProject);
+    afterEach(closeRecordingProject);
+
+    describe('run up from the drop to 60 BPM at beat 12, with one bar of pre-roll, into loop [16,24)', () => {
+        const scenario: TempoChangeScenario = {
+            recordPointBeat: 12,
+            loop: [16, 24],
+            preRollBars: 1,
+            tempoChanges: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-12', beat: 12, tempo: 60, curve: 'instant' },
+            ],
+            // Pass 1 after the 4-beat run-up, pass 2 a loop later.
+            passDepths: [4, 12],
+            // Beats 8–12 at 120 BPM, then the run-up and two 8 s laps at 60 BPM.
+            captureSeconds: 2 + 4 + 16 + 0.02,
+        };
+        /** The roll starts at beat 8, 4 s into the song; 20 ms of latency precede it. */
+        const mediaOriginSeconds = 4 - 0.02;
+        /** What lap `lap` of the loop captured on its beat `beat`, in seconds into the file. */
+        const capturedOnLap = (beat: number, lap: number) =>
+            songSecondsAt(scenario, beat) + lap * 8 - mediaOriginSeconds;
+
+        it('plays pass 1 across the whole loop from what was captured there', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 2');
+
+            expect(fileSecondsAt(scenario, 16)).toBeCloseTo(capturedOnLap(16, 0), 9);
+            expect(fileSecondsAt(scenario, 17)).toBeCloseTo(capturedOnLap(17, 0), 9);
+            expect(fileSecondsAt(scenario, 23.5)).toBeCloseTo(capturedOnLap(23.5, 0), 9);
+        });
+
+        it('plays pass 2 across the whole loop from what was captured a lap later', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 3');
+
+            expect(fileSecondsAt(scenario, 16)).toBeCloseTo(capturedOnLap(16, 1), 9);
+            expect(fileSecondsAt(scenario, 17)).toBeCloseTo(capturedOnLap(17, 1), 9);
+            expect(fileSecondsAt(scenario, 23.5)).toBeCloseTo(capturedOnLap(23.5, 1), 9);
+        });
+    });
+
+    describe('begun at beat 12 inside loop [8,16), the tempo dropping to 60 BPM at beat 10, no pre-roll', () => {
+        const scenario: TempoChangeScenario = {
+            recordPointBeat: 12,
+            loop: [8, 16],
+            preRollBars: 0,
+            tempoChanges: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-10', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+            // Pass 1 from the record point, pass 2 after its 4-beat lap.
+            passDepths: [0, 4],
+            // The short first lap (4 s) and two 7 s laps.
+            captureSeconds: 4 + 14 + 0.02,
+        };
+        /** Beat 12 sounds 7 s into the song; 20 ms of latency precede the record point. */
+        const mediaOriginSeconds = 7 - 0.02;
+        /** One lap of [8,16): 1 s at 120 BPM, then 6 s at 60 BPM. */
+        const lapSeconds = 7;
+        const capturedOnLap = (beat: number, lap: number) =>
+            songSecondsAt(scenario, beat) + lap * lapSeconds - mediaOriginSeconds;
+
+        it('opens the clip at the loop start, entering the file where beat 8 sits before the capture', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+
+            expect(recordedClip().startBeat).toBe(8);
+            // Uncomped, the clip plays its own media: leading silence, then
+            // the record point's downbeat on its beat.
+            expect(fileSecondsAt(scenario, 8)).toBeCloseTo(capturedOnLap(8, 0), 9);
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 0), 9);
+        });
+
+        it('plays pass 1 from the record point on its beat', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 2');
+
+            expect(fileSecondsAt(scenario, 11.5)).toBeNull();
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 0), 9);
+            expect(fileSecondsAt(scenario, 15)).toBeCloseTo(capturedOnLap(15, 0), 9);
+        });
+
+        it('plays pass 2 across the whole loop from what was captured a lap later', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 3');
+
+            expect(fileSecondsAt(scenario, 8)).toBeCloseTo(capturedOnLap(8, 1), 9);
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 1), 9);
+            expect(fileSecondsAt(scenario, 15.5)).toBeCloseTo(capturedOnLap(15.5, 1), 9);
+        });
     });
 });

@@ -176,11 +176,11 @@ describe('stopRecording during a loop recording', () => {
         ]);
         const offsets = writtenTakes().map((take) => take.sourceOffsetBeats);
         expect(offsets).toEqual([0, 4]);
-        const placements = writtenTakes().map((take) => take.passStartBeats);
-        expect(placements).toEqual([0, -4]);
+        // A MIDI pass sounds from its clip's start, bounded by it, so none is placed.
+        expect(writtenTakes().every((take) => !('passStartBeats' in take))).toBe(true);
     });
 
-    it('opens a MIDI clip recorded inside the loop at the loop start, its media origin on the record point', () => {
+    it('keeps a MIDI clip recorded inside the loop on its record point, with no media offset', () => {
         seedRecording({ type: 'midi', startBeat: 12, endBeat: 12 }, [
             loopPassTake('pass-1', 8, 16, 0),
             loopPassTake('pass-2', 8, 16, 4),
@@ -188,22 +188,12 @@ describe('stopRecording during a loop recording', () => {
 
         void stopRecording(14);
 
-        expect(writtenClip()).toMatchObject({ startBeat: 8, endBeat: 16, midiOffsetBeats: -4 });
-        expect(mocks.commitRecording).toHaveBeenCalledWith(
-            expect.objectContaining({ startBeat: 8, endBeat: 16, midiOffsetBeats: -4 })
-        );
-    });
-
-    it('keeps a MIDI clip whose passes all begin inside it where it opened', () => {
-        seedRecording({ type: 'midi', startBeat: 1, endBeat: 1 }, [loopPassTake('pass-1', 2, 6, 1)]);
-
-        void stopRecording(3);
-
-        expect(writtenClip()).toMatchObject({ startBeat: 1, endBeat: 6 });
+        expect(writtenClip()).toMatchObject({ startBeat: 12, endBeat: 16 });
         expect(writtenClip()).not.toHaveProperty('midiOffsetBeats');
+        expect(mocks.commitRecording).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 12, endBeat: 16 }));
     });
 
-    it('does not rebase the takes of an audio recording, which its capture terminal owns', () => {
+    it('does not place the takes of an audio recording, which its capture terminal owns', () => {
         seedRecording({ type: 'audio', startBeat: 12, endBeat: 12 }, [loopPassTake('pass-1', 8, 16, 0)]);
 
         void stopRecording(14);

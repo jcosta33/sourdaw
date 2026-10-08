@@ -22,7 +22,6 @@ type TestRecordingClip = {
 
 type TestRecordedCapture = {
     provisionalStartBeat: number;
-    mediaOriginBeat: number;
     mediaOriginSeconds: number;
 };
 
@@ -442,7 +441,7 @@ describe('toggleRecording', () => {
         expect(clipUpdate.startBeat).toBeCloseTo(3.8, 9);
     });
 
-    it('hands the commit the media origin its takes are rebased onto', async () => {
+    it('hands the commit the media origin its takes are placed against', async () => {
         // The recorder minted every take against the record point (beat 4); the
         // first sample sits 0.1 s earlier, which at 120 BPM is 0.2 beats.
         const recordingClip = { id: 'clip-recording', trackId: 'track-audio', startBeat: 4, endBeat: 4 };
@@ -472,8 +471,7 @@ describe('toggleRecording', () => {
         await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
         const capture = mocks.commitRecording.mock.calls[0]?.[1];
-        expect(capture?.provisionalStartBeat).toBe(4);
-        expect(capture?.mediaOriginBeat).toBeCloseTo(3.8, 9);
+        expect(capture).toEqual({ provisionalStartBeat: 4, mediaOriginSeconds: expect.any(Number) });
         expect(capture?.mediaOriginSeconds).toBeCloseTo(secondsBetweenBeats([], 0, 3.8, 120), 9);
     });
 

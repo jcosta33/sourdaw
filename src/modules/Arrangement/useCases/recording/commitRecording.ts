@@ -4,14 +4,13 @@ import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { type Clip } from '../../stores/trackStore';
 
 import { placeRecordingClipStart } from './placeRecordingClipStart';
-import { rebaseRecordingTakes } from './rebaseRecordingTakes';
+import { placeRecordingTakes } from './placeRecordingTakes';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
     /** The beat the recorder opened the clip on, which every staged take was minted against. */
     provisionalStartBeat: number;
-    /** The beat and song time the capture's first sample sounds on, pre-roll lead and latency included. */
-    mediaOriginBeat: number;
+    /** The song time the capture's first sample sounds on, pre-roll lead and latency included. */
     mediaOriginSeconds: number;
 };
 
@@ -44,11 +43,12 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
  * so one undo removes the clip together with the takes that name it and one redo
  * restores the same clip identity, placement, and take membership.
  *
- * A capture terminal hands in where its media truly begins. The clip is placed
- * against its loop passes first, then the staged takes are rebased onto that
- * origin, both before the dispatch so they land in the one entry, which
- * captures the live lane state. A MIDI recording is placed and rebased by
- * `stopRecording` and commits without one.
+ * An audio capture terminal hands in where its media truly begins. The clip is
+ * placed against its loop passes first, then the staged takes are placed
+ * against that committed clip's media origin, both before the dispatch so they
+ * land in the one entry, which captures the live lane state. A MIDI recording
+ * keeps the clip it opened, its passes bounded by that clip's start, and
+ * commits without a capture.
  *
  * Deliberately `executeAppAction`, not `executeUserAppAction`: every caller
  * attaches its own rejection handler that retires the provisional recording and
@@ -63,10 +63,11 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
         return;
     }
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
-    rebaseRecordingTakes({
+    placeRecordingTakes({
         clipId: clip.id,
-        provisionalStartBeat: capture.provisionalStartBeat,
-        shiftBeats: capture.provisionalStartBeat - capture.mediaOriginBeat,
+        recordPointBeat: capture.provisionalStartBeat,
+        mediaOriginSeconds: capture.mediaOriginSeconds,
+        clipMediaOriginBeat: placed.startBeat - (placed.audioOffsetBeats ?? 0),
     });
     await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
 }

@@ -61,7 +61,7 @@ type CapturePlacementInput = {
 type CapturePlacement = {
     startBeat: number;
     audioOffsetBeats: number;
-    capture: { provisionalStartBeat: number; mediaOriginBeat: number; mediaOriginSeconds: number };
+    capture: { provisionalStartBeat: number; mediaOriginSeconds: number };
 };
 
 /**
@@ -92,16 +92,12 @@ type CapturePlacement = {
  *
  * `capture` is where the media truly begins, pre-roll lead and latency
  * included, as the commit needs it: the recorder minted every take against the
- * record point, and the commit rebases them onto this origin.
+ * record point, and the commit places them against the clip's media.
  */
 function placeCapture(input: CapturePlacementInput): CapturePlacement {
     const { originSeconds, recordPointBeat, rollLeadBeats, tempoChanges, defaultTempo } = input;
     const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
-    const capture = {
-        provisionalStartBeat: recordPointBeat,
-        mediaOriginBeat: originBeat,
-        mediaOriginSeconds: originSeconds,
-    };
+    const capture = { provisionalStartBeat: recordPointBeat, mediaOriginSeconds: originSeconds };
     const prerollTrimBeat = rollLeadBeats > 0 ? recordPointBeat : 0;
     const startBeat = Math.max(0, originBeat, prerollTrimBeat);
     // The clip opens on the origin itself: nothing precedes it in the file, and
