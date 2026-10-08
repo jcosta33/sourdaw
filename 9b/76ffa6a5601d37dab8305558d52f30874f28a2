@@ -1,0 +1,52 @@
+src/modules/AudioAnalysis/handlers/analysis/__tests__/detectTempoSourceTime.integration.spec.ts
+  s_1f0dcd815e8946::t_a0236619f6ae3c 250-271
+  s_1f0dcd815e8946::t_738896b6f79cd2 320
+  s_1f0dcd815e8946::t_ccec7f1eed4fbd 1-5,7,10-11,14-16,18-75,77-95,99-102,113-170,172-202,204-207,238-249,272-319,321-325
+  s_1f0dcd815e8946::t_d0ad7bbe28ab33 220-229
+  s_1f0dcd815e8946::t_234d4d1ca6b88d 76,96-98,171,203,208-219,230-237
+  s_1f0dcd815e8946::t_4b46ab346eeace 6,8-9,12-13,17,103-112
+  s_1f0dcd815e8946::t_0e01d02d8589ad 326-376
+src/modules/Transport/useCases/tempoMapping/operations/detectProjectTempo.ts
+  s_1f0dcd815e8946::t_7069d7bf45c93c 2,15-18
+  s_1f0dcd815e8946::t_3b8f42f7032668 6,11
+src/modules/Transport/useCases/tempoMapping/operations/normalizeDetectedTempo.ts
+  s_1f0dcd815e8946::t_3b8f42f7032668 12,15
+  s_1f0dcd815e8946::t_7069d7bf45c93c 10-11
+src/modules/Command/useCases/__tests__/appActionExecutionPolicy.spec.ts
+  s_1f0dcd815e8946::t_a0236619f6ae3c 3,14
+  s_1f0dcd815e8946::t_cbba9e3c43943f 8-13,15-16
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_1f0dcd815e8946::t_7a51a2427c9475 155
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleDetectTempo.spec.ts
+  s_1f0dcd815e8946::t_a0236619f6ae3c 57
+  s_1f0dcd815e8946::t_0c3e7ef6fa6dd0 101-103,105-129
+  s_1f0dcd815e8946::t_234d4d1ca6b88d 43
+  s_1f0dcd815e8946::t_38c02d5c5e3561 14,20-23,71,74-83,86-90,92-99,130,134-145,148,150-155
+  s_1f0dcd815e8946::t_13ddb17b3bf103 73,91,104,132
+  s_1f0dcd815e8946::t_a082569f8bd2bd 100,131,133,156,158,160,173,176-179
+src/modules/Transport/useCases/tempoMapping/operations/__tests__/normalizeDetectedTempo.spec.ts
+  s_1f0dcd815e8946::t_3b8f42f7032668 4,10,15-22,24-28,32-34,36-45,50-62,67-70,72-76,78-79
+  s_1f0dcd815e8946::t_7069d7bf45c93c 23,35,46,71
+  s_1f0dcd815e8946::t_aaf28efa13511e 77,80,84-97
+src/modules/Transport/useCases/tempoMapping/operations/__tests__/detectProjectTempo.spec.ts
+  s_1f0dcd815e8946::t_cbba9e3c43943f 39,54
+src/modules/AudioAnalysis/handlers/analysis/handleDetectTempo.ts
+  s_1f0dcd815e8946::t_7a51a2427c9475 2,47,49-51,62,69
+  s_1f0dcd815e8946::t_67893d423066e5 5,10-45,48,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b76ffa6a5601d37dab8305558d52f30874f28a2",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
