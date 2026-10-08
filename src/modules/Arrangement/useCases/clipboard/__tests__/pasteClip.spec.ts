@@ -76,7 +76,8 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     restoreMidiClipData: mocks.restoreMidiClipData,
     setNotesForClip: mocks.setNotesForClip,
 }));
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     playheadPositionRef: mocks.playheadPositionRef,
     transportStore: mocks.transportStore,
 }));

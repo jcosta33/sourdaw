@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     prepareMidiClipSplit: mocks.prepareMidiClipSplit,
     splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
 }));
