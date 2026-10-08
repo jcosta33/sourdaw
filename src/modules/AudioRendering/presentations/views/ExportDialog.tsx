@@ -85,6 +85,7 @@ type WebFileHandle = {
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 };
 
@@ -733,7 +734,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (webFileHandle) {
                     // File System Access Method
                     const writable = await webFileHandle.createWritable();
+                    // A Cancel pressed while the file was being opened or written must not commit it:
+                    // closing a writable is what makes the file appear, so a cancelled one is aborted.
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
                     await writable.write(finalBytes);
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
                     await writable.close();
                 } else {
                     // Fallback

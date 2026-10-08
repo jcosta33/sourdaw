@@ -697,6 +697,82 @@ describe('ExportDialog', () => {
         expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
     });
 
+    it('encodes no later format when Cancel is pressed while an earlier format is being written', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav', 'mp3'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+            dither: 'random',
+            normalization: 'off',
+        });
+        const writing = createDeferred<void>();
+        mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            writing.resolve();
+        });
+
+        await waitFor(
+            () => {
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            },
+            { timeout: 4000 }
+        );
+        expect(audioBufferToMp3).not.toHaveBeenCalled();
+        expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts the browser save instead of committing it when Cancel is pressed while the file is being opened', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const opening = createDeferred<void>();
+        const writable = {
+            write: vi.fn(() => Promise.resolve()),
+            close: vi.fn(() => Promise.resolve()),
+            abort: vi.fn(() => Promise.resolve()),
+        };
+        const createWritable = vi.fn(async () => {
+            await opening.promise;
+            return writable;
+        });
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue({ createWritable }));
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(createWritable).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                opening.resolve();
+            });
+
+            await waitFor(
+                () => {
+                    expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                },
+                { timeout: 4000 }
+            );
+            expect(writable.abort).toHaveBeenCalledTimes(1);
+            expect(writable.write).not.toHaveBeenCalled();
+            expect(writable.close).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+        } finally {
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
     it('still writes every format when no Cancel is pressed', async () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav', 'mp3'],
