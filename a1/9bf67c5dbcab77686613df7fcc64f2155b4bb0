@@ -1,0 +1,83 @@
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  s_2bfd55a4393d7c::t_f1dcc1285b8972 1-96
+src/app/initDeviceStateReconciliation.ts
+  s_2bfd55a4393d7c::t_67443f5b6fbe4b 1-60
+src/app/registerDependencies.ts
+  s_4c8cd08893b364::t_eba865d888d16a 9,33
+src/modules/AiRuntime/useCases/cancelActiveAgentRuns.ts
+  s_6e6c03a81c99af::t_1aa9b0edac077d 1-28
+src/modules/AiRuntime/useCases/index.ts
+  s_1c08b47ac3792f::t_fb6f522f31c5ac 83
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_1c08b47ac3792f::t_9102238614d9c6 643-711
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_1c08b47ac3792f::t_77620abcb0bef9 33-34,225-228,279-287
+src/modules/Crumbs/events/CrumbsModeChangedPayload.ts
+  s_4c8cd08893b364::t_d902e88a05a34b 1-15
+src/modules/Crumbs/events/index.ts
+  s_4c8cd08893b364::t_fa94141ff3e15e 1
+src/modules/Crumbs/stores/index.ts
+  s_4c8cd08893b364::t_c9edd756435e4c 10
+src/modules/Crumbs/useCases/reconcileCrumbsDeviceStateFromProject.ts
+  s_1c08b47ac3792f::t_22e69673fc90f7 1-2,11,13-14,102-103,105-112,114-116,118-124,126,132-136,137-143,160-163,181
+src/modules/Crumbs/useCases/triggerPad/resolveCrumbsPadControls.ts
+  s_4c8cd08893b364::t_ed9d50923a0682 16,18-19
+src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts
+  s_1c08b47ac3792f::t_ea64a733ff46dd 1-67
+src/modules/Project/useCases/index.ts
+  s_1c08b47ac3792f::t_ae2668f3f519df 17-18
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_1c08b47ac3792f::t_e541c5783a26bd 3,114,116,268-332
+src/modules/Project/useCases/projectPersistence/helpers/activeAgentRunCancellationState.ts
+  s_1c08b47ac3792f::t_9ab31c0164f5a3 1-15
+src/modules/Project/useCases/projectPersistence/helpers/agentSectionRenderArtifactsClearingState.ts
+  s_1c08b47ac3792f::t_d250a5f8a7cad5 1-16
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_1c08b47ac3792f::t_025a0d245b6c6e 24,26,48-57
+src/modules/Project/useCases/projectPersistence/setActiveAgentRunsCanceller.ts
+  s_1c08b47ac3792f::t_4106ef3d03f8a1 1-10
+src/modules/Project/useCases/projectPersistence/setAgentSectionRenderArtifactsClearer.ts
+  s_1c08b47ac3792f::t_fb1b1a5097b8d1 1-13
+src/modules/Toaster/useCases/reconcileToasterKitFromProject.ts
+  s_1c08b47ac3792f::t_6228fea98c308b 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a19bf67c5dbcab77686613df7fcc64f2155b4bb0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_6e6c03a81c99af": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "08053f3e-990b-427b-b7f8-ee99558449d8",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

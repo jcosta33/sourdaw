@@ -11,6 +11,11 @@ src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
   "git_ai_version": "1.7.5",
   "base_commit_sha": "95593d8f6fecf567f7088eeacd7368420534b54d",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_1c08b47ac3792f": {
       "agent_id": {
