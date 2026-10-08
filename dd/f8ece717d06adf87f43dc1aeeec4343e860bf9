@@ -1,0 +1,21 @@
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/syncAutoInputMonitoring.spec.ts
+  s_4c8cd08893b364::t_275a9ca92d5bd1 239,246-249,252,260-279
+src/modules/AudioEngine/AGENTS.md
+  s_4c8cd08893b364::t_314d9504c74610 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ddf8ece717d06adf87f43dc1aeeec4343e860bf9",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
