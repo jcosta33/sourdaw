@@ -31,3 +31,41 @@ The repair projects only `{ stance, admittedBy }` and uses the existing content 
 intended fields again at request construction. This is bounded defense in depth: the screen's
 documented encoded or split-secret limitations still apply, and advisory status never makes
 caller content safe to export.
+
+## Escape: complete request admission and actual SDK bytes
+
+[PR #4491](https://github.com/jcosta33/sourdaw/pull/4491), introduced by
+`9effe3689c72384f30f60971ca40f26a44c0a355`, added the semantic adapter's cache lookup using caller
+objects and its unchecked per-run token addition. Offline regressions admitted unsafe would-hit
+cache requests and accepted provider success after cancellation. The missed risk is complete
+request admission and cancellation across awaited effects; historical dispatch wording and tier
+are not established here. Structural limits and actual SDK wire enforcement add defensive refusal
+boundaries beyond those reproduced failures.
+
+Screening a collected source region does not screen caller claims, reproduction notes, question
+instructions, criteria, property names, or the final envelope. Trace both scan and verify into the
+shared preparation boundary and exercise an unsafe request against a cache that would otherwise hit.
+Require zero cache reads, reservations, recording calls, and delegated fetches. Descriptor accessors,
+serialization hooks, cycles, omitted JSON values, sparse arrays, and invalid question unions must be
+refused without executing caller getters or `toJSON`. Include exact UTF-8 caps and their next byte,
+the depth and visited-value boundaries, and repeated noncyclic occurrences.
+
+A measured request object is insufficient evidence of the SDK's wire body. Capture the installed
+SDK's actual `fetch` `init.body` and compare it with the frozen prepared string for escaping,
+multibyte text, nested descriptions, property order, and mutation after preparation. Force an SDK
+serialization mismatch and require refusal before delegated fetch, one caller attempt, and no retry
+even when the SDK wraps the local cause in `APIConnectionError`. Abort before cache read, during an
+awaited cache read, before handoff, after provider success, during body delivery, and during retry
+wait; require no accepted answer or cache write after cancellation. A byte cap never establishes a
+token-count or dollar cap.
+
+## Escape: usage aggregation after valid responses
+
+[PR #4933](https://github.com/jcosta33/sourdaw/pull/4933), introduced by
+`d03336ec91adeeb3ec8e084d8401151223688f97`, added the measurement fold's unchecked
+`actualInputTokens` addition. Individually safe counts can sum to an unsafe integer across stored
+scan/verification reports or evaluation-reader outcomes. The missed probe is the aggregate boundary;
+historical reviewer stance and tier are not established here. Require `MAX_SAFE_INTEGER + 0` to
+succeed and `MAX_SAFE_INTEGER + 1` to refuse before a measurement record is returned or emitted.
+The per-run provider fold must likewise check all additions atomically before cache write and keep
+overflow terminal, with no partial total update or retry.

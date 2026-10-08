@@ -22,6 +22,17 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
 
+- An aggregation test claiming a stored report route must use the production reader's filename and
+  assert that both input records were admitted. An ignored artifact can make a boundary control pass
+  while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification
+  and evaluation-reader outcomes independently: exact `MAX_SAFE_INTEGER + 0` succeeds and the next
+  count refuses before record output. PR #4933 introduced the unchecked measurement addition; no
+  historical reviewer stance or tier is established by this lesson.
+- An SDK request test must execute in the server environment and capture the installed SDK's actual
+  fetch body. A browser-environment refusal or a caller-only serialization assertion proves neither
+  the exact wire string nor response-body timeout and cancellation. Preserve failed harness attempts
+  separately from qualified behavior reproductions.
+
 - For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).
 
 - Apply the standard mechanical probe the Review section of `AGENTS.md` defines; this file does not

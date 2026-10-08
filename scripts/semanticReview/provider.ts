@@ -1,5 +1,5 @@
 /**
- * The TypeSafe adapter: one client per process, an application-owned budget, one retry layer, a
+ * The TypeSafe adapter: one prepared request per SDK attempt, an application-owned budget, one retry layer, a
  * content-addressed cache, and offline replay.
  *
  * The provider call is the only external effect here, and it is reached through a narrow port so the
@@ -25,11 +25,19 @@ import {
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
-    TypeSafeClient,
+    type Fetch,
     TypeSafeError,
     UnprocessableEntityError,
     VERSION as TYPESAFE_SDK_VERSION,
 } from '@typesafe-ai/sdk';
+
+import {
+    assertTypeSafeActive,
+    localTypeSafeFailure,
+    prepareTypeSafeRequest,
+    sendTypeSafeRequest,
+    type PreparedTypeSafeRequest,
+} from '../typesafeRequest.ts';
 
 import {
     refuse,
@@ -41,10 +49,11 @@ import {
     type SemanticFailureCode,
 } from './contracts.ts';
 
+import type { JsonValue } from '../canonicalRecord.ts';
 import type { SemanticBudgetProfile } from './rules.ts';
 
 /** Explicit endpoint and model. Environment fallbacks exist in the SDK and must never decide these. */
-export const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai';
+export { TYPESAFE_ENDPOINT } from '../typesafeRequest.ts';
 export const TYPESAFE_MODEL = 'jev-1.13.0';
 export const TYPESAFE_API_KEY_ENV = 'TYPESAFE_API_KEY';
 
@@ -66,6 +75,7 @@ export type SemanticProviderPort = {
         model: string;
         signal: AbortSignal;
         timeoutMs: number;
+        prepared: PreparedTypeSafeRequest;
     }) => Promise<SemanticRawResponse>;
 };
 
@@ -74,32 +84,17 @@ export type SemanticProviderPort = {
  * `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, or `TYPESAFE_LOG_LEVEL` in the environment cannot
  * redirect the endpoint, swap the model, or turn on unredacted body logging.
  */
-export function createSdkProviderPort(input: { apiKey: string; model?: string }): SemanticProviderPort {
-    const model = input.model ?? TYPESAFE_MODEL;
-    const client = new TypeSafeClient({
-        apiKey: input.apiKey,
-        baseURL: TYPESAFE_ENDPOINT,
-        defaultModel: model,
-        logLevel: 'warn',
-        timeout: 5_000,
-        retry: { maxRetries: 0 },
-        dangerouslyAllowBrowser: false,
-    });
+export function createSdkProviderPort(input: { apiKey: string; model?: string; fetch?: Fetch }): SemanticProviderPort {
     return {
         systemOne: async (request) => {
-            const result = await client.systemOne(
-                {
-                    state: request.state as never,
-                    questions: request.questions as never,
-                    model: request.model,
-                },
-                { signal: request.signal, timeout: request.timeoutMs }
-            );
-            return {
-                model: result.model,
-                answers: result.answers,
-                usage: result.usage,
-            };
+            const result = await sendTypeSafeRequest({
+                prepared: request.prepared,
+                apiKey: input.apiKey,
+                signal: request.signal,
+                timeoutMs: request.timeoutMs,
+                fetch: input.fetch,
+            });
+            return { model: result.model, answers: result.answers, usage: result.usage };
         },
     };
 }
@@ -118,6 +113,10 @@ const REQUEST_TOO_LARGE_PROVIDER_TOKEN = 'max_tokens_exceeded';
  * adapter; everything else is terminal, including authentication, invalid requests, and aborts.
  */
 export function classifyProviderError(error: unknown): { code: SemanticFailureCode; transient: boolean } {
+    const local = localTypeSafeFailure(error);
+    if (local !== undefined) {
+        return { code: local.code, transient: false };
+    }
     if (error instanceof APIUserAbortError) {
         return { code: 'cancelled', transient: false };
     }
@@ -186,11 +185,7 @@ export type SemanticUsageTotals = {
  * this, so the live path consuming it unchecked was an asymmetry: a hostile or buggy token count
  * would inflate the estimated cost, or poison the whole report when the writer re-validated it.
  */
-export function readUsage(
-    value: unknown,
-    label: string,
-    maxInputTokens?: number
-): { input_tokens: number; output_tokens: number } | undefined {
+export function readUsage(value: unknown, label: string): { input_tokens: number; output_tokens: number } | undefined {
     if (value === undefined) {
         return undefined;
     }
@@ -203,15 +198,6 @@ export function readUsage(
     }
     if (!Number.isSafeInteger(tokens.output_tokens) || (tokens.output_tokens as number) < 0) {
         refuse('invalid_response', `${label} output_tokens must be a non-negative safe integer`);
-    }
-    // A token cannot cover less than one byte of the request we serialized, so a count above the
-    // submitted byte length is impossible rather than merely large. Without this the reported cost is
-    // entirely provider-controlled: a schema-valid but hostile count inflates it without limit.
-    if (maxInputTokens !== undefined && (tokens.input_tokens as number) > maxInputTokens) {
-        refuse(
-            'invalid_response',
-            `${label} input_tokens ${String(tokens.input_tokens)} exceeds the ${String(maxInputTokens)} bytes submitted, which no tokenization can produce`
-        );
     }
     return { input_tokens: tokens.input_tokens as number, output_tokens: tokens.output_tokens as number };
 }
@@ -324,8 +310,13 @@ export function createBudgetController(profile: SemanticBudgetProfile): Semantic
                 usage.attemptsWithUnknownUsage += 1;
                 return;
             }
-            usage.actualInputTokens += returned.input_tokens;
-            usage.estimatedInputTokens += estimatedTokens;
+            const actual = usage.actualInputTokens + returned.input_tokens;
+            const estimated = usage.estimatedInputTokens + estimatedTokens;
+            if (!Number.isSafeInteger(actual) || !Number.isSafeInteger(estimated)) {
+                refuse('invalid_response', 'TypeSafe aggregate usage must remain a non-negative safe integer');
+            }
+            usage.actualInputTokens = actual;
+            usage.estimatedInputTokens = estimated;
         },
         totals: () => ({
             networkAttempts: usage.networkAttempts,
@@ -352,8 +343,8 @@ export function computeResponseCacheKey(input: {
         evidenceSelectionVersion: SEMANTIC_EVIDENCE_SELECTION_VERSION,
         sdkVersion: TYPESAFE_SDK_VERSION_FOR_CACHE,
         model: input.model,
-        state: input.state as never,
-        questions: input.questions as never,
+        state: input.state as JsonValue,
+        questions: input.questions as JsonValue,
     });
 }
 
@@ -402,7 +393,7 @@ export function createFileCache(directory: string): SemanticCachePort {
  * Validates a cached or replayed response. Only normalized, schema-checked responses are ever stored,
  * so an unvalidated payload can never be replayed as a successful assessment.
  */
-export function parseCachedResponse(value: unknown, label: string, maxInputTokens?: number): SemanticRawResponse {
+export function parseCachedResponse(value: unknown, label: string): SemanticRawResponse {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         refuse('invalid_response', `${label} must be an object`);
     }
@@ -416,7 +407,7 @@ export function parseCachedResponse(value: unknown, label: string, maxInputToken
     return {
         model: record.model,
         answers: record.answers as Readonly<Record<string, unknown>>,
-        usage: readUsage(record.usage, `${label} usage`, maxInputTokens),
+        usage: readUsage(record.usage, `${label} usage`),
     };
 }
 
@@ -449,7 +440,7 @@ function retryAfterMs(error: unknown): number | undefined {
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
         if (signal.aborted) {
-            reject(new DOMException('aborted', 'AbortError'));
+            reject(new SemanticFailure('cancelled', 'the assessment was cancelled during retry wait'));
             return;
         }
         const timer = setTimeout(() => {
@@ -458,7 +449,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
         }, ms);
         const onAbort = (): void => {
             clearTimeout(timer);
-            reject(new DOMException('aborted', 'AbortError'));
+            reject(new SemanticFailure('cancelled', 'the assessment was cancelled during retry wait'));
         };
         signal.addEventListener('abort', onAbort, { once: true });
     });
@@ -484,33 +475,22 @@ export async function assessUnit(input: {
     now?: () => number;
 }): Promise<SemanticAssessmentResult> {
     const now = input.now ?? (() => Date.now());
-    const cacheKey = computeResponseCacheKey({
-        state: input.state,
-        questions: input.questions,
-        model: input.requestedModel,
+    const prepared = prepareTypeSafeRequest({
+        payload: { state: input.state, questions: input.questions, model: input.requestedModel },
+        maxStatePlusQuestionBytes: input.profile.maxStatePlusQuestionBytes,
+        maxRequestBytes: input.profile.maxRequestBytes,
+        signal: input.signal,
     });
-    // Serialized before the cache read so the token-magnitude bound applies to a cached response too.
-    const body = JSON.stringify({ state: input.state, questions: input.questions, model: input.requestedModel });
-    const cachedBytes = Buffer.byteLength(body, 'utf8');
-    const cached = input.cache.read(cacheKey);
+    const cacheKey = computeResponseCacheKey(prepared.payload);
+    const cached = await input.cache.read(cacheKey);
+    assertTypeSafeActive(input.signal);
     if (cached !== undefined) {
-        const response = parseCachedResponse(cached, `cache entry ${cacheKey.slice(0, 12)}`, cachedBytes);
+        const response = parseCachedResponse(cached, `cache entry ${cacheKey.slice(0, 12)}`);
         assertReturnedModel(response.model, input.requestedModel);
         input.budget.recordCacheHit();
         return { cacheKey, response, attempts: [], fromCache: true, requestedModel: input.requestedModel };
     }
-
-    const bytes = cachedBytes;
-    // A per-request size limit is a property of this unit, exactly as the controller's own
-    // per-request branch is: the refusal is recorded against the unit and the run keeps its remaining
-    // units assessable, so it must not share the whole-run budget's code.
-    const stateBytes = Buffer.byteLength(canonicalBytes({ state: input.state, questions: input.questions }), 'utf8');
-    if (stateBytes > input.profile.maxStatePlusQuestionBytes) {
-        refuse(
-            'request_too_large',
-            `state plus longest question is ${String(stateBytes)} bytes, over the ${String(input.profile.maxStatePlusQuestionBytes)}-byte limit`
-        );
-    }
+    const bytes = prepared.bodyBytes;
 
     input.budget.recordLogicalRequest();
     const outcome = await attemptWithRetries({
@@ -519,8 +499,7 @@ export async function assessUnit(input: {
         budget: input.budget,
         profile: input.profile,
         deadline: input.deadline,
-        state: input.state,
-        questions: input.questions,
+        prepared,
         requestedModel: input.requestedModel,
         signal: input.signal,
         bytes,
@@ -552,8 +531,7 @@ async function attemptWithRetries(input: {
     budget: SemanticBudgetController;
     profile: SemanticBudgetProfile;
     deadline: number;
-    state: unknown;
-    questions: SemanticProviderQuestions;
+    prepared: PreparedTypeSafeRequest;
     requestedModel: string;
     signal: AbortSignal;
     bytes: number;
@@ -580,17 +558,20 @@ async function attemptWithRetries(input: {
         }
         const attemptTimeout = Math.min(input.profile.attemptTimeoutMs, remaining);
         try {
+            assertTypeSafeActive(input.signal);
             const response = await input.port.systemOne({
-                state: input.state,
-                questions: input.questions,
+                state: input.prepared.payload.state,
+                questions: input.prepared.payload.questions,
+                prepared: input.prepared,
                 model: input.requestedModel,
                 signal: input.signal,
                 timeoutMs: attemptTimeout,
             });
+            assertTypeSafeActive(input.signal);
             assertReturnedModel(response.model, input.requestedModel);
             attempts.push({ attempt: reservation.attempt, retry: attemptIndex, outcome: 'ok', bytes: input.bytes });
             input.budget.recordUsage(
-                readUsage(response.usage, 'TypeSafe response usage', input.bytes),
+                readUsage(response.usage, 'TypeSafe response usage'),
                 estimateInputTokens(input.bytes)
             );
             input.cache.write(input.cacheKey, response);
@@ -598,9 +579,11 @@ async function attemptWithRetries(input: {
         } catch (error) {
             // A refusal this adapter raised is not a provider failure: a model mismatch or a schema
             // violation is terminal and must never be retried or reclassified as transient.
-            if (error instanceof SemanticFailure) {
-                throw error;
+            const local = localTypeSafeFailure(error);
+            if (local !== undefined) {
+                throw local;
             }
+            assertTypeSafeActive(input.signal);
             const classified = classifyProviderError(error);
             const message = error instanceof Error ? error.message : String(error);
             attempts.push({
@@ -643,10 +626,6 @@ async function attemptWithRetries(input: {
         failure.code,
         `TypeSafe assessment failed after ${String(attempts.length)} attempt(s): ${failure.message}`
     );
-}
-
-function canonicalBytes(value: unknown): string {
-    return JSON.stringify(value);
 }
 
 /** The returned model must be exactly the pinned model that was requested. */
