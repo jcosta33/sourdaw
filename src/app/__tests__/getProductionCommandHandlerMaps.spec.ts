@@ -51,8 +51,16 @@ describe('getProductionCommandHandlerMaps', () => {
                         label: 'Stale current action',
                         action: { type: 'setTempo', payload: { bpm: 140 } },
                         actionOperationVersion: 2,
-                        inverseAction: { type: 'setTempo', payload: { bpm: 128 } },
+                        inverseAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 128, expectedBpm: 140, tempoChangeId: null },
+                        },
                         inverseActionOperationVersion: 2,
+                        redoAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 140, expectedBpm: 128, tempoChangeId: null },
+                        },
+                        redoActionOperationVersion: 2,
                         timestamp: 2,
                         source: 'ai',
                     },
@@ -61,7 +69,14 @@ describe('getProductionCommandHandlerMaps', () => {
                         kind: 'action',
                         label: 'Current action',
                         action: { type: 'setTempo', payload: { bpm: 128 } },
-                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        inverseAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 120, expectedBpm: 128, tempoChangeId: null },
+                        },
+                        redoAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 128, expectedBpm: 120, tempoChangeId: null },
+                        },
                         timestamp: 3,
                         source: 'manual',
                     },
@@ -77,6 +92,14 @@ describe('getProductionCommandHandlerMaps', () => {
 
         expect(handlerMaps).toHaveLength(36);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
+        expect(actionTypes).toEqual(
+            expect.arrayContaining([
+                'addTempoMapChange',
+                'removeTempoMapChange',
+                'restoreTempoMapChange',
+                'updateTempoMapChange',
+            ])
+        );
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)
         ).toEqual([]);
