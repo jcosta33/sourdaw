@@ -2225,7 +2225,10 @@ function isStatedBeatCount(maskedScope: string, number: PromptNumber): boolean {
  * descriptor carries, so the figure is evidence about the creation and never about a treatment
  * value on an existing track. Seconds and minutes stay out: descriptors state those units, so a
  * figure carrying one may be the treatment value itself. The joining reads through the hyphen a
- * compound states it with: "a 4-beat loop" carries the same figure "4 beats" does.
+ * compound states it with, but only when the unit word survives masking: a singular "beat"
+ * hyphen-attached to the figure is replaced by a plan-invented clip reference before this
+ * predicate runs (the masking-collision issue carries the fix), so the plural compound is the
+ * covered hyphenated form.
  */
 function isStatedArrangementDuration(maskedScope: string, number: PromptNumber): boolean {
     return /^[-\s]*(?:beats?|bars?|measures?)\b/iu.test(maskedScope.slice(number.end));
