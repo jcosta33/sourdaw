@@ -482,7 +482,7 @@ export async function assessUnit(input: {
         signal: input.signal,
     });
     const cacheKey = computeResponseCacheKey(prepared.payload);
-    const cached = await input.cache.read(cacheKey);
+    const cached = input.cache.read(cacheKey);
     assertTypeSafeActive(input.signal);
     if (cached !== undefined) {
         const response = parseCachedResponse(cached, `cache entry ${cacheKey.slice(0, 12)}`);

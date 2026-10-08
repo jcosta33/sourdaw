@@ -5709,12 +5709,49 @@ describe('complete transport admission', () => {
         });
     });
 
-    it('does not accept a cache answer after its read cancels the request', async () => {
+    it('refuses an unresolved Promise-shaped cache answer without awaiting it', async () => {
+        const controller = new AbortController();
+        let reads = 0;
+        let calls = 0;
+        let writes = 0;
+        const input = request({
+            signal: controller.signal,
+            cache: {
+                read: () => {
+                    reads += 1;
+                    return new Promise<unknown>(() => undefined);
+                },
+                write: () => {
+                    writes += 1;
+                },
+            },
+            port: {
+                systemOne: async () => {
+                    calls += 1;
+                    return { model: TYPESAFE_MODEL, answers: {} };
+                },
+            },
+        });
+        const result = assessUnit(input);
+        controller.abort();
+        await expect(result).rejects.toMatchObject({ code: 'invalid_response' });
+        expect(reads).toBe(1);
+        expect(calls).toBe(0);
+        expect(writes).toBe(0);
+        expect(input.budget.totals()).toMatchObject({
+            logicalRequests: 0,
+            networkAttempts: 0,
+            retries: 0,
+            cacheHits: 0,
+        });
+    });
+
+    it('does not accept a cache answer after its synchronous read cancels the request', async () => {
         const controller = new AbortController();
         const input = request({
             signal: controller.signal,
             cache: {
-                read: async () => {
+                read: () => {
                     controller.abort();
                     return { model: TYPESAFE_MODEL, answers: {} };
                 },
@@ -5821,13 +5858,13 @@ describe('complete transport admission', () => {
         expect(input.budget.totals().networkAttempts).toBe(0);
     });
 
-    it('passes the frozen snapshot after an awaited cache read and preserves the golden identity', async () => {
+    it('passes the frozen snapshot through a synchronous cache read and preserves the golden identity', async () => {
         const state = { evidence: 'ordinary text' };
         let observedKey = '';
         const input = request({
             state,
             cache: {
-                read: async (key) => {
+                read: (key) => {
                     observedKey = key;
                     state.evidence = 'mutated';
                     return undefined;

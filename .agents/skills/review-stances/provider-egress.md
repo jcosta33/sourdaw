@@ -54,9 +54,11 @@ A measured request object is insufficient evidence of the SDK's wire body. Captu
 SDK's actual `fetch` `init.body` and compare it with the frozen prepared string for escaping,
 multibyte text, nested descriptions, property order, and mutation after preparation. Force an SDK
 serialization mismatch and require refusal before delegated fetch, one caller attempt, and no retry
-even when the SDK wraps the local cause in `APIConnectionError`. Abort before cache read, during an
-awaited cache read, before handoff, after provider success, during body delivery, and during retry
-wait; require no accepted answer or cache write after cancellation. A byte cap never establishes a
+even when the SDK wraps the local cause in `APIConnectionError`. Abort before cache read, during a
+synchronous cache callback, before handoff, after provider success, during body delivery, and during
+retry wait; require no accepted answer or cache write after cancellation. Cache reads are synchronous:
+refuse a Promise-shaped answer locally without awaiting it, before budget, provider, or cache-write
+effects, even when that Promise never settles. A byte cap never establishes a
 token-count or dollar cap.
 
 ## Escape: usage aggregation after valid responses
