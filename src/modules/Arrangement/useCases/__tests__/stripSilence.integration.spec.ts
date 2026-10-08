@@ -12,6 +12,7 @@ import {
     clearUndoHistory,
     executeAppAction,
     executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -459,6 +460,25 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             expect(trackStore.value!.tracks).toEqual(tracksBefore);
         });
 
+        // Red when only the recorded previous state is compared: a replacement whose segments were
+        // renamed would commit under the approved command's name.
+        it('refuses a carried plan whose replacement was altered, leaving the project unchanged', async () => {
+            const action = planStrip();
+            action.payload.replacement = {
+                ...action.payload.replacement!,
+                clips: action.payload.replacement!.clips.map((clip) => ({ ...clip, name: 'Altered' })),
+            };
+            const tracksBefore = structuredClone(trackStore.value!.tracks);
+
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: stripSilence: The strip silence this command recorded no longer matches the project',
+            });
+            expect(trackStore.value!.tracks).toEqual(tracksBefore);
+        });
+
         it('refuses a carried plan whose segment id another clip took since it was planned', async () => {
             const action = planStrip();
             const takenId = action.payload.replacement!.clips[0]!.id;
@@ -478,6 +498,48 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             });
             expect(trackStore.value!.tracks).toEqual(tracksBefore);
         });
+    });
+
+    // Red when macro replay keeps the recorded strip plan: the clip changed since recording, so the
+    // carried plan is stale and the replay would be refused instead of planned against the project.
+    it('re-plans a recorded strip macro against the clip as it now is', async () => {
+        registerHandlerMap(getMacroHandlers());
+        const recorded: Extract<AppAction, { type: 'stripSilence' }> = {
+            type: 'stripSilence',
+            payload: { clipId: 'clip-1' },
+        };
+        handleStripSilence.describe(recorded);
+        if (!recorded.payload.expected || !recorded.payload.replacement) {
+            throw new Error('Expected a planned strip');
+        }
+        const recordedSegmentIds = recorded.payload.replacement.clips.map((clip) => clip.id);
+        expect(recordedSegmentIds).toHaveLength(2);
+        macroStore.set({
+            macros: [{ id: 'strip-macro', name: 'Strip', actions: [structuredClone(recorded)], createdAt: 1 }],
+            recording: false,
+            currentRecording: [],
+        });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: [
+                {
+                    ...state.tracks[0]!,
+                    clips: state.tracks[0]!.clips.map((clip) => ({ ...clip, gain: 0.5 })),
+                },
+            ],
+        });
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'strip-macro' } });
+
+        const clips = trackStore.value!.tracks[0]!.clips;
+        expect(clips).toHaveLength(2);
+        expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
+        expect(clips.map((clip) => clip.id)).not.toEqual(recordedSegmentIds);
+        expect(clips).toMatchObject([
+            { startBeat: 17, endBeat: 19, gain: 0.5 },
+            { startBeat: 23, endBeat: 26, gain: 0.5 },
+        ]);
     });
 
     it('round-trips the full satellite transition through undo (regression #2108)', async () => {
