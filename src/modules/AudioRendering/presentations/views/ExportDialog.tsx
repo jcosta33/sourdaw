@@ -428,6 +428,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setProgress(0);
         setStatusText('Heating the offline oven...');
 
+        // Set once the browser save's commit has started. From then on the export has succeeded and a
+        // Cancel no longer decides its outcome, so the export ends in exactly one of the two states.
+        let committed = false;
+        const endedCancelled = (): boolean => cancelledRef.current && !committed;
+
         try {
             // Restore audio buffers from IndexedDB before rendering.
             // The primary CRDT load path (loadProject → projectCrdtToStores) does not
@@ -745,6 +750,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         await writable.abort();
                         return;
                     }
+                    committed = true;
                     await writable.close();
                 } else {
                     // Fallback
@@ -764,7 +770,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }, 2500);
         } catch (error) {
             // A Cancel's own failure is reported by the finally below.
-            if (!cancelledRef.current) {
+            if (!endedCancelled()) {
                 const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
@@ -774,9 +780,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
         } finally {
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
-            if (cancelledRef.current) {
-                // Every Cancel exit ends here, whether it threw or returned: nothing was saved, so
-                // the bar must not keep the encoder's last figure, and 100 would show the finished state.
+            if (endedCancelled()) {
+                // Every Cancel exit before the commit ends here, whether it threw or returned: the
+                // export is reported as cancelled, so the bar must not keep the encoder's last
+                // figure, and 100 would show the finished state.
                 setProgress(0);
                 setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);

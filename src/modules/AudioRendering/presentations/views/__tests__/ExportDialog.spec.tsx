@@ -836,6 +836,51 @@ describe('ExportDialog', () => {
         }
     });
 
+    it('ends succeeded, and only succeeded, when Cancel is pressed while the browser save is closing', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        encodeWavReportingDone();
+        const closing = createDeferred<void>();
+        const writable = {
+            write: vi.fn(() => Promise.resolve()),
+            close: vi.fn(() => closing.promise),
+            abort: vi.fn(() => Promise.resolve()),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi.fn().mockResolvedValue({ createWritable: vi.fn(() => Promise.resolve(writable)) })
+        );
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => {
+                expect(writable.close).toHaveBeenCalledTimes(1);
+            });
+
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                closing.resolve();
+            });
+
+            await waitFor(() => {
+                expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+            });
+            // The file was committed, so the export is finished and nothing re-reports it as cancelled.
+            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+            expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+            expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
+            expect(writable.abort).not.toHaveBeenCalled();
+            // Outlast the cancelled-state unlock delay: a reset would land here.
+            await new Promise((resolve) => setTimeout(resolve, 1700));
+            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+        } finally {
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
     it('ends cancelled, not finished, when Cancel is pressed while the last format is being written', async () => {
         encodeWavReportingDone();
         const writing = createDeferred<void>();
