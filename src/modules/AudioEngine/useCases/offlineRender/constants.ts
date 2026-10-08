@@ -91,19 +91,20 @@ export const NO_PROGRESS_REFERENCE_SAMPLE_RATE = 48_000;
 export const NO_PROGRESS_POLL_MS = 1_000;
 
 /**
- * How long a musician's export waits for a preempted agent measurement to release the render lock
- * before it fails (#4768).
+ * How long a musician's export waits for a preempted agent render, a measurement or a section render,
+ * to release the render lock before it fails (#4768, #5036).
  *
  * A stopped segmented render ends at its next checkpoint, one {@link RENDER_SEGMENT_SECONDS} of
  * audio away, or when its own watchdog abandons it after {@link NO_PROGRESS_TIMEOUT_MS} without a
- * checkpoint, whichever is first. Measurements render at 48 kHz, the reference rate that budget is
- * stated at, so 10 s plus one {@link NO_PROGRESS_POLL_MS} poll is the longest a render that honours
- * its stop takes to settle. The extra 4 s covers the teardown that follows the stop (backend
- * disposal, the scope closing) so a measurement that is merely slow to unwind is not mistaken for a
- * stuck one. A measurement still holding the lock past this has outlived its own watchdog, and the
- * musician is told so rather than left watching an export that never starts.
+ * checkpoint, whichever is first. At 48 kHz, the reference rate that budget is stated at, 10 s plus
+ * one {@link NO_PROGRESS_POLL_MS} poll is the longest a render that honours its stop takes to
+ * settle; a section render at a higher rate has a proportionally longer watchdog, but a render that
+ * is progressing still stops at its next checkpoint, well inside this bound. The extra 4 s covers
+ * the teardown that follows the stop (backend disposal, the scope closing) so a render that is
+ * merely slow to unwind is not mistaken for a stuck one. A render still holding the lock past this
+ * is stuck, and the musician is told so rather than left watching an export that never starts.
  */
-export const MEASUREMENT_RELEASE_TIMEOUT_MS = NO_PROGRESS_TIMEOUT_MS + NO_PROGRESS_POLL_MS + 4_000;
+export const RENDER_RELEASE_TIMEOUT_MS = NO_PROGRESS_TIMEOUT_MS + NO_PROGRESS_POLL_MS + 4_000;
 
 export const YIELD_EVERY_N_NOTES = 200;
 

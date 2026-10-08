@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getPrecedingBars } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -12,6 +11,7 @@ import { ensureTrackStrips } from '../ensureTrackStrips';
 import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
+import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
 
@@ -48,23 +48,7 @@ export async function startPlayback(): Promise<void> {
     });
     ensureTrackStrips();
 
-    let startPosition = state.playheadPosition;
-    if (state.preRollEnabled && state.preRollBars > 0) {
-        // Pre-roll is a count of *bars* before the play point, so its length has
-        // to come from the meter governing those bars. Multiplying the transport
-        // numerator by the bar count read neither the time-signature map nor the
-        // denominator, so a project with a meter change — or any meter that is
-        // not x/4 — rolled in from the wrong beat.
-        const preRollBars = getPrecedingBars(
-            timeSignatureMapStore.value?.changes ?? [],
-            startPosition,
-            state.preRollBars,
-            state.timeSignatureNumerator,
-            state.timeSignatureDenominator
-        );
-        // `preRollBars > 0` is the branch condition, so there is always a bar here.
-        startPosition = Math.max(0, preRollBars[0]!.startBeat);
-    }
+    const startPosition = resolveRollStartBeat(state, timeSignatureMapStore.value?.changes ?? []);
 
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
