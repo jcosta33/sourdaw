@@ -1,12 +1,13 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-import { reversedClipAudioOffsetBeats } from './reversedClipAudioOffsetBeats';
+import { reversedClipAudioSource } from './reversedClipAudioSource';
 
 /**
  * `reversedBufferId` is resolved by the command layer before dispatch rather than minted
@@ -29,6 +30,13 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
     if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
         return false;
     }
+    if (clip.loopEnabled) {
+        notifyUser(
+            'Reverse cannot preserve the playback window of a looped clip. Bounce the whole looped clip to audio first.',
+            'error'
+        );
+        return false;
+    }
 
     const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
     if (!buffer) {
@@ -47,11 +55,14 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
 
     const newId = reversedBufferId ?? `reversed-${clip.audioBufferId}-${Date.now()}`;
     const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
+    const elapsedTimelineSeconds =
+        readSecondsAtBeat({ beat: clip.endBeat }) - readSecondsAtBeat({ beat: clip.startBeat });
     const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
-        const remappedAudioOffsetBeats = reversedClipAudioOffsetBeats({
-            audioOffsetBeats: candidate.audioOffsetBeats ?? 0,
-            clipLengthBeats: candidate.endBeat - candidate.startBeat,
+        const remappedAudioSource = reversedClipAudioSource({
+            audioOffsetSeconds: candidate.audioOffsetSeconds,
+            audioOffsetBeats: candidate.audioOffsetBeats,
+            elapsedTimelineSeconds,
             bufferLength: buffer.length,
             sampleRate: buffer.sampleRate,
             tempo: clipTempo,
@@ -67,10 +78,10 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             fadeInBeats: candidate.fadeOutBeats,
             fadeOutBeats: candidate.fadeInBeats,
         };
-        if (remappedAudioOffsetBeats === undefined) {
+        if (!remappedAudioSource) {
             return reversedClip;
         }
-        return { ...reversedClip, audioOffsetBeats: remappedAudioOffsetBeats };
+        return { ...reversedClip, ...remappedAudioSource };
     });
     if (!didWrite) {
         return false;

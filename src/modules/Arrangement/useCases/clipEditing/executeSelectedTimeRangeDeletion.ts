@@ -685,11 +685,11 @@ function planTrack(
                 sourceClipId: clip.id,
                 fragmentClipId: identity.targetClipId,
                 clipRelativeSplitBeats: operation.endBeat - clip.startBeat,
-                // Content beats are timeline beats times the consumed stretch
-                // law (reversedClipAudioOffsetBeats) — the same conversion the
-                // ordinary split's warp axis performs. Without it the cut
-                // lands short by the ratio and the fragment inherits markers
-                // for audio the deleted span carried.
+                // The warp content axis converts integrated source seconds to
+                // a legacy buffer-beat alias at the original clip-start tempo,
+                // as ordinary split does. Without it the cut lands short by
+                // the stretch ratio and the fragment inherits markers for
+                // audio the deleted span carried.
                 contentSplitBeats: rightAudioSource
                     ? (rightAudioSource.audioOffsetSeconds * readTempoAtBeat({ beat: clip.startBeat })) / 60
                     : rightAudioOffsetBeats,

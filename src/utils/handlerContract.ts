@@ -541,7 +541,13 @@ export type StripSilenceActionSnapshot = {
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
+export type ClipSplitTakeLaneSnapshot = {
+    readonly version: 1;
+    readonly lanes: readonly CompTakeLaneSnapshot[];
+};
 export type ClipSplitActionSnapshot = {
+    /** Only this split's take/region facets; absent on historical captures. */
+    readonly takeLanes?: ClipSplitTakeLaneSnapshot;
     readonly trackId: string;
     readonly leftClip: ClipStateSnapshot;
     readonly rightClip: ClipStateSnapshot | null;
@@ -2164,6 +2170,9 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Exact canonical and legacy field presence for current undo/redo entries.
+               *  Historical entries omit this and retain their beat-only restore. */
+              audioSource?: AudioSourceStateSnapshot;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
