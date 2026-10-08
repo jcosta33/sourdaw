@@ -691,6 +691,36 @@ describe('review-publication recovery of a landed review among thread-reply revi
         expect(lockOid(fixture.root)).not.toBeUndefined();
     });
 
+    it('refuses and leaves the dossier unbound when a third actor posts an exact copy only by the second inspection', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        const thirdReviewId = 5433790100;
+        const withThird = fakeGitHub({
+            posted: true,
+            reviews: [
+                ...incidentReviews(),
+                restReview(thirdReviewId, 'CHANGES_REQUESTED', renderedBody, AUTHOR_BOT_NODE_ID),
+            ],
+            comments: [
+                ...incidentComments(),
+                restComment(thirdReviewId, 4199790101, 670, landedCommentBodies[0]!, { actor: AUTHOR_BOT_NODE_ID }),
+                restComment(thirdReviewId, 4199790102, 64, landedCommentBodies[1]!, {
+                    actor: AUTHOR_BOT_NODE_ID,
+                    originalPosition: 5,
+                }),
+            ],
+        });
+
+        await expect(
+            recoverWith(fixture.root, fixture.ownerOid, remote.gh, (inspection) =>
+                inspection === 1 ? remote.gh : withThird.gh
+            )
+        ).rejects.toThrow(/unauthorized landed review evidence/);
+        expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+        expect(lockOid(fixture.root)).not.toBeUndefined();
+    });
+
     it('releases again over a dossier already bound to the landed review and leaves it byte-unchanged', async () => {
         const fixture = fixtureFor({ planCarrying: true });
         const remote = fakeGitHub({ posted: false });
