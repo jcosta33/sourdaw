@@ -79,7 +79,7 @@ describe('handleRemoveAllTracks', () => {
                 .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeFirst })
                 .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeSecond });
 
-            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
 
             expect(mocks.removeTrack).toHaveBeenCalledTimes(2);
             expect(mocks.removeTrack).toHaveBeenCalledWith('t1', {
@@ -112,7 +112,7 @@ describe('handleRemoveAllTracks', () => {
                 .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeFirst })
                 .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeSecond });
 
-            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
             await result?.afterAmbiguousCommit?.();
 
             expect(finalizeFirst).toHaveBeenCalledOnce();
@@ -126,12 +126,12 @@ describe('handleRemoveAllTracks', () => {
             expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
         });
 
-        it('keeps runtime ownership when committed track state is unavailable', () => {
+        it('keeps runtime ownership when committed track state is unavailable', async () => {
             mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1' }] }).mockReturnValue(null);
             const finalize = vi.fn();
             mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: finalize });
 
-            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            const result = await handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
             expect(() => result?.afterAmbiguousCommit?.()).toThrow('Committed track state is unavailable');
 
             expect(finalize).not.toHaveBeenCalled();
