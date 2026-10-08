@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeAudioWaveformDrawSpan } from '../audioWaveformSpan';
+import {
+    computeAudioWaveformDrawSpan,
+    getAudioWaveformOccurrences,
+    getAudioWaveformPeakPositions,
+} from '../audioWaveformSpan';
+
+import type { ClipRenderModel, TimelineRenderModel } from '../../../models/TimelineRenderModel';
 
 const secondsPerBeatAt120Bpm = 60 / 120;
 const sampleRate48k = 48_000;
@@ -73,5 +79,137 @@ describe('computeAudioWaveformDrawSpan', () => {
         expect(span.audibleTimelineBeats).toBe(3.5);
         expect(span.startSample).toBe(0);
         expect(span.endSample).toBe(168_000);
+    });
+
+    it('ends signed canonical pre-roll at the inverse beat across an instant marker', () => {
+        const span = computeAudioWaveformDrawSpan({
+            offsetBeats: 4,
+            offsetSeconds: -2,
+            stretchRatio: 1,
+            clipBeats: 8,
+            secondsPerBeat: 0.5,
+            sampleRate: 100,
+            tempoChanges: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 2, tempo: 60, curve: 'instant' },
+            ],
+            baseTempo: 120,
+        });
+
+        expect(span.leadingSilenceBeats).toBeCloseTo(3, 10);
+        expect(span.startSample).toBe(0);
+        expect(span.endSample).toBe(500);
+    });
+
+    it('rebuilds cached loop windows when the map or preview geometry changes', () => {
+        const clip: ClipRenderModel = {
+            id: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            name: 'Audio',
+            color: '#000',
+            type: 'audio',
+            muted: false,
+            midiNotes: [],
+            audioBufferId: 'buffer',
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 2,
+            stretchMode: 'off',
+            stretchRatio: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        const model: TimelineRenderModel = {
+            dataDirty: true,
+            tracks: [],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 8,
+            beatsPerPixel: 0.04,
+            pixelsPerBeat: 25,
+            trackHeight: 40,
+            scrollY: 0,
+            tempo: 120,
+            tempoChanges: [],
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        const input = { clip, model, sampleRate: 100, bufferLength: 1000, maxBins: 600 };
+        const first = getAudioWaveformOccurrences(input);
+        expect(first).toHaveLength(2);
+        expect(first[0]!.span.endSample).toBe(200);
+        expect(first[1]!.span.endSample).toBe(200);
+        expect(getAudioWaveformOccurrences(input)).toBe(first);
+
+        model.tempoChanges = [{ id: 'slow', beat: 4, tempo: 60, curve: 'instant' }];
+        const afterMap = getAudioWaveformOccurrences(input);
+        expect(afterMap).not.toBe(first);
+        expect(afterMap[1]!.span.endSample).toBe(400);
+
+        clip.endBeat = 6;
+        const afterPreview = getAudioWaveformOccurrences(input);
+        expect(afterPreview).not.toBe(afterMap);
+        expect(afterPreview[1]!.span.endSample).toBe(200);
+    });
+
+    it('requests only the visible tail of a long source window and places its bins there', () => {
+        const clip: ClipRenderModel = {
+            id: 'long-audio',
+            startBeat: 0,
+            endBeat: 100,
+            name: 'Audio',
+            color: '#000',
+            type: 'audio',
+            muted: false,
+            midiNotes: [],
+            audioBufferId: 'buffer',
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 20,
+            stretchMode: 'off',
+            stretchRatio: 2,
+            loopEnabled: false,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        const model: TimelineRenderModel = {
+            dataDirty: true,
+            tracks: [],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 98,
+            viewportEndBeat: 100,
+            beatsPerPixel: 0.04,
+            pixelsPerBeat: 25,
+            trackHeight: 40,
+            scrollY: 0,
+            tempo: 120,
+            tempoChanges: [],
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+
+        const occurrences = getAudioWaveformOccurrences({
+            clip,
+            model,
+            sampleRate: 100,
+            bufferLength: 10_000,
+            maxBins: 600,
+        });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]!.span.startSample).toBe(4_900);
+        expect(occurrences[0]!.span.endSample).toBe(5_000);
+        expect(occurrences[0]!.numBins).toBe(50);
+        const positions = getAudioWaveformPeakPositions({ clip, model, occurrence: occurrences[0]!, binCount: 2 });
+        expect(positions[0]).toBeCloseTo(0, 10);
+        expect(positions[1]).toBeCloseTo(25, 10);
+        expect(positions[2]).toBeCloseTo(50, 10);
     });
 });

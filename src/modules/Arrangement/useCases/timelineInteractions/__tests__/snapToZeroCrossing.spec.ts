@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { snapToZeroCrossing } from '../snapToZeroCrossing';
 
-import type { SnapSplitBeatToZeroCrossingInput } from '../../../services/snapSplitBeatToZeroCrossing';
-
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     snapSplitBeatToZeroCrossing: vi.fn(),
@@ -21,6 +19,9 @@ vi.mock('#/modules/Transport/stores', () => ({
     transportStore: mocks.transportStore,
     readTempoAtBeat: ({ beat }: { beat: number }) =>
         (beat === 4 ? mocks.clipStartTempo : null) ?? mocks.transportStore.value?.tempo ?? 120,
+    readSecondsAtBeat: ({ beat }: { beat: number }) => (beat * 60) / (mocks.transportStore.value?.tempo ?? 120),
+    readBeatAtSamples: ({ samples, sampleRate }: { samples: number; sampleRate: number }) =>
+        (samples / sampleRate) * ((mocks.transportStore.value?.tempo ?? 120) / 60),
 }));
 
 vi.mock('../../../services/snapSplitBeatToZeroCrossing', () => ({
@@ -62,13 +63,17 @@ describe('snapToZeroCrossing use case', () => {
 
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(audioBuffer.getChannelData).toHaveBeenCalledWith(0);
-        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith({
-            clip,
-            splitBeat: 2,
-            channelData,
-            sampleRate: 48000,
-            tempo: 60,
-        } satisfies SnapSplitBeatToZeroCrossingInput);
+        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clip,
+                splitBeat: 2,
+                channelData,
+                sampleRate: 48000,
+                tempo: 60,
+                secondsAtBeat: expect.any(Function),
+                beatAtSeconds: expect.any(Function),
+            })
+        );
     });
 
     it('passes tempo at the clip start when it differs from project tempo', () => {
@@ -114,12 +119,16 @@ describe('snapToZeroCrossing use case', () => {
 
         expect(snapToZeroCrossing(clip, 2)).toBe(2.25);
 
-        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith({
-            clip,
-            splitBeat: 2,
-            channelData,
-            sampleRate: 48000,
-            tempo: 120,
-        } satisfies SnapSplitBeatToZeroCrossingInput);
+        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clip,
+                splitBeat: 2,
+                channelData,
+                sampleRate: 48000,
+                tempo: 120,
+                secondsAtBeat: expect.any(Function),
+                beatAtSeconds: expect.any(Function),
+            })
+        );
     });
 });

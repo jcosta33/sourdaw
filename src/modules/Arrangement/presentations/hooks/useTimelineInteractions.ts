@@ -458,13 +458,20 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 for (const time of state.tracks) {
                     for (const clip of time.clips) {
                         if (allIds.includes(clip.id)) {
-                            originals.set(clip.id, {
+                            const original: ClipPreviewPosition = {
                                 trackId: time.id,
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                                 audioOffsetBeats: clip.audioOffsetBeats,
                                 midiOffsetBeats: clip.midiOffsetBeats,
-                            });
+                            };
+                            if (clip.type === 'audio') {
+                                original.audioOffsetSeconds = resolveAudioSourceOffsetSeconds(
+                                    clip,
+                                    readTempoAtBeat({ beat: clip.startBeat })
+                                );
+                            }
+                            originals.set(clip.id, original);
                             types.set(clip.id, clip.type);
                             if (clip.locked) {
                                 locked.add(clip.id);
@@ -575,10 +582,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                             endBeat: clip.endBeat,
                             audioOffsetBeats: clip.audioOffsetBeats,
                             midiOffsetBeats: clip.midiOffsetBeats,
-                        };
+                        } satisfies ClipPreviewPosition;
+                        const previewPosition: ClipPreviewPosition = { ...pos };
+                        if (clip.type === 'audio') {
+                            previewPosition.audioOffsetSeconds = resolveAudioSourceOffsetSeconds(
+                                clip,
+                                readTempoAtBeat({ beat: clip.startBeat })
+                            );
+                        }
                         clipDragPreviewRef.current = {
-                            positions: new Map([[clipId, { ...pos }]]),
-                            originals: new Map([[clipId, { ...pos }]]),
+                            positions: new Map([[clipId, { ...previewPosition }]]),
+                            originals: new Map([[clipId, { ...previewPosition }]]),
                         };
                     }
                 }
@@ -587,11 +601,15 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 if (preview) {
                     const current = preview.positions.get(clipId);
                     if (current) {
-                        preview.positions.set(clipId, {
+                        const next: ClipPreviewPosition = {
                             ...current,
                             audioOffsetBeats: clipType === 'audio' ? newOffset : current.audioOffsetBeats,
                             midiOffsetBeats: clipType === 'midi' ? newOffset : current.midiOffsetBeats,
-                        });
+                        };
+                        if (clipType === 'audio' && sourceOffset.offsetSeconds !== undefined) {
+                            next.audioOffsetSeconds = sourceOffset.offsetSeconds;
+                        }
+                        preview.positions.set(clipId, next);
                     }
                 }
                 previewDirtyFlag.value = true;
@@ -632,13 +650,29 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     // instead of sliding with it (#4989).
                     const delta = newStart - orig.startBeat;
                     const clipType = dragContextRef.current?.types.get(dragState.clipId);
-                    preview.positions.set(dragState.clipId, {
+                    const position: ClipPreviewPosition = {
                         ...orig,
                         startBeat: newStart,
                         audioOffsetBeats: (orig.audioOffsetBeats ?? 0) + delta,
                         midiOffsetBeats:
                             clipType === 'midi' ? (orig.midiOffsetBeats ?? 0) + delta : orig.midiOffsetBeats,
-                    });
+                    };
+                    if (clipType === 'audio' && orig.audioOffsetSeconds !== undefined) {
+                        const clip = trackStore.value?.tracks
+                            .flatMap((track) => track.clips)
+                            .find((candidate) => candidate.id === dragState.clipId);
+                        const stretch = clip ? consumedStretchFactor(clip) : 1;
+                        const elapsedSeconds =
+                            readSecondsAtBeat({ beat: newStart }) - readSecondsAtBeat({ beat: orig.startBeat });
+                        const sourceSeconds = getAudioSourcePositionSeconds(
+                            orig.audioOffsetSeconds,
+                            elapsedSeconds,
+                            stretch
+                        );
+                        position.audioOffsetSeconds = sourceSeconds;
+                        position.audioOffsetBeats = (sourceSeconds * readTempoAtBeat({ beat: newStart })) / 60;
+                    }
+                    preview.positions.set(dragState.clipId, position);
                     previewDirtyFlag.value = true;
                 }
             }

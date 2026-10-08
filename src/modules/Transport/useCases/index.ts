@@ -17,6 +17,7 @@ export { setTempo } from './setTempo';
 export { tempoSourceDependencies } from './tempoSourceDependencies';
 export { setTimeSignature } from './setTimeSignature';
 export { secondsBetweenBeats } from './secondsBetweenBeats';
+export { beatAtSeconds } from './beatAtSeconds';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 export { projectPpqEndpoints } from './projectPpqEndpoints';

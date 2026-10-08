@@ -8,7 +8,7 @@ import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modul
 
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
-import { computeAudioWaveformDrawSpan } from './audioWaveformSpan';
+import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { CLIP_LABEL_FILL_STYLE, CLIP_LABEL_FONT, computeClipLabelLayout } from './clipLabel';
 
 export const drawClip = (
@@ -482,31 +482,16 @@ const drawWaveformPeaks = (
         return;
     }
 
-    // Map clip beats onto audio-buffer samples so trimmed / offset / stretched
-    // clips show the actual portion of the sample that will be played, rather
-    // than the whole buffer squashed into the clip width. A negative offset
-    // also reserves the scheduler's pre-roll as leading silence inside the
-    // clip, so the waveform shows what sounds, not more material than plays.
-    const offsetBeats = clip.audioOffsetBeats ?? 0;
-    const stretchRatio = clip.stretchRatio ?? 1;
-    const clipBeats = clip.endBeat - clip.startBeat;
-    const secondsPerBeat = 60 / (clip.clipStartTempo ?? model.tempo);
-    const sampleRate = buffer.sampleRate;
-    const span = computeAudioWaveformDrawSpan({ offsetBeats, stretchRatio, clipBeats, secondsPerBeat, sampleRate });
-    if (span.audibleTimelineBeats <= 0) {
-        // The pre-roll swallowed the clip; the scheduler starts no source.
+    const occurrences = getAudioWaveformOccurrences({
+        clip,
+        model,
+        sampleRate: buffer.sampleRate,
+        bufferLength: buffer.length,
+        maxBins: 600,
+    });
+    if (occurrences.length === 0) {
         return;
     }
-    const leadingSilencePx = span.leadingSilenceBeats * model.pixelsPerBeat;
-    const waveformWidth = w - leadingSilencePx;
-    const numBins = Math.min(Math.floor(waveformWidth), 600);
-
-    const peaks = getCachedAudioBufferWaveformPeaks({
-        bufferId: clip.audioBufferId,
-        numBins,
-        startSample: span.startSample,
-        endSample: span.endSample,
-    });
 
     const midY = trackY + trackHeight / 2 + 4;
     const amplitude = (trackHeight - padding * 2) * 0.35;
@@ -525,21 +510,30 @@ const drawWaveformPeaks = (
     waveGrad.addColorStop(1, 'rgba(255, 255, 255, 0.28)');
     ctx.fillStyle = waveGrad;
 
-    const drawBinWidth = waveformWidth / peaks.length;
-    const waveStartX = x + padding + leadingSilencePx;
-
-    ctx.beginPath();
-    ctx.moveTo(waveStartX, midY);
-    for (let index = 0; index < peaks.length; index++) {
-        const peak = peaks[index] ?? 0;
-        ctx.lineTo(waveStartX + index * drawBinWidth, midY - peak * amplitude);
+    for (const occurrence of occurrences) {
+        const peaks = getCachedAudioBufferWaveformPeaks({
+            bufferId: clip.audioBufferId,
+            numBins: occurrence.numBins,
+            startSample: occurrence.span.startSample,
+            endSample: occurrence.span.endSample,
+        });
+        if (peaks.length === 0) {
+            continue;
+        }
+        const positions = getAudioWaveformPeakPositions({ clip, model, occurrence, binCount: peaks.length });
+        ctx.beginPath();
+        ctx.moveTo(positions[0]! + padding, midY);
+        for (let index = 0; index < peaks.length; index++) {
+            const peak = peaks[index] ?? 0;
+            ctx.lineTo(positions[index]! + padding, midY - peak * amplitude);
+        }
+        for (let index = peaks.length - 1; index >= 0; index--) {
+            const peak = peaks[index] ?? 0;
+            ctx.lineTo(positions[index]! + padding, midY + peak * amplitude);
+        }
+        ctx.closePath();
+        ctx.fill();
     }
-    for (let index = peaks.length - 1; index >= 0; index--) {
-        const peak = peaks[index] ?? 0;
-        ctx.lineTo(waveStartX + index * drawBinWidth, midY + peak * amplitude);
-    }
-    ctx.closePath();
-    ctx.fill();
     ctx.restore();
 };
 
