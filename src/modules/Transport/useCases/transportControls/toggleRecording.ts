@@ -58,6 +58,12 @@ type CapturePlacementInput = {
     defaultTempo: number;
 };
 
+type CapturePlacement = {
+    startBeat: number;
+    audioOffsetBeats: number;
+    capture: { provisionalStartBeat: number; mediaOriginBeat: number; mediaOriginSeconds: number };
+};
+
 /**
  * Where a capture's clip opens on the timeline and how far into the file it
  * enters.
@@ -70,6 +76,10 @@ type CapturePlacementInput = {
  * the record point and the pre-roll head is trimmed through the same offset, so
  * the take neither shifts nor grows by the pre-roll.
  *
+ * A loop recording begun inside the loop has passes reaching before this beat;
+ * the commit opens the clip at its earliest pass instead, writing the offset in
+ * the same unit, so no pass sounds outside its clip.
+ *
  * The offset is in the unit the readers seek in, not a timeline span.
  * `scheduleAudioClips` and `projectOfflineAudioClipPlaybacks` turn
  * `audioOffsetBeats` into a file position at the one tempo governing the clip's
@@ -79,20 +89,29 @@ type CapturePlacementInput = {
  * `startBeat - audioOffsetBeats` lands on the capture's origin beat (the law
  * #2050 introduced for punched takes) only while the tempo is constant across
  * the offset span; across a tempo change it is not the origin beat.
+ *
+ * `capture` is where the media truly begins, pre-roll lead and latency
+ * included, as the commit needs it: the recorder minted every take against the
+ * record point, and the commit rebases them onto this origin.
  */
-function placeCapture(input: CapturePlacementInput): { startBeat: number; audioOffsetBeats: number } {
+function placeCapture(input: CapturePlacementInput): CapturePlacement {
     const { originSeconds, recordPointBeat, rollLeadBeats, tempoChanges, defaultTempo } = input;
     const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
+    const capture = {
+        provisionalStartBeat: recordPointBeat,
+        mediaOriginBeat: originBeat,
+        mediaOriginSeconds: originSeconds,
+    };
     const prerollTrimBeat = rollLeadBeats > 0 ? recordPointBeat : 0;
     const startBeat = Math.max(0, originBeat, prerollTrimBeat);
     // The clip opens on the origin itself: nothing precedes it in the file, and
     // the two conversions below would only leave float noise.
     if (startBeat === originBeat) {
-        return { startBeat, audioOffsetBeats: 0 };
+        return { startBeat, audioOffsetBeats: 0, capture };
     }
     const leadInSeconds = secondsBetweenBeats(tempoChanges, 0, startBeat, defaultTempo) - originSeconds;
     const startBeatTempo = getTempoAtBeat(tempoChanges, startBeat, defaultTempo);
-    return { startBeat, audioOffsetBeats: (leadInSeconds * startBeatTempo) / 60 };
+    return { startBeat, audioOffsetBeats: (leadInSeconds * startBeatTempo) / 60, capture };
 }
 
 async function beginActualRecording(
@@ -155,7 +174,7 @@ async function beginActualRecording(
                     // latency the musician heard it through (and, on a stopped
                     // transport, the roll the capture waited through).
                     const originSeconds = captureStartSeconds - offsetSeconds;
-                    const { startBeat, audioOffsetBeats } = placeCapture({
+                    const { startBeat, audioOffsetBeats, capture } = placeCapture({
                         originSeconds,
                         recordPointBeat: recClip.startBeat,
                         rollLeadBeats,
@@ -207,7 +226,7 @@ async function beginActualRecording(
                     // and says so the way the capture-failure sibling does.
                     recordingLifecycle.trackCommit(
                         Promise.resolve().then(() =>
-                            commitRecording(recordedClip).catch((error: unknown) => {
+                            commitRecording(recordedClip, capture).catch((error: unknown) => {
                                 logger.error(new Error('Recording commit failed', { cause: error }));
                                 notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
                                 discardRecording(recordedClip.id);
