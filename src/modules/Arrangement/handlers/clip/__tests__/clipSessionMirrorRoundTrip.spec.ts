@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -13,6 +15,7 @@ import {
     commitUndoEntry,
     createUndoEntry,
     executeAppAction,
+    productionBriefAdmissionPort,
     registerProductionCommandHandlers,
     undo,
     redo,
@@ -20,16 +23,27 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    agentProjectInspectionPort,
+    projectCrdtToStores,
     getDrumPreviewBranchHandlers,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
@@ -48,6 +62,35 @@ import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const TRACK_ID = 'track-keys';
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+let stopProjectionBridge = () => undefined;
+
+function savedMovePoint(
+    entry: unknown,
+    actionName: 'inverseAction' | 'redoAction',
+    placementName: 'replacement' | 'expected'
+): Record<string, unknown> {
+    if (!isRecord(entry)) {
+        throw new Error('Expected saved move entry');
+    }
+    const action = entry[actionName];
+    if (!isRecord(action) || !isRecord(action.payload)) {
+        throw new Error('Expected saved move action');
+    }
+    const placement = action.payload[placementName];
+    if (!isRecord(placement) || !Array.isArray(placement.automationLanes)) {
+        throw new Error('Expected saved move placement');
+    }
+    const lane = placement.automationLanes[0];
+    if (!isRecord(lane) || !Array.isArray(lane.points) || !isRecord(lane.points[0])) {
+        throw new Error('Expected saved move point');
+    }
+    return lane.points[0];
+}
 
 function createClipFixture(id: string, startBeat: number, endBeat: number): Clip {
     return {
@@ -112,6 +155,35 @@ function automationLane(id: string, clipId?: string): AutomationLane {
     return lane;
 }
 
+function prepareAutomationMove(): AutomationLane[] {
+    const first = automationLane('clip-lane-a', 'clip-a');
+    first.points = [
+        {
+            id: 'point-a',
+            beat: 0.5,
+            value: 0.25,
+            curve: 'bezier',
+            tension: 0.3,
+            cp1: { x: 0.2, y: 0.4 },
+            cp2: { x: 0.7, y: 0.8 },
+        },
+        { id: 'point-b', beat: 2, value: 0.75, curve: 'stairs', tension: 0, stairSteps: 3 },
+    ];
+    first.trimPoints = [{ beat: 1, value: 0.5, curve: 'linear', tension: 0 }];
+    first.ghostPoints = [{ beat: 3, value: 0.6, curve: 'smooth', tension: 0.2 }];
+    const second = automationLane('clip-lane-b', 'clip-a');
+    second.points = [{ id: 'point-c', beat: 1, value: 0.4, curve: 's-curve', tension: 0.1 }];
+    const unrelated = automationLane('unrelated-lane');
+    automationStore.set({ lanes: [first, second, unrelated] });
+    flushAutomergeStorageWrites();
+    setNotificationEventBus(createEventBus<NotificationEvents>());
+    agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
+    productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    return structuredClone(automationStore.value!.lanes);
+}
+
 /** The production hydration path: every registered descriptor's forward contract plus the internal-replay contracts. */
 function hydrateProductionContracts(): void {
     clearHandlerRegistry();
@@ -164,6 +236,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     afterEach(() => {
+        stopProjectionBridge();
+        stopProjectionBridge = () => undefined;
+        agentProjectInspectionPort.setProvider(null);
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
         clearHandlerRegistry();
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
@@ -615,6 +691,92 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(projectClips?.map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual(
             trackStore.value?.tracks[0]?.clips.map((clip) => [clip.id, clip.startBeat, clip.endBeat])
         );
+    });
+
+    it('rehydrates a rich paired move capture and restores exact automation with real Undo and Redo', async () => {
+        const originalLanes = prepareAutomationMove();
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 9 } },
+            { source: 'manual' }
+        );
+        const movedLanes = structuredClone(automationStore.value?.lanes);
+        const movedAuthority = structuredClone(getCrdtDoc('root'));
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const past = saved.past;
+        if (!Array.isArray(past)) {
+            throw new TypeError('Expected persisted history');
+        }
+        expect(savedMovePoint(past[0], 'inverseAction', 'replacement')).toMatchObject(originalLanes[0]!.points[0]!);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: 4 });
+        expect(automationStore.value?.lanes).toEqual(originalLanes);
+        expect(getCrdtDoc<{ automation: { lanes: AutomationLane[] } }>('root')?.automation.lanes).toEqual(
+            originalLanes
+        );
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 9, endBeat: 13 });
+        expect(automationStore.value?.lanes).toEqual(movedLanes);
+        expect(getCrdtDoc('root')).toEqual(movedAuthority);
+    });
+
+    it.each([
+        {
+            name: 'unsupported curve',
+            corrupt: (point: Record<string, unknown>) => {
+                point.curve = 'unsupported';
+            },
+        },
+        {
+            name: 'negative beat',
+            corrupt: (point: Record<string, unknown>) => {
+                point.beat = -1;
+            },
+        },
+        {
+            name: 'empty point id',
+            corrupt: (point: Record<string, unknown>) => {
+                point.id = '';
+            },
+        },
+        {
+            name: 'negative stair steps',
+            corrupt: (point: Record<string, unknown>) => {
+                point.stairSteps = -1;
+            },
+        },
+    ])('rejects paired saved move automation with $name before real Undo writes', async ({ corrupt }) => {
+        prepareAutomationMove();
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 9 } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const past = saved.past;
+        if (!Array.isArray(past)) {
+            throw new TypeError('Expected persisted history');
+        }
+        corrupt(savedMovePoint(past[0], 'inverseAction', 'replacement'));
+        corrupt(savedMovePoint(past[0], 'redoAction', 'expected'));
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const beforeAuthority = structuredClone(getCrdtDoc('root'));
+        const beforeTracks = structuredClone(trackStore.value);
+        const beforeAutomation = structuredClone(automationStore.value);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(0);
+        await undo();
+        expect(getCrdtDoc('root')).toEqual(beforeAuthority);
+        expect(trackStore.value).toEqual(beforeTracks);
+        expect(automationStore.value).toEqual(beforeAutomation);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 
     it.each([

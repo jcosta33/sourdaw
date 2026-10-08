@@ -174,6 +174,13 @@ admission. Keep a valid producer-capture/reload/Undo/Redo control with two clip 
 lane, then corrupt one nested lane field in the saved sibling entry. Hydration must drop that entry,
 and real Undo must leave raw document, track, MIDI, gain, Automation projections and history unchanged.
 
+The #5064 move capture also needs Automation's point contract at saved-history admission. It records
+partial lane snapshots with only id, trackId, and points, so a full-lane validator is the wrong shape.
+Move a clip with two rich automation lanes through real save and hydration, then corrupt the same
+point in the paired inverse and redo snapshots with an unsupported curve, negative beat, empty id,
+or negative stair steps. Require hydration to discard the entry before real Undo can change raw
+authority, projections, or history; keep a valid rich Undo/Redo control and an empty capture control.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

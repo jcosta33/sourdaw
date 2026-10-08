@@ -1,4 +1,4 @@
-import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
+import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
@@ -235,7 +235,7 @@ function isPlacement(value: unknown): boolean {
         typeof value.endBeat === 'number' &&
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
-        Array.isArray(value.automationLanes) &&
+        isExactClipAutomationMoveSnapshots(value.automationLanes) &&
         hasFiniteNumbers(value.automationLanes)
     );
 }
