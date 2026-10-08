@@ -417,6 +417,68 @@ mod tests {
         assert_fade_tracks("opening at attack 2, release 250", long_open, 2.0);
     }
 
+    const NOTE_FREQUENCY_HZ: f32 = 110.0;
+
+    /// Time in ms from an abrupt stop of a 110 Hz sine peaking at `peak_dbfs` until the gate gain
+    /// first leaves unity, averaged over stop phases spread across one sine period. The engine's
+    /// own gain is read, so the 20 ms hold and the detector fall are both measured, not assumed.
+    fn gate_close_onset_ms(peak_dbfs: f32, release_ms: f32) -> f32 {
+        const PHASES: usize = 8;
+        let amplitude = 10.0_f32.powf(peak_dbfs / 20.0);
+        let period = (FADE_SAMPLE_RATE / NOTE_FREQUENCY_HZ) as usize;
+        let sine = |n: usize| {
+            (n as f32 * 2.0 * std::f32::consts::PI * NOTE_FREQUENCY_HZ / FADE_SAMPLE_RATE).sin()
+                * amplitude
+        };
+
+        let total: f32 = (0..PHASES)
+            .map(|phase| {
+                let mut gate = NoiseGate::new(FADE_SAMPLE_RATE);
+                gate.set_param("gateEnabled", 1.0);
+                gate.set_param("gateThreshold", -60.0);
+                gate.set_param("gateAttack", 2.0);
+                gate.set_param("gateRelease", release_ms);
+
+                let settle = FADE_SAMPLE_RATE as usize + phase * period / PHASES;
+                for n in 0..settle {
+                    gate.process_sample(sine(n));
+                }
+                assert!(
+                    gate.gain() > 0.999,
+                    "gate should be fully open while the note sounds, got {}",
+                    gate.gain()
+                );
+
+                let limit = (FADE_SAMPLE_RATE * 3.0) as usize;
+                let left_unity = (0..limit)
+                    .find(|_| {
+                        gate.process_sample(0.0);
+                        gate.gain() < 0.999
+                    })
+                    .expect("gate gain never left unity after the note stopped");
+                (left_unity + 1) as f32 * 1_000.0 / FADE_SAMPLE_RATE
+            })
+            .sum();
+        total / PHASES as f32
+    }
+
+    fn assert_close_onset(peak_dbfs: f32, release_ms: f32, expected_ms: f32) {
+        let measured = gate_close_onset_ms(peak_dbfs, release_ms);
+        eprintln!("{peak_dbfs} dBFS, release {release_ms}: close onset {measured} ms");
+        assert!(
+            (measured - expected_ms).abs() <= 3.0,
+            "{peak_dbfs} dBFS peak at release {release_ms}: close onset {measured} ms, expected {expected_ms} ms (20 ms hold plus the detector fall at 0.6 x release, within 3 ms)"
+        );
+    }
+
+    #[test]
+    fn gate_close_onset_is_hold_plus_detector_fall_from_the_note_level() {
+        assert_close_onset(-40.0, 60.0, 106.0);
+        assert_close_onset(-40.0, 250.0, 383.0);
+        assert_close_onset(-26.0, 60.0, 164.0);
+        assert_close_onset(-26.0, 250.0, 624.0);
+    }
+
     #[test]
     fn input_modes_are_not_interchangeable() {
         let instrument = conditioned_burst_metrics(0.0);
