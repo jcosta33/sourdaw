@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { type BassProcessingCopyCapability } from '../../models/BassProcessingCopyCapability';
+import { type DrumRoutingCapability, type DrumRoutingRole } from '../../models/DrumRoutingCapability';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type LlmActionCapabilityData } from '../../transformers/llmActionBridge';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
 
@@ -78,6 +81,107 @@ function parseMessageSection(message: string, heading: string): unknown {
     const start = message.indexOf(`${heading}:\n`);
     const end = message.indexOf('\n\n', start);
     return JSON.parse(message.slice(start + heading.length + 2, end === -1 ? undefined : end));
+}
+
+const drumRoles: DrumRoutingRole[] = ['kick', 'snare', 'hi-hat', 'tom', 'cymbal', 'overhead', 'room', 'percussion'];
+
+function buildDrumRoutingCapability(drumCount: number, nonDrumTrackCount: number): DrumRoutingCapability {
+    const candidateDrums = Array.from({ length: drumCount }, (_unused, index) => {
+        const role = drumRoles[index % drumRoles.length]!;
+        return {
+            id: `track-drum-${String(index).padStart(2, '0')}`,
+            name: `Drum ${role} ${String(index)}`,
+            kind: 'midi' as const,
+            role,
+            roleEvidence: `canonical-role:${role}:track-name`,
+            currentOutputId: 'master',
+            frozen: false,
+            locked: false,
+        };
+    });
+    // Buses and structural tracks are protected non-drums exactly as
+    // getDrumRoutingPromptScope classifies them.
+    const protectedNonDrums = [
+        ...['bus-bass', 'bus-vocals'].map((id, index) => ({
+            id,
+            name: index === 0 ? 'Bass Bus' : 'Vocal Bus',
+            kind: 'bus',
+            role: 'structural',
+            roleEvidence: 'track-kind:bus',
+            currentOutputId: null,
+            frozen: false,
+            locked: false,
+        })),
+        ...Array.from({ length: nonDrumTrackCount }, (_unused, index) => ({
+            id: `track-non-drum-${String(index).padStart(2, '0')}`,
+            name: `Backing Vocal ${String(index)} Double`,
+            kind: 'audio',
+            role: 'backing-vocal',
+            roleEvidence: 'canonical-role:backing-vocal:track-name',
+            currentOutputId: 'master',
+            frozen: false,
+            locked: false,
+        })),
+    ];
+    return {
+        schemaVersion: 1,
+        baseRevision: 'revision-1',
+        actionType: 'setTrackOutput',
+        bus: { id: 'bus-drums', name: 'Drum Bus', kind: 'bus' },
+        candidateDrums,
+        protectedReturn: {
+            id: 'track-parallel-return',
+            name: 'Parallel Compression Return',
+            kind: 'audio',
+            role: 'parallel-compression-return',
+            roleEvidence: 'exact-protected-name',
+            currentOutputId: 'master',
+            frozen: false,
+            locked: false,
+        },
+        protectedNonDrums,
+        allowedAction: {
+            type: 'setTrackOutput',
+            exactTargetIds: candidateDrums.map((candidate) => candidate.id),
+            outputId: 'bus-drums',
+            requiredPayloadKeys: ['trackId', 'outputId'],
+            forbiddenTargetIds: ['track-parallel-return', ...protectedNonDrums.map((track) => track.id)],
+        },
+        constraints: {
+            requireCompleteExactTargetSet: true,
+            requireFreshConfirmation: true,
+            preserveProtectedTracks: true,
+        },
+    };
+}
+
+function buildBassProcessingCopyCapability(): BassProcessingCopyCapability {
+    return {
+        schemaVersion: 1,
+        baseRevision: 'revision-1',
+        actionType: 'addAdjustmentRegion',
+        sourceSection: { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 16 },
+        targetSection: { id: 'section-chorus', name: 'Chorus', startBeat: 16, endBeat: 32 },
+        bassTracks: [{ id: 'track-bass', name: 'Bass DI' }],
+        sourceProcessing: [],
+        exactPlan: [],
+        protectedAutomationLanes: [],
+        protectedObjectIds: [],
+        constraints: {
+            preserveSourceProcessing: true,
+            preserveTargetDistortionAutomation: true,
+            requireFreshConfirmation: true,
+        },
+    };
+}
+
+type CapabilitySchemasSection = {
+    availableCapabilities: string;
+    omittedCapabilityNames?: string[];
+};
+
+function readCapabilitySchemasSection(built: ReturnType<typeof buildAgentContext>): CapabilitySchemasSection {
+    return parseMessageSection(built.message, 'capability_schemas') as CapabilitySchemasSection;
 }
 
 describe('buildAgentContext', () => {
@@ -540,5 +644,66 @@ describe('buildAgentContext', () => {
 
         const validationFailures = parseMessageSection(built.message, 'validation_failures') as Record<string, unknown>;
         expect(validationFailures.correction).toBeUndefined();
+    });
+
+    it('serializes under-budget capability data whole into hosted availableCapabilities', () => {
+        const capabilityData: LlmActionCapabilityData = {
+            bassProcessingCopyCapability: buildBassProcessingCopyCapability(),
+            drumRoutingCapability: buildDrumRoutingCapability(8, 3),
+        };
+
+        const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'adjust', context, capabilityData });
+
+        const section = readCapabilitySchemasSection(built);
+        expect(JSON.stringify(capabilityData).length).toBeLessThanOrEqual(8_192);
+        expect(section.availableCapabilities).toBe(JSON.stringify(capabilityData));
+        expect(section.availableCapabilities.length).toBeLessThanOrEqual(8_192);
+        expect(section.omittedCapabilityNames).toBeUndefined();
+    });
+
+    it('keeps over-budget capability data valid JSON with whole entries and the omission named', () => {
+        const bassCapability = buildBassProcessingCopyCapability();
+        const drumCapability = buildDrumRoutingCapability(4, 40);
+        expect(JSON.stringify(drumCapability).length).toBeGreaterThan(8_192);
+
+        const mixed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            capabilityData: { bassProcessingCopyCapability: bassCapability, drumRoutingCapability: drumCapability },
+        });
+        const mixedSection = readCapabilitySchemasSection(mixed);
+        expect(mixedSection.availableCapabilities.length).toBeLessThanOrEqual(8_192);
+        expect(JSON.parse(mixedSection.availableCapabilities)).toEqual({
+            bassProcessingCopyCapability: bassCapability,
+        });
+        expect(mixedSection.omittedCapabilityNames).toEqual(['drumRoutingCapability']);
+
+        const alone = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            capabilityData: { drumRoutingCapability: drumCapability },
+        });
+        const aloneSection = readCapabilitySchemasSection(alone);
+        expect(aloneSection.availableCapabilities).toBe('{}');
+        expect(aloneSection.omittedCapabilityNames).toEqual(['drumRoutingCapability']);
+    });
+
+    it('holds the hosted bound on a realistic large-project drum routing blowup', () => {
+        const bassCapability = buildBassProcessingCopyCapability();
+        const drumCapability = buildDrumRoutingCapability(8, 30);
+        const capabilityData: LlmActionCapabilityData = {
+            bassProcessingCopyCapability: bassCapability,
+            drumRoutingCapability: drumCapability,
+        };
+        expect(JSON.stringify(capabilityData).length).toBeGreaterThan(8_192);
+
+        const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'adjust', context, capabilityData });
+
+        const section = readCapabilitySchemasSection(built);
+        expect(section.availableCapabilities.length).toBeLessThanOrEqual(8_192);
+        expect(JSON.parse(section.availableCapabilities)).toEqual({ bassProcessingCopyCapability: bassCapability });
+        expect(section.omittedCapabilityNames).toEqual(['drumRoutingCapability']);
     });
 });

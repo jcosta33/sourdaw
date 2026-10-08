@@ -44,17 +44,31 @@ otherwise. The replacement contract has two parts:
   transition store with the staged bank's, and moves the displaced storage, with the staged bank's
   leftover instrument id, into a single retired slot. A commit that finds the slot occupied returns
   false and leaves the bank staged.
+- **The abort allocates and frees nothing either.** `abort_sample_bank` moves the whole staged bank
+  (zone map, PCM pool, legato store, instrument id) into the same slot and returns whether it
+  retired one. Dropping it there would free a whole bank, or the last reference to a shared pool, in
+  one message on the render thread, a cost that scales with the bank. The API cannot reach an abort
+  with the slot occupied (begin empties it, a commit consumes the staged bank); if a host gets there
+  anyway, the abort frees the older bank in that call, as begin does, and retires the staged one.
 - **A paced message frees the retired bank.** `release_retired_bank(max_entries)` frees at most
   `max_entries` PCM entries per call and reports when the slot is empty. A pool a sibling instance
   still shares is only released by decrementing its count. The host sends one
-  `releaseRetiredBank` message per step, after `sampleBankLoaded`, and repeats it while the worklet
-  answers that more remains. Every load registers with its port before it posts
-  `beginSampleBank`, and the next load's begin waits until every earlier load on that port is over:
-  the worklet's terminal answer for a bank that did not commit (an aborted load whose commit is
-  still in flight counts as committing until the worklet says otherwise), or the end of the release
-  loop for one that did. Begin then finds the slot empty and frees nothing. If the processor ended
-  meanwhile (it faulted or was disposed, and drops every later message), the waiting load rejects
-  with the same "processor ended" error the handshake uses and posts nothing.
+  `releaseRetiredBank` message per step and repeats it while the worklet answers that more remains:
+  after `sampleBankLoaded` for a load that committed, and after the `abortSampleBank` it posted (or
+  after the worklet's own `sampleBankError`) for one that failed once its begin was posted. The
+  release is fenced by the load's token, and the worklet answers one for a token that retired
+  nothing as done. Every load registers with its port before it posts `beginSampleBank`, and the
+  next load's begin waits until every earlier load on that port is over: the end of the release
+  loop for every load whose begin was posted, or, for a load that never posted one, the end of the
+  loads before it. Begin then finds the slot empty and frees nothing. If the processor ended (it
+  faulted or was disposed, and drops every later message), the release loop stops at once, and the
+  waiting load rejects with the same "processor ended" error the handshake uses and posts nothing.
+- **Two bounded costs stay on the render thread, accepted.** `attach_sample_bank` frees an empty
+  placeholder pool (one small allocation, since followers and ready roles never upload PCM) and
+  refuses once the staged bank holds PCM, so a misused call cannot drop staged samples.
+  `publish_sample_bank` allocates its registry key (a few dozen bytes). Both are bounded and do not
+  scale with the bank. Moving them off the message handler waits for `ZoneMap::build_lut` to leave
+  the render thread (#5080), which would let the key be preallocated at begin.
 - **`begin_sample_bank` frees a leftover bank in one call.** That is only a safety net for a host
   that does not wait for the loop, such as one that supersedes a load before the release finishes
   and then talks to the engine directly. The call is unbounded: it frees the whole bank. The loader
@@ -71,8 +85,11 @@ at 48 kHz). The one unbounded free is the safety net above.
   thread. Moving them to a Worker, and splitting large samples into chunks, are separate follow-ups.
 - The retired slot holds one bank. Peak residency is unchanged: the displaced bank is freed after the
   commit instead of during it.
-- `device_process_rt.rs` guards the commit with `assert_no_alloc`, which aborts on a free as well as an
-  allocation; `levain_bank_retirement.rs` counts allocations to show the frees moved to the release.
+- `device_process_rt.rs` guards the commit and the abort with `assert_no_alloc`, which aborts on a free
+  as well as an allocation; `levain_bank_retirement.rs` counts allocations to show the frees moved to
+  the release.
+- A failed load now delays the next load on its port by one round trip plus a paced release, where it
+  used to release the port at once.
 - The native host is unaffected: it builds and commits each instance on a control thread before the
   audio thread sees it, and the retired bank is freed there or with the instance.
 - If wasm threads with a lock-free allocator ever ship, ADR 0020's return channel can replace the

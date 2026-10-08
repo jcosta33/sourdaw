@@ -321,6 +321,30 @@ describe('exportMidiClip writes what the clip plays', () => {
             ]);
         });
 
+        it('writes a pedal the loop carries onto a sub-tick note start tick behind that release', () => {
+            // Pass 0's sliver (1.9996 for 0.0004) releases on tick 961, and the pedal
+            // carry onto pass 1's head (beat 2, tick 960) follows the sliver's true end.
+            // Playback posts the release before the carry; ahead of the repair the file
+            // wrote the carry on tick 960 and held the note under it to the pedal-up
+            // release at tick 1872.
+            const events = exportClip(
+                { startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 2 },
+                [note('sliver', 1.9996, 0.0004, 62)],
+                [sustain('down', 0, 127), sustain('up', 1.9, 0)]
+            );
+
+            expect(summary(events)).toEqual([
+                ['cc', 0],
+                ['cc', 912],
+                ['on', 960],
+                ['off', 961],
+                ['cc', 961],
+                ['cc', 1872],
+                ['on', 1920],
+                ['off', 1921],
+            ]);
+        });
+
         it('releases a note before a same-pitch note it overlaps by under a tick is struck', () => {
             const events = exportClip(clip, [note('a', 0, 1.0011), note('b', 1.00105, 0.5)], []);
 

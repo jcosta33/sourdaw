@@ -156,8 +156,11 @@ impl LevainInstance {
     }
 
     /// Discard a failed staged bank without changing the sounding bank.
-    pub fn abort_sample_bank(&mut self) {
-        self.engine.abort_sample_bank();
+    ///
+    /// Allocates and frees nothing: the staged bank moves to the retired slot
+    /// for `release_retired_bank` to free. Returns true when it retired a bank.
+    pub fn abort_sample_bank(&mut self) -> bool {
+        self.engine.abort_sample_bank()
     }
 
     /// Attach an immutable PCM bank published in this rendering thread.

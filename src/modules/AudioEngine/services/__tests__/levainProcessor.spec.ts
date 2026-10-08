@@ -34,6 +34,7 @@ let abortSampleBankShouldThrow = false;
 let allNotesOffShouldThrow = false;
 let setParamShouldThrow = false;
 let zoneMapShouldBuild = true;
+let attachShouldFail = false;
 // Release steps the mock engine still needs before it reports the retired bank freed.
 let retiredBankStepsLeft = 0;
 const sharedBanks = new Set<string>();
@@ -94,26 +95,33 @@ class LevainInstanceMock {
         calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
         return zoneMapShouldBuild;
     }
+    // Whether a bank is staged, which is what the real abort reports retiring.
+    bankStaged = false;
     begin_sample_bank(instrumentId: string): void {
         calls.push({ method: 'begin_sample_bank', args: [instrumentId] });
+        this.bankStaged = true;
     }
     attach_sample_bank(bankKey: string): boolean {
         calls.push({ method: 'attach_sample_bank', args: [bankKey] });
-        return sharedBanks.has(bankKey);
+        return !attachShouldFail && sharedBanks.has(bankKey);
     }
     publish_sample_bank(bankKey: string): boolean {
         calls.push({ method: 'publish_sample_bank', args: [bankKey] });
         sharedBanks.add(bankKey);
         return true;
     }
-    abort_sample_bank(): void {
+    abort_sample_bank(): boolean {
         calls.push({ method: 'abort_sample_bank', args: [] });
         if (abortSampleBankShouldThrow) {
             throw new Error('abort trapped');
         }
+        const retired = this.bankStaged;
+        this.bankStaged = false;
+        return retired;
     }
     commit_sample_bank(): boolean {
         calls.push({ method: 'commit_sample_bank', args: [] });
+        this.bankStaged = false;
         return true;
     }
     release_retired_bank(maxEntries: number): boolean {
@@ -182,6 +190,7 @@ describe('LevainProcessor message handling', () => {
         allNotesOffShouldThrow = false;
         setParamShouldThrow = false;
         zoneMapShouldBuild = true;
+        attachShouldFail = false;
         retiredBankStepsLeft = 0;
         sharedBanks.clear();
     });
@@ -837,6 +846,108 @@ describe('LevainProcessor message handling', () => {
             send(proc, { type: 'beginSampleBank', bankKey: 'release-bank-3', instrumentId: 'violin', loadToken: 3 });
             send(proc, { type: 'releaseRetiredBank', loadToken: 2 });
             expect(calls.some((call) => call.method === 'release_retired_bank')).toBe(false);
+        });
+    });
+
+    describe('freeing the bank an abort retired', () => {
+        function releaseReplies(proc: LevainProcessorLike): unknown[] {
+            return proc.port.postMessage.mock.calls
+                .map((call) => call[0] as { type?: string })
+                .filter((message) => message.type === 'retiredBankReleased');
+        }
+
+        function releaseCalls(): number {
+            return calls.filter((call) => call.method === 'release_retired_bank').length;
+        }
+
+        async function readyProcessor(): Promise<LevainProcessorLike> {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            return proc;
+        }
+
+        function begin(proc: LevainProcessorLike, bankKey: string, loadToken: number): void {
+            send(proc, { type: 'beginSampleBank', bankKey, instrumentId: 'violin', loadToken });
+        }
+
+        it('frees an explicitly aborted bank one bounded step per release message', async () => {
+            const proc = await readyProcessor();
+            begin(proc, 'abort-release-bank', 1);
+            send(proc, { type: 'abortSampleBank', loadToken: 1 });
+            expect(releaseCalls()).toBe(0);
+            retiredBankStepsLeft = 2;
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+
+            expect(releaseCalls()).toBe(2);
+            expect(releaseReplies(proc)).toEqual([
+                { type: 'retiredBankReleased', loadToken: 1, done: false },
+                { type: 'retiredBankReleased', loadToken: 1, done: true },
+            ]);
+        });
+
+        it('frees the bank of a load whose commit failed', async () => {
+            const proc = await readyProcessor();
+            begin(proc, 'failed-commit-bank', 1);
+            zoneMapShouldBuild = false;
+            send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 33, numMics: 1 });
+            expect(proc.port.postMessage).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'sampleBankError', loadToken: 1 })
+            );
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+
+            expect(releaseCalls()).toBe(1);
+            expect(releaseReplies(proc)).toEqual([{ type: 'retiredBankReleased', loadToken: 1, done: true }]);
+        });
+
+        it('frees the owner and the follower banks on their own processors when the owner aborts', async () => {
+            const owner = await readyProcessor();
+            const follower = await readyProcessor();
+            begin(owner, 'owner-abort-bank', 1);
+            begin(follower, 'owner-abort-bank', 2);
+
+            send(owner, { type: 'abortSampleBank', loadToken: 1 });
+            expect(follower.port.postMessage).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'sampleBankError', loadToken: 2 })
+            );
+
+            send(follower, { type: 'releaseRetiredBank', loadToken: 2 });
+            expect(releaseCalls()).toBe(1);
+            send(owner, { type: 'releaseRetiredBank', loadToken: 1 });
+            expect(releaseCalls()).toBe(2);
+            expect(releaseReplies(follower)).toEqual([{ type: 'retiredBankReleased', loadToken: 2, done: true }]);
+            expect(releaseReplies(owner)).toEqual([{ type: 'retiredBankReleased', loadToken: 1, done: true }]);
+        });
+
+        it('frees the bank of a follower rejected because the published bank would not attach', async () => {
+            const owner = await readyProcessor();
+            const follower = await readyProcessor();
+            begin(owner, 'attach-fails-bank', 1);
+            begin(follower, 'attach-fails-bank', 2);
+            attachShouldFail = true;
+            send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+            expect(follower.port.postMessage).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'sampleBankError', loadToken: 2 })
+            );
+            expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
+
+            send(follower, { type: 'releaseRetiredBank', loadToken: 2 });
+
+            expect(releaseCalls()).toBe(1);
+            expect(releaseReplies(follower)).toEqual([{ type: 'retiredBankReleased', loadToken: 2, done: true }]);
+        });
+
+        it('leaves a release for the load a begin superseded as a no-op that reports done', async () => {
+            const proc = await readyProcessor();
+            begin(proc, 'superseded-bank', 1);
+            begin(proc, 'superseding-bank', 2);
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+
+            expect(releaseCalls()).toBe(0);
+            expect(releaseReplies(proc)).toEqual([{ type: 'retiredBankReleased', loadToken: 1, done: true }]);
         });
     });
 

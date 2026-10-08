@@ -1442,9 +1442,14 @@ export class LevainInstance {
     }
     /**
      * Discard a failed staged bank without changing the sounding bank.
+     *
+     * Allocates and frees nothing: the staged bank moves to the retired slot
+     * for `release_retired_bank` to free. Returns true when it retired a bank.
+     * @returns {boolean}
      */
     abort_sample_bank() {
-        wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        const ret = wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Get number of currently sounding voices.
