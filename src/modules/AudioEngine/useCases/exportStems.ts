@@ -14,7 +14,9 @@ import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/make
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
+import { acquireRenderLockFromAgentRender } from './offlineRender/acquireRenderLockFromAgentRender';
 import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
+import { canPreemptAgentRender } from './offlineRender/canPreemptAgentRender';
 import { checkCancel } from './offlineRender/checkCancel';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -125,7 +127,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
     optsOrBeats: OfflineRenderOptions | number,
     maybeSampleRate?: number
 ): Promise<Map<string, AudioBuffer>> {
-    const releaseLock = acquireRenderLock();
+    // A stem export is always a musician's: it stops an agent render holding the lock and waits
+    // for it to release (#4768, #5036).
+    const releaseLock = canPreemptAgentRender()
+        ? await acquireRenderLockFromAgentRender()
+        : acquireRenderLock('musician-export');
 
     try {
         // The scope's signal is this stem set's cancellation handle (#4440):

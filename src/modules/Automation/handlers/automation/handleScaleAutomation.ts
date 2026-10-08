@@ -4,10 +4,16 @@ import { scaleAutomationValues } from '../../useCases/automation/scaleAutomation
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
+import { findFollowerLaneRefusal } from './followerLaneRefusal';
 
 export const handleScaleAutomation = createHandler<'scaleAutomation'>({
     execute: (alpha) => {
+        const followerRefusal = findFollowerLaneRefusal(alpha.payload.laneId);
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
+        }
         scaleAutomationValues(alpha.payload.laneId, alpha.payload.factor, alpha.payload.anchor);
+        return undefined;
     },
     isNoop: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);

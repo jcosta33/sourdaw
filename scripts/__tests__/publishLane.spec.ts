@@ -560,6 +560,33 @@ describe('stack publication fencing', () => {
         expect(calls).toContain(`changedPaths:${ISSUE_LANE}:parent-head:abc`);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
+
+    it('classifies the how-to-test gate from the landed stack head (main), never the recorded parent head', () => {
+        // After the parent pull request lands, stackPublicationBase resolves stack.head to
+        // origin/main while stack.parentHead keeps the parent's recorded pre-land sha — the one
+        // stack state where the two differ. Only the main..head range carries product scope here,
+        // so a gate reading the recorded parent head instead of the resolved comparison head would
+        // classify an empty range and publish the command-only --test this refusal stops.
+        const { port, calls } = fakePort({ existing: 41 });
+        port.stackBase = () => ({
+            branch: 'main',
+            head: 'base',
+            parentNumber: 11,
+            parentState: 'MERGED',
+            parentHead: 'landed-parent-head',
+        });
+        port.changedPaths = (lane, base, head) => {
+            calls.push(`changedPaths:${lane}:${base}:${head}`);
+            return base === 'base' ? [PRODUCT_SCOPE_PATH] : [];
+        };
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
+            CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
+        );
+
+        expect(calls).toContain(`changedPaths:${ISSUE_LANE}:base:abc`);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
 });
 
 /**
@@ -1431,6 +1458,63 @@ describe('lane publish', () => {
 
         expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('refuses a command-only --test when the only product change is a rename out of a product tree', () => {
+        // A numstat rename record names the source beside the destination; the record below carries
+        // no product-tree destination, so only the source can fire the gate — the same refusal a
+        // straight deletion of src/components/Meter.tsx would raise (#4743).
+        const { port, calls } = fakePort({
+            changedPaths: [
+                {
+                    path: 'src/app/Meter.tsx',
+                    group: 'handwritten',
+                    added: 2,
+                    deleted: 1,
+                    binary: false,
+                    previous: { path: 'src/components/Meter.tsx', group: 'handwritten' },
+                },
+            ],
+        });
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
+            CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('publishes a command-only --test when a rename touches no product tree on either side', () => {
+        const { port } = fakePort({
+            changedPaths: [
+                {
+                    path: 'src/utils/relay.ts',
+                    group: 'handwritten',
+                    added: 2,
+                    deleted: 1,
+                    binary: false,
+                    previous: { path: 'src/helpers/relay.ts', group: 'handwritten' },
+                },
+            ],
+        });
+
+        expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
+    });
+
+    it('fires the gate on an unedited rename’s product source, and not on its destination alone', () => {
+        const moved: ReviewChangedPath = {
+            path: 'scripts/router.ts',
+            group: 'handwritten',
+            added: 0,
+            deleted: 0,
+            binary: false,
+            previous: { path: 'electron/ipc/router.ts', group: 'handwritten' },
+        };
+
+        expect(isProductScopeChange([moved])).toBe(true);
+        // The destination-only view of the same record must not fire: the source path is what the
+        // fix adds, so this contrast is what a reverted fix reddens.
+        expect(isProductScopeChange([{ ...moved, previous: undefined }])).toBe(false);
     });
 
     it('updates the existing What section when --summary is supplied', () => {
@@ -2433,6 +2517,61 @@ describe('lane publish', () => {
                 deleted: 0,
                 binary: false,
             });
+            expect(isProductScopeChange(paths)).toBe(true);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The defect #4743 closes, measured against a real rename commit: a numstat rename record
+     * carries the source beside the destination, and the port must hand both to the gate. Moving a
+     * product file out of src/components/ fires the gate exactly as deleting it would, even though
+     * the destination src/app/ is not a product tree — keeping only the destination hid the source
+     * and let a command-only --test through.
+     */
+    it('classifies a real rename out of a product tree as product scope through its source path', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-renamed-paths-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            // The 40-line product file sits at the base commit, so the rename source exists in the
+            // gate's base tree and detection can pair it with the moved destination (#4743).
+            const meterLines = Array.from({ length: 40 }, (_, line) => `const line${line} = ${line};`);
+            const moduleFile = join('src/components', 'Meter.tsx');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), `${meterLines.join('\n')}\n`);
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const movedFile = 'src/app/Meter.tsx';
+            mkdirSync(join(repository, dirname(movedFile)), { recursive: true });
+            git(['mv', moduleFile, movedFile]);
+            writeFileSync(join(repository, movedFile), `${meterLines.join('\n')}\nexport const meter = 1;\n`);
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'refactor(meter): move the meter out of components']);
+
+            const paths = shellPort(session, repository).changedPaths(repository, base, 'HEAD');
+
+            expect(paths).toEqual([
+                {
+                    path: movedFile,
+                    group: 'handwritten',
+                    added: 1,
+                    deleted: 0,
+                    binary: false,
+                    previous: { path: moduleFile, group: 'handwritten' },
+                },
+            ]);
             expect(isProductScopeChange(paths)).toBe(true);
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });

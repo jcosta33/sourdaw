@@ -1731,4 +1731,193 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-low', 'mix', 0);
         });
     });
+
+    describe('duplicate track-level lanes on one parameter (#4928)', () => {
+        /**
+         * Two track-level lanes reach one parameter only through a CRDT collab
+         * merge or legacy/preset data — the add-lane action folds track-level
+         * duplicates. Every export family resolves such duplicates through the
+         * automation merges, where the later single-point lane compiles to a
+         * lone zero-length terminator covering no span and contributes nothing
+         * (pinned as the agreement target by
+         * offlineScheduler `trackLaneSinglePointDuplicateParity.spec.ts`). The
+         * live apply resolves the same duplicates the same way: the no-span
+         * lane stands down in favour of the sibling whose curve has material.
+         */
+        type DuplicateLaneSeed = {
+            id: string;
+            parameterId: string;
+            points: Array<{ beat: number; value: number }>;
+            enabled?: boolean;
+        };
+
+        function seedDuplicateTrackLanes(devices: SeedDevice[], lanes: DuplicateLaneSeed[]): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices,
+                        gain: 0.4,
+                        pan: 0,
+                        sends: [],
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: lanes.map((lane) => ({ ...lane, trackId: 'track-1', minValue: 0 })),
+            };
+        }
+
+        function voiceLaneCurves(byLaneId: Record<string, (beat: number) => number>): void {
+            vi.mocked(getAutomationValueAtBeat).mockImplementation(
+                (laneId: string, beat: number) => byLaneId[laneId]?.(beat) ?? 0
+            );
+        }
+
+        const RAMP_POINTS = [
+            { beat: 0, value: 0.2 },
+            { beat: 16, value: 0.6 },
+        ];
+        const HELD_POINTS = [{ beat: 4, value: 0.9 }];
+
+        it('gain: voices the earlier material lane and never the later single-point lane', () => {
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            applyAutomation(0);
+            applyAutomation(8);
+
+            expect(vi.mocked(scheduleTrackGain).mock.calls.map((call) => call[1])).toEqual([0.2, 0.6]);
+        });
+
+        it('device param: delivers the earlier material lane and never the later single-point lane', () => {
+            seedDuplicateTrackLanes(
+                [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                [
+                    { id: 'lane-ramp', parameterId: 'device-eq1:eq-low-gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'device-eq1:eq-low-gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            // The scope-entry snap (#4741) on the first tick and the epoch
+            // bump on the second deliver exact curve values instead of slew
+            // glides, so the delivered sequence is assertable as written.
+            schedulerSession.discontinuityEpoch = 900;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 901;
+            applyAutomation(8);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
+        });
+
+        it('device param: a legacy-spelled single-point duplicate stands down beside a canonical material sibling', () => {
+            // Both spellings resolve to one device target — the canonical
+            // `device-id:param` and the legacy `device-type:param` — so the
+            // export merges both streams into one (device, parameter) group
+            // where the lone terminator contributes nothing. Live must group
+            // by that resolved target too: keyed by the raw string, the held
+            // duplicate would see no material sibling and drive flat 0.9 over
+            // the sibling's ramp.
+            seedDuplicateTrackLanes(
+                [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                [
+                    { id: 'lane-ramp', parameterId: 'device-eq1:eq-low-gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'builtin-eq:eq-low-gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': (beat) => (beat < 8 ? 0.2 : 0.6),
+                'lane-held': () => 0.9,
+            });
+
+            schedulerSession.discontinuityEpoch = 900;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 901;
+            applyAutomation(8);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[3])).toEqual([0.2, 0.6]);
+        });
+
+        it('lets the single-point lane drive again once the material lane is gone', () => {
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': () => 0.2,
+                'lane-held': () => 0.9,
+            });
+            applyAutomation(0);
+
+            mutableAutomationStore.value = {
+                lanes: [{ id: 'lane-held', trackId: 'track-1', parameterId: 'gain', minValue: 0, points: HELD_POINTS }],
+            };
+            applyAutomation(1);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.9, 5);
+        });
+
+        it('still plays the single-point lane when the material sibling is disabled', () => {
+            // A disabled lane is not in the export's stream collection either
+            // (`scheduleTrackAutomation` filters `enabled !== false`), so the
+            // held lane's lone terminator is the only stream and its value is
+            // what an export holds — live must play it.
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-ramp', parameterId: 'gain', points: RAMP_POINTS, enabled: false },
+                    { id: 'lane-held', parameterId: 'gain', points: HELD_POINTS },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-ramp': () => 0.2,
+                'lane-held': () => 0.9,
+            });
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.9, 5);
+        });
+
+        it('keeps later-lane-wins when both duplicates are single-point', () => {
+            // No sibling carries material, so there is nothing to stand down
+            // for: the merge splices equal zero-span streams to the last one's
+            // value, and live keeps its last-write-wins per tick.
+            seedDuplicateTrackLanes(
+                [],
+                [
+                    { id: 'lane-first', parameterId: 'gain', points: [{ beat: 0, value: 0.3 }] },
+                    { id: 'lane-second', parameterId: 'gain', points: [{ beat: 4, value: 0.7 }] },
+                ]
+            );
+            voiceLaneCurves({
+                'lane-first': () => 0.3,
+                'lane-second': () => 0.7,
+            });
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.7, 5);
+        });
+    });
 });

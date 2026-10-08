@@ -379,6 +379,33 @@ describe('coreAutomationStrategy', () => {
         );
     });
 
+    it('refuses lane transforms on a linked follower while the source lane stays transformable', () => {
+        const sourceLane = {
+            ...projectContext.automationLanes![0]!,
+            id: 'source',
+        };
+        const followerLane = {
+            ...projectContext.automationLanes![0]!,
+            id: 'follower',
+            linkedLaneId: sourceLane.id,
+            linkScale: 2,
+        };
+        const linkedContext = { ...projectContext, automationLanes: [followerLane, sourceLane] };
+
+        expect(
+            bridge({ name: 'scaleAutomation', arguments: { laneId: sourceLane.id, factor: 1.5 } }, linkedContext)
+        ).toEqual({
+            type: 'scaleAutomation',
+            payload: { laneId: sourceLane.id, factor: 1.5 },
+        });
+        expectRejected('scaleAutomation', { laneId: followerLane.id, factor: 1.5 }, undefined, linkedContext);
+        expectRejected('stretchAutomation', { laneId: followerLane.id, factor: 2 }, undefined, linkedContext);
+        expectRejected('invertAutomation', { laneId: followerLane.id }, undefined, linkedContext);
+        expectRejected('reverseAutomation', { laneId: followerLane.id }, undefined, linkedContext);
+        expectRejected('thinAutomation', { laneId: followerLane.id, tolerance: 0.25 }, undefined, linkedContext);
+        expectRejected('quantizeAutomation', { laneId: followerLane.id, gridSize: 1 }, undefined, linkedContext);
+    });
+
     it('requires changed boolean lane enablement and a changed supported track mode', () => {
         expect(
             bridge(

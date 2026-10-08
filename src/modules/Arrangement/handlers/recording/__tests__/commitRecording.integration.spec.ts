@@ -51,6 +51,12 @@ function takeRefs(): { id: string; clipId: string }[] {
     );
 }
 
+function takeEndsFor(clipId: string): number[] {
+    return (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
+        lane.takes.filter((take) => take.clipId === clipId).map((take) => take.endBeat)
+    );
+}
+
 function laneIds(): string[] {
     return (takeLaneStore.value?.lanes ?? []).map((lane) => lane.id);
 }
@@ -149,6 +155,44 @@ describe('recording gesture commit (issue #4439)', () => {
             audioBufferId: 'rec-buffer-1',
         });
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
+    });
+
+    // The ordinary audio terminal commits buffer truth: a 0.125 s capture is
+    // 0.25 beats at the default 120 BPM, inside the one-beat minimum the live
+    // stop gives the clip and its take. Letting that short end overwrite the
+    // floored live state would leave the take outlasting its own clip (#4994),
+    // so the durable write and the entry's redo must both carry the floored end.
+    it('commits a short capture at the one-beat minimum its take took, and restores that end on redo', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const recordedTakeId = takeRefs()[0]?.id;
+        expect(recordedTakeId).toBeTruthy();
+
+        // The user-facing stop closes the gesture — the live clip and its take
+        // take start + 1 — and the capture terminal then commits the buffer's
+        // own 0.25-beat end over that state.
+        await stopRecording(4.25);
+        flushAutomergeStorageWrites();
+        expect(findClip(provisional.id)).toMatchObject({ startBeat: 4, endBeat: 5 });
+        expect(takeEndsFor(provisional.id)).toEqual([5]);
+
+        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 4, endBeat: 4.25 });
+        flushAutomergeStorageWrites();
+        expect(findClip(provisional.id)).toMatchObject({ startBeat: 4, endBeat: 5 });
+        expect(takeEndsFor(provisional.id)).toEqual([5]);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(clipIds()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 5 });
+        expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
+        expect(takeEndsFor(provisional.id)).toEqual([5]);
     });
 
     it('keeps a pre-existing take lane and its unrelated take through undo and redo', async () => {

@@ -1,8 +1,7 @@
 import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
-import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -230,7 +229,7 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             return false;
         }
 
-        const tempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
+        const tempo = readTempoAtBeat({ beat: clip.startBeat });
         const audible = projectAudibleClipWindow(clip, tempo, buffer.duration);
         if (!audible) {
             return false;

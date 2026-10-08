@@ -29,6 +29,7 @@ import {
     resolveDeviceAutomationTargetIndex,
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
+import { resolveLinkedLane } from '#/utils/automationLaneLink';
 import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/utils/automationSlew';
 
 import { secondsBetweenBeats, samplesToBeat } from '../../../models/TempoMap';
@@ -97,6 +98,149 @@ function clampToDeclaredParameterRange(
     }
 
     return clampDeviceParameterValue({ deviceType: device.type, paramId, value });
+}
+
+type SchedulerAutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
+
+/**
+ * Whether a track-level lane's curve normalizes to a single point — the
+ * zero-material shape the export compile produces (sort by beat, collapse
+ * same-beat points, emit the held seed, add no segment). Such a lane compiles
+ * to a lone zero-length terminator covering no span, wherever its point sits.
+ */
+function laneCurveCoversNoSpan(points: SchedulerAutomationLane['points']): boolean {
+    if (points.length === 0) {
+        return false;
+    }
+    let firstBeat = points[0]!.beat;
+    let lastBeat = firstBeat;
+    for (const point of points) {
+        if (point.beat < firstBeat) {
+            firstBeat = point.beat;
+        }
+        if (point.beat > lastBeat) {
+            lastBeat = point.beat;
+        }
+    }
+    return firstBeat === lastBeat;
+}
+
+/**
+ * Which export merge group a track-level lane competes under — the group key
+ * `scheduleTrackAutomation` collects that lane's compiled stream into, so the
+ * pre-pass sees exactly the siblings the export's merge sees.
+ *
+ * The export collects device-parameter streams under the *resolved* target,
+ * `${deviceId}::${parameterId}`: `resolveDeviceAutomationTargetIndex` lands the
+ * canonical `device-id:param` spelling and the legacy `device-type:param`
+ * spelling of one target on the same device, so both compile into one merge
+ * group offline. Keying live by the raw string would split them, and a
+ * single-point duplicate spelled the legacy way would stand beside a material
+ * sibling spelled the canonical way with neither suppressing the other — the
+ * held duplicate drives flat over the sibling's ramp. So a lane whose
+ * parameter resolves to a device (the same resolution the tick's write path
+ * runs) groups by `${deviceId}::${paramId}`.
+ *
+ * The strip families have no device target: the export groups gain, pan and
+ * each send pot per track+parameter (`track:${trackId}::${parameterId}`),
+ * which the raw key already is, so they keep it — gain/pan/send are decided
+ * before device resolution here exactly as the tick decides them before its
+ * own device branch. A device spelling that resolves to no target (absent or
+ * ambiguous owner) never writes from the tick path either, so it stays on the
+ * raw key. A linked lane competes under its own target — the group its stream
+ * is compiled under, since a follower's values come from the resolved source
+ * but the target stays the follower's — while its material is read through
+ * {@link resolveLinkedLane}, the same link walk the export runs before it
+ * compiles the source's points into that group.
+ */
+function resolveTrackLaneGroupKey(lane: SchedulerAutomationLane): string {
+    const rawKey = `${lane.trackId}::${lane.parameterId}`;
+    if (
+        lane.parameterId === 'gain' ||
+        lane.parameterId === 'pan' ||
+        getSendAutomationBusId(lane.parameterId) !== null
+    ) {
+        return rawKey;
+    }
+    const track = automationState.trackIndex.get(lane.trackId);
+    if (!track) {
+        return rawKey;
+    }
+    const deviceIndex = resolveDeviceAutomationTargetIndex(
+        lane.parameterId,
+        track.devices,
+        deviceAcceptsAutomationParameter
+    );
+    const paramId = deviceIndex >= 0 ? getDeviceAutomationParameterId(lane.parameterId) : null;
+    if (deviceIndex < 0 || !paramId) {
+        return rawKey;
+    }
+    return `${track.devices[deviceIndex]!.id}::${paramId}`;
+}
+
+/**
+ * Which track-level lanes must stand down this tick because a sibling with
+ * material drives the same parameter (#4928).
+ *
+ * Two track-level lanes reach one parameter only through a CRDT collab merge
+ * or legacy/preset data — the add-lane action folds track-level duplicates —
+ * and when the later one carries a single point, every export family drops it:
+ * through `mergeAutomationSegmentStreams`/`mergeAutomationEventStreams` its
+ * compiled stream is a lone zero-length terminator covering no span, so it
+ * contributes nothing and the material lane's curve is what plays. Live's
+ * per-tick apply had no scope concept for equal-scope track lanes and played
+ * the later lane flat instead. This resolves the duplicates the way the merge
+ * does: a track-level lane whose curve covers no span yields to an enabled
+ * sibling on the same (track, parameter) whose curve has material.
+ *
+ * The gates mirror the export's own lane admission (`scheduleTrackAutomation`):
+ * a clip-scoped lane is the more specific scope and keeps its #4736 law; a
+ * disabled lane is not in the export's collection at all, so it neither
+ * suppresses nor stands down; and material is read off the resolved link
+ * source's points, which is what both sides compile. Siblings are matched the
+ * way the export merges its compiled streams — see
+ * {@link resolveTrackLaneGroupKey}. With no material sibling the set is empty
+ * and every lane applies as before — a lone single-point lane still drives, and
+ * equal zero-span duplicates keep the merge's last-terminator-wins order.
+ */
+function resolveZeroSpanDuplicateTrackLanes(lanes: readonly SchedulerAutomationLane[]): Set<string> {
+    const laneById = new Map<string, SchedulerAutomationLane>();
+    for (const lane of lanes) {
+        laneById.set(lane.id, lane);
+    }
+    const noSpanLaneIdsByGroup = new Map<string, string[]>();
+    const groupsWithMaterial = new Set<string>();
+    for (const lane of lanes) {
+        if (lane.clipId !== undefined || lane.enabled === false) {
+            continue;
+        }
+        const groupKey = resolveTrackLaneGroupKey(lane);
+        const source = resolveLinkedLane(lane.id, (id) => laneById.get(id));
+        const sourcePoints = source ? (laneById.get(source.sourceLaneId)?.points ?? []) : [];
+        if (sourcePoints.length === 0) {
+            continue;
+        }
+        if (laneCurveCoversNoSpan(sourcePoints)) {
+            const groupIds = noSpanLaneIdsByGroup.get(groupKey);
+            if (groupIds) {
+                groupIds.push(lane.id);
+            } else {
+                noSpanLaneIdsByGroup.set(groupKey, [lane.id]);
+            }
+        } else {
+            groupsWithMaterial.add(groupKey);
+        }
+    }
+    const suppressed = new Set<string>();
+    for (const [groupKey, laneIds] of noSpanLaneIdsByGroup) {
+        if (!groupsWithMaterial.has(groupKey)) {
+            continue;
+        }
+        for (const laneId of laneIds) {
+            suppressed.add(laneId);
+        }
+    }
+    return suppressed;
 }
 
 const automationState: {
@@ -413,6 +557,11 @@ export function applyAutomation(currentBeat: number): Set<string> {
         clipOwnedDeviceParams.set(`${device.id}::${paramId}`, lane.id);
     }
 
+    // #4928: equal-scope duplicate track lanes resolve the way every export
+    // family does — a lane whose curve covers no span contributes nothing to a
+    // sibling with material. See resolveZeroSpanDuplicateTrackLanes.
+    const zeroSpanDuplicateLaneIds = resolveZeroSpanDuplicateTrackLanes(autoState.lanes);
+
     for (const lane of autoState.lanes) {
         if (lane.points.length === 0) {
             continue;
@@ -444,6 +593,20 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     landTime: now + compensationFor(lane.trackId),
                 });
             }
+            continue;
+        }
+
+        // #4928: this lane's curve covers no span and an enabled sibling on the
+        // same parameter carries material — the export merge gives the span to
+        // the material lane, so the held duplicate stands down. Dropping the
+        // driving and slew state without restoring a base is the
+        // clip-suppression treatment: the winner writes this tick, and on the
+        // tick the material lane goes away this lane re-enters and writes its
+        // held value once (the #4741 entry law) instead of gliding from stale
+        // state.
+        if (zeroSpanDuplicateLaneIds.has(lane.id)) {
+            automationState.drivingLanes.delete(lane.id);
+            automationState.pluginParamSlew.delete(lane.id);
             continue;
         }
 

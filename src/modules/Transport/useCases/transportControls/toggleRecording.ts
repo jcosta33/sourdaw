@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
+import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats, type TempoChange } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -23,17 +23,24 @@ import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { recordingLifecycle } from './recordingLifecycle';
+import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
 /**
  * The two instants that bound the wait for the roll, on the clock the capture
- * runs on. Instants rather than a duration because the finaliser can run before
- * the roll answers — Record pressed again inside the hold stops the take from
- * within it — and a duration written after the roll would still read zero there.
- * Both stay null while nothing has been asked to roll.
+ * runs on, and how far ahead of the record point that roll starts. Instants
+ * rather than a duration because the finaliser can run before the roll answers
+ * — Record pressed again inside the hold stops the take from within it — and a
+ * duration written after the roll would still read zero there. All stay null
+ * while nothing has been asked to roll; the lead is written with the request,
+ * before the finaliser can run.
  */
-type TransportHold = { requestedAtContextSeconds: number | null; rolledAtContextSeconds: number | null };
+type TransportHold = {
+    requestedAtContextSeconds: number | null;
+    rolledAtContextSeconds: number | null;
+    rollLeadBeats: number | null;
+};
 
 /** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
 function heldTransportSeconds(hold: TransportHold, nowContextSeconds: number): number {
@@ -41,6 +48,51 @@ function heldTransportSeconds(hold: TransportHold, nowContextSeconds: number): n
         return 0;
     }
     return Math.max((hold.rolledAtContextSeconds ?? nowContextSeconds) - hold.requestedAtContextSeconds, 0);
+}
+
+type CapturePlacementInput = {
+    originSeconds: number;
+    recordPointBeat: number;
+    rollLeadBeats: number;
+    tempoChanges: readonly TempoChange[];
+    defaultTempo: number;
+};
+
+/**
+ * Where a capture's clip opens on the timeline and how far into the file it
+ * enters.
+ *
+ * A take recorded from the top of the song has its origin before beat 0.
+ * Clamping the clip to the timeline must not take the media with it: the clip
+ * starts at 0 and its content offset skips the pre-origin samples (#4662).
+ *
+ * Pre-roll audio is a non-destructive handle in the same way: the clip opens at
+ * the record point and the pre-roll head is trimmed through the same offset, so
+ * the take neither shifts nor grows by the pre-roll.
+ *
+ * The offset is in the unit the readers seek in, not a timeline span.
+ * `scheduleAudioClips` and `projectOfflineAudioClipPlaybacks` turn
+ * `audioOffsetBeats` into a file position at the one tempo governing the clip's
+ * start beat, without integrating the tempo map across the offset. So it is the
+ * capture's lead-in before the clip's first beat in seconds, converted at that
+ * tempo, and the file is entered at exactly the capture time of that beat.
+ * `startBeat - audioOffsetBeats` lands on the capture's origin beat (the law
+ * #2050 introduced for punched takes) only while the tempo is constant across
+ * the offset span; across a tempo change it is not the origin beat.
+ */
+function placeCapture(input: CapturePlacementInput): { startBeat: number; audioOffsetBeats: number } {
+    const { originSeconds, recordPointBeat, rollLeadBeats, tempoChanges, defaultTempo } = input;
+    const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
+    const prerollTrimBeat = rollLeadBeats > 0 ? recordPointBeat : 0;
+    const startBeat = Math.max(0, originBeat, prerollTrimBeat);
+    // The clip opens on the origin itself: nothing precedes it in the file, and
+    // the two conversions below would only leave float noise.
+    if (startBeat === originBeat) {
+        return { startBeat, audioOffsetBeats: 0 };
+    }
+    const leadInSeconds = secondsBetweenBeats(tempoChanges, 0, startBeat, defaultTempo) - originSeconds;
+    const startBeatTempo = getTempoAtBeat(tempoChanges, startBeat, defaultTempo);
+    return { startBeat, audioOffsetBeats: (leadInSeconds * startBeatTempo) / 60 };
 }
 
 async function beginActualRecording(
@@ -91,22 +143,25 @@ async function beginActualRecording(
                     // governs. `samplesToBeat` inverts exactly that integration; a
                     // rate of one sample per second makes its coordinate seconds.
                     const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
-                    const anchorSeconds = secondsBetweenBeats(tempoChanges, 0, recClip.startBeat, defaultTempo);
+                    // The capture runs from wherever the transport rolls from,
+                    // which is ahead of the record point by the pre-roll when
+                    // one is enabled. With no pre-roll, or no roll of its own
+                    // (record engaged on a moving transport), it is the anchor.
+                    const rollLeadBeats = transportHold.rollLeadBeats ?? 0;
+                    const captureStartBeat = recClip.startBeat - rollLeadBeats;
+                    const captureStartSeconds = secondsBetweenBeats(tempoChanges, 0, captureStartBeat, defaultTempo);
                     // The buffer's first sample was captured at this timeline
-                    // position: the anchor beat, rewound by the latency the
-                    // musician heard it through (and, on a stopped transport,
-                    // the roll the capture waited through).
-                    const originSeconds = anchorSeconds - offsetSeconds;
-                    const originBeat = samplesToBeat(tempoChanges, originSeconds, defaultTempo, 1);
-                    // A take recorded from the top of the song has its origin
-                    // before beat 0. Clamping the clip to the timeline must not
-                    // take the media with it: the clip starts at 0 and its
-                    // content offset skips the pre-origin samples, so
-                    // `startBeat - audioOffsetBeats` stays on the capture's
-                    // true origin — the media-origin law #2050 introduced for
-                    // punched takes (#4662).
-                    const startBeat = Math.max(0, originBeat);
-                    const audioOffsetBeats = startBeat - originBeat;
+                    // position: the beat the capture began on, rewound by the
+                    // latency the musician heard it through (and, on a stopped
+                    // transport, the roll the capture waited through).
+                    const originSeconds = captureStartSeconds - offsetSeconds;
+                    const { startBeat, audioOffsetBeats } = placeCapture({
+                        originSeconds,
+                        recordPointBeat: recClip.startBeat,
+                        rollLeadBeats,
+                        tempoChanges,
+                        defaultTempo,
+                    });
                     const exactEndBeat = samplesToBeat(tempoChanges, originSeconds + buffer.duration, defaultTempo, 1);
                     // A capture shorter than the offset that precedes it ends
                     // before the timeline begins: `startBeat` clamps to 0 and
@@ -196,7 +251,11 @@ async function beginActualRecording(
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
-    const transportHold: TransportHold = { requestedAtContextSeconds: null, rolledAtContextSeconds: null };
+    const transportHold: TransportHold = {
+        requestedAtContextSeconds: null,
+        rolledAtContextSeconds: null,
+        rollLeadBeats: null,
+    };
     void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
@@ -204,6 +263,8 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
             // The instant the transport is asked to roll, read on the clock the
             // capture runs on: the take opened here is placed against it.
             transportHold.requestedAtContextSeconds = ctx.currentTime;
+            transportHold.rollLeadBeats =
+                current.playheadPosition - resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
             await startPlayback();
             transportHold.rolledAtContextSeconds = ctx.currentTime;
         }

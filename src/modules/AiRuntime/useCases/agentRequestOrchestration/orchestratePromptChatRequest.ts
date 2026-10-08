@@ -9,6 +9,7 @@ import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunWorkLea
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
+import { type PlanningOutcome } from '../../models/PlanningOutcome';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
@@ -286,6 +287,23 @@ function refuseScheduledPlanInMode(
     });
 }
 
+/** An answer is an ordinary reply: no error, no pending confirmation, and the receipts it rests on. */
+function appendAnswerMessages(userText: string, outcome: Extract<PlanningOutcome, { kind: 'answer' }>): void {
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'user',
+        content: userText,
+        timestamp: Date.now(),
+    });
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'assistant',
+        content: outcome.text,
+        timestamp: Date.now(),
+        answerEvidence: outcome.evidence,
+    });
+}
+
 async function dispatchPromptPlan(input: {
     request: PromptChatRequestInput;
     admission: PromptRequestAdmission;
@@ -448,6 +466,10 @@ async function dispatchPromptPlan(input: {
         return undefined;
     }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+    if (result.planningOutcome?.kind === 'answer') {
+        appendAnswerMessages(request.userText, result.planningOutcome);
+        return undefined;
+    }
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'user',

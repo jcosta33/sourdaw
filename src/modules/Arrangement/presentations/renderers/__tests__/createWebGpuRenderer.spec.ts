@@ -841,6 +841,26 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         expect(handles.draw).toHaveBeenCalled();
     });
 
+    it('requests the clip-start-tempo source window when the map tempo differs from base tempo', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 80;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
+        const model = create_test_model();
+        model.tracks[0]!.clips[0]!.clipStartTempo = 90;
+        renderer.render(model);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
+            expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
+        );
+    });
+
     it('draws the pre-roll as leading silence and shortens the material for a negative offset (#2519)', async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 400;
