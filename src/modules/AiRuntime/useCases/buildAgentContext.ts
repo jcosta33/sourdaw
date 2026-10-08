@@ -25,6 +25,14 @@ const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
 const MAX_REJECTION_CANDIDATES = 8;
+/**
+ * The hosted availableCapabilities copy is bounded at whole capability entries, never a
+ * character slice: the full capability data still rides the hosted project_context, so a
+ * cut mid-value would only hand the provider malformed JSON it cannot parse. Entries that
+ * cannot fit whole are omitted whole and named in the sibling `omittedCapabilityNames`
+ * field, so the worst case is an empty object plus the full omission list.
+ */
+const MAX_AVAILABLE_CAPABILITIES_LENGTH = 8_192;
 
 function isRelevantLock(
     lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
@@ -64,6 +72,36 @@ type BuildAgentContextInput = {
 
 function stableJson(value: unknown): string {
     return JSON.stringify(value);
+}
+
+/**
+ * Selects whole capability entries for the hosted copy: under budget the data serializes
+ * exactly as before, over budget each entry is kept whole only while the running total fits
+ * the budget, in the data's own entry order, and every dropped entry is named. An entry
+ * larger than the whole budget is omitted whole, so the result parses even when it is empty.
+ */
+function buildAvailableCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
+    value: string;
+    omittedCapabilityNames: string[];
+} {
+    const full = stableJson(capabilityData ?? null);
+    if (full.length <= MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+        return { value: full, omittedCapabilityNames: [] };
+    }
+    let included: Record<string, unknown> = {};
+    const omittedCapabilityNames: string[] = [];
+    for (const [name, entry] of Object.entries(capabilityData ?? {})) {
+        if (entry === undefined) {
+            continue;
+        }
+        const candidate = stableJson({ ...included, [name]: entry });
+        if (candidate.length > MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+            omittedCapabilityNames.push(name);
+            continue;
+        }
+        included = { ...included, [name]: entry };
+    }
+    return { value: stableJson(included), omittedCapabilityNames };
 }
 
 function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
@@ -322,6 +360,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         name: boundedString(schema.name).value,
         schemaVersion: schema.schemaVersion,
     }));
+    const hostedCapabilities = buildAvailableCapabilities(input.capabilityData);
     const measurements = (input.measurements ?? []).slice(-MAX_MEASUREMENTS).map((measurement) => ({
         name: boundedString(measurement.name).value,
         value: measurement.value,
@@ -427,6 +466,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
+        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: hostedCapabilities.value, ...(hostedCapabilities.omittedCapabilityNames.length === 0 ? {} : { omittedCapabilityNames: hostedCapabilities.omittedCapabilityNames }) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
     };
 }
