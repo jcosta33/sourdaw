@@ -2,6 +2,7 @@ import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerC
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
@@ -193,7 +194,7 @@ function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: st
         valuesEqual(value.removedClips[0], clipSnapshot) &&
         Array.isArray(value.shiftedClips) &&
         value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
-        Array.isArray(value.clipSatellites) &&
+        clipSatelliteStateCodec.decodeEntries(value.clipSatellites) !== null &&
         Array.isArray(value.clipAutomationLanes)
     );
 }

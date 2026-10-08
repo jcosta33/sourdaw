@@ -155,6 +155,17 @@ plan's scope or make its replay legs disagree. Hydration must drop each forged e
 project write. Keep internal restore validation with the owner and session mirror; admitting a
 local forward action to the mirror must not add it to executable action discovery.
 
+The first #5064 saved clip-edit validator (`e8163b99cc`) checked a removed clip's satellite
+capture only as an array. Its malformed-history review stance mutated optional clip fields and
+take state, but missed nested gain and warp values. A real `removeClip` with a gain envelope could
+therefore persist an inverse whose `gainDb` was later changed to a string; fresh session hydration
+kept it, and real Undo wrote the string to raw CRDT while the gain-envelope projection discarded it.
+For every saved inverse carrying clip satellites, seed valid envelopes and warp markers through their
+owning stores, remove the clip, corrupt one nested field in the persisted capture, then hydrate and
+invoke real Undo. Require hydration to drop the entry and both raw authority and projections to stay
+unchanged. Keep a valid gain-and-warp remove/reload/Undo/Redo control and the legacy warp alias and
+default-collapse controls; an array check or general finite-number sweep cannot prove shape safety.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

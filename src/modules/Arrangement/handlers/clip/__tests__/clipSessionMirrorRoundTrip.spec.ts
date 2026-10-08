@@ -32,8 +32,10 @@ import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
+import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
@@ -149,6 +151,125 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    it.each([
+        {
+            name: 'gain envelope point',
+            corrupt: (satellite: {
+                gainEnvelope: { points: { gainDb: unknown }[] };
+                warpState: { markers: { originalBeat: unknown }[] };
+            }) => {
+                satellite.gainEnvelope.points[0]!.gainDb = 'bad';
+            },
+        },
+        {
+            name: 'warp marker',
+            corrupt: (satellite: {
+                gainEnvelope: { points: { gainDb: unknown }[] };
+                warpState: { markers: { originalBeat: unknown }[] };
+            }) => {
+                satellite.warpState.markers[0]!.originalBeat = 'bad';
+            },
+        },
+    ])('rejects a malformed persisted removeClip $name before real undo writes', async ({ corrupt }) => {
+        setEnvelope('clip-a', {
+            clipId: 'clip-a',
+            enabled: true,
+            points: [{ id: 'envelope-point-a', beatOffset: 0, gainDb: -6 }],
+        });
+        setWarpState('clip-a', {
+            enabled: true,
+            markers: [{ id: 'warp-marker-a', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = persisted.past as {
+            inverseAction: {
+                payload: {
+                    ripplePlan: {
+                        clipSatellites: {
+                            gainEnvelope: { points: { gainDb: unknown }[] };
+                            warpState: { markers: { originalBeat: unknown }[] };
+                        }[];
+                    };
+                };
+            };
+        }[];
+        const satellite = entries[0]!.inverseAction.payload.ripplePlan.clipSatellites[0]!;
+        expect(satellite.gainEnvelope.points[0]?.gainDb).toBe(-6);
+        expect(satellite.warpState.markers[0]?.originalBeat).toBe(0);
+        corrupt(satellite);
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+
+        const beforeRaw = structuredClone(getCrdtDoc('root'));
+        const beforeGainProjection = structuredClone(gainEnvelopeStore.value);
+        const beforeWarpProjection = structuredClone(warpStateStore.value);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(0);
+        await undo();
+        expect(getCrdtDoc('root')).toEqual(beforeRaw);
+        expect(gainEnvelopeStore.value).toEqual(beforeGainProjection);
+        expect(warpStateStore.value).toEqual(beforeWarpProjection);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+    });
+
+    it('restores real gain and warp captures after removal, persistence, and fresh hydration', async () => {
+        const envelope = {
+            clipId: 'clip-a',
+            enabled: true,
+            points: [{ id: 'envelope-point-a', beatOffset: 0, gainDb: -6 }],
+        };
+        const warpState = {
+            enabled: true,
+            markers: [{ id: 'warp-marker-a', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch' as const,
+            originalTempo: 120,
+        };
+        setEnvelope('clip-a', envelope);
+        setWarpState('clip-a', warpState);
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toBeUndefined();
+        expect(warpStateStore.value?.states['clip-a']).toBeUndefined();
+
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toEqual(envelope);
+        expect(warpStateStore.value?.states['clip-a']).toEqual(warpState);
+        expect(
+            getCrdtDoc<{
+                gainEnvelopes: { envelopes: Record<string, unknown> };
+                warpStates: { states: Record<string, unknown> };
+            }>('root')
+        ).toMatchObject({
+            gainEnvelopes: { envelopes: { 'clip-a': envelope } },
+            warpStates: { states: { 'clip-a': warpState } },
+        });
+
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+        expect(gainEnvelopeStore.value?.envelopes['clip-a']).toBeUndefined();
+        expect(warpStateStore.value?.states['clip-a']).toBeUndefined();
+        expect(
+            getCrdtDoc<{
+                gainEnvelopes: { envelopes: Record<string, unknown> };
+                warpStates: { states: Record<string, unknown> };
+            }>('root')
+        ).toMatchObject({ gainEnvelopes: { envelopes: {} }, warpStates: { states: {} } });
     });
 
     it('drawClip: the recorded entry serializes, rehydrates, and its discard inverse still replays', async () => {
