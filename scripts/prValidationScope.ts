@@ -12,6 +12,7 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'checkStancesRecord',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -34,6 +35,8 @@ const REVIEW_TOOLING = new Set([
     'savedProjectStatePaths',
     'semanticReview',
     'semanticReviewContext',
+    'semanticReviewEvaluation',
+    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -50,21 +53,30 @@ const REVIEW_TOOLING = new Set([
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
+    'typesafeRequest',
     'trackerIssueReconciliation',
 ]);
 
 const SEMANTIC_REVIEW_TOOLING = new Set([
     '__tests__/admissionScheduling.spec.ts',
+    '__tests__/candidateFindings.spec.ts',
+    '__tests__/changeFacts.spec.ts',
+    '__tests__/digestProbes.ts',
     '__tests__/egressVendorShapeExtraction.spec.ts',
     '__tests__/multiPassTransport.spec.ts',
     '__tests__/semanticReview.spec.ts',
     'admissionBytes.ts',
     'candidateFindings.ts',
+    'changeFacts.ts',
     'contractCarrying.ts',
     'contracts.ts',
     'egressVendorShapeExtraction.ts',
     'egressVendorShapes.ts',
     'egressVendorToml.ts',
+    'evaluation/__tests__/semanticEvaluation.spec.ts',
+    'evaluation/corpus.ts',
+    'evaluation/runEvaluation.ts',
+    'evaluation/semanticEvaluationCorpus.json',
     'evidence.ts',
     'evidenceOrdering.ts',
     'fit.ts',
@@ -90,6 +102,8 @@ const SEMANTIC_REVIEW_TOOLING = new Set([
     'verify.ts',
     'withheldReasons.ts',
 ]);
+
+const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
 
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
@@ -117,6 +131,9 @@ function needsCodeql(path: string): boolean {
 function isReviewTooling(path: string): boolean {
     if (path.startsWith('scripts/semanticReview/')) {
         return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
+    }
+    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
+        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
     const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
     const scriptName = match?.[1];

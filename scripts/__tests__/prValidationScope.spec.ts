@@ -97,6 +97,27 @@ const PR_4902_PATHS = [
     'scripts/semanticReview/rules.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
+const KNOWN_NODE_REVIEW_TOOLING = [
+    'scripts/checkStancesRecord.ts',
+    'scripts/__tests__/checkStancesRecord.spec.ts',
+    'scripts/typesafeRequest.ts',
+    'scripts/__tests__/typesafeRequest.spec.ts',
+    'scripts/semanticReviewEvaluation.ts',
+    'scripts/semanticReviewMeasurement.ts',
+    'scripts/__tests__/semanticReviewMeasurement.spec.ts',
+    'scripts/semanticReview/__tests__/candidateFindings.spec.ts',
+    'scripts/semanticReview/__tests__/changeFacts.spec.ts',
+    'scripts/semanticReview/__tests__/digestProbes.ts',
+    'scripts/semanticReview/changeFacts.ts',
+    'scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts',
+    'scripts/semanticReview/evaluation/corpus.ts',
+    'scripts/semanticReview/evaluation/runEvaluation.ts',
+    'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
+    'scripts/semanticReviewMeasurement/artifacts.ts',
+    'scripts/semanticReviewMeasurement/contracts.ts',
+    'scripts/semanticReviewMeasurement/gaps.ts',
+    'scripts/semanticReviewMeasurement/record.ts',
+];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
     'scripts/reviewRiskPolicy.ts',
@@ -219,6 +240,99 @@ describe('required affected verification', () => {
             codeql: true,
             matrix: { include: [] },
         });
+    });
+
+    it.each(KNOWN_NODE_REVIEW_TOOLING)('keeps known Node-only review tooling %s out of browser jobs', (path) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: path.endsWith('.ts'),
+            matrix: { include: [] },
+        });
+    });
+
+    it('plans immutable Node-only review changes without browser jobs, but widens mixed product and config changes', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), '// smoke fixture\n');
+        writeFileSync(join(root, 'tests/e2e/undo.spec.ts'), '// browser fixture\n');
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', 'tests/e2e']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        const nodePaths = [
+            'scripts/checkStancesRecord.ts',
+            'scripts/typesafeRequest.ts',
+            'scripts/semanticReview/evaluation/runEvaluation.ts',
+            'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
+            'scripts/semanticReviewMeasurement/record.ts',
+        ];
+        for (const path of nodePaths) {
+            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
+        }
+        git(['add', ...nodePaths]);
+        git(['commit', '--quiet', '-m', 'Node-only review tooling']);
+        const output = join(root, 'output');
+        const planAt = (startingSha: string) => {
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    BASE_SHA: startingSha,
+                    HEAD_SHA: git(['rev-parse', 'HEAD']),
+                    GITHUB_OUTPUT: output,
+                },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan: unknown = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+            return plan;
+        };
+        const tooling = planAt(base);
+        expect(tooling).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        expect(tooling).toMatchObject({
+            reasons: [...nodePaths].sort().map((path) => ({
+                path,
+                reason: 'known review tooling; security/static checks without browser execution',
+            })),
+        });
+        expect(readFileSync(output, 'utf8')).toContain(
+            'profile=tooling\nbrowser=false\nbrowser-ai=false\ncodeql=true\n'
+        );
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product fixture\n');
+        writeFileSync(join(root, 'vite.config.ts'), '// config fixture\n');
+        git(['add', 'src/app/bootstrap.ts', 'vite.config.ts']);
+        git(['commit', '--quiet', '-m', 'mixed product and config']);
+        const broad = planAt(base);
+        expect(broad).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
+        expect(broad).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
+        const broadHead = git(['rev-parse', 'HEAD']);
+        const unknown = 'scripts/semanticReview/newBuildStep.ts';
+        writeFileSync(join(root, unknown), 'export const fixture = true;\n');
+        git(['add', unknown]);
+        git(['commit', '--quiet', '-m', 'unknown semantic module']);
+        const unknownPlan = planAt(broadHead);
+        expect(unknownPlan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(unknownPlan).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
+        const unknownHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'scripts/e2eServerIdentity.ts'), 'export const fixture = true;\n');
+        git(['add', 'scripts/e2eServerIdentity.ts']);
+        git(['commit', '--quiet', '-m', 'browser-owned script helper']);
+        const browserOwned = planAt(unknownHead);
+        expect(browserOwned).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(browserOwned).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
     });
 
     it('uses broad scope for mixed, unknown, and build paths', () => {
