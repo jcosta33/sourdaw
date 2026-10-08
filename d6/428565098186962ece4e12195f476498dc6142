@@ -1,0 +1,27 @@
+scripts/deliverPullRequest.ts
+  s_97ab82e0b4f10c::t_00a636f8727c94 151-152,163-173,182,186
+scripts/__tests__/deliveryRiskPlanLoss.spec.ts
+  s_97ab82e0b4f10c::t_bd69568a19a02d 75-93
+.agents/skills/review-stances/review-authorization.md
+  s_97ab82e0b4f10c::t_00a636f8727c94 12-15,19-21,38-47
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_97ab82e0b4f10c::t_f03f3bc52bcc8a 452-466,468-469
+  s_97ab82e0b4f10c::t_bd69568a19a02d 411,578-582
+  s_97ab82e0b4f10c::t_ccffc9b2851fbb 467,518,583-585,11938,11949-11950
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6428565098186962ece4e12195f476498dc6142",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
