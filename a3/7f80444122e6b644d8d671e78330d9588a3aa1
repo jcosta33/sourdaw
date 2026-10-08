@@ -1,0 +1,67 @@
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_1f0dcd815e8946::t_08870ce4364df0 9,111,122,228-247
+  s_1f0dcd815e8946::t_359b8f30aeb277 248-256
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_1f0dcd815e8946::t_0688e9f5e7d51c 5,158-159,167-168,172,184-185,193-198
+  s_1f0dcd815e8946::t_5a254935d567d3 173-183,186-192,674
+  s_1f0dcd815e8946::t_f87e16eabe61ab 681
+  s_97ab82e0b4f10c::t_340b51b21327e8 199-200
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  s_1f0dcd815e8946::t_56632356989de4 2,7-8,18-19,61-62,70,75-76
+  s_1f0dcd815e8946::t_8512252a3772fe 21-25,63-69
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_1f0dcd815e8946::t_8a485852e4079c 2-3,9-10,26,34-36
+  s_1f0dcd815e8946::t_0f2193a66d6675 58-85
+  s_1f0dcd815e8946::t_561d373ea590ad 86-90,110,121,134-140,164-169
+src/utils/handlerContract.ts
+  s_1f0dcd815e8946::t_45b8d2c99504aa 184
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipPlacement.spec.ts
+  s_1f0dcd815e8946::t_0cc9d3b08be282 96-97,99-118
+  s_1f0dcd815e8946::t_45fda052ba2357 98,119-120
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_1f0dcd815e8946::t_18b41b3831d503 23
+  s_1f0dcd815e8946::t_1b12bced5ce8ff 18,121-126,129-132,135-137,144-145,153-155,160-166,168,174
+  s_1f0dcd815e8946::t_242f009a8e352b 70-71,116-120,127-128,133-134,138-143,146-152,156-159,167,169-173,175-177
+src/modules/Arrangement/useCases/clipEditing/clipWithAudioSourceAtBeat.ts
+  s_1f0dcd815e8946::t_09d4e5acc5224f 1-10
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_1f0dcd815e8946::t_625ffb34d6cb49 126-127,130
+  s_1f0dcd815e8946::t_2c8c262d0c9c57 21-25,28-38,50,82-85,120-123,128-129,156
+  s_1f0dcd815e8946::t_3a27b8af21d768 6-7,86-88,124-125
+  s_1f0dcd815e8946::t_d3894ffb8f0e06 118-119,137,154-155
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_1f0dcd815e8946::t_f12de32cfab437 411,413-416,656-657,660,665,703,712,718
+  s_1f0dcd815e8946::t_449bf41823e7ff 2,345-347,409,655,658,672,693-695,702,704-705,710
+  s_1f0dcd815e8946::t_59f4db015be3dd 27-28
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_1f0dcd815e8946::t_59f4db015be3dd 14-15,982-985,1027-1030
+  s_1f0dcd815e8946::t_ecdbfa025f74a9 863,866,872,954,968-969,972-977,1001-1004,1021,1023,1104
+  s_1f0dcd815e8946::t_b987c1a62239c5 296-300,351-355
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  s_1f0dcd815e8946::t_18b41b3831d503 52-66
+  s_1f0dcd815e8946::t_2fe4cd448cffe3 3-4,15-16,47-51,67-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a37f80444122e6b644d8d671e78330d9588a3aa1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
