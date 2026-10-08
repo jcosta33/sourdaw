@@ -148,7 +148,8 @@ export type DeliveryAuthorizationBinding =
 
 /**
  * A plan-less bundle is legacy only when its head-bound manifest says it never generated one.
- * Early manifests predate baseRefName; a present value still has to be valid.
+ * The original producer wrote only pr, baseSha, and headSha. Later producers recorded generated;
+ * a present generated list or baseRefName still has to be valid.
  */
 function assertLegacyReviewBundle(number: number, head: string, bundle: string): void {
     const manifestPath = join(bundle, 'manifest.json');
@@ -159,6 +160,17 @@ function assertLegacyReviewBundle(number: number, head: string, bundle: string):
         fail(`PR #${number} review bundle manifest at ${manifestPath} is missing or unreadable`);
     }
     const manifest = parseJson<unknown>(contents, `PR #${number} review bundle manifest at ${manifestPath}`);
+    const generated =
+        isRecord(manifest) &&
+        Array.isArray(manifest.generated) &&
+        manifest.generated.every((entry): entry is string => typeof entry === 'string')
+            ? manifest.generated
+            : undefined;
+    const originalManifest =
+        isRecord(manifest) &&
+        Object.keys(manifest).length === 3 &&
+        !Object.hasOwn(manifest, 'generated') &&
+        !Object.hasOwn(manifest, 'baseRefName');
     if (
         !isRecord(manifest) ||
         manifest.pr !== number ||
@@ -167,12 +179,11 @@ function assertLegacyReviewBundle(number: number, head: string, bundle: string):
             (typeof manifest.baseRefName !== 'string' || manifest.baseRefName.trim() === '')) ||
         typeof manifest.baseSha !== 'string' ||
         manifest.baseSha === '' ||
-        !Array.isArray(manifest.generated) ||
-        !manifest.generated.every((entry): entry is string => typeof entry === 'string')
+        (generated === undefined && !originalManifest)
     ) {
         fail(`PR #${number} review bundle manifest at ${manifestPath} has invalid provenance`);
     }
-    if (manifest.generated.includes('risk-plan.json')) {
+    if (generated?.includes('risk-plan.json')) {
         fail(
             `missing review risk plan at ${join(bundle, 'risk-plan.json')}; the bundle manifest records generating it`
         );

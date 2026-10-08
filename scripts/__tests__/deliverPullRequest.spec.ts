@@ -408,6 +408,7 @@ function writeLegacyReviewBundleManifest(primaryRoot: string, number: number, he
 
 function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) {
     const captures: Array<{ command: string; args: string[] }> = [];
+    const mergeCaptures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
     let deliveryReceipt: DeliveryReceiptComment | undefined;
     let primaryMerged = false;
@@ -442,6 +443,24 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
                                 comments: {
                                     totalCount: deliveryReceipt === undefined ? 0 : 1,
                                     nodes: deliveryReceipt === undefined ? [] : [{ id: deliveryReceipt.id }],
+                                },
+                            },
+                        },
+                    },
+                });
+            }
+            if (joined.includes('comments(first:') && joined.includes('lastEditedAt')) {
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                comments: {
+                                    totalCount: deliveryReceipt === undefined ? 0 : 1,
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                    nodes:
+                                        deliveryReceipt === undefined
+                                            ? []
+                                            : [{ id: deliveryReceipt.id, lastEditedAt: null }],
                                 },
                             },
                         },
@@ -496,7 +515,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
                 ]);
             }
             if (joined.includes('.delete_branch_on_merge')) {
-                return String(finalSettings.delete_branch_on_merge);
+                return 'false';
             }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
@@ -556,8 +575,14 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
             }
         },
     };
-    const port = shellPort('jcosta33/sourdaw', shell, { primaryRoot });
-    return { captures, port };
+    const port = shellPort('jcosta33/sourdaw', shell, {
+        primaryRoot,
+        mergeCapture: (command, args) => {
+            mergeCaptures.push({ command, args });
+            return shell.capture(command, args);
+        },
+    });
+    return { captures, mergeCaptures, port };
 }
 
 function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -11910,7 +11935,7 @@ describe('delivery shell boundary', () => {
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
         writeLegacyReviewBundleManifest(primaryRoot, 42, 'head');
         try {
-            const { captures, port } = stackedDeliveryPort(
+            const { captures, mergeCaptures, port } = stackedDeliveryPort(
                 {
                     allow_merge_commit: false,
                     allow_rebase_merge: false,
@@ -11921,6 +11946,8 @@ describe('delivery shell boundary', () => {
             );
 
             expect(() => deliverPullRequest(42, port)).toThrow(/automatic merged-branch deletion/);
+            expect(captures).toContainEqual({ command: 'gh', args: ['api', 'repos/jcosta33/sourdaw'] });
+            expect(mergeCaptures).toHaveLength(0);
             expect(captures).not.toContainEqual(
                 expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
             );

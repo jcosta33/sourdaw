@@ -72,6 +72,25 @@ describe('delivery risk-plan provenance at the production shell port', () => {
         expect(authorizationReader(root)(PR, HEAD)).toEqual({ kind: 'legacy' });
     });
 
+    it('admits the original three-field pre-plan manifest before generated was recorded', () => {
+        const { root, bundle } = bundleFixture(['manifest.json']);
+        writeFileSync(join(bundle, 'manifest.json'), JSON.stringify({ pr: PR, baseSha: BASE, headSha: HEAD }));
+
+        expect(authorizationReader(root)(PR, HEAD)).toEqual({ kind: 'legacy' });
+    });
+
+    it.each([
+        ['another PR', { pr: PR + 1, baseSha: BASE, headSha: HEAD }],
+        ['another head', { pr: PR, baseSha: BASE, headSha: 'other-head' }],
+        ['an empty base SHA', { pr: PR, baseSha: '', headSha: HEAD }],
+        ['an unproven extra field', { pr: PR, baseSha: BASE, headSha: HEAD, extra: true }],
+    ])('refuses original manifest provenance with %s', (_label, manifest) => {
+        const { root, bundle } = bundleFixture(['manifest.json']);
+        writeFileSync(join(bundle, 'manifest.json'), JSON.stringify(manifest));
+
+        expect(() => authorizationReader(root)(PR, HEAD)).toThrow(/invalid provenance/u);
+    });
+
     it('refuses a missing plan recorded by a manifest without baseRefName', () => {
         const generated = ['manifest.json', 'risk-plan.json'];
         const { root, bundle } = bundleFixture(generated);

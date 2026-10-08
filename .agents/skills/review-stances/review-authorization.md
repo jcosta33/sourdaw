@@ -9,12 +9,16 @@ decision must follow the producer's provenance, not the continued presence of on
 - Trace every generated bundle file from `review:prepare` through the manifest and every consumer
   that grants publication, acceptance, or delivery authority. Remove one generated file at a time
   while leaving the manifest and other caller records intact; require refusal before a remote write.
-- Exercise a genuine pre-contract bundle with a valid head-bound manifest that never named the new
-  artifact. Keep it as a positive control, then make the manifest absent, unreadable, malformed, or
-  bound to another head. Unknown provenance must never become legacy authority.
+- Exercise the original producer's three-field `{ pr, baseSha, headSha }` manifest as a positive
+  control, alongside later pre-contract manifests whose `generated` list excludes the new artifact.
+  Make each manifest absent, unreadable, malformed, or bound to another head. Unknown provenance
+  must never become legacy authority.
 - Run the production shell port, not a fixture that supplies a preselected `legacy` or `required`
   binding. With a present plan, retain the live reviewer id, authorized dossier digest, and exact
   head checks; mutate each binding independently and require refusal before merge.
+- A stacked-delivery fixture must let initial deletion-policy reads pass and prove the final policy
+  read occurred before any author merge call. If the first read already refuses, the final guard
+  remains untested even when the error text matches.
 
 ## Escape: PR #4573 treated a lost modern plan as legacy
 
@@ -31,3 +35,13 @@ remove `risk-plan.json`, then call the production delivery authorization reader 
 missing-generated-plan refusal. Keep a valid pre-plan manifest as the positive control. A malformed
 or missing manifest and a surviving dossier with no plan must also refuse, while a complete planned
 bundle must still return the bound authorization and its pre-authorization dossier digest.
+
+## Escape: PR #5057 missed the oldest manifest and the final stack guard
+
+The first repair's positive control still supplied `generated`, although the original
+`prepareReview` producer at `6517347907b1d255aca9eff0545b488a824e95d6` wrote only
+`pr`, `baseSha`, and `headSha`. Its reader therefore rejected a genuine pre-plan bundle.
+The stacked-delivery case supplied `delete_branch_on_merge: true` to the initial policy read,
+which returned before the final control; the case stayed green if that control was removed.
+Keep the exact three-field manifest as a positive control, reject unproven variants, and make
+the stack fixture reach the final repository-policy read with zero merge attempts.
