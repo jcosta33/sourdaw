@@ -118,6 +118,13 @@ const KNOWN_NODE_REVIEW_TOOLING = [
     'scripts/semanticReviewMeasurement/gaps.ts',
     'scripts/semanticReviewMeasurement/record.ts',
 ];
+const RELEASE_METADATA = ['release/open-source-inventory.json', 'release/dependency-license-proofs.json'];
+const REVIEW_REPAIR_TOOLING = [
+    'scripts/reviewRepair.ts',
+    'scripts/__tests__/reviewRepair.spec.ts',
+    'scripts/reconstructReviewRounds.ts',
+    'scripts/__tests__/reconstructReviewRounds.spec.ts',
+];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
     'scripts/reviewRiskPolicy.ts',
@@ -252,6 +259,69 @@ describe('required affected verification', () => {
         });
     });
 
+    it.each([...RELEASE_METADATA, ...REVIEW_REPAIR_TOOLING])(
+        'keeps known non-browser source %s in tooling scope',
+        (path) => {
+            expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                profile: 'tooling',
+                browser: false,
+                browserAi: false,
+                codeql: path.endsWith('.ts'),
+                matrix: { include: [] },
+            });
+        }
+    );
+
+    it('keeps release metadata and review helpers narrow together, with CodeQL for TypeScript', () => {
+        expect(selectValidationPlan(RELEASE_METADATA, INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: false,
+            matrix: { include: [] },
+        });
+        expect(selectValidationPlan([...RELEASE_METADATA, 'scripts/typesafeRequest.ts'], INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+        expect(selectValidationPlan([...RELEASE_METADATA, ...REVIEW_REPAIR_TOOLING], INVENTORY)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: true,
+            matrix: { include: [] },
+        });
+    });
+
+    it('preserves unknown release and WASM, product, and config fallback when metadata changes', () => {
+        for (const path of [
+            'release/new-release-metadata.json',
+            'release/wasm-artifacts.json',
+            'public/wasm/manifest.json',
+            'src/app/bootstrap.ts',
+            'vite.config.ts',
+            'package.json',
+        ]) {
+            const plan = selectValidationPlan([...RELEASE_METADATA, path], INVENTORY);
+            expect(plan).toMatchObject({
+                profile: 'broad',
+                browser: true,
+                browserAi: true,
+            });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+        const direct = selectValidationPlan([...RELEASE_METADATA, 'tests/e2e/undo.spec.ts'], INVENTORY);
+        expect(direct).toMatchObject({
+            profile: 'broad',
+            browser: true,
+            browserAi: false,
+        });
+        expect(allSelected(direct)).toEqual(['tests/e2e/undo.spec.ts']);
+    });
+
     it('plans immutable Node-only review changes without browser jobs, but widens mixed product and config changes', () => {
         const root = temporaryRoot();
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -264,19 +334,13 @@ describe('required affected verification', () => {
         git(['add', 'tests/e2e']);
         git(['commit', '--quiet', '-m', 'base']);
         const base = git(['rev-parse', 'HEAD']);
-        const nodePaths = [
-            'scripts/checkStancesRecord.ts',
-            'scripts/typesafeRequest.ts',
-            'scripts/semanticReview/evaluation/runEvaluation.ts',
-            'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
-            'scripts/semanticReviewMeasurement/record.ts',
-        ];
-        for (const path of nodePaths) {
-            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
-            writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
+        const metadataPaths = RELEASE_METADATA;
+        for (const path of metadataPaths) {
+            mkdirSync(join(root, 'release'), { recursive: true });
+            writeFileSync(join(root, path), '{}\n');
         }
-        git(['add', ...nodePaths]);
-        git(['commit', '--quiet', '-m', 'Node-only review tooling']);
+        git(['add', ...metadataPaths]);
+        git(['commit', '--quiet', '-m', 'release metadata only']);
         const output = join(root, 'output');
         const planAt = (startingSha: string) => {
             const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
@@ -293,6 +357,31 @@ describe('required affected verification', () => {
             const plan: unknown = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
             return plan;
         };
+        expect(planAt(base)).toMatchObject({
+            profile: 'tooling',
+            browser: false,
+            browserAi: false,
+            codeql: false,
+            matrix: { include: [] },
+            reasons: [...metadataPaths].sort().map((path) => ({
+                path,
+                reason: 'known review tooling; security/static checks without browser execution',
+            })),
+        });
+        const nodePaths = [
+            'scripts/checkStancesRecord.ts',
+            'scripts/typesafeRequest.ts',
+            'scripts/semanticReview/evaluation/runEvaluation.ts',
+            'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
+            'scripts/semanticReviewMeasurement/record.ts',
+            ...REVIEW_REPAIR_TOOLING,
+        ];
+        for (const path of nodePaths) {
+            mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
+        }
+        git(['add', ...nodePaths]);
+        git(['commit', '--quiet', '-m', 'Node-only review tooling']);
         const tooling = planAt(base);
         expect(tooling).toMatchObject({
             profile: 'tooling',
@@ -302,7 +391,7 @@ describe('required affected verification', () => {
             matrix: { include: [] },
         });
         expect(tooling).toMatchObject({
-            reasons: [...nodePaths].sort().map((path) => ({
+            reasons: [...metadataPaths, ...nodePaths].sort().map((path) => ({
                 path,
                 reason: 'known review tooling; security/static checks without browser execution',
             })),
@@ -381,6 +470,14 @@ describe('required affected verification', () => {
         );
         expect(selectValidationPlan(reviewToolRenamedToUnknown, INVENTORY).profile).toBe('broad');
         expect(selectValidationPlan(reviewToolRenamedFromUnknown, INVENTORY).profile).toBe('broad');
+        const metadataRenamedToUnknown = parseChangedPaths(
+            'R100\0release/open-source-inventory.json\0release/future.json\0'
+        );
+        const metadataRenamedFromUnknown = parseChangedPaths(
+            'R100\0release/future.json\0release/open-source-inventory.json\0'
+        );
+        expect(selectValidationPlan(metadataRenamedToUnknown, INVENTORY).profile).toBe('broad');
+        expect(selectValidationPlan(metadataRenamedFromUnknown, INVENTORY).profile).toBe('broad');
         expect(
             selectValidationPlan(parseChangedPaths('D\0scripts/semanticReviewContext.ts\0'), INVENTORY).profile
         ).toBe('tooling');
