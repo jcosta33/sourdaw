@@ -37,10 +37,18 @@ function observed(): CapabilityObservation {
     };
 }
 
+function requiredRuleset(observation: CapabilityObservation): CapabilityObservation['rulesets'][number] {
+    const ruleset = observation.rulesets[0];
+    if (ruleset === undefined) {
+        throw new Error('test fixture is missing its main ruleset');
+    }
+    return ruleset;
+}
+
 describe('inactive retarget capability plan', () => {
     it('prints the exact disabled branch proposal and unchanged main rollback in canonical form', () => {
         const input = observed();
-        const original = canonicalJson(input.rulesets[0]);
+        const original = canonicalJson(requiredRuleset(input));
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
         expect(plan.proposal).toEqual({
             name: 'native-publication-nonmain',
@@ -53,7 +61,7 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
         expect(plan.completeObservedInventory).toBe(true);
         expect(plan.originalMainRollback).toEqual([original]);
-        expect(canonicalJson(input.rulesets[0])).toBe(original);
+        expect(canonicalJson(requiredRuleset(input))).toBe(original);
         expect(plan.sourceSha).toBe(SOURCE);
         expect(plan.futureActorOperationIntent).toMatchObject({
             observedEnforcement: false,
@@ -70,7 +78,7 @@ describe('inactive retarget capability plan', () => {
     it('changes the semantic digest when observed main protection changes', () => {
         const first = observed();
         const changed = observed();
-        changed.rulesets[0].rules = [{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }];
+        requiredRuleset(changed).rules = [{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }];
         expect(buildCapabilityPlan(first, SOURCE, INTERVAL).originalMainSemanticDigest).not.toBe(
             buildCapabilityPlan(changed, SOURCE, INTERVAL).originalMainSemanticDigest
         );
@@ -115,17 +123,18 @@ describe('inactive retarget capability plan', () => {
 
     it('refuses a same-name collision and unsafe policy value', () => {
         const collision = observed();
-        collision.rulesets[0].name = 'native-publication-nonmain';
+        requiredRuleset(collision).name = 'native-publication-nonmain';
         expect(() => buildCapabilityPlan(collision, SOURCE, INTERVAL)).toThrow(/already exists/u);
         const secret = observed();
-        secret.rulesets[0].name = ['ghp', '_secret'].join('');
+        requiredRuleset(secret).name = ['ghp', '_secret'].join('');
         expect(() => buildCapabilityPlan(secret, SOURCE, INTERVAL)).toThrow(/unsafe value/u);
     });
 
     it('preserves incomplete visibility and unknown semantics without making an activation claim', () => {
         const input = observed();
-        delete input.rulesets[0].bypass_actors;
-        input.rulesets[0].rules = [{ type: 'future_rule' }];
+        const mainRuleset = requiredRuleset(input);
+        delete mainRuleset.bypass_actors;
+        mainRuleset.rules = [{ type: 'future_rule' }];
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
         expect(plan.completeObservedInventory).toBe(false);
         expect(plan.limitations).toContain('ruleset detail or bypass visibility is incomplete');

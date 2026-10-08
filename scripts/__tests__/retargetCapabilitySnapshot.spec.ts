@@ -12,6 +12,7 @@ import {
     type ListPage,
 } from '../retargetCapabilitySnapshot.ts';
 
+import type { JsonValue } from '../canonicalRecord.ts';
 import type { GhSession } from '../githubAppIdentity.ts';
 
 const SOURCE = 'a'.repeat(40);
@@ -69,11 +70,17 @@ const KINDS = [
     'reviewDismissalAllowances',
 ] as const;
 
-function rest(items: unknown[], nextPage: number | null = null): ListPage {
-    return { items: items as ListPage['items'], nextPage };
+function rest(items: JsonValue[], nextPage: number | null = null): ListPage {
+    return { items, nextPage };
 }
-function connection(nodes: unknown[], totalCount: number, hasNextPage = false, endCursor: string | null = null) {
+function connection(nodes: JsonValue[], totalCount: number, hasNextPage = false, endCursor: string | null = null) {
     return { nodes, totalCount, pageInfo: { hasNextPage, endCursor } };
+}
+function requiredRecord(value: JsonValue | undefined, label: string): Record<string, JsonValue> {
+    if (value === undefined || value === null || Array.isArray(value) || typeof value !== 'object') {
+        throw new Error(`${label} is missing from the test fixture`);
+    }
+    return value;
 }
 function fakePort() {
     const calls: string[] = [];
@@ -150,10 +157,19 @@ describe('bounded capability capture', () => {
         const result = captureCapabilitySnapshot(port);
         expect(result.rulesets).toEqual([RULE]);
         expect(result.classic).toHaveLength(1);
+        const classicRule = result.classic[0];
+        if (classicRule === undefined) {
+            throw new Error('expected one captured classic rule');
+        }
+        const allowances = requiredRecord(classicRule.allowances, 'classic allowances');
         for (const kind of KINDS) {
             expect(calls).toContain(`${kind}-classic-node-null`);
             expect(calls).toContain(`${kind}-classic-node-cursor-1`);
-            expect(result.classic[0].allowances[kind]).toHaveLength(2);
+            const entries = allowances[kind];
+            if (!Array.isArray(entries)) {
+                throw new TypeError(`missing ${kind} connection entries`);
+            }
+            expect(entries).toHaveLength(2);
         }
         expect(calls).toContain('effective-main-1');
         expect(result.limitations).toEqual([]);
@@ -218,7 +234,7 @@ describe('bounded capability capture', () => {
         let captures = 0;
         const disposed = vi.fn();
         const print = vi.fn();
-        const session = { dispose: disposed } as unknown as GhSession;
+        const session: GhSession = { configDir: '/unused', env: {}, dispose: disposed };
         const result = () =>
             runRetargetCapabilityPlanCli([], {
                 sourceCheck: () => SOURCE,
@@ -256,21 +272,37 @@ describe('bounded capability capture', () => {
         expect(auth).not.toHaveBeenCalled();
         const { port } = fakePort();
         const disposed = vi.fn();
-        const print = vi.fn();
+        const printed: string[] = [];
+        const print = vi.fn((value: string) => {
+            printed.push(value);
+        });
         expect(
             runRetargetCapabilityPlanCli([], {
                 sourceCheck: () => SOURCE,
                 primaryRoot: () => '/primary',
                 authenticate: () => ({
                     minted: { actorNodeId: USER.node_id },
-                    session: { dispose: disposed } as unknown as GhSession,
+                    session: { configDir: '/unused', env: {}, dispose: disposed },
                 }),
                 readPort: () => port,
                 now: () => '2026-10-08T00:00:00.000Z',
                 print,
             })
         ).toBe(0);
-        const emitted = JSON.parse(print.mock.calls[0][0]);
+        const printedValue = printed[0];
+        if (printedValue === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted: unknown = JSON.parse(printedValue);
+        if (
+            typeof emitted !== 'object' ||
+            emitted === null ||
+            Array.isArray(emitted) ||
+            !('activationEligible' in emitted) ||
+            !('sourceSha' in emitted)
+        ) {
+            throw new Error('emitted capability plan is not an object');
+        }
         expect(print).toHaveBeenCalledOnce();
         expect(emitted.activationEligible).toBe(false);
         expect(emitted.sourceSha).toBe(SOURCE);

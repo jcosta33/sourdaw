@@ -2238,6 +2238,12 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/retargetCapabilitySnapshot.ts",
+            "value": "https://api.github.com/${slot}${slot}per_page=100&page=${slot}",
+            "templateSha256": "3922199f6821c354d4734cda7d408d616ef2f881c16d52c41a0de012cc8bbe9c"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/run-gitleaks-history-scan.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
