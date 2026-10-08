@@ -1,0 +1,49 @@
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_1f0dcd815e8946::t_d959013dfcaedc 3,11,96
+  s_1f0dcd815e8946::t_b162bc19813680 80-85,95
+src/modules/Arrangement/useCases/clipboard/copySelectedClip.ts
+  s_1f0dcd815e8946::t_4521db59a921bc 7,53-56,58
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_1f0dcd815e8946::t_d959013dfcaedc 29,86
+  s_1f0dcd815e8946::t_a02d6d11e77aa2 7-16,48-49
+src/modules/Arrangement/useCases/clipboard/__tests__/copySelectedClip.spec.ts
+  s_1f0dcd815e8946::t_9d48affd8e8c27 1,3-5,7,66-67,78-118
+  s_1f0dcd815e8946::t_6b9afd68e006f7 119
+src/modules/Arrangement/useCases/clip/__tests__/addClip.spec.ts
+  s_1f0dcd815e8946::t_f718854fa2cb9c 169,184,191-222
+src/modules/Arrangement/useCases/clipboard/__tests__/cutSelectedClip.spec.ts
+  s_1f0dcd815e8946::t_5c75134dd57544 1-3,7,9,111-112,124-154
+  s_1f0dcd815e8946::t_f1fd22feca10a4 155
+src/modules/Arrangement/useCases/clipboard/cutSelectedClip.ts
+  s_1f0dcd815e8946::t_4521db59a921bc 8,54-57,59
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_1f0dcd815e8946::t_1255cb6d3dd44a 1,4,85-86,158-169,171-175,177,184,188-202
+  s_1f0dcd815e8946::t_b162bc19813680 5,65,87,170,176,178-183,185-187
+  s_1f0dcd815e8946::t_c558d9e29597ca 3,66
+  s_1f0dcd815e8946::t_d7596076c7f10e 88-89,203-204
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClipDropsClipSettings.spec.ts
+  s_1f0dcd815e8946::t_b162bc19813680 120-123
+  s_1f0dcd815e8946::t_474fd9af7d0b6a 7,10-11,63,78,139-163
+  s_1f0dcd815e8946::t_cb641331f8af32 3,9,65,79,107-119,124-138
+  s_1f0dcd815e8946::t_f5047fc2b19312 164-167
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_1f0dcd815e8946::t_b162bc19813680 122-127,139
+  s_1f0dcd815e8946::t_a02d6d11e77aa2 14
+  s_1f0dcd815e8946::t_d959013dfcaedc 3,140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4cedd9d3e41eca6c427c6743a96298f5c90a30cc",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
