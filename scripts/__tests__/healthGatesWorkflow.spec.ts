@@ -101,6 +101,11 @@ const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
 // Longest observed time of every step except the browser install, per job.
 const SMOKE_NON_INSTALL_SECONDS = 480;
 const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
+// The derived minimum is a floor only; the declared limit is also a ceiling, so
+// raising a job toward GitHub's 360-minute default (an effectively unbounded
+// job) is a deliberate edit to these constants and not a silent workflow change.
+const SMOKE_JOB_MINUTES = 45;
+const E2E_JOB_MINUTES = 75;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // A cancelled upstream job must still reach the required assertion. GitHub
@@ -730,7 +735,12 @@ function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
 // cannot signal it: the stalled apt would survive as an orphan holding its lock
 // and every later attempt would fail on it. The root half is therefore bounded
 // from the root side, and the user-side browser download separately.
-function assertBoundedBrowserInstall(job: UnknownRecord, label: string, nonInstallSeconds: number): void {
+function assertBoundedBrowserInstall(
+    job: UnknownRecord,
+    label: string,
+    nonInstallSeconds: number,
+    declaredJobMinutes: number
+): void {
     const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
     if (!installRun.includes('for attempt in 1 2 3')) {
         throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
@@ -750,6 +760,9 @@ function assertBoundedBrowserInstall(job: UnknownRecord, label: string, nonInsta
             `${label} must have a job limit that holds three timed-out install attempts and its other steps`
         );
     }
+    if (timeoutMinutes !== declaredJobMinutes) {
+        throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
+    }
 }
 
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
@@ -757,7 +770,7 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS);
+    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS, SMOKE_JOB_MINUTES);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -776,7 +789,7 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     ) {
         throw new Error('the Playwright install step must be bounded below the E2E job limit');
     }
-    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS);
+    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS, E2E_JOB_MINUTES);
     if (!run.includes('sleep $((attempt * 5))') || !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')) {
         throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
     }
@@ -3139,18 +3152,21 @@ describe('health gates workflow contract', () => {
                 workflow: validationWorkflow,
                 job: 'smoke',
                 nonInstallSeconds: SMOKE_NON_INSTALL_SECONDS,
+                declaredJobMinutes: SMOKE_JOB_MINUTES,
             },
             {
                 label: 'the affected end-to-end job',
                 workflow: heavyWorkflow,
                 job: 'e2e',
                 nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+                declaredJobMinutes: E2E_JOB_MINUTES,
             },
             {
                 label: 'the nightly end-to-end job',
                 workflow: nightly,
                 job: 'e2e',
                 nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
+                declaredJobMinutes: E2E_JOB_MINUTES,
             },
         ];
         const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
@@ -3159,9 +3175,9 @@ describe('health gates workflow contract', () => {
         );
         const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
 
-        for (const { label, workflow, job, nonInstallSeconds } of installs) {
+        for (const { label, workflow, job, nonInstallSeconds, declaredJobMinutes } of installs) {
             const check = (candidate: UnknownRecord): void => {
-                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds);
+                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds, declaredJobMinutes);
             };
             const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
                 const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
@@ -3223,10 +3239,22 @@ describe('health gates workflow contract', () => {
             expect(() => check(justBelowLimit)).toThrow(
                 `${label} must have a job limit that holds three timed-out install attempts and its other steps`
             );
-            const exactLimit = mutate('limit at the requirement', (target) => {
-                target['timeout-minutes'] = requiredMinutes;
+            expect(declaredJobMinutes).toBeGreaterThanOrEqual(requiredMinutes);
+            const pinMessage = `${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`;
+            const justAboveLimit = mutate('limit just above the declaration', (target) => {
+                target['timeout-minutes'] = declaredJobMinutes + 1;
             });
-            expect(() => check(exactLimit)).not.toThrow();
+            expect(() => check(justAboveLimit)).toThrow(pinMessage);
+            const defaultLimit = mutate('GitHub default limit', (target) => {
+                target['timeout-minutes'] = 360;
+            });
+            expect(() => check(defaultLimit)).toThrow(pinMessage);
+            const unlimited = mutate('absent limit', (target) => {
+                delete target['timeout-minutes'];
+            });
+            expect(() => check(unlimited)).toThrow(
+                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+            );
         }
     });
 
