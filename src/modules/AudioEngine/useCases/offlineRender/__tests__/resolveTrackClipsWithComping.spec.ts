@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { type Clip } from '#/modules/Arrangement/stores';
 
+import { projectOfflineAudioClipPlaybacks } from '../projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 const mocks = vi.hoisted(() => ({
@@ -34,6 +35,34 @@ function testClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 }
 
 describe('resolveTrackClipsWithComping', () => {
+    it('seeks the uncovered tail through the tempo map from canonical source time', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'src', name: 'Take 1', startBeat: 0, endBeat: 12, selected: true }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-1' }],
+                },
+            ],
+        };
+        const source = { ...testClip({ id: 'src', endBeat: 12, audioOffsetBeats: 0 }), audioOffsetSeconds: 0 };
+        const tail = resolveTrackClipsWithComping('t1', [source]).find((clip) => clip.startBeat === 8);
+        expect(tail).toBeDefined();
+        const beatToSeconds = (beat: number): number => (beat <= 4 ? beat / 2 : 2 + beat - 4);
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: tail!,
+            bufferDurationSeconds: 20,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 20,
+            compensationDelay: 0,
+            projectBeatToSeconds: beatToSeconds,
+            resolveTempoAtBeat: (beat) => (beat < 4 ? 120 : 60),
+        });
+        expect(playbacks[0]?.bufferOffsetSec).toBe(6);
+    });
+
     it('returns clip bounds as region and source bounds when the lane store is empty', () => {
         mocks.takeLaneStoreValue.value = null;
 
