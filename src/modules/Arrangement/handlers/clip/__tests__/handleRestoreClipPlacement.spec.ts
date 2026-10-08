@@ -10,11 +10,15 @@ const mocks = vi.hoisted(() => ({
     restoreClipAutomationMoveState: vi.fn(),
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
-    getAutomationLanes: mocks.getAutomationLanes,
-    restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
+        getAutomationLanes: mocks.getAutomationLanes,
+        isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
+    };
+});
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
