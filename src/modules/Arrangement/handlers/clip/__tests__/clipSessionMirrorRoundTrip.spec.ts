@@ -8,7 +8,11 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import {
+    getAutomationHandlers,
+    prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
 import {
     commitUndoEntry,
@@ -29,9 +33,17 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import {
+    getMidiNoteTransformHandlers,
+    prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
+} from '#/modules/MIDI/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { getTransportHandlers } from '#/modules/Transport/useCases';
+import {
+    getTransportHandlers,
+    prepareTimelineMapStateRestore,
+    prepareTimelineMapTimeOperation,
+} from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
@@ -49,6 +61,7 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDrawClip } from '../handleDrawClip';
@@ -274,6 +287,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     afterEach(() => {
+        setTimeOperationDependencies(null);
         clearHandlerRegistry();
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });
@@ -1152,6 +1166,63 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(clipOnTrack(TRACK_ID, 'clip-right')?.audioOffsetSeconds).toBe(1.25);
         const raw = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root');
         expect(raw?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-right')?.audioOffsetSeconds).toBe(1.25);
+    });
+
+    it('hydrates a settled Delete Time capture with canonical-zero audio source and restores it', async () => {
+        setTimeOperationDependencies({
+            prepareAutomationTimeOperation,
+            prepareAutomationTimeStateRestore,
+            prepareMidiGlobalTimeTransaction,
+            prepareMidiTimeStateRestore,
+            prepareTimelineMapTimeOperation,
+            prepareTimelineMapStateRestore,
+        });
+        seedAudioMoveSource(0);
+        takeLaneStore.set({ lanes: [] });
+        const beforePlacement = trackStore.value!;
+        trackStore.set({
+            ...beforePlacement,
+            tracks: beforePlacement.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-a' ? { ...clip, startBeat: 3, endBeat: 7 } : clip)),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        const rawBefore = structuredClone(getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root'));
+        const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+        expect(rawBefore?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')).toEqual(original);
+        expect(original).toMatchObject({ audioOffsetSeconds: 0, audioOffsetBeats: 9, startBeat: 3, endBeat: 7 });
+
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 1, endBeat: 2 } }, { source: 'manual' });
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({
+            audioOffsetSeconds: 0,
+            startBeat: 2,
+            endBeat: 6,
+        });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+        const rawAfter = structuredClone(getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root'));
+        expect(rawAfter?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')).toEqual(after);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(undoStore.value?.future).toHaveLength(1);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'clip-a'
+            )
+        ).toEqual(original);
+        await redo();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'clip-a'
+            )
+        ).toEqual(after);
     });
 
     it.each([false, true])('split restores later right-fragment take after redo with hydration=%s', async (reload) => {
