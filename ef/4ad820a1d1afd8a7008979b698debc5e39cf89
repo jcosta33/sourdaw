@@ -1,0 +1,19 @@
+scripts/__tests__/prContract.spec.ts
+  s_97ab82e0b4f10c::t_fa5602cf47ff14 1579-1582,1585-1586,1623-1665
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef4ad820a1d1afd8a7008979b698debc5e39cf89",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
