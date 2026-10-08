@@ -1,0 +1,57 @@
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_4c8cd08893b364::t_f952556daa383c 95,100
+  s_4c8cd08893b364::t_ca42aeef4fc4d0 64
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_4c8cd08893b364::t_84e39fa136fbec 115-156
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_4c8cd08893b364::t_914fd72b705f67 66,68-70
+  s_4c8cd08893b364::t_554c1aa7c12ad7 46-51
+  s_4c8cd08893b364::t_97f5cbbcfa2378 7,13
+src/modules/Arrangement/useCases/recording/placeRecordingTakes.ts
+  s_4c8cd08893b364::t_245ea395e700c0 1-40
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_4c8cd08893b364::t_2970cdcf9175b6 333-334
+  s_4c8cd08893b364::t_50832a80adc9b7 573-578
+  s_4c8cd08893b364::t_6daedbda667aa2 553-554
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_4c8cd08893b364::t_0d6124b052cd08 210-213
+  s_4c8cd08893b364::t_863b6dc5370f15 24,41-42,52-55,57,72-76,78-82,84-85,90-91,97-98,102,104-111,114,117-122,127-129,131-144,146,149,190-192,194-195,197-200,202-206,208,214,216-219,221,223-225,228-230,232-233,235-236,239-258
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_4c8cd08893b364::t_a9451bd10eb690 5
+  s_4c8cd08893b364::t_1ef8da5ed6b682 105-106,108,113-117
+  s_4c8cd08893b364::t_13375014576167 128-129,132
+src/modules/Arrangement/useCases/recording/__tests__/placeRecordingTakes.spec.ts
+  s_4c8cd08893b364::t_90fd85728251aa 3-160,169
+  s_4c8cd08893b364::t_7a0909b7dd13a4 163-165
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRollLoop.integration.spec.ts
+  s_4c8cd08893b364::t_acb4d4a3e9afd4 368-371
+  s_4c8cd08893b364::t_36020e04efe896 407-410
+  s_4c8cd08893b364::t_8ab7c48fd4d06a 270-367,372-406,411-451
+  s_4c8cd08893b364::t_6f4ff9e5d2bd92 23
+  s_4c8cd08893b364::t_997a4515b37b82 183-208,210-213,215-236
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_4c8cd08893b364::t_0d9e89c4a190d4 474
+  s_4c8cd08893b364::t_1e8d31bf54ac36 444
+src/modules/Arrangement/models/TakeLane.ts
+  s_4c8cd08893b364::t_67e9677c9bdbb5 10-21,25-38
+  s_4c8cd08893b364::t_fbdd3ed750ad46 81-84,86-88,91,94-109,111-115,117-124,126-133,137-146,148-149,151-165
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_4c8cd08893b364::t_8b24c3dca957b7 196
+  s_4c8cd08893b364::t_8d90acdf72d0ce 179-180,183,191,193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86f88de8d2557a1b4c1e802a21a9d6e756715597",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
