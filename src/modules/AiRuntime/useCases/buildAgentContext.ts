@@ -29,8 +29,15 @@ const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
 const MAX_REJECTION_CANDIDATES = 8;
-/** The characters the capability data may take in `capability_schemas`, hosted and local alike. */
-const MAX_CAPABILITY_DATA_LENGTH = 8_192;
+/**
+ * The characters the capability data may take in `capability_schemas`, hosted and local alike.
+ * Both copies are bounded at whole capability entries, never a character slice: a cut mid-value
+ * would only hand the model malformed JSON it cannot parse. Entries that cannot fit whole are
+ * omitted whole and named — in the hosted copy's sibling `omittedCapabilityNames` field, whose
+ * full capability data still rides the hosted project_context, and in the local message's
+ * `context_omissions` — so the worst case is an empty object plus the full omission list.
+ */
+const MAX_AVAILABLE_CAPABILITIES_LENGTH = 8_192;
 /**
  * What a local model reads when the capped sections left part of the project out. The hosted
  * project context restates everything; the local one restates none of it, so the model is told
@@ -108,20 +115,12 @@ function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undef
                 left.cost - right.cost ||
                 left.key.localeCompare(right.key)
         );
-    const kept: Record<string, unknown> = {};
-    const omitted: string[] = [];
-    for (const { key, value } of present) {
-        if (stableJson({ ...kept, [key]: value }).length <= MAX_CAPABILITY_DATA_LENGTH) {
-            kept[key] = value;
-        } else {
-            omitted.push(key);
-        }
-    }
+    const { kept, omitted } = fitWholeCapabilityEntries(present.map(({ key, value }) => [key, value] as const));
     return { serialized: stableJson(capabilityData === undefined ? null : kept), omitted };
 }
 
 function describeOmittedCapabilities(omitted: readonly string[]): string {
-    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, which did not fit what the ${String(MAX_CAPABILITY_DATA_LENGTH)}-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
+    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, which did not fit what the ${String(MAX_AVAILABLE_CAPABILITIES_LENGTH)}-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
 }
 
 function isRelevantLock(
@@ -162,6 +161,47 @@ type BuildAgentContextInput = {
 
 function stableJson(value: unknown): string {
     return JSON.stringify(value);
+}
+
+/**
+ * Keeps whole capability entries, in the order given, while the serialized object stays within
+ * the capability budget. An entry that does not fit what the entries kept before it left is
+ * named and left out whole, and the entries after it are still tried. Each copy of the
+ * capability data passes its own order.
+ */
+function fitWholeCapabilityEntries(entries: ReadonlyArray<readonly [string, unknown]>): {
+    kept: Record<string, unknown>;
+    omitted: string[];
+} {
+    let kept: Record<string, unknown> = {};
+    const omitted: string[] = [];
+    for (const [key, value] of entries) {
+        if (stableJson({ ...kept, [key]: value }).length > MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+            omitted.push(key);
+            continue;
+        }
+        kept = { ...kept, [key]: value };
+    }
+    return { kept, omitted };
+}
+
+/**
+ * Selects whole capability entries for the hosted copy: under budget the data serializes
+ * exactly as before, over budget each entry is kept whole only while the running total fits
+ * the budget, in the data's own entry order, and every dropped entry is named. An entry
+ * larger than the whole budget is omitted whole, so the result parses even when it is empty.
+ */
+function buildAvailableCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
+    value: string;
+    omittedCapabilityNames: string[];
+} {
+    const full = stableJson(capabilityData ?? null);
+    if (full.length <= MAX_AVAILABLE_CAPABILITIES_LENGTH) {
+        return { value: full, omittedCapabilityNames: [] };
+    }
+    const presentEntries = Object.entries(capabilityData ?? {}).filter(([, entry]) => entry !== undefined);
+    const { kept, omitted } = fitWholeCapabilityEntries(presentEntries);
+    return { value: stableJson(kept), omittedCapabilityNames: omitted };
 }
 
 function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
@@ -428,6 +468,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         name: boundedString(schema.name).value,
         schemaVersion: schema.schemaVersion,
     }));
+    const hostedCapabilities = buildAvailableCapabilities(input.capabilityData);
     const measurements = (input.measurements ?? []).slice(-MAX_MEASUREMENTS).map((measurement) => ({
         name: boundedString(measurement.name).value,
         value: measurement.value,
@@ -521,7 +562,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const availableCapabilities = stableJson(input.capabilityData ?? null).slice(0, MAX_CAPABILITY_DATA_LENGTH);
     const leadingSections = [
         `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
         `user_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}`,
@@ -535,7 +575,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     ];
     const hostedSections = [
         ...leadingSections,
-        `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities })}`,
+        `capability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: hostedCapabilities.value, ...(hostedCapabilities.omittedCapabilityNames.length === 0 ? {} : { omittedCapabilityNames: hostedCapabilities.omittedCapabilityNames }) })}`,
         ...trailingSections,
         `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
     ].join('\n\n');

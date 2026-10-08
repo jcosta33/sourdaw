@@ -19,7 +19,16 @@
  *   { type: 'addZone', loadToken, ... }
  *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
  *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
+ *   { type: 'releaseRetiredBank', loadToken }
  *   { type: 'dispose' }
+ *
+ * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
+ * commits with a call that allocates and frees nothing: the bank it replaces
+ * waits in the engine's retired slot. Aborting a staged bank does the same with
+ * the staged bank. The host frees it with `releaseRetiredBank` messages of its
+ * own, one bounded step each, answered by
+ * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
+ * commit, the abort or `process()`.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -147,6 +156,7 @@ type LevainMsg =
     | LevainAddZoneMsg
     | LevainAddLegatoTransitionMsg
     | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
+    | { type: 'releaseRetiredBank'; loadToken: number }
     | { type: 'dispose' };
 
 type LevainQueued =
@@ -168,6 +178,14 @@ type InFlightBank = { owner: LevainProcessor; followers: Set<LevainProcessor> };
 
 const inFlightBanks = new Map<string, InFlightBank>();
 
+/**
+ * PCM entries one `releaseRetiredBank` message frees. Freeing 2,000 samples
+ * took about 0.45 ms and 6,000 about 2.3 ms in one call (measured on the
+ * shipped wasm under Node), against a 2.67 ms render quantum, so a bank is
+ * freed a few hundred entries per message instead.
+ */
+const RETIRED_BANK_RELEASE_ENTRIES = 256;
+
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
@@ -182,6 +200,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     _bankRole: BankRole | null = null;
     _bankLoadToken: number | null = null;
     _pendingBankBuild: BankBuild | null = null;
+    // Load token of the commit whose displaced bank still waits in the engine's
+    // retired slot; a `releaseRetiredBank` for any other token frees nothing.
+    _retiredBankToken: number | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -260,7 +281,10 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
 
         this._leaveBankLoad(new Error('Levain sample bank load was superseded'));
+        // Begins by freeing any retired bank, the one the leave above just
+        // retired included, so none is left to release.
         inst.begin_sample_bank(instrumentId);
+        this._retiredBankToken = null;
         this._bankKey = bankKey;
         this._bankLoadToken = loadToken;
         this._pendingBankBuild = null;
@@ -288,6 +312,7 @@ class LevainProcessor extends AudioWorkletProcessor {
     }
 
     _completeSampleBankLoad(loadToken: number): void {
+        this._retiredBankToken = loadToken;
         this._bankKey = null;
         this._bankRole = null;
         this._bankLoadToken = null;
@@ -412,6 +437,7 @@ class LevainProcessor extends AudioWorkletProcessor {
 
     _leaveBankLoad(error: unknown): void {
         const bankKey = this._bankKey;
+        const loadToken = this._bankLoadToken;
         const inFlight = bankKey ? inFlightBanks.get(bankKey) : undefined;
         this._bankKey = null;
         this._bankRole = null;
@@ -430,7 +456,11 @@ class LevainProcessor extends AudioWorkletProcessor {
             inFlight?.followers.delete(this);
         }
         try {
-            this._instance?.abort_sample_bank();
+            // The abort retires the staged bank instead of freeing it, so the
+            // host's release loop for this load's token frees it in steps.
+            if (this._instance?.abort_sample_bank()) {
+                this._retiredBankToken = loadToken;
+            }
         } catch (abortError) {
             console.error('LevainProcessor sample-bank abort failed:', abortError);
         }
@@ -656,10 +686,30 @@ class LevainProcessor extends AudioWorkletProcessor {
                 }
                 this._buildZoneMap(msg);
                 break;
+            case 'releaseRetiredBank':
+                this._releaseRetiredBank(inst, msg.loadToken);
+                break;
             case 'dispose':
                 this._dispose();
                 break;
         }
+    }
+
+    /**
+     * One bounded step of freeing the bank a commit displaced. Answers every
+     * request, so the host's loop always ends: a request for a load whose
+     * retiree is already gone, or was replaced by a newer commit's, is `done`
+     * without touching the engine.
+     */
+    _releaseRetiredBank(inst: LevainInstance, loadToken: number): void {
+        let done = true;
+        if (loadToken === this._retiredBankToken) {
+            done = inst.release_retired_bank(RETIRED_BANK_RELEASE_ENTRIES);
+            if (done) {
+                this._retiredBankToken = null;
+            }
+        }
+        this.port.postMessage({ type: 'retiredBankReleased', loadToken, done });
     }
 
     _drainQueue(blockEndFrame: number): void {

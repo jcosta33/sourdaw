@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    AUTHOR_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
@@ -46,6 +47,7 @@ export type PublicReview = {
 export type PublicReviewComment = {
     id: number;
     reviewId: number;
+    actorNodeId: string | null;
     path: string;
     line: number;
     side: 'LEFT' | 'RIGHT';
@@ -120,7 +122,10 @@ export function reconstructReviewRounds(
     }
     const repairsByRoot = new Map<number, ReviewRepairRecord[]>();
     for (const comment of comments) {
-        if (comment.inReplyToId === undefined) {
+        if (
+            comment.inReplyToId === undefined ||
+            (comment.actorNodeId !== AUTHOR_BOT_NODE_ID && comment.actorNodeId !== REVIEWER_BOT_NODE_ID)
+        ) {
             continue;
         }
         const repair = parseReviewRepairReply(comment.body);
@@ -358,6 +363,7 @@ export function readPublicReviewComments(gh: (args: string[]) => string, number:
         const comment: PublicReviewComment = {
             id,
             reviewId,
+            actorNodeId: isRecord(entry.user) && typeof entry.user.node_id === 'string' ? entry.user.node_id : null,
             path: entry.path,
             line,
             side: entry.side,

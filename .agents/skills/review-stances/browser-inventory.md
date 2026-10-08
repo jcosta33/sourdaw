@@ -6,6 +6,7 @@ Use this lesson when a change selects browser files, partitions their execution,
 
 - Trace Playwright's configured `testDir`, `testMatch`, and `testIgnore` to the planner's filesystem inventory, changed-file classification, and runner argument validation. Plant one ordinary file for every admitted filename family and one excluded path, then compare the emitted plan with `playwright test --list` or the installed runner's collector. Require each selected CLI argument to match only its intended file.
 - For a changed browser file, prove direct selection. For a product or unknown path, prove that the complete non-smoke inventory reaches the matrix once, with the separate smoke and hardware rules intact. A deleted or moved-away file must still trigger broad coverage.
+- For explicit Node-only tooling exemptions, classify the complete actual diff, including root and nested specs, helpers, and corpus inputs. Known tooling must keep static and security checks with an empty browser matrix; mixed product, config, and unknown paths must retain broad browser coverage. PRs #4484 (`4504a698`), #4932 (`33c27947`), and #4933 (`d03336ec`) added Node-only files without completing those opt-ins; the historical reviewer stance and tier are unavailable.
 - Apply the standard mechanical regression probe: revert the admission change and run the named planner spec. A green result means the spec does not guard this boundary.
 
 ## Escape lesson from PR #4854
