@@ -212,9 +212,12 @@ describe('cold first-paint warmup', () => {
         await warmFirstPaint(config);
 
         expect(warmupMocks.assertIdentity).toHaveBeenCalledWith('http://localhost:4173', expect.any(String));
-        expect(warmupMocks.assertIdentity.mock.invocationCallOrder[0]).toBeLessThan(
-            warmupMocks.launch.mock.invocationCallOrder[0]
-        );
+        const identityCallOrder = warmupMocks.assertIdentity.mock.invocationCallOrder[0];
+        const launchCallOrder = warmupMocks.launch.mock.invocationCallOrder[0];
+        if (typeof identityCallOrder !== 'number' || typeof launchCallOrder !== 'number') {
+            throw new TypeError('Expected identity validation and browser launch to have invocation order values');
+        }
+        expect(identityCallOrder).toBeLessThan(launchCallOrder);
         expect(warmupMocks.newPage).toHaveBeenCalledWith({ baseURL: 'http://localhost:4173' });
         expect(warmupMocks.addInitScript).toHaveBeenCalledWith(expect.any(Function), 'sourdaw-e2e-direct');
         expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
