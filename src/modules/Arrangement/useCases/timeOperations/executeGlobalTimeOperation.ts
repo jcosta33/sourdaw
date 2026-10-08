@@ -14,6 +14,7 @@ import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 import { clipWithAudioSourceAtBeat } from '../clipEditing/clipWithAudioSourceAtBeat';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
+import { captureInsertedTakeTransitions } from '../comping/captureInsertedTakeTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
 import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
 import { removeTakesForClips } from '../comping/removeTakesForClips';
@@ -1668,7 +1669,26 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
                   clipIdentities,
                   clipIdentityTransition.removedClipIds
               )
-            : [];
+            : captureInsertedTakeTransitions({
+                  owners: owners.filter((owner) => owner.acceptsClipUpdate),
+                  afterTracks: local.trackState.tracks,
+                  atBeat:
+                      validatedInput.operation.type === 'insert'
+                          ? validatedInput.operation.atBeat
+                          : validatedInput.operation.endBeat,
+                  durationBeats:
+                      validatedInput.operation.type === 'insert'
+                          ? validatedInput.operation.durationBeats
+                          : validatedInput.operation.endBeat - validatedInput.operation.startBeat,
+                  copyTargets:
+                      validatedInput.operation.type === 'duplicate'
+                          ? new Map(
+                                clipIdentities
+                                    .filter((identity) => identity.role === 'duplicate-copy')
+                                    .map((identity) => [identity.sourceClipId, identity.targetClipId])
+                            )
+                          : undefined,
+              });
 
     const inversePlan = createCombinedInversePlan({
         expectedTrackState: local.trackState,

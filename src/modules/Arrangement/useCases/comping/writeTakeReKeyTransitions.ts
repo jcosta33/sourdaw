@@ -23,6 +23,30 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
     );
 }
 
+function sourceMatches(left: Take, right: Take): boolean {
+    return (
+        Object.hasOwn(left, 'sourceOffsetSeconds') === Object.hasOwn(right, 'sourceOffsetSeconds') &&
+        Object.hasOwn(left, 'sourceOffsetBeats') === Object.hasOwn(right, 'sourceOffsetBeats') &&
+        Object.is(left.sourceOffsetSeconds, right.sourceOffsetSeconds) &&
+        Object.is(left.sourceOffsetBeats, right.sourceOffsetBeats)
+    );
+}
+
+function preserveLiveSource(target: Take, live: Take): Take {
+    const result = {
+        ...target,
+        sourceOffsetSeconds: live.sourceOffsetSeconds,
+        sourceOffsetBeats: live.sourceOffsetBeats,
+    };
+    if (!Object.hasOwn(live, 'sourceOffsetSeconds')) {
+        delete result.sourceOffsetSeconds;
+    }
+    if (!Object.hasOwn(live, 'sourceOffsetBeats')) {
+        delete result.sourceOffsetBeats;
+    }
+    return result;
+}
+
 /**
  * The takes facet of one lane, reconciled toward the transition's target side.
  *
@@ -84,7 +108,9 @@ function reconcileTransitionTakes(
             continue;
         }
         if (modifiedIds.has(target.id)) {
-            reconciled.push({ ...target, selected: liveTake.selected });
+            const source = fromById.get(target.id)!;
+            const replayed = sourceMatches(liveTake, source) ? target : preserveLiveSource(target, liveTake);
+            reconciled.push({ ...replayed, selected: liveTake.selected });
             continue;
         }
         reconciled.push(liveTake);

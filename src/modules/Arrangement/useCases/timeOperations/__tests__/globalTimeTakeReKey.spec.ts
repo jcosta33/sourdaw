@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
     const markerState = { value: null as unknown };
@@ -155,11 +157,115 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         setTimeOperationDependencies(null);
         setTracks([]);
         takeLaneStore.set({ lanes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
+        tempoMapStore.set({ changes: [] });
     });
 
     afterEach(() => {
         setTimeOperationDependencies(null);
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it.each([
+        { operation: { type: 'insert' as const, atBeat: 1, durationBeats: 4 }, expectedBeat: 6 },
+        { operation: { type: 'duplicate' as const, startBeat: 2, endBeat: 4 }, expectedBeat: 4 },
+    ])(
+        '$operation.type keeps comped take source depth when placing material after a tempo seam',
+        ({ operation, expectedBeat }) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const { take } = setCompedClip({ clipId: 'source', startBeat: 2, endBeat: 4 });
+            takeLaneStore.set({ lanes: [{ ...liveLane(), takes: [{ ...take, sourceOffsetBeats: 2 }] }] });
+            registerIdleDependencies();
+
+            const applied = requireApplied(executeGlobalTimeOperation({ operation }));
+            const target = liveTrackClips().find((clip) => clip.startBeat === expectedBeat);
+            expect(target).toBeDefined();
+            const targetTake = liveLane().takes.find((candidate) => candidate.clipId === target?.id);
+            expect(targetTake).toMatchObject({ startBeat: expectedBeat, sourceOffsetSeconds: 1 });
+            expect(liveLane().activeCompRegions).toContainEqual({
+                startBeat: expectedBeat,
+                endBeat: expectedBeat + 2,
+                takeId: targetTake?.id,
+            });
+            expect(
+                resolveClipsWithComping('track-1', [...liveTrackClips()]).find(
+                    (clip) => clip.startBeat === expectedBeat
+                )?.audioOffsetSeconds
+            ).toBe(1);
+
+            const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
+            transaction.undo();
+            expect(liveLane().takes[0]).toHaveProperty('sourceOffsetBeats', 2);
+            expect(liveLane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+            transaction.redo();
+            expect(liveLane().takes.find((candidate) => candidate.clipId === target?.id)?.sourceOffsetSeconds).toBe(1);
+        }
+    );
+
+    it('keeps canonical zero ahead of a stale take beat alias on the duplicated comp', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const { take } = setCompedClip({ clipId: 'source', startBeat: 2, endBeat: 4 });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...liveLane(),
+                    takes: [{ ...take, sourceOffsetSeconds: 0, sourceOffsetBeats: 9 }],
+                },
+            ],
+        });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'duplicate', startBeat: 2, endBeat: 4 } })
+        );
+        const copiedClip = liveTrackClips().find((clip) => clip.id !== 'source');
+        const copiedTake = liveLane().takes.find((candidate) => candidate.clipId === copiedClip?.id);
+        expect(copiedTake).toMatchObject({ sourceOffsetSeconds: 0, sourceOffsetBeats: 9 });
+        expect(
+            resolveClipsWithComping('track-1', [...liveTrackClips()]).find((clip) => clip.id === copiedClip?.id)
+                ?.audioOffsetSeconds
+        ).toBe(0);
+
+        const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
+        transaction.undo();
+        expect(liveLane().takes).toEqual([{ ...take, sourceOffsetSeconds: 0, sourceOffsetBeats: 9 }]);
+        transaction.redo();
+        expect(liveLane().takes.find((candidate) => candidate.clipId === copiedClip?.id)).toEqual(copiedTake);
+    });
+
+    it('materializes a legacy take at its original slow clip start before delete time moves it to the fast side', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const { take } = setCompedClip({ clipId: 'keeper', startBeat: 6, endBeat: 10 });
+        takeLaneStore.set({ lanes: [{ ...liveLane(), takes: [{ ...take, sourceOffsetBeats: 2 }] }] });
+        registerIdleDependencies();
+
+        const applied = requireApplied(
+            executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
+        );
+        expect(liveLane().takes[0]).toMatchObject({ startBeat: 2, endBeat: 6, sourceOffsetSeconds: 2 });
+        expect(resolveClipsWithComping('track-1', [...liveTrackClips()])[0]?.audioOffsetSeconds).toBe(2);
+        const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
+        transaction.undo();
+        expect(liveLane().takes[0]).toHaveProperty('sourceOffsetBeats', 2);
+        expect(liveLane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+        transaction.redo();
+        expect(liveLane().takes[0]?.sourceOffsetSeconds).toBe(2);
     });
 
     it('re-keys the take and comp region of a clip that starts inside the deleted span and outlives it', () => {

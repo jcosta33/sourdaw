@@ -39,6 +39,7 @@ import {
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
 } from '#/modules/MIDI/useCases';
+import { tempoMapStore } from '#/modules/Transport/stores';
 import {
     getTransportHandlers,
     prepareTimelineMapStateRestore,
@@ -214,7 +215,7 @@ async function peerComp(take: Take, startBeat: number, endBeat: number): Promise
     expect(undoStore.value).toEqual(history);
 }
 
-describe('Delete Time take ownership through Command and CRDT', () => {
+describe('Time operation take ownership through Command and CRDT', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('delete time comp integration');
@@ -323,6 +324,195 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         ]);
         expectAuthority();
     });
+
+    it.each(['global', 'selected'] as const)(
+        '%s preserves a legacy take media depth through a tempo seam, settled Undo and Redo',
+        async (route) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            if (route === 'global') {
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            const original = arrangeComp(0, 10);
+            const legacy = { ...original, sourceOffsetBeats: 2 };
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacy] }] });
+            flushAutomergeStorageWrites();
+
+            await removeTime(route, 2, 6);
+            const right = clips().find((clip) => clip.id !== 'source');
+            const rightTake = lane().takes.find((take) => take.clipId === right?.id);
+            expect(rightTake).toMatchObject({ sourceOffsetSeconds: 1, sourceOffsetBeats: 2 });
+            expect(
+                resolveClipsWithComping('track-1', clips()).find((clip) => clip.id === right?.id)?.audioOffsetSeconds
+            ).toBe(5);
+            expectAuthority();
+
+            if (route === 'global') {
+                await vi.waitFor(() => {
+                    expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+                });
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            await undo();
+            expect(lane().takes).toEqual([legacy]);
+            expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.clipId === right?.id)).toEqual(rightTake);
+            expectAuthority();
+        }
+    );
+
+    it.each(['global', 'selected'] as const)(
+        '%s Undo preserves a peer source-depth edit on a surviving take',
+        async (route) => {
+            if (route === 'global') {
+                clearHandlerRegistry();
+                registerProductionCommandHandlers([
+                    getArrangementHandlers(),
+                    getAudioRenderingHandlers(),
+                    getAutomationHandlers(),
+                    getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                    getMidiNoteTransformHandlers(),
+                    getTransportHandlers(),
+                    getYeastHandlers(),
+                ]);
+            }
+            const original = arrangeComp(0, 10);
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [{ ...original, sourceOffsetBeats: 2 }] }] });
+            flushAutomergeStorageWrites();
+            await removeTime(route, 2, 6);
+            expect(lane().takes.find((take) => take.id === original.id)?.sourceOffsetSeconds).toBe(1);
+
+            mutateCrdtDoc<Project>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.takeLanes.lanes[0]!.takes.find((take) => take.id === original.id)!.sourceOffsetSeconds = 7;
+                },
+            });
+            expect(lane().takes.find((take) => take.id === original.id)?.sourceOffsetSeconds).toBe(7);
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            await undo();
+            expect(lane().takes.find((take) => take.id === original.id)).toMatchObject({ sourceOffsetSeconds: 7 });
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.id === original.id)).toMatchObject({ sourceOffsetSeconds: 7 });
+            expect(
+                getCrdtDoc<Project>('root')?.takeLanes.lanes[0]?.takes.find((take) => take.id === original.id)
+                    ?.sourceOffsetSeconds
+            ).toBe(7);
+            expectAuthority();
+        }
+    );
+
+    it.each([
+        {
+            name: 'insert',
+            action: { type: 'insertTime' as const, payload: { atBeat: 1, durationBeats: 4 } },
+            targetBeat: 6,
+        },
+        {
+            name: 'duplicate',
+            action: { type: 'duplicateTimeRange' as const, payload: { startBeat: 2, endBeat: 4 } },
+            targetBeat: 4,
+        },
+    ])(
+        '$name saves a moved comp with its original media depth and replays it after hydration',
+        async ({ action, targetBeat }) => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            flushAutomergeStorageWrites();
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            const original = arrangeComp(2, 4);
+            const legacy = { ...original, sourceOffsetBeats: 2 };
+            takeLaneStore.set({ lanes: [{ ...lane(), takes: [legacy] }] });
+            flushAutomergeStorageWrites();
+
+            await executeAppAction(action);
+            const target = clips().find((clip) => clip.startBeat === targetBeat);
+            const targetTake = lane().takes.find((take) => take.clipId === target?.id && take.startBeat === targetBeat);
+            expect(targetTake).toMatchObject({ sourceOffsetSeconds: 1, sourceOffsetBeats: 2 });
+            expect(lane().activeCompRegions).toContainEqual({
+                startBeat: targetBeat,
+                endBeat: targetBeat + 2,
+                takeId: targetTake?.id,
+            });
+            expect(
+                resolveClipsWithComping('track-1', clips()).find((clip) => clip.startBeat === targetBeat)
+                    ?.audioOffsetSeconds
+            ).toBe(1);
+            expectAuthority();
+            expect(undoStore.value?.past).toHaveLength(1);
+            const liveEntry = undoStore.value?.past[0] as HandlerSessionActionEntry;
+            expect(isRestoreTimeOperationSessionPayload(liveEntry.inverseAction?.payload)).toBe(true);
+            expect(isRestoreTimeOperationSessionPayload(liveEntry.redoAction?.payload)).toBe(true);
+            await vi.waitFor(() => {
+                expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1);
+            });
+            clearHandlerRegistry();
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+            await undo();
+            expect(lane().takes).toEqual([legacy]);
+            expect(lane().takes[0]).not.toHaveProperty('sourceOffsetSeconds');
+            expectAuthority();
+            await redo();
+            expect(lane().takes.find((take) => take.clipId === target?.id && take.startBeat === targetBeat)).toEqual(
+                targetTake
+            );
+            expectAuthority();
+        }
+    );
 
     it.each([
         { name: 'bogus inverse scope', leg: 'inverseAction', scope: 'other-scope' },
