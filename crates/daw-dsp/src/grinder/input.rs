@@ -79,6 +79,10 @@ impl NoiseGate {
                 self.gain_attack_coeff = Self::time_to_coeff(value.max(0.1), self.sample_rate);
             }
             "gateRelease" => {
+                // The detector release decides when closing starts, not how fast: it sets how long
+                // the envelope stays above the close threshold after a note stops, so a longer
+                // release also rides out longer dips. It keeps its 0.6x so close-onset timing is
+                // unchanged; the closing fade itself runs on gain_release_coeff.
                 self.detector_release_coeff =
                     Self::time_to_coeff((value * 0.6).max(5.0), self.sample_rate);
                 self.gain_release_coeff = Self::time_to_coeff(value.max(5.0), self.sample_rate);
@@ -122,9 +126,7 @@ impl NoiseGate {
             let transition = ((self.envelope - close_threshold) / denom).clamp(0.0, 1.0);
             self.floor_gain + transition * (1.0 - self.floor_gain)
         };
-        let coeff = if !self.is_open {
-            self.gain_attack_coeff
-        } else if target_gain > self.gate_gain {
+        let coeff = if target_gain > self.gate_gain {
             self.gain_attack_coeff
         } else {
             self.gain_release_coeff
@@ -311,7 +313,9 @@ mod tests {
             gate.process_sample(0.18);
         }
 
-        for _ in 0..12_288 {
+        // About 107 ms until closing starts, then the 40 ms release fade needs about 290 ms
+        // to fall below -60 dB.
+        for _ in 0..24_000 {
             gate.process_sample(0.0);
         }
 
@@ -320,6 +324,97 @@ mod tests {
             "enabled gate should clamp to a deep closed gain, got {}",
             gate.gain()
         );
+    }
+
+    const FADE_SAMPLE_RATE: f32 = 48_000.0;
+
+    /// A one-pole fade crosses 10 % to 90 % of its swing in ln(9) time constants.
+    const TEN_TO_NINETY_TIME_CONSTANTS: f32 = 2.197_224_6;
+
+    /// Opening (10 % to 90 %) and closing (90 % to 10 %) fade times in ms of the gain swing
+    /// between the closed floor and unity, for a 0.2 step that sits 36 dB above a -50 dB
+    /// threshold and then stops.
+    fn gate_fade_times_ms(attack_ms: f32, release_ms: f32) -> (f32, f32) {
+        let mut gate = NoiseGate::new(FADE_SAMPLE_RATE);
+        gate.set_param("gateEnabled", 1.0);
+        gate.set_param("gateThreshold", -50.0);
+        gate.set_param("gateAttack", attack_ms);
+        gate.set_param("gateRelease", release_ms);
+        gate.reset();
+
+        let floor = gate.gain();
+        let low = floor + 0.1 * (1.0 - floor);
+        let high = floor + 0.9 * (1.0 - floor);
+        let samples = (FADE_SAMPLE_RATE * 2.0) as usize;
+        let to_ms = |count: usize| count as f32 * 1_000.0 / FADE_SAMPLE_RATE;
+
+        let mut rose_past_low = None;
+        let mut rose_past_high = None;
+        for n in 0..samples {
+            gate.process_sample(0.2);
+            let gain = gate.gain();
+            if rose_past_low.is_none() && gain >= low {
+                rose_past_low = Some(n);
+            }
+            if rose_past_high.is_none() && gain >= high {
+                rose_past_high = Some(n);
+            }
+        }
+
+        let mut fell_past_high = None;
+        let mut fell_past_low = None;
+        for n in 0..samples {
+            gate.process_sample(0.0);
+            let gain = gate.gain();
+            if fell_past_high.is_none() && gain <= high {
+                fell_past_high = Some(n);
+            }
+            if fell_past_low.is_none() && gain <= low {
+                fell_past_low = Some(n);
+            }
+        }
+
+        let opening = rose_past_high.expect("gate never opened past 90 %")
+            - rose_past_low.expect("gate never opened past 10 %");
+        let closing = fell_past_low.expect("gate never closed past 10 %")
+            - fell_past_high.expect("gate never closed past 90 %");
+        (to_ms(opening), to_ms(closing))
+    }
+
+    fn assert_fade_tracks(label: &str, measured_ms: f32, time_constant_ms: f32) {
+        let expected = TEN_TO_NINETY_TIME_CONSTANTS * time_constant_ms;
+        assert!(
+            (measured_ms - expected).abs() <= expected * 0.05,
+            "{label}: measured {measured_ms} ms, expected {expected} ms (ln 9 x {time_constant_ms} ms, within 5 %)"
+        );
+    }
+
+    #[test]
+    fn gate_opening_fade_follows_attack_and_ignores_release() {
+        let (fast_open, fast_close) = gate_fade_times_ms(1.0, 100.0);
+        let (slow_open, slow_close) = gate_fade_times_ms(8.0, 100.0);
+        eprintln!(
+            "attack 1, release 100: open {fast_open} ms, close {fast_close} ms; attack 8, release 100: open {slow_open} ms, close {slow_close} ms"
+        );
+
+        assert_fade_tracks("opening at attack 1", fast_open, 1.0);
+        assert_fade_tracks("opening at attack 8", slow_open, 8.0);
+        assert_fade_tracks("closing at attack 1, release 100", fast_close, 100.0);
+        assert_fade_tracks("closing at attack 8, release 100", slow_close, 100.0);
+    }
+
+    #[test]
+    fn gate_closing_fade_follows_release_and_ignores_attack() {
+        let (short_open, short_close) = gate_fade_times_ms(2.0, 60.0);
+        let (long_open, long_close) = gate_fade_times_ms(2.0, 250.0);
+        eprintln!(
+            "attack 2, release 60: open {short_open} ms, close {short_close} ms; attack 2, release 250: open {long_open} ms, close {long_close} ms"
+        );
+
+        assert_fade_tracks("closing at release 60", short_close, 60.0);
+        assert_fade_tracks("closing at release 250", long_close, 250.0);
+        assert_fade_tracks("opening at attack 2, release 60", short_open, 2.0);
+        assert_fade_tracks("opening at attack 2, release 250", long_open, 2.0);
     }
 
     #[test]
