@@ -550,7 +550,7 @@ jobs:
     needs: decide
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -582,10 +582,38 @@ jobs:
 
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
+      #
+      # The install is split so each half can be bounded by the user that owns
+      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
+      # run as the runner user cannot signal it and would leave apt holding its
+      # lock for the next attempt. So the system dependencies run under
+      # `sudo timeout` and the browser download under its own `timeout`; a
+      # timed-out attempt is a failed one and the loop continues. GNU timeout
+      # signals its whole process group, but its TERM grace period ends when
+      # the direct child exits while a grandchild survives, so the browser
+      # download is killed outright and apt gets a TERM first.
+      #
+      # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
+      # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
+      # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
+      # while the browser download never exceeded 56s. The 8m dependency cap
+      # therefore also kills the rare install that is slowly making progress
+      # (15 of about 4300) and retries it, relying on apt resuming its partial
+      # downloads; it is the price of failing a genuine stall, which prints
+      # nothing after `apt-get update` for an hour, within minutes.
+      #
+      # Limit: apt runs dpkg in its own session, which the group signal of
+      # `timeout` does not reach. A cap that expires while dpkg is unpacking,
+      # seconds after the downloads finish, can leave dpkg holding its lock
+      # and fail the next attempt; the attempt after that retries.
+      #
+      # Three timed-out attempts take 34 minutes, which this job's limit holds
+      # together with the longest observed shard.
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if pnpm exec playwright install --with-deps chromium; then
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -646,7 +674,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Bounded like the retried install elsewhere: a stalled download fails in
+      # minutes rather than holding the job to its limit. Installs on this
+      # runner took 24s at the 99th percentile and 103s at most from
+      # 2026-09-20 to 2026-10-08.
       - name: Install Chromium
+        timeout-minutes: 5
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
