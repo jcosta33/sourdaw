@@ -236,27 +236,47 @@ describe('syncAutoInputMonitoring', () => {
         expect(harness.startInputMonitoring).toHaveBeenCalledTimes(2);
     });
 
-    it('opens the edge for a track id and input a previous project had refused once a project load tears the graph down', async () => {
+    it('opens the edge for a track id and input a previous project had refused once a project load has run', async () => {
         harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
         setTracks(audioTrack());
         await drainSettledOpens();
         expect(harness.startInputMonitoring).toHaveBeenCalledTimes(1);
         harness.startInputMonitoring.mockClear();
 
-        // The load's graph reset releases every capture and advances the teardown
-        // epoch; its one store batch then resets and hydrates the track store, so
-        // no publication ever shows the previous project's track absent.
+        // A load resets the graph, then the CRDT reset publishes the track store
+        // as empty outside any batch, and only later does one batch hydrate the
+        // incoming tracks. The empty publication lets the removed-track sweep
+        // forget the refusal, so the new project's same track and input open.
         stopInputMonitoring();
         harness.monitored.clear();
+        setTracks();
         batchStoreUpdates(() => {
-            stores.trackStore.set({ tracks: [] });
             setTracks(audioTrack());
         });
 
         expect(harness.startInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1', 'input-1');
     });
 
-    it('still withholds a refused open from a batched republication of the same track within one teardown epoch', async () => {
+    it('releases an edge kept through a store-only On when a graph repair reopens it and a store-only Off follows', () => {
+        setTracks(audioTrack());
+        expect(harness.monitored.get('track-1')).toBe('input-1');
+
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        // The repair resets the graph, settles Auto through the owner, then
+        // starts the On tracks again, the order rearmInputMonitoring takes.
+        stopInputMonitoring();
+        harness.monitored.clear();
+        reconcileAutoInputMonitoring();
+        harness.monitored.set('track-1', 'input-1');
+        harness.stopTrackInputMonitoring.mockClear();
+
+        setTracks(audioTrack({ inputMonitoring: 'off' }));
+
+        expect(harness.stopTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1');
+        expect(harness.monitored.has('track-1')).toBe(false);
+    });
+
+    it('still withholds a refused open from a republication of the track that never publishes it absent', async () => {
         harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
         setTracks(audioTrack());
         await drainSettledOpens();
