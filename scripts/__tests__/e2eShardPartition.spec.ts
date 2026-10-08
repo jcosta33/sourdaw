@@ -62,10 +62,13 @@ describe('duration-balanced browser shards', () => {
     });
 
     it('weighs a file without a recording as the median recorded file', () => {
-        const recorded = durations({ a: 5, b: 4, c: 4, p: 10, q: 10, r: 10, s: 10 });
-        expect(partitionByDuration(['a', 'b', 'c', 'unrecorded'].map(spec), recorded, 2)).toEqual([
-            [spec('unrecorded')],
-            ['a', 'b', 'c'].map(spec),
+        // Recorded out of order, so the median (9s) is neither the maximum, the
+        // middle entry as written (20s), the middle of a string sort (3s) nor 1s;
+        // each of those weights partitions these files differently.
+        const recorded = durations({ p: 100, q: 9, r: 20, s: 3, t: 7 });
+        expect(partitionByDuration(['q', 'r', 's', 't', 'unrecorded'].map(spec), recorded, 2)).toEqual([
+            ['r', 's'].map(spec),
+            ['q', 't', 'unrecorded'].map(spec),
         ]);
     });
 
