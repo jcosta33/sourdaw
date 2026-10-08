@@ -36,6 +36,7 @@ export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
 export { freezeTrack } from './freezeBounce/freezeTrack';
+export { resolveBouncedClipEndBeat } from './freezeBounce/resolveBouncedClipEndBeat';
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
