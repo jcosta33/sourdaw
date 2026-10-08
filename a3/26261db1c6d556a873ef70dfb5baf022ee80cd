@@ -1,0 +1,28 @@
+scripts/offlineAudioWorkletTrace.ts
+  s_2bfd55a4393d7c::t_7c1299bab2a62e 208
+  s_2bfd55a4393d7c::t_625e673eeb5ab8 128-134
+  s_2bfd55a4393d7c::t_5f11d9f6b78bd1 209-212,244
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_2bfd55a4393d7c::t_60f97eec59a404 190
+  s_2bfd55a4393d7c::t_cf89f1d4c8d8c8 191-204
+  s_2bfd55a4393d7c::t_69cf0cc05528c8 223
+  s_2bfd55a4393d7c::t_63e774232d6dde 129-151
+  s_2bfd55a4393d7c::t_076e3d638fe404 216-217
+  s_2bfd55a4393d7c::t_cf76b923e8aa91 235-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a326261db1c6d556a873ef70dfb5baf022ee80cd",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
