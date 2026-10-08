@@ -6,6 +6,7 @@ import {
     existsSync,
     linkSync,
     mkdirSync,
+    mkdtempSync,
     readdirSync,
     readFileSync,
     realpathSync,
@@ -917,6 +918,161 @@ function boundedEnvironment(
     };
 }
 
+const GUARD_TEMP_DIRECTORY_PREFIX = 'sourdaw-guard-';
+const GUARD_TEMP_REAP_GRACE_MS = 60_000;
+const VITEST_COMMAND_MARKER = '/vitest/';
+
+function createCommandTempDirectory(): string {
+    return mkdtempSync(join(tmpdir(), GUARD_TEMP_DIRECTORY_PREFIX));
+}
+
+function removeCommandTempDirectory(directory: string): void {
+    rmSync(directory, { recursive: true, force: true });
+}
+
+export type AbandonedCommandTempState = {
+    /** `undefined` means no live Vitest. `'unreadable'` means a live one whose start time could not be read. */
+    earliestVitestStartMs: number | 'unreadable' | undefined;
+    guardTempDirectories: ReadonlySet<string>;
+};
+
+export function reapAbandonedCommandTempDirectories(
+    tempRoot: string,
+    live: AbandonedCommandTempState,
+    now = Date.now()
+): number {
+    let names: string[];
+    try {
+        names = readdirSync(tempRoot);
+    } catch {
+        return 0;
+    }
+    let removed = 0;
+    for (const name of names) {
+        const directory = join(tempRoot, name);
+        let directoryStat;
+        try {
+            directoryStat = statSync(directory);
+        } catch {
+            continue;
+        }
+        if (!directoryStat.isDirectory()) {
+            continue;
+        }
+        if (name.startsWith(GUARD_TEMP_DIRECTORY_PREFIX)) {
+            let realDirectory: string;
+            try {
+                realDirectory = realpathSync(directory);
+            } catch {
+                continue;
+            }
+            if (live.guardTempDirectories.has(realDirectory)) {
+                continue;
+            }
+            if (now - directoryStat.mtimeMs < GUARD_TEMP_REAP_GRACE_MS) {
+                continue;
+            }
+        } else if (!isVitestTransformTempDirectory(directory)) {
+            continue;
+        } else if (live.earliestVitestStartMs === 'unreadable') {
+            continue;
+        } else if (
+            typeof live.earliestVitestStartMs === 'number' &&
+            directoryStat.mtimeMs >= live.earliestVitestStartMs
+        ) {
+            continue;
+        }
+        try {
+            rmSync(directory, { recursive: true, force: true });
+            removed += 1;
+        } catch {
+            // A directory that disappeared, or one a live process still holds, waits for the next sweep.
+        }
+    }
+    return removed;
+}
+
+function isVitestTransformTempDirectory(directory: string): boolean {
+    let names: string[];
+    try {
+        names = readdirSync(directory);
+    } catch {
+        return false;
+    }
+    if (names.length !== 1 || names[0] !== 'client') {
+        return false;
+    }
+    try {
+        return statSync(join(directory, 'client')).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
+function liveGuardTempDirectories(): ReadonlySet<string> | undefined {
+    if (platform() === 'win32') {
+        return new Set();
+    }
+    const args = platform() === 'darwin' ? ['eww', '-axo', 'command='] : ['eww', 'axo', 'command='];
+    const result = spawnSync('ps', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    if (result.status !== 0) {
+        return undefined;
+    }
+    const live = new Set<string>();
+    for (const line of result.stdout.split('\n')) {
+        for (const match of line.matchAll(/(?:^|\s)TMPDIR=(\S+)/g)) {
+            const value = match[1];
+            if (value === undefined || !value.includes(GUARD_TEMP_DIRECTORY_PREFIX)) {
+                continue;
+            }
+            try {
+                live.add(realpathSync(value));
+            } catch {
+                live.add(value);
+            }
+        }
+    }
+    return live;
+}
+
+function readAbandonedCommandTempState(): AbandonedCommandTempState | undefined {
+    const rows = processTable();
+    if (rows === undefined) {
+        return undefined;
+    }
+    let earliestVitestStartMs: number | undefined;
+    let unreadable = false;
+    for (const row of rows) {
+        if (!row.command.includes(VITEST_COMMAND_MARKER)) {
+            continue;
+        }
+        const startedAt = processStartedAt(row.pid);
+        const startedMs = startedAt === undefined ? Number.NaN : Date.parse(startedAt);
+        if (!Number.isFinite(startedMs)) {
+            unreadable = true;
+            break;
+        }
+        earliestVitestStartMs =
+            earliestVitestStartMs === undefined ? startedMs : Math.min(earliestVitestStartMs, startedMs);
+    }
+    const guardTempDirectories = liveGuardTempDirectories();
+    if (guardTempDirectories === undefined) {
+        return undefined;
+    }
+    return {
+        earliestVitestStartMs: unreadable ? 'unreadable' : earliestVitestStartMs,
+        guardTempDirectories,
+    };
+}
+
+function reapAbandonedSystemTempDirectories(): void {
+    const live = readAbandonedCommandTempState();
+    if (live === undefined) {
+        return;
+    }
+    reapAbandonedCommandTempDirectories(tmpdir(), live);
+}
+
 function terminateProcessTree(
     pid: number,
     signal: NodeJS.Signals,
@@ -1065,12 +1221,31 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     }
     const startedAt = Date.now();
     const tracked = new Map<number, string>();
-    const child = spawn(input.command, input.args, {
-        cwd: input.cwd ?? process.cwd(),
-        env: boundedEnvironment(session, input.env ?? process.env, processToken, Math.floor(maxRssBytes / 1024 ** 2)),
-        detached: platform() !== 'win32',
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const commandTempDirectory = createCommandTempDirectory();
+    const child = (() => {
+        try {
+            return spawn(input.command, input.args, {
+                cwd: input.cwd ?? process.cwd(),
+                env: {
+                    ...boundedEnvironment(
+                        session,
+                        input.env ?? process.env,
+                        processToken,
+                        Math.floor(maxRssBytes / 1024 ** 2)
+                    ),
+                    TMPDIR: commandTempDirectory,
+                },
+                detached: platform() !== 'win32',
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+        } catch (error) {
+            removeCommandTempDirectory(commandTempDirectory);
+            if (ownedSession) {
+                session.release();
+            }
+            throw error;
+        }
+    })();
     // Handlers must exist before the blocking post-spawn work below (start-time probing,
     // identity publication): until they are registered, a SIGINT or SIGTERM kills this
     // process by default disposition — orphaning the just-spawned, detached child this
@@ -1091,6 +1266,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             if (ownedSession) {
                 session.release();
             }
+            removeCommandTempDirectory(commandTempDirectory);
             process.removeListener('SIGINT', onSigint);
             process.removeListener('SIGTERM', onSigterm);
             throw new Error('validation process identity could not be published', { cause: error });
@@ -1178,6 +1354,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (ownedSession) {
             session.release();
         }
+        removeCommandTempDirectory(commandTempDirectory);
         if (forceKillTimer !== undefined) {
             clearTimeout(forceKillTimer);
         }
@@ -1247,6 +1424,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (ownedSession) {
             session.release();
         }
+        removeCommandTempDirectory(commandTempDirectory);
     }
 }
 
@@ -1861,6 +2039,11 @@ export async function main(
 
     try {
         const input = parseCliArgs(argv);
+        // A killed Vitest never reaches its own temp cleanup. Production runs reap what earlier
+        // kills left behind. Tests inject runCommand and must not touch the machine temp directory.
+        if (options.runCommand === undefined) {
+            reapAbandonedSystemTempDirectories();
+        }
 
         // Issue #4118 preflight, before anything runs — including a `--recover` re-execution. The
         // guarded pnpm command is the write event: from a lane whose `node_modules` symlinks into

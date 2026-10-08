@@ -10,6 +10,7 @@ import {
     renameSync,
     rmSync,
     symlinkSync,
+    utimesSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -31,6 +32,7 @@ import {
     pnpmScriptName,
     psSamplingArgs,
     readGuardFailureReceipt,
+    reapAbandonedCommandTempDirectories,
     resolveDefaultMaxRssBytes,
     writeGuardFailureReceipt,
     RESOURCE_ROOT_ENV,
@@ -383,6 +385,48 @@ describe('process table sampling', () => {
     });
 });
 
+describe('abandoned command temp directories', () => {
+    it('removes a dead Vitest transform directory and a dead guard directory', () => {
+        const root = fixtureRoot('reap');
+        try {
+            const abandoned = join(root, 'dead-run');
+            mkdirSync(join(abandoned, 'client'), { recursive: true });
+            writeFileSync(join(abandoned, 'client', 'module.js'), 'transformed');
+            const live = join(root, 'live-run');
+            mkdirSync(join(live, 'client'), { recursive: true });
+            const unrelated = join(root, 'sockets');
+            mkdirSync(unrelated);
+            writeFileSync(join(unrelated, 'keep.txt'), 'x');
+            const deadGuard = join(root, 'sourdaw-guard-dead');
+            mkdirSync(deadGuard);
+            writeFileSync(join(deadGuard, 'owned.txt'), 'x');
+            const liveGuard = join(root, 'sourdaw-guard-live');
+            mkdirSync(liveGuard);
+            const freshGuard = join(root, 'sourdaw-guard-fresh');
+            mkdirSync(freshGuard);
+            const old = new Date(Date.now() - 120_000);
+            utimesSync(abandoned, old, old);
+            utimesSync(deadGuard, old, old);
+            utimesSync(liveGuard, old, old);
+
+            const removed = reapAbandonedCommandTempDirectories(root, {
+                earliestVitestStartMs: Date.now() - 60_000,
+                guardTempDirectories: new Set([realpathSync(liveGuard)]),
+            });
+
+            expect(removed).toBe(2);
+            expect(existsSync(abandoned)).toBe(false);
+            expect(existsSync(live)).toBe(true);
+            expect(existsSync(join(unrelated, 'keep.txt'))).toBe(true);
+            expect(existsSync(deadGuard)).toBe(false);
+            expect(existsSync(liveGuard)).toBe(true);
+            expect(existsSync(freshGuard)).toBe(true);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('resource enforcement', () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
@@ -410,6 +454,56 @@ describe('resource enforcement', () => {
         });
 
         expect(result.reason).toBe('pressure');
+    });
+
+    it('deletes the command temp directory after the child exits', async () => {
+        const root = fixtureRoot('command-temp-exit');
+        const marker = join(root, 'tmpdir');
+        try {
+            const result = await runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: [
+                    '-e',
+                    `const { writeFileSync } = require('node:fs'); const { join } = require('node:path'); writeFileSync(join(process.env.TMPDIR, 'owned.txt'), 'x'); writeFileSync(${JSON.stringify(marker)}, process.env.TMPDIR);`,
+                ],
+                profile: 'focused',
+                maxRssBytes: 2 * 1024 ** 3,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            const commandTempDirectory = readFileSync(marker, 'utf8');
+
+            expect(result.code).toBe(0);
+            expect(commandTempDirectory).toContain('sourdaw-guard-');
+            expect(existsSync(commandTempDirectory)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('deletes the command temp directory when the child is killed', async () => {
+        const root = fixtureRoot('command-temp');
+        const marker = join(root, 'tmpdir');
+        try {
+            const result = await runIsolatedGuardedCommand({
+                command: process.execPath,
+                args: [
+                    '-e',
+                    `const { writeFileSync } = require('node:fs'); const { join } = require('node:path'); writeFileSync(join(process.env.TMPDIR, 'owned.txt'), 'x'); writeFileSync(${JSON.stringify(marker)}, process.env.TMPDIR); setInterval(() => {}, 1000);`,
+                ],
+                profile: 'focused',
+                timeoutMs: 200,
+                maxRssBytes: 2 * 1024 ** 3,
+                availableMemoryBytes: abundantMemoryBytes,
+                sampleIntervalMs: 20,
+            });
+            const commandTempDirectory = readFileSync(marker, 'utf8');
+
+            expect(result.reason).toBe('timeout');
+            expect(commandTempDirectory).toContain('sourdaw-guard-');
+            expect(existsSync(commandTempDirectory)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it('kills commands that exceed their deadline', async () => {
