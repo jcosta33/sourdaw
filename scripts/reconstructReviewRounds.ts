@@ -289,11 +289,11 @@ function assertPublicRepairFinding(
     root: PublicReviewComment
 ): void {
     assertReviewRepairRecord(record);
+    // The root uses its review-time line; an immutable repair can record a later live line.
     if (
         record.pr !== pr ||
         record.finding.commentId !== rootId ||
         record.finding.path !== root.path ||
-        record.finding.line !== root.line ||
         record.finding.side !== root.side
     ) {
         fail(`review reconstruction: repair record does not bind pull request ${pr} and root finding ${rootId}`);

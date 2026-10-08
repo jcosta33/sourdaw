@@ -252,6 +252,50 @@ describe('reconstruct review rounds', () => {
         ).toThrow(/confirmation/u);
     });
 
+    it.each([
+        { label: 'pull request', change: (record: ReviewRepairRecord): ReviewRepairRecord => ({ ...record, pr: 43 }) },
+        {
+            label: 'root comment ID',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, commentId: 999 },
+            }),
+        },
+        {
+            label: 'path',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, path: 'scripts/other.ts' },
+            }),
+        },
+        {
+            label: 'side',
+            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
+                ...record,
+                finding: { ...record.finding, side: 'LEFT' },
+            }),
+        },
+    ])('refuses an author repair bound to a different $label', ({ change }) => {
+        const record = change(repairRecord(100, head));
+        const comments: PublicReviewComment[] = [
+            rootComment(100, 10),
+            {
+                ...rootComment(101, 10),
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(record),
+            },
+        ];
+        expect(() =>
+            reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                comments
+            )
+        ).toThrow(/does not bind pull request 42 and root finding 100/u);
+    });
+
     it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
         'fails closed on a malformed repair marker from authorized actor %s',
         (actorNodeId) => {
@@ -400,6 +444,103 @@ describe('shadow comparison', () => {
         const dossier = dossierWithPublication([{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }], 99);
         expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
     });
+
+    it.each([
+        {
+            label: 'compact with evidence at the repair coordinate',
+            compact: true,
+            emptyEvidence: false,
+            currentLine: 367,
+        },
+        {
+            label: 'compact historical empty evidence after another move',
+            compact: true,
+            emptyEvidence: true,
+            currentLine: 374,
+        },
+        { label: 'legacy with evidence after another move', compact: false, emptyEvidence: false, currentLine: 374 },
+        {
+            label: 'legacy historical empty evidence when outdated',
+            compact: false,
+            emptyEvidence: true,
+            currentLine: null,
+        },
+    ])(
+        'reconstructs moved $label without rebinding the original dossier',
+        ({ compact, emptyEvidence, currentLine }) => {
+            const originalLine = 358;
+            const repairLine = 367;
+            const source = repairRecord(100, head);
+            const record: ReviewRepairRecord = {
+                ...source,
+                finding: { ...source.finding, line: repairLine },
+                evidence: emptyEvidence ? [] : source.evidence,
+            };
+            let confirmationBody: string;
+            if (compact) {
+                confirmationBody = renderReviewRepairConfirmationMarker(record, head);
+            } else {
+                confirmationBody = renderReviewRepairReply(record);
+            }
+            const entries = [
+                {
+                    id: 100,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: originalLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: 'blocking',
+                    user: { node_id: REVIEWER_BOT_NODE_ID },
+                },
+                {
+                    id: 101,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: repairLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: renderReviewRepairReply(record),
+                    in_reply_to_id: 100,
+                    user: { node_id: AUTHOR_BOT_NODE_ID },
+                },
+                {
+                    id: 102,
+                    pull_request_review_id: 99,
+                    path: record.finding.path,
+                    original_line: repairLine,
+                    line: currentLine,
+                    side: record.finding.side,
+                    body: confirmationBody,
+                    in_reply_to_id: 100,
+                    user: { node_id: REVIEWER_BOT_NODE_ID },
+                },
+            ];
+            const comments = readPublicReviewComments(() => JSON.stringify([entries]), 42);
+            expect(comments[0]?.line).toBe(originalLine);
+            const reconstruction = reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(99, head, 'CHANGES_REQUESTED')],
+                comments
+            );
+            const finding = reconstruction.rounds[0]?.findings[0];
+            expect(finding?.line).toBe(originalLine);
+            expect(finding?.repairs).toEqual([record]);
+            expect(finding?.confirmations).toEqual([
+                {
+                    format: compact ? 'repair-confirmation-v1' : 'legacy-repair-v1',
+                    recordDigest: reviewRepairRecordDigest(record),
+                    confirmationHead: head,
+                },
+            ]);
+            const dossier = dossierWithPublication(
+                [{ path: record.finding.path, line: originalLine, side: 'RIGHT' }],
+                99
+            );
+            expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
+        }
+    );
 
     it('records a mismatch when the recorded publication stands in no public round', () => {
         const reconstruction = reconstructReviewRounds(
