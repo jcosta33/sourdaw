@@ -5,7 +5,9 @@ import { maskQuotedTextContents } from '../../transformers/promptParser/promptQu
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
+import { LEVEL_DIRECTION_WORDS } from './groundingStrategies/classifyPromptDecibelFigures';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
+import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import {
     isAgentReferenceCapabilityCandidate,
     type AgentReferenceCapability,
@@ -84,6 +86,20 @@ const GATED_RISKS: ReadonlySet<AppActionRisk> = new Set<AppActionRisk>([
 ]);
 
 const NO_RESERVED_REFERENCE_WORDS: ReadonlySet<string> = new Set();
+
+/**
+ * Tokens a clause states after its target rather than as the rest of its name: the direction and
+ * qualifier words a level clause uses, the track control verbs, the nouns that qualify a master
+ * output reference, and any numeric figure.
+ */
+const SENTENCE_MATERIAL_TOKENS: ReadonlySet<string> = new Set([
+    ...LEVEL_DIRECTION_WORDS,
+    'mute',
+    'solo',
+    'bus',
+    'channel',
+    'output',
+]);
 
 const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
@@ -463,6 +479,78 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     }
 }
 
+/**
+ * List punctuation starts another list item — a comma, a semicolon, or a dash set off by spaces —
+ * while name punctuation continues one name ("Master-Take", "Master's Choir", "Master/Take").
+ */
+function joinerCarriesListPunctuation(joiner: string): boolean {
+    return /[,;]|\s[-–—]|[-–—]\s/u.test(joiner);
+}
+
+/**
+ * Whether one exact-name match reads the given id occurrence as part of the name being typed. A match
+ * that reaches past the id word through list punctuation ("master, drums") or ends on sentence
+ * material — a level figure, a direction, a control verb, or a master-qualifier noun — is the
+ * instruction continuing after the target, not the rest of its name. Name punctuation continues the
+ * name itself, so it consumes the occurrence.
+ */
+function nameMatchConsumesIdOccurrence(
+    foldedPrompt: string,
+    idRange: { end: number; start: number },
+    nameRange: { end: number; start: number }
+): boolean {
+    const tail = foldedPrompt.slice(idRange.end, nameRange.end);
+    const joinerAfterId = /^[^\p{L}\p{N}]+/u.exec(tail)?.[0];
+    if (joinerAfterId !== undefined && joinerCarriesListPunctuation(joinerAfterId)) {
+        return false;
+    }
+    const matchedName = foldedPrompt.slice(nameRange.start, nameRange.end);
+    const trailingToken = normalizeAgentReferenceText(matchedName).split(' ').at(-1) ?? '';
+    return !SENTENCE_MATERIAL_TOKENS.has(trailingToken) && parsePromptNumberValue(trailingToken) === null;
+}
+
+/**
+ * A literal id read from a word that every occurrence sits inside a longer exact-name match was the
+ * name being typed, not the id ("Master" inside "Master Take"), so it yields to the name. A match that
+ * only reached past the id word on sentence material ("turn the master down 2 dB" beside a "Master
+ * Down" track) is not the name being typed, so the id stands and the prompt stays ambiguous. A span
+ * that only equals the id's own text stays ambiguous too: that prompt names both objects equally.
+ */
+function removeLiteralIdEvidenceNestedInExactNames(
+    prompt: string,
+    candidates: readonly CapabilityCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>
+): void {
+    const overlapPrompt = foldReferenceMarks(prompt);
+    const exactNameRanges = candidates.flatMap((candidate) =>
+        evidenceById.get(candidate.id) === 'exact-name' ? [...getExactNameOverlapRanges(prompt, candidate.name)] : []
+    );
+    if (exactNameRanges.length === 0) {
+        return;
+    }
+    for (const candidate of candidates) {
+        if (evidenceById.get(candidate.id) !== 'literal-id') {
+            continue;
+        }
+        const idRanges = getContiguousReferenceRanges(overlapPrompt, candidate.id);
+        if (idRanges.length === 0) {
+            continue;
+        }
+        const everyIdOccurrenceIsInsideALongerExactName = idRanges.every((idRange) =>
+            exactNameRanges.some(
+                (nameRange) =>
+                    nameRange.start <= idRange.start &&
+                    idRange.end <= nameRange.end &&
+                    (nameRange.start < idRange.start || idRange.end < nameRange.end) &&
+                    nameMatchConsumesIdOccurrence(overlapPrompt, idRange, nameRange)
+            )
+        );
+        if (everyIdOccurrenceIsInsideALongerExactName) {
+            evidenceById.delete(candidate.id);
+        }
+    }
+}
+
 function isGatedRisk(risk: AppActionRisk | undefined): boolean {
     return risk === undefined || GATED_RISKS.has(risk);
 }
@@ -651,6 +739,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
 
     removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
     removeOverlappedExactNameEvidence(input.prompt, candidates, evidenceById);
+    removeLiteralIdEvidenceNestedInExactNames(input.prompt, candidates, evidenceById);
 
     const gated = isGatedRisk(input.risk);
     // Every tiered evidence already clears MIN_BINDING_CONFIDENCE, so approximate names are read only

@@ -157,8 +157,8 @@ export type OfflineRenderOptions = {
     abortSignal?: AbortSignal;
     /**
      * Who the render holds the process-wide render lock for. Defaults to a musician's export, which
-     * refuses a second render; an agent measurement yields the lock to a musician's export, which
-     * stops the measurement with a `RenderBusy` error (#4768).
+     * refuses a second render; an agent render, a measurement or a section render, yields the lock
+     * to a musician's export, which stops it with a `RenderBusy` error (#4768, #5036).
      */
     lockHolder?: RenderLockHolder;
 };

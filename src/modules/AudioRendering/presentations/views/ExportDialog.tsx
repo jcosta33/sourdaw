@@ -430,11 +430,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }
                 }
             } catch (error) {
-                // If user clicked cancel, abort quietly
                 if (error instanceof Error && error.name === 'AbortError') {
                     return;
                 }
-                // Otherwise, allow it to drop to fallback `<a download>` memory mode
+                if (isNativeProjectRuntimeAvailable()) {
+                    const message = error instanceof Error ? error.message : 'Unknown oven malfunction';
+                    logger.error(new Error('Export failed', { cause: error }));
+                    setErrorText(message);
+                    setStatusText('The bread burned...');
+                    setProgress(0);
+                    notifyUser(message, 'error');
+                    return;
+                }
+                // A browser save-picker failure still falls through to the download link.
             }
         }
 
@@ -601,6 +609,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     targetTrackId: renderTargetTrackId,
                     startBeat,
                     endBeat,
+                    tailSeconds: tail,
                     buffer,
                     name: clipName,
                 });

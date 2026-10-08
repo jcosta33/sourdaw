@@ -760,18 +760,21 @@ describe('exportStems — option parsing, validation & control flow', () => {
         await expect(exportStems(Number.NaN)).rejects.toThrow(/Invalid export duration/);
     });
 
-    it('stops an agent measurement holding the render lock and takes the lock after its release (#4768)', async () => {
-        let releaseMeasurement: () => void = () => undefined;
-        const stopMeasurement = vi.fn(() => queueMicrotask(releaseMeasurement));
-        releaseMeasurement = acquireRenderLock('agent-measurement', stopMeasurement);
+    it.each(['agent-measurement', 'agent-section-render'] as const)(
+        'stops an agent render (%s) holding the render lock and takes the lock after its release (#4768, #5036)',
+        async (holder) => {
+            let releaseAgentRender: () => void = () => undefined;
+            const stopAgentRender = vi.fn(() => queueMicrotask(releaseAgentRender));
+            releaseAgentRender = acquireRenderLock(holder, stopAgentRender);
 
-        // Reaching the duration check means the export got past lock admission.
-        await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
+            // Reaching the duration check means the export got past lock admission.
+            await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
 
-        expect(stopMeasurement).toHaveBeenCalledTimes(1);
-        expect(isExportActive()).toBe(false);
-        acquireRenderLock('musician-export')();
-    });
+            expect(stopAgentRender).toHaveBeenCalledTimes(1);
+            expect(isExportActive()).toBe(false);
+            acquireRenderLock('musician-export')();
+        }
+    );
 
     it('still refuses a stem export while another musician export holds the lock', async () => {
         const release = acquireRenderLock('musician-export');
