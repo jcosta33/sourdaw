@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStart.spec.ts
+  s_1f0dcd815e8946::t_e88860c4c85aa9 95-103
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_1f0dcd815e8946::t_2baef8d8c57f99 53,55-67,76
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_1f0dcd815e8946::t_2baef8d8c57f99 64,66-80
+  s_1f0dcd815e8946::t_c1fefffce02e4e 88
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_1f0dcd815e8946::t_e88860c4c85aa9 76-85
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_ac2e95131e5e9b 961,965-977,979
+  s_1f0dcd815e8946::t_49987e834313d4 1030-1048,1063-1092
+  s_1f0dcd815e8946::t_38a071aebe334a 958-960,962-964,978,980-984,1029
+  s_1f0dcd815e8946::t_ced94f6c1085ff 985-1028,1049-1062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c44c891d38dc82e8d36a68d3282060784c3c460e",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
