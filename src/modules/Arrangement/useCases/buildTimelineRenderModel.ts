@@ -5,6 +5,8 @@ import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import {
     DEFAULT_TEMPO_BPM,
     playheadPositionRef,
+    readTempoAtBeat,
+    tempoMapStore,
     timeSignatureMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
@@ -110,6 +112,7 @@ const renderCache: {
     prefs: unknown;
     transport: number | null;
     timeSig: unknown;
+    tempoMap: unknown;
 } = {
     model: null,
     track: null,
@@ -119,6 +122,7 @@ const renderCache: {
     prefs: null,
     transport: null,
     timeSig: null,
+    tempoMap: null,
 };
 
 // The cached render model consumes one render-affecting transport field
@@ -187,6 +191,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const ws = clipSelectionStore.value;
     const prefs = preferencesStore.value;
     const timeSigState = timeSignatureMapStore.value;
+    const tempoMapState = tempoMapStore.value;
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -197,7 +202,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         ws !== renderCache.ws ||
         prefs !== renderCache.prefs ||
         transportTempo !== renderCache.transport ||
-        timeSigState !== renderCache.timeSig;
+        timeSigState !== renderCache.timeSig ||
+        tempoMapState !== renderCache.tempoMap;
 
     if (dataChanged) {
         renderCache.track = trackState;
@@ -207,6 +213,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.prefs = prefs;
         renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
+        renderCache.tempoMap = tempoMapState;
 
         const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
         const scrollX = viewState?.scrollX ?? 0;
@@ -237,6 +244,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopEnabled: clip.loopEnabled,
                     loopLength: clip.loopLength,
                     audioOffsetBeats: clip.audioOffsetBeats,
+                    clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                     midiOffsetBeats: clip.midiOffsetBeats,
                     stretchRatio: clip.stretchRatio,
                     fadeInBeats: clip.fadeInBeats,
@@ -269,6 +277,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopEnabled: ghost.loopEnabled,
                     loopLength: ghost.loopLength,
                     audioOffsetBeats: ghost.audioOffsetBeats,
+                    clipStartTempo: readTempoAtBeat({ beat: ghost.startBeat }),
                     midiOffsetBeats: ghost.midiOffsetBeats,
                     stretchRatio: ghost.stretchRatio,
                     fadeInBeats: ghost.fadeInBeats,
@@ -312,6 +321,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                                   loopEnabled: clip.loopEnabled,
                                   loopLength: clip.loopLength,
                                   audioOffsetBeats: clip.audioOffsetBeats,
+                                  clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
                                   midiOffsetBeats: clip.midiOffsetBeats,
                                   stretchRatio: clip.stretchRatio,
                                   fadeInBeats: clip.fadeInBeats,
@@ -406,6 +416,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         startBeat: pos.startBeat,
                         endBeat: pos.endBeat,
                         audioOffsetBeats: pos.audioOffsetBeats ?? base.audioOffsetBeats,
+                        clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
                         midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
                     });
                 }

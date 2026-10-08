@@ -596,7 +596,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 const offsetBeats = clip.audioOffsetBeats ?? 0;
                                 const stretchRatio = clip.stretchRatio ?? 1;
                                 const clipBeats = clip.endBeat - clip.startBeat;
-                                const secondsPerBeat = 60 / model.tempo;
+                                const secondsPerBeat = 60 / (clip.clipStartTempo ?? model.tempo);
                                 const sampleRate = buffer.sampleRate;
                                 const span = computeAudioWaveformDrawSpan({
                                     offsetBeats,

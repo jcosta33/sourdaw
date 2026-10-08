@@ -1,7 +1,16 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -707,6 +716,38 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
+    }
+}
+
+function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
+    const e2e = jobAt(candidate, 'e2e');
+    const install = stepNamed(e2e, 'Install Playwright browsers');
+    const run = stringAt(install, 'run');
+    const stepTimeoutMinutes = install['timeout-minutes'];
+    if (e2e['timeout-minutes'] !== 60 || stepTimeoutMinutes !== 35) {
+        throw new Error('the Playwright install step must be bounded below the 60-minute E2E job limit');
+    }
+    if (
+        !run.includes('for attempt in 1 2 3') ||
+        !run.includes('timeout --signal=KILL 10m pnpm exec playwright install --with-deps chromium') ||
+        !run.includes('sleep $((attempt * 5))') ||
+        !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')
+    ) {
+        throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
+    }
+    const maximumSeconds = 3 * (10 * 60) + 15;
+    if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= maximumSeconds) {
+        throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
+    }
+    const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
+    const installIndex = steps.indexOf(install);
+    const runShard = stepNamed(e2e, 'Run shard');
+    if (
+        steps.indexOf(runShard) !== installIndex + 1 ||
+        runShard.if !== undefined ||
+        runShard['continue-on-error'] !== undefined
+    ) {
+        throw new Error('a failed Playwright install must prevent the heavy E2E shard from running');
     }
 }
 
@@ -3101,6 +3142,134 @@ describe('health gates workflow contract', () => {
             'pull-request scanner config must come from the trusted base and retain no credentials'
         );
     });
+
+    it('bounds a stalled heavy E2E browser install and keeps its retry failure fatal', () => {
+        const e2e = jobAt(heavyWorkflow, 'e2e');
+        const installRun = stringAt(stepNamed(e2e, 'Install Playwright browsers'), 'run');
+        expect(() => assertBoundedHeavyE2eInstall(heavyWorkflow)).not.toThrow();
+
+        const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
+        stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
+            'timeout --signal=KILL 10m ',
+            ''
+        );
+        expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
+            'the heavy E2E install must retry three bounded attempts and fail after the third'
+        );
+
+        const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
+        stepNamed(jobAt(overlongInstall.heavy, 'e2e'), 'Install Playwright browsers')['timeout-minutes'] = 60;
+        expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
+            'the Playwright install step must be bounded below the 60-minute E2E job limit'
+        );
+    });
+
+    const gnuTimeout = process.env.SOURDAW_GNU_TIMEOUT ?? (process.platform === 'linux' ? 'timeout' : 'gtimeout');
+    const timeoutVersion = spawnSync(gnuTimeout, ['--version'], { encoding: 'utf8' });
+    const hasGnuTimeout = timeoutVersion.status === 0 && timeoutVersion.stdout.startsWith('timeout (GNU coreutils)');
+
+    for (const startupDelay of [0, 1.1]) {
+        it.runIf(process.platform === 'linux' || hasGnuTimeout)(
+            `kills a ready installer before retry after ${startupDelay}s startup`,
+            () => {
+                expect(hasGnuTimeout, 'the Ubuntu runner must use GNU timeout').toBe(true);
+                const psProbe = spawnSync('ps', ['-o', 'stat=', '-p', String(process.pid)], { encoding: 'utf8' });
+                expect(psProbe.status).toBe(0);
+                expect(psProbe.stdout.trim()).not.toBe('');
+                const installRun = stringAt(
+                    stepNamed(jobAt(heavyWorkflow, 'e2e'), 'Install Playwright browsers'),
+                    'run'
+                );
+                const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-process-group-'));
+                const pidLog = join(probeDirectory, 'pids.log');
+                const overlapLog = join(probeDirectory, 'overlap.log');
+                const attemptLog = join(probeDirectory, 'attempts.log');
+                const installer = join(probeDirectory, 'installer.py');
+                writeFileSync(
+                    installer,
+                    [
+                        'import os, signal, time',
+                        'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
+                        'time.sleep(float(os.environ["STALL_STARTUP_DELAY"]))',
+                        'with open(os.environ["STALL_PID_LOG"], "a") as log:',
+                        '    log.write(str(os.getpid()) + "\\n")',
+                        '    log.flush()',
+                        'os.kill(int(os.environ["TIMEOUT_PID"]), signal.SIGALRM)',
+                        'time.sleep(20)',
+                    ].join('\n')
+                );
+                writeFileSync(
+                    join(probeDirectory, 'pnpm'),
+                    [
+                        '#!/usr/bin/env bash',
+                        'trap "exit 143" TERM',
+                        'printf "attempt\\n" >> "$ATTEMPT_LOG"',
+                        'if [ -f "$STALL_PID_LOG" ]; then',
+                        '  while read -r pid; do',
+                        '    state=$(ps -o stat= -p "$pid" 2>/dev/null || true)',
+                        '    case "$state" in ""|Z*) ;; *) printf "%s\\n" "$pid" >> "$OVERLAP_LOG" ;; esac',
+                        '  done < "$STALL_PID_LOG"',
+                        'fi',
+                        'TIMEOUT_PID=$PPID python3 "$STALL_INSTALLER" &',
+                        'wait "$!"',
+                    ].join('\n'),
+                    { mode: 0o755 }
+                );
+                try {
+                    if (gnuTimeout !== 'timeout') {
+                        const resolvedTimeout = spawnSync('which', [gnuTimeout], { encoding: 'utf8' });
+                        expect(resolvedTimeout.status).toBe(0);
+                        symlinkSync(resolvedTimeout.stdout.trim(), join(probeDirectory, 'timeout'));
+                    }
+                    // The child asks GNU timeout to fire its own expiry handler
+                    // only after recording readiness; startup time cannot consume
+                    // the synthetic deadline before a descendant exists.
+                    const probeRun = installRun.replace('sleep $((attempt * 5))', 'sleep 0');
+                    expect(probeRun).not.toBe(installRun);
+                    const result = spawnSync('bash', ['-c', probeRun], {
+                        env: {
+                            ...process.env,
+                            ATTEMPT_LOG: attemptLog,
+                            OVERLAP_LOG: overlapLog,
+                            STALL_INSTALLER: installer,
+                            STALL_PID_LOG: pidLog,
+                            STALL_STARTUP_DELAY: String(startupDelay),
+                            PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
+                        },
+                        stdio: 'ignore',
+                        timeout: 10_000,
+                    });
+                    expect(result.error).toBeUndefined();
+                    expect(result.status).toBe(1);
+                    expect(existsSync(attemptLog), 'pnpm wrapper never started').toBe(true);
+                    expect(readFileSync(attemptLog, 'utf8').trim().split('\n')).toHaveLength(3);
+                    expect(existsSync(pidLog), 'installer never registered before expiry').toBe(true);
+                    expect(
+                        readFileSync(pidLog, 'utf8').trim().split('\n'),
+                        'every attempt must register before expiry'
+                    ).toHaveLength(3);
+                    expect(existsSync(overlapLog)).toBe(false);
+                    for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
+                        const state = spawnSync('ps', ['-o', 'stat=', '-p', pid], { encoding: 'utf8' }).stdout.trim();
+                        expect(state === '' || state.startsWith('Z'), `installer ${pid} survived`).toBe(true);
+                    }
+                } finally {
+                    if (existsSync(pidLog)) {
+                        for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
+                            if (pid) {
+                                try {
+                                    process.kill(Number(pid), 'SIGKILL');
+                                } catch {
+                                    /* already exited */
+                                }
+                            }
+                        }
+                    }
+                    rmSync(probeDirectory, { force: true, recursive: true });
+                }
+            }
+        );
+    }
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();

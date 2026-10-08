@@ -24,6 +24,14 @@ function withPreemption(preemption: AbortSignal, callerSignal: AbortSignal | und
     return AbortSignal.any([preemption, callerSignal]);
 }
 
+function combineSignals(...signals: readonly (AbortSignal | undefined)[]): AbortSignal | undefined {
+    const present = signals.filter((signal) => signal !== undefined);
+    if (present.length === 0) {
+        return undefined;
+    }
+    return AbortSignal.any(present);
+}
+
 /**
  * Admission, capture and teardown share one uninterrupted lock ownership boundary, except that a
  * musician's export which finds an agent render, a measurement or a section render, holding the lock
@@ -54,13 +62,12 @@ export async function executeOfflineRender(
         const abortSignal =
             holder === 'musician-export' ? callerSignal : withPreemption(preemption.signal, callerSignal);
         const callbacks = { ...options, abortSignal };
-        // The scope's signal is this render's cancellation handle (#4440),
-        // threaded into the backend so instrument setup aborts at the moment
-        // Cancel fires rather than at the next between-track checkpoint.
-        const scopeSignal = beginExportCancellationScope();
+        // Only a musician's export owns the export cancellation scope (#4440), threaded into the
+        // backend so instrument setup aborts at the moment Cancel fires rather than at the next
+        // between-track checkpoint. An agent render opens none: a musician's Cancel never reaches it.
+        const scopeSignal = holder === 'musician-export' ? beginExportCancellationScope() : undefined;
         // Instrument setup stops at an export cancel or at this render's own stop, whichever comes first.
-        const cancellationSignal =
-            abortSignal === undefined ? scopeSignal : AbortSignal.any([scopeSignal, abortSignal]);
+        const cancellationSignal = combineSignals(scopeSignal, abortSignal);
         const input = capture();
         const { sampleRate, historySeconds, outputDurationSeconds } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
@@ -103,8 +110,10 @@ export async function executeOfflineRender(
         throw error;
     } finally {
         // The mixdown owns its scope's lifetime: a cancelled render's flag must
-        // not outlive it (#4782).
-        endExportCancellationScope();
+        // not outlive it (#4782). An agent render never opened one.
+        if (holder === 'musician-export') {
+            endExportCancellationScope();
+        }
         backend?.dispose();
         releaseLock();
     }

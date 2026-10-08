@@ -39,6 +39,9 @@ const CARRIER_GATE_RAMP_SEC = 0.005;
 /** Ten time constants, where an exponential approach is closer than any sample can represent. */
 const CARRIER_GATE_LANDING_SEC = 0.05;
 
+/** Window of the no-SAB fallback meter, in samples (~5.3 ms at 48 kHz), matching the strip analyser. */
+const FALLBACK_METER_FFT_SIZE = 256;
+
 /**
  * The native parameter a device-parameter name addresses, or `null` when it
  * addresses none.
@@ -66,6 +69,46 @@ function toNativePluginParameterId(name: string): number | null {
     }
     const parameterId = Number(name);
     return parameterId <= MAX_NATIVE_PLUGIN_PARAMETER_ID ? parameterId : null;
+}
+
+/**
+ * Per-channel fallback meter for a strip without SharedArrayBuffer: a stereo
+ * splitter taps the pan output the meter worklet would scan, and each channel
+ * feeds its own analyser, so each analyser's time-domain data is exactly that
+ * channel's samples. An AnalyserNode fed the stereo bus directly down-mixes its
+ * input to mono before analysis — its peak would be peak((L+R)/2), reading any
+ * panned signal low against the worklet meter and the native engine's
+ * `pair_peak` (#5035).
+ */
+type AnalyserFallbackMeter = {
+    splitter: ChannelSplitterNode;
+    analysers: readonly [AnalyserNode, AnalyserNode];
+    buffers: readonly [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>];
+};
+
+function createAnalyserFallbackMeter(context: AudioContext, panNode: StereoPannerNode): AnalyserFallbackMeter {
+    const splitter = context.createChannelSplitter(2);
+    const leftAnalyser = context.createAnalyser();
+    const rightAnalyser = context.createAnalyser();
+    leftAnalyser.fftSize = FALLBACK_METER_FFT_SIZE;
+    rightAnalyser.fftSize = FALLBACK_METER_FFT_SIZE;
+    panNode.connect(splitter);
+    splitter.connect(leftAnalyser, 0, 0);
+    splitter.connect(rightAnalyser, 1, 0);
+    return {
+        splitter,
+        analysers: [leftAnalyser, rightAnalyser],
+        buffers: [new Float32Array(FALLBACK_METER_FFT_SIZE), new Float32Array(FALLBACK_METER_FFT_SIZE)],
+    };
+}
+
+/** Loudest absolute sample one channel's time-domain data holds. */
+function channelPeak(buffer: Float32Array): number {
+    let peak = 0;
+    for (let i = 0; i < buffer.length; i++) {
+        peak = Math.max(peak, Math.abs(buffer[i]!));
+    }
+    return peak;
 }
 
 export type TrackNodeDeps = {
@@ -154,8 +197,9 @@ type DeviceLoadState = 'ready' | 'pending' | 'failed';
 
 export class TrackNode {
     public strip: TrackChannelStrip;
-    /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
-    private _analyserFallbackBuffer: Float32Array<ArrayBuffer> | null = null;
+    /** When SAB is unavailable, getPeakLevel meters max(|L|, |R|) through this
+     *  splitter-and-two-analysers fallback instead of the metering worklet. */
+    private _analyserFallbackMeter: AnalyserFallbackMeter | null = null;
     // §88.3 — async plugin loads each resolve with a rebuildChain() call;
     // firing multiple of these in the same microtask produced overlapping
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
@@ -214,7 +258,7 @@ export class TrackNode {
             meterBuffer = new Float32Array(meterSab);
         } else {
             meterBuffer = new Float32Array(1);
-            this._analyserFallbackBuffer = new Float32Array(analyserNode.fftSize);
+            this._analyserFallbackMeter = createAnalyserFallbackMeter(context, panNode);
         }
 
         gainNode.connect(preFaderTap);
@@ -433,16 +477,13 @@ export class TrackNode {
     }
 
     public getPeakLevel(): number {
-        if (this._analyserFallbackBuffer) {
-            this.strip.analyserNode.getFloatTimeDomainData(this._analyserFallbackBuffer);
-            let peak = 0;
-            for (let i = 0; i < this._analyserFallbackBuffer.length; i++) {
-                const abs = Math.abs(this._analyserFallbackBuffer[i]!);
-                if (abs > peak) {
-                    peak = abs;
-                }
-            }
-            return peak;
+        const fallbackMeter = this._analyserFallbackMeter;
+        if (fallbackMeter) {
+            const [leftAnalyser, rightAnalyser] = fallbackMeter.analysers;
+            const [leftBuffer, rightBuffer] = fallbackMeter.buffers;
+            leftAnalyser.getFloatTimeDomainData(leftBuffer);
+            rightAnalyser.getFloatTimeDomainData(rightBuffer);
+            return Math.max(channelPeak(leftBuffer), channelPeak(rightBuffer));
         }
         // Read-and-reset of a single f32, deliberately without Atomics (audit
         // RT-9) — the scalar-meter exception to the Atomics discipline the
@@ -708,6 +749,13 @@ export class TrackNode {
             s.meterNode.connect(s.analyserNode);
         } else {
             s.panNode.connect(s.analyserNode);
+            // The fallback meter taps the same pan output the meter worklet
+            // would scan; the sweep above cleared every panNode edge, so the
+            // splitter tap is re-laid beside the analyser edge.
+            const fallbackMeter = this._analyserFallbackMeter;
+            if (fallbackMeter) {
+                s.panNode.connect(fallbackMeter.splitter);
+            }
         }
 
         this.routeOutput();
@@ -1513,6 +1561,15 @@ export class TrackNode {
             this.strip.meterNode.port.postMessage({ type: 'shutdown' });
             this.strip.meterNode.port.close();
             this.strip.meterNode.disconnect();
+        }
+        const fallbackMeter = this._analyserFallbackMeter;
+        if (fallbackMeter) {
+            // The panNode sweep above already dropped the tap edge; detach the
+            // splitter from its analysers so none of the three stays live.
+            fallbackMeter.splitter.disconnect();
+            for (const analyser of fallbackMeter.analysers) {
+                analyser.disconnect();
+            }
         }
         for (const dn of this.strip.deviceNodes) {
             if (dn.controller) {
