@@ -1,0 +1,29 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1c08b47ac3792f::t_284cbbdb781e12 738-743
+  s_1c08b47ac3792f::t_c4fee2cd228e8d 763-765
+  s_1c08b47ac3792f::t_0df82a7c5e66d5 3155
+  s_1c08b47ac3792f::t_b2994fe9010fa4 792
+  s_1c08b47ac3792f::t_00646b7a41398d 3162
+  s_1c08b47ac3792f::t_d4c2e20067fbca 773
+  s_1c08b47ac3792f::t_0c265c731d1c06 3178,3180
+  s_1c08b47ac3792f::t_96ce75369a1e4e 3244-3247
+  s_1c08b47ac3792f::t_ea152d3022e821 3242-3243,3248-3253,3255-3257
+  s_1c08b47ac3792f::t_d1c57f14c9646d 104-108
+  s_1c08b47ac3792f::t_41ac6f2bcf6eee 3169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebeaf7b7418556dd8cba31ea8d41b72a8129be97",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
