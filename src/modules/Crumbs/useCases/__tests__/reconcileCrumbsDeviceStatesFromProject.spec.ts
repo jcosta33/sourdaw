@@ -353,6 +353,80 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
         expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/mine.wav');
     });
 
+    // The reviewer's withdrawal shape: while a paired decode is in flight the
+    // peer reverts the document's sample to the very path the store already
+    // holds. The re-sweep finds no change and starts nothing, so nothing
+    // supersedes the in-flight decode — and its release used to commit the
+    // decoded pick over the peer's newer write, silently undoing the revert
+    // on both machines. The release must re-read the document and converge
+    // to it: the peer's revert stands.
+    it('converges a withdrawn pair to the document sample the peer reverted to', async () => {
+        const peerDecode = deferredDecode();
+        mocks.nativeLoadSample.mockImplementationOnce(() => peerDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+
+        // The peer reverts the sample mid-window; the wiring sweeps again and
+        // finds the document already matching the store's leaf, so the
+        // in-flight decode is never superseded.
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/a.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        expect(mocks.nativeLoadSample).toHaveBeenCalledTimes(1);
+
+        peerDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('slice');
+        // The commit is the document's own truth, never the withdrawn pick.
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/a.wav');
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/b.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/a.wav');
+    });
+
+    // The full-undo shape: the peer's undo reverts BOTH halves mid-window.
+    // The re-sweep converges the mode back through the live route but starts
+    // no load, so the in-flight decode still owns the epoch — and its release
+    // used to commit the decoded pick over the reverted document. The release
+    // must converge to the document's state: the settled store and the commit
+    // carry what the peer restored, not what it withdrew.
+    it('converges a fully undone pair to the document state the peer restored', async () => {
+        const peerDecode = deferredDecode();
+        mocks.nativeLoadSample.mockImplementationOnce(() => peerDecode.promise);
+        setMode(DEVICE_ID, 'quick');
+
+        projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('slice');
+
+        // The peer's undo reverts mode and sample; the wiring sweeps again.
+        projectWith(crumbsDevice(peerChunk({ sampleId: 7 })));
+        reconcileCrumbsDeviceStatesFromProject();
+        // The sweep converges the mode but starts no second decode.
+        expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('quick');
+        expect(mocks.nativeLoadSample).toHaveBeenCalledTimes(1);
+
+        peerDecode.resolve(LOCAL_DECODE_OF_B);
+        await flushLoad();
+        await flushLoad();
+
+        const commits = setDeviceStateCommits();
+        expect(commits).toHaveLength(1);
+        expect(commits[0]?.payload.state.data.mode).toBe('quick');
+        expect(commits[0]?.payload.state.data.activeSample?.filePath).toBe('/samples/a.wav');
+        expect(commits.some((commit) => commit.payload.state.data.activeSample?.filePath === '/samples/b.wav')).toBe(
+            false
+        );
+        expect(crumbsStore.value?.[DEVICE_ID]?.mode).toBe('quick');
+        expect(crumbsStore.value?.[DEVICE_ID]?.activeSample?.filePath).toBe('/samples/a.wav');
+    });
+
     it('commits the converged store at a paired settle and never the stale sample', async () => {
         projectWith(crumbsDevice(peerChunk({ mode: 'slice', filePath: '/samples/b.wav', sampleId: 7 })));
         setMode(DEVICE_ID, 'quick');

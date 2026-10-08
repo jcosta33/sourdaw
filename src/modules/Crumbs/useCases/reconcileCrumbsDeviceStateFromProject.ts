@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { fromCrumbsDeviceState } from '../models/CrumbsDeviceState';
+import { fromCrumbsDeviceState, type CrumbsDevicePlayback } from '../models/CrumbsDeviceState';
 import { crumbsStore, setActiveSample } from '../stores/crumbsStore';
 import {
     beginCrumbsPairedReconcile,
@@ -16,7 +16,30 @@ import { switchCrumbsMode } from './setCrumbsMode';
 import type { SampleMeta } from '../models/CrumbsTypes';
 
 /**
- * Converge a settled pair's sample half before the release replay reads it.
+ * Read one device's playback state out of the current document, or `null` when
+ * the tracks, the device or its chunk are gone or unreadable.
+ *
+ * The sweep opens with this, and the pair's release re-reads with it: the
+ * document can move on while a paired decode is in flight, and the sweep-time
+ * read is then stale — deciding the release from it would commit a pick the
+ * document already withdrew.
+ */
+function readDocumentPlayback(deviceId: string): CrumbsDevicePlayback | null {
+    const tracks = trackStore.value?.tracks;
+    if (!tracks) {
+        return null;
+    }
+
+    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    if (!device) {
+        return null;
+    }
+
+    return fromCrumbsDeviceState(device.deviceState);
+}
+
+/**
+ * Restore the document's own reference into an undecided paired sample.
  *
  * A successful paired load lands the peer's meta, but a failed one leaves the
  * store holding the very leaf the mode apply found beside it — the stale local
@@ -47,6 +70,38 @@ function restoreUndecidedPairedSample(
 }
 
 /**
+ * Converge a settled pair's sample to a document that moved on mid-window.
+ *
+ * The paired decode applies the sweep-time read, but the peer can withdraw
+ * that pick while the decode is in flight — re-picking the sample the store
+ * already holds, or undoing the whole commit. The re-sweep that read sees no
+ * change (the store still holds the pre-pair leaf) and starts nothing, so
+ * nothing supersedes the decode; committing the settled store at release would
+ * then write the withdrawn pick over the peer's newer write, silently undoing
+ * the revert on both machines. Re-reading the document here and restoring its
+ * current reference makes the release commit the document's own truth, and
+ * lands the mirror's baseline on the document's state.
+ *
+ * Converge only when the store still holds exactly the paired pick: a newer
+ * local load that applied after it owns the store, and the replay must carry
+ * that pick, not the document's older one.
+ */
+function restoreWithdrawnPairedSample(deviceId: string, pairedPick: SampleMeta | null): void {
+    if (!pairedPick) {
+        return;
+    }
+    const documentSample = readDocumentPlayback(deviceId)?.activeSample;
+    if (!documentSample || documentSample.filePath === pairedPick.filePath) {
+        return;
+    }
+    const state = crumbsStore.value?.[deviceId];
+    if (state?.activeSample?.filePath !== pairedPick.filePath) {
+        return;
+    }
+    setActiveSample(deviceId, documentSample);
+}
+
+/**
  * Apply authoritative project playback state to a loaded Crumbs session
  * (#4764).
  *
@@ -72,23 +127,13 @@ function restoreUndecidedPairedSample(
  * actually carries.
  */
 export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return;
-    }
-
-    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
-    if (!device) {
+    const playback = readDocumentPlayback(deviceId);
+    if (!playback) {
         return;
     }
 
     const state = crumbsStore.value?.[deviceId];
     if (!state) {
-        return;
-    }
-
-    const playback = fromCrumbsDeviceState(device.deviceState);
-    if (!playback) {
         return;
     }
 
@@ -106,8 +151,9 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
     // reference — a failed or slow decode then erases the reference
     // cross-session. Hold the mirror until the paired load settles; the
     // release below converges: it restores the document's reference into an
-    // undecided sample leaf, replays the persistence comparison against the
-    // settled store, and commits (#4764).
+    // undecided sample leaf, converges a pick the document withdrew mid-window
+    // back to the document's current state, replays the persistence
+    // comparison against the settled store, and commits (#4764).
     const paired = modeChanged && filePath !== null && sampleChanged;
     const prePairSample = state.activeSample;
     if (paired) {
@@ -132,6 +178,7 @@ export function reconcileCrumbsDeviceStateFromProject(deviceId: string): void {
                     return;
                 }
                 restoreUndecidedPairedSample(deviceId, prePairSample, playback.activeSample);
+                restoreWithdrawnPairedSample(deviceId, playback.activeSample);
                 replayCrumbsDeviceStateCommit(deviceId);
             });
     }
