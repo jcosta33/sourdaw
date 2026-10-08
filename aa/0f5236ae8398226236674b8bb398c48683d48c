@@ -1,0 +1,26 @@
+scripts/__tests__/prValidationScope.spec.ts
+  s_97ab82e0b4f10c::t_eec1e598d4ef0b 412,431,448,451,463,481,571-581
+  s_97ab82e0b4f10c::t_58d434ec045d62 582-583
+scripts/vitestCollectionPatterns.ts
+  s_97ab82e0b4f10c::t_327971d07ee625 37-39,41,62,69
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_3c8685dcce822a 14-17
+scripts/__tests__/vitestCollectionPatterns.spec.ts
+  s_97ab82e0b4f10c::t_eec1e598d4ef0b 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa0f5236ae8398226236674b8bb398c48683d48c",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
