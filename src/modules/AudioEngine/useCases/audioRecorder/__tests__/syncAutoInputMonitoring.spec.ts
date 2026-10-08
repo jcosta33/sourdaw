@@ -66,6 +66,17 @@ function setTransport(state: TestTransport): void {
     stores.transportStore.set(state);
 }
 
+/**
+ * Lets every promise reaction already queued run, which is when the owner
+ * learns the outcome of an open. A timer fires only after the microtask queue
+ * has drained, so this waits for completion rather than counting turns.
+ */
+function drainSettledOpens(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 describe('syncAutoInputMonitoring', () => {
     let unsubscribe: () => void;
 
@@ -217,6 +228,18 @@ describe('syncAutoInputMonitoring', () => {
 
         setTransport({ isPlaying: true, isRecording: false });
         setTransport({ isPlaying: false, isRecording: false });
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a refused open once the track has passed through On and back to Auto', async () => {
+        harness.startInputMonitoring.mockImplementation(() => Promise.resolve(false));
+        setTracks(audioTrack());
+        await drainSettledOpens();
+        expect(harness.startInputMonitoring).toHaveBeenCalledTimes(1);
+
+        setTracks(audioTrack({ inputMonitoring: 'on' }));
+        setTracks(audioTrack());
+
         expect(harness.startInputMonitoring).toHaveBeenCalledTimes(2);
     });
 
