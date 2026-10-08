@@ -7,6 +7,7 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
+import { captureClipSplitTakeLanes } from '../comping/captureClipSplitTakeLanes';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
@@ -120,7 +121,12 @@ export function prepareClipSplit({
         leftClip.audioOffsetSeconds = sourceEntrySeconds;
         rightClip.audioOffsetSeconds = splitSourceSeconds;
     }
+    const takes = captureClipSplitTakeLanes(clip, effectiveRightClipId, adjustedSplitBeat);
+    if (!takes) {
+        return null;
+    }
     const previous: ClipSplitActionSnapshot = {
+        takeLanes: takes.previous,
         trackId: track.id,
         leftClip: structuredClone(clip),
         rightClip: null,
@@ -133,6 +139,7 @@ export function prepareClipSplit({
         clipAutomationLanes: [],
     };
     const next: ClipSplitActionSnapshot = {
+        takeLanes: takes.next,
         trackId: track.id,
         leftClip: structuredClone(leftClip),
         rightClip: structuredClone(rightClip),

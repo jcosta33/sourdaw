@@ -1,9 +1,15 @@
 import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type AppAction, type HandlerSessionActionEntry, type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type ClipSplitActionSnapshot,
+    type HandlerSessionActionEntry,
+    type TakeSourceDepthSnapshot,
+} from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
+import { decodeClipSplitTakeTransitions } from '../../useCases/comping/decodeClipSplitTakeTransitions';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
@@ -312,7 +318,7 @@ export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolea
     );
 }
 
-function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): boolean {
+function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): value is ClipSplitActionSnapshot {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -336,7 +342,13 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         value.rightClipId !== value.clipId &&
         isSplitSnapshot(value.expected, value.clipId, value.rightClipId) &&
         isSplitSnapshot(value.replacement, value.clipId, value.rightClipId) &&
-        (value.retiredTakeLanes === undefined || isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId))
+        (value.retiredTakeLanes === undefined || isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId)) &&
+        decodeClipSplitTakeTransitions({
+            clipId: value.clipId,
+            rightClipId: value.rightClipId,
+            expected: value.expected,
+            replacement: value.replacement,
+        }) !== null
     );
 }
 

@@ -10,6 +10,15 @@ import { tempoSourceDependencies } from '../../useCases/tempoSourceDependencies'
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
+type PendingDescription = { label: string; inverseAction: SetTempoAction | null; redoAction?: SetTempoAction };
+const pendingDescriptions = new WeakMap<SetTempoAction, PendingDescription>();
+
+function updateReplayPayload(target: SetTempoAction, replacement: SetTempoAction): void {
+    Object.assign(target.payload, replacement.payload);
+    if (replacement.payload.sourceTransition === undefined) {
+        delete target.payload.sourceTransition;
+    }
+}
 
 /**
  * Build the action that restores, or re-applies, a tempo write.
@@ -64,6 +73,36 @@ function prepareSourceChange(action: SetTempoAction, tempoChangeId: string | nul
     });
 }
 
+function refreshReplayDescription(
+    pending: PendingDescription | undefined,
+    action: SetTempoAction,
+    target: NonNullable<ReturnType<typeof getTempoWriteTarget>>,
+    sourceChange: ReturnType<typeof prepareSourceChange>
+): void {
+    if (!pending?.inverseAction || !pending.redoAction) {
+        return;
+    }
+    const source = sourceChange?.transition;
+    updateReplayPayload(
+        pending.inverseAction,
+        buildTargetedAction(
+            target.tempo,
+            target.tempoChangeId,
+            action.payload.bpm,
+            source ? { ...source, direction: 'restore' } : undefined
+        )
+    );
+    updateReplayPayload(
+        pending.redoAction,
+        buildTargetedAction(
+            action.payload.bpm,
+            target.tempoChangeId,
+            target.tempo,
+            source ? { ...source, direction: 'apply' } : undefined
+        )
+    );
+}
+
 export const handleSetTempo = createHandler<'setTempo'>({
     previewExecution: 'isolated-project',
     validateSessionEntry: (entry) => {
@@ -115,45 +154,52 @@ export const handleSetTempo = createHandler<'setTempo'>({
         );
     },
     execute: (alpha): HandlerExecutionResult | void => {
-        if (alpha.payload.expectedBpm !== undefined) {
+        const pending = pendingDescriptions.get(alpha);
+        let applied = false;
+        try {
             const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
-            if (target?.writable !== true || target.tempo !== alpha.payload.expectedBpm) {
+            if (
+                alpha.payload.expectedBpm !== undefined &&
+                (target?.writable !== true || target.tempo !== alpha.payload.expectedBpm)
+            ) {
                 return { status: 'conflict' };
             }
+            if (!target) {
+                return { status: 'no-write' };
+            }
+            if (!target.writable) {
+                setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
+                return { status: 'no-write' };
+            }
+            const sourceChange = prepareSourceChange(alpha, target.tempoChangeId);
+            if (
+                tempoSourceDependencies.available() &&
+                (alpha.payload.expectedBpm === undefined || alpha.payload.sourceTransition !== undefined) &&
+                sourceChange === null
+            ) {
+                return { status: 'conflict' };
+            }
+            const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: target.tempoChangeId });
+            if (result.status === 'no-write') {
+                return { status: 'no-write' };
+            }
+            if (sourceChange && !sourceChange.apply()) {
+                return { status: 'conflict' };
+            }
+            refreshReplayDescription(pending, alpha, target, sourceChange);
+            applied = true;
+            return {
+                status: 'written',
+                afterCommit: markTempoProjectWrite,
+                afterAmbiguousCommit: markTempoProjectWrite,
+            };
+        } finally {
+            if (pending && !applied) {
+                pending.inverseAction = null;
+                pending.redoAction = undefined;
+            }
+            pendingDescriptions.delete(alpha);
         }
-        const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
-        if (!target) {
-            return { status: 'no-write' };
-        }
-        if (!target.writable) {
-            setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
-            return { status: 'no-write' };
-        }
-        const sourceChange = prepareSourceChange(alpha, target.tempoChangeId);
-        if (
-            tempoSourceDependencies.available() &&
-            (alpha.payload.expectedBpm === undefined || alpha.payload.sourceTransition !== undefined) &&
-            sourceChange === null
-        ) {
-            return { status: 'conflict' };
-        }
-        const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
-        if (result.status === 'no-write') {
-            // There was nothing to write to — no transport state, or a named
-            // change deleted since. Reporting it aborts the transaction and keeps
-            // a nothing-happened entry out of the undo stack. A *refused* write
-            // inside a ramp throws out of `setTempo` instead, so it reaches the
-            // caller rather than vanishing into the same silent abort.
-            return { status: 'no-write' };
-        }
-        if (sourceChange && !sourceChange.apply()) {
-            return { status: 'conflict' };
-        }
-        return {
-            status: 'written',
-            afterCommit: markTempoProjectWrite,
-            afterAmbiguousCommit: markTempoProjectWrite,
-        };
     },
     // Compare against the governing tempo, not `transport.tempo`: with a tempo
     // map the base tempo is inert, so comparing against it would call a real
@@ -182,7 +228,9 @@ export const handleSetTempo = createHandler<'setTempo'>({
             // that lands: `undo` treats null-inverse entries as inert, drops them
             // and keeps scanning, so the next Ctrl+Z would undo an unrelated
             // earlier action while the destroyed tempo stayed destroyed.
-            return { label, inverseAction: null };
+            const pending: PendingDescription = { label, inverseAction: null };
+            pendingDescriptions.set(alpha, pending);
+            return pending;
         }
 
         let source: TempoAudioSourceTransition | undefined;
@@ -192,7 +240,7 @@ export const handleSetTempo = createHandler<'setTempo'>({
             })?.transition;
         }
 
-        return {
+        const pending: PendingDescription = {
             label,
             inverseAction: buildTargetedAction(
                 target.tempo,
@@ -207,6 +255,8 @@ export const handleSetTempo = createHandler<'setTempo'>({
                 source ? { ...source, direction: 'apply' } : undefined
             ),
         };
+        pendingDescriptions.set(alpha, pending);
+        return pending;
     },
     undoable: true,
 });

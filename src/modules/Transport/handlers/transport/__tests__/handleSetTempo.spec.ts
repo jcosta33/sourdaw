@@ -128,6 +128,67 @@ describe('transport handlers', () => {
         });
     });
 
+    it('refreshes a bare-playhead capture to the destination actually executed', () => {
+        tempoMapRef.value = {
+            changes: [
+                { id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' },
+                { id: 'tc-b', beat: 12, tempo: 130, curve: 'instant' },
+            ],
+        };
+        const action = { type: 'setTempo', payload: { bpm: 100 } } as const;
+        const described = handleSetTempo.describe(action);
+        seekTo(12);
+        expect(handleSetTempo.execute(action)).toMatchObject({ status: 'written' });
+        expect(described.inverseAction).toEqual({
+            type: 'setTempo',
+            payload: { bpm: 130, expectedBpm: 100, tempoChangeId: 'tc-b' },
+        });
+        expect(described.redoAction).toEqual({
+            type: 'setTempo',
+            payload: { bpm: 100, expectedBpm: 130, tempoChangeId: 'tc-b' },
+        });
+        seekTo(0);
+        if (described.inverseAction?.type !== 'setTempo') {
+            throw new Error('Expected targeted inverse');
+        }
+        expect(handleSetTempo.execute(described.inverseAction)).toMatchObject({ status: 'written' });
+        expect(tempoOf('tc-a')).toBe(90);
+        expect(tempoOf('tc-b')).toBe(130);
+    });
+
+    it('refreshes a named capture to the tempo immediately before execution', () => {
+        tempoMapRef.value = {
+            changes: [
+                { id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' },
+                { id: 'tc-b', beat: 12, tempo: 130, curve: 'instant' },
+            ],
+        };
+        const action = { type: 'setTempo', payload: { bpm: 100, tempoChangeId: 'tc-b' } } as const;
+        const described = handleSetTempo.describe(action);
+        tempoMapRef.value.changes[1]!.tempo = 140;
+        expect(handleSetTempo.execute(action)).toMatchObject({ status: 'written' });
+        expect(described.inverseAction).toEqual({
+            type: 'setTempo',
+            payload: { bpm: 140, expectedBpm: 100, tempoChangeId: 'tc-b' },
+        });
+        if (described.inverseAction?.type !== 'setTempo') {
+            throw new Error('Expected named inverse');
+        }
+        expect(handleSetTempo.execute(described.inverseAction)).toMatchObject({ status: 'written' });
+        expect(tempoOf('tc-a')).toBe(90);
+        expect(tempoOf('tc-b')).toBe(140);
+    });
+
+    it('clears a described replay when its named destination disappears before execution', () => {
+        tempoMapRef.value = { changes: [{ id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' }] };
+        const action = { type: 'setTempo', payload: { bpm: 100, tempoChangeId: 'tc-a' } } as const;
+        const described = handleSetTempo.describe(action);
+        tempoMapRef.value = { changes: [] };
+        expect(handleSetTempo.execute(action)).toEqual({ status: 'no-write' });
+        expect(described.inverseAction).toBeNull();
+        expect(described.redoAction).toBeUndefined();
+    });
+
     it('handleSetTempo restores the event it wrote even after the playhead has moved', () => {
         tempoMapRef.value = {
             changes: [
