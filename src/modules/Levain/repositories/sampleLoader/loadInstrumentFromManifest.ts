@@ -185,6 +185,47 @@ function createSampleBankHandshake(
     };
 }
 
+/**
+ * Ask the worklet to free the bank this load's commit displaced, one bounded
+ * step per message, re-asking while it answers that more is left. The commit
+ * itself frees nothing, and nothing waits on this: the load has already
+ * resolved. A port that closes, or a processor that ends, stops the loop; the
+ * next `beginSampleBank` frees whatever is left.
+ */
+function releaseRetiredBank(nodePort: MessagePort, loadToken: number): void {
+    function stop(): void {
+        nodePort.removeEventListener('message', onMessage);
+    }
+    function request(): void {
+        try {
+            nodePort.postMessage({ type: 'releaseRetiredBank', loadToken });
+        } catch {
+            stop();
+        }
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (message.type === 'disposed' || message.type === 'error') {
+            stop();
+            return;
+        }
+        if (message.type !== 'retiredBankReleased' || message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.done === true) {
+            stop();
+            return;
+        }
+        request();
+    }
+
+    nodePort.addEventListener('message', onMessage);
+    request();
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
@@ -380,6 +421,7 @@ export async function loadInstrumentFromManifest({
         handshake.markZoneMapPosted();
         await handshake.completed;
         completed = true;
+        releaseRetiredBank(nodePort, loadToken);
         return bank;
     } finally {
         if (handshake && !completed) {

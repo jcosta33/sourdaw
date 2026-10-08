@@ -34,6 +34,8 @@ let abortSampleBankShouldThrow = false;
 let allNotesOffShouldThrow = false;
 let setParamShouldThrow = false;
 let zoneMapShouldBuild = true;
+// Release steps the mock engine still needs before it reports the retired bank freed.
+let retiredBankStepsLeft = 0;
 const sharedBanks = new Set<string>();
 
 class LevainInstanceMock {
@@ -114,6 +116,13 @@ class LevainInstanceMock {
         calls.push({ method: 'commit_sample_bank', args: [] });
         return true;
     }
+    release_retired_bank(maxEntries: number): boolean {
+        calls.push({ method: 'release_retired_bank', args: [maxEntries] });
+        if (retiredBankStepsLeft > 0) {
+            retiredBankStepsLeft--;
+        }
+        return retiredBankStepsLeft === 0;
+    }
     sample_bank_bytes(): number {
         return 16;
     }
@@ -173,6 +182,7 @@ describe('LevainProcessor message handling', () => {
         allNotesOffShouldThrow = false;
         setParamShouldThrow = false;
         zoneMapShouldBuild = true;
+        retiredBankStepsLeft = 0;
         sharedBanks.clear();
     });
 
@@ -751,6 +761,80 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 4, numMics: 3 });
 
         expect(method('build_zone_map')!.args).toEqual([4, 3]);
+    });
+
+    describe('freeing the bank a commit displaced', () => {
+        function releaseReplies(proc: LevainProcessorLike): unknown[] {
+            return proc.port.postMessage.mock.calls
+                .map((call) => call[0] as { type?: string })
+                .filter((message) => message.type === 'retiredBankReleased');
+        }
+
+        async function commitBank(loadToken: number): Promise<LevainProcessorLike> {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            send(proc, {
+                type: 'beginSampleBank',
+                bankKey: `release-bank-${loadToken}`,
+                instrumentId: 'violin',
+                loadToken,
+            });
+            send(proc, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+            return proc;
+        }
+
+        it('commits without freeing anything: neither the commit message nor process() releases the bank', async () => {
+            const proc = await commitBank(1);
+            const output = makeChannels(2, FRAMES);
+
+            proc.process([], [output]);
+
+            const order = calls.map((call) => call.method);
+            expect(order).toContain('commit_sample_bank');
+            expect(order).not.toContain('release_retired_bank');
+            expect(order.indexOf('build_zone_map')).toBeLessThan(order.indexOf('commit_sample_bank'));
+            expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
+        });
+
+        it('frees one bounded step per releaseRetiredBank message and reports when none is left', async () => {
+            const proc = await commitBank(1);
+            retiredBankStepsLeft = 3;
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+
+            const releases = calls.filter((call) => call.method === 'release_retired_bank');
+            expect(releases).toHaveLength(3);
+            expect(releases.every((call) => (call.args[0] as number) > 0 && (call.args[0] as number) <= 1024)).toBe(
+                true
+            );
+            expect(releaseReplies(proc)).toEqual([
+                { type: 'retiredBankReleased', loadToken: 1, done: false },
+                { type: 'retiredBankReleased', loadToken: 1, done: false },
+                { type: 'retiredBankReleased', loadToken: 1, done: true },
+            ]);
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+            expect(calls.filter((call) => call.method === 'release_retired_bank')).toHaveLength(3);
+            expect(releaseReplies(proc).at(-1)).toEqual({ type: 'retiredBankReleased', loadToken: 1, done: true });
+        });
+
+        it('ignores a release for a load whose displaced bank is gone or was replaced', async () => {
+            const proc = await commitBank(1);
+            send(proc, { type: 'beginSampleBank', bankKey: 'release-bank-2', instrumentId: 'violin', loadToken: 2 });
+            send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+            calls.length = 0;
+
+            send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+
+            expect(calls.some((call) => call.method === 'release_retired_bank')).toBe(false);
+            expect(releaseReplies(proc).at(-1)).toEqual({ type: 'retiredBankReleased', loadToken: 1, done: true });
+
+            send(proc, { type: 'beginSampleBank', bankKey: 'release-bank-3', instrumentId: 'violin', loadToken: 3 });
+            send(proc, { type: 'releaseRetiredBank', loadToken: 2 });
+            expect(calls.some((call) => call.method === 'release_retired_bank')).toBe(false);
+        });
     });
 
     it('rejects an invalid DSP zone-map build instead of reporting a hydrated instrument', async () => {

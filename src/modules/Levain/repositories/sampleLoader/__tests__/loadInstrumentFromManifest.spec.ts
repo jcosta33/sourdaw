@@ -94,6 +94,11 @@ type MakePortOptions = {
      * acknowledgement".
      */
     silenceAbortReply?: boolean;
+    /**
+     * Release steps the fake worklet needs before it answers `done: true` to a
+     * `releaseRetiredBank` request (default 1). `Infinity` never finishes.
+     */
+    releaseSteps?: number;
 };
 
 /**
@@ -107,6 +112,7 @@ type MakePortOptions = {
 function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
+    let releaseRequests = 0;
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -146,6 +152,14 @@ function makePort(options: MakePortOptions = {}): FakePort {
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
+            });
+            return;
+        }
+        if (message.type === 'releaseRetiredBank') {
+            releaseRequests++;
+            const done = releaseRequests >= (options.releaseSteps ?? 1);
+            queueMicrotask(() => {
+                emit({ type: 'retiredBankReleased', loadToken: message.loadToken, done });
             });
             return;
         }
@@ -361,6 +375,81 @@ describe('loadInstrumentFromManifest', () => {
         expect(postedTypes(port)).not.toContain('addSample');
         expect(postedTypes(port)).toContain('addZone');
         expect(postedTypes(port)).toContain('buildZoneMap');
+    });
+
+    describe('freeing the bank the commit displaced', () => {
+        function load(port: FakePort): Promise<unknown> {
+            return loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+        }
+
+        function releaseCount(port: FakePort): number {
+            return postedTypes(port).filter((type) => type === 'releaseRetiredBank').length;
+        }
+
+        it('asks for one release step at a time, only after the commit is acknowledged, until the worklet reports done', async () => {
+            const port = makePort({ releaseSteps: 3 });
+
+            await load(port);
+
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(3);
+            });
+            const types = postedTypes(port);
+            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+            const begin = port.postMessage.mock.calls[0]?.[0] as { loadToken: number };
+            const releases = port.postMessage.mock.calls
+                .map(([message]) => message as { type: string; loadToken: number })
+                .filter((message) => message.type === 'releaseRetiredBank');
+            expect(releases.every((message) => message.loadToken === begin.loadToken)).toBe(true);
+            // Done was reported: a late duplicate reply asks for nothing more.
+            port.emit({ type: 'retiredBankReleased', loadToken: begin.loadToken, done: false });
+            expect(releaseCount(port)).toBe(3);
+        });
+
+        it('asks for no release before the worklet has acknowledged the commit', async () => {
+            const port = makePort({ autoComplete: false });
+            const pending = load(port);
+
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('buildZoneMap');
+            });
+            expect(releaseCount(port)).toBe(0);
+
+            const buildMessage = port.postMessage.mock.calls
+                .map(([message]) => message as { type: string; loadToken: number })
+                .find((message) => message.type === 'buildZoneMap');
+            port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage!.loadToken });
+            await pending;
+
+            expect(releaseCount(port)).toBe(1);
+        });
+
+        it('asks for no release when the load fails to commit', async () => {
+            const port = makePort({ commitError: 'zone map rejected' });
+
+            await expect(load(port)).rejects.toThrow('zone map rejected');
+
+            expect(releaseCount(port)).toBe(0);
+        });
+
+        it('stops asking once the processor ends', async () => {
+            const port = makePort({ releaseSteps: Number.POSITIVE_INFINITY });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBeGreaterThan(0);
+            });
+
+            port.emit({ type: 'disposed' });
+            const asked = releaseCount(port);
+            port.emit({ type: 'retiredBankReleased', loadToken: 1, done: false });
+
+            expect(releaseCount(port)).toBe(asked);
+        });
     });
 
     it('rejects when the worklet cannot commit the staged bank', async () => {
