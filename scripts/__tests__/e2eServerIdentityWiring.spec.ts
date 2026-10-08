@@ -2,7 +2,27 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import warmFirstPaint from '../../tests/e2e/firstPaintWarmup';
+
+const clock = vi.hoisted(() => ({ now: 0 }));
+const warmupMocks = vi.hoisted(() => ({
+    assertIdentity: vi.fn(),
+    launch: vi.fn(),
+    newPage: vi.fn(),
+    addInitScript: vi.fn(),
+    goto: vi.fn(),
+    getByLabel: vi.fn(),
+    waitFor: vi.fn(),
+    close: vi.fn(),
+}));
+
+vi.mock('@playwright/test', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@playwright/test')>()),
+    chromium: { launch: warmupMocks.launch },
+}));
+vi.mock('../e2eServerIdentity', () => ({ assertServingCheckoutIdentity: warmupMocks.assertIdentity }));
 
 /**
  * Structural pins for the lane-isolation wiring itself
@@ -154,5 +174,104 @@ describe('e2e serving-identity wiring', () => {
     it('agent ui-scripts await assertServingCheckoutIdentity before navigating (source pin: no TS project covers .agents)', () => {
         const utilsPath = join(repositoryRoot, '.agents/ui-scripts/utils.ts');
         expect(readFileSync(utilsPath, 'utf8')).toMatch(/await\s+assertServingCheckoutIdentity\(/);
+    });
+});
+
+describe('cold first-paint warmup', () => {
+    const config = { projects: [{ use: { baseURL: 'http://localhost:4173' } }] } as Parameters<
+        typeof warmFirstPaint
+    >[0];
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        clock.now = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+        warmupMocks.assertIdentity.mockResolvedValue(undefined);
+        warmupMocks.launch.mockResolvedValue({ newPage: warmupMocks.newPage, close: warmupMocks.close });
+        warmupMocks.newPage.mockResolvedValue({
+            addInitScript: warmupMocks.addInitScript,
+            goto: warmupMocks.goto,
+            getByLabel: warmupMocks.getByLabel,
+        });
+        warmupMocks.getByLabel.mockReturnValue({ waitFor: warmupMocks.waitFor });
+        warmupMocks.goto.mockResolvedValue(null);
+        warmupMocks.waitFor.mockResolvedValue(undefined);
+        warmupMocks.close.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('shares 180 seconds between a 35-second navigation and prompt overlay', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+
+        await warmFirstPaint(config);
+
+        expect(warmupMocks.assertIdentity).toHaveBeenCalledWith('http://localhost:4173', expect.any(String));
+        expect(warmupMocks.assertIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+            warmupMocks.launch.mock.invocationCallOrder[0]
+        );
+        expect(warmupMocks.newPage).toHaveBeenCalledWith({ baseURL: 'http://localhost:4173' });
+        expect(warmupMocks.addInitScript).toHaveBeenCalledWith(expect.any(Function), 'sourdaw-e2e-direct');
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.getByLabel).toHaveBeenCalledWith('Sourdaw — start a project');
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('bounds a hung navigation by the shared deadline and closes the browser', async () => {
+        warmupMocks.goto.mockImplementation(async (_url: string, options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw new Error('navigation timed out');
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('navigation timed out');
+
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
+        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('bounds a late overlay by navigation time already spent and closes the browser', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async (options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw new Error('overlay timed out');
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('overlay timed out');
+
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a depleted budget before passing timeout zero to the overlay', async () => {
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 179_999.5;
+            return null;
+        });
+
+        await expect(warmFirstPaint(config)).rejects.toThrow(/warmup.*deadline/i);
+
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a different serving checkout before launching or navigating', async () => {
+        warmupMocks.assertIdentity.mockRejectedValue(new Error('wrong serving checkout'));
+
+        await expect(warmFirstPaint(config)).rejects.toThrow('wrong serving checkout');
+
+        expect(warmupMocks.launch).not.toHaveBeenCalled();
+        expect(warmupMocks.goto).not.toHaveBeenCalled();
     });
 });

@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
+
+The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
+at Playwright's default 30 seconds. On a cold review server, navigation timed out before any selected
+spec could start. The slow load's underlying cause was not established.
+
+Blind spot: review checked the overlay wait's allowance without tracing every awaited operation that
+must complete before it. Probe the real warmup entry with a controlled monotonic clock: a 35-second
+navigation followed by a prompt overlay must pass under one 180-second deadline, while a hung
+navigation or late overlay must fail within that same deadline. Assert explicit positive remaining
+timeouts at both Playwright calls, identity validation before browser launch, and browser closure on
+success and failure. A controlled unit probe alone does not prove hosted browser-spec admission.
+
 ### 2026-10-08 — a shutdown timing assertion measured more than its budget (introduced by PR #2976)
 
 A native CI run for PR #5064 completed plugin reclamation but failed the test's `elapsed < 250 ms`
