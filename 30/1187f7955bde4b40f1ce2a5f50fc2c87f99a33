@@ -1,0 +1,21 @@
+evidence/agent-campaign/manifest.json
+  s_97ab82e0b4f10c::t_bc4bfa1e03b789 527
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_97ab82e0b4f10c::t_865cc309111c0f 327,329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "301187f7955bde4b40f1ce2a5f50fc2c87f99a33",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
