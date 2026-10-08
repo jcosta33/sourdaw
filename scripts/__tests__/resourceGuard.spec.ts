@@ -812,7 +812,10 @@ describe('resource CLI', () => {
         expect(readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8')).toMatch(
             /maxWorkers:\s*Number\(env\.VITEST_MAX_WORKERS \?\? 2\)/
         );
-        expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(/workers:\s*1/);
+        // Local runs share the machine with every lane; only CI shards own a runner.
+        expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(
+            /workers:\s*env\.CI \? 2 : 1,/
+        );
     });
 
     it('requires narrow lint targets unless full lint is explicit', () => {
