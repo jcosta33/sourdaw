@@ -34,8 +34,9 @@ export const vitestExcludePrefixes: readonly string[] = [
 /** Playwright's `testDir` (`playwright.config.ts`): the only directory it runs specs from. */
 export const playwrightTestDir = 'tests/e2e';
 
-/** Playwright matches its default `testMatch` and configured glob `testIgnore` without case sensitivity. */
+/** Playwright glob matching ignores case, while its extension filter admits lowercase suffixes only. */
 const playwrightSpecFilePattern = new RegExp(specFilePattern.source, 'i');
+const playwrightExtensionPattern = /\.(?:[cm]?[jt]sx?)$/;
 
 /** Playwright's `testIgnore` entry excluding any `__tests__` directory (`playwright.config.ts`). */
 export const playwrightTestIgnorePattern = /(?:^|\/)__tests__\//iu;
@@ -59,14 +60,14 @@ export function isVitestCollected(path: string): boolean {
 
 /** Whether Playwright collects the path (`playwright.config.ts` testDir and testIgnore). */
 export function isPlaywrightCollected(path: string): boolean {
-    // Playwright's default testMatch carries the same suffix shape as Vitest, with case-insensitive glob matching.
+    // Match the glob first, then Playwright's separate, case-sensitive extension filter.
     if (!path.startsWith(`${playwrightTestDir}/`)) {
         return false;
     }
     if (playwrightTestIgnorePattern.test(path)) {
         return false;
     }
-    return playwrightSpecFilePattern.test(path);
+    return playwrightSpecFilePattern.test(path) && playwrightExtensionPattern.test(path);
 }
 
 /** Whether the server's node:test command collects the path (`server/package.json`). */

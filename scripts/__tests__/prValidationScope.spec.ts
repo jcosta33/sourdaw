@@ -425,6 +425,19 @@ describe('required affected verification', () => {
         );
     });
 
+    it('falls back to full coverage for a changed uppercase extension', () => {
+        const path = 'tests/e2e/rejected.Spec.MJS';
+        expect(() => selectValidationPlan(['src/app/bootstrap.ts'], [...INVENTORY, path])).toThrow(
+            'Invalid E2E inventory'
+        );
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(plan.reasons).toContainEqual({
+            path,
+            reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+        });
+    });
+
     it.each([
         'tests/e2e/__tests__/nested.test.ts',
         'tests/e2e/nested/__tests__/case.spec.ts',
@@ -450,6 +463,7 @@ describe('required affected verification', () => {
         writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
         writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
         mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
+        writeFileSync(join(root, 'tests/e2e/rejected.Spec.MJS'), '// Playwright does not collect this extension\n');
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
         git(['config', 'user.name', 'Scope test']);
@@ -493,6 +507,24 @@ describe('required affected verification', () => {
         });
         expect(broad.status, broad.stderr).toBe(0);
         expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual(added);
+        const broadHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'tests/e2e/new-rejected.Spec.MJS'), '// excluded extension change\n');
+        git(['add', 'tests/e2e/new-rejected.Spec.MJS']);
+        git(['commit', '--quiet', '-m', 'add excluded extension']);
+        const fallback = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: broadHead, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(fallback.status, fallback.stderr).toBe(0);
+        const fallbackPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+        expect(allSelected(fallbackPlan)).toEqual(added);
+        expect(fallbackPlan.reasons).toEqual([
+            {
+                path: 'tests/e2e/new-rejected.Spec.MJS',
+                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+            },
+        ]);
     });
 
     it('widens deleted tests and both sides of a move outside a known mapping', () => {
@@ -579,6 +611,14 @@ describe('required affected verification', () => {
         }
         expect(new RegExp(argument).test(join(root, spec))).toBe(true);
         expect(new RegExp(argument).test(join(root, 'tests/e2e/nested/a111.TEST.ts'))).toBe(false);
+    });
+
+    it('rejects an existing file whose extension is uppercase', () => {
+        const root = temporaryRoot();
+        const spec = 'tests/e2e/rejected.Spec.MJS';
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, spec), '');
+        expect(() => selectedSpecArguments([spec], root)).toThrow(`Selected E2E spec is invalid or missing: ${spec}`);
     });
 
     it('anchors literal arguments so regex metacharacters cannot broaden selected files', () => {

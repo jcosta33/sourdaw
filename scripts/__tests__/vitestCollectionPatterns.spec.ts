@@ -6,7 +6,8 @@ describe('runner-specific collection case semantics', () => {
     it('admits Playwright filename case variants while keeping Vitest case-sensitive', () => {
         const upper = 'tests/e2e/nested/fourth.TEST.ts';
         expect(isPlaywrightCollected(upper)).toBe(true);
-        expect(isPlaywrightCollected('tests/e2e/nested/FIFTH.Spec.MJS')).toBe(true);
+        expect(isPlaywrightCollected('tests/e2e/nested/FIFTH.Spec.MJS')).toBe(false);
+        expect(isPlaywrightCollected('tests/e2e/nested/fifth.Spec.mjs')).toBe(true);
         expect(specFilePattern.test(upper)).toBe(false);
         expect(isVitestCollected('src/fourth.TEST.ts')).toBe(false);
     });
