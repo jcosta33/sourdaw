@@ -245,6 +245,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'native-windows',
     'desktop-measure',
     'e2e',
+    'e2e-report',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -3770,6 +3771,95 @@ describe('health gates workflow contract', () => {
         expect(() => requireBrowserWebGpuHardware({ status: 'unavailable', reason: 'fallback-adapter' })).toThrow(
             'This Browser AI proof requires hardware WebGPU (fallback-adapter)'
         );
+    });
+
+    it('reports a sole nightly E2E report failure on scheduled runs', () => {
+        const report = jobAt(nightly, 'nightly-report');
+        expect.soft(arrayAt(report, 'needs')).toContain('e2e-report');
+        expect(report.if).toBe("${{ failure() && github.event_name == 'schedule' }}");
+
+        const reporter = stepNamed(report, 'Open or update the nightly failure issue');
+        expect(recordAt(reporter, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+
+        const runReporter = (existingIssue: '' | '37') => {
+            const directory = mkdtempSync(join(tmpdir(), 'sourdaw-nightly-report-'));
+            try {
+                const bin = join(directory, 'bin');
+                mkdirSync(bin);
+                writeFileSync(
+                    join(bin, 'gh'),
+                    [
+                        '#!/usr/bin/env node',
+                        "const fs = require('node:fs');",
+                        'const args = process.argv.slice(2);',
+                        "const fail = () => { process.stderr.write('unsupported gh invocation\\n'); process.exit(97); };",
+                        'const append = () => fs.appendFileSync(process.env.GH_CAPTURE, `${JSON.stringify(args)}\\n`);',
+                        "if (JSON.stringify(args) === JSON.stringify(['issue', 'list', '--repo', 'owner/repository', '--state', 'open', '--search', '\"ci(nightly): health gates red on main\" in:title', '--json', 'number', '--jq', '.[0].number // empty'])) {",
+                        '  append();',
+                        "  if (process.env.GH_LOOKUP_RESULT === '37') process.stdout.write('37\\n');",
+                        "  else if (process.env.GH_LOOKUP_RESULT !== '') fail();",
+                        '  process.exit(0);',
+                        '}',
+                        "if (args[0] === 'issue' && args[1] === 'create' && process.env.GH_LOOKUP_RESULT === '') {",
+                        "  if (args.length !== 14 || args[2] !== '--repo' || args[3] !== 'owner/repository' || args[4] !== '--title' || args[5] !== 'ci(nightly): health gates red on main' || args[6] !== '--body' || args[8] !== '--label' || args[9] !== 'bug' || args[10] !== '--label' || args[11] !== 'status:ready' || args[12] !== '--label' || args[13] !== 'priority:P1') fail();",
+                        "  if (!args[7].includes('Failing jobs: e2e-report') || !args[7].includes('https://github.com/owner/repository/actions/runs/1')) fail();",
+                        '  append();',
+                        '  process.exit(0);',
+                        '}',
+                        "if (args[0] === 'issue' && args[1] === 'comment' && process.env.GH_LOOKUP_RESULT === '37') {",
+                        "  if (args.length !== 7 || args[2] !== '37' || args[3] !== '--repo' || args[4] !== 'owner/repository' || args[5] !== '--body' || !args[6].includes('Failing jobs: e2e-report') || !args[6].includes('https://github.com/owner/repository/actions/runs/1')) fail();",
+                        '  append();',
+                        '  process.exit(0);',
+                        '}',
+                        'fail();',
+                    ].join('\n'),
+                    { mode: 0o755 }
+                );
+                const result = spawnSync('bash', ['-c', stringAt(reporter, 'run')], {
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        GH_CAPTURE: join(directory, 'gh-calls.txt'),
+                        GH_TOKEN: 'unit-test',
+                        GITHUB_REPOSITORY: 'owner/repository',
+                        GH_LOOKUP_RESULT: existingIssue,
+                        PATH: `${bin}:${process.env.PATH ?? ''}`,
+                        RESULTS: JSON.stringify({ 'e2e-report': { result: 'failure' } }),
+                        RUN_URL: 'https://github.com/owner/repository/actions/runs/1',
+                    },
+                });
+                expect(result.status).toBe(0);
+                return readFileSync(join(directory, 'gh-calls.txt'), 'utf8')
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line) as string[]);
+            } finally {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        };
+
+        const createCalls = runReporter('');
+        expect(createCalls).toHaveLength(2);
+        expect(createCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
+        const createCall = createCalls[1];
+        if (createCall === undefined) {
+            throw new Error('nightly issue create call was not captured');
+        }
+        expect(createCall.slice(0, 2)).toEqual(['issue', 'create']);
+        const createdBody = createCall[7];
+        expect(createdBody).toContain('Failing jobs: e2e-report');
+        expect(createdBody).toContain('https://github.com/owner/repository/actions/runs/1');
+
+        const updateCalls = runReporter('37');
+        expect(updateCalls).toHaveLength(2);
+        expect(updateCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
+        const updateCall = updateCalls[1];
+        if (updateCall === undefined) {
+            throw new Error('nightly issue comment call was not captured');
+        }
+        expect(updateCall.slice(0, 3)).toEqual(['issue', 'comment', '37']);
+        expect(updateCall[6]).toContain('Failing jobs: e2e-report');
+        expect(updateCall[6]).toContain('https://github.com/owner/repository/actions/runs/1');
     });
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {

@@ -6,9 +6,11 @@ name: Nightly
 # This workflow never runs on a pull request. The required `Gate` check is minted
 # only by `.github/workflows/health-gates.yml`. No job here may be named `Gate`.
 #
-# A scheduled or dispatched run answers "is this revision of main healthy", then
-# promotes that same SHA if every validation leg succeeded, the SHA is still the
-# tip of `main`, and production does not already serve it.
+# A scheduled run validates the `main` revision selected for that run; a manual
+# promotion also runs only from `main`. After every validation leg succeeds, the
+# train promotes that same SHA if production does not already serve it. The
+# production revision step refuses a candidate that does not descend from the
+# revision currently served; it does not re-resolve the latest `main` tip.
 
 on:
   schedule:
@@ -697,8 +699,8 @@ jobs:
   codeql:
     name: CodeQL
     needs: decide
-    # Minutes rather than seconds, so this runs on the nightly train rather
-    # than on every pull request. PR Gate does not skip-pass this job.
+    # Nightly analysis covers the scheduled train revision; eligible pull
+    # requests run separate scope-selected CodeQL analysis in Health gates.
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -1063,9 +1065,10 @@ jobs:
     # tree otherwise carries the ~971 MiB `public/samples` payload that this
     # job has no use for.
     if: ${{ failure() && github.event_name == 'schedule' }}
-    # `deploy-web` is here for the same reason as every validation leg: a
-    # nightly deployment that fails where nobody looks is the blind spot this
-    # reporter exists to close.
+    # `e2e-report` can fail while merging or uploading reports after `e2e`
+    # succeeds. Keep it as a direct dependency so failure() admits this job and
+    # toJSON(needs) includes the report failure in the issue body. The deploy
+    # and native-job dependency policies remain owned by their respective jobs.
     needs:
       [
         static,
@@ -1079,6 +1082,7 @@ jobs:
         native-windows,
         desktop-measure,
         e2e,
+        e2e-report,
         browser-ai-webgpu,
         codeql,
         secrets,
