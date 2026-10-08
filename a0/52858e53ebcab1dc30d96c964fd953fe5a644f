@@ -1,0 +1,30 @@
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_2bfd55a4393d7c::t_789a760e17833a 26-27
+  s_2bfd55a4393d7c::t_d33d712f26dfe7 134-135
+src/modules/Toaster/stores/__tests__/toasterStore.spec.ts
+  s_2bfd55a4393d7c::t_fcdff399ed0e46 7-8
+  s_2bfd55a4393d7c::t_7902916b11eb78 244-338
+src/modules/Toaster/stores/toasterStore.ts
+  s_2bfd55a4393d7c::t_a8eaacdd97d5b2 57-94
+  s_2bfd55a4393d7c::t_736fe97e2219b0 162
+  s_2bfd55a4393d7c::t_8ae2591dabfcea 174
+  s_2bfd55a4393d7c::t_f5652279969eec 178-187
+  s_2bfd55a4393d7c::t_3a60aa4515925d 191-193,195
+  s_2bfd55a4393d7c::t_66a7800f134d8d 128-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a052858e53ebcab1dc30d96c964fd953fe5a644f",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
