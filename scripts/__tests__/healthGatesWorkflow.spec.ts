@@ -704,27 +704,54 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
 // A hung install never exits, so a retry loop alone never retries (#5072):
 // every attempt carries a deadline, and the step carries a limit that leaves
 // room for all attempts plus backoff while staying inside its job's limit.
-const INSTALL_ATTEMPT_SECONDS = 3 * 60;
-const PLAYWRIGHT_INSTALL_COMMAND = 'timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium';
+//
+// The system dependencies are installed by root, which an unprivileged
+// `timeout` cannot signal and sudo does not relay SIGKILL to, so that part
+// carries a root `timeout` of its own; the browser download carries another.
+type BoundedInstall = {
+    readonly commands: readonly string[];
+    readonly attemptSeconds: number;
+    readonly backoffSeconds: number;
+    // What the run script ends with: the exit that fails the step once the
+    // last attempt has failed. Without it three failed installs exit 0.
+    readonly failingTail: string;
+};
+
+const PLAYWRIGHT_DEPS_COMMAND =
+    'sudo env "PATH=$PATH" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium';
+const PLAYWRIGHT_BROWSER_COMMAND = 'timeout --signal=KILL 2m pnpm exec playwright install chromium';
+// Joined by `&&` so a failed or timed-out dependency phase fails the attempt.
+const PLAYWRIGHT_INSTALL: BoundedInstall = {
+    commands: [`${PLAYWRIGHT_DEPS_COMMAND} \\\n    && ${PLAYWRIGHT_BROWSER_COMMAND}`],
+    attemptSeconds: 2 * 2 * 60,
+    backoffSeconds: 15,
+    failingTail: 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone',
+};
 const ALSA_INSTALL_COMMAND =
     "sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'";
+const ALSA_INSTALL: BoundedInstall = {
+    commands: [ALSA_INSTALL_COMMAND],
+    attemptSeconds: 3 * 60,
+    backoffSeconds: 45,
+    failingTail: 'done\nexit 1',
+};
 
-function assertBoundedRetriedInstall(
-    job: UnknownRecord,
-    stepName: string,
-    command: string,
-    backoffSeconds: number
-): void {
+function assertBoundedRetriedInstall(job: UnknownRecord, stepName: string, install: BoundedInstall): void {
     const step = stepNamed(job, stepName);
     const run = stringAt(step, 'run');
-    if (!run.includes('for attempt in 1 2 3') || !run.includes(command)) {
+    const commandOffsets = install.commands.map((command) => run.indexOf(command));
+    const inOrder = commandOffsets.every((offset, index) => offset >= 0 && offset > (commandOffsets[index - 1] ?? -1));
+    if (!run.includes('for attempt in 1 2 3') || !inOrder) {
         throw new Error(`${stepName} must retry three attempts, each bounded by a GNU timeout`);
+    }
+    if (!run.trimEnd().endsWith(install.failingTail)) {
+        throw new Error(`${stepName} must fail the step after the third failed attempt`);
     }
     const stepTimeoutMinutes = step['timeout-minutes'];
     if (typeof stepTimeoutMinutes !== 'number') {
         throw new TypeError(`${stepName} must carry a step-level timeout`);
     }
-    if (stepTimeoutMinutes * 60 <= 3 * INSTALL_ATTEMPT_SECONDS + backoffSeconds) {
+    if (stepTimeoutMinutes * 60 <= 3 * install.attemptSeconds + install.backoffSeconds) {
         throw new Error(`${stepName} step limit must leave room for all bounded attempts and backoff`);
     }
     const jobTimeoutMinutes = job['timeout-minutes'];
@@ -740,35 +767,25 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     }
     const installStep = stepNamed(smoke, 'Install Playwright browsers');
     const installRun = stringAt(installStep, 'run');
-    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
+    if (!installRun.includes('playwright install-deps chromium')) {
         throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
     }
     if (!installRun.includes('for attempt in 1 2 3')) {
         throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
     }
-    assertBoundedRetriedInstall(smoke, 'Install Playwright browsers', PLAYWRIGHT_INSTALL_COMMAND, 15);
+    assertBoundedRetriedInstall(smoke, 'Install Playwright browsers', PLAYWRIGHT_INSTALL);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
 }
 
 function assertBoundedAlsaInstalls(set: WorkflowSet): void {
-    assertBoundedRetriedInstall(
-        jobAt(set.validation, 'rust'),
-        'Install ALSA development headers',
-        ALSA_INSTALL_COMMAND,
-        45
-    );
-    assertBoundedRetriedInstall(
-        jobAt(set.nightly, 'rust'),
-        'Install ALSA development headers',
-        ALSA_INSTALL_COMMAND,
-        45
-    );
+    assertBoundedRetriedInstall(jobAt(set.validation, 'rust'), 'Install ALSA development headers', ALSA_INSTALL);
+    assertBoundedRetriedInstall(jobAt(set.nightly, 'rust'), 'Install ALSA development headers', ALSA_INSTALL);
 }
 
 function assertBoundedNightlyE2eInstall(candidate: UnknownRecord): void {
-    assertBoundedRetriedInstall(jobAt(candidate, 'e2e'), 'Install Playwright browsers', PLAYWRIGHT_INSTALL_COMMAND, 15);
+    assertBoundedRetriedInstall(jobAt(candidate, 'e2e'), 'Install Playwright browsers', PLAYWRIGHT_INSTALL);
 }
 
 function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
@@ -781,13 +798,12 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     }
     if (
         !run.includes('for attempt in 1 2 3') ||
-        !run.includes(PLAYWRIGHT_INSTALL_COMMAND) ||
-        !run.includes('sleep $((attempt * 5))') ||
-        !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')
+        !PLAYWRIGHT_INSTALL.commands.every((command) => run.includes(command)) ||
+        !run.trimEnd().endsWith(PLAYWRIGHT_INSTALL.failingTail)
     ) {
         throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
     }
-    if (stepTimeoutMinutes * 60 <= 3 * INSTALL_ATTEMPT_SECONDS + 15) {
+    if (stepTimeoutMinutes * 60 <= 3 * PLAYWRIGHT_INSTALL.attemptSeconds + PLAYWRIGHT_INSTALL.backoffSeconds) {
         throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
     }
     const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
@@ -3148,8 +3164,7 @@ describe('health gates workflow contract', () => {
         );
 
         const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
-        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
-            'pnpm exec playwright install --with-deps chromium';
+        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run = PLAYWRIGHT_DEPS_COMMAND;
         expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
             'the offline smoke job must retry browser and dependency installation against mirror outages'
         );
@@ -3201,10 +3216,30 @@ describe('health gates workflow contract', () => {
 
         const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
         stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'timeout --signal=KILL 3m ',
-            ''
+            PLAYWRIGHT_BROWSER_COMMAND,
+            'pnpm exec playwright install chromium'
         );
         expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
+            'the heavy E2E install must retry three bounded attempts and fail after the third'
+        );
+
+        const unboundedDeps = cloneWorkflows('unbounded heavy E2E dependency install');
+        stepNamed(jobAt(unboundedDeps.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
+            'sudo env "PATH=$PATH" timeout --signal=KILL 2m ',
+            'sudo env "PATH=$PATH" '
+        );
+        expect(() => assertBoundedHeavyE2eInstall(unboundedDeps.heavy)).toThrow(
+            'the heavy E2E install must retry three bounded attempts and fail after the third'
+        );
+
+        // Mutation-kill: without the final exit the step passes after three
+        // failed installs and the shard runs without a browser.
+        const unfailingInstall = cloneWorkflows('unfailing heavy E2E browser install');
+        stepNamed(jobAt(unfailingInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
+            'then\n    exit 1\n  fi',
+            'then\n    true\n  fi'
+        );
+        expect(() => assertBoundedHeavyE2eInstall(unfailingInstall.heavy)).toThrow(
             'the heavy E2E install must retry three bounded attempts and fail after the third'
         );
 
@@ -3220,11 +3255,47 @@ describe('health gates workflow contract', () => {
         expect(() => assertBoundedNightlyE2eInstall(nightly)).not.toThrow();
         expect(() => assertBoundedAlsaInstalls(workflowSet())).not.toThrow();
 
-        const unboundedSmoke = cloneWorkflows('unbounded smoke install');
-        const smokeInstall = stepNamed(jobAt(unboundedSmoke.validation, 'smoke'), 'Install Playwright browsers');
-        smokeInstall.run = stringAt(smokeInstall, 'run').replace('timeout --signal=KILL 3m ', '');
-        expect(() => assertOfflineSmokeJob(unboundedSmoke.validation)).toThrow(
+        // The root dependency phase and the browser download each need their
+        // own deadline: an unprivileged timeout cannot signal root's apt-get.
+        const unboundedSmokeDeps = cloneWorkflows('unbounded smoke dependency install');
+        const smokeDepsInstall = stepNamed(
+            jobAt(unboundedSmokeDeps.validation, 'smoke'),
+            'Install Playwright browsers'
+        );
+        smokeDepsInstall.run = stringAt(smokeDepsInstall, 'run').replace(
+            'sudo env "PATH=$PATH" timeout --signal=KILL 2m ',
+            'sudo env "PATH=$PATH" '
+        );
+        expect(() => assertOfflineSmokeJob(unboundedSmokeDeps.validation)).toThrow(
             'Install Playwright browsers must retry three attempts, each bounded by a GNU timeout'
+        );
+
+        const unboundedSmokeBrowser = cloneWorkflows('unbounded smoke browser download');
+        const smokeBrowserInstall = stepNamed(
+            jobAt(unboundedSmokeBrowser.validation, 'smoke'),
+            'Install Playwright browsers'
+        );
+        smokeBrowserInstall.run = stringAt(smokeBrowserInstall, 'run').replace(
+            PLAYWRIGHT_BROWSER_COMMAND,
+            'pnpm exec playwright install chromium'
+        );
+        expect(() => assertOfflineSmokeJob(unboundedSmokeBrowser.validation)).toThrow(
+            'Install Playwright browsers must retry three attempts, each bounded by a GNU timeout'
+        );
+
+        // Mutation-kill: dropping the failing exit leaves a step that passes
+        // after three failed installs, with the snapshot regenerated to match.
+        const unfailingSmoke = cloneWorkflows('unfailing smoke install');
+        const unfailingSmokeInstall = stepNamed(
+            jobAt(unfailingSmoke.validation, 'smoke'),
+            'Install Playwright browsers'
+        );
+        unfailingSmokeInstall.run = stringAt(unfailingSmokeInstall, 'run').replace(
+            'then\n    exit 1\n  fi',
+            'then\n    true\n  fi'
+        );
+        expect(() => assertOfflineSmokeJob(unfailingSmoke.validation)).toThrow(
+            'Install Playwright browsers must fail the step after the third failed attempt'
         );
 
         const unlimitedSmoke = cloneWorkflows('step-unlimited smoke install');
@@ -3235,13 +3306,29 @@ describe('health gates workflow contract', () => {
 
         const unboundedNightlyE2e = cloneWorkflows('unbounded nightly e2e install');
         const nightlyInstall = stepNamed(jobAt(unboundedNightlyE2e.nightly, 'e2e'), 'Install Playwright browsers');
-        nightlyInstall.run = stringAt(nightlyInstall, 'run').replace('timeout --signal=KILL 3m ', '');
+        nightlyInstall.run = stringAt(nightlyInstall, 'run').replace(
+            'sudo env "PATH=$PATH" timeout --signal=KILL 2m ',
+            'sudo env "PATH=$PATH" '
+        );
         expect(() => assertBoundedNightlyE2eInstall(unboundedNightlyE2e.nightly)).toThrow(
             'Install Playwright browsers must retry three attempts, each bounded by a GNU timeout'
         );
 
+        const unfailingNightlyE2e = cloneWorkflows('unfailing nightly e2e install');
+        const unfailingNightlyInstall = stepNamed(
+            jobAt(unfailingNightlyE2e.nightly, 'e2e'),
+            'Install Playwright browsers'
+        );
+        unfailingNightlyInstall.run = stringAt(unfailingNightlyInstall, 'run').replace(
+            'then\n    exit 1\n  fi',
+            'then\n    true\n  fi'
+        );
+        expect(() => assertBoundedNightlyE2eInstall(unfailingNightlyE2e.nightly)).toThrow(
+            'Install Playwright browsers must fail the step after the third failed attempt'
+        );
+
         const squeezedNightlyE2e = cloneWorkflows('squeezed nightly e2e install');
-        stepNamed(jobAt(squeezedNightlyE2e.nightly, 'e2e'), 'Install Playwright browsers')['timeout-minutes'] = 9;
+        stepNamed(jobAt(squeezedNightlyE2e.nightly, 'e2e'), 'Install Playwright browsers')['timeout-minutes'] = 12;
         expect(() => assertBoundedNightlyE2eInstall(squeezedNightlyE2e.nightly)).toThrow(
             'Install Playwright browsers step limit must leave room for all bounded attempts and backoff'
         );
@@ -3255,6 +3342,16 @@ describe('health gates workflow contract', () => {
             alsaInstall.run = stringAt(alsaInstall, 'run').replace('sudo timeout --signal=KILL 3m ', 'sudo ');
             expect(() => assertBoundedAlsaInstalls(unboundedAlsa)).toThrow(
                 'Install ALSA development headers must retry three attempts, each bounded by a GNU timeout'
+            );
+
+            const unfailingAlsa = cloneWorkflows(`unfailing ${workflowName} ALSA install`);
+            const unfailingAlsaInstall = stepNamed(
+                jobAt(unfailingAlsa[workflowName], 'rust'),
+                'Install ALSA development headers'
+            );
+            unfailingAlsaInstall.run = stringAt(unfailingAlsaInstall, 'run').replace('done\nexit 1', 'done\nexit 0');
+            expect(() => assertBoundedAlsaInstalls(unfailingAlsa)).toThrow(
+                'Install ALSA development headers must fail the step after the third failed attempt'
             );
 
             const overlongAlsa = cloneWorkflows(`overlong ${workflowName} ALSA install`);
@@ -3327,7 +3424,12 @@ describe('health gates workflow contract', () => {
                     // The child asks GNU timeout to fire its own expiry handler
                     // only after recording readiness; startup time cannot consume
                     // the synthetic deadline before a descendant exists.
-                    const probeRun = installRun.replace('sleep $((attempt * 5))', 'sleep 0');
+                    // The root dependency phase is stubbed out: the probe has no
+                    // apt-get to stall, only the unprivileged download to kill.
+                    const probeRun = installRun
+                        .replace('sleep $((attempt * 5))', 'sleep 0')
+                        .replace(PLAYWRIGHT_DEPS_COMMAND, 'true');
+                    expect(probeRun).not.toContain(PLAYWRIGHT_DEPS_COMMAND);
                     expect(probeRun).not.toBe(installRun);
                     const result = spawnSync('bash', ['-c', probeRun], {
                         env: {

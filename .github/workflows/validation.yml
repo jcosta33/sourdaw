@@ -580,22 +580,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `--with-deps` shells out to apt-get for the browser library set, and a
-      # transient mirror outage (apt exiting 100) red this job and Gate on an
-      # otherwise-green head (#4085). Three attempts with a 5s then 10s
-      # backoff; the last failure still fails the step. A healthy install takes
-      # 20 to 70 seconds, but one attempt has stalled for 10 minutes without
-      # exiting (#5072), so each attempt is bounded at 3 minutes and the step
-      # at 3 attempts x 3 minutes plus 15 seconds of backoff, rounded up.
+      # The browser library set comes from apt-get, and a transient mirror
+      # outage (apt exiting 100) red this job and Gate on an otherwise-green
+      # head (#4085). Three attempts with a 5s then 10s backoff; the last
+      # failure still fails the step. A healthy install takes 20 to 70 seconds,
+      # but one attempt has stalled for 10 minutes without exiting (#5072), so
+      # each part of an attempt is bounded at 2 minutes and the step at
+      # 3 attempts x 4 minutes plus 15 seconds of backoff, rounded up.
       - name: Install Playwright browsers
-        timeout-minutes: 10
+        timeout-minutes: 13
         run: |
           for attempt in 1 2 3; do
-            # Each attempt is bounded so a hung download fails and retries
-            # rather than burning the job (#5072). GNU timeout kills the whole
-            # process group at the deadline; a TERM grace period would end if
-            # pnpm exited while an installer child survived.
-            if timeout --signal=KILL 3m pnpm exec playwright install --with-deps chromium; then
+            # `--with-deps` would run apt-get under sudo, which an unprivileged
+            # timeout cannot signal and sudo does not relay SIGKILL to: a stall
+            # would outlive the deadline holding the apt lock. So the system
+            # dependencies run under a root `timeout`, and the browser download
+            # under an unprivileged one. sudo resets PATH, which the pnpm shim
+            # needs to find node, hence `env "PATH=$PATH"` and the direct bin.
+            # GNU timeout kills the whole process group at the deadline; a TERM
+            # grace period would end if the parent exited while a child lived.
+            if sudo env "PATH=$PATH" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \
+              && timeout --signal=KILL 2m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
