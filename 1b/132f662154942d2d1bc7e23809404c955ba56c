@@ -1,0 +1,24 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_1c08b47ac3792f::t_262b77afa696a2 783-786
+  s_1c08b47ac3792f::t_8608345c414fc4 431-435
+  s_1c08b47ac3792f::t_55e52e93bd1895 773
+  s_1c08b47ac3792f::t_b05fcb5ca465e1 753
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1c08b47ac3792f::t_9aaf7056dc07b2 839-883
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b132f662154942d2d1bc7e23809404c955ba56c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
