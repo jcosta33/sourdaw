@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 test('mono sources reach both Auto Pan outputs and stay centred through Stereo Widener', async ({ page }) => {
+    await page.route('/', (route) =>
+        route.fulfill({
+            contentType: 'text/html',
+            body: '<!doctype html><html><body></body></html>',
+        })
+    );
     await page.goto('/');
 
     const result = await page.evaluate(async () => {
