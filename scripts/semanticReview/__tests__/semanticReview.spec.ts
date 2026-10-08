@@ -9,7 +9,7 @@ import {
     BadRequestError,
     RateLimitError,
 } from '@typesafe-ai/sdk';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     renderSavedProjectStateMatcherDigest,
@@ -5662,16 +5662,7 @@ describe('complete transport admission', () => {
         let reads = 0;
         let calls = 0;
         let inspections = 0;
-        const state = new Proxy(
-            { evidence: 'ordinary text' },
-            {
-                getPrototypeOf: (target) => {
-                    inspections += 1;
-                    controller.abort();
-                    return Object.getPrototypeOf(target);
-                },
-            }
-        );
+        const state = { evidence: 'ordinary text' };
         const input = request({
             state,
             signal: controller.signal,
@@ -5691,11 +5682,31 @@ describe('complete transport admission', () => {
                 },
             },
         });
-        await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        // Cancel through the inspector seam; Proxy traps must never run during admission.
+        const originalDescriptors = Object.getOwnPropertyDescriptors;
+        const inspection = vi.spyOn(Object, 'getOwnPropertyDescriptors').mockImplementation((value) => {
+            const descriptors = originalDescriptors(value);
+            if (value === state) {
+                inspections += 1;
+                controller.abort();
+            }
+            return descriptors;
+        });
+        try {
+            await expect(assessUnit(input)).rejects.toMatchObject({ code: 'cancelled' });
+        } finally {
+            inspection.mockRestore();
+        }
+        expect(controller.signal.aborted).toBe(true);
         expect(inspections).toBe(1);
         expect(reads).toBe(0);
         expect(calls).toBe(0);
-        expect(input.budget.totals()).toMatchObject({ networkAttempts: 0, cacheHits: 0 });
+        expect(input.budget.totals()).toMatchObject({
+            logicalRequests: 0,
+            networkAttempts: 0,
+            retries: 0,
+            cacheHits: 0,
+        });
     });
 
     it('does not accept a cache answer after its read cancels the request', async () => {
