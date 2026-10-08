@@ -4,6 +4,7 @@ import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEven
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
 import { acquireRenderLock } from '../offlineRender/acquireRenderLock';
+import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
 import { isExportActive } from '../offlineRender/isExportActive';
 
@@ -153,6 +154,42 @@ function createRenderContext(tracks: unknown[] | null) {
         projectPpqEndpoints: vi.fn(),
         resolveTempoAtBeat: ({ defaultTempo: tempo }: { defaultTempo: number }) => tempo,
         processYeastMidi: null,
+    };
+}
+
+type FakeStemContext = {
+    sampleRate: number;
+    destination: object;
+    suspend: ReturnType<typeof vi.fn<(time: number) => Promise<void>>>;
+    resume: ReturnType<typeof vi.fn<() => Promise<void>>>;
+    close: ReturnType<typeof vi.fn<() => Promise<void>>>;
+    startRendering: ReturnType<typeof vi.fn<() => Promise<unknown>>>;
+    reachCheckpoint: () => void;
+};
+
+/** A segmented-render context that renders to its end once resumed and parks at its checkpoint until told. */
+function createFakeStemContext(): FakeStemContext {
+    let reachCheckpoint: () => void = () => undefined;
+    let finishRender: (buffer: unknown) => void = () => undefined;
+    const checkpointReached = new Promise<void>((resolve) => {
+        reachCheckpoint = resolve;
+    });
+    const rendered = new Promise<unknown>((resolve) => {
+        finishRender = resolve;
+    });
+    return {
+        sampleRate: 44_100,
+        destination: {},
+        suspend: vi.fn(() => checkpointReached),
+        resume: vi.fn(() => {
+            finishRender({ id: 'buffer' });
+            return Promise.resolve();
+        }),
+        close: vi.fn(() => Promise.resolve()),
+        startRendering: vi.fn(() => rendered),
+        reachCheckpoint: () => {
+            reachCheckpoint();
+        },
     };
 }
 
@@ -958,6 +995,70 @@ describe('exportStems — option parsing, validation & control flow', () => {
             await expect(exportStems({ durationBeats: 4, onWarning })).rejects.toMatchObject({ _tag: 'Export' });
             vi.unstubAllGlobals();
         });
+    });
+
+    // The export's finally lowers the shared flag the moment the pool rejects. Stems still rendering
+    // read their next checkpoint after that, so only the stem set's own scope signal can stop them.
+    it('stops every in-flight stem at its next checkpoint after the cancelled export lowered the flag', async () => {
+        const stemTrack = (id: string) => ({ id, kind: 'midi', disabled: false, muted: false, devices: [] });
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            ...createRenderContext([stemTrack('bass'), stemTrack('keys'), stemTrack('lead')]),
+            durationSeconds: 1.5,
+        });
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
+            Promise.resolve({
+                inputNode: {},
+                faderNode: {},
+                panNode: {},
+                outputNode: { connect: vi.fn() },
+                deviceEntries: [],
+            })
+        );
+        const contexts: FakeStemContext[] = [];
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                const context = createFakeStemContext();
+                contexts.push(context);
+                return context;
+            })
+        );
+        // Two stems render at once; the third waits for one of them to settle.
+        vi.stubGlobal('navigator', { hardwareConcurrency: 2 });
+
+        try {
+            const onProgress = vi.fn();
+            const outcome = exportStems({ durationBeats: 4, onProgress }).then(
+                () => null,
+                (error: unknown) => error
+            );
+            await vi.waitFor(() => {
+                expect(contexts).toHaveLength(2);
+                expect(contexts.every((context) => context.suspend.mock.calls.length > 0)).toBe(true);
+            });
+
+            cancelExport();
+            contexts[0]!.reachCheckpoint();
+            expect(await outcome).toMatchObject({ message: 'Export cancelled' });
+            // The state this defect needs: the export settled, so the shared flag is down again.
+            expect(exportCancellationState.cancelFlag).toBe(false);
+            const progressReportsAtCancel = onProgress.mock.calls.length;
+
+            contexts[1]!.reachCheckpoint();
+            await vi.waitFor(() => {
+                expect(contexts[1]!.close).toHaveBeenCalled();
+            });
+            // Let the cancelled stem's rejection reach the pool.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            expect(contexts[0]!.resume).not.toHaveBeenCalled();
+            expect(contexts[1]!.resume).not.toHaveBeenCalled();
+            // The pool neither starts the waiting third stem nor reports stems settling after the cancel.
+            expect(contexts).toHaveLength(2);
+            expect(onProgress).toHaveBeenCalledTimes(progressReportsAtCancel);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('rejects when a cancel is requested before the render pool starts', async () => {

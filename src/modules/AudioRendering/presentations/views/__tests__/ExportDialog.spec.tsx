@@ -7,6 +7,7 @@ import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/h
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 
 import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
+import { audioBufferToMp3 } from '../../../useCases/audioBufferToMp3';
 import { renderToClip } from '../../../useCases/renderToClip';
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
@@ -431,6 +432,16 @@ async function startRenderToClip(): Promise<number> {
     return renderedTail;
 }
 
+function createDeferred<TValue>(): { promise: Promise<TValue>; resolve: (value: TValue) => void } {
+    let settle: (value: TValue) => void = () => {
+        throw new Error('Deferred was not initialised');
+    };
+    const promise = new Promise<TValue>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, resolve: settle };
+}
+
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -612,6 +623,98 @@ describe('ExportDialog', () => {
         // overwrite the first 'Bass.wav' with the second.
         expect(new Set(fileNames).size).toBe(2);
         expect(fileNames).toContain('Bass.wav');
+    });
+
+    it('writes nothing for the format being encoded, or any later format, when Cancel is pressed during encoding', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav', 'mp3'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+            dither: 'random',
+            normalization: 'off',
+        });
+        const encoding = createDeferred<Uint8Array>();
+        mocks.encodeWav.mockReturnValue(encoding.promise);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            encoding.resolve(new Uint8Array([1, 2, 3]));
+        });
+
+        // A cancelled export unlocks the dialog after a short readable delay.
+        await waitFor(
+            () => {
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            },
+            { timeout: 4000 }
+        );
+        expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+        expect(audioBufferToMp3).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    });
+
+    it('writes no further stem file when Cancel is pressed while a stem is encoding', async () => {
+        setProjectTracks([
+            { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
+            { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
+        ]);
+        const stemBuffer = MockAudioBuffer.create(2, 128, 44100);
+        mocks.exportStems.mockResolvedValue(
+            new Map([
+                ['track-bass', stemBuffer],
+                ['track-lead', stemBuffer],
+            ])
+        );
+        const encoding = createDeferred<Uint8Array>();
+        mocks.encodeWav.mockReturnValue(encoding.promise);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            encoding.resolve(new Uint8Array([1, 2, 3]));
+        });
+
+        await waitFor(
+            () => {
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            },
+            { timeout: 4000 }
+        );
+        expect(mocks.writeNativeAudioStemFile).not.toHaveBeenCalled();
+        expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+    });
+
+    it('still writes every format when no Cancel is pressed', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav', 'mp3'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+            dither: 'random',
+            normalization: 'off',
+        });
+        vi.mocked(audioBufferToMp3).mockResolvedValue(new Uint8Array([4, 5, 6]));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(2);
+        });
+        expect(mocks.writeNativeAudioMixdownFile.mock.calls.map((call) => call[0].format)).toEqual(['wav', 'mp3']);
     });
 
     it('should stop offering 32-bit once FLAC is selected instead of downgrading it (OE-8)', () => {

@@ -969,7 +969,7 @@ describe('a measurement that does not report leaves the shared state as it found
         }
     );
 
-    // Red when a measurement's own stop raises the export flag a freeze or bounce beside it reads.
+    // Red when a measurement's own stop raises the export flag a musician's export or mixdown beside it reads.
     it('times a master measurement out while a render reading the export cancel flag carries on', async () => {
         configureAgentResourceLimits({ measurementWallClockMs: 50 });
         engine.renderOffline.mockImplementation(

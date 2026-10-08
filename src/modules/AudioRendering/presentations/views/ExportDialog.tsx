@@ -521,6 +521,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         fileData = await encodeWav(buffer, bd, passProgress, ditherOptions);
                     }
 
+                    // A Cancel pressed while this format was encoding stops here: the encoder
+                    // finished, but nothing of it may reach disk.
+                    if (cancelledRef.current) {
+                        return;
+                    }
+
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
                     const finalFileName = `${name}.${freq}`;
 
