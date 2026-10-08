@@ -27,7 +27,7 @@ function hasFiniteNumbers(value: unknown): boolean {
     return true;
 }
 
-function isFiniteNumber(value: unknown): boolean {
+function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 

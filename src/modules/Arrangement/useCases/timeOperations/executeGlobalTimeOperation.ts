@@ -571,18 +571,21 @@ function createMidiOwners(owners: readonly NormalizedOwner[]) {
     }));
 }
 
-function toOwnerTimeOperation(operation: GlobalTimeOperation) {
+function toInsertTimeOperation(
+    operation: InsertGlobalTimeOperation | DuplicateGlobalTimeOperation
+): InsertGlobalTimeOperation {
     if (operation.type === 'insert') {
         return operation;
     }
-    if (operation.type === 'delete') {
-        return operation;
-    }
     return {
-        type: 'insert' as const,
+        type: 'insert',
         atBeat: operation.endBeat,
         durationBeats: operation.endBeat - operation.startBeat,
     };
+}
+
+function toOwnerTimeOperation(operation: GlobalTimeOperation) {
+    return operation.type === 'delete' ? operation : toInsertTimeOperation(operation);
 }
 
 function createClipIdentityRequests(
@@ -591,7 +594,7 @@ function createClipIdentityRequests(
     splitSpanningAudio: boolean
 ): readonly ClipIdentityRequest[] {
     const requests: ClipIdentityRequest[] = [];
-    const insertOperation = operation.type === 'delete' ? null : toOwnerTimeOperation(operation);
+    const insertOperation = operation.type === 'delete' ? null : toInsertTimeOperation(operation);
     for (const owner of owners) {
         if (!owner.acceptsClipUpdate) {
             continue;
@@ -808,7 +811,7 @@ function insertedClipIdentitiesMatchPreparedState(
     if (actualNewIds.length !== expectedNewIds.size || actualNewIds.some((id) => !expectedNewIds.has(id))) {
         return false;
     }
-    const insertOperation = toOwnerTimeOperation(operation);
+    const insertOperation = toInsertTimeOperation(operation);
     for (const identity of identities) {
         const owner = owners.find((candidate) => candidate.id === identity.sourceTrackId);
         const source = owner?.clips.find((candidate) => candidate.id === identity.sourceClipId)?.source;
@@ -1681,7 +1684,7 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     const retiredClipIds = collectRetiredClipIds(clipIdentityTransition);
 
     const insertOperation =
-        validatedInput.operation.type === 'delete' ? null : toOwnerTimeOperation(validatedInput.operation);
+        validatedInput.operation.type === 'delete' ? null : toInsertTimeOperation(validatedInput.operation);
     const insertedSplits: { source: Clip; rightClipId: string }[] = [];
     for (const identity of clipIdentities) {
         if (identity.role !== 'insert-right') {
