@@ -1,0 +1,35 @@
+.github/workflows/heavy-gates.yml
+  s_2bfd55a4393d7c::t_1ffbb35f949822 56-59,61,66
+.github/workflows/nightly.yml
+  s_1f0dcd815e8946::t_2c19fbfbb43761 310-311,313-328,600-602,604,607-611
+.github/workflows/validation.yml
+  s_1f0dcd815e8946::t_d9d3f083f212cb 586-589,591,594-598,675-678,681,685-687
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_2bfd55a4393d7c::t_4db61f31c5a759 213-214,792-793,867-868,1453-1455,1701-1702
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_2bfd55a4393d7c::t_329737ebd649c7 704-735,749,755-773,779,784,790,3204,3218-3269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7455dd10bc2b740d44a9f433385afc0190a67ace",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
