@@ -548,6 +548,7 @@ describe('planWholeProjectVibeRun baselines', () => {
     it('carries no baseline when the project has no section a window could cover', () => {
         const result = plan({ tracks }, [measurement(window(0, 32), { 't-bass': { spectralCentroid: figure(310) } })]);
 
+        expect(result.batches.map((batch) => batch.targetIds)).toEqual([['t-kick', 't-snare'], ['t-bass']]);
         expect(result.batches.every((batch) => batch.baselines.length === 0)).toBe(true);
         expect(result.batches[1]?.unmeasuredTargetIds).toEqual(['t-bass']);
     });
@@ -639,6 +640,10 @@ describe('planWholeProjectVibeRun batches', () => {
     it('gives every batch an objective and the measurable deltas its recipes expect, with their direction', () => {
         const result = plan(NO_SECTIONS_CONTEXT);
 
+        expect(result.batches.map((batch) => [batch.objective.role, batch.targetIds])).toEqual([
+            ['drums', ['t-kick']],
+            ['bass', ['t-bass']],
+        ]);
         for (const batch of result.batches) {
             expect(batch.objective.descriptors).toEqual(['warm']);
             for (const target of batch.targets) {
