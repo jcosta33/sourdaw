@@ -1,3 +1,4 @@
+import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
@@ -195,7 +196,7 @@ function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: st
         Array.isArray(value.shiftedClips) &&
         value.shiftedClips.every((shift) => isRippleDeleteShift(shift, clipId)) &&
         clipSatelliteStateCodec.decodeEntries(value.clipSatellites) !== null &&
-        Array.isArray(value.clipAutomationLanes)
+        isExactAutomationLaneSnapshots(value.clipAutomationLanes)
     );
 }
 
