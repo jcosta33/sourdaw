@@ -1189,6 +1189,7 @@ export function buildLlmActionUserMessage({
     context,
     projectRevision,
     profile = 'hosted',
+    contextSectionOmissions = null,
     articulationTransferCapability,
     creativeInterpretationCatalog,
     backingVocalPlateCapability,
@@ -1207,10 +1208,12 @@ export function buildLlmActionUserMessage({
     context: ProjectContext;
     projectRevision?: string;
     profile?: LlmActionMessageProfile;
+    /** In the local profile, what the capped context sections left out and where to read it. */
+    contextSectionOmissions?: string | null;
 } & LlmActionCapabilityData): string {
     const commandContext =
         profile === 'local'
-            ? buildLocalCommandContext(context)
+            ? buildLocalCommandContext(context, contextSectionOmissions)
             : buildHostedCommandContext(context, projectRevision, {
                   articulationTransferCapability,
                   creativeInterpretationCatalog,
@@ -1240,15 +1243,18 @@ ${prompt}
 
 /**
  * The project context a local model reads after the context sections, which already state the
- * revision, the selection, the capability data, the master level, every selectable track's name,
- * kind, level, clips and sends in project order, and the automation lanes and sections. It adds
- * only what those sections do not: the transport, the rest of the production brief, the device
- * catalogue by name, sidechain routes, VCA groups, and each track's mix state and devices by
- * parameter value. It leaves out the presentational clip fields (color, fades, loop settings, MIDI
- * offset), which no target grounding reads and `project.query` answers.
+ * revision, the selection, the capability data, the master level, and, up to their caps, the
+ * selectable tracks' names, kinds, levels, clips and sends in project order and the automation
+ * lanes and sections. It adds only what those sections do not: the transport, the rest of the
+ * production brief, the device catalogue by name, sidechain routes, VCA groups, and each track's
+ * mix state and devices by parameter value. It does not restate what the capped sections leave
+ * out; `omittedFromContextSections` says so whenever they leave anything out and names
+ * `project.query` as the way to read it. It also leaves out the presentational clip fields (color,
+ * fades, loop settings, MIDI offset), which no target grounding reads and `project.query` answers.
  */
-function buildLocalCommandContext(context: ProjectContext) {
+function buildLocalCommandContext(context: ProjectContext, contextSectionOmissions: string | null) {
     return {
+        omittedFromContextSections: contextSectionOmissions,
         productionBrief: projectLocalProductionBrief(context.productionBrief),
         tempo: context.tempo,
         timeSignature: context.timeSignature,

@@ -29,6 +29,12 @@ const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
 const MAX_REJECTION_CANDIDATES = 8;
+/**
+ * What a local model reads when the capped sections left part of the project out. The hosted
+ * project context restates everything; the local one restates none of it, so the model is told
+ * where the rest is.
+ */
+const CONTEXT_SECTION_OMISSIONS = `untrusted_project_data lists at most ${String(MAX_CONTEXT_TARGETS)} tracks, ${String(MAX_SELECTED_CLIPS)} clips and ${String(MAX_CONTEXT_TARGETS)} sends on each, and ${String(MAX_CONTEXT_TARGETS)} sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.`;
 
 function isRelevantLock(
     lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
@@ -466,6 +472,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
                   context: input.context,
                   projectRevision: input.projectRevision,
                   profile,
+                  contextSectionOmissions: projectData.truncated ? CONTEXT_SECTION_OMISSIONS : null,
                   ...input.capabilityData,
               })}`;
 

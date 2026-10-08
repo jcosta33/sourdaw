@@ -324,7 +324,7 @@ describe('WebLLM provider artifact admission', () => {
     });
 
     it('loads the planning window from code, apart from the digested manifest', () => {
-        expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(24_576);
+        expect(getWebLlmContextWindowSize('Qwen3-4B-q4f16_1-MLC')).toBe(32_768);
         expect(getWebLlmContextWindowSize('Qwen3-1.7B-q4f16_1-MLC')).toBe(8_192);
         expect(getWebLlmContextWindowSize('Qwen3-8B-q4f16_1-MLC')).toBe(8_192);
         for (const selectableModel of WEBLLM_MODELS) {
@@ -335,12 +335,13 @@ describe('WebLLM provider artifact admission', () => {
         expect(() => getWebLlmContextWindowSize('mutable-or-unknown-model')).toThrow(/no context window/);
     });
 
-    // The manifest records web-llm's published VRAM figure at its own window; every token the model
-    // loads beyond that window adds its KV cache: two tensors of 8 KV heads × 128 dimensions at
-    // 2 bytes for each layer (28 in Qwen3-1.7B, 36 in Qwen3-4B and Qwen3-8B).
+    // The manifest records web-llm's published VRAM figure at its own window: the weights, the
+    // runtime workspace, and the KV cache for that window. Every token the model loads beyond it adds
+    // its KV cache: K and V for 8 KV heads × 128 dimensions at 2 bytes (q4f16 keeps the cache in
+    // float16) in each layer — 28 in Qwen3-1.7B, 36 in Qwen3-4B (its MLC config) and Qwen3-8B.
     it.each([
         { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMb: 2_484.66 },
-        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMb: 6_311.59 },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMb: 7_463.59 },
         { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMb: 6_271.78 },
     ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMb }) => {
         const kvCacheMbPerToken = (2 * 8 * 128 * 2 * layers) / (1024 * 1024);

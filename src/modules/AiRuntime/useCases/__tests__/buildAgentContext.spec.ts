@@ -6,7 +6,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
 
-import { createPlanningProject } from './planningProjectFixture';
+import { createPlanningProject, planningFixtureIds } from './planningProjectFixture';
 
 const context: ProjectContext = {
     tempo: 120,
@@ -601,9 +601,9 @@ describe('buildAgentContext', () => {
         it.each([
             [
                 'a five-track first turn with capability data',
-                '46cf4b7ce38bf489815e6182d86ed340352e0ef1e8d7cb53e167c9f237cc4c01',
+                '1b1d3c0d774a3b3e9b12e017fafaa2246305e7be2ec6e00fc8310e6abf630947',
             ],
-            ['a five-track receipt turn', 'b0a25b56b718a2baed28bb5ac7da7cec4e352b0d4bda12ba638c3f4ed1613b47'],
+            ['a five-track receipt turn', 'dd6dbe19fbe966909b3232d6d2196d5063ac7b8ad8cdaf59f5096a1b2f2b9585'],
         ] as const)('keeps the hosted message for %s byte-identical', (label, expectedDigest) => {
             const built = buildAgentContext(hostedInputs[label]);
 
@@ -647,21 +647,21 @@ describe('buildAgentContext', () => {
             const hostedTracks = projectContextOf(built.message).tracks as Array<{ devices: unknown[] }>;
             expect(localTracks[0]?.devices).toEqual([
                 {
-                    id: 'track-1-device-1',
+                    id: planningFixtureIds.device(0, 0),
                     name: 'EQ',
                     type: 'builtin-eq',
                     bypassed: false,
                     parameterValues: { 'low-gain': 0.5, 'high-gain': 0.5 },
                 },
                 {
-                    id: 'track-1-device-2',
+                    id: planningFixtureIds.device(0, 1),
                     name: 'Compressor',
                     type: 'builtin-compressor',
                     bypassed: false,
                     parameterValues: { threshold: 0.5, ratio: 0.5 },
                 },
                 {
-                    id: 'track-1-device-3',
+                    id: planningFixtureIds.device(0, 2),
                     name: 'Reverb',
                     type: 'builtin-reverb',
                     bypassed: false,
@@ -752,6 +752,7 @@ describe('buildAgentContext', () => {
                     'loopStart',
                     'metronomeEnabled',
                     'metronomeVolume',
+                    'omittedFromContextSections',
                     'productionBrief',
                     'punchInBeat',
                     'punchInEnabled',
@@ -793,13 +794,70 @@ describe('buildAgentContext', () => {
                 outputId: 'master',
             });
             expect(local.tracks[1]).toEqual({
-                id: 'track-2',
+                id: planningFixtureIds.track(1),
                 muted: true,
                 pan: -0.25,
                 outputId: 'bus-drums',
                 devices: expect.any(Array),
             });
         });
+
+        type ProjectSectionData = {
+            truncated: boolean;
+            targetCount: number;
+            selectableTargets: Array<{ omittedClipCount: number }>;
+        };
+
+        // The context sections cap what they list; the local project context does not restate the
+        // rest, so it must say what was left out and where to read it.
+        it.each([
+            {
+                label: 'a track with 30 clips',
+                project: createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 2, 30),
+                omitted: (data: ProjectSectionData) => {
+                    expect(data.selectableTargets[0]?.omittedClipCount).toBe(14);
+                },
+            },
+            {
+                label: 'a 70-track project',
+                project: createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 70),
+                omitted: (data: ProjectSectionData) => {
+                    expect(data.selectableTargets).toHaveLength(64);
+                    expect(data.targetCount).toBe(70);
+                },
+            },
+        ])('names project.query for what the capped sections leave out of $label', ({ project, omitted }) => {
+            const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'tidy', context: project });
+
+            const projectData = parseMessageSection(built.localMessage, 'untrusted_project_data') as {
+                data: ProjectSectionData;
+            };
+            expect(projectData.data.truncated).toBe(true);
+            omitted(projectData.data);
+            expect(projectContextOf(built.localMessage).omittedFromContextSections).toBe(
+                'untrusted_project_data lists at most 64 tracks, 16 clips and 64 sends on each, and 64 sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.'
+            );
+        });
+
+        it('states no omission when the capped sections list the whole project', () => {
+            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+            expect(projectContextOf(built.localMessage).omittedFromContextSections).toBeNull();
+        });
+
+        // Each brief field the context sections do not carry reaches the local model; a field
+        // dropped from the local brief would leave the planner blind to that guidance.
+        it.each(['hardConstraints', 'sectionGoals', 'trackRoles'] as const)(
+            "keeps the brief's %s in the local project context",
+            (field) => {
+                const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+
+                const brief = projectContextOf(built.localMessage).productionBrief as Record<string, unknown>;
+                const expected = fiveTrackProject.productionBrief?.[field];
+                expect(expected).toHaveLength(1);
+                expect(brief[field]).toEqual(expected);
+            }
+        );
 
         it('states a delta turn, which has no project context, with the hosted grounding', () => {
             const first = buildAgentContext(hostedInputs['a five-track first turn with capability data']);

@@ -15,9 +15,27 @@ describe('estimateConservativePromptTokens', () => {
         { text: 'abcd', tokens: 2 },
         { text: '2048', tokens: 4 },
         { text: '{"gainDb":-1.5}', tokens: 2 + 5 },
-        { text: 'é—♪', tokens: 1 },
     ])('counts "$text" as $tokens tokens: one per digit, a third of everything else', ({ text, tokens }) => {
         expect(estimateConservativePromptTokens(text)).toBe(tokens);
+    });
+
+    // Qwen's pre-tokenizer encodes each chunk on its own: every digit, every letter run (with one
+    // leading non-letter) and every punctuation run. The chunk counts below are worked by hand from
+    // its split, and each is a floor the model's own count never goes under.
+    it.each([
+        // track, -, then every hex digit and hex letter alone, "-a" joined: 37 chunks; the
+        // character rule alone gives 18 digits + ceil(24 / 3) = 26.
+        { label: 'a production track id', text: 'track-3f2a9c1e-0b7d-4e85-a6f1-92c4d0e8b7a3', chunks: 37 },
+        // "(a", then ")(" and "a" in turn, closed by ")": 600; the character rule gives 300.
+        { label: 'alternating letters and punctuation', text: '(a)'.repeat(300), chunks: 600 },
+        // "a", then " b", " c" … each a chunk, and the trailing space: 501; the rule gives 334.
+        { label: 'one-letter words', text: 'a b c d e '.repeat(100), chunks: 501 },
+        // "音", "🎵乐" (a non-letter joins the letters after it), "🎵": 3; the rule gives 2.
+        { label: 'CJK and emoji', text: '音🎵乐🎵', chunks: 3 },
+        // "é", then the run "—♪": 2; the rule gives 1.
+        { label: 'an accented letter and symbols', text: 'é—♪', chunks: 2 },
+    ])('never budgets $label below its pre-tokenizer chunk count', ({ text, chunks }) => {
+        expect(estimateConservativePromptTokens(text)).toBe(chunks);
     });
 });
 

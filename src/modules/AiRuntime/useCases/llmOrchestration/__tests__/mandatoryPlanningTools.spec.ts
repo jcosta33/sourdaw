@@ -532,15 +532,15 @@ describe('mandatory planning tools', () => {
             it("refuses the request the same way when the engine's own count overflows the window", async () => {
                 mocks.generateWebLlmCompletion.mockRejectedValue(
                     new Error(
-                        'Prompt tokens exceed context window size: number of prompt tokens: 25000; context window size: 24576\nConsider shortening the prompt, or increase `context_window_size`, or using sliding window via `sliding_window_size`.'
+                        'Prompt tokens exceed context window size: number of prompt tokens: 33000; context window size: 32768\nConsider shortening the prompt, or increase `context_window_size`, or using sliding window via `sliding_window_size`.'
                     )
                 );
 
                 const { outcome, providerResults } = await sendLocalRequest(fiveTrackProject());
 
                 const reason = describeLocalContextWindowShortfall({
-                    neededTokens: 25_000 + LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
-                    windowTokens: 24_576,
+                    neededTokens: 33_000 + LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
+                    windowTokens: 32_768,
                 });
                 expect(outcome).toEqual({ status: 'rejected', reason });
                 expect(providerResults).toHaveLength(1);

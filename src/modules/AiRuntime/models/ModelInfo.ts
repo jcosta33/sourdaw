@@ -34,7 +34,7 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         description:
             'The local model that can plan project edits: its context window holds a planning request. Recommended.',
         downloadSize: '~2.28 GB',
-        ramUsage: '~6.5 GB',
+        ramUsage: '~7.5 GB',
     },
     {
         id: 'Qwen3-8B-q4f16_1-MLC',
@@ -55,8 +55,9 @@ export const WEBLLM_MODELS: ModelInfo[] = [
  */
 export const WEBLLM_CONTEXT_WINDOW_TOKENS: Readonly<Record<string, number>> = {
     'Qwen3-1.7B-q4f16_1-MLC': 8_192,
-    // The smallest window a five-track first turn and a receipt turn fit with the reply reserve.
-    'Qwen3-4B-q4f16_1-MLC': 24_576,
+    // Qwen3-4B's native 32,768-token context: a five-track session's receipt turn at the evidence
+    // ceiling, with production-shaped ids, needs more than 24,576 with the reply reserve.
+    'Qwen3-4B-q4f16_1-MLC': 32_768,
     'Qwen3-8B-q4f16_1-MLC': 8_192,
 };
 

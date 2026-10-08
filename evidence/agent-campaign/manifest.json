@@ -383,7 +383,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
-                    "digest": "f9649c1702fa06e8846c78c94ab2a5b20cd9a16185f6063d36163007d3302085"
+                    "digest": "f13d14c4d8c054e8bd8197bd0a132d7983c12e120880b26ef38da19ae7d49acb"
                 }
             ]
         },
@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "cf3476eac95a7c3dc0476dc9ad70182565ff64f8fa1374545b9857bf064e01f8"
+                    "digest": "9cc09c8816304e9e648f8ad75be545ec010b21a172e491ac82be09b8f0d68145"
                 }
             ]
         },
