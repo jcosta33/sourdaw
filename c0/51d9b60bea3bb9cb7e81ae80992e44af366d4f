@@ -1,0 +1,24 @@
+scripts/confirmReviewRepairs.ts
+  s_97ab82e0b4f10c::t_74fdf5fdf9486d 137-144,156
+.agents/skills/review-stances/public-repair-records.md
+  s_97ab82e0b4f10c::t_74fdf5fdf9486d 25-29,58-67
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_97ab82e0b4f10c::t_6929630dc7dee6 279-323
+  s_97ab82e0b4f10c::t_62f6c3782d686a 324-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c051d9b60bea3bb9cb7e81ae80992e44af366d4f",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
