@@ -1731,6 +1731,9 @@ fn levain_bank_commit_with_a_transition_does_not_allocate() {
         .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
         .expect("test sample should fit the bank");
     stage_two_mic_levain_zones(&mut instance, sounding_sample);
+    // The sounding bank owns a transition store with heap storage, so a commit
+    // that dropped it would free here.
+    instance.add_legato_transition(2, 0, 3, sounding_sample, 20.0);
     assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
     assert!(instance.commit_sample_bank());
     instance.note_on(60, 100);

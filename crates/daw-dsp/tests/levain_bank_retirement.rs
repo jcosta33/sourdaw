@@ -18,6 +18,11 @@ const SAMPLE_RATE: f32 = 48_000.0;
 const SAMPLE_FRAMES: u32 = 480;
 const BANK_SAMPLES: u32 = 24;
 const STEP_ENTRIES: u32 = 4;
+/// Allocations beside the PCM entries that one release step may free: the
+/// pool's `Arc` (first step) or, in the last step, the bank's zone-map
+/// vectors, transition store, instrument id and the pool's entry vector,
+/// with one to spare. Moves only if those structures gain or lose a heap part.
+const STEP_STORAGE_FREES: usize = 8;
 
 struct CountingAllocator;
 
@@ -129,14 +134,17 @@ fn a_commit_frees_nothing_and_the_release_steps_free_the_bank_in_bounded_pieces(
         steps += 1;
         total_frees += step.deallocations;
         assert_eq!(step.allocations, 0, "releasing must not allocate");
+        // Every step is held to the budget, the last one included: the step
+        // that empties the slot also drops the bank's non-PCM storage, which
+        // `STEP_STORAGE_FREES` allows for, and nothing more.
+        assert!(
+            step.deallocations <= STEP_ENTRIES as usize + STEP_STORAGE_FREES,
+            "step {steps} freed {} allocations, past its {STEP_ENTRIES}-entry budget",
+            step.deallocations
+        );
         if step.value {
             break;
         }
-        assert!(
-            step.deallocations <= STEP_ENTRIES as usize + 1,
-            "a step freed {} allocations, past its {STEP_ENTRIES}-entry budget",
-            step.deallocations
-        );
     }
 
     assert!(
@@ -187,6 +195,23 @@ fn releasing_a_pool_a_sibling_shares_only_drops_a_reference() {
         owner.sample_bank_bytes(),
         shared_bytes,
         "the owner's PCM must outlive the follower's release"
+    );
+}
+
+#[test]
+fn beginning_a_bank_after_a_full_paced_release_frees_nothing() {
+    let mut instance = committed_instance();
+    stage_bank(&mut instance, "cello");
+    assert!(instance.commit_sample_bank());
+    while !instance.release_retired_bank(STEP_ENTRIES) {}
+    assert!(!instance.has_retired_bank());
+
+    let begin = counted(|| instance.begin_sample_bank("viola"));
+
+    assert_eq!(
+        begin.deallocations, 0,
+        "begin_sample_bank freed {} allocations after the retired bank was fully released",
+        begin.deallocations
     );
 }
 
