@@ -3594,7 +3594,11 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('builds the native addon and runs every spec that loads it, unsoftened', () => {
+    // Measured budget, not the 5 s default: discovering addon-loading specs
+    // reads every spec under src once per process — 7.2 s on a cold external-SSD
+    // file cache under load (#5106), 19 s on a loaded lane — and no narrower
+    // scan exists, because any spec under src may import the addon.
+    it('builds the native addon and runs every spec that loads it, unsoftened', { timeout: 60_000 }, () => {
         expect(() => assertNativeParityJob(validationWorkflow)).not.toThrow();
         expect(addonLoadingSpecs(join(repositoryRoot, 'src'))).toContain(
             'src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts'
@@ -3628,7 +3632,9 @@ describe('health gates workflow contract', () => {
         expect(() => assertNativeParityJob(droppedSpec)).toThrow(`native parity must run ${dropped}`);
     });
 
-    it('refuses an addon presence guard that cannot fail', () => {
+    // Same measured budget: both assertions reach the addon discovery through
+    // assertNativeParityJob, whose scan is cold whenever this row runs alone.
+    it('refuses an addon presence guard that cannot fail', { timeout: 60_000 }, () => {
         // Executed, not read: each of these bodies names the artifact exactly as
         // the real step does, and each would let the parity specs skip on every
         // hosted run while a substring pin reported the leg intact.
