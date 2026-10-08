@@ -91,26 +91,23 @@ describe('renderAgentMeasurementScope — export cancel flag', () => {
         expect(() => checkCancel()).not.toThrow();
     });
 
-    it('leaves a cancel flag it did not raise untouched', async () => {
-        // Simulates an unrelated export already having raised the process-wide
-        // flag before this measurement's master render begins.
-        cancelExport();
+    it("leaves the cancel flag down when a musician's Cancel lands while the master render runs", async () => {
+        engine.renderOffline.mockImplementation(() => {
+            cancelExport();
+            return Promise.resolve(fakeBuffer());
+        });
 
-        try {
-            const result = await renderAgentMeasurementScope({
-                scope: { kind: 'master' },
-                startBeat: 0,
-                endBeat: 4,
-                sourceRevision: 'rev-1',
-            });
+        const result = await renderAgentMeasurementScope({
+            scope: { kind: 'master' },
+            startBeat: 0,
+            endBeat: 4,
+            sourceRevision: 'rev-1',
+        });
 
-            expect(result.status).toBe('rendered');
-            // This measurement's own render never raised the flag, so it must not
-            // silently clear an unrelated export's cancellation.
-            expect(() => checkCancel()).toThrow('Export cancelled');
-        } finally {
-            endExportCancellationScope();
-        }
+        expect(result.status).toBe('rendered');
+        // No export of the musician's holds the lock, so their Cancel raises nothing for the
+        // next freeze or bounce to read.
+        expect(() => checkCancel()).not.toThrow();
     });
 
     it('cancels an isolated track render without touching the process-wide cancel flag', async () => {
