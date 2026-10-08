@@ -202,7 +202,7 @@ export const FERMENTER_SOURCE_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         -6,
         2,
         ['Combines with additiveOdd.'],
-        ['Toward +6 the engine output rises over 20 dB.'],
+        ['At 32 partials a sweep to +6 raises the output over 20 dB (about 9 dB at 8).'],
         noExternalModulation
     ),
     additiveOdd: parameterGuidance(
