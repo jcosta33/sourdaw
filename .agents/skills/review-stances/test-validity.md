@@ -116,6 +116,14 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Lessons from escapes
 
+### 2026-10-09 — a newly declared "every spec owes the first-paint bound" left literal 15 s and 30 s waits in place (escaped via commit `04c28be0f8`)
+
+Commit `04c28be0f8` declared in `tests/e2e/e2eUtils.ts` that every spec waiting on the launch overlay itself owes `LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS`, but did not sweep the specs that already waited with a literal bound; the 15 s in `promptBarCancelRecentTestId.spec.ts` came from commit `d78dac728a`. It surfaced only when two Playwright workers per runner added CPU contention and a cold boot was still on its loading overlay at 15 s.
+
+Blind spot: a contract written as prose ("every X owes Y") binds sites the diff never touches, and a green suite on the declaring head cannot show them, because the literals were sufficient until contention changed boot time.
+
+Probe that would have caught it: when a change declares an "every X owes Y" contract, grep every existing X, run a census of them against Y, and land the census as a spec that reads the real files and cannot pass by matching nothing.
+
 ### 2026-09-28 — one aggregate deadline hid cumulative closure work (CI run 36366521880, job 108754137864; introduced by PR #4775)
 
 The trusted-write closure spec walked all 13 command graphs in one Vitest case. Each walk independently proved its command's exact closure, but the accumulated work took 5547 ms against the default 5000 ms case timeout and failed the CI shard. The failure was test granularity, not evidence that a command graph was wrong.
