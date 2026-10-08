@@ -209,6 +209,43 @@ describe('syncKneadToEngine', () => {
         expect(lastPushedStartSeconds()).toBeCloseTo(6, 12);
     });
 
+    it('uses a canonical zero-second offset ahead of a stale beat alias', () => {
+        const track = trackWithKnead();
+        setTrack({
+            ...track,
+            clips: [{ ...track.clips[0]!, audioOffsetSeconds: 0, audioOffsetBeats: 2 }],
+        });
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(0, 12);
+    });
+
+    it('keeps a canonical source offset fixed while tempo-map changes move the integrated clip anchor', () => {
+        const track = trackWithKnead(12);
+        setTrack({
+            ...track,
+            clips: [{ ...track.clips[0]!, audioOffsetSeconds: 1.5, audioOffsetBeats: 2 }],
+        });
+        tempoMapStore.set({ changes: TEMPO_CHANGES });
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(6.5, 12);
+
+        tempoMapStore.set({ changes: [TEMPO_CHANGES[0]!, { id: 'tempo-b', beat: 8, tempo: 30, curve: 'instant' }] });
+
+        // Beat 12 moves from 8 s to 12 s, while the canonical source offset
+        // remains 1.5 s even though the stale 2-beat alias now means 4 s.
+        expect(lastPushedStartSeconds()).toBeCloseTo(10.5, 12);
+    });
+
+    it('preserves a negative canonical seconds offset for source pre-roll', () => {
+        const track = trackWithKnead();
+        setTrack({
+            ...track,
+            clips: [{ ...track.clips[0]!, audioOffsetSeconds: -1.25, audioOffsetBeats: 2 }],
+        });
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(1.25, 12);
+    });
+
     it('moves the anchor the other way for a negative offset pre-roll', () => {
         // -2 beats at 120 BPM: the clip's head sits before its source, the
         // anchor opens by 1 s, and the negative lookup window matches no blob —
