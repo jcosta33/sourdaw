@@ -1,6 +1,8 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { tempoMapStore, transportStore, defaultTransportState } from '#/modules/Transport/stores';
+
 import { clipDragPreviewRef } from '../../../stores/clipDragPreviewRef';
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
@@ -954,10 +956,50 @@ describe('useTimelineInteractions', () => {
         expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
         expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
         });
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('starts an audio slip from canonical zero rather than a stale beat alias', () => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                            audioOffsetBeats: 9,
+                        },
+                    ],
+                },
+            ],
+        };
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({
+                button: 0,
+                clientX: 100,
+                clientY: 50,
+                ctrlKey: true,
+                shiftKey: true,
+            } as any);
+            result.current.handleMouseUp({ clientX: 250, clientY: 50 } as any);
+        });
+
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
+        });
     });
 
     it('does not commit a slip when the drag delta is sub-threshold', () => {
@@ -1294,7 +1336,7 @@ describe('useTimelineInteractions', () => {
         // 150px / 100ppb = 1.5 beats from a base offset of 0.
         expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5, offsetSeconds: 0.75 },
         });
     });
 

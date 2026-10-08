@@ -5,8 +5,10 @@ import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -19,6 +21,7 @@ import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
+import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -56,6 +59,27 @@ import { useTimelineGestures } from './useTimelineGestures';
 type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; trackId: string; splitBeat: number };
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
 export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
+
+type SlipDragState = {
+    clipId: string;
+    clipType: 'audio' | 'midi';
+    startX: number;
+    originalOffset: number;
+    audioSource?: { entrySeconds: number; startBeat: number; stretch: number; tempoAtStart: number };
+};
+
+function sourceOffsetAtSlipBeat(drag: SlipDragState, deltaBeats: number): { offset: number; offsetSeconds?: number } {
+    if (!drag.audioSource) {
+        return { offset: drag.originalOffset + deltaBeats };
+    }
+    const { entrySeconds, startBeat, stretch, tempoAtStart } = drag.audioSource;
+    const offsetSeconds = getAudioSourcePositionSeconds(
+        entrySeconds,
+        readSecondsAtBeat({ beat: startBeat + deltaBeats }) - readSecondsAtBeat({ beat: startBeat }),
+        stretch
+    );
+    return { offset: (offsetSeconds * tempoAtStart) / 60, offsetSeconds };
+}
 
 // Pixels-of-pinch-spread → pixels-per-beat conversion for two-finger pinch zoom.
 // Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
@@ -109,12 +133,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         points: AutomationPoint[];
     } | null>(null);
     const drawDragRef = useRef<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>(null);
-    const slipDragRef = useRef<{
-        clipId: string;
-        clipType: 'audio' | 'midi';
-        startX: number;
-        originalOffset: number;
-    } | null>(null);
+    const slipDragRef = useRef<SlipDragState | null>(null);
     const noteDragRef = useRef<{
         clipId: string;
         noteId: string;
@@ -335,13 +354,26 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const track = state?.tracks.find((time) => time.id === slipHit.trackId);
                 const clip = track?.clips.find((context) => context.id === slipHit.clipId);
                 if (clip) {
-                    slipDragRef.current = {
+                    const tempoAtStart = readTempoAtBeat({ beat: clip.startBeat });
+                    const sourceEntrySeconds = resolveAudioSourceOffsetSeconds(clip, tempoAtStart);
+                    const slipDrag: SlipDragState = {
                         clipId: clip.id,
                         clipType: clip.type,
                         startX: x,
                         originalOffset:
-                            clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0),
+                            clip.type === 'audio'
+                                ? (sourceEntrySeconds * tempoAtStart) / 60
+                                : (clip.midiOffsetBeats ?? 0),
                     };
+                    if (clip.type === 'audio') {
+                        slipDrag.audioSource = {
+                            entrySeconds: sourceEntrySeconds,
+                            startBeat: clip.startBeat,
+                            stretch: consumedStretchFactor(clip),
+                            tempoAtStart,
+                        };
+                    }
+                    slipDragRef.current = slipDrag;
                     return;
                 }
             }
@@ -523,11 +555,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (slipDragRef.current) {
-            const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
+            const drag = slipDragRef.current;
+            const { clipId, clipType, startX } = drag;
             const view = timelineViewStore.value;
             if (view) {
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
-                const newOffset = originalOffset + deltaBeats;
+                const sourceOffset = sourceOffsetAtSlipBeat(drag, deltaBeats);
+                const newOffset = sourceOffset.offset;
 
                 // Update ephemeral preview
                 if (!clipDragPreviewRef.current) {
@@ -793,7 +827,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
         if (slipDragRef.current) {
-            const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
+            const drag = slipDragRef.current;
+            const { clipId, clipType, startX } = drag;
             slipDragRef.current = null;
             clipDragPreviewRef.current = null;
             previewDirtyFlag.value = true;
@@ -808,7 +843,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     // refusals surface instead of vanishing.
                     void executeUserAppAction({
                         type: 'slipClipContent',
-                        payload: { clipId, clipType, offset: originalOffset + deltaBeats },
+                        payload: { clipId, clipType, ...sourceOffsetAtSlipBeat(drag, deltaBeats) },
                     });
                 }
             }

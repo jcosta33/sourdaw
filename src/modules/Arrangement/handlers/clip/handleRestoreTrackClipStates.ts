@@ -183,6 +183,7 @@ const CLIP_FIELD_COMPARATORS: ClipFieldComparators = {
     fileId: (live, expected) => live.fileId === expected.fileId,
     assetHash: (live, expected) => live.assetHash === expected.assetHash,
     audioOffsetBeats: (live, expected) => live.audioOffsetBeats === expected.audioOffsetBeats,
+    audioOffsetSeconds: (live, expected) => live.audioOffsetSeconds === expected.audioOffsetSeconds,
     midiOffsetBeats: (live, expected) => live.midiOffsetBeats === expected.midiOffsetBeats,
     fadeInBeats: (live, expected) => live.fadeInBeats === expected.fadeInBeats,
     fadeOutBeats: (live, expected) => live.fadeOutBeats === expected.fadeOutBeats,

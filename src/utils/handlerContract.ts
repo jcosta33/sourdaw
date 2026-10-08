@@ -182,6 +182,11 @@ export type ClipMoveActionSnapshot = {
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
 };
+/** Optional clip-source field presence in an inverse action; null means absent. */
+export type AudioSourceStateSnapshot = {
+    audioOffsetSeconds: number | null;
+    audioOffsetBeats: number | null;
+};
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
 export type ClipMoveTarget = {
@@ -1386,9 +1391,32 @@ export type AppAction =
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
-    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | {
+          type: 'trimClipStart';
+          payload: {
+              clipId: string;
+              newStartBeat: number;
+              /** Internal inverse capture; null records an absent source field. */
+              restoreAudioSource?: AudioSourceStateSnapshot;
+              /** Source state written by the original edit; undo refuses divergence. */
+              expectedAudioSource?: AudioSourceStateSnapshot;
+          };
+      }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          type: 'slipClipContent';
+          payload: {
+              clipId: string;
+              clipType: 'audio' | 'midi';
+              offset: number;
+              /** Exact source point captured by an audio gesture across a tempo map. */
+              offsetSeconds?: number;
+              /** Internal inverse capture; null records an absent source field. */
+              restoreAudioSource?: AudioSourceStateSnapshot;
+              /** Source state written by the original edit; undo refuses divergence. */
+              expectedAudioSource?: AudioSourceStateSnapshot;
+          };
+      }
     | {
           /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
            *  drawn length, exactly as the gesture's ripple insert did. */

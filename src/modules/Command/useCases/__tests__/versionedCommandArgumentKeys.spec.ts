@@ -110,6 +110,54 @@ describe('versionedCommandArgumentKeys — restoreClipSplitState (#4521)', () =>
     });
 });
 
+describe('versionedCommandArgumentKeys — audio source inverse captures', () => {
+    it('admits legacy trim/slip actions and exact signed or zero source captures', () => {
+        const oldSource = { audioOffsetSeconds: null, audioOffsetBeats: -2 };
+        const writtenSource = { audioOffsetSeconds: 0, audioOffsetBeats: 0 };
+        expect(validateVersionedCommandArguments('trimClipStart', { clipId: 'c1', newStartBeat: 3 })).toBe(true);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', { clipId: 'c1', clipType: 'audio', offset: 0 })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('trimClipStart', {
+                clipId: 'c1',
+                newStartBeat: 0,
+                restoreAudioSource: oldSource,
+                expectedAudioSource: writtenSource,
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: -2,
+                restoreAudioSource: oldSource,
+                expectedAudioSource: writtenSource,
+            })
+        ).toBe(true);
+    });
+
+    it('rejects malformed saved source captures before replay', () => {
+        expect(
+            validateVersionedCommandArguments('trimClipStart', {
+                clipId: 'c1',
+                newStartBeat: 0,
+                restoreAudioSource: { audioOffsetSeconds: Number.NaN, audioOffsetBeats: 0 },
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 0 },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('slipClipContent', {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 0,
+                restoreAudioSource: { audioOffsetSeconds: 0 },
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 0 },
+            })
+        ).toBe(false);
+    });
+});
+
 describe('versionedCommandArgumentKeys — dense array admission (#4938)', () => {
     // Assigning past the end leaves the skipped indices as holes; Array.prototype.every
     // would visit only the populated slots and admit the array.

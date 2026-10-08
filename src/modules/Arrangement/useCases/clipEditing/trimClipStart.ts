@@ -1,10 +1,14 @@
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
+
+import { audioSourceAtBeat } from './audioSourceAtBeat';
+import { isAudioSourceStateSnapshot } from './isAudioSourceStateSnapshot';
 
 /**
  * A looped clip reads its notes at `note.startBeat - midiOffsetBeats` wrapped by
@@ -54,8 +58,13 @@ function shiftNotesWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrappedOff
     );
 }
 
-export function trimClipStart(clipId: string, newStartBeat: number): boolean {
+type RestoreAudioSource = NonNullable<Extract<AppAction, { type: 'trimClipStart' }>['payload']['restoreAudioSource']>;
+
+export function trimClipStart(clipId: string, newStartBeat: number, restoreAudioSource?: RestoreAudioSource): boolean {
     if (!Number.isFinite(newStartBeat)) {
+        return false;
+    }
+    if (restoreAudioSource && !isAudioSourceStateSnapshot(restoreAudioSource)) {
         return false;
     }
 
@@ -75,7 +84,7 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
         if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);
             const delta = startBeat - context.startBeat;
-            const updated = {
+            const updated: Clip = {
                 ...context,
                 startBeat,
                 audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
@@ -85,6 +94,21 @@ export function trimClipStart(clipId: string, newStartBeat: number): boolean {
                 const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
                 shiftNotesWithOffsetWrap(updated, rawOffsetBeats, midiOffsetBeats);
                 return { ...updated, midiOffsetBeats };
+            }
+            if (context.type === 'audio') {
+                const sourceAtNewStart = audioSourceAtBeat(context, startBeat);
+                updated.audioOffsetSeconds = sourceAtNewStart.audioOffsetSeconds;
+                updated.audioOffsetBeats = sourceAtNewStart.audioOffsetBeats;
+                if (restoreAudioSource) {
+                    delete updated.audioOffsetSeconds;
+                    delete updated.audioOffsetBeats;
+                    if (restoreAudioSource.audioOffsetSeconds !== null) {
+                        updated.audioOffsetSeconds = restoreAudioSource.audioOffsetSeconds;
+                    }
+                    if (restoreAudioSource.audioOffsetBeats !== null) {
+                        updated.audioOffsetBeats = restoreAudioSource.audioOffsetBeats;
+                    }
+                }
             }
             return updated;
         }
