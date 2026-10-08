@@ -23,7 +23,7 @@ function isFiniteNumber(value: unknown): boolean {
 }
 
 function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
-    return !Object.hasOwn(value, key) || accepts(value[key]);
+    return !Object.hasOwn(value, key) || value[key] === undefined || accepts(value[key]);
 }
 
 function isKneadBlob(value: unknown): boolean {
@@ -111,7 +111,8 @@ const requiredClipFields = new Set([
 function hasValidClipFields(value: Record<string, unknown>): boolean {
     return Object.entries(value).every(
         ([key, field]) =>
-            requiredClipFields.has(key) || (Object.hasOwn(optionalClipFields, key) && optionalClipFields[key]!(field))
+            requiredClipFields.has(key) ||
+            (Object.hasOwn(optionalClipFields, key) && (field === undefined || optionalClipFields[key]!(field)))
     );
 }
 

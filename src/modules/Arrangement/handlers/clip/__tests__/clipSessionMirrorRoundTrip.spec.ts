@@ -628,4 +628,37 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             )
         ).toEqual(original);
     });
+
+    it('keeps a real addClip capture with omitted optional values through remove and session reload', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        await executeAppAction(
+            {
+                type: 'addClip',
+                payload: {
+                    id: 'new-clip',
+                    trackId: TRACK_ID,
+                    startBeat: 9,
+                    endBeat: 13,
+                    name: 'New clip',
+                    type: 'midi',
+                },
+            },
+            { source: 'manual' }
+        );
+        expect(clipOnTrack(TRACK_ID, 'new-clip')).toMatchObject({ startBeat: 9, endBeat: 13 });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'new-clip' } }, { source: 'manual' });
+        expect(undoStore.value?.past).toHaveLength(2);
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(2)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(2);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'new-clip')).toMatchObject({ startBeat: 9, endBeat: 13 });
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'new-clip'
+            )
+        ).toMatchObject({ startBeat: 9, endBeat: 13 });
+    });
 });
