@@ -534,10 +534,11 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         function beginTokens(port: FakePort): number[] {
-            return port.postMessage.mock.calls
-                .map(([message]) => message as { type: string; loadToken: number })
-                .filter((message) => message.type === 'beginSampleBank')
-                .map((message) => message.loadToken);
+            const posted = port.postMessage.mock.calls.map(
+                ([message]) => message as { type: string; loadToken: number }
+            );
+            const begins = posted.filter((message) => message.type === 'beginSampleBank');
+            return begins.map((message) => message.loadToken);
         }
 
         const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, 20));
@@ -900,11 +901,14 @@ describe('loadInstrumentFromManifest', () => {
         await vi.waitFor(() => {
             expect(postedTypes(port)).toContain('buildZoneMap');
         });
-        const firstToken = (
-            port.postMessage.mock.calls.find(
-                ([message]) => isRecord(message) && message.type === 'beginSampleBank'
-            )?.[0] as Record<string, unknown>
-        ).loadToken as number;
+        const beginCall = port.postMessage.mock.calls.find(
+            ([message]) => isRecord(message) && message.type === 'beginSampleBank'
+        );
+        const beginMessage: unknown = beginCall?.[0];
+        if (!isRecord(beginMessage) || typeof beginMessage.loadToken !== 'number') {
+            throw new Error('Expected a beginSampleBank message');
+        }
+        const firstToken = beginMessage.loadToken;
 
         let firstSettled = false;
         void first.then(
