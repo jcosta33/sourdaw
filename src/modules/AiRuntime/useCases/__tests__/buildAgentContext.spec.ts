@@ -6,6 +6,7 @@ import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
+import { getSidechainRoutingPromptScope } from '../agentReference/getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
@@ -1119,6 +1120,98 @@ describe('buildAgentContext', () => {
             expect(omitted).not.toContain('wholeProjectVibeMixCapability');
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
                 expect.stringContaining(`leaves out ${omitted.join(', ')}, which did not fit`)
+            );
+        });
+
+        // A real capability grown to an exact serialized length: the selection reads each entry only
+        // as JSON, so a padding field sizes it without changing what kind of entry it is.
+        function padTo<T extends object>(value: T, length: number): T & { padding: string } {
+            const unpadded = JSON.stringify({ ...value, padding: '' }).length;
+            const padded = { ...value, padding: 'p'.repeat(length - unpadded) };
+            expect(JSON.stringify(padded)).toHaveLength(length);
+            return padded;
+        }
+
+        function keptCapabilitiesOf(message: string): Record<string, unknown> {
+            const schemas = parseMessageSection(message, 'capability_schemas') as { availableCapabilities: string };
+            return JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
+        }
+
+        // A capability the request itself asked for stands ahead of every capability the project's
+        // shape merely offers: the sidechain scope exists only because the request's wording matched it.
+        it('keeps the capability the request asked for ahead of one the project offers', () => {
+            const prompt = 'reduce kick bass masking without replacing either basic sound';
+            // The bass carries a compressor with a sidechain input, the one device the scope routes to.
+            const project: ProjectContext = {
+                ...fiveTrackProject,
+                tracks: withTrackChanged(1, (track) => ({
+                    ...track,
+                    devices: [
+                        ...track.devices,
+                        {
+                            id: planningFixtureIds.device(1, 3),
+                            name: 'Sidechain Compressor',
+                            type: 'builtin-sidechain-compressor',
+                            bypassed: false,
+                            parameters: [],
+                        },
+                    ],
+                })),
+            };
+            const sidechain = getSidechainRoutingPromptScope(prompt, project, 'revision-1');
+            if (sidechain.status !== 'request' || sidechain.capability === undefined) {
+                throw new Error('Expected the request to scope the sidechain routing workflow.');
+            }
+            // Alone it fits; beside the sidechain entry it cannot.
+            const offered = padTo(drumAndVibeSession(0).vibeMix, 8_146);
+            const capabilities = {
+                sidechainRoutingCapability: sidechain.capability,
+                wholeProjectVibeMixCapability: offered,
+            };
+            expect(JSON.stringify({ wholeProjectVibeMixCapability: offered }).length).toBeLessThanOrEqual(8_192);
+            expect(JSON.stringify(capabilities).length).toBeGreaterThan(8_192);
+
+            const built = buildAgentContext({
+                fixedPolicy: 'policy',
+                prompt,
+                context: project,
+                capabilityData: capabilities,
+            });
+
+            expect(keptCapabilitiesOf(built.localMessage)).toEqual({
+                sidechainRoutingCapability: sidechain.capability,
+            });
+            expect(contextOmissionsOf(built.localMessage)).toContainEqual(
+                expect.stringContaining('leaves out wholeProjectVibeMixCapability, which did not fit')
+            );
+        });
+
+        // Cost is what an entry adds to the serialized object, key included. The drum routing value
+        // is the longer by 4 characters, but its key is shorter by 8, so it costs 4 fewer: with room
+        // for one entry but not both, it is the one kept.
+        it('keeps the entry that costs less, key included, when only one of two fits', () => {
+            const session = drumAndVibeSession(0);
+            if (session.drumRouting === undefined) {
+                throw new Error('Expected the session to offer the drum routing capability.');
+            }
+            const valueLength = 5_400;
+            const drumRouting = padTo(session.drumRouting, valueLength + 4);
+            const vibeMix = padTo(session.vibeMix, valueLength);
+            const drumCost = JSON.stringify({ drumRoutingCapability: drumRouting }).length;
+            const vibeCost = JSON.stringify({ wholeProjectVibeMixCapability: vibeMix }).length;
+            expect(drumCost).toBeLessThan(vibeCost);
+            expect(drumCost + vibeCost - 1).toBeGreaterThan(8_192);
+
+            const built = buildAgentContext({
+                fixedPolicy: 'policy',
+                prompt: 'make the second chorus hit harder',
+                context: session.project,
+                capabilityData: { drumRoutingCapability: drumRouting, wholeProjectVibeMixCapability: vibeMix },
+            });
+
+            expect(keptCapabilitiesOf(built.localMessage)).toEqual({ drumRoutingCapability: drumRouting });
+            expect(contextOmissionsOf(built.localMessage)).toContainEqual(
+                expect.stringContaining('leaves out wholeProjectVibeMixCapability, which did not fit')
             );
         });
 

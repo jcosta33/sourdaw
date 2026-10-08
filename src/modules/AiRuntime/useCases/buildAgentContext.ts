@@ -85,11 +85,12 @@ function capabilityTier(key: LocalCapabilityKey): number {
 }
 
 /**
- * The capability data a local message carries: whole entries, by tier and then smallest first
- * within a tier, while the serialized object stays within the capability budget. Smallest first
- * means a workflow capability is never left out while a larger one of its tier is kept. An entry
- * that does not fit the budget left after the entries kept before it is left out whole and named,
- * never cut mid-value, and the entries after it are still tried.
+ * The capability data a local message carries: whole entries, by tier and then cheapest first
+ * within a tier, while the serialized object stays within the capability budget. An entry's cost
+ * is what it adds to the serialized object, its key included, so cheapest first means a workflow
+ * capability is never left out while a costlier one of its tier is kept. An entry that does not
+ * fit the budget left after the entries kept before it is left out whole and named, never cut
+ * mid-value, and the entries after it are still tried.
  */
 function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
     serialized: string;
@@ -99,12 +100,12 @@ function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undef
     const present = capabilityKeys
         .flatMap((key) => {
             const value = capabilityData?.[key];
-            return value === undefined ? [] : [{ key, value, length: stableJson(value).length }];
+            return value === undefined ? [] : [{ key, value, cost: stableJson({ [key]: value }).length }];
         })
         .sort(
             (left, right) =>
                 capabilityTier(left.key) - capabilityTier(right.key) ||
-                left.length - right.length ||
+                left.cost - right.cost ||
                 left.key.localeCompare(right.key)
         );
     const kept: Record<string, unknown> = {};
