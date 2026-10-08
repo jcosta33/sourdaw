@@ -373,10 +373,16 @@ export function parseRestPageOutput(output: string, path: string, page: number):
     }
     return { items: json(output.slice(boundary + split.length)), nextPage };
 }
-function graphql(session: GhSession, primaryRoot: string, query: string, variables: readonly string[]): JsonValue {
+function graphql(
+    session: GhSession,
+    primaryRoot: string,
+    query: string,
+    variables: readonly string[],
+    capture: typeof spawnCapture
+): JsonValue {
     const response = object(
         json(
-            spawnCapture('gh', ['api', '--hostname', 'github.com', 'graphql', '-f', `query=${query}`, ...variables], {
+            capture('gh', ['api', '--hostname', 'github.com', 'graphql', '-f', `query=${query}`, ...variables], {
                 env: session.env,
                 cwd: primaryRoot,
             })
@@ -390,7 +396,11 @@ function graphql(session: GhSession, primaryRoot: string, query: string, variabl
 }
 
 /** Transport is fixed to REST GETs and four known GraphQL query documents. */
-export function shellCapabilityReadPort(session: GhSession, primaryRoot: string): CapabilityReadPort {
+export function shellCapabilityReadPort(
+    session: GhSession,
+    primaryRoot: string,
+    capture: typeof spawnCapture = spawnCapture
+): CapabilityReadPort {
     const rest = (path: string): JsonValue =>
         json(spawnCapture('gh', ['api', '--hostname', 'github.com', path], { env: session.env, cwd: primaryRoot }));
     return {
@@ -402,13 +412,13 @@ export function shellCapabilityReadPort(session: GhSession, primaryRoot: string)
             restPage(session, primaryRoot, `${REPOSITORY}/rules/branches/${encodeURIComponent(branch)}`, page),
         exactMainProtection: () => rest(`${REPOSITORY}/branches/main/protection`),
         classicPage: (cursor) =>
-            graphql(session, primaryRoot, CLASSIC_QUERY, cursor === null ? [] : [`-F`, `cursor=${cursor}`]),
+            graphql(session, primaryRoot, CLASSIC_QUERY, cursor === null ? [] : ['-f', `cursor=${cursor}`], capture),
         allowancePage: (kind, ruleId, cursor) => {
-            const variables = ['-F', `ruleId=${ruleId}`];
+            const variables = ['-f', `ruleId=${ruleId}`];
             if (cursor !== null) {
-                variables.push('-F', `cursor=${cursor}`);
+                variables.push('-f', `cursor=${cursor}`);
             }
-            return graphql(session, primaryRoot, ALLOWANCE_QUERIES[kind], variables);
+            return graphql(session, primaryRoot, ALLOWANCE_QUERIES[kind], variables, capture);
         },
     };
 }

@@ -84,6 +84,76 @@ describe('inactive retarget capability plan', () => {
         );
     });
 
+    it('selects main rollback by include and exclude roles, not selector text', () => {
+        const input = observed();
+        const selected = requiredRuleset(input);
+        selected.conditions = { ref_name: { include: ['refs/heads/main'], exclude: [] } };
+        const excluded = {
+            ...selected,
+            id: 2,
+            name: 'excluded',
+            conditions: { ref_name: { include: ['~ALL'], exclude: ['refs/heads/main'] } },
+        };
+        const unrelated = {
+            ...selected,
+            id: 3,
+            name: 'unrelated',
+            conditions: { ref_name: { include: ['refs/heads/main-old'], exclude: [] } },
+        };
+        input.rulesets.push(excluded, unrelated);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.originalMainRollback).toEqual([canonicalJson(selected)]);
+        expect(plan.completeObservedInventory).toBe(true);
+        const changed = observed();
+        changed.rulesets.splice(
+            0,
+            1,
+            selected,
+            { ...excluded, bypass_actors: [{ actor_id: 7, actor_type: 'User', bypass_mode: 'always' }] },
+            unrelated
+        );
+        expect(buildCapabilityPlan(changed, SOURCE, INTERVAL).originalMainSemanticDigest).toBe(
+            plan.originalMainSemanticDigest
+        );
+    });
+
+    it('includes default branch policy but makes uncertain selectors incomplete', () => {
+        const input = observed();
+        const defaultRule = requiredRuleset(input);
+        expect(buildCapabilityPlan(input, SOURCE, INTERVAL).originalMainRollback).toEqual([canonicalJson(defaultRule)]);
+        const wildcard = { ...defaultRule, conditions: { ref_name: { include: ['refs/heads/m*'], exclude: [] } } };
+        input.rulesets.splice(0, 1, wildcard);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('main ruleset applicability is unresolved');
+        expect(plan.originalMainRollback).toEqual([canonicalJson(wildcard)]);
+        expect(plan.baseline).toMatchObject({ rulesets: [wildcard] });
+        expect(plan.activationEligible).toBe(false);
+        const changed = observed();
+        changed.rulesets.splice(0, 1, {
+            ...wildcard,
+            bypass_actors: [{ actor_id: 7, actor_type: 'User', bypass_mode: 'always' }],
+        });
+        expect(buildCapabilityPlan(changed, SOURCE, INTERVAL).originalMainSemanticDigest).not.toBe(
+            plan.originalMainSemanticDigest
+        );
+
+        const unknownDefault = observed();
+        unknownDefault.repository.default_branch = null;
+        expect(() => buildCapabilityPlan(unknownDefault, SOURCE, INTERVAL)).toThrow(/default branch/u);
+    });
+
+    it('retains disabled and evaluate rulesets in main rollback visibility', () => {
+        const input = observed();
+        const original = requiredRuleset(input);
+        const disabled = { ...original, id: 2, name: 'disabled-main', enforcement: 'disabled' };
+        const evaluateRule = { ...original, id: 3, name: 'evaluate-main', enforcement: 'evaluate' };
+        input.rulesets.push(disabled, evaluateRule);
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.originalMainRollback).toEqual([original, disabled, evaluateRule].map(canonicalJson));
+        expect(plan.completeObservedInventory).toBe(true);
+    });
+
     it.each([
         [
             'user id',

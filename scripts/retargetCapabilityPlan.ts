@@ -115,6 +115,10 @@ function jsonArray(value: JsonValue | undefined): value is JsonValue[] {
     return Array.isArray(value);
 }
 
+function stringSelectors(value: JsonValue | undefined): value is string[] {
+    return Array.isArray(value) && value.every((selector) => typeof selector === 'string');
+}
+
 function rulesetShapeComplete(ruleset: RulesetDocument): ruleset is RulesetDocument & {
     rules: JsonValue[];
     bypass_actors: JsonValue[];
@@ -150,8 +154,11 @@ function ruleLimitations(rule: JsonValue): string[] {
     return [];
 }
 
-function policyLimitations(observation: CapabilityObservation): string[] {
+function policyLimitations(observation: CapabilityObservation, mainApplicabilityUnresolved: boolean): string[] {
     const limitations = [...observation.limitations];
+    if (mainApplicabilityUnresolved) {
+        limitations.push('main ruleset applicability is unresolved');
+    }
     const permissions = observation.repository.permissions;
     if (permissions === undefined || record(permissions, 'repository permissions').admin !== true) {
         limitations.push('repository administration visibility unavailable');
@@ -244,14 +251,46 @@ function assertUniqueRulesets(rulesets: readonly RulesetDocument[]): void {
     }
 }
 
-function mainRulesets(rulesets: readonly RulesetDocument[]): RulesetDocument[] {
-    return rulesets.filter(
-        (ruleset) =>
-            ruleset.target === 'branch' &&
-            (canonicalJson(ruleset.conditions ?? null).includes('~ALL') ||
-                canonicalJson(ruleset.conditions ?? null).includes('~DEFAULT_BRANCH') ||
-                canonicalJson(ruleset.conditions ?? null).includes('refs/heads/main'))
-    );
+function selectorMatchesMain(selector: string): boolean | null {
+    if (selector === '~ALL' || selector === '~DEFAULT_BRANCH' || selector === 'refs/heads/main') {
+        return true;
+    }
+    if (/^refs\/heads\/[A-Za-z0-9._/-]+$/u.test(selector)) {
+        return false;
+    }
+    return null;
+}
+
+function mainRulesets(rulesets: readonly RulesetDocument[]): {
+    rulesets: RulesetDocument[];
+    unresolved: boolean;
+} {
+    const selected: RulesetDocument[] = [];
+    let unresolved = false;
+    for (const ruleset of rulesets) {
+        if (ruleset.target !== 'branch') {
+            continue;
+        }
+        const conditions = ruleset.conditions;
+        const refs = conditions === undefined ? null : record(conditions, 'conditions').ref_name;
+        const refName = refs === null || refs === undefined ? null : record(refs, 'ref conditions');
+        const include = refName?.include;
+        const exclude = refName?.exclude;
+        if (!stringSelectors(include) || !stringSelectors(exclude)) {
+            unresolved = true;
+            selected.push(ruleset);
+            continue;
+        }
+        const included = include.map(selectorMatchesMain);
+        const excluded = exclude.map(selectorMatchesMain);
+        if (included.includes(null) || excluded.includes(null)) {
+            unresolved = true;
+        }
+        if ((included.includes(true) || included.includes(null)) && !excluded.includes(true)) {
+            selected.push(ruleset);
+        }
+    }
+    return { rulesets: selected, unresolved };
 }
 
 /** The only emitted proposal is a disabled document; this function never authorizes activation. */
@@ -275,14 +314,15 @@ export function buildCapabilityPlan(
     assertUniqueRulesets(observation.rulesets);
     const baseline = capabilityObservationRecord(observation);
     safe(baseline);
-    const limitations = policyLimitations(observation);
+    const mainSelection = mainRulesets(observation.rulesets);
+    const limitations = policyLimitations(observation, mainSelection.unresolved);
     const mainPolicy: RulesetDocument = {
-        rulesets: mainRulesets(observation.rulesets),
+        rulesets: mainSelection.rulesets,
         classic: observation.classic,
         effective: observation.effectiveBranches.main ?? [],
         exactProtection: observation.exactMainProtection,
     };
-    const rollback = mainRulesets(observation.rulesets).map((ruleset) => captureRollback(ruleset));
+    const rollback = mainSelection.rulesets.map((ruleset) => captureRollback(ruleset));
     const plan: RulesetDocument = {
         format: 'retarget-capability-plan-v1',
         sourceSha,

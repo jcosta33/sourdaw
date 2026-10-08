@@ -7,6 +7,7 @@ import {
     parseRestPageOutput,
     parseRetargetCapabilityArgs,
     runRetargetCapabilityPlanCli,
+    shellCapabilityReadPort,
     verifyRetargetCapabilitySource,
     type CapabilityReadPort,
     type ListPage,
@@ -140,6 +141,34 @@ function fakePort() {
 }
 
 describe('bounded capability capture', () => {
+    it('passes opaque GraphQL cursors and node IDs as literal string fields', () => {
+        const calls: string[][] = [];
+        const spawn = (_command: string, args: string[]) => {
+            calls.push(args);
+            return '{"data":{}}';
+        };
+        const port = shellCapabilityReadPort({ configDir: '/unused', env: {}, dispose: vi.fn() }, '/primary', spawn);
+        port.classicPage('@cursor');
+        port.classicPage('true');
+        port.allowancePage('pushAllowances', '@rule', '42');
+        port.allowancePage('bypassForcePushAllowances', '123', '@cursor');
+        port.allowancePage('bypassPullRequestAllowances', 'false', null);
+        port.allowancePage('reviewDismissalAllowances', '42', 'false');
+        expect(calls).toHaveLength(6);
+        for (const args of calls) {
+            expect(args).toContain('graphql');
+            expect(args).toContain('-f');
+            expect(args.some((value) => value.startsWith('query=query Retarget'))).toBe(true);
+            expect(args).not.toContain('-F');
+        }
+        expect(calls[0]).toContain('cursor=@cursor');
+        expect(calls[1]).toContain('cursor=true');
+        expect(calls[2]).toEqual(expect.arrayContaining(['ruleId=@rule', 'cursor=42']));
+        expect(calls[3]).toEqual(expect.arrayContaining(['ruleId=123', 'cursor=@cursor']));
+        expect(calls[4]).toContain('ruleId=false');
+        expect(calls[5]).toEqual(expect.arrayContaining(['ruleId=42', 'cursor=false']));
+    });
+
     it('accepts only the next page of the same fixed REST endpoint', () => {
         const path = 'repos/jcosta33/sourdaw/rulesets?includes_parents=true';
         const good = `HTTP/2 200\r\nlink: <https://api.github.com/repos/jcosta33/sourdaw/rulesets?includes_parents=true&per_page=100&page=2>; rel="next"\r\n\r\n[]`;
