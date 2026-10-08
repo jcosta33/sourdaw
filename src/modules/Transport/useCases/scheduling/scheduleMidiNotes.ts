@@ -33,16 +33,19 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import {
-    forgetStoredControllersWithheld,
-    hasStoredControllersWithheld,
-    noteStoredControllersWithheld,
+    forgetStoredControllersClipMuteWithheld,
+    forgetStoredControllersTrackMuteWithheld,
+    hasStoredControllersTrackMuteWithheld,
+    noteStoredControllersClipMuteWithheld,
+    noteStoredControllersTrackMuteWithheld,
+    readStoredControllersClipMuteWithheld,
     storedControllerDeviceKey,
 } from '../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
-import { mutesStoredControllersInWindow } from './mutesStoredControllersInWindow';
+import { listMutedMidiClips } from './listMutedMidiClips';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
@@ -909,29 +912,43 @@ export async function scheduleMidiNotes(
     // Whether this window is the one a track schedules again in after a mute kept its stored controllers
     // from earlier windows of this playback: the device still holds what it last received, so the window
     // restores the value in force at its start, the chase a relocation runs. A track mute ends here
-    // whatever muted clips overlap the window, because the restore leaves muted clips out. A muted clip
-    // with stored controllers in this window still withholds them, so a clip mute's resume waits for a
-    // window without one, and a track-mute restore run before then does not discharge it. A record is
-    // forgotten as the window decides, because the restore it queues is the chase that mute owed.
+    // whatever muted clips overlap the window, because the restore leaves muted clips out. A clip mute ends
+    // for each recorded clip on its own, in the first window that clip no longer withholds (unmuted, ended,
+    // moved away or removed), whatever other clips stay muted. A record is forgotten as the window decides,
+    // because the restore it queues is the chase that mute owed.
+    const withholdsStoredControllers = (mutedClip: SchedulerTrack['clips'][number]): boolean =>
+        mutedClip.startBeat < toBeat &&
+        mutedClip.endBeat > fromBeat &&
+        (midiState.ccByClipId[mutedClip.id]?.length ?? 0) > 0;
+    const stillWithholds = (mutedClips: readonly SchedulerTrack['clips'][number][], clipId: string): boolean => {
+        for (const mutedClip of mutedClips) {
+            if (mutedClip.id === clipId) {
+                return withholdsStoredControllers(mutedClip);
+            }
+        }
+        return false;
+    };
     const takeResumeAfterMute = (track: SchedulerTrack): boolean => {
-        const clipMuteWithholds = mutesStoredControllersInWindow({
-            clips: track.clips,
-            fromBeat,
-            toBeat,
-            ccByClipId: midiState.ccByClipId,
-        });
-        if (clipMuteWithholds) {
-            noteStoredControllersWithheld(track.id, 'clip-mute');
+        const mutedClips = listMutedMidiClips(track.clips);
+        let resumes = hasStoredControllersTrackMuteWithheld(track.id);
+        if (resumes) {
+            forgetStoredControllersTrackMuteWithheld(track.id);
         }
-        const resumesFromTrackMute = hasStoredControllersWithheld(track.id, 'track-mute');
-        const resumesFromClipMute = !clipMuteWithholds && hasStoredControllersWithheld(track.id, 'clip-mute');
-        if (resumesFromTrackMute) {
-            forgetStoredControllersWithheld(track.id, 'track-mute');
+        const withheldClipIds = readStoredControllersClipMuteWithheld(track.id);
+        if (withheldClipIds) {
+            for (const clipId of withheldClipIds) {
+                if (!stillWithholds(mutedClips, clipId)) {
+                    forgetStoredControllersClipMuteWithheld(track.id, clipId);
+                    resumes = true;
+                }
+            }
         }
-        if (resumesFromClipMute) {
-            forgetStoredControllersWithheld(track.id, 'clip-mute');
+        for (const mutedClip of mutedClips) {
+            if (withholdsStoredControllers(mutedClip)) {
+                noteStoredControllersClipMuteWithheld(track.id, mutedClip.id);
+            }
         }
-        return resumesFromTrackMute || resumesFromClipMute;
+        return resumes;
     };
     for (const track of tracks) {
         if (!isCurrent()) {
@@ -941,7 +958,7 @@ export async function scheduleMidiNotes(
             continue;
         }
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
-            noteStoredControllersWithheld(track.id, 'track-mute');
+            noteStoredControllersTrackMuteWithheld(track.id);
             continue;
         }
 

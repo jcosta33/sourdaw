@@ -146,50 +146,69 @@ export function takeStoredControllerEngagements(): StoredControllerEngagement[] 
     return taken;
 }
 
-/** What kept a track's stored controllers from a window: the track's own mute, or a muted clip of it. */
-export type StoredControllerWithholding = 'track-mute' | 'clip-mute';
-
-/**
- * The tracks a mute kept from posting their stored controllers in a window of this
- * playback, per kind of mute. The moves of those windows were never sent, so the
- * device still holds what it last received, and the window that schedules the track
- * again owes it the value in force there. The two are kept apart because they end
- * apart: a track mute ends when the track schedules again, whatever muted clips it
- * has, while a clip mute ends only in a window no muted clip with a lane overlaps,
- * and a restore that ran while such a clip was still muted left that clip out. One
- * entry per track and kind, dropped when its restore runs and with the rest of this
- * record when playback stops or the scheduler is disposed.
+/*
+ * What a mute kept from posting stored controllers in a window of this playback. The
+ * moves of those windows were never sent, so the device still holds what it last
+ * received, and the window in which the mute ends owes it the value in force there. A
+ * track mute is recorded per track and ends when the track schedules again, whatever
+ * muted clips it has (the restore leaves them out). A clip mute is recorded per clip and
+ * ends for that clip alone, so another clip still muted does not hold back the chase a
+ * clip unmuted, ended or removed is owed. Each entry is dropped when its restore is
+ * queued, and every entry when playback stops or the scheduler is disposed, so the record
+ * is bounded by the tracks and clips present.
  */
-const withheldTrackIds: Record<StoredControllerWithholding, Set<string>> = {
-    'track-mute': new Set<string>(),
-    'clip-mute': new Set<string>(),
-};
+const trackMuteWithheldTrackIds = new Set<string>();
+const clipMuteWithheldClipIdsByTrack = new Map<string, Set<string>>();
 
-/** Record that a mute kept one track's stored controllers from a window. */
-export function noteStoredControllersWithheld(trackId: string, by: StoredControllerWithholding): void {
-    withheldTrackIds[by].add(trackId);
+/** Record that a track mute kept one track's stored controllers from a window. */
+export function noteStoredControllersTrackMuteWithheld(trackId: string): void {
+    trackMuteWithheldTrackIds.add(trackId);
 }
 
-/** Whether this kind of mute has kept the track's stored controllers from a window since its last restore. */
-export function hasStoredControllersWithheld(trackId: string, by: StoredControllerWithholding): boolean {
-    return withheldTrackIds[by].has(trackId);
+/** Whether a track mute has kept this track's stored controllers from a window since its last restore. */
+export function hasStoredControllersTrackMuteWithheld(trackId: string): boolean {
+    return trackMuteWithheldTrackIds.has(trackId);
 }
 
-/** Forget that this kind of mute kept the track's stored controllers from a window: its restore is queued. */
-export function forgetStoredControllersWithheld(trackId: string, by: StoredControllerWithholding): void {
-    withheldTrackIds[by].delete(trackId);
+/** Forget that a track mute kept this track's stored controllers from a window: its restore is queued. */
+export function forgetStoredControllersTrackMuteWithheld(trackId: string): void {
+    trackMuteWithheldTrackIds.delete(trackId);
 }
 
-/** Forget every track a mute kept stored controllers from: the playback that withheld them is over. */
+/** Record that a clip's mute kept its stored controllers from a window. */
+export function noteStoredControllersClipMuteWithheld(trackId: string, clipId: string): void {
+    const clipIds = clipMuteWithheldClipIdsByTrack.get(trackId);
+    if (clipIds) {
+        clipIds.add(clipId);
+        return;
+    }
+    clipMuteWithheldClipIdsByTrack.set(trackId, new Set([clipId]));
+}
+
+/** The clips of one track whose mute has kept their stored controllers from a window since their last restore. */
+export function readStoredControllersClipMuteWithheld(trackId: string): ReadonlySet<string> | undefined {
+    return clipMuteWithheldClipIdsByTrack.get(trackId);
+}
+
+/** Forget that a clip's mute kept its stored controllers from a window: the chase it is owed is queued. */
+export function forgetStoredControllersClipMuteWithheld(trackId: string, clipId: string): void {
+    const clipIds = clipMuteWithheldClipIdsByTrack.get(trackId);
+    clipIds?.delete(clipId);
+    if (clipIds?.size === 0) {
+        clipMuteWithheldClipIdsByTrack.delete(trackId);
+    }
+}
+
+/** Forget everything a mute kept stored controllers from: the playback that withheld them is over. */
 export function forgetAllStoredControllersWithheld(): void {
-    withheldTrackIds['track-mute'].clear();
-    withheldTrackIds['clip-mute'].clear();
+    trackMuteWithheldTrackIds.clear();
+    clipMuteWithheldClipIdsByTrack.clear();
 }
 
 /** Drop every engagement without releasing it, for a teardown whose audio graph is already gone. */
 export function forgetStoredControllerEngagements(): void {
     engagementByDevice.clear();
     postedDeviceByKey.clear();
-    withheldTrackIds['track-mute'].clear();
-    withheldTrackIds['clip-mute'].clear();
+    trackMuteWithheldTrackIds.clear();
+    clipMuteWithheldClipIdsByTrack.clear();
 }

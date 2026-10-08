@@ -3529,6 +3529,117 @@ describe('scheduleMidiNotes', () => {
                 });
             });
 
+            // A clip mute is owed per clip: each recorded clip resumes on its own, whatever other clips stay muted,
+            // and only a muted clip whose lane has a row and overlaps the half-open window withholds anything.
+            describe('one clip at a time', () => {
+                /** Track `track-1` with these clips, `clip-1` first, as a fresh list the way the store replaces it. */
+                function loadClips(clips: Record<string, unknown>[]) {
+                    (trackStore as { value: unknown }).value = {
+                        tracks: [
+                            midiTrack({
+                                clips: clips.map((clip) => midiClip(clip)),
+                                devices: [{ id: 'gb-1', type: 'grand-boule' }],
+                            }),
+                        ],
+                    };
+                }
+
+                const laneClip = (muted: boolean) => ({ id: 'clip-1', startBeat: 0, endBeat: 8, muted });
+                const ordinaryRun = [
+                    'on 60 @0',
+                    `sustain 1 @${BEAT_FRAMES}`,
+                    `on 60 @${BEAT_FRAMES}`,
+                    `on 60 @${2 * BEAT_FRAMES}`,
+                    `sustain 0 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${3 * BEAT_FRAMES}`,
+                    `on 60 @${4 * BEAT_FRAMES}`,
+                    `on 60 @${5 * BEAT_FRAMES}`,
+                ];
+
+                it('lifts at the unmute of one clip while another clip with a lane stays muted', async () => {
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-1': notesOnEveryBeat, 'clip-2': [] },
+                        ccByClipId: { 'clip-1': sustainLane, 'clip-2': [storedController('wheel', 1, 64, 0)] },
+                    };
+                    const mutedSibling = { id: 'clip-2', startBeat: 0, endBeat: 8, muted: true };
+                    const posted = recordGrandBoule();
+                    loadClips([laneClip(false), mutedSibling]);
+                    await playBeats(0, 2);
+                    loadClips([laneClip(true), mutedSibling]);
+                    await playBeats(2, 4);
+                    loadClips([laneClip(false), mutedSibling]);
+                    await playBeats(4, 9);
+
+                    expect(posted).toEqual([
+                        'on 60 @0',
+                        `sustain 1 @${BEAT_FRAMES}`,
+                        `on 60 @${BEAT_FRAMES}`,
+                        `sustain 0 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${4 * BEAT_FRAMES}`,
+                        `on 60 @${5 * BEAT_FRAMES}`,
+                        `on 60 @${6 * BEAT_FRAMES}`,
+                        `on 60 @${7 * BEAT_FRAMES}`,
+                        // The sibling's own mute ends with the clip at 8, and is chased there.
+                        `sustain 0 @${8 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('chases a clip that stays muted until it ends in the first window after its end', async () => {
+                    // The muted clip's lift at 2 never plays, so the press clip-1 left is in force at 3.
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-1': notesOnEveryBeat, 'clip-2': [] },
+                        ccByClipId: {
+                            'clip-1': [storedController('down', 64, 127, 1)],
+                            'clip-2': [storedController('up', 64, 0, 2)],
+                        },
+                    };
+                    const posted = recordGrandBoule();
+                    loadClips([laneClip(false), { id: 'clip-2', startBeat: 0, endBeat: 3, muted: true }]);
+                    await playBeats(0, 5);
+
+                    expect(posted).toEqual([
+                        'on 60 @0',
+                        `sustain 1 @${BEAT_FRAMES}`,
+                        `on 60 @${BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 1 @${3 * BEAT_FRAMES}`,
+                        `on 60 @${3 * BEAT_FRAMES}`,
+                        `on 60 @${4 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('owes no chase for a muted clip that has notes but no stored lane', async () => {
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: {
+                            'clip-1': notesOnEveryBeat,
+                            'clip-3': notesOnEveryBeat.map((note) => ({ ...note, id: `muted-${note.id}`, pitch: 72 })),
+                        },
+                        ccByClipId: { 'clip-1': sustainLane },
+                    };
+                    const posted = recordGrandBoule();
+                    loadClips([laneClip(false), { id: 'clip-3', startBeat: 0, endBeat: 4, muted: true }]);
+                    await playBeats(0, 6);
+
+                    expect(posted).toEqual(ordinaryRun);
+                });
+
+                it('owes no chase for a muted clip that only abuts the windows it was muted in', async () => {
+                    // clip-4 starts at 4 and is unmuted there, so its mute never overlapped the window [3, 4).
+                    (midiStore as { value: unknown }).value = {
+                        notesByClipId: { 'clip-1': notesOnEveryBeat, 'clip-4': [] },
+                        ccByClipId: { 'clip-1': sustainLane, 'clip-4': [storedController('wheel', 1, 64, 0)] },
+                    };
+                    const laterClip = (muted: boolean) => ({ id: 'clip-4', startBeat: 4, endBeat: 8, muted });
+                    const posted = recordGrandBoule();
+                    loadClips([laneClip(false), laterClip(true)]);
+                    await playBeats(0, 4);
+                    loadClips([laneClip(false), laterClip(false)]);
+                    await playBeats(4, 6);
+
+                    expect(posted).toEqual(ordinaryRun);
+                });
+            });
+
             // Playback restarts at 2 under the held press: a start does not chase, so the new playback posts
             // only its own windows, never a stale resume restore of the press at 2.
             const restartedAtTwo = [
