@@ -438,14 +438,6 @@ describe('loadInstrumentFromManifest', () => {
             expect(releaseCount(port)).toBe(1);
         });
 
-        it('asks for no release when the load fails to commit', async () => {
-            const port = makePort({ commitError: 'zone map rejected' });
-
-            await expect(load(port)).rejects.toThrow('zone map rejected');
-
-            expect(releaseCount(port)).toBe(0);
-        });
-
         function loadTokenOf(port: FakePort): number {
             const begin = port.postMessage.mock.calls
                 .map(([message]) => message as { type: string; loadToken: number })
@@ -636,6 +628,96 @@ describe('loadInstrumentFromManifest', () => {
             await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
             expect(beginTokens(port)).toHaveLength(1);
             expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        });
+
+        describe('draining the bank a failed load staged', () => {
+            it('drains a load that fails to commit one step at a time and holds the next begin until done', async () => {
+                const port = makePort({ commitError: 'zone map rejected', manualRelease: true });
+
+                await expect(load(port)).rejects.toThrow('zone map rejected');
+                await vi.waitFor(() => {
+                    expect(releaseCount(port)).toBe(1);
+                });
+                const [firstToken] = beginTokens(port);
+                const types = postedTypes(port);
+                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+
+                const second = load(port).catch((error: unknown) => error);
+                await settle();
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: false });
+                await settle();
+                expect(releaseCount(port)).toBe(2);
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+                await vi.waitFor(() => {
+                    expect(beginTokens(port)).toHaveLength(2);
+                });
+                expect(await second).toMatchObject({ message: expect.stringContaining('zone map rejected') });
+            });
+
+            it('posts abort, release and the next begin in that order after a load is aborted mid-upload', async () => {
+                const port = makePort({ manualRelease: true });
+                const controller = new AbortController();
+                const originalPostMessage = port.postMessage;
+                port.postMessage = vi.fn((message: unknown) => {
+                    originalPostMessage(message);
+                    if (isRecord(message) && message.type === 'beginSampleBank') {
+                        controller.abort();
+                    }
+                });
+                const first = loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal: controller.signal,
+                });
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await vi.waitFor(() => {
+                    expect(releaseCount(port)).toBe(1);
+                });
+                const [firstToken] = beginTokens(port);
+
+                const second = load(port);
+                await settle();
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+                await expect(second).resolves.toBeDefined();
+                expect(postedTypes(port).filter((type) => type !== 'addSample' && type !== 'addZone')).toEqual([
+                    'beginSampleBank',
+                    'abortSampleBank',
+                    'releaseRetiredBank',
+                    'beginSampleBank',
+                    'buildZoneMap',
+                    'releaseRetiredBank',
+                ]);
+            });
+
+            it.each(['disposed', 'error'] as const)(
+                'rejects the next load without hanging when the failure was the processor ending (%s)',
+                async (type) => {
+                    const port = makePort({ autoComplete: false, manualRelease: true });
+                    const first = load(port);
+                    await vi.waitFor(() => {
+                        expect(postedTypes(port)).toContain('buildZoneMap');
+                    });
+                    const second = load(port);
+                    await settle();
+
+                    port.emit({ type, message: 'gone' });
+
+                    await expect(first).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    await expect(second).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    expect(releaseCount(port)).toBe(0);
+                    expect(beginTokens(port)).toHaveLength(1);
+                    await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+                }
+            );
         });
     });
 
