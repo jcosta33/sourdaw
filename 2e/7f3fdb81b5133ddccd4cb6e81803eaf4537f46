@@ -1,0 +1,24 @@
+scripts/__tests__/retargetCapabilitySnapshot.spec.ts
+  s_97ab82e0b4f10c::t_dfecf775cd1e5c 340-380
+scripts/__tests__/retargetCapabilityPlan.spec.ts
+  s_97ab82e0b4f10c::t_d885fce5ecd0ca 1-2,253-265
+  s_97ab82e0b4f10c::t_dfecf775cd1e5c 6-11,130-133,224-252,266-267,273-291
+scripts/retargetCapabilityPlan.ts
+  s_97ab82e0b4f10c::t_87c3ccc151a340 9-20,158-175,348,357-358,392,395-396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e7f3fdb81b5133ddccd4cb6e81803eaf4537f46",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
