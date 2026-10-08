@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -27,9 +28,17 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
@@ -45,9 +54,16 @@ import { handleDuplicateClipAt } from '../handleDuplicateClipAt';
 import { handleMoveClips } from '../handleMoveClips';
 import { handleRestoreClipMoves } from '../handleRestoreClipMoves';
 import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
+import { isMoveClipSessionEntry } from '../validateClipEditSessionEntries';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const TRACK_ID = 'track-keys';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 function createClipFixture(id: string, startBeat: number, endBeat: number): Clip {
     return {
@@ -91,6 +107,47 @@ function persistedInverse(entryIndex = 0): { type: string; payload: Record<strin
 
 const clipOnTrack = (trackId: string, clipId: string): Clip | undefined =>
     trackStore.value?.tracks.find((track) => track.id === trackId)?.clips.find((clip) => clip.id === clipId);
+
+function seedAudioMoveSource(canonicalSeconds?: number): void {
+    tempoMapStore.set({
+        changes: [
+            { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+            { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+        ],
+    });
+    const before = trackStore.value!;
+    const original: Clip = {
+        ...before.tracks[0]!.clips[0]!,
+        type: 'audio',
+        audioBufferId: 'buffer-a',
+        audioOffsetBeats: canonicalSeconds === undefined ? 2 : 9,
+    };
+    if (canonicalSeconds !== undefined) {
+        original.audioOffsetSeconds = canonicalSeconds;
+    }
+    trackStore.set({
+        ...before,
+        tracks: [{ ...before.tracks[0]!, kind: 'audio', clips: [original, before.tracks[0]!.clips[1]!] }],
+    });
+    takeLaneStore.set({
+        lanes: [
+            {
+                id: 'lane-a',
+                trackId: TRACK_ID,
+                activeCompRegions: [],
+                takes: [0, 2].map((sourceOffsetBeats, index) => ({
+                    id: `take-${index}`,
+                    clipId: 'clip-a',
+                    name: `Take ${index}`,
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: false,
+                    sourceOffsetBeats,
+                })),
+            },
+        ],
+    });
+}
 
 function automationLane(id: string, clipId?: string): AutomationLane {
     const lane: AutomationLane = {
@@ -141,6 +198,7 @@ function hydrateProductionContracts(): void {
 describe('slice-three clip actions / session-undo mirror round trips', () => {
     beforeEach(() => {
         Container.clear();
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('slice-three session mirror round trips');
         removeCrdtDoc('root');
@@ -150,6 +208,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         clearHandlerRegistry();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         const track = TrackDummy.create({
             id: TRACK_ID,
             name: 'Keys',
@@ -166,6 +226,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     afterEach(() => {
         clearHandlerRegistry();
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
@@ -718,6 +780,204 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         ).toMatchObject({ startBeat: 0.1, endBeat: 4.1 });
     });
 
+    it('hydrates a saved canonical-zero audio removal and restores the exact source field', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        const before = trackStore.value!;
+        const original: Clip = {
+            ...before.tracks[0]!.clips[0]!,
+            type: 'audio',
+            audioBufferId: 'buffer-a',
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 9,
+        };
+        trackStore.set({
+            ...before,
+            tracks: [{ ...before.tracks[0]!, kind: 'audio', clips: [original, before.tracks[0]!.clips[1]!] }],
+        });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        const raw = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root');
+        expect(raw?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')).toEqual(original);
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+    });
+
+    it.each(['audioSource', 'takeSources'] as const)(
+        'drops a saved move with coherently corrupted %s before project writes',
+        async (field) => {
+            seedAudioMoveSource(0);
+            await executeAppAction(
+                { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 5.5 } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entry = (persisted.past as Record<string, unknown>[])[0]!;
+            const inverse = (entry.inverseAction as { payload: { expected: Record<string, unknown> } }).payload;
+            const redo = (entry.redoAction as { payload: { replacement: Record<string, unknown> } }).payload;
+            if (field === 'audioSource') {
+                (inverse.expected.audioSource as Record<string, unknown>).audioOffsetSeconds = 'invalid';
+                (redo.replacement.audioSource as Record<string, unknown>).audioOffsetSeconds = 'invalid';
+            } else {
+                (inverse.expected.takeSources as Record<string, unknown>[])[1]!.sourceOffsetSeconds = 'invalid';
+                (redo.replacement.takeSources as Record<string, unknown>[])[1]!.sourceOffsetSeconds = 'invalid';
+            }
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+            const rawBefore = structuredClone(getCrdtDoc('root'));
+            const trackBefore = structuredClone(trackStore.value);
+            const takesBefore = structuredClone(takeLaneStore.value);
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toHaveLength(0);
+            await undo();
+            expect(getCrdtDoc('root')).toEqual(rawBefore);
+            expect(trackStore.value).toEqual(trackBefore);
+            expect(takeLaneStore.value).toEqual(takesBefore);
+        }
+    );
+
+    it.each([true, false])(
+        'hydrates a fractional audio move and restores source presence with canonical=%s',
+        async (canonical) => {
+            seedAudioMoveSource(canonical ? 0 : undefined);
+            const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            const originalTakes = structuredClone(takeLaneStore.value?.lanes);
+            await executeAppAction(
+                { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 5.5 } },
+                { source: 'manual' }
+            );
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({
+                startBeat: 5.5,
+                audioOffsetSeconds: canonical ? 0 : 1,
+                audioOffsetBeats: canonical ? 0 : 1,
+            });
+            expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.sourceOffsetSeconds)).toEqual([0, 1]);
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entry = (persisted.past as Record<string, unknown>[])[0]!;
+            const inverse = (entry.inverseAction as { payload: { expected: Record<string, unknown> } }).payload;
+            expect(inverse.expected.audioSource).toEqual({
+                audioOffsetSeconds: canonical ? 0 : 1,
+                audioOffsetBeats: canonical ? 0 : 1,
+            });
+            expect(
+                (inverse.expected.takeSources as { sourceOffsetSeconds: number }[]).map(
+                    (take) => take.sourceOffsetSeconds
+                )
+            ).toEqual([0, 1]);
+            expect(isMoveClipSessionEntry(entry as HandlerSessionActionEntry)).toBe(true);
+
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toHaveLength(1);
+            await undo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+            expect(takeLaneStore.value?.lanes).toEqual(originalTakes);
+            const rawUndo = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] }; takeLanes: { lanes: unknown[] } }>(
+                'root'
+            );
+            expect(rawUndo?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')).toEqual(original);
+            expect(rawUndo?.takeLanes.lanes).toEqual(originalTakes);
+            const rawClip = rawUndo?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a');
+            if (canonical) {
+                expect(rawClip?.audioOffsetSeconds).toBe(0);
+            } else {
+                expect(Object.hasOwn(rawClip ?? {}, 'audioOffsetSeconds')).toBe(false);
+            }
+            expect(undoStore.value?.future).toHaveLength(1);
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')?.audioOffsetSeconds).toBe(canonical ? 0 : 1);
+            expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.sourceOffsetSeconds)).toEqual([0, 1]);
+            expect(undoStore.value?.past).toHaveLength(1);
+        }
+    );
+
+    it.each(['clip', 'take'] as const)(
+        'keeps a peer %s source edit and saved Redo after hydrated Undo',
+        async (field) => {
+            seedAudioMoveSource(0);
+            await executeAppAction(
+                { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 5.5 } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toHaveLength(1);
+            await undo();
+            expect(undoStore.value?.future).toHaveLength(1);
+            if (field === 'clip') {
+                const before = trackStore.value!;
+                trackStore.set({
+                    ...before,
+                    tracks: before.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === 'clip-a' ? { ...clip, audioOffsetSeconds: 7 } : clip
+                        ),
+                    })),
+                });
+            } else {
+                const before = takeLaneStore.value!;
+                takeLaneStore.set({
+                    lanes: before.lanes.map((lane) => ({
+                        ...lane,
+                        takes: lane.takes.map((take) =>
+                            take.id === 'take-1' ? { ...take, sourceOffsetSeconds: 7 } : take
+                        ),
+                    })),
+                });
+            }
+            const rawPeer = structuredClone(getCrdtDoc('root'));
+            const trackPeer = structuredClone(trackStore.value);
+            const takesPeer = structuredClone(takeLaneStore.value);
+            const historyPeer = structuredClone(undoStore.value);
+            await redo();
+            expect(getCrdtDoc('root')).toEqual(rawPeer);
+            expect(trackStore.value).toEqual(trackPeer);
+            expect(takeLaneStore.value).toEqual(takesPeer);
+            expect(undoStore.value).toEqual(historyPeer);
+        }
+    );
+
+    it('hydrates an audio split with canonical source seconds and restores both fragments', async () => {
+        seedAudioMoveSource(0);
+        takeLaneStore.set({ lanes: [] });
+        const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2.5, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        expect(clipOnTrack(TRACK_ID, 'clip-right')?.audioOffsetSeconds).toBe(1.25);
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-right')?.audioOffsetSeconds).toBe(1.25);
+        const raw = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root');
+        expect(raw?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-right')?.audioOffsetSeconds).toBe(1.25);
+    });
+
     it.each([false, true])('split restores later right-fragment take after redo with hydration=%s', async (reload) => {
         await executeAppAction(
             { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
@@ -741,6 +1001,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         startBeat: 2,
                         endBeat: 4,
                         selected: true,
+                        sourceOffsetSeconds: 0,
                     },
                 ],
                 activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'peer-take' }],
@@ -774,6 +1035,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             name: 'audio offset',
             corrupt: (clip: Record<string, unknown>) => {
                 clip.audioOffsetBeats = 'older-file-offset';
+            },
+        },
+        {
+            name: 'canonical audio seconds',
+            corrupt: (clip: Record<string, unknown>) => {
+                clip.audioOffsetSeconds = 'invalid';
             },
         },
         {

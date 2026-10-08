@@ -1,8 +1,9 @@
 import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
-import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry, type TakeSourceDepthSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
@@ -72,6 +73,7 @@ const optionalClipFields: Record<string, (value: unknown) => boolean> = {
     fileId: (value) => typeof value === 'string',
     assetHash: (value) => typeof value === 'string',
     audioOffsetBeats: isFiniteNumber,
+    audioOffsetSeconds: isFiniteNumber,
     midiOffsetBeats: isFiniteNumber,
     stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
     stretchRatio: isFiniteNumber,
@@ -224,7 +226,35 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
     );
 }
 
-function isPlacement(value: unknown): boolean {
+function isTakeSourceDepthSnapshot(value: unknown): value is TakeSourceDepthSnapshot {
+    return (
+        isRecord(value) &&
+        Object.keys(value).length === 4 &&
+        ['laneId', 'takeId', 'sourceOffsetSeconds', 'sourceOffsetBeats'].every((key) => Object.hasOwn(value, key)) &&
+        typeof value.laneId === 'string' &&
+        value.laneId.length > 0 &&
+        typeof value.takeId === 'string' &&
+        value.takeId.length > 0 &&
+        (value.sourceOffsetSeconds === null ||
+            (isFiniteNumber(value.sourceOffsetSeconds) && value.sourceOffsetSeconds >= 0)) &&
+        (value.sourceOffsetBeats === null || (isFiniteNumber(value.sourceOffsetBeats) && value.sourceOffsetBeats >= 0))
+    );
+}
+
+function isTakeSourceDepthSnapshots(value: unknown): boolean {
+    if (!Array.isArray(value) || !value.every(isTakeSourceDepthSnapshot)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+    }
+    const identities = value.map((source) => JSON.stringify([source.laneId, source.takeId]));
+    return new Set(identities).size === identities.length;
+}
+
+function isPlacement(value: unknown): value is Record<string, unknown> {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -236,17 +266,25 @@ function isPlacement(value: unknown): boolean {
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
         Array.isArray(value.automationLanes) &&
-        hasFiniteNumbers(value.automationLanes)
+        hasFiniteNumbers(value.automationLanes) &&
+        (!Object.hasOwn(value, 'audioSource') || isAudioSourceStateSnapshot(value.audioSource)) &&
+        (!Object.hasOwn(value, 'takeSources') || isTakeSourceDepthSnapshots(value.takeSources))
     );
 }
 
 export function isRestoreClipPlacementSessionPayload(value: unknown): boolean {
+    if (
+        !isRecord(value) ||
+        typeof value.clipId !== 'string' ||
+        value.clipId.length === 0 ||
+        !isPlacement(value.expected) ||
+        !isPlacement(value.replacement)
+    ) {
+        return false;
+    }
     return (
-        isRecord(value) &&
-        typeof value.clipId === 'string' &&
-        value.clipId.length > 0 &&
-        isPlacement(value.expected) &&
-        isPlacement(value.replacement)
+        Object.hasOwn(value.expected, 'audioSource') === Object.hasOwn(value.replacement, 'audioSource') &&
+        Object.hasOwn(value.expected, 'takeSources') === Object.hasOwn(value.replacement, 'takeSources')
     );
 }
 
