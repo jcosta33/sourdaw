@@ -146,7 +146,10 @@ export type DeliveryAuthorizationBinding =
           dossierDigest: string;
       };
 
-/** A plan-less bundle is legacy only when its head-bound manifest says it never generated one. */
+/**
+ * A plan-less bundle is legacy only when its head-bound manifest says it never generated one.
+ * Early manifests predate baseRefName; a present value still has to be valid.
+ */
 function assertLegacyReviewBundle(number: number, head: string, bundle: string): void {
     const manifestPath = join(bundle, 'manifest.json');
     let contents: string;
@@ -160,8 +163,8 @@ function assertLegacyReviewBundle(number: number, head: string, bundle: string):
         !isRecord(manifest) ||
         manifest.pr !== number ||
         manifest.headSha !== head ||
-        typeof manifest.baseRefName !== 'string' ||
-        manifest.baseRefName === '' ||
+        (Object.hasOwn(manifest, 'baseRefName') &&
+            (typeof manifest.baseRefName !== 'string' || manifest.baseRefName.trim() === '')) ||
         typeof manifest.baseSha !== 'string' ||
         manifest.baseSha === '' ||
         !Array.isArray(manifest.generated) ||

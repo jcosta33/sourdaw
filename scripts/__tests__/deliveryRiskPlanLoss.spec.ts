@@ -61,6 +61,55 @@ describe('delivery risk-plan provenance at the production shell port', () => {
         expect(authorizationReader(root)(PR, HEAD)).toEqual({ kind: 'legacy' });
     });
 
+    it('admits a historical pre-plan manifest written before baseRefName was recorded', () => {
+        const generated = ['diff.patch', 'manifest.json', 'pr.md'];
+        const { root, bundle } = bundleFixture(generated);
+        writeFileSync(
+            join(bundle, 'manifest.json'),
+            JSON.stringify({ pr: PR, baseSha: BASE, headSha: HEAD, generated })
+        );
+
+        expect(authorizationReader(root)(PR, HEAD)).toEqual({ kind: 'legacy' });
+    });
+
+    it('refuses a missing plan recorded by a manifest without baseRefName', () => {
+        const generated = ['manifest.json', 'risk-plan.json'];
+        const { root, bundle } = bundleFixture(generated);
+        writeFileSync(
+            join(bundle, 'manifest.json'),
+            JSON.stringify({ pr: PR, baseSha: BASE, headSha: HEAD, generated })
+        );
+
+        expect(() => authorizationReader(root)(PR, HEAD)).toThrow(/missing review risk plan/u);
+    });
+
+    it.each([
+        ['another PR', { pr: PR + 1 }],
+        ['another head', { headSha: 'other-head' }],
+        ['an empty base SHA', { baseSha: '' }],
+        ['a non-string base SHA', { baseSha: null }],
+        ['a malformed generated list', { generated: ['manifest.json', 7] }],
+    ])('refuses historical manifest provenance with %s', (_label, override) => {
+        const { root, bundle } = bundleFixture(['manifest.json']);
+        writeFileSync(
+            join(bundle, 'manifest.json'),
+            JSON.stringify({ pr: PR, baseSha: BASE, headSha: HEAD, generated: ['manifest.json'], ...override })
+        );
+
+        expect(() => authorizationReader(root)(PR, HEAD)).toThrow(/invalid provenance/u);
+    });
+
+    it.each([[''], [' '], [null], [7]])('refuses a present invalid baseRefName of %j', (baseRefName) => {
+        const generated = ['manifest.json'];
+        const { root, bundle } = bundleFixture(generated);
+        writeFileSync(
+            join(bundle, 'manifest.json'),
+            JSON.stringify({ pr: PR, baseRefName, baseSha: BASE, headSha: HEAD, generated })
+        );
+
+        expect(() => authorizationReader(root)(PR, HEAD)).toThrow(/invalid provenance/u);
+    });
+
     it.each([
         ['a malformed generated list', ['manifest.json', 7]],
         ['an absent generated list', undefined],
