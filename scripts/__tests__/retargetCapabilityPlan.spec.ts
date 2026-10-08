@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { canonicalJson } from '../canonicalRecord.ts';
+import { canonicalJson, type JsonValue } from '../canonicalRecord.ts';
 import {
     CAPABILITY_PROPOSAL,
     buildCapabilityPlan,
@@ -252,19 +252,23 @@ describe('inactive retarget capability plan', () => {
         expect(buildCapabilityPlan(valid, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
     });
 
-    it.each([
+    const malformedRequiredCheckParameters: JsonValue[] = [
         { required_status_checks: [] },
         { strict_required_status_checks_policy: 'false', required_status_checks: [] },
         { strict_required_status_checks_policy: false, required_status_checks: [{}] },
         { strict_required_status_checks_policy: false, required_status_checks: [null] },
         { strict_required_status_checks_policy: false, do_not_enforce_on_create: 'false', required_status_checks: [] },
-    ])('marks an unreadable present required-check value incomplete', (parameters) => {
-        const input = observed();
-        requiredRuleset(input).rules = [{ type: 'required_status_checks', parameters }];
-        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
-        expect(plan.completeObservedInventory).toBe(false);
-        expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
-    });
+    ];
+    it.each(malformedRequiredCheckParameters)(
+        'marks an unreadable present required-check value incomplete',
+        (parameters) => {
+            const input = observed();
+            requiredRuleset(input).rules = [{ type: 'required_status_checks', parameters }];
+            const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(false);
+            expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
+        }
+    );
 
     it('refuses any altered or enabled proposal at render time', () => {
         const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
