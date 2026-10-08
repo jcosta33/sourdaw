@@ -1,0 +1,61 @@
+src/modules/Arrangement/models/Track.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 116-117
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_f4dac868a847a4 54,63
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_1f0dcd815e8946::t_f4dac868a847a4 82,116
+  s_4c8cd08893b364::t_aee5f5ec7413c7 117-120
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_1f0dcd815e8946::t_6d0bf687ac3647 147,193-204,433-435,440,442
+  s_1f0dcd815e8946::t_2053982f1bcd11 50-52
+  s_4c8cd08893b364::t_92fc76045a9d34 53-56
+src/modules/Project/stores/arrangementStore.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 45
+src/utils/handlerContract.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 138,532
+src/modules/Project/models/ProjectData.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 241
+src/modules/Arrangement/stores/trackStore.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 272-274
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_1f0dcd815e8946::t_f4dac868a847a4 69-70
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 402
+src/modules/Arrangement/useCases/timeOperations/timeOperationStateCodec.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 75
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeArrangementTracks.spec.ts
+  s_1f0dcd815e8946::t_f4dac868a847a4 24,40-41
+src/modules/Project/useCases/projectPersistence/fileIO/serializeArrangementTracks.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 55
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 20
+src/modules/Arrangement/models/TakeLane.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 17-18
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_1f0dcd815e8946::t_b814b3d6d15cd4 28,87-88,110-111
+  s_1f0dcd815e8946::t_bcbfb6f39119d4 112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edb2fd6dbe3f29873ff57a04fd3a91a3dd11b251",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
