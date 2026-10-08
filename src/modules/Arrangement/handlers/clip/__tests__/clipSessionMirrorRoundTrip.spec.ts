@@ -955,6 +955,141 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
     );
 
+    it.each([
+        {
+            name: 'trim',
+            peerSource: 'changed',
+            action: { type: 'trimClipStart' as const, payload: { clipId: 'clip-a', newStartBeat: 2 } },
+        },
+        {
+            name: 'trim',
+            peerSource: 'absent',
+            action: { type: 'trimClipStart' as const, payload: { clipId: 'clip-a', newStartBeat: 2 } },
+        },
+        {
+            name: 'slip',
+            peerSource: 'changed',
+            action: {
+                type: 'slipClipContent' as const,
+                payload: { clipId: 'clip-a', clipType: 'audio' as const, offset: 2, offsetSeconds: 1 },
+            },
+        },
+        {
+            name: 'slip',
+            peerSource: 'absent',
+            action: {
+                type: 'slipClipContent' as const,
+                payload: { clipId: 'clip-a', clipType: 'audio' as const, offset: 2, offsetSeconds: 1 },
+            },
+        },
+    ])(
+        'keeps a peer $peerSource source edit and saved $name Redo after hydrated Undo',
+        async ({ action, peerSource }) => {
+            seedAudioMoveSource(0);
+            takeLaneStore.set({ lanes: [] });
+            await executeAppAction(action, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(
+                    (parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length
+                ).toBe(1)
+            );
+            hydrateProductionContracts();
+            expect(undoStore.value?.past).toHaveLength(1);
+            await undo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')?.audioOffsetSeconds).toBe(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+            const before = trackStore.value!;
+            trackStore.set({
+                ...before,
+                tracks: before.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) => {
+                        if (clip.id !== 'clip-a') {
+                            return clip;
+                        }
+                        const edited = { ...clip };
+                        if (peerSource === 'absent') {
+                            delete edited.audioOffsetSeconds;
+                        } else {
+                            edited.audioOffsetSeconds = 7;
+                        }
+                        return edited;
+                    }),
+                })),
+            });
+            const rawPeer = structuredClone(getCrdtDoc('root'));
+            const trackPeer = structuredClone(trackStore.value);
+            const historyPeer = structuredClone(undoStore.value);
+            await redo();
+            expect(getCrdtDoc('root')).toEqual(rawPeer);
+            expect(trackStore.value).toEqual(trackPeer);
+            expect(undoStore.value).toEqual(historyPeer);
+        }
+    );
+
+    it.each([
+        { name: 'trim canonical zero', canonical: 0, action: 'trim', nextSeconds: 3, nextBeats: 3 },
+        { name: 'trim signed preroll', canonical: -2, action: 'trim', nextSeconds: 1, nextBeats: 1 },
+        { name: 'trim legacy absence', canonical: undefined, action: 'trim', nextSeconds: 4, nextBeats: 4 },
+        { name: 'slip canonical zero', canonical: 0, action: 'slip', nextSeconds: -2, nextBeats: -4 },
+        { name: 'slip signed preroll', canonical: -2, action: 'slip', nextSeconds: -2, nextBeats: -4 },
+        { name: 'slip legacy absence', canonical: undefined, action: 'slip', nextSeconds: -2, nextBeats: -4 },
+    ] as const)('$name preserves exact source fields through saved Undo and Redo', async (scenario) => {
+        seedAudioMoveSource(scenario.canonical);
+        takeLaneStore.set({ lanes: [] });
+        const before = trackStore.value!;
+        trackStore.set({
+            ...before,
+            tracks: before.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-a' ? { ...clip, endBeat: 8 } : clip)),
+            })),
+        });
+        const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+        if (scenario.action === 'trim') {
+            await executeAppAction(
+                { type: 'trimClipStart', payload: { clipId: 'clip-a', newStartBeat: 5 } },
+                { source: 'manual' }
+            );
+        } else {
+            await executeAppAction(
+                {
+                    type: 'slipClipContent',
+                    payload: { clipId: 'clip-a', clipType: 'audio', offset: -4, offsetSeconds: -2 },
+                },
+                { source: 'manual' }
+            );
+        }
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({
+            audioOffsetSeconds: scenario.nextSeconds,
+            audioOffsetBeats: scenario.nextBeats,
+        });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        const rawUndo = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root');
+        const rawClip = rawUndo?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a');
+        expect(rawClip).toEqual(original);
+        if (scenario.canonical === undefined) {
+            expect(Object.hasOwn(rawClip ?? {}, 'audioOffsetSeconds')).toBe(false);
+        }
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({
+            audioOffsetSeconds: scenario.nextSeconds,
+            audioOffsetBeats: scenario.nextBeats,
+        });
+        const rawRedo = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root');
+        expect(rawRedo?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-a')).toEqual(
+            clipOnTrack(TRACK_ID, 'clip-a')
+        );
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
     it('hydrates an audio split with canonical source seconds and restores both fragments', async () => {
         seedAudioMoveSource(0);
         takeLaneStore.set({ lanes: [] });

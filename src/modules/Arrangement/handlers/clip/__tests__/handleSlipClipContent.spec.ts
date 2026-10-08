@@ -73,6 +73,16 @@ describe('handleSlipClipContent', () => {
                 expectedAudioSource: { audioOffsetSeconds: 0.75, audioOffsetBeats: 1.5 },
             },
         });
+        expect(desc.redoAction).toEqual({
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 1.5,
+                expectedAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: -2 },
+                restoreAudioSource: { audioOffsetSeconds: 0.75, audioOffsetBeats: 1.5 },
+            },
+        });
     });
 
     it('refuses an inverse after a peer changed canonical zero while leaving the beat alias intact', () => {

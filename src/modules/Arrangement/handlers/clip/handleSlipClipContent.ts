@@ -61,13 +61,23 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                 clipType: action.payload.clipType,
                 offset: previousOffset,
             };
+            let redoAction: SlipClipContentAction | undefined;
             if (action.payload.clipType === 'audio') {
-                inversePayload.restoreAudioSource = captureAudioSourceState(clip);
-                inversePayload.expectedAudioSource = audioSourceAfterSlip(
-                    clip,
-                    action.payload.offset,
-                    action.payload.offsetSeconds
-                );
+                const previousSource = captureAudioSourceState(clip);
+                const nextSource = audioSourceAfterSlip(clip, action.payload.offset, action.payload.offsetSeconds);
+                inversePayload.restoreAudioSource = previousSource;
+                inversePayload.expectedAudioSource = nextSource;
+                const redoPayload: SlipClipContentAction['payload'] = {
+                    clipId: clip.id,
+                    clipType: 'audio',
+                    offset: action.payload.offset,
+                    expectedAudioSource: previousSource,
+                    restoreAudioSource: nextSource,
+                };
+                if (action.payload.offsetSeconds !== undefined) {
+                    redoPayload.offsetSeconds = action.payload.offsetSeconds;
+                }
+                redoAction = { type: 'slipClipContent', payload: redoPayload };
             }
             return {
                 label,
@@ -75,6 +85,7 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                     type: 'slipClipContent',
                     payload: inversePayload,
                 },
+                redoAction,
             };
         } catch {
             return { label, inverseAction: null };

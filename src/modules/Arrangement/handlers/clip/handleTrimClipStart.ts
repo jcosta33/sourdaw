@@ -50,9 +50,21 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 clipId: clip.id,
                 newStartBeat: clip.startBeat,
             };
+            let redoAction: TrimClipStartAction | undefined;
             if (clip.type === 'audio') {
-                inversePayload.restoreAudioSource = captureAudioSourceState(clip);
-                inversePayload.expectedAudioSource = audioSourceAtBeat(clip, Math.max(0, alpha.payload.newStartBeat));
+                const previousSource = captureAudioSourceState(clip);
+                const nextSource = audioSourceAtBeat(clip, Math.max(0, alpha.payload.newStartBeat));
+                inversePayload.restoreAudioSource = previousSource;
+                inversePayload.expectedAudioSource = nextSource;
+                redoAction = {
+                    type: 'trimClipStart',
+                    payload: {
+                        clipId: clip.id,
+                        newStartBeat: alpha.payload.newStartBeat,
+                        expectedAudioSource: previousSource,
+                        restoreAudioSource: nextSource,
+                    },
+                };
             }
 
             return {
@@ -61,6 +73,7 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                     type: 'trimClipStart',
                     payload: inversePayload,
                 },
+                redoAction,
             };
         } catch {
             return { label, inverseAction: null };

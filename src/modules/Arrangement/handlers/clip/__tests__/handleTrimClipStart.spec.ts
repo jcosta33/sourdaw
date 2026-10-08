@@ -92,6 +92,15 @@ describe('handleTrimClipStart', () => {
                 expectedAudioSource: { audioOffsetSeconds: 0.5, audioOffsetBeats: 1 },
             },
         });
+        expect(desc.redoAction).toEqual({
+            type: 'trimClipStart',
+            payload: {
+                clipId: 'c1',
+                newStartBeat: 2,
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 9 },
+                restoreAudioSource: { audioOffsetSeconds: 0.5, audioOffsetBeats: 1 },
+            },
+        });
     });
 
     it('refuses an inverse after a peer changed the canonical source at the same clip placement', () => {
