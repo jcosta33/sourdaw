@@ -221,6 +221,8 @@ export async function scheduleTrackClips({
     function resolveClipTempo(beat: number): number {
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
+    // The map comp resolution writes each fragment's offset against.
+    const tempoTimeline = { secondsAtBeat: projectBeatToSeconds, tempoAtBeat: resolveClipTempo };
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = captured
         ? getCompensationDelay(track.id, undefined, undefined, captured.latency)
@@ -371,7 +373,7 @@ export async function scheduleTrackClips({
     }
 
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
-    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes)) {
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes, tempoTimeline)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
@@ -401,7 +403,12 @@ export async function scheduleTrackClips({
             if (!childTrack || (honorMuted && childTrack.muted) || childTrack.disabled) {
                 continue;
             }
-            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips, captured?.takeLanes);
+            const childClips = resolveTrackClipsWithComping(
+                childTrack.id,
+                childTrack.clips,
+                captured?.takeLanes,
+                tempoTimeline
+            );
             clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }
     }

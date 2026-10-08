@@ -273,8 +273,8 @@ type TempoChangeScenario = {
     loop: readonly [startBeat: number, endBeat: number];
     preRollBars: number;
     tempoChanges: TempoChange[];
-    /** How deep into the media the scheduler mints passes 1 and 2, in unwrapped beats from the record point. */
-    passDepths: readonly [number, number];
+    /** How deep into the media the scheduler mints each pass, in unwrapped beats from the record point. */
+    passDepths: readonly number[];
     captureSeconds: number;
 };
 
@@ -305,14 +305,11 @@ async function recordLoopAcrossTempoChange(scenario: TempoChangeScenario): Promi
     toggleRecording();
     await vi.waitFor(() => expect(mocks.startPlayback).toHaveBeenCalledOnce());
     const provisional = recordedClip();
-    for (const [name, sourceOffsetBeats] of [
-        ['Take 2', scenario.passDepths[0]],
-        ['Take 3', scenario.passDepths[1]],
-    ] as const) {
+    for (const [index, sourceOffsetBeats] of scenario.passDepths.entries()) {
         stageRecordingTake({
             trackId: TRACK_ID,
             clipId: provisional.id,
-            name,
+            name: `Take ${index + 2}`,
             startBeat: loopStartBeat,
             endBeat: loopEndBeat,
             sourceOffsetBeats,
@@ -327,14 +324,18 @@ async function recordLoopAcrossTempoChange(scenario: TempoChangeScenario): Promi
     flushAutomergeStorageWrites();
 }
 
-async function compLoop(scenario: TempoChangeScenario, takeName: string): Promise<void> {
+async function compLoop(
+    scenario: TempoChangeScenario,
+    takeName: string,
+    region: readonly [startBeat: number, endBeat: number] = scenario.loop
+): Promise<void> {
     const take = takeLaneStore.value?.lanes[0]?.takes.find((candidate) => candidate.name === takeName);
     if (!take) {
         throw new Error(`Expected the ${takeName} pass`);
     }
     await executeAppAction({
         type: 'setCompRegion',
-        payload: { trackId: TRACK_ID, takeId: take.id, startBeat: scenario.loop[0], endBeat: scenario.loop[1] },
+        payload: { trackId: TRACK_ID, takeId: take.id, startBeat: region[0], endBeat: region[1] },
     });
     flushAutomergeStorageWrites();
 }
@@ -408,10 +409,11 @@ describe('a loop recording across a tempo change', () => {
                 { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
                 { id: 'tempo-10', beat: 10, tempo: 60, curve: 'instant' },
             ],
-            // Pass 1 from the record point, pass 2 after its 4-beat lap.
-            passDepths: [0, 4],
-            // The short first lap (4 s) and two 7 s laps.
-            captureSeconds: 4 + 14 + 0.02,
+            // Pass 1 from the record point, pass 2 after its 4-beat lap, pass 3
+            // a whole loop after that.
+            passDepths: [0, 4, 12],
+            // The short first lap (4 s) and three 7 s laps.
+            captureSeconds: 4 + 21 + 0.02,
         };
         /** Beat 12 sounds 7 s into the song; 20 ms of latency precede the record point. */
         const mediaOriginSeconds = 7 - 0.02;
@@ -445,6 +447,61 @@ describe('a loop recording across a tempo change', () => {
 
             expect(fileSecondsAt(scenario, 8)).toBeCloseTo(capturedOnLap(8, 1), 9);
             expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 1), 9);
+            expect(fileSecondsAt(scenario, 15.5)).toBeCloseTo(capturedOnLap(15.5, 1), 9);
+        });
+
+        it('plays pass 3 from what was captured two laps later, the whole loop walked through the tempo change', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 4');
+
+            expect(fileSecondsAt(scenario, 8)).toBeCloseTo(capturedOnLap(8, 2), 9);
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 2), 9);
+        });
+
+        it('fills the clip after a comp ending past the tempo change from what was captured there', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 3', [8, 12]);
+
+            // The clip shows through from beat 12, entering its own media there.
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 0), 9);
+            expect(fileSecondsAt(scenario, 14)).toBeCloseTo(capturedOnLap(14, 0), 9);
+        });
+
+        it('enters a pass comped from after the tempo change at what was captured there', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 3', [12, 16]);
+
+            expect(fileSecondsAt(scenario, 12)).toBeCloseTo(capturedOnLap(12, 1), 9);
+            expect(fileSecondsAt(scenario, 15)).toBeCloseTo(capturedOnLap(15, 1), 9);
+        });
+    });
+
+    describe('begun at the start of loop [8,16), the tempo dropping to 60 BPM at beat 12, no pre-roll', () => {
+        const scenario: TempoChangeScenario = {
+            recordPointBeat: 8,
+            loop: [8, 16],
+            preRollBars: 0,
+            tempoChanges: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-12', beat: 12, tempo: 60, curve: 'instant' },
+            ],
+            // Pass 1 from the loop start, pass 2 a whole loop later.
+            passDepths: [0, 8],
+            // Two 6 s laps and part of a third.
+            captureSeconds: 12 + 2 + 0.02,
+        };
+        /** Beat 8 sounds 4 s into the song; 20 ms of latency precede the record point. */
+        const mediaOriginSeconds = 4 - 0.02;
+        /** One lap of [8,16): 2 s at 120 BPM, then 4 s at 60 BPM. */
+        const lapSeconds = 6;
+        const capturedOnLap = (beat: number, lap: number) =>
+            songSecondsAt(scenario, beat) + lap * lapSeconds - mediaOriginSeconds;
+
+        it('enters pass 2 comped from after the tempo change at what was captured there', async () => {
+            await recordLoopAcrossTempoChange(scenario);
+            await compLoop(scenario, 'Take 3', [13, 16]);
+
+            expect(fileSecondsAt(scenario, 13)).toBeCloseTo(capturedOnLap(13, 1), 9);
             expect(fileSecondsAt(scenario, 15.5)).toBeCloseTo(capturedOnLap(15.5, 1), 9);
         });
     });

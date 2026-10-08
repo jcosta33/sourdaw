@@ -91,8 +91,8 @@ export function startFirstPassAtRecordPoint(take: Take, recordPointBeat: number)
     return { ...take, startBeat: recordPointBeat };
 }
 
-/** The tempo map as a pass placement reads it. */
-export type RecordingTimeline = {
+/** The tempo map as pass placement and comp resolution read it: song seconds at a beat, and the flat tempo governing it. */
+export type TempoTimeline = {
     secondsAtBeat: (beat: number) => number;
     tempoAtBeat: (beat: number) => number;
 };
@@ -104,7 +104,7 @@ type PassPlacementInput = {
     mediaOriginSeconds: number;
     /** The committed clip's media origin: its start less its media offset. */
     clipMediaOriginBeat: number;
-    timeline: RecordingTimeline;
+    timeline: TempoTimeline;
 };
 
 /**
@@ -114,7 +114,7 @@ type PassPlacementInput = {
  * to the loop boundary, then a whole loop per later pass. The pass's take spans
  * that loop, so the same walk measures it on the tempo map.
  */
-function secondsIntoRecording(take: Take, recordPointBeat: number, timeline: RecordingTimeline): number {
+function secondsIntoRecording(take: Take, recordPointBeat: number, timeline: TempoTimeline): number {
     const seconds = (fromBeat: number, toBeat: number): number =>
         timeline.secondsAtBeat(toBeat) - timeline.secondsAtBeat(fromBeat);
     const depthBeats = take.sourceOffsetBeats ?? 0;

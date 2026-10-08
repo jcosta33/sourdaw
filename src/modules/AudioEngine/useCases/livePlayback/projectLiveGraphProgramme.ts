@@ -183,6 +183,8 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
     function resolveClipTempo(beat: number): number {
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
+    // The map comp resolution writes each fragment's offset against.
+    const tempoTimeline = { secondsAtBeat: projectBeatToSeconds, tempoAtBeat: resolveClipTempo };
 
     const regionStartSec = projectBeatToSeconds(LIVE_REGION_START_BEAT);
     const durationSeconds = programmeHorizonSeconds({ stripTracks, projectBeatToSeconds, readBuffer });
@@ -249,7 +251,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         // clip's expansion is what spends it.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
+        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, undefined, tempoTimeline)) {
             if (!isLiveClip(clip)) {
                 continue;
             }

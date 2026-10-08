@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
 type Take = TakeLaneStoreState['lanes'][number]['takes'][number];
+type TempoChange = NonNullable<typeof tempoMapStore.value>['changes'][number];
 
 function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number): Clip {
     const clip: Clip = {
@@ -112,39 +114,93 @@ describe('live and offline comp resolution', () => {
         expect(offline).toEqual(live);
         expect(live.length).toBeGreaterThan(0);
     });
+});
 
-    // Takes as the commit places them across a tempo change, every term in the
-    // clip's offset unit (seconds × the tempo at the beat it is entered on, /60).
-    // A fragment entering a pass at its start must seek to the seconds the
-    // capture had run when that lap began.
+/** 120 BPM, dropping to 60 at `beat`. */
+function dropTo60At(beat: number): TempoChange[] {
+    return [
+        { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+        { id: `tempo-${beat}`, beat, tempo: 60, curve: 'instant' },
+    ];
+}
+
+// Takes as the commit places them across a tempo change, with the project's
+// tempo map in force. Every offset is media seconds × the tempo at the
+// fragment's own first beat / 60, the unit the readers seek in: a fragment
+// must enter at the seconds the capture had run when what it plays sounded.
+describe('live and offline comp resolution across a tempo change', () => {
+    afterEach(() => {
+        takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    /** Begun at 12 inside loop [8,16), capture from 6.98 s: the clip opens at 8 entering −2.98 s at 120 BPM. */
+    const insideLoop = recording(8, 30, -5.96);
+
     it.each([
         {
-            // Tempo 120 then 60 from beat 12; recorded from 12 with one bar of
-            // pre-roll (capture from 3.98 s) into loop [16,24). The clip opens
-            // at 12, entering 2.02 s in; pass 2 began 14.02 s into the capture.
-            name: 'run up across a tempo drop',
+            // Recorded from 12 with one bar of pre-roll (capture from 3.98 s)
+            // into loop [16,24). The clip opens at 12, entering 2.02 s in;
+            // pass 2 began 14.02 s into the capture, read at 60 BPM.
+            name: 'a run-up pass across the drop',
+            tempoChanges: dropTo60At(12),
             state: lane([pass('pass-2', [16, 24], 14.02, 6.02)], 'pass-2', 16, 24),
             clip: recording(12, 32, 2.02),
             entry: { startBeat: 16, audioOffsetBeats: 14.02 },
         },
         {
-            // Tempo 120 then 60 from beat 10; begun at 12 inside loop [8,16)
-            // (capture from 6.98 s). The clip opens at 8, entering −2.98 s at
-            // 120 BPM; pass 2 began 4.02 s into the capture, read at 120 BPM.
-            name: 'begun inside the loop across a tempo drop',
+            // Pass 2 began 4.02 s into the capture, read at 120 BPM.
+            name: 'pass 2 of a recording begun inside the loop',
+            tempoChanges: dropTo60At(10),
             state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 8, 16),
-            clip: recording(8, 30, -5.96),
+            clip: insideLoop,
             entry: { startBeat: 8, audioOffsetBeats: 8.04 },
         },
         {
-            // The same recording's first pass sounds from the record point,
-            // 0.02 s into the capture at 60 BPM.
-            name: 'whose first pass starts at the record point across a tempo drop',
+            // Its first pass sounds from the record point, 0.02 s in at 60 BPM.
+            name: 'pass 1 of a recording begun inside the loop',
+            tempoChanges: dropTo60At(10),
             state: lane([pass('pass-1', [12, 16], 0.02, -1.96)], 'pass-1', 8, 16),
-            clip: recording(8, 30, -5.96),
+            clip: insideLoop,
             entry: { startBeat: 12, audioOffsetBeats: 0.02 },
         },
-    ])('enter a pass $name where the capture recorded it', ({ state, clip, entry }) => {
+        {
+            // Pass 3 began 11.02 s into the capture, read at 120 BPM.
+            name: 'pass 3 of a recording begun inside the loop',
+            tempoChanges: dropTo60At(10),
+            state: lane([pass('pass-3', [8, 16], 22.04, -5.96)], 'pass-3', 8, 16),
+            clip: insideLoop,
+            entry: { startBeat: 8, audioOffsetBeats: 22.04 },
+        },
+        {
+            // Comped over [8,12), the clip shows through from 12, where the
+            // capture had run 0.02 s, read at 60 BPM.
+            name: 'the clip filling in after a comp ending past the drop',
+            tempoChanges: dropTo60At(10),
+            state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 8, 12),
+            clip: insideLoop,
+            entry: { startBeat: 12, audioOffsetBeats: 0.02 },
+        },
+        {
+            // Comped from 12, pass 2 enters at 7.02 s, read at 60 BPM.
+            name: 'pass 2 comped from after the drop',
+            tempoChanges: dropTo60At(10),
+            state: lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 12, 16),
+            clip: insideLoop,
+            entry: { startBeat: 12, audioOffsetBeats: 7.02 },
+        },
+        {
+            // Begun at the loop start, 8, with the drop at 12 inside the loop
+            // (capture from 3.98 s, the clip on its origin at 7.96). Comped
+            // from 13, pass 2 enters at 9.02 s, read at 60 BPM.
+            name: 'pass 2 of a recording begun at the loop start, comped from after the drop',
+            tempoChanges: dropTo60At(12),
+            state: lane([pass('pass-2', [8, 16], 12.04, 0.04)], 'pass-2', 13, 16),
+            clip: recording(7.96, 24),
+            entry: { startBeat: 13, audioOffsetBeats: 9.02 },
+        },
+    ])('enter $name where the capture recorded it', ({ tempoChanges, state, clip, entry }) => {
+        tempoMapStore.set({ changes: tempoChanges });
         takeLaneStore.set(state);
 
         const live = resolveClipsWithComping('t1', [clip]);
@@ -153,5 +209,20 @@ describe('live and offline comp resolution', () => {
         expect(offline).toEqual(live);
         const entered = offline.find((fragment) => fragment.startBeat === entry.startBeat);
         expect(entered?.audioOffsetBeats).toBeCloseTo(entry.audioOffsetBeats, 9);
+    });
+
+    it('leaves a fragment on its clip’s own offset byte-identical to the clip', () => {
+        tempoMapStore.set({ changes: dropTo60At(10) });
+        const state = lane([pass('pass-2', [8, 16], 8.04, -5.96)], 'pass-2', 12, 16);
+        takeLaneStore.set(state);
+
+        const live = resolveClipsWithComping('t1', [insideLoop]);
+        const offline = resolveTrackClipsWithComping('t1', [insideLoop], state);
+
+        // The clip shows through from its own start, [8,12).
+        const { regionStartBeat, regionEndBeat, sourceStartBeat, ...gap } = live[0]!;
+        expect([regionStartBeat, regionEndBeat, sourceStartBeat]).toEqual([8, 12, 8]);
+        expect({ ...gap, endBeat: insideLoop.endBeat }).toStrictEqual(insideLoop);
+        expect(offline[0]?.audioOffsetBeats).toBe(insideLoop.audioOffsetBeats);
     });
 });

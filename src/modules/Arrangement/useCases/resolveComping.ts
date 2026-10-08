@@ -1,9 +1,18 @@
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+
+import { type TempoTimeline } from '../models/TakeLane';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
-import { clipMediaOriginBeat } from './clipMediaOriginBeat';
+import { clipMediaOffsetAt } from './clipMediaOffsetAt';
 import { resolveTakeMedia } from './resolveTakeMedia';
 import { withMediaOffsetBeats } from './withMediaOffsetBeats';
+
+/** The live tempo map, which the Web Audio scheduler converts every offset against. */
+const liveTempoTimeline: TempoTimeline = {
+    secondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+    tempoAtBeat: (beat) => readTempoAtBeat({ beat }),
+};
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;
@@ -45,7 +54,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             continue;
         }
 
-        const media = resolveTakeMedia(take, sourceClip);
+        const media = resolveTakeMedia(take, sourceClip, liveTempoTimeline);
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
         if (overlapStart >= overlapEnd) {
@@ -53,7 +62,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         }
 
         resolved.push({
-            ...withMediaOffsetBeats(sourceClip, overlapStart - media.originBeat),
+            ...withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart)),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -88,7 +97,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
 
         for (const gap of gaps) {
             resolved.push({
-                ...withMediaOffsetBeats(clip, gap.start - clipMediaOriginBeat(clip)),
+                ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, gap.start, liveTempoTimeline)),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,

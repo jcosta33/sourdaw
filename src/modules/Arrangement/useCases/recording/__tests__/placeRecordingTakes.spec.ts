@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     placeTakeOnClipMedia,
-    type RecordingTimeline,
     startFirstPassAtRecordPoint,
     type Take,
+    type TempoTimeline,
 } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { placeRecordingTakes } from '../placeRecordingTakes';
@@ -38,10 +38,10 @@ function take(id: string, clipId: string, startBeat: number, endBeat: number, so
     return result;
 }
 
-const flat120: RecordingTimeline = { secondsAtBeat: (beat) => beat / 2, tempoAtBeat: () => 120 };
+const flat120: TempoTimeline = { secondsAtBeat: (beat) => beat / 2, tempoAtBeat: () => 120 };
 
 /** 120 BPM up to beat 10, 60 BPM after it. */
-const slowingAt10: RecordingTimeline = {
+const slowingAt10: TempoTimeline = {
     secondsAtBeat: (beat) => (beat <= 10 ? beat / 2 : 5 + (beat - 10)),
     tempoAtBeat: (beat) => (beat < 10 ? 120 : 60),
 };
@@ -114,6 +114,21 @@ describe('placeTakeOnClipMedia', () => {
         expect(pass2.startBeat).toBe(8);
         expect(pass2.passStartBeats).toBeCloseTo(-5.96, 9);
         expect(pass2.sourceOffsetBeats).toBeCloseTo(4.02 * 2, 9);
+    });
+
+    it('walks whole loops through the tempo change inside the loop', () => {
+        // Pass 3 of the same recording: the 4 s first lap, then one whole lap
+        // of 1 s at 120 BPM and 6 s at 60 BPM, 11.02 s into the media, read at
+        // the loop start's 120 BPM.
+        const placed = placeTakeOnClipMedia(take('pass-3', 'rec', 8, 16, 12), {
+            recordPointBeat: 12,
+            mediaOriginSeconds: 6.98,
+            clipMediaOriginBeat: 13.96,
+            timeline: slowingAt10,
+        });
+
+        expect(placed.sourceOffsetBeats).toBeCloseTo(22.04, 9);
+        expect(placed.passStartBeats).toBeCloseTo(-5.96, 9);
     });
 
     it('measures a later pass through whole loops of the tempo map', () => {

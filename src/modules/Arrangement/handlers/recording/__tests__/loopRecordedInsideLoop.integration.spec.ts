@@ -217,6 +217,7 @@ describe('MIDI loop recordings under Delete Time', () => {
             await recordWithRunUp();
             await compPass('Take 3');
             const comped = heardPitches(LOOP_START_BEAT, LOOP_END_BEAT);
+            expect(comped).not.toContain(null);
 
             await dispatch({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 10 } });
 
