@@ -18,6 +18,7 @@ export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { stopTrackInputMonitoring } from './audioRecorder/stopTrackInputMonitoring';
 export { reconcileAutoInputMonitoring } from './audioRecorder/reconcileAutoInputMonitoring';
+export { suspendAutoInputMonitoring } from './audioRecorder/suspendAutoInputMonitoring';
 export { syncAutoInputMonitoring } from './audioRecorder/syncAutoInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 

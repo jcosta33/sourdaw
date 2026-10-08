@@ -3,6 +3,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
 import { readMonitorTeardownEpoch } from '../../repositories/audioRecorder/readMonitorTeardownEpoch';
+import { isAutoInputMonitoringHeld } from '../../services/autoInputMonitoringSuspension';
 
 import { deriveAutoMonitorEdge } from './deriveAutoInputMonitoring';
 import { startInputMonitoring } from './startInputMonitoring';
@@ -82,9 +83,13 @@ function openEdge(trackId: string, inputId: string | null): void {
  * transition that feeds the derivation — arm, mode change, record start/stop,
  * play, stop — reaches this through the track and transport stores, plus the
  * explicit calls where a rebuilt graph or a mode gesture needs the edge settled
- * in the same turn.
+ * in the same turn. While a caller holds a suspension it does nothing, so a
+ * transport state that caller publishes only in passing is never read as rest.
  */
 export function reconcileAutoInputMonitoring(): void {
+    if (isAutoInputMonitoringHeld()) {
+        return;
+    }
     const tracks = trackStore.value?.tracks ?? [];
     const transport = transportStore.value ?? defaultTransportState;
     const presentIds = new Set<string>();
