@@ -7,6 +7,13 @@ const mocks = vi.hoisted(() => ({
     addMidiNote: vi.fn(),
     getTransportState: vi.fn(),
     executeAppAction: vi.fn(),
+    clipStartTempo: null as number | null,
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    readTempoAtBeat: ({ beat }: { beat: number }) =>
+        (beat === 4 ? mocks.clipStartTempo : null) ?? mocks.getTransportState()?.tempo ?? 120,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -61,6 +68,7 @@ function makeBuffer(length: number, fill: (index: number) => number): AudioBuffe
 describe('audioToMidi track creation routes through the command boundary (Fix 1)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.clipStartTempo = null;
         mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
@@ -130,6 +138,7 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
 describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.clipStartTempo = null;
         mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
@@ -234,6 +243,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.clipStartTempo = null;
         mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: TEMPO });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
@@ -293,6 +303,26 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(written).toHaveLength(1);
         expect(written[0]).toBeLessThan(rawStartBeat);
         expect(written[0]).toBeCloseTo(rawStartBeat - offsetBeats, 1);
+    });
+
+    it('transcribes the audible source transient using clip-start tempo rather than base tempo', () => {
+        mocks.clipStartTempo = 60;
+        const onsetSample = 100 * HOP_SIZE;
+        const buffer = stepBuffer(onsetSample, 180 * HOP_SIZE + FRAME_SIZE);
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 4,
+            endBeat: 6,
+            name: 'Drum',
+            audioOffsetBeats: 1,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        expect(noteStartBeats()).toHaveLength(1);
+        expect(noteStartBeats()[0]).toBeGreaterThan(0);
+        expect(noteStartBeats()[0]).toBeLessThan(0.5);
     });
 
     it('writes no note for an onset past the clip audible end', () => {

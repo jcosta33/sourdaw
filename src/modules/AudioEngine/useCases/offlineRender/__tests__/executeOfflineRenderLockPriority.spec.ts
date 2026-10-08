@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createExportError } from '../../../errors/ExportError';
 import { type captureOfflineRenderInput } from '../captureOfflineRenderInput';
+import { checkCancel } from '../checkCancel';
 import { RENDER_RELEASE_TIMEOUT_MS } from '../constants';
 import { executeOfflineRender } from '../executeOfflineRender';
 import { cancelExport } from '../exportCancellation';
@@ -15,11 +16,14 @@ type StartedRender = {
     /** The stop the renderer would read at its checkpoints. */
     abortSignal: AbortSignal | undefined;
     finish: () => void;
+    fail: (error: Error) => void;
 };
 
 const mocks = vi.hoisted(() => ({
     events: [] as string[],
     started: [] as StartedRender[],
+    /** What each render's instrument setup stops on, in start order. */
+    cancellationSignals: [] as (AbortSignal | undefined)[],
     /** Whether a started render ends at its stop, as the segmented renderer does at its next checkpoint. */
     honoursStop: { value: true },
     scheduleOfflineMix: vi.fn(),
@@ -30,7 +34,10 @@ vi.mock('../../../repositories/offlineScheduler/makeOfflineFrameScheduler', () =
 }));
 vi.mock('../buildOfflineWebAudioGraph', () => ({ buildOfflineWebAudioGraph: vi.fn(() => Promise.resolve({})) }));
 vi.mock('../createOfflineRenderBackend', () => ({
-    createOfflineRenderBackend: vi.fn(() => ({ dispose: () => mocks.events.push('render-released-resources') })),
+    createOfflineRenderBackend: vi.fn(({ cancellationSignal }: { cancellationSignal?: AbortSignal }) => {
+        mocks.cancellationSignals.push(cancellationSignal);
+        return { dispose: () => mocks.events.push('render-released-resources') };
+    }),
 }));
 vi.mock('../cropHistoryFromRenderedBuffer', () => ({
     cropHistoryFromRenderedBuffer: ({ buffer }: { buffer: AudioBuffer }) => buffer,
@@ -88,6 +95,7 @@ function outcomeOf(render: Promise<AudioBuffer>): Promise<{ buffer: AudioBuffer 
 beforeEach(() => {
     mocks.events.length = 0;
     mocks.started.length = 0;
+    mocks.cancellationSignals.length = 0;
     mocks.honoursStop.value = true;
     exportCancellationState.cancelFlag = false;
     exportCancellationState.renderLock = null;
@@ -100,6 +108,7 @@ beforeEach(() => {
                 mocks.started.push({
                     abortSignal: callbacks.abortSignal,
                     finish: () => resolve(renderedBuffer(label)),
+                    fail: reject,
                 });
                 callbacks.abortSignal?.addEventListener('abort', () => {
                     if (mocks.honoursStop.value) {
@@ -446,5 +455,89 @@ describe('executeOfflineRender — agent renders never preempt one another', () 
 
         startedRender(0).finish();
         expect(await section).toMatchObject({ buffer: expect.objectContaining({ label: 'render-0' }) });
+    });
+});
+
+describe("executeOfflineRender — a musician's Cancel stops only the musician's own export", () => {
+    it.each(['agent-measurement', 'agent-section-render'] as const)(
+        'leaves an assistant render (%s) running to completion when no export of theirs runs or waits',
+        async (holder) => {
+            const scopeBefore = exportCancellationState.controller;
+            const assistant = outcomeOf(executeOfflineRender(capturing('assistant'), { lockHolder: holder }));
+            await renderStarted(1);
+
+            cancelExport();
+
+            expect(exportCancellationState.cancelFlag).toBe(false);
+            expect(startedRender(0).abortSignal?.aborted).toBe(false);
+            expect(mocks.cancellationSignals[0]?.aborted).toBe(false);
+            expect(() => checkCancel()).not.toThrow();
+
+            startedRender(0).finish();
+            expect(await assistant).toMatchObject({ buffer: expect.objectContaining({ label: 'render-0' }) });
+            // The assistant's render opened and closed no export cancellation scope.
+            expect(exportCancellationState.controller).toBe(scopeBefore);
+            expect(exportCancellationState.renderLock).toBeNull();
+        }
+    );
+
+    it("cancels the musician's own export, aborting the scope its instrument setup stops on", async () => {
+        const musician = outcomeOf(executeOfflineRender(capturing('export')));
+        await renderStarted(1);
+        expect(mocks.cancellationSignals[0]?.aborted).toBe(false);
+
+        cancelExport();
+
+        expect(exportCancellationState.cancelFlag).toBe(true);
+        expect(mocks.cancellationSignals[0]?.aborted).toBe(true);
+        expect(() => checkCancel()).toThrow('Export cancelled');
+
+        startedRender(0).fail(createExportError('Export cancelled'));
+        expect(await musician).toMatchObject({ error: { message: 'Export cancelled' } });
+    });
+
+    it('lowers the flag its Cancel raised once the export settles, so a later assistant render is not stopped by it', async () => {
+        const musician = outcomeOf(executeOfflineRender(capturing('export')));
+        await renderStarted(1);
+        cancelExport();
+        startedRender(0).fail(createExportError('Export cancelled'));
+        await musician;
+
+        expect(exportCancellationState.cancelFlag).toBe(false);
+        expect(exportCancellationState.controller.signal.aborted).toBe(false);
+        expect(() => checkCancel()).not.toThrow();
+
+        const assistant = outcomeOf(
+            executeOfflineRender(capturing('measurement'), { lockHolder: 'agent-measurement' })
+        );
+        await renderStarted(2);
+        startedRender(1).finish();
+        expect(await assistant).toMatchObject({ buffer: expect.objectContaining({ label: 'render-1' }) });
+    });
+
+    it('lowers the flag when a cancelled export still renders to the end', async () => {
+        const musician = outcomeOf(executeOfflineRender(capturing('export')));
+        await renderStarted(1);
+        cancelExport();
+
+        startedRender(0).finish();
+        await musician;
+
+        expect(exportCancellationState.cancelFlag).toBe(false);
+        expect(exportCancellationState.controller.signal.aborted).toBe(false);
+    });
+
+    it('pressed with no render holding the lock, raises nothing for the next assistant render to read', async () => {
+        cancelExport();
+
+        const assistant = outcomeOf(
+            executeOfflineRender(capturing('measurement'), { lockHolder: 'agent-measurement' })
+        );
+        await renderStarted(1);
+
+        expect(exportCancellationState.cancelFlag).toBe(false);
+        expect(mocks.cancellationSignals[0]?.aborted).toBe(false);
+        startedRender(0).finish();
+        expect(await assistant).toMatchObject({ buffer: expect.objectContaining({ label: 'render-0' }) });
     });
 });

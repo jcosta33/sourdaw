@@ -1,11 +1,13 @@
 import { type ReactNode } from 'react';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 
 import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
+import { renderToClip } from '../../../useCases/renderToClip';
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
@@ -414,6 +416,22 @@ function setProjectTracks(tracks: TestTrack[]): void {
     };
 }
 
+async function startRenderToClip(): Promise<number> {
+    vi.mocked(renderToClip).mockReturnValue({ trackId: 'track-1', clipId: 'clip-new', audioBufferId: 'rendered-1' });
+    fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+
+    await waitFor(() => {
+        expect(renderToClip).toHaveBeenCalledTimes(1);
+    });
+    const renderedWith: { tailSeconds?: unknown } | undefined = mocks.renderOffline.mock.calls[0]?.[0];
+    const renderedTail = renderedWith?.tailSeconds;
+    if (typeof renderedTail !== 'number') {
+        throw new TypeError('expected renderOffline to receive a numeric tailSeconds');
+    }
+    return renderedTail;
+}
+
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -441,6 +459,7 @@ describe('ExportDialog', () => {
         mocks.workspaceStore.value = { soloMode: 'sip' };
         mocks.midiStore.value = { notesByClipId: {} };
         mocks.listToasterPatternsOutsideArrangement.mockReturnValue([]);
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
         setProjectClips([
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
@@ -534,6 +553,27 @@ describe('ExportDialog', () => {
         await waitFor(() => {
             expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 60 }));
         });
+    });
+
+    it('hands Render to Clip the manual tail the render carried', async () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('checkbox', { name: /auto-detect/i }));
+        fireEvent.change(screen.getByRole('spinbutton', { name: /tail seconds/i }), { target: { value: '7.5' } });
+
+        const renderedTail = await startRenderToClip();
+
+        expect(renderedTail).toBeGreaterThan(0);
+        expect(renderToClip).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: renderedTail }));
+    });
+
+    it('hands Render to Clip the auto-detected tail the render carried', async () => {
+        mocks.getAutoDetectedTailSeconds.mockReturnValue({ seconds: 9.25, uncappedSeconds: 9.25, clamped: false });
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        const renderedTail = await startRenderToClip();
+
+        expect(renderedTail).toBeGreaterThan(0);
+        expect(renderToClip).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: renderedTail }));
     });
 
     it('should pass undefined buffer ids when no clips reference audio buffers', async () => {
@@ -790,5 +830,223 @@ describe('ExportDialog', () => {
         render(<ExportDialog open={true} onClose={vi.fn()} />);
 
         expect(screen.queryByText(/has a sequencer pattern that is not in the arrangement/i)).not.toBeInTheDocument();
+    });
+
+    it('starts fresh on reopen after a completed export so a second bake is possible', async () => {
+        // AppShell keeps the dialog mounted and toggles only `open`; the rerender
+        // pair below reproduces exactly that close-then-reopen sequence.
+        const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+        view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('does not let a completed export auto-close a dialog reopened within the timer window', async () => {
+        // The success auto-close timer is armed by the finishing export; closing
+        // and reopening inside its window starts a new session, and the stale
+        // timer must not fire onClose against that fresh session.
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open={true} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={onClose} />);
+        view.rerender(<ExportDialog open={true} onClose={onClose} />);
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 2600);
+        });
+        expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('starts fresh on reopen after a failed export so no stale error remains', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+        const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('disk full')).toBeInTheDocument();
+        });
+
+        view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+        view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByText('disk full')).not.toBeInTheDocument();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('renders the failure status beside the error when an export fails', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('The bread burned...')).toBeInTheDocument();
+        });
+        expect(screen.getByText('disk full')).toBeInTheDocument();
+    });
+
+    it('grows the oven status slot for a long failure message instead of clipping it', async () => {
+        // Native write failures carry the command plus the full output path, so
+        // the message wraps to several lines inside the slot. jsdom cannot
+        // measure wrapping, so the observable is the slot's class: min-height
+        // (free to grow) in the failure state instead of the fixed height that
+        // clipped the message's bottom.
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(
+            new Error(
+                'Bake failed: sourdaw-mixdown exited 1 while writing "/Users/musician/Bounces/My Song (final mix) 2026-10-07.wav"'
+            )
+        );
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        const errorNode = await screen.findByText(/Bake failed:/);
+        expect(errorNode).toBeInTheDocument();
+        expect(errorNode.closest('.min-h-10')).not.toBeNull();
+        expect(errorNode.closest('.h-10')).toBeNull();
+    });
+
+    it('keeps the fixed oven status slot for the ready layout', () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.getByText(/Oven Ready/).closest('.h-10')).not.toBeNull();
+    });
+
+    it('keeps the fixed oven status slot during a retry flight after a failed export', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(screen.getByText('disk full')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        const bar = await screen.findByRole('progressbar');
+        expect(bar.closest('.h-10')).not.toBeNull();
+    });
+
+    it('stops before rendering and surfaces an error when native destination selection fails', async () => {
+        mocks.selectNativeAudioExportFile.mockRejectedValue(new Error('Permission denied'));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('Permission denied')).toBeInTheDocument();
+        });
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Permission denied', 'error');
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+    });
+
+    it('falls through to the download link when the browser save picker fails', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const pickerError = new Error('Save picker failed');
+        const showSaveFilePicker = vi.fn().mockRejectedValue(pickerError);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+        const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:sourdaw-export');
+        const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        const clickDownload = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+            await waitFor(() => {
+                expect(document.querySelector('a[download$=".wav"]')).toBeInstanceOf(HTMLAnchorElement);
+            });
+
+            expect(document.querySelector('a[download$=".wav"]')).toHaveAttribute(
+                'download',
+                expect.stringMatching(/^Sourdaw_Bake_\d+\.wav$/)
+            );
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            expect(clickDownload).toHaveBeenCalledTimes(1);
+            expect(screen.queryByText('Save picker failed')).not.toBeInTheDocument();
+            expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith('Save picker failed', 'error');
+            expect(createObjectURL).toHaveBeenCalledTimes(1);
+            expect(revokeObjectURL).not.toHaveBeenCalled();
+        } finally {
+            clickDownload.mockRestore();
+            createObjectURL.mockRestore();
+            revokeObjectURL.mockRestore();
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('stops before rendering when destination selection is aborted', async () => {
+        const abortError = new Error('The user aborted a request.');
+        abortError.name = 'AbortError';
+        let rejectSelection: (error: Error) => void = () => {
+            throw new Error('Destination selection was not started');
+        };
+        const selection = new Promise<string | null>((_resolve, reject) => {
+            rejectSelection = reject;
+        });
+        mocks.selectNativeAudioExportFile.mockReturnValue(selection);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+        });
+
+        await act(async () => {
+            rejectSelection(abortError);
+        });
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByText('The user aborted a request.')).not.toBeInTheDocument();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('stops before rendering when native destination selection is cancelled', async () => {
+        let resolveSelection: (path: string | null) => void = () => {
+            throw new Error('Destination selection was not started');
+        };
+        const selection = new Promise<string | null>((resolve) => {
+            resolveSelection = resolve;
+        });
+        mocks.selectNativeAudioExportFile.mockReturnValue(selection);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
+        });
+
+        await act(async () => {
+            resolveSelection(null);
+        });
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
     });
 });

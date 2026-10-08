@@ -17,6 +17,7 @@ import { type OfflineMidiProbabilitySelector } from '../../../repositories/offli
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
+import { acquireRenderLock } from '../acquireRenderLock';
 import { cancelExport } from '../exportCancellation';
 import { exportCancellationState } from '../exportCancellationState';
 import { isCancelRequested } from '../isCancelRequested';
@@ -1963,6 +1964,7 @@ describe('scheduleTrackClips — export cancellation is caller-owned', () => {
     // here (#4782): a cancelled mixdown left it raised, and every later freeze
     // failed with "Export cancelled" although the musician cancelled nothing.
     it('schedules a freeze whose caller signal is live while a cancelled export left the flag raised', async () => {
+        const releaseExportLock = acquireRenderLock('musician-export');
         cancelExport();
         expect(isCancelRequested()).toBe(true);
 
@@ -1971,16 +1973,20 @@ describe('scheduleTrackClips — export cancellation is caller-owned', () => {
         expect(events.filter((event) => event.type === 'on')).toHaveLength(1);
         // Neither consulted nor cleared by a render that does not own the flag.
         expect(isCancelRequested()).toBe(true);
+        releaseExportLock();
     });
 
     it('completes a running schedule when an export cancel fires mid-batch', async () => {
         mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        const releaseExportLock = acquireRenderLock('musician-export');
         // The musician cancels an export while a freeze is already scheduling.
         mocks.scheduleNoteOffline.mockImplementationOnce(() => cancelExport());
 
         await runSchedule({ useLegacyScheduler: true, includeSecondNote: true });
 
+        expect(isCancelRequested()).toBe(true);
         expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(2);
+        releaseExportLock();
     });
 
     // The stop this scheduler keeps: the same mid-batch granularity the export

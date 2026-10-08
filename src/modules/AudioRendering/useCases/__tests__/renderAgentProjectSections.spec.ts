@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAppError } from '#/infra/errors/createAppError';
-import { checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
+import { cancelExport, checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
 import { type AgentRenderReceipt } from '#/utils/agentRenderReceipt';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
@@ -239,6 +239,33 @@ describe('renderAgentProjectSections', () => {
         finishActiveRender?.(createAudioBuffer());
 
         await expect(rendering).rejects.toThrow(/cancel/i);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
+    // A musician's Cancel with no export of theirs running is not a stop for the assistant's batch.
+    it("renders every section when a musician's Cancel lands during the first one, leaving the flag down", async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        mocks.renderOffline.mockImplementationOnce(() => {
+            cancelExport();
+            return Promise.resolve(createAudioBuffer());
+        });
+
+        await renderAgentProjectSections({ jobs, sourceRevision: 'revision-a' });
+
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([
+            'render-chorus-one',
+            'render-chorus-two',
+        ]);
         expect(() => checkCancel()).not.toThrow();
     });
 

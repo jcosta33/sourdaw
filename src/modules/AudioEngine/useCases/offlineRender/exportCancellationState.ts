@@ -11,7 +11,9 @@
  * scope closes when the export settles (`endExportCancellationScope`), so a
  * cancelled export's flag never outlives its render (#4782). Freeze and
  * bounce begin no scope and read none of this state: they stop only on a
- * caller's own `abortSignal`.
+ * caller's own `abortSignal`. Neither does an agent render: `cancelExport`
+ * raises the flag only while a musician's export holds the lock, so the flag
+ * is down for the whole of an agent render's hold.
  *
  * The render lock records who holds it (#4768, #5036). A musician's export
  * outranks every agent render, a measurement or a section render: it stops the

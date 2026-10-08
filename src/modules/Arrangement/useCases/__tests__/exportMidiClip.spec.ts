@@ -70,11 +70,12 @@ describe('exportMidiClip', () => {
 
         exportMidiClip('clip-a');
 
+        // The projection places both lanes on the timeline, so the file adds no clip start.
         expect(mocks.downloadMidiFile).toHaveBeenCalledWith({
             clipName: 'Fill',
-            clipStartBeat: 8,
-            notes: [note],
-            ccs: [{ id: 'cc1', controller: 1, value: 64, beat: 0, channel: 0 }],
+            clipStartBeat: 0,
+            notes: [{ ...note, startBeat: 8 }],
+            ccs: [{ id: 'cc1', controller: 1, value: 64, beat: 8, channel: 0 }],
         });
     });
 
@@ -118,10 +119,10 @@ describe('exportMidiClip', () => {
             return mocks.downloadMidiFile.mock.calls[0]?.[0];
         }
 
-        it('exports the notes the clip plays for one pass, rebased by the content offset', () => {
+        it('exports the notes the clip plays for one pass, on the timeline from the clip start', () => {
             const exported = exportSlippedClip();
 
-            expect(exported.clipStartBeat).toBe(8);
+            expect(exported.clipStartBeat).toBe(0);
             expect(
                 exported.notes.map((exportedNote: any) => [
                     exportedNote.id,
@@ -129,9 +130,9 @@ describe('exportMidiClip', () => {
                     exportedNote.duration,
                 ])
             ).toEqual([
-                ['straddles-start', 0, 0.5],
-                ['inside', 1, 1],
-                ['straddles-end', 3.5, 0.5],
+                ['straddles-start', 8, 0.5],
+                ['inside', 9, 1],
+                ['straddles-end', 11.5, 0.5],
             ]);
         });
 
@@ -139,8 +140,8 @@ describe('exportMidiClip', () => {
             const exported = exportSlippedClip();
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
-                ['hidden-down', 0, 100],
-                ['inside-up', 1, 20],
+                ['hidden-down', 8, 100],
+                ['inside-up', 9, 20],
             ]);
         });
 
@@ -148,8 +149,8 @@ describe('exportMidiClip', () => {
             const exported = exportSlippedClip([controller('down', 0, 127), controller('up', 1, 0)]);
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
-                ['up', 0, 0],
-                ['inside-up', 1, 20],
+                ['up', 8, 0],
+                ['inside-up', 9, 20],
             ]);
         });
 
@@ -157,8 +158,8 @@ describe('exportMidiClip', () => {
             const exported = exportSlippedClip([controller('up', 1, 0), controller('down', 0, 127)]);
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
-                ['up', 0, 0],
-                ['inside-up', 1, 20],
+                ['up', 8, 0],
+                ['inside-up', 9, 20],
             ]);
         });
 
@@ -166,8 +167,8 @@ describe('exportMidiClip', () => {
             const exported = exportSlippedClip([controller('hidden-down', 1, 100), controller('after-end', 7, 55)]);
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
-                ['hidden-down', 0, 100],
-                ['inside-up', 1, 20],
+                ['hidden-down', 8, 100],
+                ['inside-up', 9, 20],
             ]);
         });
 
@@ -175,8 +176,8 @@ describe('exportMidiClip', () => {
             const exported = exportSlippedClip([controller('z-release', 1, 0), controller('a-press', 1, 127)]);
 
             expect(exported.ccs.map((row: any) => [row.id, row.beat, row.value])).toEqual([
-                ['a-press', 0, 127],
-                ['inside-up', 1, 20],
+                ['a-press', 8, 127],
+                ['inside-up', 9, 20],
             ]);
         });
     });

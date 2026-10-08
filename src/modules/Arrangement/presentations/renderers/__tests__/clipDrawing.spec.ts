@@ -273,6 +273,14 @@ describe('drawClip (Coordinate Conventions)', () => {
         });
     });
 
+    it('requests the clip-start-tempo source window when the map tempo differs from base tempo', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        drawClip(mockCtx, create_audio_clip({ clipStartTempo: 90 }), create_test_model(), 0, 40);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
+            expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
+        );
+    });
+
     it('should not read waveform peaks when the cached audio buffer is missing', () => {
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 

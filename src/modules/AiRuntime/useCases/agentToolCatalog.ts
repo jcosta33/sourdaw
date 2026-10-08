@@ -324,7 +324,9 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. Call with no arguments to list every available device type as { id, name }; a later turn's context omits that list. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
+            `Read the bounded versioned factory manifest for built-in and scanned devices; read evidence, not plugin-state authority. No arguments lists the device types as { id, name }. A full receipt can exceed the per-call budget (tool-receipt-too-large); then request that type alone. page: { index: true } returns the compact parameter index ({ id, name } each) in one call; parameterIds (up to ${String(
+                DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT
+            )} ids) reads just those parameters with bounds and legal sets. Windows: page: { cursor, limit }, follow nextCursor until null.`,
             {
                 types: {
                     type: 'array',
@@ -332,11 +334,19 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     maxItems: 8,
                     items: { type: 'string', minLength: 1, maxLength: 256 },
                 },
+                parameterIds: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT,
+                    uniqueItems: true,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
                 page: {
                     type: 'object',
                     properties: {
                         limit: { type: 'integer', minimum: 1, maximum: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
                         cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
+                        index: { type: 'boolean', enum: [true] },
                     },
                     additionalProperties: false,
                 },

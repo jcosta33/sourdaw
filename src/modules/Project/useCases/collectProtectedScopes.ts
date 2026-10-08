@@ -14,7 +14,9 @@ export type ProtectedBriefScope = {
  * guard and the banner that explains a refusal must never disagree about which
  * decisions count as protecting and which do not.
  */
-export function collectProtectedScopes(brief: ProductionBrief): readonly ProtectedBriefScope[] {
+export function collectProtectedScopes(
+    brief: Pick<ProductionBrief, 'locks' | 'decisions'>
+): readonly ProtectedBriefScope[] {
     return [
         ...brief.locks.map((lock) => ({
             id: lock.id,

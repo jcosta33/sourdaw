@@ -1,6 +1,8 @@
 import { crumbsStore, type CrumbsState } from '../stores/crumbsStore';
+import { hasUnsettledCrumbsPairedReconcile } from '../stores/sampleLoadGate';
 
 import { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
+import { liveCrumbsMirrorPass } from './crumbsDeviceStateMirror';
 
 /** The two fields the chunk carries, flattened to one comparable key. */
 function playbackKey(state: CrumbsState): string {
@@ -17,9 +19,9 @@ function playbackKey(state: CrumbsState): string {
  * someone adds the next one.
  *
  * Change is detected on the **two fields the chunk carries**, not on state identity.
- * `setMetering` rewrites peak levels and voice counts on every animation frame, and
- * committing on those would open a document transaction per frame for the lifetime
- * of the session.
+ * Metering state (peak levels, voice counts) rides the same store but stays outside
+ * the key, so a per-frame metering feed could rewrite it freely — committing on
+ * those would open a document transaction per frame for the lifetime of the session.
  *
  * A device is recorded on first sight without committing. `ensureCrumbsInstanceFromProject`
  * seeds the entry from either the module default or the chunk just read back out of
@@ -29,21 +31,36 @@ function playbackKey(state: CrumbsState): string {
 export function initCrumbsDeviceStatePersistence(): () => void {
     const committed = new Map<string, string>();
 
-    return crumbsStore.subscribe((instances) => {
+    const mirrorPass = (deviceId: string, state: CrumbsState): void => {
+        const previous = committed.get(deviceId);
+        const current = playbackKey(state);
+        if (previous !== undefined && previous !== current && hasUnsettledCrumbsPairedReconcile(deviceId)) {
+            // #4764: this edit is a reconcile-initiated mode apply whose
+            // paired sample load is still unsettled, so the activeSample
+            // beside the new mode is still the stale local one. Committing
+            // it would mirror the stale sample over the peer's document
+            // reference. Leave the baseline at the last committed key: the
+            // pair's release replays this pass against the settled store
+            // and commits then.
+            return;
+        }
+        committed.set(deviceId, current);
+
+        if (previous === undefined || previous === current) {
+            return;
+        }
+        commitCrumbsDeviceState(deviceId);
+    };
+    liveCrumbsMirrorPass.current = mirrorPass;
+
+    const unsubscribe = crumbsStore.subscribe((instances) => {
         if (!instances) {
             committed.clear();
             return;
         }
 
         for (const [deviceId, state] of Object.entries(instances)) {
-            const previous = committed.get(deviceId);
-            const current = playbackKey(state);
-            committed.set(deviceId, current);
-
-            if (previous === undefined || previous === current) {
-                continue;
-            }
-            commitCrumbsDeviceState(deviceId);
+            mirrorPass(deviceId, state);
         }
 
         // Drop devices that are gone, so a device id reused by a later load is
@@ -54,4 +71,11 @@ export function initCrumbsDeviceStatePersistence(): () => void {
             }
         }
     });
+
+    return () => {
+        if (liveCrumbsMirrorPass.current === mirrorPass) {
+            liveCrumbsMirrorPass.current = null;
+        }
+        unsubscribe();
+    };
 }

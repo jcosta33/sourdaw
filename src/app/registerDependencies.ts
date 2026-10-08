@@ -6,6 +6,7 @@ import {
     type TrackSelectionChangedPayload,
 } from '#/modules/Arrangement/events';
 import { type AudioDeviceLoadedPayload, type AudioDeviceRemovedPayload } from '#/modules/AudioEngine/events';
+import { type CrumbsModeChangedPayload } from '#/modules/Crumbs/events';
 import {
     type ShowDevicePanelGenericPayload,
     type VoidPayload,
@@ -29,6 +30,7 @@ export type AppEvents = {
     'track.selectionChanged': TrackSelectionChangedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;
     'audioDevice.removed': AudioDeviceRemovedPayload;
+    'crumbs.modeChanged': CrumbsModeChangedPayload;
 
     // Panel toggles
     'panel.showDevice': ShowDevicePanelGenericPayload;

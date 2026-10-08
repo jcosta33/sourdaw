@@ -14,6 +14,8 @@ export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/i
 export { loadProject } from './projectPersistence/loadProject';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
 export { setAgentMeasurementArtifactsClearer } from './projectPersistence/setAgentMeasurementArtifactsClearer';
+export { setAgentSectionRenderArtifactsClearer } from './projectPersistence/setAgentSectionRenderArtifactsClearer';
+export { setActiveAgentRunsCanceller } from './projectPersistence/setActiveAgentRunsCanceller';
 export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
 export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
@@ -31,6 +33,8 @@ export {
     doesProductionBriefAllowActionBatch,
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
+export { collectProtectedScopes } from './collectProtectedScopes';
+export { isProjectWideScope } from './isProjectWideScope';
 export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';
 export { repairProjectData } from './repairProjectData';
 export { unlockProjectScopedBrief } from './unlockProjectScopedBrief';

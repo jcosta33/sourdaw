@@ -274,6 +274,50 @@ describe('handleSplitClip atomic integration', () => {
         }
     );
 
+    describe('an audio split', () => {
+        beforeEach(() => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                name: 'Audio Intro',
+                trackId: 'track-1',
+                type: 'audio',
+                startBeat: 0,
+                endBeat: 8,
+                audioBufferId: 'audio-buffer-1',
+            });
+            const track = TrackDummy.create({ id: 'track-1', name: 'Audio', kind: 'audio', clips: [clip] });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            const channelData = new Float32Array(700).fill(1);
+            channelData.fill(-1, 251);
+            vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+        });
+
+        // Red when an audio split accepts note ids it will never create: a committed split would then
+        // carry receipt bindings for notes that do not exist.
+        it('is refused when it carries note ids no MIDI note will take', async () => {
+            const result = await executeAppActionBatch(
+                [{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4, targetNoteIds: ['note-phantom'] } }],
+                { source: 'prompt', requireCompensation: true }
+            );
+
+            expect(result).not.toMatchObject({ status: 'committed' });
+            expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-1', startBeat: 0, endBeat: 8 }]);
+        });
+
+        it('still commits without note ids', async () => {
+            const result = await executeAppActionBatch(
+                [{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }],
+                {
+                    source: 'prompt',
+                    requireCompensation: true,
+                }
+            );
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(trackStore.value!.tracks[0]!.clips).toHaveLength(2);
+        });
+    });
+
     it('round-trips gain envelope and warp state exactly through split, undo, and redo', async () => {
         const clip = ClipDummy.create({
             id: 'clip-1',
