@@ -1,5 +1,10 @@
 import { inject } from '#/infra/di/inject';
-import { removeBusStrip, removeTrackStrip, setTrackOutput } from '#/modules/AudioEngine/useCases';
+import {
+    removeBusStrip,
+    removeTrackStrip,
+    setTrackOutput,
+    stopTrackInputMonitoring,
+} from '#/modules/AudioEngine/useCases';
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
@@ -112,6 +117,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                     return;
                 }
                 const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
+                effects.push(() => stopTrackInputMonitoring(trackId));
                 if (shouldCreateLiveTrackStrip(removedTrack)) {
                     effects.push(() => removeTrackStrip(trackId));
                 }

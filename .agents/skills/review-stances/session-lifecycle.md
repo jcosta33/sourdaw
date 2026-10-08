@@ -139,3 +139,18 @@ run is unchanged, then cancel the same confirmation again. The retry must persis
 before releasing either temporary run assets or confirmation resources, and must not report success
 while cleanup remains pending. Repeat without temporary assets: an already-terminal no-op cannot
 prove persistence. A mocked cancellation helper misses the live-store-before-storage failure seam.
+
+### 2026-10-08 — deleting a track left its input capture alive (escaped via PR #867 and #2387)
+
+PR #867 put strip teardown in `removeTrack` without releasing the track's input-monitor owner;
+PR #2387 added bulk track removal by calling that use case before command commit. Review followed
+the visible strip and undo state, missing the recorder's separate per-track edge and capture lease.
+Deleting the last monitored track could leave its MediaStream running, and bulk deletion could stop
+live resources even if the project transaction aborted.
+
+Probe: start two tracks monitoring one input through the public AudioEngine API. Delete one through
+each Arrangement removal route and check that only its source edge disconnects; delete the last and
+check that the MediaStreamTrack stops exactly once. Hold a permission grant through deletion, then
+resolve it and check that no deleted strip or edge is recreated. Abort and commit the single and
+bulk commands separately: the abort must retain every edge and stream, while the commit releases
+only owners whose IDs are absent from committed project truth.

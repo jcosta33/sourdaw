@@ -1,8 +1,12 @@
+import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
+import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
+import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 
 function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is RestoreTrackPayloadSnapshot {
@@ -12,11 +16,52 @@ function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is 
 export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
     execute: () => {
         const state = getTrackStoreState();
-        if (state) {
-            for (const time of state.tracks) {
-                removeTrack(time.id);
+        if (!state || state.tracks.length === 0) {
+            return { status: 'no-write' };
+        }
+        const removals: Array<{ trackId: string; finalizeRuntimeRemoval: () => void }> = [];
+        for (const track of state.tracks) {
+            const result = removeTrack(track.id, {
+                deferRuntimeEffects: true,
+                suppressRemovedEvent: true,
+            });
+            if (result.removed) {
+                removals.push({ trackId: track.id, finalizeRuntimeRemoval: result.finalizeRuntimeRemoval });
             }
         }
+        if (removals.length === 0) {
+            return { status: 'no-write' };
+        }
+        return {
+            status: 'written',
+            afterCommit: () =>
+                runAllAsyncEffects(
+                    removals.flatMap(({ trackId, finalizeRuntimeRemoval }) => [
+                        finalizeRuntimeRemoval,
+                        () => publishTrackRemoved({ trackId }),
+                    ])
+                ),
+            afterAmbiguousCommit: () => {
+                const committedState = getTrackStoreState();
+                if (!committedState) {
+                    throw new Error('Committed track state is unavailable; manual repair required');
+                }
+                const committedIds = new Set(committedState.tracks.map((track) => track.id));
+                const effects: Array<() => void | Promise<void>> = [];
+                for (const { trackId, finalizeRuntimeRemoval } of removals) {
+                    if (committedIds.has(trackId)) {
+                        effects.push(() => {
+                            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
+                        });
+                    } else {
+                        effects.push(finalizeRuntimeRemoval, () => publishTrackRemoved({ trackId }));
+                    }
+                }
+                effects.push(() => wireSidechainRoutes());
+                return runAllAsyncEffects(effects);
+            },
+            postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
+        };
     },
     describe: (alpha) => {
         // Capture every live track before execute deletes them, in track order, so the
@@ -33,5 +78,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
         };
     },
     isNoop: () => (getTrackStoreState()?.tracks.length ?? 0) === 0,
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
     undoable: true,
 });

@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     removeTrack: vi.fn(),
     captureTrackRemovalSnapshot: vi.fn(),
+    publishTrackRemoved: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -18,6 +21,16 @@ vi.mock('../../../useCases/removeTrack', () => ({
 
 vi.mock('../../../useCases/captureTrackRemovalSnapshot', () => ({
     captureTrackRemovalSnapshot: mocks.captureTrackRemovalSnapshot,
+}));
+vi.mock('../../../useCases/publishTrackRemoved', () => ({
+    publishTrackRemoved: mocks.publishTrackRemoved,
+}));
+vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+}));
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
 function createSnapshot(trackId: string, trackIndex: number) {
@@ -56,16 +69,73 @@ describe('handleRemoveAllTracks', () => {
             expect(mocks.removeTrack).not.toHaveBeenCalled();
         });
 
-        it('removes all tracks in the store', () => {
+        it('defers every removal and notification until the transaction commits', async () => {
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [{ id: 't1' }, { id: 't2' }],
             });
+            const finalizeFirst = vi.fn();
+            const finalizeSecond = vi.fn();
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeFirst })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeSecond });
 
-            void handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
 
             expect(mocks.removeTrack).toHaveBeenCalledTimes(2);
-            expect(mocks.removeTrack).toHaveBeenCalledWith('t1');
-            expect(mocks.removeTrack).toHaveBeenCalledWith('t2');
+            expect(mocks.removeTrack).toHaveBeenCalledWith('t1', {
+                deferRuntimeEffects: true,
+                suppressRemovedEvent: true,
+            });
+            expect(mocks.removeTrack).toHaveBeenCalledWith('t2', {
+                deferRuntimeEffects: true,
+                suppressRemovedEvent: true,
+            });
+            expect(finalizeFirst).not.toHaveBeenCalled();
+            expect(finalizeSecond).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+
+            await result?.afterCommit?.();
+
+            expect(finalizeFirst).toHaveBeenCalledOnce();
+            expect(finalizeSecond).toHaveBeenCalledOnce();
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't2' });
+        });
+
+        it('reconciles only track IDs absent from committed truth after an ambiguous commit', async () => {
+            mocks.getTrackStoreState
+                .mockReturnValueOnce({ tracks: [{ id: 't1' }, { id: 't2' }] })
+                .mockReturnValue({ tracks: [{ id: 't2' }] });
+            const finalizeFirst = vi.fn();
+            const finalizeSecond = vi.fn();
+            mocks.removeTrack
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeFirst })
+                .mockReturnValueOnce({ removed: true, finalizeRuntimeRemoval: finalizeSecond });
+
+            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            await result?.afterAmbiguousCommit?.();
+
+            expect(finalizeFirst).toHaveBeenCalledOnce();
+            expect(finalizeSecond).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalledWith({ trackId: 't2' });
+            expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+                trackId: 't2',
+                activateDormantExternalPlugins: true,
+            });
+            expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
+        });
+
+        it('keeps runtime ownership when committed track state is unavailable', () => {
+            mocks.getTrackStoreState.mockReturnValueOnce({ tracks: [{ id: 't1' }] }).mockReturnValue(null);
+            const finalize = vi.fn();
+            mocks.removeTrack.mockReturnValue({ removed: true, finalizeRuntimeRemoval: finalize });
+
+            const result = handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
+            expect(() => result?.afterAmbiguousCommit?.()).toThrow('Committed track state is unavailable');
+
+            expect(finalize).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
         });
     });
 
