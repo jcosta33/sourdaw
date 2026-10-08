@@ -1,0 +1,23 @@
+src/utils/audioSourceTime.ts
+  s_1f0dcd815e8946::t_3a0f333c23536f 1-19,21-43
+  s_1f0dcd815e8946::t_3d512c71f56357 20
+src/utils/__tests__/audioSourceTime.spec.ts
+  s_1f0dcd815e8946::t_c86f110dd2e993 32-35
+  s_1f0dcd815e8946::t_bc5f7a3e7bf373 1-31,36-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c95ab9fb60e8a5ae416c2366879a94f512b1e1b8",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
