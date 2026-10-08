@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createAppError } from '#/infra/errors/createAppError';
+import { cancelExport, checkCancel, endExportCancellationScope } from '#/modules/AudioEngine/useCases';
+import { type AgentRenderReceipt } from '#/utils/agentRenderReceipt';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSectionRenderRetentionPolicy';
@@ -9,14 +12,16 @@ import { renderAgentProjectSections } from '../renderAgentProjectSections';
 import { wouldAgentSectionRenderSetExceedRetention } from '../wouldAgentSectionRenderSetExceedRetention';
 
 const mocks = vi.hoisted(() => ({
-    cancelExport: vi.fn(),
     captureProjectRevision: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    cancelExport: mocks.cancelExport,
+// The real `cancelExport` stays wired: a section stop that raises the
+// process-wide flag must be visible to the real `checkCancel` reader below,
+// not hidden behind a double.
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     renderOffline: mocks.renderOffline,
 }));
 
@@ -71,6 +76,9 @@ describe('renderAgentProjectSections', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+        // The export cancel flag is process-wide state; no row in this file may
+        // leave it behind for the next one.
+        endExportCancellationScope();
     });
 
     it('renders exact ranges into session-owned revision-bound artifacts', async () => {
@@ -85,6 +93,7 @@ describe('renderAgentProjectSections', () => {
             sampleRate: 44_100,
             tailSeconds: 0,
             onWarning: expect.any(Function),
+            lockHolder: 'agent-section-render',
         });
         expect(getAgentSectionRenderArtifacts()).toEqual([
             expect.objectContaining({
@@ -175,7 +184,7 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
-    it('cancels the active render and prevents later jobs or artifacts after its execution signal aborts', async () => {
+    it('stops the active render through its own signal and prevents later jobs or artifacts after its execution signal aborts', async () => {
         const controller = new AbortController();
         const jobs = [
             createJob(),
@@ -198,12 +207,125 @@ describe('renderAgentProjectSections', () => {
         const rendering = renderAgentProjectSections({ jobs, sourceRevision: 'revision-a', signal: controller.signal });
         await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
         controller.abort();
-        expect(mocks.cancelExport).toHaveBeenCalledOnce();
+        // The stop must reach the render as the section's own signal (#4969),
+        // never as the process-wide export cancel.
+        expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ abortSignal: controller.signal }));
         finishActiveRender?.(createAudioBuffer());
 
         await expect(rendering).rejects.toThrow(/cancel/i);
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    // A stop that raised the process-wide flag (#4969) left every freeze or
+    // bounce started after the section render failing with "Export cancelled".
+    it('leaves the export cancel flag down once its stopped section render settles', async () => {
+        const controller = new AbortController();
+        let finishActiveRender: ((buffer: ReturnType<typeof createAudioBuffer>) => void) | undefined;
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishActiveRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({
+            jobs: [createJob()],
+            sourceRevision: 'revision-a',
+            signal: controller.signal,
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        controller.abort();
+        finishActiveRender?.(createAudioBuffer());
+
+        await expect(rendering).rejects.toThrow(/cancel/i);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
+    // A musician's Cancel with no export of theirs running is not a stop for the assistant's batch.
+    it("renders every section when a musician's Cancel lands during the first one, leaving the flag down", async () => {
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        mocks.renderOffline.mockImplementationOnce(() => {
+            cancelExport();
+            return Promise.resolve(createAudioBuffer());
+        });
+
+        await renderAgentProjectSections({ jobs, sourceRevision: 'revision-a' });
+
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([
+            'render-chorus-one',
+            'render-chorus-two',
+        ]);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
+    it.each(["The assistant's render stopped because an export started.", 'Another offline render is in progress.'])(
+        'reports a render the lock turned away as render-busy and stops the batch, retaining nothing (%s)',
+        async (message) => {
+            const secondJob = createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            });
+            mocks.renderOffline.mockRejectedValueOnce(createAppError('RenderBusy', message));
+            const receipts: AgentRenderReceipt[] = [];
+
+            await expect(
+                renderAgentProjectSections({
+                    jobs: [createJob(), secondJob],
+                    sourceRevision: 'revision-a',
+                    onReceipt: (receipt) => receipts.push(receipt),
+                })
+            ).rejects.toMatchObject({
+                failureKind: 'render-incomplete',
+                message: expect.stringContaining(`render-chorus-one: ${message}`),
+                pendingEffect: expect.objectContaining({ remediation: 'reconcile', state: 'pending' }),
+            });
+
+            expect(receipts.map((receipt) => receipt.phase)).toEqual(['started', 'failed', 'batch-settled']);
+            expect(receipts[1]).toMatchObject({
+                phase: 'failed',
+                failureKind: 'render-busy',
+                provenance: { jobId: 'render-chorus-one' },
+            });
+            expect(receipts[2]).toMatchObject({ phase: 'batch-settled', outcome: 'failed' });
+            // The second section never began: it would meet the same lock, or render after the export.
+            expect(mocks.renderOffline).toHaveBeenCalledOnce();
+            expect(getAgentSectionRenderArtifacts()).toEqual([]);
+            expect(() => checkCancel()).not.toThrow();
+        }
+    );
+
+    it('lets its own stop win over a busy render, as a cancelled batch', async () => {
+        const controller = new AbortController();
+        mocks.renderOffline.mockImplementationOnce(() => {
+            controller.abort();
+            return Promise.reject(createAppError('RenderBusy', 'stopped'));
+        });
+        const receipts: AgentRenderReceipt[] = [];
+
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob()],
+                sourceRevision: 'revision-a',
+                signal: controller.signal,
+                onReceipt: (receipt) => receipts.push(receipt),
+            })
+        ).rejects.toThrow(/cancel/i);
+
+        expect(receipts.map((receipt) => receipt.phase)).toEqual(['started', 'cancelled', 'batch-settled']);
     });
 
     it('refuses attachment when its injected authority validator changes during an awaited render', async () => {

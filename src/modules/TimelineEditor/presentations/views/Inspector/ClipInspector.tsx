@@ -9,14 +9,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import {
-    trimClipStart,
-    trimClipEnd,
-    setClipFade,
-    setClipColor,
-    renameClip,
-    setClipFollowAction,
-} from '#/modules/Arrangement/useCases';
+import { setClipFade, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -66,6 +59,29 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             renameClip(clip.id, trimmed);
         }
         setEditingName(false);
+    };
+
+    // Trim edits commit one undoable action per gesture, the same contract
+    // as the gain slider and a timeline drag: the drag only moves local
+    // thumb state — the store does not react mid-gesture — and the commit
+    // dispatches the registered trim action once with the committed value.
+    const [trimStartDrag, setTrimStartDrag] = useState<number | null>(null);
+    const [trimEndDrag, setTrimEndDrag] = useState<number | null>(null);
+
+    const commitTrimStart = (beat: number): void => {
+        setTrimStartDrag(null);
+        void executeUserAppAction({
+            type: 'trimClipStart',
+            payload: { clipId: clip.id, newStartBeat: beat },
+        });
+    };
+
+    const commitTrimEnd = (beat: number): void => {
+        setTrimEndDrag(null);
+        void executeUserAppAction({
+            type: 'trimClipEnd',
+            payload: { clipId: clip.id, newEndBeat: beat },
+        });
     };
 
     // Clip gain edits are one undoable action per gesture. The drag never
@@ -188,13 +204,22 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
                 <Stack gap={2}>
+                    {/* Trim edits dispatch the registered trim actions rather
+                        than the use cases directly, so undo history and the
+                        handlers' inverse capture see the same edit as a
+                        timeline drag. */}
                     <div>
                         <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
-                            value={[clip.startBeat]}
+                            value={[trimStartDrag ?? clip.startBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    trimClipStart(clip.id, value);
+                                    setTrimStartDrag(value);
+                                }
+                            }}
+                            onValueCommit={([value]) => {
+                                if (value !== undefined) {
+                                    commitTrimStart(value);
                                 }
                             }}
                             max={clip.endBeat - 1}
@@ -205,10 +230,15 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     <div>
                         <ControlHeader className="mb-1" label="Trim End" />
                         <Slider
-                            value={[clip.endBeat]}
+                            value={[trimEndDrag ?? clip.endBeat]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    trimClipEnd(clip.id, value);
+                                    setTrimEndDrag(value);
+                                }
+                            }}
+                            onValueCommit={([value]) => {
+                                if (value !== undefined) {
+                                    commitTrimEnd(value);
                                 }
                             }}
                             min={clip.startBeat + 1}

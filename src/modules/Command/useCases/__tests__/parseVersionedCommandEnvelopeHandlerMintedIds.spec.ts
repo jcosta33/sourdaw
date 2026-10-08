@@ -1,0 +1,266 @@
+import { describe, expect, it } from 'vitest';
+
+import { type AppAction } from '#/utils/handlerContract';
+
+import { type CommandApplicationAssignedId } from '../../models/VersionedCommandEnvelope';
+import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
+import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
+import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
+import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
+
+type GlueAction = Extract<AppAction, { type: 'glueClips' }>;
+
+function lane(id: string, parameterId: string) {
+    return {
+        id,
+        trackId: 'track-midi',
+        clipId: 'clip-glued',
+        parameterId,
+        parameterName: parameterId,
+        points: [],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+}
+
+const snapshot = {
+    trackId: 'track-midi',
+    clips: [],
+    clipOrder: [],
+    midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+    clipSatellites: [],
+    clipAutomationLanes: [],
+};
+
+const GLUE: GlueAction = {
+    type: 'glueClips',
+    payload: {
+        clipIds: ['clip-a', 'clip-b'],
+        targetClipId: 'clip-glued',
+        expected: snapshot,
+        replacement: {
+            ...snapshot,
+            clipAutomationLanes: [lane('auto-lane-one', 'gain'), lane('auto-lane-two', 'pan')],
+        },
+    },
+};
+
+const GLUE_TARGET: CommandApplicationAssignedId = { argument: 'targetClipId', value: 'clip-glued' };
+const GLUE_LANE_ONE: CommandApplicationAssignedId = {
+    argument: 'replacement.clipAutomationLanes[0].id',
+    value: 'auto-lane-one',
+};
+const GLUE_LANE_TWO: CommandApplicationAssignedId = {
+    argument: 'replacement.clipAutomationLanes[1].id',
+    value: 'auto-lane-two',
+};
+
+function parseWithAssignedIds(action: AppAction, applicationAssignedIds: readonly CommandApplicationAssignedId[]) {
+    const argumentsValue = 'payload' in action ? (action.payload as Record<string, unknown>) : {};
+    const metadata = compileCommandArgumentMetadata(argumentsValue, action.type);
+    const envelope = createVersionedCommandEnvelope({
+        action,
+        applicationAssignedIds,
+        availableDeviceVersions: {},
+        expectedEffect: action.type,
+        normalizedProjectRevision: 'revision-1',
+        objectReferences: metadata.objectReferences,
+        parameterUnits: metadata.parameterUnits,
+        reason: `Execute ${action.type}`,
+        time: metadata.time,
+    });
+    return parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope)).status;
+}
+
+function arpeggiate(addedNoteId: string): AppAction {
+    return {
+        type: 'arpeggiate',
+        payload: {
+            clipId: 'clip-m',
+            pattern: 'up',
+            rate: 8,
+            octaves: 1,
+            gate: 50,
+            expectedTrackId: 'track-m',
+            trackName: 'Keys',
+            expectedTrackFrozen: false,
+            clipName: 'Chords',
+            expectedClipLocked: false,
+            expectedNotes: [{ id: 'note-root', pitch: 60, startBeat: 0, duration: 4, velocity: 100 }],
+            addedNotes: [{ id: addedNoteId, pitch: 64, startBeat: 1, duration: 1, velocity: 90 }],
+        },
+    };
+}
+
+function duplicateClipAt(targetClipId: string): AppAction {
+    return {
+        type: 'duplicateClipAt',
+        payload: { clipId: 'clip-src', destinationTrackId: 'track-destination', startBeat: 8, targetClipId },
+    };
+}
+
+function splitClip(payload: { rightClipId: string; targetNoteIds?: string[] }): AppAction {
+    return { type: 'splitClip', payload: { clipId: 'clip-m', beat: 3, ...payload } };
+}
+
+describe('parseVersionedCommandEnvelope over ids a handler drew while compiling', () => {
+    // Red when the parser requires the handler-minted ids: every envelope persisted before they
+    // were recorded would stop parsing after the upgrade.
+    it('parses a glueClips envelope recorded before its lane ids were named', () => {
+        expect(parseWithAssignedIds(GLUE, [])).toBe('valid');
+        expect(parseWithAssignedIds(GLUE, [GLUE_TARGET])).toBe('invalid');
+    });
+
+    it('parses a glueClips envelope that records every id its handler drew', () => {
+        expect(parseWithAssignedIds(GLUE, [GLUE_TARGET, GLUE_LANE_ONE, GLUE_LANE_TWO])).toBe('valid');
+    });
+
+    // Red when any subset is accepted: a record naming one lane but not the other was not written
+    // by either writer.
+    it('refuses a glueClips envelope recording only some of its handler-minted ids', () => {
+        expect(parseWithAssignedIds(GLUE, [GLUE_TARGET, GLUE_LANE_ONE])).toBe('invalid');
+        expect(parseWithAssignedIds(GLUE, [GLUE_LANE_TWO])).toBe('invalid');
+    });
+
+    it('refuses a glueClips envelope whose recorded id differs from its argument or names an unknown argument', () => {
+        expect(
+            parseWithAssignedIds(GLUE, [GLUE_TARGET, { ...GLUE_LANE_ONE, value: 'auto-other' }, GLUE_LANE_TWO])
+        ).toBe('invalid');
+        expect(
+            parseWithAssignedIds(GLUE, [
+                GLUE_TARGET,
+                GLUE_LANE_ONE,
+                GLUE_LANE_TWO,
+                { argument: 'replacement.clipAutomationLanes[2].id', value: 'auto-lane-three' },
+            ])
+        ).toBe('invalid');
+    });
+
+    // The rule-based ids keep their exact-once requirement: only handler-minted ids are optional.
+    it('still requires the rule id of a command whose id is named by a rule', () => {
+        const createGroup: AppAction = {
+            type: 'createVcaGroup',
+            payload: { name: 'Vocals', trackIds: ['track-1'], vcaGroupId: 'vca-command-1' },
+        };
+
+        expect(parseWithAssignedIds(createGroup, [{ argument: 'vcaGroupId', value: 'vca-command-1' }])).toBe('valid');
+        expect(parseWithAssignedIds(createGroup, [])).toBe('invalid');
+    });
+
+    // Every duplicateClipAt envelope written before the copy id was recorded carries it in its
+    // arguments with an empty record. Red when the record is required again.
+    it('parses a duplicateClipAt envelope recorded before its copy id was named, and refuses a wrong record', () => {
+        const duplicate: AppAction = {
+            type: 'duplicateClipAt',
+            payload: {
+                clipId: 'clip-source',
+                destinationTrackId: 'track-destination',
+                startBeat: 8,
+                targetClipId: 'clip-copy',
+            },
+        };
+
+        expect(parseWithAssignedIds(duplicate, [])).toBe('valid');
+        expect(parseWithAssignedIds(duplicate, [{ argument: 'targetClipId', value: 'clip-copy' }])).toBe('valid');
+        expect(parseWithAssignedIds(duplicate, [{ argument: 'targetClipId', value: 'clip-other' }])).toBe('invalid');
+    });
+
+    it('parses a splitClip envelope recorded before its cut note ids were named, and refuses a partial record', () => {
+        const split: AppAction = {
+            type: 'splitClip',
+            payload: {
+                clipId: 'clip-m',
+                beat: 3,
+                rightClipId: 'clip-right',
+                targetNoteIds: ['note-one', 'note-two'],
+            },
+        };
+        const rightClip = { argument: 'rightClipId', value: 'clip-right' };
+        const noteOne = { argument: 'targetNoteIds[0]', value: 'note-one' };
+        const noteTwo = { argument: 'targetNoteIds[1]', value: 'note-two' };
+
+        expect(parseWithAssignedIds(split, [rightClip])).toBe('valid');
+        expect(parseWithAssignedIds(split, [rightClip, noteOne, noteTwo])).toBe('valid');
+        expect(parseWithAssignedIds(split, [rightClip, noteOne])).toBe('invalid');
+    });
+
+    // The scope check sets aside every id a command records as its own, so a record that names an
+    // object the command also points at would hide that object from the protected-target check.
+    describe('an assigned id that names an object the command points at', () => {
+        const cases: Array<{
+            name: string;
+            honest: AppAction;
+            honestAssigned: CommandApplicationAssignedId[];
+            forged: AppAction;
+            assigned: CommandApplicationAssignedId[];
+        }> = [
+            {
+                name: 'glueClips lane id',
+                honest: GLUE,
+                honestAssigned: [GLUE_TARGET, GLUE_LANE_ONE, GLUE_LANE_TWO],
+                forged: {
+                    ...GLUE,
+                    payload: {
+                        ...GLUE.payload,
+                        replacement: {
+                            ...snapshot,
+                            clipAutomationLanes: [lane('clip-a', 'gain'), lane('auto-lane-two', 'pan')],
+                        },
+                    },
+                },
+                assigned: [
+                    GLUE_TARGET,
+                    { argument: 'replacement.clipAutomationLanes[0].id', value: 'clip-a' },
+                    GLUE_LANE_TWO,
+                ],
+            },
+            {
+                name: 'arpeggiate added note id',
+                honest: arpeggiate('note-added'),
+                honestAssigned: [{ argument: 'addedNotes[0].id', value: 'note-added' }],
+                forged: arpeggiate('clip-m'),
+                assigned: [{ argument: 'addedNotes[0].id', value: 'clip-m' }],
+            },
+            {
+                name: 'duplicateClipAt copy id',
+                honest: duplicateClipAt('clip-copy'),
+                honestAssigned: [{ argument: 'targetClipId', value: 'clip-copy' }],
+                forged: duplicateClipAt('clip-src'),
+                assigned: [{ argument: 'targetClipId', value: 'clip-src' }],
+            },
+            {
+                name: 'splitClip cut note id',
+                honest: splitClip({ rightClipId: 'clip-right', targetNoteIds: ['note-cut'] }),
+                honestAssigned: [
+                    { argument: 'rightClipId', value: 'clip-right' },
+                    { argument: 'targetNoteIds[0]', value: 'note-cut' },
+                ],
+                forged: splitClip({ rightClipId: 'clip-right', targetNoteIds: ['clip-m'] }),
+                assigned: [
+                    { argument: 'rightClipId', value: 'clip-right' },
+                    { argument: 'targetNoteIds[0]', value: 'clip-m' },
+                ],
+            },
+            {
+                name: 'splitClip right clip id (a rule id)',
+                honest: splitClip({ rightClipId: 'clip-right' }),
+                honestAssigned: [{ argument: 'rightClipId', value: 'clip-right' }],
+                forged: splitClip({ rightClipId: 'clip-m' }),
+                assigned: [{ argument: 'rightClipId', value: 'clip-m' }],
+            },
+        ];
+
+        it.each(cases)(
+            'refuses a $name that equals a referenced target',
+            ({ honest, honestAssigned, forged, assigned }) => {
+                expect(honestAssigned.length).toBeGreaterThan(0);
+                expect(parseWithAssignedIds(honest, honestAssigned)).toBe('valid');
+                expect(parseWithAssignedIds(forged, assigned)).toBe('invalid');
+            }
+        );
+    });
+});

@@ -34,6 +34,7 @@ import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAut
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
+import { discardStaleStoredMoves } from '../scheduling/discardStaleStoredMoves';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
@@ -256,6 +257,7 @@ export function startPlayheadScheduler(): void {
     // full teardown (stop/dispose already cleared these) this is a no-op.
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();
+    schedulerSession.lastLoopSeamAudioTime = null;
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
 
     schedulerSession.lastTickTime = ctx.currentTime;
@@ -358,10 +360,27 @@ export function startPlayheadScheduler(): void {
         // and the wrap replaced the scanned position before the punch checks
         // below.
         let lateWrap = false;
+        // Set when an edit's teardown cuts the look-ahead: the window that
+        // re-emits it opens where playback stands (or at the loop start), and
+        // like a jump's it must restore the stored controllers in force there.
+        let reemitAfterEdit = false;
         if (tempoMapChanged || loopChanged) {
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
+            // A wrap tail the fence was sparing is gone with the teardown, and
+            // the region the seam pivoted on may be the one this edit replaced:
+            // the device read must not map back across it (#4784).
+            schedulerSession.lastLoopSeamAudioTime = null;
             stopAllScheduled();
+            // The teardown stops notes, not pedals or controllers (a controller
+            // is state), so the stored moves still queued for the cut look-ahead
+            // would apply at their old frames after the re-emitted window: drop
+            // them on every device stored playback posted to. The re-emitted
+            // window restores the values in force where it opens and lifts a
+            // pedal only where nothing is in force, so a pedal the lane holds
+            // down is never lifted and pressed again.
+            discardStaleStoredMoves();
+            reemitAfterEdit = true;
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -507,6 +526,10 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             const seamAudioTime = now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            // #4784 — the wrap the device read maps back across for one
+            // compensation window: for that long the audio a compensated track
+            // is fed is still this dying pass's tail.
+            schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
             const wrappedPastSeam = beatAtSecondsFromAnchor(
                 changes,
                 current.loopStart,
@@ -523,7 +546,15 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
-            stopActiveSources(schedulerSession.activeAudioSources, ctx);
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the loop start restores what is in force there.
+            discardStaleStoredMoves();
+            // Fenced at the seam, each source by its own compensation: the
+            // loop-end tail a compensated source is still due outlives the seam
+            // instant (#4784). An uncompensated source is cut at the seam
+            // unchanged.
+            stopActiveSources(schedulerSession.activeAudioSources, ctx, seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             schedulerSession.pendingSeam = null;
@@ -577,6 +608,11 @@ export function startPlayheadScheduler(): void {
                 anchorAudioTime: now,
                 anchorPosition: newPosition,
             };
+            // #4784 — recorded at detection, not when the instant arrives, so
+            // the device read maps back across the region for exactly the
+            // compensation window (the reader ignores it while the seam is
+            // still ahead). A jump that supersedes this seam clears it below.
+            schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
             seam = {
                 seamAudioTime,
                 passPosition: newPosition,
@@ -608,6 +644,10 @@ export function startPlayheadScheduler(): void {
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
             schedulerSession.pendingSeam = null;
+            // And the wrap it was to pivot on never happened — the fence below
+            // is the teardown semantic, so the device read must not map back
+            // across a region on the strength of this record (#4784).
+            schedulerSession.lastLoopSeamAudioTime = null;
             newPosition = jumpToPosition;
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
@@ -615,6 +655,10 @@ export function startPlayheadScheduler(): void {
             tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
+            // Stops notes, not pedals or controllers: drop the stored moves still
+            // queued for the old position, as the edit teardown above does; the
+            // window opening at the destination restores what is in force there.
+            discardStaleStoredMoves();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -897,7 +941,10 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                // Only an edit's re-emit makes this window a relocation (it opens
+                // where the cut look-ahead began); an ordinary seam tick continues.
+                reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -932,7 +979,10 @@ export function startPlayheadScheduler(): void {
             // immediate mid-buffer duplicate layered over its own fenced
             // source, whose key then blocks the incoming pass from ever
             // re-anchoring them. Sources sounding across the seam are cut at
-            // the seam instant itself, not one grain late.
+            // the seam instant itself, not one grain late — each by its own
+            // compensation (#4784): a compensated source's loop-end tail is
+            // still due for that long past the seam, and the incoming pass's
+            // window holds until it is done.
             stopActiveSources(schedulerSession.activeAudioSources, ctx, seam.seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
@@ -947,6 +997,10 @@ export function startPlayheadScheduler(): void {
             // physical instant.
             resetMetronomeBeat(current.loopStart);
             scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current);
+            // The incoming pass opens at the loop start: a relocation, so the
+            // stored controllers are restored to what is in force there. The
+            // dying window above already posted everything up to the seam, which
+            // is why this path lifts nothing frameless.
             await scheduleMidiNotes(
                 current.loopStart,
                 seam.wrappedUpTo,
@@ -955,7 +1009,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                true
             );
             if (!cancellation.isCurrent()) {
                 return;
@@ -989,6 +1044,9 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.accumulatedPosition,
                 current
             );
+            // A late wrap, a follow-action jump and an edit's re-emit open this
+            // window at their destination, so it restores the stored controllers
+            // there too.
             await scheduleMidiNotes(
                 schedulerSession.lastScheduledBeat,
                 scheduleUpTo,
@@ -997,7 +1055,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.activeAudioSources,
                 current,
                 currentTempo,
-                cancellation
+                cancellation,
+                lateWrap || jumpToPosition !== null || reemitAfterEdit
             );
             if (!cancellation.isCurrent()) {
                 return;

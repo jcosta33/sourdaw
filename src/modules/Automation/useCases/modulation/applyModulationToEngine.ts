@@ -30,7 +30,8 @@ type AppliedAutomationBases = ReadonlyMap<string, ReadonlyMap<string, number>>;
  * track this tick, indexed `trackId → beat` — the transport-owned
  * `deviceReadBeatByTrack` map, handed in read-only. Without it (existing
  * callers, or a track with no device-family lane) `indexAutomatedBases` falls
- * back to the raw playhead beat.
+ * back to the raw playhead beat, and so does the modulator phase for that
+ * track's targets.
  */
 type DeviceReadBeatByTrack = ReadonlyMap<string, number>;
 
@@ -134,7 +135,18 @@ function rebuildLaneMetadata(lanes: readonly AutomationLane[], tracks: readonly 
     for (let index = 0; index < lanes.length; index++) {
         const lane = lanes[index]!;
         const track = trackById.get(lane.trackId);
-        if (!track || track.automationMode === 'off' || lane.parameterId === 'gain' || lane.parameterId === 'pan') {
+        // Same lane gates as the Transport apply path, `enabled` included
+        // (#4786): a disabled lane writes nothing live, so its curve must not
+        // become the base a modulator combines onto either. `enabled` is
+        // compared against `false` rather than falsy so a lane persisted
+        // before the flag existed still plays.
+        if (
+            !track ||
+            track.automationMode === 'off' ||
+            lane.enabled === false ||
+            lane.parameterId === 'gain' ||
+            lane.parameterId === 'pan'
+        ) {
             continue;
         }
         const deviceIndex = resolveDeviceAutomationTargetIndex(
@@ -210,8 +222,10 @@ function indexAutomatedBases(currentBeat: number, deviceReadBeats?: DeviceReadBe
  * `deviceReadBeats` is the per-track compensated read beat `applyAutomation`
  * resolved for its own device-family lanes this tick (#4684); passing it
  * keeps `indexAutomatedBases`'s clip gate and curve read on the same clock
- * `applyAutomation` used, instead of the raw playhead beat every other caller
- * still gets by omitting it.
+ * `applyAutomation` used, and evaluates each mapping's modulator phase on the
+ * read beat of its target track (#4790) — the same beat the base it combines
+ * onto used — instead of the raw playhead beat every other caller still gets
+ * by omitting it.
  */
 export function applyModulationToEngine(
     currentBeat: number,
@@ -251,7 +265,6 @@ export function applyModulationToEngine(
         if (!modulator.enabled || modulator.mappings.length === 0) {
             continue;
         }
-        const modValue = computeModulatorValue(modulator, currentBeat);
 
         for (const mapping of modulator.mappings) {
             const binding = resolveModulationBinding(mapping);
@@ -262,6 +275,15 @@ export function applyModulationToEngine(
             if (targetOwner.status !== 'eligible' || targetOwner.trackId !== mapping.targetTrackId) {
                 continue;
             }
+
+            // #4790: the modulator phase rides the same compensated device
+            // read beat the automated base for this target track read (#4684's
+            // map), so a tempo-synced LFO stays locked to the automation curve
+            // and the audio beneath it instead of running D beats early. A
+            // track with no entry — no compensation, or a caller that omitted
+            // the map — keeps the playhead beat, unchanged.
+            const modulatorBeat = deviceReadBeats?.get(targetOwner.trackId) ?? currentBeat;
+            const modValue = computeModulatorValue(modulator, modulatorBeat);
 
             const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
             const automatedBase = automatedBaseByDevice.get(mapping.targetDeviceId)?.get(mapping.targetParamId);

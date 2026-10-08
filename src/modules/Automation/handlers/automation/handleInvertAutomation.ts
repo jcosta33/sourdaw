@@ -4,10 +4,16 @@ import { invertAutomation } from '../../useCases/automation/invertAutomation';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
+import { findFollowerLaneRefusal } from './followerLaneRefusal';
 
 export const handleInvertAutomation = createHandler<'invertAutomation'>({
     execute: (alpha) => {
+        const followerRefusal = findFollowerLaneRefusal(alpha.payload.laneId);
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
+        }
         invertAutomation(alpha.payload.laneId);
+        return undefined;
     },
     isNoop: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);

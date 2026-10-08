@@ -49,6 +49,11 @@ export function prepareMidiClipSplit({
     const previousSource = snapshotClipData(sourceClipId, state);
     const previousRight = snapshotClipData(rightClipId, state);
     if (!state || !splitNotes) {
+        // Supplied note ids name notes this split would create; with no notes to split there are none,
+        // and a plan that carried them would give the receipt notes that do not exist.
+        if (targetNoteIds !== undefined && targetNoteIds.length > 0) {
+            return null;
+        }
         return {
             targetNoteIds: [] as readonly string[],
             previousSource,

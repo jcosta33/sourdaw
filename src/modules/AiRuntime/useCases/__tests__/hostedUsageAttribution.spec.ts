@@ -192,6 +192,45 @@ describe('hosted usage attribution', () => {
         ).toEqual({ status: 'reserved' });
     });
 
+    it('releases a hosted reservation when the provider reports no billed counters', () => {
+        createRun({ limits: { remoteTokens: 100 }, consumed: {} });
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+        });
+        const usageless = providerResult({ inputTokens: null, outputTokens: null });
+
+        recordAgentProviderUsage(
+            RUN_ID,
+            { ...usageless, usage: { ...usageless.usage, provenance: 'unavailable' } },
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toEqual({
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            reserved: 100,
+            actual: 0,
+            provenance: 'unavailable',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            final: true,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.remoteTokens).toBe(0);
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: RUN_ID,
+                attemptId: 'next-hosted-turn',
+                category: 'remoteTokens',
+                estimate: 100,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'reserved' });
+    });
+
     it('keeps the estimate when output usage is unknown', () => {
         createRun();
         agentRunLifecycle.reserveBudget({

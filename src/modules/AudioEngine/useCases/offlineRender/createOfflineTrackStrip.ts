@@ -1,4 +1,4 @@
-import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
+import { clampFaderGain, configureDualMonoPannerInput, toStereoPan } from '#/utils/audioLevelLaw';
 
 import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain, type BuildDeviceChainContext } from '../buildDeviceChain';
@@ -89,6 +89,7 @@ export async function createOfflineTrackStrip(
     // Mixdown bakes mute into the strip; stem exports opt out so muted
     // tracks still export their content (M-037).
     postFaderGain.gain.value = honorMuted && track.muted ? 0 : 1;
+    configureDualMonoPannerInput(postFaderGain);
 
     const panNode = offlineCtx.createStereoPanner();
     panNode.pan.value = toStereoPan(track.pan);

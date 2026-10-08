@@ -7,6 +7,7 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { checkCancel } from '../offlineRender/checkCancel';
 import { cancelExport } from '../offlineRender/exportCancellation';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
+import { isCancelRequested } from '../offlineRender/isCancelRequested';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
 import { renderOffline } from '../renderOffline';
@@ -183,7 +184,7 @@ describe('renderOffline — cancelling an in-flight render', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         exportCancellationState.cancelFlag = false;
-        exportCancellationState.isRenderingActive = false;
+        exportCancellationState.renderLock = null;
         SuspendableOfflineContext.latest = null;
         vi.stubGlobal('OfflineAudioContext', SuspendableOfflineContext);
         mocks.sidechainStore.value.routes = [];
@@ -236,6 +237,21 @@ describe('renderOffline — cancelling an in-flight render', () => {
         expect(() => checkCancel()).not.toThrow();
     });
 
+    // The flag a cancelled export raised used to outlive its render (#4782),
+    // sitting raised until some later export happened to run.
+    it('lowers the export cancel flag once a cancelled render settles', async () => {
+        const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE });
+        const rejection = expect(rendering).rejects.toThrow('Export cancelled');
+
+        await reachCheckpoint(1);
+        exportCancellationState.cancelFlag = true;
+        await reachCheckpoint(2);
+
+        await rejection;
+        expect(isCancelRequested()).toBe(false);
+        expect(() => checkCancel()).not.toThrow();
+    });
+
     // Red when a render that owns an abort signal stops honouring the user's export Stop.
     it('still stops at the next segment boundary on a user export cancel while its own signal is live', async () => {
         const controller = new AbortController();
@@ -252,6 +268,25 @@ describe('renderOffline — cancelling an in-flight render', () => {
         expect(context.resumeCount).toBe(1);
         expect(context.renderCompleted).toBe(false);
     });
+
+    // Red when a musician's Cancel raises the export flag while an assistant render holds the lock.
+    it.each(['agent-measurement', 'agent-section-render'] as const)(
+        "runs an assistant render (%s) through the segment boundaries after a musician's Cancel",
+        async (lockHolder) => {
+            const rendering = renderOffline({ durationBeats: 8, sampleRate: SAMPLE_RATE, lockHolder });
+
+            await reachCheckpoint(1);
+            const context = SuspendableOfflineContext.latest!;
+            cancelExport();
+            await reachCheckpoint(2);
+            await reachCheckpoint(3);
+            context.finishRendering();
+
+            await expect(rendering).resolves.toBe(renderedBuffer);
+            expect(context.resumeCount).toBeGreaterThan(1);
+            expect(exportCancellationState.cancelFlag).toBe(false);
+        }
+    );
 
     // Red when the track loops stop reading the render's own abort signal.
     it('fails before scheduling on an abort signal already raised, leaving the export flag down', async () => {

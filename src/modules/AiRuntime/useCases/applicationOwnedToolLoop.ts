@@ -547,7 +547,7 @@ function buildDeviceManifestEntries(types: readonly string[]) {
     return [...builtins, ...external.devices];
 }
 
-type DeviceManifestPageArguments = { cursor?: string; limit?: number };
+type DeviceManifestPageArguments = { cursor?: string; index?: true; limit?: number };
 
 /** The strict `page` argument contract for one `device.factory-manifest.read` call. */
 function parseDeviceManifestPageArgument(
@@ -558,7 +558,7 @@ function parseDeviceManifestPageArgument(
     }
     if (
         !isRecord(pageValue) ||
-        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'index' && key !== 'limit') ||
         (pageValue.cursor !== undefined &&
             (typeof pageValue.cursor !== 'string' ||
                 pageValue.cursor.length === 0 ||
@@ -568,14 +568,20 @@ function parseDeviceManifestPageArgument(
             (typeof pageValue.limit !== 'number' ||
                 !Number.isInteger(pageValue.limit) ||
                 pageValue.limit < 1 ||
-                pageValue.limit > DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT))
+                pageValue.limit > DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)) ||
+        (pageValue.index !== undefined && pageValue.index !== true)
     ) {
+        return { status: 'invalid' };
+    }
+    // The compact index is its own mode: it never combines with a cursor window.
+    if (pageValue.index === true && (pageValue.cursor !== undefined || pageValue.limit !== undefined)) {
         return { status: 'invalid' };
     }
     return {
         status: 'valid',
         page: {
             ...(typeof pageValue.cursor === 'string' ? { cursor: pageValue.cursor } : {}),
+            ...(pageValue.index === true ? { index: true as const } : {}),
             ...(typeof pageValue.limit === 'number' ? { limit: pageValue.limit } : {}),
         },
     };
@@ -658,6 +664,102 @@ function deviceManifestSuccess(input: {
 }
 
 /**
+ * Reads one type's compact parameter index: `{ id, name }` for every parameter
+ * of the descriptor, in one receipt for every released builtin type. This is
+ * how a planner discovers which parameters a large descriptor offers without
+ * paging its full entries (#4797).
+ */
+function executeDeviceManifestParameterIndex(input: {
+    type: string;
+    callId: string;
+    turn: number;
+}): ApplicationToolReceipt {
+    const entry = buildDeviceManifestEntries([input.type])[0];
+    if (entry === undefined) {
+        return deviceManifestSuccess({
+            callId: input.callId,
+            turn: input.turn,
+            data: {
+                schema: 'sourdaw.agent-device-factory-manifest',
+                schemaVersion: 1,
+                devices: [],
+            },
+            summary: `Index of 0 parameter(s) for ${input.type}`,
+            warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+        });
+    }
+    const parameterIndex = entry.parameters.map((parameter) => ({ id: parameter.id, name: parameter.name }));
+    return deviceManifestSuccess({
+        callId: input.callId,
+        turn: input.turn,
+        data: {
+            schema: 'sourdaw.agent-device-factory-manifest',
+            schemaVersion: 1,
+            devices: [
+                {
+                    type: entry.type,
+                    name: entry.name,
+                    version: entry.version,
+                    parameterCount: parameterIndex.length,
+                    parameterIndex,
+                },
+            ],
+        },
+        summary: `Index of ${String(parameterIndex.length)} parameter(s) for ${input.type}`,
+        warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
+}
+
+/**
+ * Reads exactly the named parameters of one type, in descriptor order, with
+ * their full bounds, legal sets and guidance. The compact index names the ids;
+ * this call fetches only the parameters the planner needs in one run (#4797).
+ */
+function executeDeviceManifestParameterSelection(input: {
+    type: string;
+    parameterIds: readonly string[];
+    callId: string;
+    turn: number;
+}): ApplicationToolReceipt {
+    const entry = buildDeviceManifestEntries([input.type])[0];
+    if (entry === undefined) {
+        return deviceManifestSuccess({
+            callId: input.callId,
+            turn: input.turn,
+            data: {
+                schema: 'sourdaw.agent-device-factory-manifest',
+                schemaVersion: 1,
+                devices: [],
+            },
+            summary: `0 of 0 parameter(s) for ${input.type}`,
+            warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+        });
+    }
+    const requestedIds = new Set(input.parameterIds);
+    const selected = entry.parameters.filter((parameter) => requestedIds.has(parameter.id));
+    // The ids arrive pre-deduplicated, so any shortfall names an id the
+    // descriptor does not declare.
+    if (selected.length !== input.parameterIds.length) {
+        return deviceManifestFailure({
+            callId: input.callId,
+            turn: input.turn,
+            safeMessage: 'device.factory-manifest.read parameterIds do not all name parameters of the requested type',
+        });
+    }
+    return deviceManifestSuccess({
+        callId: input.callId,
+        turn: input.turn,
+        data: {
+            schema: 'sourdaw.agent-device-factory-manifest',
+            schemaVersion: 1,
+            devices: [{ ...entry, parameters: selected }],
+        },
+        summary: `${String(selected.length)} of ${String(entry.parameters.length)} parameter(s) for ${input.type}`,
+        warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
+}
+
+/**
  * Reads one type's `parameters` window. Only reachable once the caller has already resolved a
  * single requested type and a valid `page` argument, so the cursor's identity check has exactly
  * one live entry to bind against.
@@ -669,6 +771,9 @@ function executeDeviceManifestPage(input: {
     turn: number;
 }): ApplicationToolReceipt {
     const { type, page, callId, turn } = input;
+    if (page.index === true) {
+        return executeDeviceManifestParameterIndex({ type, callId, turn });
+    }
     const entry = buildDeviceManifestEntries([type])[0];
     const limit = page.limit ?? DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT;
     if (entry === undefined) {
@@ -762,7 +867,7 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     }
     const typeValues = call.arguments.types;
     if (
-        Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page') ||
+        Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page' && key !== 'parameterIds') ||
         !Array.isArray(typeValues) ||
         typeValues.length === 0 ||
         typeValues.length > 8
@@ -790,6 +895,56 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
             callId,
             turn,
             safeMessage: 'device.factory-manifest.read page requires exactly one type',
+        });
+    }
+    const parameterIdsValue = call.arguments.parameterIds;
+    if (parameterIdsValue !== undefined && types.length !== 1) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read parameterIds require exactly one type',
+        });
+    }
+    if (parameterIdsValue !== undefined && pageValue !== undefined) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read parameterIds cannot be combined with a page',
+        });
+    }
+    if (parameterIdsValue !== undefined) {
+        if (
+            !Array.isArray(parameterIdsValue) ||
+            parameterIdsValue.length === 0 ||
+            parameterIdsValue.length > DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT
+        ) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read parameterIds do not match the strict selection contract',
+            });
+        }
+        const parameterIds: string[] = [];
+        for (const parameterId of parameterIdsValue) {
+            if (
+                typeof parameterId !== 'string' ||
+                parameterId.length === 0 ||
+                parameterId.length > 256 ||
+                parameterIds.includes(parameterId)
+            ) {
+                return deviceManifestFailure({
+                    callId,
+                    turn,
+                    safeMessage: 'device.factory-manifest.read parameterIds do not match the strict selection contract',
+                });
+            }
+            parameterIds.push(parameterId);
+        }
+        return executeDeviceManifestParameterSelection({
+            type: types[0]!,
+            parameterIds,
+            callId,
+            turn,
         });
     }
     const pageArgument = parseDeviceManifestPageArgument(pageValue);
@@ -1578,10 +1733,15 @@ function buildFinalReceiptList(
 }
 
 /**
- * Turns a `turn`-classified refusal into the non-retryable `run` form wherever its lone retry —
- * issued a turn later — could not fit either the turn cap or what the run leaves once this turn's
- * final list is charged. An instructed retry that the run cannot honour is worse than no retry at
- * all, so this closes that gap after the walk below has picked each refusal's starting cap.
+ * Turns a `turn`-classified refusal into the non-retryable `run` form wherever its retry — issued
+ * a turn later — could not fit either the turn cap or what the run leaves once this turn's final
+ * list is charged. Kept retries are charged jointly: a planner that follows every receipt retries
+ * all of them in one later turn, so each kept retry must fit the remainder alongside the retries
+ * kept before it, not alone. The charges accumulate in the map's insertion order — the walk's call
+ * order — so the kept set is deterministic: earlier calls hold their retry, later ones that would
+ * overflow the shared remainder are demoted. An instructed retry that the run cannot honour is
+ * worse than no retry at all, so this closes that gap after the walk below has picked each
+ * refusal's starting cap.
  *
  * Reclassification only ever moves `turn` to `run`, never back, and each pass recomputes the
  * remainder from the current final list before testing every still-`turn` refusal against it, so
@@ -1609,12 +1769,14 @@ function reclassifyUnfittingRetries(input: {
         changed = false;
         const remainder =
             maxTotalReceiptBytes - totalReceiptBytesSoFar - byteLength(serializeReceiptContext(finalList, turn));
+        let keptRetryBytes = 0;
         for (const [index, classification] of classifications.entries()) {
             if (classification !== 'turn') {
                 continue;
             }
             const retryBytes = byteLength(serializeReceiptContext([realReceipts[index]!], turn + 1));
-            if (retryBytes <= remainder && retryBytes <= maxReceiptBytesPerTurn) {
+            if (keptRetryBytes + retryBytes <= remainder && retryBytes <= maxReceiptBytesPerTurn) {
+                keptRetryBytes += retryBytes;
                 continue;
             }
             classifications.set(index, 'run');
@@ -1645,9 +1807,9 @@ function reclassifyUnfittingRetries(input: {
  * grows, so a candidate that overflowed it starts (and stays) the non-retryable
  * `run-receipt-budget-spent` failure, while a candidate that overflowed only the turn's own budget
  * starts the retryable `turn-receipt-budget-spent` failure. `reclassifyUnfittingRetries` then
- * demotes a `turn` refusal to `run` wherever its own lone retry could not fit what the run leaves
- * after this turn, so a refusal is never left retryable when the retry it instructs cannot be
- * honoured.
+ * demotes a `turn` refusal to `run` wherever the retries it and the refusals kept before it
+ * instruct would not together fit what the run leaves after this turn, so a refusal is never left
+ * retryable when the retry it instructs cannot be honoured.
  */
 function admitTurnReadReceipts(input: {
     realReceipts: readonly ApplicationToolReceipt[];

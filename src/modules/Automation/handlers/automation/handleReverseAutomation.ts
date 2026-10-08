@@ -4,10 +4,16 @@ import { reverseAutomation } from '../../useCases/automation/reverseAutomation';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { describeLaneTransformUndo } from './automationTransformUndo';
+import { findFollowerLaneRefusal } from './followerLaneRefusal';
 
 export const handleReverseAutomation = createHandler<'reverseAutomation'>({
     execute: (alpha) => {
+        const followerRefusal = findFollowerLaneRefusal(alpha.payload.laneId);
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
+        }
         reverseAutomation(alpha.payload.laneId);
+        return undefined;
     },
     isNoop: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);

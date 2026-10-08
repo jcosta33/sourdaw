@@ -170,6 +170,13 @@ const {
     collectDurableOwnedAudioBufferIdsMock,
     clearAgentMeasurementArtifactsMock,
     setAgentMeasurementArtifactsClearerMock,
+    clearAgentSectionRenderArtifactsMock,
+    setAgentSectionRenderArtifactsClearerMock,
+    cancelActiveAgentRunsMock,
+    setActiveAgentRunsCancellerMock,
+    setCrumbsEventBusMock,
+    initCrumbsModePushMock,
+    initDeviceStateReconciliationMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -247,6 +254,17 @@ const {
         // exact reference, so rewiring or dropping the registration fails here.
         clearAgentMeasurementArtifactsMock: vi.fn(),
         setAgentMeasurementArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
+        clearAgentSectionRenderArtifactsMock: vi.fn(),
+        setAgentSectionRenderArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
+        cancelActiveAgentRunsMock: vi.fn(),
+        setActiveAgentRunsCancellerMock: vi.fn<(canceller: () => void) => void>(),
+        // Distinguishable from the shared noop like the other seam pins: the
+        // Crumbs wiring assertions pin these by reference, so deleting the
+        // composition-root registration or handing the seam another function
+        // fails here.
+        setCrumbsEventBusMock: vi.fn(),
+        initCrumbsModePushMock: vi.fn(),
+        initDeviceStateReconciliationMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -305,6 +323,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     failMixAnalysis: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffects: recoverRetainedSectionRenderEffectsMock,
+    cancelActiveAgentRuns: cancelActiveAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     initializeVoiceInputAvailability: noop,
@@ -360,6 +379,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
     getToasterDeviceControls: noop,
+    ensureTrackStrip: noop,
+    getTrackStrip: noop,
+    writeNativeBuiltinParameters: noop,
     updateDevicePatch: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
@@ -387,6 +409,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
     clearAgentMeasurementArtifacts: clearAgentMeasurementArtifactsMock,
+    clearAgentSectionRenderArtifacts: clearAgentSectionRenderArtifactsMock,
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -483,6 +506,16 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
+    // The Crumbs device-state reconciliation is pinned by reference in its own
+    // mock below, so this stands in for the document-change listeners the
+    // collaboration bridge registers at session start. A noop unsubscribe is
+    // all any of them need here: no document change fires under this fixture.
+    subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Crumbs/stores')>()),
+    setCrumbsEventBus: setCrumbsEventBusMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -522,6 +555,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     initLevainDeviceStatePersistence: () => noop,
+    reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
@@ -544,6 +578,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
+    projectClipControllerEvents: noop,
     resolveMidiNoteArticulationId: () => null,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
@@ -569,6 +604,8 @@ vi.mock('#/modules/Project/useCases', () => ({
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
     setAgentMeasurementArtifactsClearer: setAgentMeasurementArtifactsClearerMock,
+    setAgentSectionRenderArtifactsClearer: setAgentSectionRenderArtifactsClearerMock,
+    setActiveAgentRunsCanceller: setActiveAgentRunsCancellerMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
@@ -619,6 +656,7 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     return {
         initToasterSubscribers: noop,
         initToasterKitPersistence: noop,
+        reconcileToasterKitsFromProject: noop,
         setToasterEventBus: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
         prepareOfflineToaster: noop,
@@ -695,6 +733,14 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
+}));
+
+vi.mock('../initCrumbsModePush', () => ({
+    initCrumbsModePush: initCrumbsModePushMock,
+}));
+
+vi.mock('../initDeviceStateReconciliation', () => ({
+    initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
 
 // Side-effect import: this is what runs the composition root under test.
@@ -1017,6 +1063,30 @@ describe('bootstrap', () => {
     });
 
     /**
+     * Same seam, same pinning: `resetModuleStoresToDefault` calls Project's
+     * stored section-render clearer at every project boundary, and the
+     * composition root is the only place that binds it to AudioRendering's use
+     * case. Dropping the registration leaves a closed project's section renders
+     * (and their expiry timer) retained with nothing reporting it.
+     */
+    it('wires the agent section render artifact clearer to the AudioRendering use case', () => {
+        expect(setAgentSectionRenderArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
+            clearAgentSectionRenderArtifactsMock
+        );
+    });
+
+    /**
+     * The canceller seam binds AiRuntime's run cancellation to the same
+     * boundary: without the registration an agent run in flight survives a
+     * project switch and its render holds the process-wide render lock, keeping
+     * Export disabled in the incoming project. Pinned by reference like the
+     * clearer registrations above.
+     */
+    it('wires the active agent run canceller to the AiRuntime use case', () => {
+        expect(setActiveAgentRunsCancellerMock).toHaveBeenCalledExactlyOnceWith(cancelActiveAgentRunsMock);
+    });
+
+    /**
      * The `handleMidiMessage` suite proves injected setters reach the store and
      * the engine, but it injects its own stand-ins, so nothing there can tell
      * which functions production hands in. This is the only seam that observes
@@ -1273,6 +1343,33 @@ describe('bootstrap', () => {
         // document without re-running any app action; without this registration
         // the per-device store sits in the stale-mirror window #4894 describes.
         expect(initGrandBouleDocumentReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers Crumbs device-state reconciliation as an explicit boot step', () => {
+        // The same document-origin trigger, one module over: a peer's Crumbs
+        // sample/mode commit, an undo, or a bulk load rewrites the document
+        // without re-running any app action. Without this registration a loaded
+        // Crumbs keeps its stale deviceState until reload, and its next local
+        // edit commits that stale store over the peer's change (#4764). Pinned
+        // by reference like the Grand Boule registration above.
+        expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('wires the Crumbs mode push to the shared event bus', () => {
+        // The strip half of every Crumbs mode change rides the
+        // `crumbs.modeChanged` signal (#4764): without this registration a
+        // mid-session mode change moves the panel and the persisted document
+        // and leaves the audio alone. Pinned by reference so dropping the
+        // registration fails here instead of at the first silent mode change.
+        expect(initCrumbsModePushMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+    });
+
+    it('wires the Crumbs module event bus in the composition root', () => {
+        // The mode signal's emitter is injected, not imported: the Crumbs
+        // module cannot reach the app's event bus itself. Dropping the
+        // registration leaves every `crumbs.modeChanged` emit silent — the
+        // mode push above included. Pinned by reference.
+        expect(setCrumbsEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 
     it('recovers interrupted AI runs as an explicit boot step', () => {

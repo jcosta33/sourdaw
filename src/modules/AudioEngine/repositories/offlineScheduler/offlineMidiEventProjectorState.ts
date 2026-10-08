@@ -58,16 +58,45 @@ export type OfflineMidiArticulationResolver = (input: {
     articulation: string | undefined;
 }) => number | null;
 
+/** One stored controller move, `value` on the 7-bit wire scale and `beat` in the space its projector is told. */
+type OfflineControllerRow = {
+    id: string;
+    controller: number;
+    value: number;
+    beat: number;
+    channel: number;
+};
+
+/**
+ * The stored controller moves a clip plays inside `[fromBeat, toBeat)`, at absolute
+ * beats in beat order. The one projection live scheduling uses, handed to the
+ * offline render so both place a controller identically.
+ */
+export type OfflineClipControllerProjector = (input: {
+    controlChanges: readonly OfflineControllerRow[];
+    clip: {
+        startBeat: number;
+        endBeat: number;
+        midiOffsetBeats?: number;
+        loopEnabled?: boolean;
+        loopLength?: number;
+    };
+    fromBeat: number;
+    toBeat: number;
+}) => readonly OfflineControllerRow[];
+
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;
     selectProbability: OfflineMidiProbabilitySelector | null;
     createChordPitchProjector: OfflineChordPitchProjectorFactory | null;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId: OfflineMidiArticulationResolver | null;
+    projectClipControllers: OfflineClipControllerProjector | null;
 } = {
     createProjector: null,
     selectProbability: null,
     createChordPitchProjector: null,
     evaluateAutomationValue: null,
     resolveArticulationId: null,
+    projectClipControllers: null,
 };

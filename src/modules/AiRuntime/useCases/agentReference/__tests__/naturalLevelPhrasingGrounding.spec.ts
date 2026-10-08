@@ -369,6 +369,22 @@ describe('natural level phrasing grounds the call its words ask for', () => {
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-kick', deltaDb: -3 } }]);
     });
 
+    it('grounds the track change that continues a level list opened by a master clause', () => {
+        const result = bridge(
+            [
+                { name: 'setMasterGain', arguments: { deltaDb: -2 } },
+                { name: 'setTrackGain', arguments: { trackId: 'track-guitar', deltaDb: 3 } },
+            ],
+            'Turn the master down 2 dB and the Guitar up 3 dB.'
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'setMasterGain', payload: { deltaDb: -2 } },
+            { type: 'setTrackGain', payload: { trackId: 'track-guitar', deltaDb: 3 } },
+        ]);
+    });
+
     it('grounds a bus whose proposed name sits between the article and the noun', () => {
         const result = bridge(
             [

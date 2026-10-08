@@ -78,6 +78,18 @@ describe('TrackNode', () => {
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.preFaderSendGate);
     });
 
+    it('up-mixes to dual-mono at the node that feeds the panner, so a mono source takes the stereo pan law like native', () => {
+        const track = new TrackNode('track-1', deps);
+
+        // `postFaderGain` is the panner's direct input (asserted above); a
+        // one-channel signal reaching a bare StereoPannerNode takes the mono
+        // law and renders 3.01 dB under the native engine at centre.
+        expect(track.strip.postFaderGain.connect).toHaveBeenCalledWith(track.strip.panNode);
+        expect(track.strip.postFaderGain.channelCount).toBe(2);
+        expect(track.strip.postFaderGain.channelCountMode).toBe('explicit');
+        expect(track.strip.postFaderGain.channelInterpretation).toBe('speakers');
+    });
+
     describe('native-carrier gates', () => {
         it('closes both exits when the native engine takes the track and reopens them when it gives it back', () => {
             const track = new TrackNode('track-1', deps);
@@ -789,22 +801,25 @@ describe('TrackNode', () => {
             expect(() => track.removeDevice('absent')).not.toThrow();
         });
 
-        it('getPeakLevel uses the analyser fallback when SAB is unavailable', () => {
+        it('getPeakLevel reads per-channel analyser peaks when SAB is unavailable', () => {
             // Construct without SAB: temporarily remove SharedArrayBuffer.
             const savedSAB = (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
             delete (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
             try {
                 const noSabTrack = new TrackNode('t-nosab', deps);
                 expect(noSabTrack.strip.meterNode).toBeNull();
-                // Feed deterministic time-domain data into the analyser fallback.
-                vi.mocked(noSabTrack.strip.analyserNode.getFloatTimeDomainData).mockImplementation(
-                    (arr: Float32Array) => {
-                        arr[0] = 0.25;
-                        arr[1] = -0.8;
-                        arr[2] = 0.4;
-                        return arr;
-                    }
-                );
+                // Creation order: the strip analyser, then the two fallback
+                // channel analysers.
+                const [, leftAnalyser, rightAnalyser] = ctx.createAnalyser.mock.results.map((result) => result.value);
+                // Feed deterministic per-channel time-domain data.
+                leftAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                    arr[0] = 0.25;
+                    arr[1] = -0.8;
+                });
+                rightAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                    arr[0] = 0.4;
+                });
+                // The louder channel's peak, not the average of the two.
                 expect(noSabTrack.getPeakLevel()).toBeCloseTo(0.8, 6);
             } finally {
                 (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = savedSAB;
@@ -987,6 +1002,76 @@ describe('TrackNode', () => {
 
             // Dispose must not touch a meter (it is null) and must not throw.
             expect(() => track.dispose()).not.toThrow();
+        });
+
+        // ── #5035: a single AnalyserNode down-mixes a stereo input to mono, so
+        // the fallback peak was peak((L+R)/2) — any panned signal read low
+        // against the meter worklet and the native engine's `pair_peak`, both
+        // of which report max(|L|, |R|). The fallback therefore splits the pan
+        // bus into one analyser per channel and meters the louder one. ──
+        it('meters max(|L|, |R|) through a stereo splitter, not the analyser mono down-mix', () => {
+            const track = new TrackNode('t-nosab', deps);
+            expect(track.strip.meterNode).toBeNull();
+
+            // Creation order: the strip analyser first, then the two fallback
+            // channel analysers, split one channel each off the pan bus — the
+            // same signal the meter worklet would scan.
+            const [stripAnalyser, leftAnalyser, rightAnalyser] = ctx.createAnalyser.mock.results.map(
+                (result) => result.value
+            );
+            expect(track.strip.analyserNode).toBe(stripAnalyser);
+            expect(ctx.createAnalyser).toHaveBeenCalledTimes(3);
+            expect(ctx.createChannelSplitter).toHaveBeenCalledWith(2);
+            const splitter = ctx.createChannelSplitter.mock.results[0]!.value;
+            expect(track.strip.panNode.connect).toHaveBeenCalledWith(splitter);
+            expect(splitter.connect).toHaveBeenCalledWith(leftAnalyser, 0, 0);
+            expect(splitter.connect).toHaveBeenCalledWith(rightAnalyser, 1, 0);
+
+            // L=1.0/R=0 reads 1.0 — the louder channel — not the (L+R)/2 = 0.5
+            // down-mix a single stereo analyser would report.
+            leftAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                arr.fill(1);
+            });
+            rightAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                arr.fill(0);
+            });
+            expect(track.getPeakLevel()).toBeCloseTo(1, 6);
+
+            // And the same when the louder channel is the right one.
+            leftAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                arr.fill(0);
+            });
+            rightAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+                arr.fill(1);
+            });
+            expect(track.getPeakLevel()).toBeCloseTo(1, 6);
+        });
+
+        it('re-lays the fallback meter tap across a chain rebuild', () => {
+            const track = new TrackNode('t-nosab', deps);
+            const splitter = ctx.createChannelSplitter.mock.results[0]!.value;
+
+            vi.mocked(track.strip.panNode.connect).mockClear();
+            track.rebuildChain();
+
+            // A rebuild sweeps every panNode edge, so the per-channel tap comes
+            // back alongside the analyser edge.
+            expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
+            expect(track.strip.panNode.connect).toHaveBeenCalledWith(splitter);
+        });
+
+        it('disconnects the fallback splitter and its per-channel analysers on dispose', () => {
+            const track = new TrackNode('t-nosab', deps);
+            const splitter = ctx.createChannelSplitter.mock.results[0]!.value;
+            const [, leftAnalyser, rightAnalyser] = ctx.createAnalyser.mock.results.map((result) => result.value);
+
+            track.dispose();
+
+            // No splitter→analyser edge survives, so none of the three nodes
+            // stays live after teardown.
+            expect(splitter.disconnect).toHaveBeenCalled();
+            expect(leftAnalyser.disconnect).toHaveBeenCalled();
+            expect(rightAnalyser.disconnect).toHaveBeenCalled();
         });
     });
 });

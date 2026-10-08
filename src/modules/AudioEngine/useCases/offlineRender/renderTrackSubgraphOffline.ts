@@ -392,6 +392,7 @@ export async function renderTrackSubgraphOffline({
                     projectChordPitch,
                     evaluateAutomationValue: projections.evaluateAutomationValue,
                     resolveArticulationId: projections.resolveArticulationId,
+                    projectClipControllers: projections.projectClipControllers,
                 },
                 onWarning,
                 pendingWorkletEvents,

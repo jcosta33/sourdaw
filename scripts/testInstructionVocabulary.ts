@@ -474,9 +474,13 @@ export const GATE_CHECK_STATUSES = ['green'];
 
 /**
  * The nouns that make `Gate` the repository's check rather than the DAW device wherever they sit
- * behind it: `the Gate check`, `the Gate jobs`. Only words that cannot be a verb qualify: `the Gate
- * checks the sidechain`, `the Gate runs before the compressor`, and `let the Gate run for a bar`
- * describe the device, so `checks`, `run`, and `runs` stay out. Exported so the specs can pin the
+ * behind it: `the Gate check`, `the Gate jobs`, `the Gate workflow`. `check` anchors the compound
+ * noun phrase in every sentence shape — state predicates, imperatives, adverbials, any letter case —
+ * so the anchor never depends on the sentence's verb; the step's own uses of the compound (the
+ * `check box` control, the device checking a signal) are carved out by the match shape in
+ * `testInstructions.ts`, not here. The other verb-form nouns stay out: `the Gate checks the
+ * sidechain`, `the Gate runs before the compressor`, and `let the Gate run for a bar` describe the
+ * device, and `checks`, `run`, and `runs` are verb forms. Exported so the specs can pin the
  * inventory: changing any member reddens the equality pin and that member's case.
  */
 export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'workflow', 'workflows'];
@@ -490,25 +494,25 @@ export const SUITE_OR_PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passe
 
 /**
  * The prepositions that may tie a verdict to its check context: `green on this head`, `passed for
- * this pull request`. Exported so the specs can pin the inventory: changing any member reddens the
- * equality pin and that member's case.
+ * this pull request`, `passed after the last push`. Exported so the specs can pin the inventory:
+ * changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_PREPOSITIONS = ['on', 'for'];
+export const CHECK_CONTEXT_PREPOSITIONS = ['on', 'for', 'after'];
 
 /**
- * The determiners that point a verdict at one revision: `this head`, `the latest push`, `the
- * current commit`. Exported so the specs can pin the inventory: changing any member reddens the
- * equality pin and that member's case.
+ * The determiners that point a verdict at one revision, each the full phrase a verdict is followed
+ * by: `this head`, `the latest push`, `the last push`, `the current commit`, `the new commit`. Exported so the specs
+ * can pin the inventory: changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_DETERMINERS = ['this', 'the latest', 'the current'];
+export const CHECK_CONTEXT_DETERMINERS = ['this', 'the latest', 'the last', 'the current', 'the new'];
 
 /**
- * The revisions only a check passes on: a DAW step has no head, push, commit, pull request, or
- * change to be green on. `change` keeps `The pipeline validated this change` a report. Exported so
- * the specs can pin the inventory: changing any member reddens the equality pin and that member's
- * case.
+ * The revisions only a check passes on: a DAW step has no head, push, commit, pull request, PR, or
+ * change to be green on. `change` keeps `The pipeline validated this change` a report and `PR`
+ * keeps `Confirm Gate is green for this PR` one. Exported so the specs can pin the inventory:
+ * changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 'change'];
+export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 'change', 'PR'];
 
 /**
  * The clauses that tie a verdict to delivery without naming a revision: `the suite passed before
@@ -518,9 +522,80 @@ export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 
 export const CHECK_CONTEXT_CLAUSES = ['before merging'];
 
 /**
- * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
- * in the same segment: `the existing test track still passes`, `the existing test project covers
- * this`. Exported so the specs can pin the inventory: changing any member reddens the equality pin
- * and that member's case.
+ * The determiners an English noun phrase opens with: the articles, the demonstratives, and the
+ * possessive determiners. One list feeds two object readers so they cannot disagree — the verb
+ * sense of `Gate check` (`let the Gate check the sidechain`) and the merge object of a `before
+ * merging` clause (`before merging the stems`) — both read the object behind a verb as this
+ * determiner followed by the noun phrase. Exported so the specs can pin the inventory: changing
+ * any member reddens the equality pin and that member's case.
  */
-export const COVERAGE_VERDICT_VERBS = ['passes', 'passed', 'fails', 'failed', 'covers', 'covered'];
+export const NOUN_PHRASE_DETERMINERS = [
+    'the',
+    'a',
+    'an',
+    'this',
+    'that',
+    'these',
+    'those',
+    'its',
+    'his',
+    'her',
+    'their',
+    'your',
+];
+
+/**
+ * The prepositions that end a merge object inside a `before merging` tail: everything up to the
+ * first of them is the noun phrase being merged (`the branch into the release track` merges the
+ * branch), and whatever follows rides along without rescuing it. Closed on purpose: an open
+ * preposition list would let delivery words launder past the object. Exported so the specs can pin
+ * the inventory: changing any member reddens the equality pin and that member's case.
+ */
+export const MERGE_TAIL_PREPOSITIONS = [
+    'after',
+    'at',
+    'before',
+    'by',
+    'for',
+    'from',
+    'in',
+    'into',
+    'on',
+    'onto',
+    'through',
+    'to',
+    'with',
+];
+
+/**
+ * The DAW material a step can merge: stems, buses, tracks, clips, and takes, in both numbers. A
+ * `before merging` clause counts as delivery only when the merge object — the noun phrase directly
+ * behind `merging`, before the first tail preposition — names none of these (`before merging the
+ * stems` merges audio and stays the step's own operation, while `before merging the branch` or
+ * `before merging this to the master track` is delivery). Closed on purpose, kept in step with the
+ * `TEST_MODIFIED_NOUNS` DAW nouns by hand: a derived plural would need irregular `buses`/`mixes`
+ * rules, and the merge reading takes only material a step can merge, not every noun a test can
+ * modify. Exported so the specs can pin the inventory: changing any member reddens the equality
+ * pin and that member's case.
+ */
+export const MERGE_DAW_NOUNS = ['bus', 'buses', 'clip', 'clips', 'stem', 'stems', 'take', 'takes', 'track', 'tracks'];
+
+/**
+ * The verdict verbs that turn an exempted `test` phrase's DAW noun back into coverage when they
+ * follow it in the same segment: `the existing test track still passes`, `the existing test project
+ * covers this`, `the test fixture project covers this`, `the existing test clip is still passing`.
+ * The progressive `passing` and `failing` read as coverage only behind the literal `existing test`
+ * or a `test fixture` phrase, so `the test tone is still passing through the gate` — neither in it
+ * — stays a step. Exported so the specs can pin the inventory: changing any member reddens the
+ * equality pin and that member's case.
+ */
+export const COVERAGE_VERDICT_VERBS = [
+    'passes',
+    'passed',
+    'passing',
+    'fails',
+    'failed',
+    'failing',
+    'covers',
+    'covered',
+];

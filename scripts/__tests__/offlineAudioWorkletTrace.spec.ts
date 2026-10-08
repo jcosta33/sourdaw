@@ -126,6 +126,29 @@ function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEven
     ];
 }
 
+// Observed in CI: the exporter's independent ts/dur truncation ended the author slice one microsecond after its outer callback.
+function observedExporterTruncationTrace(): FixtureEvent[] {
+    const pid = 5100;
+    const tid = 5108;
+    const handlerThis = '0x2c4800724100';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 673_500_805,
+            dur: 25,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 673_500_806, dur: 23, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 673_500_823, dur: 7, pid, tid, args: {} },
+        ...callback(673_500_850, 3, pid, tid, handlerThis),
+        ...callback(673_500_870, 8, pid, tid, handlerThis),
+        ...callback(673_500_900, 12, pid, tid, handlerThis),
+    ];
+}
+
 // Principle-derived, not observed: equal author start with unique enclosure.
 function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
     const pid = 1;
@@ -149,6 +172,118 @@ function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
     ];
 }
 
+type Slice = { ts: number; dur: number };
+
+type AdjacentCallbackSlices = {
+    handlerA: Slice;
+    authorA: Slice;
+    authorB: Slice;
+    outerB: Slice;
+    handlerB: Slice;
+};
+
+// Callbacks A and B touch at tick 21: A's handler and outer slices end there, B's start there.
+function adjacentCallbackTrace(overrides: Partial<AdjacentCallbackSlices> = {}): FixtureEvent[] {
+    const slices: AdjacentCallbackSlices = {
+        handlerA: { ts: 10, dur: 11 },
+        authorA: { ts: 15, dur: 6 },
+        authorB: { ts: 23, dur: 5 },
+        outerB: { ts: 21, dur: 9 },
+        handlerB: { ts: 21, dur: 11 },
+        ...overrides,
+    };
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    const handlerArgs = { 'node type': 'AudioWorkletNode', this: handlerThis };
+    return [
+        { name: HANDLER, ph: 'X', ...slices.handlerA, pid, tid, args: handlerArgs },
+        { name: OUTER, ph: 'X', ts: 11, dur: 10, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...slices.authorA, pid, tid, args: {} },
+        { name: HANDLER, ph: 'X', ...slices.handlerB, pid, tid, args: handlerArgs },
+        { name: OUTER, ph: 'X', ...slices.outerB, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...slices.authorB, pid, tid, args: {} },
+        ...callback(50, 8, pid, tid, handlerThis),
+        ...callback(80, 12, pid, tid, handlerThis),
+    ];
+}
+
+// One handler, outer and author slice followed by three ordinary callbacks to meet SMALL_PHASES.
+function nestedCallbackTrace(handler: Slice, outer: Slice, author: Slice): FixtureEvent[] {
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    return [
+        { name: HANDLER, ph: 'X', ...handler, pid, tid, args: { 'node type': 'AudioWorkletNode', this: handlerThis } },
+        { name: OUTER, ph: 'X', ...outer, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...author, pid, tid, args: {} },
+        ...callback(outer.ts + 100, 3, pid, tid, handlerThis),
+        ...callback(outer.ts + 120, 8, pid, tid, handlerThis),
+        ...callback(outer.ts + 150, 12, pid, tid, handlerThis),
+    ];
+}
+
+// Small deterministic generator (mulberry32) so the property test replays identically.
+function seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+        state = (state + 0x6d2b79f5) | 0;
+        let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+        mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
+    };
+}
+
+const EIGHTHS_PER_US = 8;
+
+function gridValue(random: () => number, minUs: number, maxUs: number): number {
+    return minUs + Math.floor(random() * ((maxUs - minUs) * EIGHTHS_PER_US + 1)) / EIGHTHS_PER_US;
+}
+
+// The exporter writes ts = floor(start) and dur = floor(end - start), each truncated on its own.
+function exportedSlice(name: string, start: number, end: number, args: Record<string, unknown>): FixtureEvent {
+    return { name, ph: 'X', ts: Math.floor(start), dur: Math.floor(end - start), pid: 1, tid: 2, args };
+}
+
+function hasExportedTimestampTie(events: readonly FixtureEvent[], name: string): boolean {
+    const timestamps = events.filter((event) => event.name === name).map((event) => event.ts);
+    return new Set(timestamps).size !== timestamps.length;
+}
+
+// Real nestings on a 1/8 microsecond grid: handler contains callback contains author, callbacks last at
+// least 3 microseconds and run one after another, with optional bare handlers between them.
+function truncatedNestingTrace(random: () => number): FixtureEvent[] | null {
+    const handlerArgs = { 'node type': 'AudioWorkletNode', this: '0x1' };
+    const events: FixtureEvent[] = [];
+    let cursor = 1_000_000 + gridValue(random, 0, 1000);
+    for (
+        let callbackIndex = 0;
+        callbackIndex < SMALL_PHASES.warmupCallbacks + SMALL_PHASES.measuredCallbacks + 1;
+        callbackIndex++
+    ) {
+        if (random() < 0.5) {
+            const bareStart = cursor + gridValue(random, 0, 3);
+            const bareEnd = bareStart + gridValue(random, 0, 6);
+            events.push(exportedSlice(HANDLER, bareStart, bareEnd, handlerArgs));
+            cursor = bareEnd + gridValue(random, 0, 2);
+        }
+        const handlerStart = cursor + gridValue(random, 0, 3);
+        const callbackStart = handlerStart + gridValue(random, 0, 3);
+        const callbackEnd = callbackStart + gridValue(random, 3, 20);
+        const authorStart = callbackStart + gridValue(random, 0, callbackEnd - callbackStart);
+        const authorEnd = authorStart + gridValue(random, 0, callbackEnd - authorStart);
+        const handlerEnd = callbackEnd + gridValue(random, 0, 3);
+        events.push(
+            exportedSlice(HANDLER, handlerStart, handlerEnd, handlerArgs),
+            exportedSlice(OUTER, callbackStart, callbackEnd, {}),
+            exportedSlice(AUTHOR, authorStart, authorEnd, {})
+        );
+        cursor = handlerEnd;
+    }
+    const tied = [HANDLER, OUTER, AUTHOR].some((name) => hasExportedTimestampTie(events, name));
+    return tied ? null : events;
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -164,7 +299,21 @@ describe('offline AudioWorklet trace admission', () => {
         });
     });
 
-    it('admits the observed equal author/outer endpoint and refuses a one-microsecond overrun', () => {
+    it('admits an author slice that exporter truncation ends a microsecond after its callback', () => {
+        expect(admission(observedExporterTruncationTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 5100,
+            tid: 5108,
+            handlerThis: '0x2c4800724100',
+            warmupDurationsUs: [23],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+    });
+
+    it('admits the observed equal author/outer endpoint and a one-microsecond overrun, and refuses a two-microsecond overrun', () => {
         expect(admission(observedEqualEndpointTrace())).toEqual({
             status: 'admitted',
             outerCallbacks: 4,
@@ -176,13 +325,14 @@ describe('offline AudioWorklet trace admission', () => {
             terminalDurationUs: 14,
             bareHandlers: 0,
         });
-        expect(admission(observedEqualEndpointTrace(11))).toEqual({
+        expect(admission(observedEqualEndpointTrace(11)).status).toBe('admitted');
+        expect(admission(observedEqualEndpointTrace(12))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
         });
     });
 
-    it('admits the observed equal handler/outer endpoint and refuses a one-microsecond overrun', () => {
+    it('admits the observed equal handler/outer endpoint and a handler one microsecond short, and refuses two microseconds short', () => {
         expect(admission(observedEqualHandlerEndpointTrace())).toEqual({
             status: 'admitted',
             outerCallbacks: 4,
@@ -194,7 +344,8 @@ describe('offline AudioWorklet trace admission', () => {
             terminalDurationUs: 14,
             bareHandlers: 0,
         });
-        expect(admission(observedEqualHandlerEndpointTrace(11))).toEqual({
+        expect(admission(observedEqualHandlerEndpointTrace(11)).status).toBe('admitted');
+        expect(admission(observedEqualHandlerEndpointTrace(10))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
         });
@@ -233,6 +384,109 @@ describe('offline AudioWorklet trace admission', () => {
         expect(admission(equalAuthorStartTrace(100))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('admits an author ending where the next handler starts and refuses one that runs into it', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        const refused = {
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        };
+        expect(admission(adjacentCallbackTrace({ authorA: { ts: 15, dur: 7 } }))).toEqual(refused);
+        expect(admission(adjacentCallbackTrace({ authorA: { ts: 22, dur: 0 }, authorB: { ts: 24, dur: 4 } }))).toEqual(
+            refused
+        );
+        expect(
+            admission(
+                adjacentCallbackTrace({
+                    handlerA: { ts: 10, dur: 11 },
+                    authorA: { ts: 15, dur: 7 },
+                    outerB: { ts: 22, dur: 8 },
+                    authorB: { ts: 23, dur: 5 },
+                })
+            )
+        ).toEqual(refused);
+    });
+
+    it('refuses a callback that ends inside the next handler', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        expect(
+            admission(
+                adjacentCallbackTrace({
+                    handlerA: { ts: 10, dur: 10 },
+                    authorA: { ts: 15, dur: 5 },
+                    handlerB: { ts: 20, dur: 12 },
+                })
+            )
+        ).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits an author ending one microsecond past its own handler and refuses two', () => {
+        const separatedHandlers = {
+            handlerA: { ts: 10, dur: 10 },
+            handlerB: { ts: 22, dur: 10 },
+            outerB: { ts: 22, dur: 8 },
+        };
+        expect(admission(adjacentCallbackTrace({ ...separatedHandlers, authorA: { ts: 15, dur: 6 } })).status).toBe(
+            'admitted'
+        );
+        expect(admission(adjacentCallbackTrace({ ...separatedHandlers, authorA: { ts: 15, dur: 7 } }))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('tolerates a truncated author end only when the author starts after its callback', () => {
+        const handler = { ts: 425_593_194, dur: 19 };
+        const outer = { ts: 425_593_196, dur: 15 };
+        expect(admission(nestedCallbackTrace(handler, outer, { ts: 425_593_197, dur: 15 })).status).toBe('admitted');
+        expect(admission(nestedCallbackTrace(handler, outer, { ts: 425_593_196, dur: 16 }))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('tolerates a truncated callback end only when the callback starts after its handler', () => {
+        const outer = { ts: 416_895_108, dur: 10 };
+        const author = { ts: 416_895_110, dur: 6 };
+        expect(admission(nestedCallbackTrace({ ts: 416_895_107, dur: 10 }, outer, author)).status).toBe('admitted');
+        expect(admission(nestedCallbackTrace({ ts: 416_895_108, dur: 9 }, outer, author))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits every truncated export of a real handler, callback and author nesting', () => {
+        const random = seededRandom(5053);
+        let admitted = 0;
+        for (let trial = 0; trial < 400; trial++) {
+            const events = truncatedNestingTrace(random);
+            if (!events) {
+                continue;
+            }
+            expect(admission(events)).toMatchObject({ status: 'admitted' });
+            admitted++;
+        }
+        expect(admitted).toBeGreaterThan(200);
+    });
+
+    it('admits callbacks that touch at a boundary and refuses a one-microsecond outer overlap', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        expect(admission(adjacentCallbackTrace({ outerB: { ts: 20, dur: 10 } }))).toEqual({
+            status: 'refused',
+            reason: 'outer callbacks overlap',
+        });
+    });
+
+    it('admits handlers that touch at a boundary and refuses a one-microsecond handler overlap', () => {
+        expect(admission(adjacentCallbackTrace()).status).toBe('admitted');
+        expect(admission(adjacentCallbackTrace({ handlerB: { ts: 20, dur: 12 } }))).toEqual({
+            status: 'refused',
+            reason: 'AudioWorkletNode handler intervals overlap ambiguously',
         });
     });
 

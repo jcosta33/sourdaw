@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { copySelectedClip } from '../copySelectedClip';
 
 const mocks = vi.hoisted(() => ({
@@ -10,11 +11,21 @@ const mocks = vi.hoisted(() => ({
         } | null,
     },
     midiStore: {
-        value: null as { notesByClipId: Record<string, unknown[]> } | null,
+        value: null as {
+            notesByClipId: Record<string, unknown[]>;
+            ccByClipId: Record<string, unknown[]>;
+            pitchBendByClipId: Record<string, unknown[]>;
+        } | null,
     },
     getTrackStoreState: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     setClipClipboard: vi.fn(),
+    readClipSatelliteEntry: vi.fn((clipId: string): ClipSatelliteEntry => ({
+        clipId,
+        gainEnvelope: null,
+        warpState: null,
+    })),
+    readClipScopedAutomationLanes: vi.fn((_clipIds: readonly string[]) => [] as unknown[]),
 }));
 
 vi.mock('../../../stores/clipSelectionStore', () => ({
@@ -35,6 +46,14 @@ vi.mock('../../../stores/clipboardStore', () => ({
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
+vi.mock('../../../stores/clipSatelliteState', () => ({
+    readClipSatelliteEntry: mocks.readClipSatelliteEntry,
+}));
+
+vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
+    readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 
 describe('copySelectedClip', () => {
@@ -75,10 +94,102 @@ describe('copySelectedClip', () => {
         expect(copySelectedClip()).toBe(true);
 
         expect(mocks.getTrackStoreState).toHaveBeenCalledOnce();
+        expect(mocks.readClipSatelliteEntry.mock.calls).toStrictEqual([['clip-1'], ['clip-2']]);
+        expect(mocks.readClipScopedAutomationLanes.mock.calls).toStrictEqual([[['clip-1']], [['clip-2']]]);
         expect(mocks.setClipClipboard).toHaveBeenCalledWith([
-            { clip: { id: 'clip-1', type: 'audio' }, midiNotes: undefined, sourceTrackId: 'track-1' },
-            { clip: { id: 'clip-2', type: 'audio' }, midiNotes: undefined, sourceTrackId: 'track-1' },
+            {
+                clip: { id: 'clip-1', type: 'audio' },
+                midiNotes: undefined,
+                satellites: { clipId: 'clip-1', gainEnvelope: null, warpState: null },
+                automationLanes: [],
+                sourceTrackId: 'track-1',
+            },
+            {
+                clip: { id: 'clip-2', type: 'audio' },
+                midiNotes: undefined,
+                satellites: { clipId: 'clip-2', gainEnvelope: null, warpState: null },
+                automationLanes: [],
+                sourceTrackId: 'track-1',
+            },
         ]);
+    });
+
+    it('captures the satellite record the satellite stores hold for each copied clip', () => {
+        // The snapshot is what paste rebuilds from, so whatever the satellite
+        // stores hold at copy time must ride the entry verbatim.
+        mocks.readClipSatelliteEntry.mockImplementation((clipId: string) => {
+            if (clipId !== 'comped-clip') {
+                return { clipId, gainEnvelope: null, warpState: null };
+            }
+            return {
+                clipId,
+                gainEnvelope: {
+                    clipId,
+                    enabled: true,
+                    points: [{ id: 'env-1', beatOffset: 0, gainDb: -3 }],
+                },
+                warpState: {
+                    enabled: true,
+                    markers: [{ id: 'warp-1', originalBeat: 0, warpedBeat: 0.5 }],
+                    stretchMode: 'repitch' as const,
+                    originalTempo: 120,
+                },
+            };
+        });
+        mocks.clipSelectionStore.value = { selectedClipId: 'comped-clip', selectedClipIds: ['comped-clip'] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'comped-clip', type: 'audio' }] }],
+        });
+
+        expect(copySelectedClip()).toBe(true);
+
+        const entry = mocks.setClipClipboard.mock.calls[0]?.[0]?.[0];
+        expect(entry?.satellites).toEqual({
+            clipId: 'comped-clip',
+            gainEnvelope: {
+                clipId: 'comped-clip',
+                enabled: true,
+                points: [{ id: 'env-1', beatOffset: 0, gainDb: -3 }],
+            },
+            warpState: {
+                enabled: true,
+                markers: [{ id: 'warp-1', originalBeat: 0, warpedBeat: 0.5 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            },
+        });
+    });
+
+    it('captures the clip-scoped automation lanes the automation store holds for each copied clip', () => {
+        // Lanes are clip-id-keyed records like the satellites: whatever the
+        // automation store holds at copy time must ride the entry verbatim,
+        // because the source clip may be deleted before the paste.
+        const capturedLane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            clipId: 'comped-clip',
+            parameterId: 'volume',
+            parameterName: 'Volume',
+            points: [],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: 0,
+            maxValue: 1,
+        };
+        mocks.readClipScopedAutomationLanes.mockImplementation((clipIds: readonly string[]) =>
+            clipIds.includes('comped-clip') ? [capturedLane] : []
+        );
+        mocks.clipSelectionStore.value = { selectedClipId: 'comped-clip', selectedClipIds: ['comped-clip'] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'comped-clip', type: 'audio' }] }],
+        });
+
+        expect(copySelectedClip()).toBe(true);
+
+        const entry = mocks.setClipClipboard.mock.calls[0]?.[0]?.[0];
+        expect(entry?.automationLanes).toEqual([capturedLane]);
     });
 
     it('rejects a mixed valid and ineligible selection before writing the clipboard', () => {
@@ -124,7 +235,13 @@ describe('copySelectedClip', () => {
         expect(copySelectedClip()).toBe(true);
 
         expect(mocks.setClipClipboard).toHaveBeenCalledWith([
-            { clip: { id: 'clip-1', type: 'audio' }, midiNotes: undefined, sourceTrackId: 'track-1' },
+            {
+                clip: { id: 'clip-1', type: 'audio' },
+                midiNotes: undefined,
+                satellites: { clipId: 'clip-1', gainEnvelope: null, warpState: null },
+                automationLanes: [],
+                sourceTrackId: 'track-1',
+            },
         ]);
     });
 
@@ -161,7 +278,7 @@ describe('copySelectedClip', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-1', clips: [{ id: 'midi-1', type: 'midi' }] }],
         });
-        mocks.midiStore.value = { notesByClipId: { 'midi-1': [sourceNote] } };
+        mocks.midiStore.value = { notesByClipId: { 'midi-1': [sourceNote] }, ccByClipId: {}, pitchBendByClipId: {} };
 
         expect(copySelectedClip()).toBe(true);
 

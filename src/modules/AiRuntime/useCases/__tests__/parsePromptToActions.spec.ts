@@ -201,10 +201,12 @@ function createBulkInsertionContext(): ProjectContext {
 }
 
 function createDrumRoutingContext(): ProjectContext {
-    const createTrack = (id: string, name: string, kind: 'audio' | 'bus' = 'audio') => ({
+    // `role` is what the context producer derives from the name; the workflow scopes read it, not the name.
+    const createTrack = (id: string, name: string, kind: 'audio' | 'bus', role: string) => ({
         id,
         name,
         kind,
+        canonicalRole: { role, source: 'name-tags', evidence: 'name-tokens' },
         muted: false,
         soloed: false,
         soloSafe: false,
@@ -222,13 +224,13 @@ function createDrumRoutingContext(): ProjectContext {
     return {
         ...baseContext,
         tracks: [
-            createTrack('track-kick', 'Kick'),
-            createTrack('track-snare', 'Snare'),
-            createTrack('track-hats', 'Hats'),
-            createTrack('track-room', 'Drum Room'),
-            createTrack('track-parallel', 'Parallel Compression Return'),
-            createTrack('track-bass', 'Bass DI'),
-            createTrack('bus-drums', 'Drum Bus', 'bus'),
+            createTrack('track-kick', 'Kick', 'audio', 'kick'),
+            createTrack('track-snare', 'Snare', 'audio', 'snare'),
+            createTrack('track-hats', 'Hats', 'audio', 'hi-hat'),
+            createTrack('track-room', 'Drum Room', 'audio', 'room'),
+            createTrack('track-parallel', 'Parallel Compression Return', 'audio', 'unknown'),
+            createTrack('track-bass', 'Bass DI', 'audio', 'bass'),
+            createTrack('bus-drums', 'Drum Bus', 'bus', 'bus'),
         ],
     };
 }

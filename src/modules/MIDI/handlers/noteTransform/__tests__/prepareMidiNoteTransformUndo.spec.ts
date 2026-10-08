@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+
 vi.mock('../../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot', () => ({
     getMidiClipNotesSnapshot: vi.fn(),
 }));
@@ -8,6 +11,8 @@ import { getMidiClipNotesSnapshot } from '../../../useCases/midiNoteTransforms/g
 import { prepareMidiNoteTransformUndo } from '../prepareMidiNoteTransformUndo';
 
 const mockedSnapshot = vi.mocked(getMidiClipNotesSnapshot);
+const TRACK_ID = 'track-1';
+const CLIP_ID = 'c1';
 
 import type { MidiNote } from '../../../models/MidiNote';
 
@@ -28,6 +33,22 @@ function makeNote(overrides: Partial<MidiNote> = {}): MidiNote {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: TRACK_ID, kind: 'midi', name: 'MIDI' })],
+    });
+    if (
+        addClip({
+            id: CLIP_ID,
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 4,
+            name: 'MIDI clip',
+            type: 'midi',
+        }) === null
+    ) {
+        throw new Error('Expected MIDI clip fixture');
+    }
 });
 
 describe('prepareMidiNoteTransformUndo — noop cases', () => {
@@ -70,9 +91,18 @@ describe('prepareMidiNoteTransformUndo — with changes', () => {
                 payload: { clipId: string; notes: MidiNote[]; expectedNotes: MidiNote[] };
             }
         ).payload;
-        expect(invPayload.clipId).toBe('c1');
+        expect(invPayload.clipId).toBe(CLIP_ID);
         // Inverse: notes = original (for restore), expectedNotes = original (what was there before transform)
         expect(invPayload.notes).toEqual(notes);
+        expect(result.description.inverseAction).toMatchObject({
+            payload: {
+                noteTransformReplayGuard: {
+                    trackId: TRACK_ID,
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        });
     });
 
     it('returns redo restoreMidiClipNotes', () => {
@@ -84,5 +114,28 @@ describe('prepareMidiNoteTransformUndo — with changes', () => {
             transform: () => [makeNote({ startBeat: 0.5 })],
         });
         expect(result.description.redoAction?.type).toBe('restoreMidiClipNotes');
+        expect(result.description.redoAction).toMatchObject({
+            payload: {
+                noteTransformReplayGuard: {
+                    trackId: TRACK_ID,
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        });
+    });
+
+    it('fails closed when changed notes have no authoritative writable MIDI target', () => {
+        setTrackStoreState({ ...defaultTrackState, tracks: [] });
+        const notes = [makeNote()];
+        mockedSnapshot.mockReturnValue(notes);
+
+        const result = prepareMidiNoteTransformUndo({
+            clipId: CLIP_ID,
+            label: 'Quantize',
+            transform: () => [makeNote({ startBeat: 0.5 })],
+        });
+
+        expect(result).toEqual({ description: { label: 'Quantize' }, isNoop: false });
     });
 });

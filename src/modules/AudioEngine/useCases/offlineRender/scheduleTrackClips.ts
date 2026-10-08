@@ -13,6 +13,7 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
@@ -29,6 +30,7 @@ import {
     type OfflineMidiArticulationResolver,
     type OfflineAutomationValueEvaluator,
     type OfflineChordPitchProjector,
+    type OfflineClipControllerProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
@@ -43,7 +45,6 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
-import { checkCancel } from './checkCancel';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
@@ -77,6 +78,11 @@ type OfflineProjectionDependencies = {
     projectChordPitch: OfflineChordPitchProjector;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
     resolveArticulationId?: OfflineMidiArticulationResolver | null;
+    /**
+     * The projection live scheduling places a clip's stored controllers with.
+     * Absent, no controller reaches an instrument; the composition root sets it.
+     */
+    projectClipControllers?: OfflineClipControllerProjector | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -139,7 +145,11 @@ export type ScheduleTrackClipsInput = {
     tally?: OfflineScheduleTally;
     /** Render-time boundary after which scheduled sources belong to the returned buffer. */
     tallyStartSeconds?: number;
-    /** Caller-owned cancellation for freeze/bounce scheduling. */
+    /**
+     * The only cancellation this scheduler observes. The process-wide export
+     * flag belongs to the callers that began an export scope: a freeze or
+     * bounce scheduling beside a cancelled export must not read it (#4782).
+     */
     abortSignal?: AbortSignal;
     /**
      * The render's frame scheduler for its `offlineCtx`, handed down so every
@@ -179,11 +189,6 @@ export async function scheduleTrackClips({
     abortSignal,
     scheduleFrame,
 }: ScheduleTrackClipsInput): Promise<void> {
-    function checkScheduleCancel(): void {
-        checkCancel();
-        checkCallerAbort();
-    }
-
     function checkCallerAbort(): void {
         if (abortSignal?.aborted) {
             throw new Error('Render aborted');
@@ -198,6 +203,7 @@ export async function scheduleTrackClips({
         projectPpqEndpoints,
         processYeastMidi,
         resolveArticulationId,
+        projectClipControllers,
         resolveTempoAtBeat,
         selectMidiEventProbability,
     } = projections;
@@ -459,13 +465,11 @@ export async function scheduleTrackClips({
         return mpe;
     }
 
-    const drumKit = resolveDrumKit(track.devices);
-    const drumKitDevice = track.devices.find(
-        (device) => device.type === 'builtin-drum-kit' || device.type === 'drum-kit'
-    );
-    const kitDef = drumKitDevice
-        ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
-        : null;
+    // Live playback's resolution, step for step (`scheduleMidiNotes`): the
+    // dedicated drum-voice definition wins for every drum device type, and the
+    // factory kit voices only a device no definition covers.
+    const kitDef = resolveDrumKitBy(track.devices, getDrumKitDefByIndex);
+    const drumKit = kitDef ? null : resolveDrumKit(track.devices);
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,
@@ -485,6 +489,10 @@ export async function scheduleTrackClips({
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
     const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
     const workletEvents: WorkletMidiEvent[] = [];
+    // Read off the strategy, not `instrumentControls`, like expression: only an
+    // instrument whose engine honours a stored controller carries one.
+    const dispatchControl = instrumentEntry?.strategy.controlChange;
+    const workletControlEvents: { time: number; controller: number; value: number }[] = [];
     let noteCount = 0;
 
     function getScheduledArticulationId(articulation: string | undefined): number | undefined {
@@ -518,7 +526,7 @@ export async function scheduleTrackClips({
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         for (const note of notes) {
-            checkScheduleCancel();
+            checkCallerAbort();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                 continue;
             }
@@ -762,6 +770,38 @@ export async function scheduleTrackClips({
                 continue;
             }
 
+            // A stored controller is placed by the projection live scheduling
+            // uses and timed exactly as a note at its beat is. A move before
+            // the region start is dropped, as a note that ends before it is:
+            // the chase a mid-song start needs belongs to the transport.
+            const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
+            if (storedControllers && projectClipControllers) {
+                const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
+                for (const controller of projectClipControllers({
+                    controlChanges: storedControllers,
+                    clip,
+                    fromBeat: regionStartBeat,
+                    toBeat: clip.endBeat,
+                })) {
+                    checkCallerAbort();
+                    const { startSamples } = projectPpqEndpoints({
+                        startPpq: controller.beat,
+                        endPpq: controller.beat,
+                        defaultTempo,
+                        sampleRate: offlineCtx.sampleRate,
+                        changes,
+                    });
+                    if (startSamples < regionStartSamples) {
+                        continue;
+                    }
+                    const time = Math.max(0, startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec);
+                    if (time >= durationSeconds) {
+                        continue;
+                    }
+                    workletControlEvents.push({ time, controller: controller.controller, value: controller.value });
+                }
+            }
+
             for (let iter = 0; iter < maxIterations; iter++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
@@ -863,6 +903,12 @@ export async function scheduleTrackClips({
                     tally?.scheduledBuffers.push(buffer);
                 }
             }
+        }
+    }
+
+    if (dispatchControl && pendingWorkletEvents) {
+        for (const event of workletControlEvents) {
+            pendingWorkletEvents.push({ type: 'control', dispatch: dispatchControl, ...event });
         }
     }
 

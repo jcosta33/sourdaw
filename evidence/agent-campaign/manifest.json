@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "60c12e0aa935d0be2044954dd7d00617cc03c7d417b7da43b166f163add007c4"
+        "digest": "a4d365ee60ac7f2c69d9ca2f59121cad29949852b03c5e172500f82fabd44514"
     },
     "census": {
         "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "a40fe20fc42dd9642adb35b3857d10d7d3fdb94f313d89d8b949693ae6e3f17c"
+                    "digest": "5f7a231517bc007df88af1b9b7bd20232548b463c2e1d7f16a915b9974b9d93a"
                 }
             ]
         },
@@ -508,7 +508,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts",
-                    "digest": "015d1a46eba241023db21744932288f58ca9ee8c16568a1dd220056e8ffe9a21"
+                    "digest": "d772eae5d1349c315c0a42ef53b045815da77f3da431abe814bbd92118e29609"
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "6e309c4ef4cc73cc9cb5aa9b004b0a4540e0828c18611d0d6e7e32ed8e6b896f"
+                    "digest": "7cbb9a828366118c12cfb6fac54f834577eecc99bd8c99de8c2abc4c05d3cf30"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "634f5e1e561e7a076c8f514c6ab017bcd5da30310c93312ec1f29edd88c16144"
+                    "digest": "addc16bd6e2e1f38d314d84a413cb2a1760e40ce7580d5165df90cb9aacc0892"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
@@ -644,7 +644,7 @@
                 },
                 {
                     "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",
-                    "digest": "1034800372a3c730c20f427f118b45ddebe3bf31a0adc6910726762799958637"
+                    "digest": "3c98c11234a834f907a45a76d75c6f6e95059530a4c4c6513fa99c6d21d12c51"
                 }
             ]
         },

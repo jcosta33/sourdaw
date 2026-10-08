@@ -6,6 +6,7 @@ export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints'
 export { createAutomationLane } from './automation/createAutomationLane';
 export { setAutomationParameterRangeResolver } from './automation/automationParameterRangeDependencies';
 export { clipAutomationMoveStateMatches } from './automation/clipAutomationMoveStateMatches';
+export { cloneClipAutomationLanes } from './automation/cloneClipAutomationLanes';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
 export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomationBatch';
 export { getClipAutomationMoveState } from './automation/getClipAutomationMoveState';

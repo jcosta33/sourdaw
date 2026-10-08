@@ -6,7 +6,10 @@
  * (device parameters, MIDI-FX parameters, Fermenter runtime parameters) with
  * the PDC-compensated beat it read for that lane (`compensatedBeatFor`,
  * #4684), before any clip gating, so a lane skipped only because the
- * compensated beat has not yet reached its clip still leaves an entry.
+ * compensated beat has not yet reached its clip still leaves an entry. It also
+ * seeds, before the lane loop, every track whose device chain sits behind a
+ * PDC delay with no lane at all (#4790), so a lane-less compensated track's
+ * modulators are read and gated on the same compensated clock.
  * `gain`, `pan`, and an existing send read the playhead beat instead and
  * never write here. `startPlayheadScheduler` hands the map to
  * `applyModulationToEngine`, whose `indexAutomatedBases` reads

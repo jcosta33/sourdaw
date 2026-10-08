@@ -427,7 +427,7 @@ function lane(input: {
  */
 type BusShape = Readonly<{ pan?: number; muted?: boolean; soloed?: boolean }>;
 
-function fixtureTracks(busShape: BusShape = {}): Track[] {
+function fixtureTracks(busShape: BusShape = {}, audioTrackPan?: number): Track[] {
     const trackA = TrackDummy.create({
         id: 'track-a',
         name: 'Source A',
@@ -472,6 +472,9 @@ function fixtureTracks(busShape: BusShape = {}): Track[] {
         muted: busShape.muted ?? false,
         soloed: busShape.soloed ?? false,
     });
+    if (audioTrackPan !== undefined) {
+        return [{ ...trackA, pan: audioTrackPan }, { ...trackB, pan: audioTrackPan }, bus];
+    }
     return [trackA, trackB, bus];
 }
 
@@ -513,9 +516,9 @@ function fixtureLanes(): AutomationLane[] {
     ];
 }
 
-function fixtureRenderContext(busShape: BusShape = {}): OfflineRenderContext {
+function fixtureRenderContext(busShape: BusShape = {}, audioTrackPan?: number): OfflineRenderContext {
     return {
-        tracks: { tracks: fixtureTracks(busShape) } as unknown as TrackStoreState,
+        tracks: { tracks: fixtureTracks(busShape, audioTrackPan) } as unknown as TrackStoreState,
         midi: emptyMidi,
         transport: { masterGain: 80 } as TransportState,
         defaultTempo: 120,
@@ -556,6 +559,16 @@ function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer
         }
     }
     return { matA, matB };
+}
+
+/**
+ * The same material as one channel: what a recorded or mono-imported clip is
+ * (#3773). Both engines receive a single channel, so the pan law each applies
+ * to it is what the parity leg measures.
+ */
+function toMono(material: HarnessAudioBuffer): HarnessAudioBuffer {
+    const channel = material.getChannelData(0);
+    return { ...material, numberOfChannels: 1, getChannelData: () => channel };
 }
 
 // ── Running one leg ────────────────────────────────────────────────────────
@@ -832,6 +845,42 @@ describe('renderOffline — native/web export parity (#2225)', () => {
             const result = nullTest({ a: web.buffer, b: native.buffer });
             process.stdout.write(
                 `[parity ${name}] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
+                    `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
+            );
+
+            expect(result.signalPeakDbfs).toBeGreaterThan(-30);
+            expect(result.residualPeakDbfs).toBeLessThanOrEqual(-90);
+        },
+        30_000
+    );
+
+    // #4686: a one-channel clip reached Web Audio's StereoPannerNode as one
+    // channel and took the mono law, 3.01 dB under the native engine at centre.
+    // The pan lane is dropped so the stored pan stays the case's own.
+    it.runIf(nativeAddonPresent).each([
+        { name: 'centre', storedPan: 0 },
+        { name: 'half right', storedPan: 25 },
+        { name: 'half left', storedPan: -25 },
+    ])(
+        'renders mono clips panned $name the same way on both engines',
+        async ({ name, storedPan }) => {
+            const { matA, matB } = fixtureMaterial();
+            mocks.audioBuffers.set('mat-a', toMono(matA));
+            mocks.audioBuffers.set('mat-b', toMono(matB));
+            mocks.lanes.length = 0;
+            mocks.lanes.push(...fixtureLanes().filter((candidate) => candidate.parameterId !== 'pan'));
+            mocks.renderContext = fixtureRenderContext({}, storedPan);
+            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
+
+            const native = await runLeg('native');
+            expect(native.buffer).toBeInstanceOf(StubAudioBuffer);
+
+            const web = await runLeg('web');
+            expect(web.buffer).not.toBeInstanceOf(StubAudioBuffer);
+
+            const result = nullTest({ a: web.buffer, b: native.buffer });
+            process.stdout.write(
+                `[parity mono ${name}] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
                     `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
             );
 

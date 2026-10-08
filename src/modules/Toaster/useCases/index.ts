@@ -7,6 +7,7 @@ export { projectToasterKitToNativePatch } from './projectToasterKitToNativePatch
 export { setToasterEventBus } from './toasterEventBus';
 export { initToasterSubscribers } from './toasterSubscriber';
 export { initToasterKitPersistence } from './initToasterKitPersistence';
+export { reconcileToasterKitsFromProject } from './reconcileToasterKitsFromProject';
 export { getToasterPresets } from './toasterQueries';
 export { setToasterGrooveAssignmentExecutor } from './setToasterGrooveAssignmentExecutor';
 export { getStoredDrumVoiceMetadata } from './getStoredDrumVoiceMetadata';

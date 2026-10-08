@@ -430,6 +430,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                 trackId: time.id,
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
+                                audioOffsetBeats: clip.audioOffsetBeats,
+                                midiOffsetBeats: clip.midiOffsetBeats,
                             });
                             types.set(clip.id, clip.type);
                             if (clip.locked) {
@@ -590,7 +592,19 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (preview) {
                 const orig = preview.originals.get(dragState.clipId);
                 if (orig) {
-                    preview.positions.set(dragState.clipId, { ...orig, startBeat: newStart });
+                    // The commit (trimClipStart) advances the content offsets by
+                    // the same delta it applies to startBeat; mirroring that here
+                    // keeps the previewed contents fixed under the moving edge
+                    // instead of sliding with it (#4989).
+                    const delta = newStart - orig.startBeat;
+                    const clipType = dragContextRef.current?.types.get(dragState.clipId);
+                    preview.positions.set(dragState.clipId, {
+                        ...orig,
+                        startBeat: newStart,
+                        audioOffsetBeats: (orig.audioOffsetBeats ?? 0) + delta,
+                        midiOffsetBeats:
+                            clipType === 'midi' ? (orig.midiOffsetBeats ?? 0) + delta : orig.midiOffsetBeats,
+                    });
                     previewDirtyFlag.value = true;
                 }
             }

@@ -26,7 +26,13 @@ export type AgentRenderProvenance = {
     readonly sourceRevision: string;
 };
 
-export type AgentRenderFailureKind = 'attachment-refused' | 'revision-mismatch' | 'invalid-buffer' | 'render-error';
+/**
+ * `render-busy` is a render that did not finish because another render held the offline render lock,
+ * or because a musician's export took the lock from it. It is retryable and says nothing about the
+ * section itself.
+ */
+export type AgentRenderFailureKind =
+    'attachment-refused' | 'revision-mismatch' | 'invalid-buffer' | 'render-error' | 'render-busy';
 
 export type AgentRenderReceipt =
     | {

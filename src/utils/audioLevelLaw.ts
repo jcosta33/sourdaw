@@ -278,6 +278,22 @@ export function resolveLevelArgument(argument: LevelArgument, current: number, l
 }
 
 /**
+ * The decibel ceiling of a lane bounded at `maxValue`.
+ *
+ * A bound at the fader maximum states its ceiling as the fader headroom
+ * itself: `FADER_MAX_GAIN` is defined as `dbToGain(FADER_HEADROOM_DB)`, and
+ * re-deriving the figure through `gainToDb` loses a step of binary precision
+ * (`5.999999999999998`), which refused the +6 dB the fader's own travel
+ * offers (#4964). `TRACK_FADER_LAW` states this same ceiling exactly.
+ */
+function laneCeilingDb(maxValue: number): number {
+    if (maxValue === FADER_MAX_GAIN) {
+        return FADER_HEADROOM_DB;
+    }
+    return maxValue > 0 ? gainToDb(maxValue) : SEND_MIN_DB;
+}
+
+/**
  * The law a linear-amplitude gain automation lane draws under.
  *
  * A lane carries its own bounds, and a gain lane written before the fader
@@ -290,7 +306,7 @@ export function resolveLevelArgument(argument: LevelArgument, current: number, l
 export function gainLaneLevelLaw(bounds: { minValue: number; maxValue: number }): LevelLaw {
     return {
         floorDb: bounds.minValue > 0 ? gainToDb(bounds.minValue) : SEND_MIN_DB,
-        ceilingDb: bounds.maxValue > 0 ? gainToDb(bounds.maxValue) : SEND_MIN_DB,
+        ceilingDb: laneCeilingDb(bounds.maxValue),
         unity: 1,
     };
 }
@@ -437,6 +453,25 @@ export const PAN_SCALE_MAX = 50;
  */
 export function toStereoPan(lanePan: number): number {
     return Math.max(-1, Math.min(1, lanePan / PAN_SCALE_MAX));
+}
+
+/**
+ * Make `node` — the node that feeds a strip's `StereoPannerNode` — present the
+ * panner a two-channel signal even when its sources are mono.
+ *
+ * A `StereoPannerNode` picks its law by input channel count: one channel gets
+ * the mono equal-power law (−3.01 dB at centre), two channels get the stereo
+ * law (identity at centre). The native engine plays a mono source to both
+ * outputs and then applies the stereo law, so a mono clip is unity at centre
+ * there. Forcing the feeding node to an explicit two-channel `speakers` mix
+ * up-mixes mono to dual-mono (L = R = s) before the panner, so Web Audio
+ * applies the same law and a mono clip renders at the same level in both
+ * engines. Stereo sources pass through unchanged.
+ */
+export function configureDualMonoPannerInput(node: AudioNode): void {
+    node.channelCount = 2;
+    node.channelCountMode = 'explicit';
+    node.channelInterpretation = 'speakers';
 }
 
 /**

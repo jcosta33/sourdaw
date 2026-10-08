@@ -242,11 +242,19 @@ describe('agent tool catalog', () => {
                     maxItems: 8,
                     items: { type: 'string', minLength: 1, maxLength: 256 },
                 },
+                parameterIds: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT,
+                    uniqueItems: true,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
                 page: {
                     type: 'object',
                     properties: {
                         limit: { type: 'integer', minimum: 1, maximum: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
                         cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
+                        index: { type: 'boolean', enum: [true] },
                     },
                     additionalProperties: false,
                 },

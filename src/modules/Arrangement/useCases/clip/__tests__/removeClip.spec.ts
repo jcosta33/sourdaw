@@ -1,14 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createTake, createTakeLane } from '../../../models/TakeLane';
+import { type Clip } from '../../../models/Track';
+import { clipboardStore } from '../../../stores/clipboardStore';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { removeClip } from '../removeClip';
 
 type MockTrack = { clips: { id: string }[] };
-type MockClipboard = {
-    clipClipboard: { clip: { id: string }; sourceTrackId: string }[];
-    noteClipboard: null;
-};
+
+function clipboardClip(id: string): Clip {
+    return {
+        id,
+        trackId: 't1',
+        name: id,
+        startBeat: 0,
+        endBeat: 4,
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '',
+        locked: false,
+        muted: false,
+    };
+}
 
 const mocks = vi.hoisted(() => ({
     mapAllTracks: vi.fn<(updater: (track: MockTrack) => MockTrack) => void>(),
@@ -17,7 +32,6 @@ const mocks = vi.hoisted(() => ({
     removeWarpState: vi.fn(),
     getAutomationLanes: vi.fn(() => [] as { id: string; clipId?: string }[]),
     removeAutomationLane: vi.fn(),
-    clipboardStore: { value: null as MockClipboard | null, set: vi.fn<(state: MockClipboard) => void>() },
     clipDragPreviewRef: {
         current: null as { positions: Map<string, unknown>; originals: Map<string, unknown> } | null,
     },
@@ -46,10 +60,6 @@ vi.mock('../../../stores/warpStates', () => ({
     removeWarpState: mocks.removeWarpState,
 }));
 
-vi.mock('../../../stores/clipboardStore', () => ({
-    clipboardStore: mocks.clipboardStore,
-}));
-
 vi.mock('../../../stores/clipDragPreviewRef', () => ({
     clipDragPreviewRef: mocks.clipDragPreviewRef,
 }));
@@ -72,11 +82,11 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 describe('removeClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clipboardStore.value = null;
         mocks.clipDragPreviewRef.current = null;
         mocks.activeRecordingRef.current = [];
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.takeLaneStoreValue.value = null;
+        clipboardStore.set({ clipClipboard: [], noteClipboard: null });
     });
 
     it('removes track data before delegating one MIDI cleanup batch ahead of remaining cleanup', () => {
@@ -128,35 +138,21 @@ describe('removeClip', () => {
         expect(mocks.removeAutomationLane).toHaveBeenCalledWith('lane-clip');
     });
 
-    it('removes a clipboard entry that points at the removed clip', () => {
-        mocks.clipboardStore.value = {
+    it('keeps the clipboard entry naming the removed clip (the entry is a capture-at-copy snapshot)', () => {
+        // A clipboard entry is self-contained — clip fields, notes and
+        // satellites read at copy time — so deleting the source must not
+        // invalidate it: copy, delete, paste still lands what the copy caught.
+        clipboardStore.set({
             clipClipboard: [
-                { clip: { id: 'c1' }, sourceTrackId: 't1' },
-                { clip: { id: 'c2' }, sourceTrackId: 't1' },
+                { clip: clipboardClip('c1'), automationLanes: [], sourceTrackId: 't1' },
+                { clip: clipboardClip('c2'), automationLanes: [], sourceTrackId: 't1' },
             ],
             noteClipboard: null,
-        };
+        });
 
         removeClip('c1');
 
-        expect(mocks.clipboardStore.set).toHaveBeenCalledTimes(1);
-        const setCall = mocks.clipboardStore.set.mock.calls[0];
-        if (!setCall) {
-            throw new Error('expected clipboardStore.set to have been called');
-        }
-        const next = setCall[0];
-        expect(next.clipClipboard).toEqual([{ clip: { id: 'c2' }, sourceTrackId: 't1' }]);
-    });
-
-    it('does not rewrite the clipboard when no entry matches', () => {
-        mocks.clipboardStore.value = {
-            clipClipboard: [{ clip: { id: 'c2' }, sourceTrackId: 't1' }],
-            noteClipboard: null,
-        };
-
-        removeClip('c1');
-
-        expect(mocks.clipboardStore.set).not.toHaveBeenCalled();
+        expect(clipboardStore.value?.clipClipboard.map((entry) => entry.clip.id)).toEqual(['c1', 'c2']);
     });
 
     it('clears the drag-preview ref entries for the removed clip', () => {

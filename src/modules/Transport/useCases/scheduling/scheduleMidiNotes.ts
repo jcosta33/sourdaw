@@ -32,13 +32,29 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { BEAT_EPSILON, beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
+import {
+    forgetStoredControllersClipMuteWithheld,
+    forgetStoredControllersTrackMuteWithheld,
+    hasStoredControllersTrackMuteWithheld,
+    noteStoredControllersClipMuteWithheld,
+    noteStoredControllersTrackMuteWithheld,
+    readStoredControllersClipMuteWithheld,
+    storedControllerDeviceKey,
+} from '../../services/storedControllerEngagement';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
+import { listMutedMidiClips } from './listMutedMidiClips';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
+import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { resolveStoredControllerClips } from './resolveStoredControllerClips';
+import { restoreStoredControllers } from './restoreStoredControllers';
+import { createSameFramePostQueue } from './sameFramePostQueue';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
+import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 
@@ -78,6 +94,74 @@ function findWorkletSynthDevice<TDevice extends { type: string }>(devices: reado
 
 function findFaustInstrumentDevice<TDevice extends { type: string }>(devices: readonly TDevice[]): TDevice | undefined {
     return devices.find((device) => isFaustInstrumentModule(device.type));
+}
+
+type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
+type SchedulerTrackStrip = ReturnType<typeof ensureTrackStrip>;
+
+/**
+ * The toaster a track's notes are dispatched to, when one has live controls: the
+ * track's own, or its parent's when the parent carries one (a child is a pad of the
+ * parent's kit, numbered among the parent's children).
+ */
+function resolveToasterTarget(
+    track: SchedulerTrack,
+    tracks: readonly SchedulerTrack[],
+    strip: SchedulerTrackStrip
+): {
+    ownerTrack: SchedulerTrack;
+    device: SchedulerTrack['devices'][number];
+    pad: number;
+    controls: ToasterControls;
+} | null {
+    let ownerTrack = track;
+    let device = findToasterDevice(track.devices);
+    let pad = -1;
+    const parentTrack = track.parentId ? tracks.find((candidate) => candidate.id === track.parentId) : undefined;
+    const parentDevice = parentTrack ? findToasterDevice(parentTrack.devices) : undefined;
+    if (parentTrack && parentDevice) {
+        ownerTrack = parentTrack;
+        device = parentDevice;
+        pad = tracks.filter((candidate) => candidate.parentId === parentTrack.id).findIndex((c) => c.id === track.id);
+    }
+    if (!device) {
+        return null;
+    }
+    const toasterDevice = device;
+    const ownerStrip = ownerTrack.id === track.id ? strip : ensureTrackStrip(ownerTrack.id);
+    const node = ownerStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id || data.type === 'toaster');
+    return node?.toasterControls ? { ownerTrack, device: toasterDevice, pad, controls: node.toasterControls } : null;
+}
+
+/**
+ * The device and node a track's stored controllers are posted to, or null when the
+ * window would post them nowhere. The one decision the window and a relocation's
+ * restore (inside a clip or across a gap) share: only the instruments that honour
+ * stored controllers take any, and only through the note path's own dispatch, so a
+ * Yeast-routed, drum-kit or Toaster track, or one whose instrument has no node,
+ * sends its notes elsewhere and its controllers nowhere.
+ */
+function resolveStoredControllerDevice(
+    track: SchedulerTrack,
+    tracks: readonly SchedulerTrack[]
+): { device: SchedulerTrack['devices'][number]; node: SchedulerTrackStrip['deviceNodes'][number] } | null {
+    if (
+        track.devices.some((candidate) => candidate.type === 'yeast') ||
+        resolveDrumKitDef(track.devices) ||
+        resolveDrumKit(track.devices)
+    ) {
+        return null;
+    }
+    const strip = ensureTrackStrip(track.id);
+    if (resolveToasterTarget(track, tracks, strip)) {
+        return null;
+    }
+    const device = findWorkletSynthDevice(track.devices);
+    if (!device || (device.type !== 'grand-boule' && device.type !== 'levain')) {
+        return null;
+    }
+    const node = strip.deviceNodes.find((candidate) => candidate.deviceId === device.id);
+    return node ? { device, node } : null;
 }
 
 /**
@@ -659,6 +743,28 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     return params;
 }
 
+type PlaceSamplesOnClockInput = {
+    startSamples: number;
+    accumulatedSamples: number;
+    sampleRate: number;
+    compensation: number;
+};
+
+/**
+ * The audio-clock time and sample frame an event `startSamples` into the
+ * timeline is posted at. Notes and stored controllers both place themselves
+ * through this, so a controller and a note on one beat get the same frame.
+ */
+function placeSamplesOnClock({
+    startSamples,
+    accumulatedSamples,
+    sampleRate,
+    compensation,
+}: PlaceSamplesOnClockInput): { time: number; sampleFrame: number } {
+    const time = getCurrentTime() + (startSamples - accumulatedSamples) / sampleRate + compensation;
+    return { time, sampleFrame: Math.round(time * sampleRate) };
+}
+
 function getSourceOccurrenceOffset({
     sourceStartBeat,
     segmentStartBeat,
@@ -684,6 +790,15 @@ function getSourceOccurrenceOffset({
  * `fromBeat` is the scheduler's monotonic high-water mark: the transport passes
  * `schedulerSession.lastScheduledBeat`, which is exactly where the previous
  * window ended, so a note already emitted can never be emitted twice.
+ *
+ * `opensAtRelocation` marks a window whose `fromBeat` is where already-rolling
+ * playback was just relocated to (a loop wrap, a follow-action jump), not the
+ * continuation of the previous window. It additionally restores every stored
+ * controller to the value in force at `fromBeat` and lifts those left engaged
+ * that nothing is in force for there, at the frame `fromBeat` lands on. A
+ * transport start or a user seek is not a relocation in this sense. A track that
+ * schedules again after a track or clip mute withheld its stored controllers gets
+ * the same restore in that window.
  */
 export async function scheduleMidiNotes(
     fromBeat: number,
@@ -693,7 +808,8 @@ export async function scheduleMidiNotes(
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     currentTempo: number,
-    cancellation?: SchedulerCancellation
+    cancellation?: SchedulerCancellation,
+    opensAtRelocation = false
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
     const tracks = trackStore.value?.tracks;
@@ -702,6 +818,19 @@ export async function scheduleMidiNotes(
         return;
     }
 
+    // The frozen path's window floor (#4784) binds on the same emissions the
+    // audio-clip twin's does — a wrap handover or a landing, where the window
+    // opens at a boundary the playhead stands at or behind — never on a
+    // steady-state window, whose first beat sits a look-ahead ahead of the
+    // playhead and would hold a late join silent. A frozen track first becoming
+    // schedulable mid-handover floors too: the playhead sits below loopStart
+    // while a seam is pending or just recorded.
+    const floorsToWindowStart =
+        fromBeat <= accumulatedPosition ||
+        (transport.isLooping === true && fromBeat === transport.loopStart) ||
+        (transport.isLooping === true &&
+            accumulatedPosition < transport.loopStart &&
+            (schedulerSession.pendingSeam !== null || schedulerSession.lastLoopSeamAudioTime !== null));
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
     // #4924 — the earliest start an admitted Yeast segment may still schedule
@@ -729,6 +858,98 @@ export async function scheduleMidiNotes(
     const busTrackIds = new Set(
         tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
     );
+    // The devices a relocating window restored, so the sweep after the tracks
+    // lifts only what no track restored.
+    const restoredStoredControllerDevices = new Set<string>();
+    // The sample frame a beat is posted at on one track's clock, for the window's own moves and for
+    // a relocation's restore alike.
+    const sampleFrameAtBeatOnTrack = (trackId: string) => (beat: number) => {
+        const { sampleRate } = getAudioContext();
+        return placeSamplesOnClock({
+            startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
+            accumulatedSamples: beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate),
+            sampleRate,
+            compensation: getCompensationDelay(trackId),
+        }).sampleFrame;
+    };
+    // What a relocation's restore sends for one track's routed device, from every clip of the track:
+    // a destination inside a clip and one across a gap run the same restore.
+    const restoreStoredControllersOnTrack = (
+        track: SchedulerTrack,
+        target: NonNullable<ReturnType<typeof resolveStoredControllerDevice>>,
+        queue: ReturnType<typeof createSameFramePostQueue>
+    ): void => {
+        restoreStoredControllers({
+            trackId: track.id,
+            device: target.device,
+            node: target.node,
+            clips: resolveStoredControllerClips({
+                trackId: track.id,
+                clips: track.clips,
+                notesByClipId: midiState.notesByClipId,
+                ccByClipId: midiState.ccByClipId,
+            }),
+            atBeat: fromBeat,
+            windowToBeat: toBeat,
+            sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+            queue,
+        });
+        restoredStoredControllerDevices.add(storedControllerDeviceKey(track.id, target.device.id));
+    };
+    // A relocation that lands where a track has no clip playing still carries what its earlier clips
+    // left, as continuous playback does, on the device the window would route stored controllers to; a
+    // posted device the scheduler no longer routes to is left to the release sweep. A track resuming
+    // after a mute is owed the same restore wherever it resumes.
+    const restoreStoredControllersAtGap = (track: SchedulerTrack, resumesAfterMute: boolean): void => {
+        const target = opensAtRelocation || resumesAfterMute ? resolveStoredControllerDevice(track, tracks) : null;
+        if (!target) {
+            return;
+        }
+        const queue = createSameFramePostQueue();
+        restoreStoredControllersOnTrack(track, target, queue);
+        queue.flush(isCurrent);
+    };
+    // Whether this window is the one a track schedules again in after a mute kept its stored controllers
+    // from earlier windows of this playback: the device still holds what it last received, so the window
+    // restores the value in force at its start, the chase a relocation runs. A track mute ends here
+    // whatever muted clips overlap the window, because the restore leaves muted clips out. A clip mute ends
+    // for each recorded clip on its own, in the first window that clip no longer withholds (unmuted, ended,
+    // moved away or removed), whatever other clips stay muted. A record is forgotten as the window decides,
+    // because the restore it queues is the chase that mute owed.
+    const withholdsStoredControllers = (mutedClip: SchedulerTrack['clips'][number]): boolean =>
+        mutedClip.startBeat < toBeat &&
+        mutedClip.endBeat > fromBeat &&
+        (midiState.ccByClipId[mutedClip.id]?.length ?? 0) > 0;
+    const stillWithholds = (mutedClips: readonly SchedulerTrack['clips'][number][], clipId: string): boolean => {
+        for (const mutedClip of mutedClips) {
+            if (mutedClip.id === clipId) {
+                return withholdsStoredControllers(mutedClip);
+            }
+        }
+        return false;
+    };
+    const takeResumeAfterMute = (track: SchedulerTrack): boolean => {
+        const mutedClips = listMutedMidiClips(track.clips);
+        let resumes = hasStoredControllersTrackMuteWithheld(track.id);
+        if (resumes) {
+            forgetStoredControllersTrackMuteWithheld(track.id);
+        }
+        const withheldClipIds = readStoredControllersClipMuteWithheld(track.id);
+        if (withheldClipIds) {
+            for (const clipId of withheldClipIds) {
+                if (!stillWithholds(mutedClips, clipId)) {
+                    forgetStoredControllersClipMuteWithheld(track.id, clipId);
+                    resumes = true;
+                }
+            }
+        }
+        for (const mutedClip of mutedClips) {
+            if (withholdsStoredControllers(mutedClip)) {
+                noteStoredControllersClipMuteWithheld(track.id, mutedClip.id);
+            }
+        }
+        return resumes;
+    };
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
@@ -737,6 +958,7 @@ export async function scheduleMidiNotes(
             continue;
         }
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
+            noteStoredControllersTrackMuteWithheld(track.id);
             continue;
         }
 
@@ -751,7 +973,13 @@ export async function scheduleMidiNotes(
             // rest of the session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    currentTempo,
+                    floorsToWindowStart ? fromBeat : null
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -759,8 +987,10 @@ export async function scheduleMidiNotes(
             continue;
         }
 
+        const resumesAfterMute = takeResumeAfterMute(track);
         const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
         if (windowMidiClips.length === 0) {
+            restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
 
@@ -769,6 +999,7 @@ export async function scheduleMidiNotes(
             (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
         );
         if (activeMidiClips.length === 0) {
+            restoreStoredControllersAtGap(track, resumesAfterMute);
             continue;
         }
 
@@ -929,6 +1160,10 @@ export async function scheduleMidiNotes(
             }
         }
 
+        // Every clip of this track posts through one queue, so the order a
+        // frame's events reach the instrument does not depend on the clip order.
+        const posts = createSameFramePostQueue();
+        const storedControllerTarget = resolveStoredControllerDevice(track, tracks);
         for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
@@ -972,61 +1207,28 @@ export async function scheduleMidiNotes(
             // note loop is a single switch instead of 4+ device array scans
             // per note (drumKitDef | drumKit | toasterChild | workletSynth |
             // faust | default synth).
-            let toasterRoute: {
-                controls: ToasterControls;
-                pad: number;
-                getSwingOffsetBeats: (noteStartBeat: number) => number;
-            } | null = null;
-            let toasterOwnerTrack = track;
-            let toasterDevice = findToasterDevice(track.devices);
-            let toasterPad = -1;
-            if (track.parentId) {
-                const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
-                const parentToasterDevice = toasterParentTrack
-                    ? findToasterDevice(toasterParentTrack.devices)
-                    : undefined;
-                if (toasterParentTrack && parentToasterDevice) {
-                    toasterOwnerTrack = toasterParentTrack;
-                    toasterDevice = parentToasterDevice;
-                    let childIndex = 0;
-                    for (const candidate of tracks) {
-                        if (candidate.parentId === toasterParentTrack.id) {
-                            if (candidate.id === track.id) {
-                                toasterPad = childIndex;
-                                break;
-                            }
-                            childIndex++;
-                        }
-                    }
-                }
-            }
-            if (toasterDevice) {
-                const toasterStrip = toasterOwnerTrack.id === track.id ? strip : ensureTrackStrip(toasterOwnerTrack.id);
-                const deviceNode = toasterStrip.deviceNodes.find(
-                    (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
-                );
-                if (deviceNode?.toasterControls) {
-                    toasterRoute = {
-                        controls: deviceNode.toasterControls,
-                        pad: toasterPad,
-                        getSwingOffsetBeats: (noteStartBeat) =>
-                            getToasterSwingOffsetBeats({
-                                parentTrackId: toasterOwnerTrack.id,
-                                toasterDeviceId: toasterDevice.id,
-                                automationMode: toasterOwnerTrack.automationMode,
-                                devices: toasterOwnerTrack.devices,
-                                lanes: automationLanes,
-                                noteStartBeat,
-                                evaluateAutomationValue: getAutomationValueAtBeat,
-                                isAutomationRecording: isRecordingAutomation,
-                                getCurrentSwingValue: (deviceId) =>
-                                    toasterStore.value?.[deviceId]?.kit.swing ??
-                                    toasterDevice.parameterValues.swing ??
-                                    0,
-                            }),
-                    };
-                }
-            }
+            const toasterTarget = resolveToasterTarget(track, tracks, strip);
+            const toasterRoute = toasterTarget
+                ? {
+                      controls: toasterTarget.controls,
+                      pad: toasterTarget.pad,
+                      getSwingOffsetBeats: (noteStartBeat: number) =>
+                          getToasterSwingOffsetBeats({
+                              parentTrackId: toasterTarget.ownerTrack.id,
+                              toasterDeviceId: toasterTarget.device.id,
+                              automationMode: toasterTarget.ownerTrack.automationMode,
+                              devices: toasterTarget.ownerTrack.devices,
+                              lanes: automationLanes,
+                              noteStartBeat,
+                              evaluateAutomationValue: getAutomationValueAtBeat,
+                              isAutomationRecording: isRecordingAutomation,
+                              getCurrentSwingValue: (deviceId) =>
+                                  toasterStore.value?.[deviceId]?.kit.swing ??
+                                  toasterTarget.device.parameterValues.swing ??
+                                  0,
+                          }),
+                  }
+                : null;
 
             const workletSynthDevice = toasterRoute ? null : findWorkletSynthDevice(track.devices);
             const workletSynthEntry = workletSynthDevice
@@ -1055,6 +1257,28 @@ export async function scheduleMidiNotes(
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
                     ? null
                     : findFaustInstrumentDevice(track.devices);
+
+            // Stored controllers join the window's queue, which posts them ahead
+            // of the note-ons of their frame (so a note struck there sounds under
+            // the pedal or controller it was recorded with) and behind the
+            // note-offs (so a pedal does not catch a note released there). Only
+            // the instruments that honour them take any, and only through the
+            // note path's own dispatch: a Yeast-routed, drum-kit or Toaster track
+            // sends its notes elsewhere and its controllers nowhere.
+            const storedControllers = storedControllerTarget ? midiState.ccByClipId[clip.id] : undefined;
+            if (storedControllerTarget && storedControllers) {
+                scheduleStoredControllers({
+                    trackId: track.id,
+                    device: storedControllerTarget.device,
+                    node: storedControllerTarget.node,
+                    controlChanges: storedControllers,
+                    clip,
+                    fromBeat,
+                    toBeat,
+                    sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+                    queue: posts,
+                });
+            }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
                 if (!isCurrent()) {
@@ -1188,11 +1412,25 @@ export async function scheduleMidiNotes(
                         const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
                         const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
-                        const time = getCurrentTime() + (noteStartSamples - accumulatedSamples) / sr + compensation;
-                        const sampleFrame = Math.round(time * sr);
+                        const { time, sampleFrame } = placeSamplesOnClock({
+                            startSamples: noteStartSamples,
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                        });
                         const durationSamples = noteEndSamples - noteStartSamples;
                         const duration = durationSamples / sr;
-                        const endSampleFrame = sampleFrame + durationSamples;
+                        // The release is placed on the clock exactly as the start
+                        // and a stored controller are, not as the start frame plus
+                        // a length: rounding the start and adding the length can
+                        // land a frame away from rounding the end, and a pedal on
+                        // the beat a note ends would then miss its own release.
+                        const endSampleFrame = placeSamplesOnClock({
+                            startSamples: noteEndSamples,
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                        }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
                         if (toasterRoute) {
@@ -1226,6 +1464,17 @@ export async function scheduleMidiNotes(
                                 registerScheduledSource(kitVoice);
                             }
                         } else if (workletSynthControls && workletSynthEntry) {
+                            // A note of no samples is not played, as the export skips a
+                            // note of no duration. Posting it would put its release on
+                            // its own start frame, where it would cut a different note
+                            // of the same pitch struck there; the sliver a looped
+                            // clip's pass wrap re-anchors onto a pass head is the usual
+                            // case. Only this path is skipped: its release is a message
+                            // that can collide, while a built-in synth voice or a drum
+                            // hit of no length has nothing to cut.
+                            if (durationSamples <= 0) {
+                                continue;
+                            }
                             const rawVel = projectedNote.velocity;
                             const vel = workletSynthEntry.velocityTransform
                                 ? workletSynthEntry.velocityTransform(rawVel)
@@ -1237,16 +1486,25 @@ export async function scheduleMidiNotes(
                                       articulation: projectedNote.articulation,
                                   })
                                 : null;
+                            // The note's posts wait for the window's queue: a
+                            // frame's events must reach the engine release,
+                            // controller, note-on, expression whichever clip or
+                            // window the note came from.
                             if (workletSynthDevice?.type === 'levain' && workletSynthNode?.levainControls) {
-                                workletSynthNode.levainControls.noteOn(
-                                    pitch,
-                                    vel,
-                                    sampleFrame,
-                                    noteChannel,
-                                    articulationId ?? undefined
+                                const levainControls = workletSynthNode.levainControls;
+                                posts.add('on', sampleFrame, () =>
+                                    levainControls.noteOn(
+                                        pitch,
+                                        vel,
+                                        sampleFrame,
+                                        noteChannel,
+                                        articulationId ?? undefined
+                                    )
                                 );
                             } else {
-                                workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                                posts.add('on', sampleFrame, () =>
+                                    workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel)
+                                );
                             }
                             // The depth the bend was recorded at, and only when
                             // there is a bend. Absent on notes captured before
@@ -1259,18 +1517,20 @@ export async function scheduleMidiNotes(
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
                             // to the voice this noteOn just started.
-                            applyNoteExpression({
-                                trackId: track.id,
-                                note: pitch,
-                                channel: noteChannel,
-                                expression: {
-                                    pressure: mpe?.pressure,
-                                    slide: mpe?.slide,
-                                    pitchBend: mpe?.pitchBend,
-                                },
-                                sampleFrame,
-                                bendRangeSemitones: noteBendRange,
-                            });
+                            posts.add('expression', sampleFrame, () =>
+                                applyNoteExpression({
+                                    trackId: track.id,
+                                    note: pitch,
+                                    channel: noteChannel,
+                                    expression: {
+                                        pressure: mpe?.pressure,
+                                        slide: mpe?.slide,
+                                        pitchBend: mpe?.pitchBend,
+                                    },
+                                    sampleFrame,
+                                    bendRangeSemitones: noteBendRange,
+                                })
+                            );
                             // Grand Boule is the one worklet synth whose
                             // `noteOff` reads a release velocity in slot 3 and
                             // its member channel in slot 4; Fermenter, Levain
@@ -1282,14 +1542,14 @@ export async function scheduleMidiNotes(
                             // All four control types accept three numbers, so
                             // the compiler had nothing to object to.
                             if (workletSynthDevice?.type === 'grand-boule' && workletSynthNode?.grandBouleControls) {
-                                workletSynthNode.grandBouleControls.noteOff(
-                                    pitch,
-                                    endSampleFrame,
-                                    undefined,
-                                    noteChannel
+                                const grandBouleControls = workletSynthNode.grandBouleControls;
+                                posts.add('off', endSampleFrame, () =>
+                                    grandBouleControls.noteOff(pitch, endSampleFrame, undefined, noteChannel)
                                 );
                             } else {
-                                workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
+                                posts.add('off', endSampleFrame, () =>
+                                    workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel)
+                                );
                             }
                         } else if (faustDevice) {
                             scheduleFaustNote(
@@ -1327,5 +1587,24 @@ export async function scheduleMidiNotes(
                 }
             }
         }
+        if ((opensAtRelocation || resumesAfterMute) && storedControllerTarget) {
+            restoreStoredControllersOnTrack(track, storedControllerTarget, posts);
+        }
+        posts.flush(isCurrent);
+    }
+    if (opensAtRelocation && isCurrent()) {
+        const { sampleRate } = getAudioContext();
+        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate);
+        const destinationSamples = beatToSamples(changes, fromBeat, transport.tempo, sampleRate);
+        releaseUnrestoredStoredControllers({
+            restored: restoredStoredControllerDevices,
+            sampleFrameOnTrack: (trackId) =>
+                placeSamplesOnClock({
+                    startSamples: destinationSamples,
+                    accumulatedSamples,
+                    sampleRate,
+                    compensation: getCompensationDelay(trackId),
+                }).sampleFrame,
+        });
     }
 }
