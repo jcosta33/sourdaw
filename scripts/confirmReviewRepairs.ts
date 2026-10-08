@@ -134,6 +134,14 @@ export function parseConfirmReviewRepairsArgs(args: string[]): ConfirmReviewRepa
     return { number: parsed, head, help: false };
 }
 
+function escapeDiagnosticLineSeparators(value: string): string {
+    return value
+        .replaceAll('\r', '\\r')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\u2028', '\\u2028')
+        .replaceAll('\u2029', '\\u2029');
+}
+
 /**
  * Logs every ignored and refused reason as one line, prefixed `<prefix>:<pr>:<thread>:`, so the
  * delivery tooling reads the selection's reasons without parsing prose.
@@ -145,7 +153,7 @@ function logReasons(
     log: (line: string) => void
 ): void {
     for (const entry of entries) {
-        log(`${prefix}:${pr}:${entry.thread}:${entry.reason}`);
+        log(escapeDiagnosticLineSeparators(`${prefix}:${pr}:${entry.thread}:${entry.reason}`));
     }
 }
 
@@ -176,6 +184,7 @@ export function confirmReviewRepairs(
         isAncestor: port.isAncestor,
     });
     logReasons('repair-ignored', number, selection.ignored, port.log);
+    logReasons('repair-refused', number, selection.refused, port.log);
     if (selection.refused.length > 0) {
         fail(
             `refusing to confirm ${selection.refused.length} review thread(s) on PR #${number}: a refused repair makes the transaction unsafe`

@@ -94,6 +94,17 @@ type MakePortOptions = {
      * acknowledgement".
      */
     silenceAbortReply?: boolean;
+    /**
+     * Release steps the fake worklet needs before it answers `done: true` to a
+     * `releaseRetiredBank` request (default 1). It answers each request once,
+     * so a loop that never stopped would still end.
+     */
+    releaseSteps?: number;
+    /**
+     * Never answer a `releaseRetiredBank` request: the test emits every reply
+     * itself, so it decides when, and for which token, the worklet reports.
+     */
+    manualRelease?: boolean;
 };
 
 /**
@@ -107,6 +118,7 @@ type MakePortOptions = {
 function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
+    let releaseRequests = 0;
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -146,6 +158,17 @@ function makePort(options: MakePortOptions = {}): FakePort {
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
+            });
+            return;
+        }
+        if (message.type === 'releaseRetiredBank') {
+            if (options.manualRelease) {
+                return;
+            }
+            releaseRequests++;
+            const done = releaseRequests >= (options.releaseSteps ?? 1);
+            queueMicrotask(() => {
+                emit({ type: 'retiredBankReleased', loadToken: message.loadToken, done });
             });
             return;
         }
@@ -361,6 +384,341 @@ describe('loadInstrumentFromManifest', () => {
         expect(postedTypes(port)).not.toContain('addSample');
         expect(postedTypes(port)).toContain('addZone');
         expect(postedTypes(port)).toContain('buildZoneMap');
+    });
+
+    describe('freeing the bank the commit displaced', () => {
+        function load(port: FakePort): Promise<unknown> {
+            return loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            });
+        }
+
+        function releaseCount(port: FakePort): number {
+            return postedTypes(port).filter((type) => type === 'releaseRetiredBank').length;
+        }
+
+        it('asks for one release step at a time, only after the commit is acknowledged, until the worklet reports done', async () => {
+            const port = makePort({ releaseSteps: 3 });
+
+            await load(port);
+
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(3);
+            });
+            const types = postedTypes(port);
+            expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+            const begin = port.postMessage.mock.calls[0]?.[0] as { loadToken: number };
+            const releases = port.postMessage.mock.calls
+                .map(([message]) => message as { type: string; loadToken: number })
+                .filter((message) => message.type === 'releaseRetiredBank');
+            expect(releases.every((message) => message.loadToken === begin.loadToken)).toBe(true);
+            // Done was reported: a late duplicate reply asks for nothing more.
+            port.emit({ type: 'retiredBankReleased', loadToken: begin.loadToken, done: false });
+            expect(releaseCount(port)).toBe(3);
+        });
+
+        it('asks for no release before the worklet has acknowledged the commit', async () => {
+            const port = makePort({ autoComplete: false });
+            const pending = load(port);
+
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('buildZoneMap');
+            });
+            expect(releaseCount(port)).toBe(0);
+
+            const buildMessage = port.postMessage.mock.calls
+                .map(([message]) => message as { type: string; loadToken: number })
+                .find((message) => message.type === 'buildZoneMap');
+            port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage!.loadToken });
+            await pending;
+
+            expect(releaseCount(port)).toBe(1);
+        });
+
+        function loadTokenOf(port: FakePort): number {
+            const begin = port.postMessage.mock.calls
+                .map(([message]) => message as { type: string; loadToken: number })
+                .find((message) => message.type === 'beginSampleBank');
+            return begin!.loadToken;
+        }
+
+        it('stops asking once the processor ends', async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+
+            port.emit({ type: 'disposed' });
+            port.emit({ type: 'retiredBankReleased', loadToken: loadTokenOf(port), done: false });
+
+            expect(releaseCount(port)).toBe(1);
+        });
+
+        it('ignores a release reply addressed to another load on the same port', async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            const token = loadTokenOf(port);
+
+            // Another load's loop asking for more, and another load finishing,
+            // say nothing about this one.
+            port.emit({ type: 'retiredBankReleased', loadToken: token + 100, done: false });
+            port.emit({ type: 'retiredBankReleased', loadToken: token + 100, done: true });
+            expect(releaseCount(port)).toBe(1);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: token, done: false });
+            expect(releaseCount(port)).toBe(2);
+        });
+
+        it("posts a following load's beginSampleBank only once the previous bank is fully released", async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            const first = loadTokenOf(port);
+            const beginCount = (): number => postedTypes(port).filter((type) => type === 'beginSampleBank').length;
+
+            const second = load(port);
+            // Give the second load every chance to run past its decode.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(beginCount()).toBe(1);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: first, done: false });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            expect(releaseCount(port)).toBe(2);
+            expect(beginCount()).toBe(1);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: first, done: true });
+            await vi.waitFor(() => {
+                expect(beginCount()).toBe(2);
+            });
+            await second;
+        });
+
+        it('does not begin a load that was aborted while it waited for the previous release', async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            const controller = new AbortController();
+
+            const second = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            controller.abort();
+
+            await expect(second).resolves.toBeUndefined();
+            expect(postedTypes(port).filter((type) => type === 'beginSampleBank')).toHaveLength(1);
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        });
+
+        function beginTokens(port: FakePort): number[] {
+            const posted = port.postMessage.mock.calls.map(
+                ([message]) => message as { type: string; loadToken: number }
+            );
+            const begins = posted.filter((message) => message.type === 'beginSampleBank');
+            return begins.map((message) => message.loadToken);
+        }
+
+        const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, 20));
+
+        it('holds a following load behind an aborted load whose commit the worklet has not yet acknowledged', async () => {
+            const port = makePort({ deferCommit: true, manualRelease: true });
+            const controller = new AbortController();
+            const first = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('buildZoneMap');
+            });
+            const [firstToken] = beginTokens(port);
+            // The user switches instrument: the first load is aborted after its
+            // commit was posted, and the next one starts at once.
+            controller.abort();
+            const second = load(port);
+            await settle();
+            expect(beginTokens(port)).toEqual([firstToken]);
+
+            // The worklet acknowledges the first commit; its displaced bank is
+            // still being freed, so the second load keeps waiting.
+            port.emit({ type: 'sampleBankLoaded', loadToken: firstToken });
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            await settle();
+            expect(beginTokens(port)).toEqual([firstToken]);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: false });
+            await settle();
+            expect(beginTokens(port)).toEqual([firstToken]);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+            await vi.waitFor(() => {
+                expect(beginTokens(port)).toHaveLength(2);
+            });
+            const secondToken = beginTokens(port)[1]!;
+            port.emit({ type: 'sampleBankLoaded', loadToken: secondToken });
+            await first;
+            await second;
+            expect(beginTokens(port)).toHaveLength(2);
+        });
+
+        it('keeps holding a load behind the release when a load queued before it is aborted', async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            const [firstToken] = beginTokens(port);
+            const controller = new AbortController();
+            const middle = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await settle();
+            const last = load(port);
+            await settle();
+            controller.abort();
+            await expect(middle).resolves.toBeUndefined();
+            await settle();
+
+            expect(beginTokens(port)).toEqual([firstToken]);
+
+            port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+            await vi.waitFor(() => {
+                expect(beginTokens(port)).toHaveLength(2);
+            });
+            await last;
+        });
+
+        it('rejects a load waiting behind a release when the processor ends, and posts nothing', async () => {
+            const port = makePort({ manualRelease: true });
+            await load(port);
+            await vi.waitFor(() => {
+                expect(releaseCount(port)).toBe(1);
+            });
+            const second = load(port);
+            await settle();
+
+            port.emit({ type: 'error', message: 'wasm trap' });
+
+            await expect(second).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
+            expect(beginTokens(port)).toHaveLength(1);
+            // A dead processor answers nothing, so a later load fails the same way.
+            await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading: wasm trap');
+            expect(beginTokens(port)).toHaveLength(1);
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        });
+
+        describe('draining the bank a failed load staged', () => {
+            it('drains a load that fails to commit one step at a time and holds the next begin until done', async () => {
+                const port = makePort({ commitError: 'zone map rejected', manualRelease: true });
+
+                await expect(load(port)).rejects.toThrow('zone map rejected');
+                await vi.waitFor(() => {
+                    expect(releaseCount(port)).toBe(1);
+                });
+                const [firstToken] = beginTokens(port);
+                const types = postedTypes(port);
+                expect(types.indexOf('releaseRetiredBank')).toBeGreaterThan(types.indexOf('buildZoneMap'));
+
+                const second = load(port).catch((error: unknown) => error);
+                await settle();
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: false });
+                await settle();
+                expect(releaseCount(port)).toBe(2);
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+                await vi.waitFor(() => {
+                    expect(beginTokens(port)).toHaveLength(2);
+                });
+                expect(await second).toMatchObject({ message: expect.stringContaining('zone map rejected') });
+            });
+
+            it('posts abort, release and the next begin in that order after a load is aborted mid-upload', async () => {
+                const port = makePort({ manualRelease: true });
+                const controller = new AbortController();
+                const originalPostMessage = port.postMessage;
+                port.postMessage = vi.fn((message: unknown) => {
+                    originalPostMessage(message);
+                    if (isRecord(message) && message.type === 'beginSampleBank') {
+                        controller.abort();
+                    }
+                });
+                const first = loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal: controller.signal,
+                });
+                await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+                await vi.waitFor(() => {
+                    expect(releaseCount(port)).toBe(1);
+                });
+                const [firstToken] = beginTokens(port);
+
+                const second = load(port);
+                await settle();
+                expect(beginTokens(port)).toEqual([firstToken]);
+
+                port.emit({ type: 'retiredBankReleased', loadToken: firstToken, done: true });
+                await expect(second).resolves.toBeDefined();
+                expect(postedTypes(port).filter((type) => type !== 'addSample' && type !== 'addZone')).toEqual([
+                    'beginSampleBank',
+                    'abortSampleBank',
+                    'releaseRetiredBank',
+                    'beginSampleBank',
+                    'buildZoneMap',
+                    'releaseRetiredBank',
+                ]);
+            });
+
+            it.each(['disposed', 'error'] as const)(
+                'rejects the next load without hanging when the failure was the processor ending (%s)',
+                async (type) => {
+                    const port = makePort({ autoComplete: false, manualRelease: true });
+                    const first = load(port);
+                    await vi.waitFor(() => {
+                        expect(postedTypes(port)).toContain('buildZoneMap');
+                    });
+                    const second = load(port);
+                    await settle();
+
+                    port.emit({ type, message: 'gone' });
+
+                    await expect(first).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    await expect(second).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    expect(releaseCount(port)).toBe(0);
+                    expect(beginTokens(port)).toHaveLength(1);
+                    await expect(load(port)).rejects.toThrow('Levain processor ended during sample-bank loading');
+                    expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+                }
+            );
+        });
     });
 
     it('rejects when the worklet cannot commit the staged bank', async () => {
@@ -608,10 +966,10 @@ describe('loadInstrumentFromManifest', () => {
     });
 
     it('ignores a sampleBankError addressed to a different load sharing the same port', async () => {
-        // Two consumers on one device's single port, each with its own
-        // `loadToken` (as the concurrent-instances test above establishes) —
-        // the exact shape a device's real MessagePort has, unlike this file's
-        // other cases which each get a fresh fake port. `onMessage`'s
+        // Loads on one device's single port share its messages, each with its
+        // own `loadToken`, and a later load only begins once the earlier one is
+        // over, so the foreign token here is one an earlier or later load of
+        // the same port would carry. `onMessage`'s
         // `message.loadToken !== loadToken` guard is what a foreign token's
         // `sampleBankError` must fail before it can reject the wrong load.
         const port = makePort({ autoComplete: false });
@@ -621,29 +979,18 @@ describe('loadInstrumentFromManifest', () => {
             expectedInstrumentId: 'violin-1',
             nodePort: port,
         });
-        const second = loadInstrumentFromManifest({
-            manifestUrl: '/m.json',
-            basePath: '/base',
-            expectedInstrumentId: 'violin-1',
-            nodePort: port,
-        });
 
         await vi.waitFor(() => {
-            const begins = port.postMessage.mock.calls.filter(
-                ([message]) => isRecord(message) && message.type === 'beginSampleBank'
-            );
-            expect(begins).toHaveLength(2);
+            expect(postedTypes(port)).toContain('buildZoneMap');
         });
-        const [firstToken, secondToken] = port.postMessage.mock.calls
-            .filter(([message]) => isRecord(message) && message.type === 'beginSampleBank')
-            .map(([message]) => (message as Record<string, unknown>).loadToken as number);
-
-        await vi.waitFor(() => {
-            const builds = port.postMessage.mock.calls.filter(
-                ([message]) => isRecord(message) && message.type === 'buildZoneMap'
-            );
-            expect(builds).toHaveLength(2);
-        });
+        const beginCall = port.postMessage.mock.calls.find(
+            ([message]) => isRecord(message) && message.type === 'beginSampleBank'
+        );
+        const beginMessage: unknown = beginCall?.[0];
+        if (!isRecord(beginMessage) || typeof beginMessage.loadToken !== 'number') {
+            throw new Error('Expected a beginSampleBank message');
+        }
+        const firstToken = beginMessage.loadToken;
 
         let firstSettled = false;
         void first.then(
@@ -655,12 +1002,11 @@ describe('loadInstrumentFromManifest', () => {
             }
         );
 
-        // Addressed to the second load's token; the first must stay pending.
-        port.emit({ type: 'sampleBankError', loadToken: secondToken, message: 'unrelated failure' });
+        // Addressed to another load's token; the first must stay pending.
+        port.emit({ type: 'sampleBankError', loadToken: firstToken + 1000, message: 'unrelated failure' });
         await Promise.resolve();
         await Promise.resolve();
         expect(firstSettled).toBe(false);
-        await expect(second).rejects.toThrow('unrelated failure');
 
         // Answer the first's own token so nothing is left pending.
         port.emit({ type: 'sampleBankLoaded', loadToken: firstToken });

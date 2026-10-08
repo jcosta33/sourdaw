@@ -80,6 +80,7 @@ export { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 export { createAgentSagaStep } from './createAgentSagaStep';
 export { agentRunControls } from './getAgentRunControlProjection';
 export { agentRunCancellation } from './cancelAgentRun';
+export { cancelActiveAgentRuns } from './cancelActiveAgentRuns';
 export { confirmPendingChatActions } from './confirmPendingChatActions';
 export { cancelPendingChatActions } from './cancelPendingChatActions';
 export { getAgentApprovalView } from './getAgentApprovalView';

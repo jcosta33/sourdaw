@@ -13,10 +13,10 @@ type CrumbsControls = NonNullable<CrumbsStripDeviceNode['crumbsControls']>;
 /**
  * The Web Audio Crumbs node for *this* device, once it can take a note.
  *
- * Modelled on `sendCrumbsModeToEngine`, including the part that matters: the
- * device id locates the owning track **and** selects the node, so a track
+ * The device id locates the owning track **and** selects the node, so a track
  * hosting two samplers addresses the one the caller named rather than whichever
- * answers first.
+ * answers first — the same selection the composition root's
+ * `crumbs.modeChanged` subscription makes for the strip's mode write.
  *
  * `null` for a device with no strip, no node, or a node whose wasm module is
  * still loading — each of them ordinary, and each of them a node that would
