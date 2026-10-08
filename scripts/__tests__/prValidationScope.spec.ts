@@ -401,6 +401,132 @@ describe('required affected verification', () => {
         expect(allSelected(selectValidationPlan([tsx], [...INVENTORY, tsx]))).toEqual([tsx]);
     });
 
+    it.each([
+        'tests/e2e/editor.test.ts',
+        'tests/e2e/editor.test.tsx',
+        'tests/e2e/editor.spec.js',
+        'tests/e2e/editor.test.mjs',
+        'tests/e2e/editor.spec.cts',
+        'tests/e2e/editor.test.mtsx',
+        'tests/e2e/nested/editor.spec.tsx',
+        'tests/e2e/nested/fourth.TEST.ts',
+    ])('selects a changed Playwright filename %s directly', (spec) => {
+        const inventory = [...INVENTORY, spec];
+        const plan = selectValidationPlan([spec], inventory);
+        expect(allSelected(plan)).toEqual([spec]);
+        expect(plan.browserAi).toBe(spec.startsWith('tests/e2e/browserAi'));
+    });
+
+    it('includes every admitted filename in broad browser coverage once', () => {
+        const additional = ['tests/e2e/alpha.test.ts', 'tests/e2e/nested/beta.spec.tsx', 'tests/e2e/gamma.test.mjs'];
+        const inventory = [...INVENTORY, ...additional, 'tests/e2e/alpha.test.ts'];
+        expect(allSelected(selectValidationPlan(['src/app/bootstrap.ts'], inventory))).toEqual(
+            fullInventory(inventory)
+        );
+    });
+
+    it('falls back to full coverage for a changed uppercase extension', () => {
+        const path = 'tests/e2e/rejected.Spec.MJS';
+        expect(() => selectValidationPlan(['src/app/bootstrap.ts'], [...INVENTORY, path])).toThrow(
+            'Invalid E2E inventory'
+        );
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(plan.reasons).toContainEqual({
+            path,
+            reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+        });
+    });
+
+    it.each([
+        'tests/e2e/__tests__/nested.test.ts',
+        'tests/e2e/nested/__tests__/case.spec.ts',
+        'tests/e2e/__TESTS__/ignored.test.ts',
+        'tests/e2e/nested/node_modules/dependency.test.ts',
+        'tests/e2e/helper.ts',
+        'tests/e2e/case.spec.ts.bak',
+        'tests/other/case.test.ts',
+        'tests/e2e/../outside.test.ts',
+    ])('rejects a path Playwright does not collect: %s', (path) => {
+        expect(() => selectValidationPlan(['src/app/bootstrap.ts'], [...INVENTORY, path])).toThrow(
+            'Invalid E2E inventory'
+        );
+        expect(allSelected(selectValidationPlan([path], INVENTORY))).toEqual(fullInventory(INVENTORY));
+    });
+
+    it('plans direct default-named tests and carries the same inventory into broad coverage', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
+        mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
+        writeFileSync(join(root, SMOKE_SPEC), '// smoke fixture\n');
+        writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
+        writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
+        mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
+        writeFileSync(join(root, 'tests/e2e/rejected.Spec.MJS'), '// Playwright does not collect this extension\n');
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        const added = [
+            'tests/e2e/new-default.test.ts',
+            'tests/e2e/another.spec.js',
+            'tests/e2e/nested/third.test.mtsx',
+            'tests/e2e/nested/fourth.TEST.ts',
+        ];
+        for (const spec of added) {
+            writeFileSync(join(root, spec), '// new Playwright test\n');
+        }
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'add Playwright test']);
+        const output = join(root, 'output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+        expect(allSelected(plan)).toEqual(added.sort());
+        expect(plan.reasons).toEqual([
+            { path: 'tests/e2e/another.spec.js', reason: 'changed browser spec' },
+            { path: 'tests/e2e/nested/fourth.TEST.ts', reason: 'changed browser spec' },
+            { path: 'tests/e2e/nested/third.test.mtsx', reason: 'changed browser spec' },
+            { path: 'tests/e2e/new-default.test.ts', reason: 'changed browser spec' },
+        ]);
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product change\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'change product']);
+        const broad = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(broad.status, broad.stderr).toBe(0);
+        expect(allSelected(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')))).toEqual(added);
+        const broadHead = git(['rev-parse', 'HEAD']);
+        writeFileSync(join(root, 'tests/e2e/new-rejected.Spec.MJS'), '// excluded extension change\n');
+        git(['add', 'tests/e2e/new-rejected.Spec.MJS']);
+        git(['commit', '--quiet', '-m', 'add excluded extension']);
+        const fallback = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: broadHead, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(fallback.status, fallback.stderr).toBe(0);
+        const fallbackPlan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+        expect(allSelected(fallbackPlan)).toEqual(added);
+        expect(fallbackPlan.reasons).toEqual([
+            {
+                path: 'tests/e2e/new-rejected.Spec.MJS',
+                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+            },
+        ]);
+    });
+
     it('widens deleted tests and both sides of a move outside a known mapping', () => {
         const paths = parseChangedPaths(
             `R100\0${TUNER}\0src/components/TunerPanel.tsx\0D\0tests/e2e/deleted.spec.ts\0`
@@ -449,10 +575,50 @@ describe('required affected verification', () => {
             [TUNER],
             ['tests/e2e/missing.spec.ts'],
             ['tests/e2e/../outside.spec.ts'],
+            ['tests/e2e/missing.test.ts'],
+            ['tests/e2e/__tests__/nested.test.ts'],
+            ['tests/e2e/case.spec.ts.bak'],
             [SMOKE_SPEC, SMOKE_SPEC],
         ]) {
             expect(() => selectedSpecArguments(value, process.cwd())).toThrow();
         }
+    });
+
+    it('accepts regular default-named files and rejects a directory with a matching suffix', () => {
+        const root = temporaryRoot();
+        const spec = 'tests/e2e/nested/a[1]+.test.mjs';
+        const directory = 'tests/e2e/fake.spec.ts';
+        mkdirSync(join(root, 'tests/e2e/nested'), { recursive: true });
+        mkdirSync(join(root, directory));
+        writeFileSync(join(root, spec), '');
+        const [argument] = selectedSpecArguments([spec], root);
+        if (argument === undefined) {
+            throw new Error('Expected a Playwright file argument');
+        }
+        expect(new RegExp(argument).test(join(root, spec))).toBe(true);
+        expect(new RegExp(argument).test(join(root, 'tests/e2e/nested/a111x.test.mjs'))).toBe(false);
+        expect(() => selectedSpecArguments([directory], root)).toThrow('invalid or missing');
+    });
+
+    it('accepts a mixed-case Playwright filename as a literal selected argument', () => {
+        const root = temporaryRoot();
+        const spec = 'tests/e2e/nested/a[1]+.TEST.ts';
+        mkdirSync(join(root, 'tests/e2e/nested'), { recursive: true });
+        writeFileSync(join(root, spec), '');
+        const argument = selectedSpecArguments([spec], root).at(0);
+        if (argument === undefined) {
+            throw new Error('Expected a Playwright file argument');
+        }
+        expect(new RegExp(argument).test(join(root, spec))).toBe(true);
+        expect(new RegExp(argument).test(join(root, 'tests/e2e/nested/a111.TEST.ts'))).toBe(false);
+    });
+
+    it('rejects an existing file whose extension is uppercase', () => {
+        const root = temporaryRoot();
+        const spec = 'tests/e2e/rejected.Spec.MJS';
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        writeFileSync(join(root, spec), '');
+        expect(() => selectedSpecArguments([spec], root)).toThrow(`Selected E2E spec is invalid or missing: ${spec}`);
     });
 
     it('anchors literal arguments so regex metacharacters cannot broaden selected files', () => {
