@@ -67,7 +67,7 @@ type NotificationEvents = {
     'ui.confirm': ConfirmPayload;
     'ui.prompt': PromptPayload;
 };
-let stopProjectionBridge = () => undefined;
+let stopProjectionBridge: () => void = () => undefined;
 
 function savedMovePoint(
     entry: unknown,
