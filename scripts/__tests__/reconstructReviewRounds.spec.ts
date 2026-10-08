@@ -70,6 +70,13 @@ function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord
     };
 }
 
+function confirmationBody(format: 'compact' | 'legacy', record: ReviewRepairRecord): string {
+    if (format === 'compact') {
+        return renderReviewRepairConfirmationMarker(record, head);
+    }
+    return renderReviewRepairReply(record);
+}
+
 function reviewerReview(id: number, commitId: string, state: string): PublicReview {
     return { id, state, commitId, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'round' };
 }
@@ -178,6 +185,68 @@ describe('reconstruct review rounds', () => {
             ],
         });
     });
+
+    it.each([
+        { format: 'compact', authorId: 102 },
+        { format: 'legacy', authorId: 102 },
+        { format: 'compact', authorId: 101 },
+        { format: 'legacy', authorId: 101 },
+    ] as const)(
+        'refuses a $format confirmation whose matching author repair has ID $authorId',
+        ({ format, authorId }) => {
+            const record = repairRecord(100, head);
+            const comments: PublicReviewComment[] = [
+                rootComment(100, 10),
+                { ...rootComment(101, 10), inReplyToId: 100, body: confirmationBody(format, record) },
+                {
+                    ...rootComment(authorId, 10),
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(record),
+                },
+            ];
+            expect(() =>
+                reconstructReviewRounds(
+                    42,
+                    { state: 'OPEN', head },
+                    [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                    comments
+                )
+            ).toThrow(/confirmation/u);
+        }
+    );
+
+    it.each(['compact', 'legacy'] as const)(
+        'reconstructs a valid %s confirmation from shuffled REST comments by immutable ID',
+        (format) => {
+            const record = repairRecord(100, head);
+            const comments: PublicReviewComment[] = [
+                { ...rootComment(102, 10), inReplyToId: 100, body: confirmationBody(format, record) },
+                rootComment(100, 10),
+                {
+                    ...rootComment(101, 10),
+                    actorNodeId: AUTHOR_BOT_NODE_ID,
+                    inReplyToId: 100,
+                    body: renderReviewRepairReply(record),
+                },
+            ];
+            const reconstruction = reconstructReviewRounds(
+                42,
+                { state: 'OPEN', head },
+                [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+                comments
+            );
+            expect(reconstruction.rounds[0]?.findings[0]).toMatchObject({
+                repairs: [record],
+                confirmations: [
+                    {
+                        format: format === 'compact' ? 'repair-confirmation-v1' : 'legacy-repair-v1',
+                        recordDigest: reviewRepairRecordDigest(record),
+                    },
+                ],
+            });
+        }
+    );
 
     it('keeps empty-evidence V1 author records and legacy reviewer confirmations readable', () => {
         const record = { ...repairRecord(100, head), evidence: [] };

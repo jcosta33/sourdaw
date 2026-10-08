@@ -843,6 +843,41 @@ describe('confirmReviewRepairs', () => {
         expect(mutations).toEqual([]);
     });
 
+    it('refuses a compact confirmation on a sibling head before posting or resolving', () => {
+        const record = recordFor();
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                {
+                    id: 9_102,
+                    body: renderReviewRepairConfirmationMarker(record, OTHER_COMMIT),
+                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                },
+            ],
+        });
+        const siblingHistory = (commit: string, target: string) => {
+            if (commit === target) {
+                return true;
+            }
+            if (target === COMMIT) {
+                return commit === REVIEWED_HEAD;
+            }
+            if (target === HEAD || target === OTHER_COMMIT || target === MOVED_HEAD) {
+                return [REVIEWED_HEAD, COMMIT, HEAD].includes(commit);
+            }
+            return false;
+        };
+        const { port, logs, mutations } = fakePort(MOVED_HEAD, [thread], siblingHistory);
+        expect(siblingHistory(record.head, OTHER_COMMIT)).toBe(true);
+        expect(siblingHistory(record.head, MOVED_HEAD)).toBe(true);
+        expect(siblingHistory(OTHER_COMMIT, MOVED_HEAD)).toBe(false);
+        expect(() => confirmReviewRepairs(PR, MOVED_HEAD, port)).toThrow(REFUSED_MESSAGE);
+        expect(logs).toContain(
+            `repair-refused:${PR}:${THREAD}:thread already carries a confirmation for a different record`
+        );
+        expect(mutations).toEqual([]);
+    });
+
     it('should fail closed on a record bound to another head', () => {
         const threads = cleanThreads();
         const staleRecord = recordFor({ head: MOVED_HEAD });

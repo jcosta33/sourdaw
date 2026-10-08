@@ -76,6 +76,8 @@ export type ReconstructedConfirmation = {
     confirmationHead: string;
 };
 
+type PublicAuthorRepair = { record: ReviewRepairRecord; replyId: number };
+
 export type ReconstructedRound = {
     headSha: string;
     reviewId: number;
@@ -153,7 +155,7 @@ export function reconstructReviewRounds(
             path: comment.path,
             line: comment.line,
             side: comment.side,
-            repairs: repairsByRoot.get(comment.id) ?? [],
+            repairs: (repairsByRoot.get(comment.id) ?? []).map((repair) => repair.record),
             confirmations: confirmationsByRoot.get(comment.id) ?? [],
         }));
         rounds.push({ headSha: review.commitId, reviewId: review.id, role, verdict, findings });
@@ -165,8 +167,8 @@ function reconstructPublicRepairEvidence(
     pr: number,
     comments: readonly PublicReviewComment[],
     roots: ReadonlyMap<number, PublicReviewComment>
-): { repairsByRoot: Map<number, ReviewRepairRecord[]>; confirmationsByRoot: Map<number, ReconstructedConfirmation[]> } {
-    const repairsByRoot = new Map<number, ReviewRepairRecord[]>();
+): { repairsByRoot: Map<number, PublicAuthorRepair[]>; confirmationsByRoot: Map<number, ReconstructedConfirmation[]> } {
+    const repairsByRoot = new Map<number, PublicAuthorRepair[]>();
     const confirmationsByRoot = new Map<number, ReconstructedConfirmation[]>();
     reconstructAuthorRepairs(pr, comments, roots, repairsByRoot);
     reconstructReviewerConfirmations(pr, comments, roots, repairsByRoot, confirmationsByRoot);
@@ -177,7 +179,7 @@ function reconstructAuthorRepairs(
     pr: number,
     comments: readonly PublicReviewComment[],
     roots: ReadonlyMap<number, PublicReviewComment>,
-    repairsByRoot: Map<number, ReviewRepairRecord[]>
+    repairsByRoot: Map<number, PublicAuthorRepair[]>
 ): void {
     for (const comment of comments) {
         if (comment.inReplyToId === undefined || comment.actorNodeId !== AUTHOR_BOT_NODE_ID) {
@@ -193,7 +195,7 @@ function reconstructAuthorRepairs(
         }
         assertPublicRepairFinding(parsed.record, pr, comment.inReplyToId, root);
         const list = repairsByRoot.get(comment.inReplyToId) ?? [];
-        list.push(parsed.record);
+        list.push({ record: parsed.record, replyId: comment.id });
         repairsByRoot.set(comment.inReplyToId, list);
     }
 }
@@ -202,7 +204,7 @@ function reconstructReviewerConfirmations(
     pr: number,
     comments: readonly PublicReviewComment[],
     roots: ReadonlyMap<number, PublicReviewComment>,
-    repairsByRoot: ReadonlyMap<number, ReviewRepairRecord[]>,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
     confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
 ): void {
     for (const comment of comments) {
@@ -232,7 +234,7 @@ function addLegacyConfirmation(
     pr: number,
     root: PublicReviewComment,
     record: ReviewRepairRecord,
-    repairsByRoot: ReadonlyMap<number, ReviewRepairRecord[]>,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
     confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
 ): void {
     const rootId = comment.inReplyToId;
@@ -242,7 +244,7 @@ function addLegacyConfirmation(
     assertPublicRepairFinding(record, pr, rootId, root);
     const digest = reviewRepairRecordDigest(record);
     const source = (repairsByRoot.get(rootId) ?? []).find(
-        (candidate) => reviewRepairRecordDigest(candidate) === digest
+        (candidate) => candidate.replyId < comment.id && reviewRepairRecordDigest(candidate.record) === digest
     );
     if (source === undefined) {
         fail(`review reconstruction: legacy confirmation ${comment.id} does not match an author repair record`);
@@ -250,7 +252,7 @@ function addLegacyConfirmation(
     addReconstructedConfirmation(confirmationsByRoot, rootId, {
         format: 'legacy-repair-v1',
         recordDigest: digest,
-        confirmationHead: source.head,
+        confirmationHead: source.record.head,
     });
 }
 
@@ -259,7 +261,7 @@ function addCompactConfirmation(
     pr: number,
     root: PublicReviewComment,
     confirmation: ReviewRepairConfirmation,
-    repairsByRoot: ReadonlyMap<number, ReviewRepairRecord[]>,
+    repairsByRoot: ReadonlyMap<number, PublicAuthorRepair[]>,
     confirmationsByRoot: Map<number, ReconstructedConfirmation[]>
 ): void {
     const rootId = comment.inReplyToId;
@@ -267,14 +269,20 @@ function addCompactConfirmation(
         return;
     }
     const source = (repairsByRoot.get(rootId) ?? []).find(
-        (record) => reviewRepairRecordDigest(record) === confirmation.recordDigest
+        (candidate) =>
+            candidate.replyId < comment.id && reviewRepairRecordDigest(candidate.record) === confirmation.recordDigest
     );
-    if (source === undefined || confirmation.pr !== pr || confirmation.thread !== source.thread || source.pr !== pr) {
+    if (
+        source === undefined ||
+        confirmation.pr !== pr ||
+        confirmation.thread !== source.record.thread ||
+        source.record.pr !== pr
+    ) {
         fail(
             `review reconstruction: confirmation ${comment.id} has no matching author record, pull request, or thread`
         );
     }
-    assertPublicRepairFinding(source, pr, rootId, root);
+    assertPublicRepairFinding(source.record, pr, rootId, root);
     addReconstructedConfirmation(confirmationsByRoot, rootId, {
         format: confirmation.format,
         recordDigest: confirmation.recordDigest,
