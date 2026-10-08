@@ -181,6 +181,7 @@ export type ClipMoveActionSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
+    readonly audioSource?: AudioSourceStateSnapshot;
 };
 /** Optional clip-source field presence in an inverse action; null means absent. */
 export type AudioSourceStateSnapshot = {

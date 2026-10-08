@@ -3,6 +3,8 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type ClipMoveActionSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { moveClip } from '../../useCases/clip/moveClip';
+import { audioSourceStateMatches } from '../../useCases/clipEditing/audioSourceStateMatches';
+import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
@@ -16,10 +18,24 @@ function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnap
     );
 }
 
-function readPlacement(clipId: string): Omit<ClipMoveActionSnapshot, 'automationLanes'> | null {
+function readPlacement(clipId: string):
+    | (Omit<ClipMoveActionSnapshot, 'automationLanes'> & {
+          sourceMatches: (expected: ClipMoveActionSnapshot) => boolean;
+      })
+    | null {
     const track = getTrackStoreState()?.tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
     const clip = track?.clips.find((candidate) => candidate.id === clipId);
-    return track && clip ? { trackId: track.id, startBeat: clip.startBeat, endBeat: clip.endBeat } : null;
+    return track && clip
+        ? {
+              trackId: track.id,
+              startBeat: clip.startBeat,
+              endBeat: clip.endBeat,
+              sourceMatches: (expected) =>
+                  expected.audioSource === undefined ||
+                  (isAudioSourceStateSnapshot(expected.audioSource) &&
+                      audioSourceStateMatches(clip, expected.audioSource)),
+          }
+        : null;
 }
 
 type RestoreClipPlacementAction = Extract<AppAction, { type: 'restoreClipPlacement' }>;
@@ -31,6 +47,7 @@ function expectedPlacementMatches(action: RestoreClipPlacementAction): boolean {
     return (
         current !== null &&
         placementsMatch({ ...current, automationLanes: [] }, { ...action.payload.expected, automationLanes: [] }) &&
+        current.sourceMatches(action.payload.expected) &&
         clipAutomationMoveStateMatches(action.payload.clipId, action.payload.expected.automationLanes)
     );
 }
@@ -62,7 +79,13 @@ function expectedPlacementMatchesProjected(
         },
         { ...action.payload.expected, automationLanes: [] }
     );
-    return placementMatches && expectedMoveStateMatches(action, projected);
+    return (
+        placementMatches &&
+        (action.payload.expected.audioSource === undefined ||
+            (isAudioSourceStateSnapshot(action.payload.expected.audioSource) &&
+                audioSourceStateMatches(located.clip, action.payload.expected.audioSource))) &&
+        expectedMoveStateMatches(action, projected)
+    );
 }
 
 function expectedMoveStateMatches(action: RestoreClipPlacementAction, projected: ProjectedClipState): boolean {
@@ -92,13 +115,26 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
         // rule can hold an audio clip on a MIDI track). Replay must return the
         // clip there, or the undo head is retained and every later Cmd+Z
         // re-fails on it.
+        if (
+            action.payload.replacement.audioSource !== undefined &&
+            !isAudioSourceStateSnapshot(action.payload.replacement.audioSource)
+        ) {
+            return { status: 'conflict' };
+        }
+        const moveOptions: NonNullable<Parameters<typeof moveClip>[5]> = {
+            historicalPlacement: true,
+            historicalEndBeat: action.payload.replacement.endBeat,
+        };
+        if (action.payload.replacement.audioSource) {
+            moveOptions.historicalAudioSource = action.payload.replacement.audioSource;
+        }
         const moved = moveClip(
             action.payload.clipId,
             action.payload.replacement.trackId,
             action.payload.replacement.startBeat,
             undefined,
             false,
-            { historicalPlacement: true, historicalEndBeat: action.payload.replacement.endBeat }
+            moveOptions
         );
         if (
             !moved ||
@@ -115,7 +151,9 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
             ? placementsMatch(
                   { ...current, automationLanes: [] },
                   { ...action.payload.replacement, automationLanes: [] }
-              ) && clipAutomationMoveStateMatches(action.payload.clipId, action.payload.replacement.automationLanes)
+              ) &&
+                  current.sourceMatches(action.payload.replacement) &&
+                  clipAutomationMoveStateMatches(action.payload.clipId, action.payload.replacement.automationLanes)
             : false;
     },
     previewExecution: 'isolated-project',

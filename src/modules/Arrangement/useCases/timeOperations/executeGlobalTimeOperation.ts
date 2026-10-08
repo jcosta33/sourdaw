@@ -11,6 +11,8 @@ import {
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
+import { clipWithAudioSourceAtBeat } from '../clipEditing/clipWithAudioSourceAtBeat';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
 import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
@@ -291,6 +293,11 @@ function validateClip(value: unknown): value is Clip {
             return false;
         }
     }
+    if (value.audioOffsetSeconds !== undefined) {
+        if (typeof value.audioOffsetSeconds !== 'number' || !Number.isFinite(value.audioOffsetSeconds)) {
+            return false;
+        }
+    }
     if (typeof value.fadeInBeats !== 'number' || typeof value.fadeOutBeats !== 'number') {
         return false;
     }
@@ -341,8 +348,11 @@ function hasValidInsertedClipTimes(clip: Clip, operation: InsertGlobalTimeOperat
 }
 
 function hasValidDeleteOffset(clip: Clip, operationEndBeat: number): boolean {
-    const audioOffsetBeats = clip.audioOffsetBeats ?? 0;
-    return isValidComputedOffset(audioOffsetBeats + (operationEndBeat - clip.startBeat));
+    if (clip.type !== 'audio') {
+        return true;
+    }
+    const source = audioSourceAtBeat(clip, operationEndBeat);
+    return isValidComputedOffset(source.audioOffsetSeconds) && isValidComputedOffset(source.audioOffsetBeats);
 }
 
 function hasValidDeleteMidiSplitTimes(clip: Clip, splitTimelineBeat: number, discardTimelineBeat: number): boolean {
@@ -850,15 +860,16 @@ function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation): C
     if (clip.endBeat <= operation.atBeat) {
         return clip;
     }
+    const materialized = clipWithAudioSourceAtBeat(clip, clip.startBeat);
     if (clip.startBeat >= operation.atBeat) {
         return {
-            ...clip,
+            ...materialized,
             startBeat: clip.startBeat + operation.durationBeats,
             endBeat: clip.endBeat + operation.durationBeats,
         };
     }
     return {
-        ...clip,
+        ...materialized,
         endBeat: clip.endBeat + operation.durationBeats,
     };
 }
@@ -940,7 +951,7 @@ function prepareDeletedTracks(
             if (clip.startBeat >= operation.endBeat) {
                 trackChanged = true;
                 clips.push({
-                    ...clip,
+                    ...clipWithAudioSourceAtBeat(clip, clip.startBeat),
                     startBeat: clip.startBeat - duration,
                     endBeat: clip.endBeat - duration,
                 });
@@ -954,15 +965,24 @@ function prepareDeletedTracks(
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
                 trackChanged = true;
                 const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+                const original = clipWithAudioSourceAtBeat(clip, clip.startBeat);
+                const right = clipWithAudioSourceAtBeat(clip, operation.endBeat);
                 clips.push(
-                    { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)` },
                     {
-                        ...clip,
+                        ...original,
+                        endBeat: operation.startBeat,
+                        name: `${clip.name} (L)`,
+                    },
+                    {
+                        ...right,
                         id: identity.targetClipId,
                         startBeat: operation.startBeat,
                         endBeat: clip.endBeat - duration,
                         name: `${clip.name} (R)`,
-                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                        audioOffsetBeats:
+                            clip.type === 'audio'
+                                ? right.audioOffsetBeats
+                                : (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                         midiOffsetBeats: 0,
                     }
                 );
@@ -978,7 +998,10 @@ function prepareDeletedTracks(
             }
             if (clip.startBeat < operation.startBeat) {
                 trackChanged = true;
-                clips.push({ ...clip, endBeat: operation.startBeat });
+                clips.push({
+                    ...clipWithAudioSourceAtBeat(clip, clip.startBeat),
+                    endBeat: operation.startBeat,
+                });
                 if (clip.type === 'midi') {
                     const mediaSplit = operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                     const identity = getClipIdentity(identityIndex, 'delete-discard', owner.id, clip.id);
@@ -995,12 +1018,16 @@ function prepareDeletedTracks(
 
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+            const right = clipWithAudioSourceAtBeat(clip, operation.endBeat);
             clips.push({
-                ...clip,
+                ...right,
                 id: identity.targetClipId,
                 startBeat: operation.startBeat,
                 endBeat: clip.endBeat - duration,
-                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                audioOffsetBeats:
+                    clip.type === 'audio'
+                        ? right.audioOffsetBeats
+                        : (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
             });
             if (clip.type === 'midi') {
@@ -1074,7 +1101,7 @@ function prepareDuplicatedTracks(
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'duplicate-copy', owner.id, clip.id);
             clips.push({
-                ...clip,
+                ...clipWithAudioSourceAtBeat(clip, clip.startBeat),
                 id: identity.targetClipId,
                 startBeat: clip.startBeat + duration,
                 endBeat: clip.endBeat + duration,

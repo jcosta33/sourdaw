@@ -1,9 +1,13 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
+import { type AudioSourceStateSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
+import { isAudioSourceStateSnapshot } from '../clipEditing/isAudioSourceStateSnapshot';
 
 import { isClipDropCompatible } from './isClipDropCompatible';
 
@@ -19,6 +23,7 @@ type MoveClipOptions = {
     historicalPlacement?: boolean;
     /** Exact captured end when restoring a historical placement. */
     historicalEndBeat?: number;
+    historicalAudioSource?: AudioSourceStateSnapshot;
 };
 
 function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): boolean {
@@ -26,6 +31,9 @@ function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): 
         return false;
     }
     const endBeat = options?.historicalEndBeat;
+    if (options?.historicalAudioSource && !isAudioSourceStateSnapshot(options.historicalAudioSource)) {
+        return false;
+    }
     if (endBeat === undefined) {
         return true;
     }
@@ -47,6 +55,39 @@ function isUnchangedPlacement(
     );
 }
 
+function resolveMovedAudioClip(
+    sourceClip: Clip,
+    movedClip: Clip,
+    startBeat: number,
+    options?: MoveClipOptions
+): Clip | null {
+    if (sourceClip.type !== 'audio') {
+        return movedClip;
+    }
+    const source = options?.historicalAudioSource;
+    if (source) {
+        const restored: Clip = {
+            ...movedClip,
+            audioOffsetSeconds: source.audioOffsetSeconds ?? undefined,
+            audioOffsetBeats: source.audioOffsetBeats ?? undefined,
+        };
+        if (source.audioOffsetSeconds === null) {
+            delete restored.audioOffsetSeconds;
+        }
+        if (source.audioOffsetBeats === null) {
+            delete restored.audioOffsetBeats;
+        }
+        return restored;
+    }
+    const sourceSeconds = audioSourceAtBeat(sourceClip, sourceClip.startBeat).audioOffsetSeconds;
+    const targetTempo = readTempoAtBeat({ beat: startBeat });
+    const targetBeats = (sourceSeconds * targetTempo) / 60;
+    if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBeats)) {
+        return null;
+    }
+    return { ...movedClip, audioOffsetSeconds: sourceSeconds, audioOffsetBeats: targetBeats };
+}
+
 export function moveClip(
     clipId: string,
     targetTrackId: string,
@@ -66,6 +107,7 @@ export function moveClip(
     }
 
     let movedClip: Clip | undefined;
+    let sourceClip: Clip | undefined;
     let oldStartBeat: number | undefined;
     let oldEndBeat: number | undefined;
     let sourceTrackId: string | undefined;
@@ -76,6 +118,7 @@ export function moveClip(
                 return time;
             }
             oldStartBeat = clip.startBeat;
+            sourceClip = clip;
             oldEndBeat = clip.endBeat;
             sourceTrackId = time.id;
             movedClip = {
@@ -88,7 +131,13 @@ export function moveClip(
         return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
     });
 
-    if (!movedClip || oldStartBeat === undefined || oldEndBeat === undefined || sourceTrackId === undefined) {
+    if (
+        !movedClip ||
+        !sourceClip ||
+        oldStartBeat === undefined ||
+        oldEndBeat === undefined ||
+        sourceTrackId === undefined
+    ) {
         return false;
     }
     // `acceptsClipUpdate` is true for bus/master/folder, but none of them
@@ -111,6 +160,12 @@ export function moveClip(
     if (isUnchangedPlacement(sourceTrackId, targetTrackId, oldStartBeat, oldEndBeat, startBeat, options)) {
         return false;
     }
+
+    const adjustedClip = resolveMovedAudioClip(sourceClip, movedClip, startBeat, options);
+    if (!adjustedClip) {
+        return false;
+    }
+    movedClip = adjustedClip;
 
     setTrackState({
         ...state,

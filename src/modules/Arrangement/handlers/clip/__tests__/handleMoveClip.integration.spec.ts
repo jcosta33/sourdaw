@@ -15,10 +15,12 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -65,6 +67,8 @@ describe('handleMoveClip atomic integration', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         const clip = ClipDummy.create({
             id: 'clip-1',
@@ -109,6 +113,68 @@ describe('handleMoveClip atomic integration', () => {
         automationStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        tempoMapStore.set({ changes: [] });
+        transportStore.set(structuredClone(defaultTransportState));
+    });
+
+    it('preserves legacy source presence through move, undo, and redo across tempo', async () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        const before = trackStore.value!;
+        const original = before.tracks[0]!.clips[0]!;
+        trackStore.set({
+            ...before,
+            tracks: [{ ...before.tracks[0]!, clips: [{ ...original, audioOffsetBeats: 2 }] }, before.tracks[1]!],
+        });
+        const action = { type: 'moveClip' as const, payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 6 } };
+
+        expect(await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true })).toMatchObject({
+            status: 'committed',
+        });
+        expect(trackStore.value?.tracks[1]?.clips[0]).toMatchObject({ audioOffsetSeconds: 1, audioOffsetBeats: 1 });
+
+        await undo();
+        const restored = trackStore.value?.tracks[0]?.clips[0];
+        expect(restored?.audioOffsetBeats).toBe(2);
+        expect(Object.hasOwn(restored ?? {}, 'audioOffsetSeconds')).toBe(false);
+        const rawUndo = getCrdtDoc<{ tracks: { tracks: { clips: { audioOffsetSeconds?: number }[] }[] } }>('root');
+        expect(Object.hasOwn(rawUndo?.tracks.tracks[0]?.clips[0] ?? {}, 'audioOffsetSeconds')).toBe(false);
+
+        await redo();
+        expect(trackStore.value?.tracks[1]?.clips[0]).toMatchObject({ audioOffsetSeconds: 1, audioOffsetBeats: 1 });
+    });
+
+    it('keeps a peer source edit and the redo entry after undo', async () => {
+        const action = { type: 'moveClip' as const, payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 } };
+        expect(await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true })).toMatchObject({
+            status: 'committed',
+        });
+        await undo();
+
+        const beforePeer = trackStore.value!;
+        const sourceTrack = beforePeer.tracks[0]!;
+        trackStore.set({
+            ...beforePeer,
+            tracks: [
+                { ...sourceTrack, clips: [{ ...sourceTrack.clips[0]!, audioOffsetSeconds: 7 }] },
+                beforePeer.tracks[1]!,
+            ],
+        });
+        const peerState = trackStore.value;
+        const peerRaw = structuredClone(getCrdtDoc('root'));
+        const future = undoHistoryStore.value?.future;
+
+        await redo();
+
+        expect(trackStore.value).toBe(peerState);
+        expect(getCrdtDoc('root')).toEqual(peerRaw);
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(7);
+        expect(undoHistoryStore.value?.future).toEqual(future);
+        expect(undoHistoryStore.value?.past).toEqual([]);
     });
 
     it('commits atomically and round-trips exact track membership and geometry through undo and redo', async () => {
