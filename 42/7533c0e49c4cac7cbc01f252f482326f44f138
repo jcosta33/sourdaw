@@ -1,0 +1,31 @@
+.agents/skills/review-stances/provider-egress.md
+  s_4c8cd08893b364::t_ba6fc83757f632 57-61
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_97ab82e0b4f10c::t_c8616596c73124 5712,5714-5716,5720-5754,5861,5867
+scripts/semanticReview/provider.ts
+  s_97ab82e0b4f10c::t_baef237cfb9500 485
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "427533c0e49c4cac7cbc01f252f482326f44f138",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
