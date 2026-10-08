@@ -1,0 +1,65 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_1c08b47ac3792f::t_d767bf156ecd68 535
+  s_1c08b47ac3792f::t_6a5c4936fb4afc 542-543
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_1c08b47ac3792f::t_9a774447f69024 327
+  s_1c08b47ac3792f::t_8b4ebfda8e0d2c 338-341,344
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_e3a1131e83da64 48
+src/modules/AiRuntime/models/ModelInfo.ts
+  s_1c08b47ac3792f::t_03afbeca443a28 37
+  s_1c08b47ac3792f::t_1a6ddeff22d70f 58-60
+src/modules/AiRuntime/transformers/estimateConservativePromptTokens.ts
+  s_1c08b47ac3792f::t_d75060cf31a67a 1-11,23-28,33-36
+  s_1c08b47ac3792f::t_9abe93c1862678 29-30
+  s_1c08b47ac3792f::t_988a89909fff4b 31-32
+src/modules/AiRuntime/transformers/__tests__/budgetLocalPlanningRequest.spec.ts
+  s_1c08b47ac3792f::t_9c4b870804df75 21-38
+  s_4c8cd08893b364::t_9cec37af665708 39
+src/modules/AiRuntime/useCases/__tests__/planningProjectFixture.ts
+  s_1c08b47ac3792f::t_a804bcf6d37448 1-2,16-21,24-50,60,67-88,90,112-115,117-119,130,134-141,143-158,161,164,167-168,170,178-179
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_1c08b47ac3792f::t_05e986235fd8cd 1192
+  s_1c08b47ac3792f::t_b44e30879798b5 1216
+  s_1c08b47ac3792f::t_df8629dec11309 1211-1212
+  s_1c08b47ac3792f::t_4de466626275af 1246-1253,1255,1257
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_1c08b47ac3792f::t_52b1b0218c5247 475
+  s_1c08b47ac3792f::t_13ae2e8007eed3 32-37
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_24925d6f50b0b8 604,606
+  s_1c08b47ac3792f::t_2e7f7c27e267ff 797
+  s_1c08b47ac3792f::t_a4356ba9b38538 9
+  s_1c08b47ac3792f::t_6fa742f0bd5451 755
+  s_1c08b47ac3792f::t_610a472f4d3f37 657
+  s_1c08b47ac3792f::t_7853ce2e92b4e5 805-810,817,824,833
+  s_1c08b47ac3792f::t_71433dc21ca225 811-816,818-823,825-832,834-861
+  s_1c08b47ac3792f::t_0b774611e42aba 664
+  s_1c08b47ac3792f::t_93ec5301db730d 650
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_0d9ab36083a437 386,539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7e0156f39b833761f8ab032db313084ebcccce0",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
