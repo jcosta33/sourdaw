@@ -1,0 +1,23 @@
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_1f0dcd815e8946::t_0f1157a978d83c 209,220
+  s_1f0dcd815e8946::t_495f8b0853f5c2 176,198-208,210-219,221-229,697-698
+src/infra/store/storage/__tests__/createAutomergeStorage.numericFidelity.spec.ts
+  s_1f0dcd815e8946::t_c156b6fd1b0f07 1-150
+  s_1f0dcd815e8946::t_1619c87149aaea 151-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e626aa2ecfbdbd062ee7d4a1d2b0c1471c24582",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
