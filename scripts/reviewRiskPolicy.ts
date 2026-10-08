@@ -165,35 +165,46 @@ function earnedStances(riskClasses: readonly ReviewRiskClass[]): ReviewStanceId[
     return [...stances].sort();
 }
 
-function prefixTriggers(rule: string, prefixes: readonly string[], paths: readonly ReviewChangedPath[]): string[] {
+/**
+ * One classifiable path side: a record's destination, or — on a rename record — its source. A rename
+ * is one changed file counted once, but its source classifies under its own group exactly as the
+ * delete+add form's deleted record does, so a move out of a specialist tree earns that tree's classes.
+ */
+type PathSide = Pick<ReviewChangedPath, 'path' | 'group'>;
+
+function sidesOf(entry: ReviewChangedPath): readonly PathSide[] {
+    return entry.previous === undefined ? [entry] : [entry, entry.previous];
+}
+
+function prefixTriggers(rule: string, prefixes: readonly string[], sides: readonly PathSide[]): string[] {
     return prefixes
-        .filter((prefix) => paths.some((entry) => entry.path.startsWith(prefix)))
+        .filter((prefix) => sides.some((side) => side.path.startsWith(prefix)))
         .map((prefix) => `${rule}:${prefix}`);
 }
 
-function exactTriggers(rule: string, exactPaths: readonly string[], paths: readonly ReviewChangedPath[]): string[] {
-    return exactPaths.filter((exact) => paths.some((entry) => entry.path === exact)).map((exact) => `${rule}:${exact}`);
+function exactTriggers(rule: string, exactPaths: readonly string[], sides: readonly PathSide[]): string[] {
+    return exactPaths.filter((exact) => sides.some((side) => side.path === exact)).map((exact) => `${rule}:${exact}`);
 }
 
-function realtimeAudioFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
+function realtimeAudioFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
-        ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, paths),
-        ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, paths),
+        ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, sides),
+        ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'realtime-audio', triggers }];
 }
 
-function nativeSecurityFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
+function nativeSecurityFindings(sides: readonly PathSide[]): RiskFinding[] {
     const triggers = [
-        ...prefixTriggers('native-security', NATIVE_SECURITY_PREFIXES, paths),
-        ...exactTriggers('native-security', NATIVE_SECURITY_PATHS, paths),
-        ...exactTriggers('native-security', GOVERNANCE_TRANSITION_PATHS, paths),
+        ...prefixTriggers('native-security', NATIVE_SECURITY_PREFIXES, sides),
+        ...exactTriggers('native-security', NATIVE_SECURITY_PATHS, sides),
+        ...exactTriggers('native-security', GOVERNANCE_TRANSITION_PATHS, sides),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
 }
 
-function undoFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    const triggers = paths.filter((entry) => isUndoPath(entry.path)).map((entry) => `undo:${entry.path}`);
+function undoFindings(sides: readonly PathSide[]): RiskFinding[] {
+    const triggers = sides.filter((side) => isUndoPath(side.path)).map((side) => `undo:${side.path}`);
     return triggers.length === 0 ? [] : [{ riskClass: 'undo', triggers }];
 }
 
@@ -205,23 +216,23 @@ function moduleDomain(path: string): string | undefined {
     return domain === undefined || domain === '' ? undefined : domain;
 }
 
-function spansMultipleSurfaces(paths: readonly ReviewChangedPath[]): boolean {
+function spansMultipleSurfaces(sides: readonly PathSide[]): boolean {
     const domains = new Set<string>();
     let hasCrossCuttingPath = false;
-    for (const entry of paths) {
-        const domain = moduleDomain(entry.path);
+    for (const side of sides) {
+        const domain = moduleDomain(side.path);
         if (domain !== undefined) {
             domains.add(domain);
         }
-        if (CROSS_CUTTING_PREFIXES.some((prefix) => entry.path.startsWith(prefix))) {
+        if (CROSS_CUTTING_PREFIXES.some((prefix) => side.path.startsWith(prefix))) {
             hasCrossCuttingPath = true;
         }
     }
     return domains.size > 1 || (domains.size > 0 && hasCrossCuttingPath);
 }
 
-function crossDomainFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    if (!spansMultipleSurfaces(paths)) {
+function crossDomainFindings(sides: readonly PathSide[]): RiskFinding[] {
+    if (!spansMultipleSurfaces(sides)) {
         return [];
     }
     return [{ riskClass: 'cross-domain', triggers: ['cross-domain:multiple-surfaces'] }];
@@ -235,19 +246,26 @@ function sizeFinding(paths: readonly ReviewChangedPath[]): RiskFinding {
     return { riskClass: 'ordinary', triggers: [`ordinary:handwritten-lines>${REVIEW_SMALL_CHANGE_LINE_BUDGET}`] };
 }
 
-function specialistFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
+function specialistFindings(sides: readonly PathSide[]): RiskFinding[] {
     return [
-        ...realtimeAudioFindings(paths),
-        ...nativeSecurityFindings(paths),
-        ...undoFindings(paths),
-        ...crossDomainFindings(paths),
+        ...realtimeAudioFindings(sides),
+        ...nativeSecurityFindings(sides),
+        ...undoFindings(sides),
+        ...crossDomainFindings(sides),
     ];
 }
 
 function decideFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    const handwritten = paths.filter((entry) => entry.group === 'handwritten');
-    const findings = specialistFindings(handwritten);
-    return findings.length === 0 ? [sizeFinding(handwritten)] : findings;
+    // A side joins the handwritten classification under its own group, so a rename record
+    // contributes its source side even when the destination landed elsewhere; the size budget still
+    // counts one numstat record once, so a record with either side handwritten counts its lines once.
+    const handwrittenSides = paths.flatMap((entry) => sidesOf(entry).filter((side) => side.group === 'handwritten'));
+    const findings = specialistFindings(handwrittenSides);
+    if (findings.length > 0) {
+        return findings;
+    }
+    const handwritten = paths.filter((entry) => sidesOf(entry).some((side) => side.group === 'handwritten'));
+    return [sizeFinding(handwritten)];
 }
 
 function testOnlyFindings(): RiskFinding[] {

@@ -796,6 +796,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         selectedBitDepth: bitDepth,
     });
 
+    // The status slot is a fixed 40px row for the progress and ready layouts; a
+    // failure message wraps to several lines and needs the slot to grow, so the
+    // container drops to min-height exactly when this error branch renders.
+    const showOvenError = !exporting && progress !== 100 && errorText !== '';
+
     const renderOvenStatus = (): ReactElement => {
         if (exporting || progress === 100) {
             return (
@@ -829,7 +834,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 </Stack>
             );
         }
-        if (errorText) {
+        if (showOvenError) {
             // A failure sets exporting=false and progress=0, so this branch is
             // the only place the failure status is ever visible — keep it beside
             // the error detail.
@@ -1298,7 +1303,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         title="Oven Status"
                         detail={isNativeProjectRuntimeAvailable() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
-                        <div className="h-10">{renderOvenStatus()}</div>
+                        <div className={showOvenError ? 'min-h-10' : 'h-10'}>{renderOvenStatus()}</div>
                     </DawDialogSection>
 
                     {unbakedToasterPatterns.length > 0 ? (

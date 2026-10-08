@@ -519,6 +519,15 @@ export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 
 export const CHECK_CONTEXT_CLAUSES = ['before merging'];
 
 /**
+ * The DAW material a step can merge: audio stems, buses, and tracks, in both numbers. A `before
+ * merging` clause that closes on a tail naming one of these is the step's own operation (`before
+ * merging the stems`), so only a tail naming none of them is delivery. Closed on purpose: an open
+ * noun list would let branch-and-delivery words launder past the clause again. Exported so the
+ * specs can pin the inventory: changing any member reddens the equality pin and that member's case.
+ */
+export const MERGE_DAW_NOUNS = ['stem', 'stems', 'bus', 'buses', 'track', 'tracks'];
+
+/**
  * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
  * in the same segment: `the existing test track still passes`, `the existing test project covers
  * this`, `the existing test clip is still passing`. The progressive `passing` and `failing` read as

@@ -860,4 +860,45 @@ describe('ExportDialog', () => {
         });
         expect(screen.getByText('disk full')).toBeInTheDocument();
     });
+
+    it('grows the oven status slot for a long failure message instead of clipping it', async () => {
+        // Native write failures carry the command plus the full output path, so
+        // the message wraps to several lines inside the slot. jsdom cannot
+        // measure wrapping, so the observable is the slot's class: min-height
+        // (free to grow) in the failure state instead of the fixed height that
+        // clipped the message's bottom.
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(
+            new Error(
+                'Bake failed: sourdaw-mixdown exited 1 while writing "/Users/musician/Bounces/My Song (final mix) 2026-10-07.wav"'
+            )
+        );
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        const errorNode = await screen.findByText(/Bake failed:/);
+        expect(errorNode).toBeInTheDocument();
+        expect(errorNode.closest('.min-h-10')).not.toBeNull();
+        expect(errorNode.closest('.h-10')).toBeNull();
+    });
+
+    it('keeps the fixed oven status slot for the ready layout', () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.getByText(/Oven Ready/).closest('.h-10')).not.toBeNull();
+    });
+
+    it('keeps the fixed oven status slot during a retry flight after a failed export', async () => {
+        mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => {
+            expect(screen.getByText('disk full')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        const bar = await screen.findByRole('progressbar');
+        expect(bar.closest('.h-10')).not.toBeNull();
+    });
 });
