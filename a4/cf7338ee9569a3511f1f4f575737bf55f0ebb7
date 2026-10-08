@@ -1,0 +1,27 @@
+crates/sourdaw-native/src/shutdown.rs
+  s_1f0dcd815e8946::t_2b62805007d958 115-123,151,188,202,290-293,311-312,325
+  s_1f0dcd815e8946::t_7e3a37d3ff320b 845-847,852-853,855,860-878,881,890-907,909-916
+  s_1f0dcd815e8946::t_d689955f720ee4 114
+.agents/skills/review-stances/test-validity.md
+  s_1f0dcd815e8946::t_ae7ed06e0eee6b 9-10,12-23
+  s_1f0dcd815e8946::t_5971e09704a004 11
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_ae7ed06e0eee6b 32-33,35-43
+  s_1f0dcd815e8946::t_5971e09704a004 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4cf7338ee9569a3511f1f4f575737bf55f0ebb7",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
