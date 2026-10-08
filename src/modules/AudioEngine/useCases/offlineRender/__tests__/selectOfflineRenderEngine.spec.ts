@@ -325,6 +325,32 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
         });
 
+        // A skipped send must not end the scan: the sends after it are still the
+        // gate's to read.
+        it('degrades a bus whose first send names an unbuilt bus and whose second names a built one', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const sends: Track['sends'] = [
+                { busId: 'bus-gone', level: 0.4, preFader: false },
+                { busId: 'bus-b', level: 0.4, preFader: false },
+            ];
+
+            const selection = await selectOfflineRenderEngine(busSendProject(null, { sends }));
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
+        });
+
+        it('degrades a muted bus whose post-fader send is followed by a pre-fader send', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const sends: Track['sends'] = [
+                { busId: 'bus-b', level: 0.4, preFader: false },
+                { busId: 'bus-b', level: 0.4, preFader: true },
+            ];
+
+            const selection = await selectOfflineRenderEngine(busSendProject(null, { sends, muted: true }));
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
+        });
+
         it('hands a track-origin send to a bus to the native engine', async () => {
             mocks.availability = { available: true, transport: stubTransport };
             const project = busSendProject(null);
