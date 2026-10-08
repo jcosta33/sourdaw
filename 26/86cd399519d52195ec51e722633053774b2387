@@ -1,0 +1,19 @@
+src/modules/Crumbs/stores/sampleLoadGate.ts
+  s_97ab82e0b4f10c::t_8c414f9efe9eff 22-28,34,48-51,53,56-60,62-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2686cd399519d52195ec51e722633053774b2387",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
