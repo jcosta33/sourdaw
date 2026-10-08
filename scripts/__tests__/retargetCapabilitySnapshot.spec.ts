@@ -337,6 +337,47 @@ describe('bounded capability capture', () => {
         expect(emitted.sourceSha).toBe(SOURCE);
         expect(disposed).toHaveBeenCalledOnce();
     });
+
+    it('emits an explicit limitation for two stable reads with a null required-check list', () => {
+        const { port } = fakePort();
+        const disposed = vi.fn();
+        const printed: string[] = [];
+        const result = runRetargetCapabilityPlanCli([], {
+            sourceCheck: () => SOURCE,
+            primaryRoot: () => '/primary',
+            authenticate: () => ({
+                minted: { actorNodeId: USER.node_id },
+                session: { configDir: '/unused', env: {}, dispose: disposed },
+            }),
+            readPort: () => ({
+                ...port,
+                ruleset: () => ({
+                    ...RULE,
+                    rules: [
+                        {
+                            type: 'required_status_checks',
+                            parameters: { strict_required_status_checks_policy: false, required_status_checks: null },
+                        },
+                    ],
+                }),
+            }),
+            now: () => '2026-10-08T00:00:00.000Z',
+            print: (value) => printed.push(value),
+        });
+        expect(result).toBe(0);
+        expect(printed).toHaveLength(1);
+        const value = printed[0];
+        if (value === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted: unknown = JSON.parse(value);
+        expect(emitted).toMatchObject({
+            completeObservedInventory: false,
+            limitations: ['an applicable ruleset has incomplete required status checks'],
+            activationEligible: false,
+        });
+        expect(disposed).toHaveBeenCalledOnce();
+    });
 });
 
 describe('landed source provenance', () => {

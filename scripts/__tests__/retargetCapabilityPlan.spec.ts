@@ -1,7 +1,14 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson } from '../canonicalRecord.ts';
-import { buildCapabilityPlan, renderCapabilityPlan, type CapabilityObservation } from '../retargetCapabilityPlan.ts';
+import {
+    CAPABILITY_PROPOSAL,
+    buildCapabilityPlan,
+    renderCapabilityPlan,
+    type CapabilityObservation,
+} from '../retargetCapabilityPlan.ts';
 
 const SOURCE = 'a'.repeat(40);
 const INTERVAL = { startedAt: '2026-10-08T00:00:00.000Z', endedAt: '2026-10-08T00:00:01.000Z' };
@@ -120,7 +127,10 @@ describe('inactive retarget capability plan', () => {
     it('includes default branch policy but makes uncertain selectors incomplete', () => {
         const input = observed();
         const defaultRule = requiredRuleset(input);
-        expect(buildCapabilityPlan(input, SOURCE, INTERVAL).originalMainRollback).toEqual([canonicalJson(defaultRule)]);
+        const knownDefault = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(knownDefault.originalMainRollback).toEqual([canonicalJson(defaultRule)]);
+        expect(knownDefault.completeObservedInventory).toBe(true);
+        expect(knownDefault.limitations).toEqual([]);
         const wildcard = { ...defaultRule, conditions: { ref_name: { include: ['refs/heads/m*'], exclude: [] } } };
         input.rulesets.splice(0, 1, wildcard);
         const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
@@ -211,9 +221,72 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
     });
 
+    it('marks present unreadable required status checks incomplete while accepting optional parameters and valid arrays', () => {
+        const malformed = observed();
+        requiredRuleset(malformed).rules = [
+            {
+                type: 'required_status_checks',
+                parameters: { strict_required_status_checks_policy: false, required_status_checks: null },
+            },
+        ];
+        const incomplete = buildCapabilityPlan(malformed, SOURCE, INTERVAL);
+        expect(incomplete.completeObservedInventory).toBe(false);
+        expect(incomplete.limitations).toContain('an applicable ruleset has incomplete required status checks');
+        expect(incomplete.activationEligible).toBe(false);
+
+        const optional = observed();
+        requiredRuleset(optional).rules = [{ type: 'required_status_checks' }];
+        expect(buildCapabilityPlan(optional, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
+
+        const valid = observed();
+        requiredRuleset(valid).rules = [
+            {
+                type: 'required_status_checks',
+                parameters: {
+                    strict_required_status_checks_policy: false,
+                    required_status_checks: [{ context: 'Gate' }],
+                    do_not_enforce_on_create: false,
+                },
+            },
+        ];
+        expect(buildCapabilityPlan(valid, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
+    });
+
+    it.each([
+        { strict_required_status_checks_policy: 'false', required_status_checks: [] },
+        { strict_required_status_checks_policy: false, required_status_checks: [{}] },
+        { strict_required_status_checks_policy: false, required_status_checks: [null] },
+        { do_not_enforce_on_create: 'false', required_status_checks: [] },
+    ])('marks an unreadable present required-check value incomplete', (parameters) => {
+        const input = observed();
+        requiredRuleset(input).rules = [{ type: 'required_status_checks', parameters }];
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
+    });
+
     it('refuses any altered or enabled proposal at render time', () => {
         const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
         plan.activationEligible = true;
         expect(() => renderCapabilityPlan(plan)).toThrow(/inactive proposal/u);
+    });
+
+    it('keeps the expected disabled proposal and its digest independent from a returned plan', () => {
+        const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        const expected = canonicalJson(CAPABILITY_PROPOSAL);
+        const digest = createHash('sha256').update(expected).digest('hex');
+        const proposal = plan.proposal;
+        if (proposal === null || Array.isArray(proposal) || typeof proposal !== 'object') {
+            throw new Error('test fixture has no proposal object');
+        }
+        proposal.enforcement = 'active';
+        expect(plan.activationEligible).toBe(false);
+        expect(() => renderCapabilityPlan(plan)).toThrow(/inactive proposal/u);
+        expect(canonicalJson(CAPABILITY_PROPOSAL)).toBe(expected);
+        expect(plan.proposalDigest).toBe(digest);
+
+        const changedDigest = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        changedDigest.proposalDigest = '0'.repeat(64);
+        expect(() => renderCapabilityPlan(changedDigest)).toThrow(/inactive proposal/u);
     });
 });

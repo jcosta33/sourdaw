@@ -6,14 +6,18 @@ import { ORCHESTRATOR_USER_NODE_ID } from './githubAppIdentity.ts';
 import { captureRollback, type RulesetDocument } from './rulesetHardening.ts';
 
 export const CAPABILITY_PROPOSAL_NAME = 'native-publication-nonmain';
-export const CAPABILITY_PROPOSAL: RulesetDocument = {
-    name: CAPABILITY_PROPOSAL_NAME,
-    target: 'branch',
-    enforcement: 'disabled',
-    conditions: { ref_name: { include: ['~ALL'], exclude: ['refs/heads/main'] } },
-    bypass_actors: [{ actor_id: 8978270, actor_type: 'User', bypass_mode: 'always' }],
-    rules: [{ type: 'creation' }, { type: 'update', parameters: { update_allows_fetch_and_merge: false } }],
-};
+function capabilityProposal(): RulesetDocument {
+    return {
+        name: CAPABILITY_PROPOSAL_NAME,
+        target: 'branch',
+        enforcement: 'disabled',
+        conditions: { ref_name: { include: ['~ALL'], exclude: ['refs/heads/main'] } },
+        bypass_actors: [{ actor_id: 8978270, actor_type: 'User', bypass_mode: 'always' }],
+        rules: [{ type: 'creation' }, { type: 'update', parameters: { update_allows_fetch_and_merge: false } }],
+    };
+}
+
+export const CAPABILITY_PROPOSAL = capabilityProposal();
 
 export type CapabilityObservation = {
     readonly user: RulesetDocument;
@@ -150,6 +154,24 @@ function ruleLimitations(rule: JsonValue): string[] {
     const known = KNOWN_RULE_PARAMETERS[type];
     if (known === undefined || Object.keys(parameters).some((key) => !known.includes(key))) {
         return ['an applicable ruleset has unknown parameter semantics'];
+    }
+    if (type === 'required_status_checks') {
+        const checks = parameters.required_status_checks;
+        if (
+            (parameters.strict_required_status_checks_policy !== undefined &&
+                typeof parameters.strict_required_status_checks_policy !== 'boolean') ||
+            (parameters.do_not_enforce_on_create !== undefined &&
+                typeof parameters.do_not_enforce_on_create !== 'boolean') ||
+            !jsonArray(checks) ||
+            checks.some((check) => {
+                if (check === null || Array.isArray(check) || typeof check !== 'object') {
+                    return true;
+                }
+                return typeof check.context !== 'string' || check.context.length === 0;
+            })
+        ) {
+            return ['an applicable ruleset has incomplete required status checks'];
+        }
     }
     return [];
 }
@@ -323,6 +345,7 @@ export function buildCapabilityPlan(
         exactProtection: observation.exactMainProtection,
     };
     const rollback = mainSelection.rulesets.map((ruleset) => captureRollback(ruleset));
+    const proposal = capabilityProposal();
     const plan: RulesetDocument = {
         format: 'retarget-capability-plan-v1',
         sourceSha,
@@ -331,8 +354,8 @@ export function buildCapabilityPlan(
         baselineDigest: sha256(baseline),
         originalMainSemanticDigest: sha256(mainPolicy),
         originalMainRollback: rollback,
-        proposal: CAPABILITY_PROPOSAL,
-        proposalDigest: sha256(CAPABILITY_PROPOSAL),
+        proposal,
+        proposalDigest: sha256(proposal),
         futureActorOperationIntent: {
             operatorUser: {
                 actorId: 8978270,
@@ -366,9 +389,11 @@ export function buildCapabilityPlan(
 }
 
 export function renderCapabilityPlan(plan: RulesetDocument): string {
+    const expectedProposal = capabilityProposal();
     if (
         plan.activationEligible !== false ||
-        canonicalJson(plan.proposal ?? null) !== canonicalJson(CAPABILITY_PROPOSAL)
+        canonicalJson(plan.proposal ?? null) !== canonicalJson(expectedProposal) ||
+        plan.proposalDigest !== sha256(expectedProposal)
     ) {
         throw new Error('inactive proposal contract changed');
     }
