@@ -46,6 +46,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
         getAutomationValueAtBeat: vi.fn(),
         getClipAutomationMoveState: vi.fn(),
         isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         recordAutomationValue: vi.fn(),
         releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
         removeAutomationLane: vi.fn(),
