@@ -2220,6 +2220,17 @@ function isStatedBeatCount(maskedScope: string, number: PromptNumber): boolean {
     return /^\s*beats?\b/iu.test(maskedScope.slice(number.end));
 }
 
+/**
+ * Whether the figure is stated as an arrangement duration (beats, bars, or measures) — units no
+ * descriptor carries, so the figure is evidence about the creation and never about a treatment
+ * value on an existing track. Seconds and minutes stay out: descriptors state those units, so a
+ * figure carrying one may be the treatment value itself. The joining reads through the hyphen a
+ * compound states it with: "a 4-beat loop" carries the same figure "4 beats" does.
+ */
+function isStatedArrangementDuration(maskedScope: string, number: PromptNumber): boolean {
+    return /^[-\s]*(?:beats?|bars?|measures?)\b/iu.test(maskedScope.slice(number.end));
+}
+
 function findBeatDurationNumbers(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber[] {
     return numbers.filter((number) => isStatedBeatCount(maskedScope, number));
 }
@@ -2431,10 +2442,14 @@ function getExpectedNumbers(
             return true;
         }
         // A descriptor-backed parameter is read against whatever scope stands in for it, and on the
-        // creative route that is the whole request. A figure stated as a beat count is the duration
-        // its own clause gives the created content, and no descriptor unit is a beat count, so it is
-        // evidence about the creation and never about a treatment value on an existing track.
-        return !isRatioUnitDenominator(actionScope.masked, number) && !isStatedBeatCount(actionScope.masked, number);
+        // creative route that is the whole request. A figure stated as an arrangement duration is
+        // the duration its own clause gives the created content, and no descriptor unit is a beat,
+        // bar, or measure count, so it is evidence about the creation and never about a treatment
+        // value on an existing track.
+        return (
+            !isRatioUnitDenominator(actionScope.masked, number) &&
+            !isStatedArrangementDuration(actionScope.masked, number)
+        );
     });
     if (numbers.length === 0) {
         return [];
