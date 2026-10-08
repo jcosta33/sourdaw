@@ -351,6 +351,17 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
         });
 
+        it('degrades a sending bus that comes after a bus with no sends', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const { renderableTracks, ...rest } = busSendProject({});
+            const [track, busA, busB] = renderableTracks;
+
+            // Order is the point: the scan must read past the send-less Bus B.
+            const selection = await selectOfflineRenderEngine({ ...rest, renderableTracks: [track!, busB!, busA!] });
+
+            expect(selection).toMatchObject({ engine: 'web-audio/offline', degraded: true });
+        });
+
         it('hands a track-origin send to a bus to the native engine', async () => {
             mocks.availability = { available: true, transport: stubTransport };
             const project = busSendProject(null);
