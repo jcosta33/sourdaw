@@ -140,13 +140,17 @@ before releasing either temporary run assets or confirmation resources, and must
 while cleanup remains pending. Repeat without temporary assets: an already-terminal no-op cannot
 prove persistence. A mocked cancellation helper misses the live-store-before-storage failure seam.
 
-### 2026-10-08 — deleting a track left its input capture alive (escaped via PR #867 and #2387)
+### 2026-10-08 — deleting a track left its input capture alive
 
-PR #867 put strip teardown in `removeTrack` without releasing the track's input-monitor owner;
-PR #2387 added bulk track removal by calling that use case before command commit. Review followed
-the visible strip and undo state, missing the recorder's separate per-track edge and capture lease.
-Deleting the last monitored track could leave its MediaStream running, and bulk deletion could stop
-live resources even if the project transaction aborted.
+PR #312 added `removeTrackStrip` and `removeBusStrip` calls to `removeTrack`; bulk removal already
+looped through `removeTrack` before PR #2387. PR #867 made runtime strip teardown deferrable, and
+PR #2387 added bulk-removal undo snapshots. PR #4255 later gave the shared monitor capture
+per-track edges and pending owners, and PR #4449 keyed captures by input while retaining per-track
+ownership. Before this fix, track removal released the engine strip without releasing that recorder
+owner. The missing lifecycle probe crossed the Arrangement and recorder owners: deleting the last
+monitored track could leave its MediaStream running, while deletion before a pending grant could
+recreate an edge for a removed track. Bulk deletion also needed proof that aborted project writes
+retain live resources.
 
 Probe: start two tracks monitoring one input through the public AudioEngine API. Delete one through
 each Arrangement removal route and check that only its source edge disconnects; delete the last and
