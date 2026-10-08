@@ -1,0 +1,43 @@
+scripts/__tests__/semanticReviewMeasurement.spec.ts
+  s_2bfd55a4393d7c::t_265bd1c8881465 676-700,702-751,753
+scripts/__tests__/typesafeRequest.spec.ts
+  s_2bfd55a4393d7c::t_1ebd17af4d52b3 208-232
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_2bfd55a4393d7c::t_0c788f10c10d22 5660-5700
+scripts/semanticReviewMeasurement/record.ts
+  s_1c08b47ac3792f::t_05e3dd73bb2872 168-172
+scripts/typesafeRequest.ts
+  s_4c8cd08893b364::t_b095679f235f91 91-101,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80b9c632bb6f75b508d757d2f7b808a31dfa615d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
