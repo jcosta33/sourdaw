@@ -1,0 +1,37 @@
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_1f0dcd815e8946::t_fd7305f585712d 1,16-17,48
+  s_1f0dcd815e8946::t_3efeeabec47deb 2-3,11-15,18-22,43-47,49-50,54-67,85
+  s_1f0dcd815e8946::t_139fe53e040917 86,130,161
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_1f0dcd815e8946::t_8d3031e32bf1d1 1-4,32-33,37-49
+  s_1f0dcd815e8946::t_2d076cf47d54d5 50-51,100,135
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithComping.spec.ts
+  s_1f0dcd815e8946::t_20346c8dc3e793 51-56,65
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_1f0dcd815e8946::t_0c75ef6ea6c5d2 378-381
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_1f0dcd815e8946::t_0c75ef6ea6c5d2 374-375,405
+  s_1f0dcd815e8946::t_55fc083b672047 406-410
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_1f0dcd815e8946::t_dabbb4279b591d 3,32,153
+  s_1f0dcd815e8946::t_e0a962da12eea5 149-151
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_1f0dcd815e8946::t_438696d48e3124 220-221,314
+  s_1f0dcd815e8946::t_a27502f85ecbad 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b97dffcca6776f6d435a19274dc2a532f4595399",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
