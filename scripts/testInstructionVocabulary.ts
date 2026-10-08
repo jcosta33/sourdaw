@@ -581,12 +581,13 @@ export const MERGE_TAIL_PREPOSITIONS = [
 export const MERGE_DAW_NOUNS = ['bus', 'buses', 'clip', 'clips', 'stem', 'stems', 'take', 'takes', 'track', 'tracks'];
 
 /**
- * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
- * in the same segment: `the existing test track still passes`, `the existing test project covers
- * this`, `the existing test clip is still passing`. The progressive `passing` and `failing` read as
- * coverage only behind the literal `existing test`, so `the test tone is still passing through the
- * gate` — no `existing test` in it — stays a step. Exported so the specs can pin the inventory:
- * changing any member reddens the equality pin and that member's case.
+ * The verdict verbs that turn an exempted `test` phrase's DAW noun back into coverage when they
+ * follow it in the same segment: `the existing test track still passes`, `the existing test project
+ * covers this`, `the test fixture project covers this`, `the existing test clip is still passing`.
+ * The progressive `passing` and `failing` read as coverage only behind the literal `existing test`
+ * or a `test fixture` phrase, so `the test tone is still passing through the gate` — neither in it
+ * — stays a step. Exported so the specs can pin the inventory: changing any member reddens the
+ * equality pin and that member's case.
  */
 export const COVERAGE_VERDICT_VERBS = [
     'passes',

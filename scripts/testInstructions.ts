@@ -672,7 +672,8 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * `EXISTING_TEST_WITH_VERDICT` judges). A fixture names coverage only as a test fixture, with at
  * most one word between (`test fixture`, `test project fixture`, `test-project fixture`) and no DAW
  * noun behind it: `the fixture project`, `the demo fixture song`, and `the test fixture project`
- * are things a reviewer opens.
+ * are things a reviewer opens (unless a verdict follows the fixture, which
+ * `TEST_FIXTURE_WITH_VERDICT` judges).
  */
 const TEST_SUITE_WORDS = new RegExp(
     `\\b(?:specs?|e2e|test[- ](?:\\w+[- ])?fixtures?(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
@@ -818,6 +819,18 @@ const EXISTING_TEST_WITH_VERDICT = new RegExp(
 );
 
 /**
+ * `test fixture` followed later in the segment by a coverage verdict: the DAW-noun exemption in
+ * `TEST_SUITE_WORDS` does not hold once the fixture is said to pass or cover (`the test fixture
+ * project still passes`, `the test fixture track covers this`). The same fixture shape as the
+ * `TEST_SUITE_WORDS` arm — `test`, at most one word between, `fixture` — so every phrase the
+ * exemption frees returns under the verdict.
+ */
+const TEST_FIXTURE_WITH_VERDICT = new RegExp(
+    `\\btest[- ](?:\\w+[- ])?fixtures?\\b.*\\b(?:${COVERAGE_VERDICT_VERBS.join('|')})\\b`,
+    'i'
+);
+
+/**
  * The repository's test runners, named as proper nouns. Matched case-sensitively: prose capitalizes a runner's
  * name (`Covered by Playwright`), while the lower-case spelling is the command a launch types
  * (`pnpm exec playwright open the app …`), which the narration rule judges instead.
@@ -832,6 +845,7 @@ function namesTestSuite(segment: string): boolean {
     return (
         TEST_SUITE_WORDS.test(segment) ||
         EXISTING_TEST_WITH_VERDICT.test(segment) ||
+        TEST_FIXTURE_WITH_VERDICT.test(segment) ||
         TEST_RUNNER_NAMES.test(segment) ||
         CI_WORD.test(segment) ||
         REPOSITORY_CHECK_NAMES.test(plain) ||

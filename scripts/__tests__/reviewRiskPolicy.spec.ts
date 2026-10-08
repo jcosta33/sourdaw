@@ -47,14 +47,21 @@ function handwritten(path: string, added: number, deleted: number): ReviewChange
     return changed(path, 'handwritten', added, deleted);
 }
 
-function renamed(path: string, previousPath: string, added: number, deleted: number): ReviewChangedPath {
+function renamed(
+    path: string,
+    previousPath: string,
+    added: number,
+    deleted: number,
+    group: ReviewChangedPath['group'] = 'handwritten',
+    previousGroup: ReviewChangedPath['group'] = 'handwritten'
+): ReviewChangedPath {
     return {
         path,
-        group: 'handwritten',
+        group,
         added,
         deleted,
         binary: false,
-        previous: { path: previousPath, group: 'handwritten' },
+        previous: { path: previousPath, group: previousGroup },
     };
 }
 
@@ -413,6 +420,45 @@ describe('planReviewRisk', () => {
         expect(result.riskClasses).toEqual(['small']);
         expect(result.requiredStances).toEqual(['correctness', 'test-validity']);
         expect(result.triggers).toEqual(['small:handwritten-lines<=200']);
+    });
+
+    it("should earn a rename-into-test-path record's specialist classes from its handwritten source, as the delete+add form does", () => {
+        const result = reviewPlan([
+            renamed(
+                'src/modules/AudioEngine/__tests__/Mixdown.spec.ts',
+                'src/modules/AudioEngine/engine/Mixdown.ts',
+                40,
+                0,
+                'tests'
+            ),
+        ]);
+
+        expect(result.riskClasses).toEqual(['realtime-audio']);
+        expect(result.requiredStances).toEqual(['correctness', 'realtime-audio', 'test-validity']);
+        expect(result.triggers).toContain('realtime-audio:src/modules/AudioEngine/');
+        expect(result.riskClasses).toEqual(
+            reviewPlan([
+                handwritten('src/modules/AudioEngine/engine/Mixdown.ts', 0, 40),
+                changed('src/modules/AudioEngine/__tests__/Mixdown.spec.ts', 'tests', 40, 0),
+            ]).riskClasses
+        );
+    });
+
+    it('should keep a rename whose both sides are tests test-only, so genuinely all-tests records never gain a specialist class', () => {
+        const result = reviewPlan([
+            renamed(
+                'src/modules/AudioEngine/__tests__/Bus.spec.ts',
+                'src/modules/AudioEngine/engine/Bus.spec.ts',
+                12,
+                2,
+                'tests',
+                'tests'
+            ),
+        ]);
+
+        expect(result.riskClasses).toEqual(['test-only']);
+        expect(result.requiredStances).toEqual(['test-validity']);
+        expect(result.triggers).toEqual(['test-only:all-paths-are-tests']);
     });
 
     it('should call a docs-only change small, since docs never trigger a specialist class', () => {

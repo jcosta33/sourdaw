@@ -1843,6 +1843,39 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
+    it.each(COVERAGE_VERDICT_VERBS_UNDER_TEST)(
+        'refuses a test fixture project followed by %s: the verdict ends the DAW-noun exemption',
+        (verb) => {
+            const instructions = `The test fixture project ${verb} this.`;
+
+            expect(narratingTestInstructionSegments(instructions)).toEqual([`The test fixture project ${verb} this`]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        [
+            'a spaced DAW-noun fixture that passes',
+            'The test fixture project still passes.',
+            ['The test fixture project still passes'],
+        ],
+        [
+            'a DAW-noun fixture covering the flow',
+            'The test fixture track covers this.',
+            ['The test fixture track covers this'],
+        ],
+    ])('refuses %s: a verdict behind a DAW-noun fixture names coverage', (_label, instructions, segments) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('passes a DAW-noun fixture step with no verdict: the exemption holds until a coverage verb follows', () => {
+        const step = 'The test fixture track plays a C major chord.';
+
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it.each([
         ['validates', 'pipeline validates the current head'],
         ['validated', 'The pipeline validated this change.'],

@@ -273,7 +273,7 @@ function testOnlyFindings(): RiskFinding[] {
 }
 
 function isTestOnly(paths: readonly ReviewChangedPath[]): boolean {
-    return paths.length > 0 && paths.every((entry) => entry.group === 'tests');
+    return paths.length > 0 && paths.every((entry) => sidesOf(entry).every((side) => side.group === 'tests'));
 }
 
 export function planReviewRisk(input: {
