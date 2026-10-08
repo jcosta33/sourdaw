@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_1f0dcd815e8946::t_0fafb3af020841 66
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_1f0dcd815e8946::t_0fafb3af020841 79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4b016db61b717a029692240fcd61085fe10bc47",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
