@@ -208,6 +208,82 @@ function adjacentCallbackTrace(overrides: Partial<AdjacentCallbackSlices> = {}):
     ];
 }
 
+// One handler, outer and author slice followed by three ordinary callbacks to meet SMALL_PHASES.
+function nestedCallbackTrace(handler: Slice, outer: Slice, author: Slice): FixtureEvent[] {
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    return [
+        { name: HANDLER, ph: 'X', ...handler, pid, tid, args: { 'node type': 'AudioWorkletNode', this: handlerThis } },
+        { name: OUTER, ph: 'X', ...outer, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ...author, pid, tid, args: {} },
+        ...callback(outer.ts + 100, 3, pid, tid, handlerThis),
+        ...callback(outer.ts + 120, 8, pid, tid, handlerThis),
+        ...callback(outer.ts + 150, 12, pid, tid, handlerThis),
+    ];
+}
+
+// Small deterministic generator (mulberry32) so the property test replays identically.
+function seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+        state = (state + 0x6d2b79f5) | 0;
+        let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+        mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
+    };
+}
+
+const EIGHTHS_PER_US = 8;
+
+function gridValue(random: () => number, minUs: number, maxUs: number): number {
+    return minUs + Math.floor(random() * ((maxUs - minUs) * EIGHTHS_PER_US + 1)) / EIGHTHS_PER_US;
+}
+
+// The exporter writes ts = floor(start) and dur = floor(end - start), each truncated on its own.
+function exportedSlice(name: string, start: number, end: number, args: Record<string, unknown>): FixtureEvent {
+    return { name, ph: 'X', ts: Math.floor(start), dur: Math.floor(end - start), pid: 1, tid: 2, args };
+}
+
+function hasExportedTimestampTie(events: readonly FixtureEvent[], name: string): boolean {
+    const timestamps = events.filter((event) => event.name === name).map((event) => event.ts);
+    return new Set(timestamps).size !== timestamps.length;
+}
+
+// Real nestings on a 1/8 microsecond grid: handler contains callback contains author, callbacks last at
+// least 3 microseconds and run one after another, with optional bare handlers between them.
+function truncatedNestingTrace(random: () => number): FixtureEvent[] | null {
+    const handlerArgs = { 'node type': 'AudioWorkletNode', this: '0x1' };
+    const events: FixtureEvent[] = [];
+    let cursor = 1_000_000 + gridValue(random, 0, 1000);
+    for (
+        let callbackIndex = 0;
+        callbackIndex < SMALL_PHASES.warmupCallbacks + SMALL_PHASES.measuredCallbacks + 1;
+        callbackIndex++
+    ) {
+        if (random() < 0.5) {
+            const bareStart = cursor + gridValue(random, 0, 3);
+            const bareEnd = bareStart + gridValue(random, 0, 6);
+            events.push(exportedSlice(HANDLER, bareStart, bareEnd, handlerArgs));
+            cursor = bareEnd + gridValue(random, 0, 2);
+        }
+        const handlerStart = cursor + gridValue(random, 0, 3);
+        const callbackStart = handlerStart + gridValue(random, 0, 3);
+        const callbackEnd = callbackStart + gridValue(random, 3, 20);
+        const authorStart = callbackStart + gridValue(random, 0, callbackEnd - callbackStart);
+        const authorEnd = authorStart + gridValue(random, 0, callbackEnd - authorStart);
+        const handlerEnd = callbackEnd + gridValue(random, 0, 3);
+        events.push(
+            exportedSlice(HANDLER, handlerStart, handlerEnd, handlerArgs),
+            exportedSlice(OUTER, callbackStart, callbackEnd, {}),
+            exportedSlice(AUTHOR, authorStart, authorEnd, {})
+        );
+        cursor = handlerEnd;
+    }
+    const tied = [HANDLER, OUTER, AUTHOR].some((name) => hasExportedTimestampTie(events, name));
+    return tied ? null : events;
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -362,6 +438,40 @@ describe('offline AudioWorklet trace admission', () => {
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
         });
+    });
+
+    it('tolerates a truncated author end only when the author starts after its callback', () => {
+        const handler = { ts: 425_593_194, dur: 19 };
+        const outer = { ts: 425_593_196, dur: 15 };
+        expect(admission(nestedCallbackTrace(handler, outer, { ts: 425_593_197, dur: 15 })).status).toBe('admitted');
+        expect(admission(nestedCallbackTrace(handler, outer, { ts: 425_593_196, dur: 16 }))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('tolerates a truncated callback end only when the callback starts after its handler', () => {
+        const outer = { ts: 416_895_108, dur: 10 };
+        const author = { ts: 416_895_110, dur: 6 };
+        expect(admission(nestedCallbackTrace({ ts: 416_895_107, dur: 10 }, outer, author)).status).toBe('admitted');
+        expect(admission(nestedCallbackTrace({ ts: 416_895_108, dur: 9 }, outer, author))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits every truncated export of a real handler, callback and author nesting', () => {
+        const random = seededRandom(5053);
+        let admitted = 0;
+        for (let trial = 0; trial < 400; trial++) {
+            const events = truncatedNestingTrace(random);
+            if (!events) {
+                continue;
+            }
+            expect(admission(events)).toMatchObject({ status: 'admitted' });
+            admitted++;
+        }
+        expect(admitted).toBeGreaterThan(200);
     });
 
     it('admits callbacks that touch at a boundary and refuses a one-microsecond outer overlap', () => {

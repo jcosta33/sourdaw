@@ -126,14 +126,22 @@ function intervalEnd(event: TraceEvent): number {
 
 // Trace timestamps are whole microseconds; an enclosing interval and the
 // interval it encloses can begin or end in the same tick. Chrome truncates ts
-// and dur independently, so an exported end is floor(start) + floor(duration)
-// and a properly nested child can end exactly one microsecond after its parent.
-// Starts keep their order, so only end comparisons carry this tolerance, and
-// the tolerances never stack: every nested end is also bounded by the start of
-// the next handler, and an author end by its own handler end plus one.
+// and dur independently, so an exported end is floor(start) + floor(duration).
+// A child that starts in a later microsecond than its parent can therefore end
+// one microsecond after it. A child exported at its parent's ts starts no
+// earlier and is no longer, so floor(duration) cannot grow and its end stays
+// within the parent's. Starts keep their order, so only end comparisons carry
+// the tolerance, and the tolerances never stack: every nested end is also
+// bounded by the start of the next handler, and an author end by its own
+// handler's end.
 
 // The exporter truncates ts and dur independently, shifting an end by up to 1 us.
 const EXPORT_END_TRUNCATION_US = 1;
+
+function endsWithin(child: TraceEvent, parent: TraceEvent): boolean {
+    const tolerance = child.ts > parent.ts ? EXPORT_END_TRUNCATION_US : 0;
+    return intervalEnd(child) <= intervalEnd(parent) + tolerance;
+}
 
 function hasTimestampTie(events: readonly TraceEvent[]): boolean {
     return events.some((event, index) => index > 0 && event.ts === events[index - 1]?.ts);
@@ -187,7 +195,7 @@ function validateHandlerIntervals(handlers: readonly TraceEvent[], pid: number, 
 
 // A truncated exported end never passes the start of a slice that truly begins after it, so a
 // nested slice ends no later than the next handler starts; Infinity marks the last handler.
-type HandlerEnclosure = { end: number; nextStart: number };
+type HandlerEnclosure = { handler: TraceEvent; nextStart: number };
 
 type HandlerBinding = { handlerThis: string; bareHandlers: number; enclosures: HandlerEnclosure[] };
 
@@ -216,12 +224,12 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
         if (
             !handler ||
             handler.ts > callback.ts ||
-            intervalEnd(handler) + EXPORT_END_TRUNCATION_US < intervalEnd(callback) ||
+            !endsWithin(callback, handler) ||
             intervalEnd(callback) > nextStart
         ) {
             return 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler';
         }
-        enclosures.push({ end: intervalEnd(handler), nextStart });
+        enclosures.push({ handler, nextStart });
         const pointer = handler.args.this;
         if (typeof pointer !== 'string') {
             return 'AudioWorkletNode handler has no trace pointer';
@@ -257,8 +265,8 @@ function bindAuthors(
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
             author.ts < callback.ts ||
-            intervalEnd(author) > intervalEnd(callback) + EXPORT_END_TRUNCATION_US ||
-            intervalEnd(author) > enclosure.end + EXPORT_END_TRUNCATION_US ||
+            !endsWithin(author, callback) ||
+            !endsWithin(author, enclosure.handler) ||
             intervalEnd(author) > enclosure.nextStart
         ) {
             return 'outer callback lacks one unambiguous contained author execution';
