@@ -1,0 +1,31 @@
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_97ab82e0b4f10c::t_226c3ce09eeace 3,5,67-75,94-99,111,130-168,173-225
+.agents/skills/review-stances/public-repair-records.md
+  s_97ab82e0b4f10c::t_4ec356807df3d5 1-24,30-57
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_97ab82e0b4f10c::t_226c3ce09eeace 329-362
+  s_97ab82e0b4f10c::t_7cce9f32619741 363-365,567
+scripts/__tests__/publishReview.spec.ts
+  s_97ab82e0b4f10c::t_58ce336974647b 11-16,5745-5798
+  s_97ab82e0b4f10c::t_7aeb67b4bc72ad 5799-5806
+scripts/confirmReviewRepairs.ts
+  s_97ab82e0b4f10c::t_66f1c41f0cfdb5 187
+scripts/reconstructReviewRounds.ts
+  s_97ab82e0b4f10c::t_66f1c41f0cfdb5 23,50,125-128,366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff950ca4191db56e1161fe5d8b2fd37b827a7d18",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
