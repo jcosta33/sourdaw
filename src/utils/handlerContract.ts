@@ -230,6 +230,13 @@ export type TempoAudioSourceTransition = {
         readonly sourceOffsetSeconds: number;
     }[];
 };
+/** One tempo-map event, captured by identity for a guarded map edit replay. */
+export type TempoMapEventSnapshot = {
+    readonly id: string;
+    readonly beat: number;
+    readonly tempo: number;
+    readonly curve: 'instant' | 'linear';
+};
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
 export type ClipMoveTarget = {
@@ -1305,6 +1312,21 @@ export type AppAction =
               expectedBpm?: number;
               /** Arrangement-owned canonical source capture for targeted tempo Undo/Redo. */
               sourceTransition?: TempoAudioSourceTransition;
+          };
+      }
+    | {
+          type: 'addTempoMapChange';
+          payload: { beat: number; tempo: number; curve: 'instant' | 'linear'; changeId?: string };
+      }
+    | { type: 'updateTempoMapChange'; payload: { changeId: string; tempo: number } }
+    | { type: 'removeTempoMapChange'; payload: { changeId: string } }
+    | {
+          /** Internal identity-scoped inverse/redo for the three map edit actions. */
+          type: 'restoreTempoMapChange';
+          payload: {
+              expected: TempoMapEventSnapshot | null;
+              replacement: TempoMapEventSnapshot | null;
+              sourceTransition: TempoAudioSourceTransition;
           };
       }
     | {

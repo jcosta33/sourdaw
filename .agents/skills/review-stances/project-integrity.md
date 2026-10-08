@@ -118,6 +118,8 @@ missing callback result, and keep ambiguous publish-then-throw outcomes on the c
 
 PR #1109 (`65f56a73aa`) made the tempo field edit either the transport base or a named map event, but its target and undo tests did not observe legacy audio source entry. A clip or comp take stored only as a beat offset can then seek a different media second when the tempo governing its clip start changes. For a tempo-write review, seed legacy clip and take offsets at the affected beat, execute the typed command, and compare the real comp resolver and offline buffer seek before and after the edit. Require exact source-field presence and media position through production save/hydration, Undo, and Redo; an inbound new legacy source or a changed captured media owner must refuse replay without changing raw truth or history. Keep no-op, missing target, conflict, ramp refusal, and isolated preview free of live source writes.
 
+PR #425 (`80d23d08d6`) carried the Tempo Editor's add/edit/remove controls into `useTempoEditorState` as direct tempo-map use-case calls. Its hook checks observed those direct calls, so they could pass while map edits bypassed Command history and shifted beat-only audio sources. For each Tempo Editor control, dispatch the actual user action and require one guarded CRDT commit and one durable Undo entry. At a clip start governed by the changed event, compare clip and comp-take media seconds before and after the edit, save/reload, Undo and Redo; include epsilon replacement, a ramp interior, and an inbound peer event or source edit as refusal controls.
+
 ## Lesson from the comp-interval escape
 
 A comp selection over `[start, end)` edits only that musical interval. Removing every intersecting

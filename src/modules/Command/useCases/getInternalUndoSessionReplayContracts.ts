@@ -16,7 +16,8 @@ function createInternalReplayContract(
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
-        | 'restoreTimeOperationState',
+        | 'restoreTimeOperationState'
+        | 'restoreTempoMapChange',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -29,7 +30,11 @@ function createInternalReplayContract(
             // These internal actions carry owner-defined captures wider than
             // their neutral Command snapshots. Their owner validators decode
             // the complete shapes without widening executable discovery.
-            if (actionType === 'restoreClip' || actionType === 'restoreTimeOperationState') {
+            if (
+                actionType === 'restoreClip' ||
+                actionType === 'restoreTimeOperationState' ||
+                actionType === 'restoreTempoMapChange'
+            ) {
                 return ownerValidator?.(payload) === true;
             }
             if (!validateVersionedCommandArguments(actionType, payload)) {
@@ -49,6 +54,27 @@ function createInternalReplayContract(
  */
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
+        {
+            actionType: 'addTempoMapChange',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('addTempoMapChange', payload),
+            validateEntry: (entry) => getHandlerByType('addTempoMapChange')?.validateSessionEntry?.(entry) === true,
+        },
+        {
+            actionType: 'updateTempoMapChange',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('updateTempoMapChange', payload),
+            validateEntry: (entry) => getHandlerByType('updateTempoMapChange')?.validateSessionEntry?.(entry) === true,
+        },
+        {
+            actionType: 'removeTempoMapChange',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('removeTempoMapChange', payload),
+            validateEntry: (entry) => getHandlerByType('removeTempoMapChange')?.validateSessionEntry?.(entry) === true,
+        },
         {
             actionType: 'insertTime',
             operationVersion: 1,
@@ -81,5 +107,6 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
+        createInternalReplayContract('restoreTempoMapChange', 1, 'required'),
     ];
 }

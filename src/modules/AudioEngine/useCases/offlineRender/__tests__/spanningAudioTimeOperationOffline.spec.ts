@@ -202,6 +202,73 @@ describe('offline projection of inserted audio source', () => {
         expect(projectedSeek()).toBe(2);
     });
 
+    it('keeps the operation-produced comp media seek through a tempo-map event edit', async () => {
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const { audioOffsetSeconds: _removed, ...legacy } = sourceClip;
+        trackStore.set({
+            tracks: [{ ...sourceTrack, clips: [{ ...legacy, audioOffsetBeats: 2 }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'source',
+                            name: 'Take',
+                            startBeat: 2,
+                            endBeat: 8,
+                            selected: true,
+                            sourceOffsetBeats: 2,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 8, takeId: 'take-1' }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        const projectedSeek = (): number | undefined => {
+            flushAutomergeStorageWrites();
+            const raw = getCrdtDoc<Project>('root');
+            expect(raw?.tracks.tracks[0]?.clips).toEqual(trackStore.value?.tracks[0]?.clips);
+            expect(raw?.takeLanes).toEqual(takeLaneStore.value);
+            const beatToSeconds = (beat: number): number => readSecondsAtBeat({ beat });
+            const tempoAtBeat = (beat: number): number => readTempoAtBeat({ beat });
+            const clip = resolveTrackClipsWithComping('track-1', raw!.tracks.tracks[0]!.clips, raw!.takeLanes, {
+                projectBeatToSeconds: beatToSeconds,
+                resolveTempoAtBeat: tempoAtBeat,
+            })[0];
+            expect(clip).toBeDefined();
+            return projectOfflineAudioClipPlaybacks({
+                clip: clip!,
+                bufferDurationSeconds: 20,
+                regionStartBeat: 0,
+                regionStartSec: 0,
+                durationSeconds: 20,
+                compensationDelay: 0,
+                projectBeatToSeconds: beatToSeconds,
+                resolveTempoAtBeat: tempoAtBeat,
+            })[0]?.bufferOffsetSec;
+        };
+
+        expect(projectedSeek()).toBe(2);
+        await executeAppAction({ type: 'addTempoMapChange', payload: { beat: 1, tempo: 60, curve: 'instant' } });
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.sourceOffsetSeconds).toBe(1);
+        expect(projectedSeek()).toBe(2);
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+        expect(projectedSeek()).toBe(2);
+        await redo();
+        expect(projectedSeek()).toBe(2);
+    });
+
     it.each([
         { name: 'Insert Time', action: { type: 'insertTime' as const, payload: { atBeat: 4, durationBeats: 2 } } },
         {
