@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/devices/modulation/createStereoWidener.ts
+  s_1f0dcd815e8946::t_79967764a02f48 68,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c00e2f1549607e6611879ff61c6533da6c49b4f1",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
