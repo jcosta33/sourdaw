@@ -718,7 +718,13 @@ function phraseAlternation(phrases: readonly string[]): string {
  * the stems`, `before merging the clips`), while `before merging the branch`, `before merging this
  * to the master track`, `before merging again`, and a bare `before merging` are delivery. The
  * object's prepositional phrase rides along to the close without rescuing it: a DAW noun beyond
- * the object (`into the release track`) no longer forgives the clause.
+ * the object (`into the release track`) no longer forgives the clause. A punctuation boundary
+ * directly behind `merging` — comma, parenthesis, em dash — blocks the object reader, so the clause
+ * is the bare delivery it is and the segment refuses whatever rides behind the boundary
+ * (`before merging, then open the app`): the boundary is read exactly like the closing dot of a
+ * bare `before merging.`, never as padding that launders the clause past the end anchor. Punctuation
+ * behind a merge object that already read DAW material (`before merging the stems, then bounce the
+ * mix`) stays the step's own operation — the boundary sits behind the object, not behind `merging`.
  */
 const MERGE_DELIVERY_CLAUSE_SOURCE =
     `\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})` +
@@ -726,7 +732,7 @@ const MERGE_DELIVERY_CLAUSE_SOURCE =
     `(?:\\s+(?!${MERGE_TAIL_PREPOSITIONS.map((preposition) => `${preposition}\\b`).join('|')})` +
     `(?!${MERGE_DAW_NOUNS.map((noun) => `${noun}\\b`).join('|')})\\S+)*` +
     `(?:\\s+(?:${MERGE_TAIL_PREPOSITIONS.join('|')})\\b(?:\\s+\\S+)*)?` +
-    `\\W*$`;
+    `(?:\\W*|(?:\\s+)?[^\\s\\w].*)$`;
 
 /**
  * The check context a verdict may be tied to (`on this head`, `for the latest push`, `before
@@ -734,7 +740,8 @@ const MERGE_DELIVERY_CLAUSE_SOURCE =
  * a pull request to pass on. A delivery clause counts only where it closes the segment on a merge
  * object naming no DAW material — `before merging the stems` merges audio and stays the step's own
  * operation, while `before merging the branch` or `before merging this to the master track` is
- * delivery padded past the end anchor.
+ * delivery padded past the end anchor. A punctuation boundary directly behind `merging` counts as
+ * the bare clause and refuses the segment whatever follows it (`before merging, then open the app`).
  */
 const CHECK_CONTEXT_SOURCE =
     `\\s+(?:(?:${CHECK_CONTEXT_PREPOSITIONS.join('|')})\\s+)?(?:${phraseAlternation(CHECK_CONTEXT_DETERMINERS)})` +

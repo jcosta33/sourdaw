@@ -1576,9 +1576,14 @@ describe('product-scope test instructions', () => {
         ['the takes', 'Confirm the pipeline is clean before merging the takes.'],
         ['the vocal stems', 'Confirm the pipeline is clean before merging the vocal stems.'],
         ['the bass bus takes', 'Confirm the pipeline is clean before merging the bass bus takes.'],
+        [
+            'the stems into the master track',
+            'Confirm the pipeline is clean before merging the stems into the master track.',
+        ],
     ])('passes a pipeline reported clean before merging %s: the merge object names DAW material', (_noun, step) => {
         // The clause reads its merge object — the noun phrase directly behind `merging` — so audio
-        // material there keeps it the step's own operation (#4822).
+        // material there keeps it the step's own operation (#4822), and the object's prepositional
+        // tail rides along without reading back into the object.
         expect(narratingTestInstructionSegments(step)).toEqual([]);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
@@ -1614,6 +1619,49 @@ describe('product-scope test instructions', () => {
             expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
         }
     );
+
+    it.each([
+        [
+            'a comma behind the clause',
+            'The suite passed before merging, then open the app.',
+            ['The suite passed before merging, then open the app'],
+        ],
+        [
+            'a parenthesis behind the clause',
+            'The suite passed before merging (then export the stems).',
+            ['The suite passed before merging (then export the stems)'],
+        ],
+        [
+            'an em dash behind the clause',
+            'The suite passed before merging — then export the stems.',
+            ['The suite passed before merging — then export the stems'],
+        ],
+        [
+            'a comma behind the clause with DAW material after it',
+            'The suite passed before merging, stems first.',
+            ['The suite passed before merging, stems first'],
+        ],
+    ])(
+        'refuses %s: a punctuation boundary directly behind `merging` is the bare delivery clause',
+        (_label, instructions, segments) => {
+            // The object reader only engages across whitespace directly behind `merging`, so a comma,
+            // parenthesis, or dash there means no object was read and the clause counts as the bare
+            // delivery it is: the segment refuses whatever instruction rides behind the boundary,
+            // exactly like a bare `before merging.` — the verdict may not flip on punctuation alone.
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it('passes a punctuation boundary behind a merge object that read DAW material', () => {
+        // The boundary rule covers punctuation directly behind `merging`, where no object was read.
+        // Here the object reader already read `the stems`, so the clause stays the step's own merge
+        // and the instruction behind the comma does not deliver it.
+        const step = 'Confirm the pipeline is clean before merging the stems, then bounce the mix.';
+
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
 
     it.each([
         'Gate is green.',
