@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
 import {
+    decodeExactTakeLaneSnapshots,
     defaultTakeLaneStoreState,
     sanitize_take_lane_store_state,
     takeLaneStore,
@@ -466,6 +467,33 @@ describe('sanitize_take_lane_store_state', () => {
                 },
             ],
         });
+    });
+
+    it('should read a lane holding a placed pass as exact, taking it as it is', () => {
+        // Exactness is what a time operation's inverse plan is decoded with, so
+        // a lane holding a placed pass that read as inexact could not be undone.
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                {
+                    id: 'pass-2',
+                    clipId: 'clip-1',
+                    name: 'Pass 2',
+                    startBeat: 8,
+                    endBeat: 16,
+                    selected: false,
+                    sourceOffsetBeats: 4,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'pass-2' }],
+        };
+        const state = { lanes: [lane] };
+
+        expect(sanitize_take_lane_store_state(state)).toBe(state);
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
     });
 
     it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {

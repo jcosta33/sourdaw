@@ -67,6 +67,31 @@ function resolveCompFragmentsAsMain(lane: TakeLane, clip: Clip) {
     });
 }
 
+/**
+ * Each comp fragment main's law expects sounds, over its own span, entering the
+ * media where main entered it. Read by span, so a pass that resolves to nothing
+ * or to no offset fails rather than drops out.
+ */
+function expectCompedAsMain(resolved: readonly Clip[], asMain: ReturnType<typeof resolveCompFragmentsAsMain>): void {
+    expect(asMain.length).toBeGreaterThan(0);
+    const comped = asMain.map((expected) => {
+        const fragment = resolved.find(
+            (candidate) => candidate.startBeat === expected.startBeat && candidate.endBeat === expected.endBeat
+        );
+        if (!fragment) {
+            return null;
+        }
+        return {
+            startBeat: fragment.startBeat,
+            endBeat: fragment.endBeat,
+            audioOffsetBeats: fragment.audioOffsetBeats,
+        };
+    });
+    expect(comped).toEqual(
+        asMain.map(({ startBeat, endBeat, audioOffsetBeats }) => ({ startBeat, endBeat, audioOffsetBeats }))
+    );
+}
+
 /** A loop recording's lanes exactly as main saves them: wrap takes carry only their offset. */
 const savedByMain = {
     lanes: [
@@ -114,17 +139,32 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
         expect(loaded).toEqual(savedByMain);
         mocks.takeLaneStoreValue.value = loaded;
 
-        const resolved = resolveClipsWithComping('t1', [clip]);
-        const comped = resolved
-            .filter((fragment) => fragment.sourceStartBeat !== clip.startBeat)
-            .map(({ startBeat, endBeat, audioOffsetBeats, sourceStartBeat }) => ({
-                startBeat,
-                endBeat,
-                audioOffsetBeats: audioOffsetBeats ?? 0,
-                sourceStartBeat,
-            }));
+        expectCompedAsMain(resolveClipsWithComping('t1', [clip]), resolveCompFragmentsAsMain(loaded.lanes[0]!, clip));
+    });
 
-        expect(comped).toEqual(resolveCompFragmentsAsMain(loaded.lanes[0]!, clip));
+    // A pass commit placed on its clip's media origin plays the material main's
+    // law gives the same depth, wherever an edit has since put the clip, as
+    // long as the clip starts on or after that origin.
+    it.each([
+        { name: 'as recorded', clip: recording(1, 10) },
+        { name: 'moved', clip: recording(5, 14) },
+        { name: 'slipped', clip: recording(1, 10, 0.5) },
+        { name: 'start trimmed past a region', clip: recording(2.5, 10, 1.5) },
+    ])('plays a pass placed on its media origin as main played its depth when the clip is $name', ({ clip }) => {
+        const lane = savedByMain.lanes[0]!;
+        // Two beats a second at the session's 120 BPM.
+        const placed = {
+            ...lane,
+            takes: lane.takes.map((take) => {
+                if (take.sourceOffsetBeats === undefined) {
+                    return take;
+                }
+                return { ...take, passAnchorSeconds: 0, passDepthSeconds: take.sourceOffsetBeats / 2 };
+            }),
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [placed] };
+
+        expectCompedAsMain(resolveClipsWithComping('t1', [clip]), resolveCompFragmentsAsMain(lane, clip));
     });
 
     // Every fragment main's resolver produces for these clips, worked by hand
