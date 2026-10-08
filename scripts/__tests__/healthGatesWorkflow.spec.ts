@@ -3672,17 +3672,25 @@ describe('health gates workflow contract', () => {
         const createCalls = runReporter('');
         expect(createCalls).toHaveLength(2);
         expect(createCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
-        expect(createCalls[1].slice(0, 2)).toEqual(['issue', 'create']);
-        const createdBody = createCalls[1][7];
+        const createCall = createCalls[1];
+        if (createCall === undefined) {
+            throw new Error('nightly issue create call was not captured');
+        }
+        expect(createCall.slice(0, 2)).toEqual(['issue', 'create']);
+        const createdBody = createCall[7];
         expect(createdBody).toContain('Failing jobs: e2e-report');
         expect(createdBody).toContain('https://github.com/owner/repository/actions/runs/1');
 
         const updateCalls = runReporter('37');
         expect(updateCalls).toHaveLength(2);
         expect(updateCalls[0]).toEqual(expect.arrayContaining(['issue', 'list']));
-        expect(updateCalls[1].slice(0, 3)).toEqual(['issue', 'comment', '37']);
-        expect(updateCalls[1][6]).toContain('Failing jobs: e2e-report');
-        expect(updateCalls[1][6]).toContain('https://github.com/owner/repository/actions/runs/1');
+        const updateCall = updateCalls[1];
+        if (updateCall === undefined) {
+            throw new Error('nightly issue comment call was not captured');
+        }
+        expect(updateCall.slice(0, 3)).toEqual(['issue', 'comment', '37']);
+        expect(updateCall[6]).toContain('Failing jobs: e2e-report');
+        expect(updateCall[6]).toContain('https://github.com/owner/repository/actions/runs/1');
     });
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
