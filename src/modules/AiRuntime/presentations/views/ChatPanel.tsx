@@ -33,6 +33,7 @@ import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPen
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
+import { AnswerEvidenceDisclosure } from '../components/AnswerEvidenceDisclosure';
 import { ChatComposer } from '../components/ChatComposer';
 
 import {
@@ -156,6 +157,7 @@ const ChatMessageItem = ({
                 ) : (
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 )}
+                {msg.answerEvidence ? <AnswerEvidenceDisclosure evidence={msg.answerEvidence} /> : null}
                 {pendingConfirmationId ? (
                     <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button

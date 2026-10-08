@@ -151,7 +151,7 @@ describe('renderOffline — cancelling during offline instrument setup (#4440)',
     beforeEach(() => {
         vi.clearAllMocks();
         exportCancellationState.cancelFlag = false;
-        exportCancellationState.isRenderingActive = false;
+        exportCancellationState.renderLock = null;
         exportCancellationState.controller = new AbortController();
         FakeOfflineContext.latest = null;
         vi.stubGlobal('OfflineAudioContext', FakeOfflineContext);

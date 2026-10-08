@@ -1,5 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores';
-import { restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { removeMidiClipData, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
     type AppAction,
@@ -845,6 +845,85 @@ function recordRedoTakeRetirement(
 }
 
 /**
+ * Satellite records the restore drops must go with the clips that carry them.
+ *
+ * A forward operation can mint or leave behind clips whose satellites exist in
+ * the `expected` capture but not in the `replacement` one — undoing a paste is
+ * the canonical case: the paste cloned the source's gain envelope and warp
+ * state onto ids it minted, and the pre-paste replacement has no record for
+ * them. Writing the replacement's satellites back (which restores every
+ * pre-existing record) is then not enough: the minted ids' records would
+ * survive the undo keyed to clips no track holds, the same leftovers a
+ * `removeClip` forward sweeps. Every record named by `expected` whose id the
+ * replacement does not itself restore is therefore cleared; for routes that
+ * only remove clips (cut, flatten, consolidate) the diff is empty and this
+ * writes nothing.
+ */
+function clearSatelliteRecordsDroppedByRestore(
+    expectedEntries: readonly TrackClipStateSnapshot[],
+    replacementEntries: readonly TrackClipStateSnapshot[]
+): void {
+    const restoredIds = new Set(
+        replacementEntries.flatMap((entry) => entry.clipSatellites.map((satellite) => satellite.clipId))
+    );
+    for (const entry of expectedEntries) {
+        for (const satellite of entry.clipSatellites) {
+            if (!restoredIds.has(satellite.clipId)) {
+                writeClipSatelliteEntry({ clipId: satellite.clipId, gainEnvelope: null, warpState: null });
+            }
+        }
+    }
+}
+
+/**
+ * MIDI rows the restore drops must go with the clips that carry them — the
+ * same dropped-record rule as {@link clearSatelliteRecordsDroppedByRestore},
+ * for the clip-id-keyed note, controller-change and pitch-bend rows.
+ *
+ * Undoing a paste is the canonical case: the paste clones the source's notes
+ * and controller streams onto ids it minted, and the pre-paste replacement has
+ * no rows for those ids, so writing the replacement's midi maps back restores
+ * every pre-existing clip's rows but leaves the minted ids' rows behind —
+ * orphaned data keyed to clips no track holds. Every clip id any `expected`
+ * midi map names that no `replacement` midi map restores is therefore retired
+ * through `removeMidiClipData`, the same retirement a `removeClip` forward
+ * runs; for routes that only remove clips (cut, flatten, consolidate) the
+ * diff is empty and this writes nothing.
+ *
+ * Clip-level granularity is exact here: the capture reads every clip id on the
+ * named tracks, so a clip the replacement leaves out had no rows before the
+ * forward ran (or did not exist), and any rows live under its id are the
+ * forward's own mint.
+ */
+function clearMidiClipDataDroppedByRestore(
+    expectedEntries: readonly TrackClipStateSnapshot[],
+    replacementEntries: readonly TrackClipStateSnapshot[]
+): void {
+    const restoredIds = new Set(
+        replacementEntries.flatMap((entry) => [
+            ...Object.keys(entry.midiNotesByClipId),
+            ...Object.keys(entry.midiCcByClipId),
+            ...Object.keys(entry.midiPitchBendByClipId),
+        ])
+    );
+    const droppedIds = new Set<string>();
+    for (const entry of expectedEntries) {
+        for (const clipId of [
+            ...Object.keys(entry.midiNotesByClipId),
+            ...Object.keys(entry.midiCcByClipId),
+            ...Object.keys(entry.midiPitchBendByClipId),
+        ]) {
+            if (!restoredIds.has(clipId)) {
+                droppedIds.add(clipId);
+            }
+        }
+    }
+    if (droppedIds.size > 0) {
+        removeMidiClipData([...droppedIds]);
+    }
+}
+
+/**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
  * flatten, consolidate). Every named track must still match `expected` on
  * everything `everyEntryMatchesLiveState` compares, down to the contents of each
@@ -910,6 +989,8 @@ export const handleRestoreTrackClipStates = createHandler<'restoreTrackClipState
         for (const entry of action.payload.replacement) {
             writeTrackClipState(entry);
         }
+        clearSatelliteRecordsDroppedByRestore(action.payload.expected, action.payload.replacement);
+        clearMidiClipDataDroppedByRestore(action.payload.expected, action.payload.replacement);
         transitionRetiredTakeLanes(action, action.payload.expected, action.payload.replacement);
         return { status: 'written' };
     },

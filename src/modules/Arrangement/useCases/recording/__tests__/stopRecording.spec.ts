@@ -124,6 +124,29 @@ describe('stopRecording', () => {
         expect(newState.tracks[0]!.clips[0]!.endBeat).toBe(5); // 4 + 1
     });
 
+    // A stop during the run-up, before the loop start, must leave the audio
+    // clip and its take agreeing on the end: both honour the one-beat
+    // minimum, so the take never names timeline the clip does not cover
+    // (#4994). Loop [2, 6], record from beat 1, stop at 1.5.
+    it('closes an audio clip stopped mid-run-up to the same end as its take', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ clips: [{ id: 'c1', type: 'audio', startBeat: 1, endBeat: 1 }] }],
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 6 } as unknown as TransportState;
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 1, endBeat: 1 }] }],
+        } as unknown as TakeLaneStoreState;
+
+        stopRecording(1.5);
+
+        const trackState = mocks.setTrackState.mock.calls[0]![0];
+        const clipEnd = trackState.tracks[0]!.clips[0]!.endBeat;
+        const laneState = mocks.takeLaneStoreSet.mock.calls[0]![0] as TakeLaneStoreState;
+        const takeEnd = laneState.lanes[0]!.takes[0]!.endBeat;
+        expect(clipEnd).toBe(2); // startBeat 1 + the one-beat minimum, past the 1.5 stop
+        expect(takeEnd).toBe(clipEnd);
+    });
+
     it('updates take lanes', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
         mocks.transportStoreValue = { playheadPosition: 10 } as unknown as TransportState;
