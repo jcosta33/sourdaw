@@ -1,6 +1,7 @@
 import { type AppAction, type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
@@ -17,6 +18,134 @@ function hasFiniteNumbers(value: unknown): boolean {
     return true;
 }
 
+function isFiniteNumber(value: unknown): boolean {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
+    return !Object.hasOwn(value, key) || accepts(value[key]);
+}
+
+function isKneadBlob(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        isFiniteNumber(value.startTime) &&
+        isFiniteNumber(value.endTime) &&
+        isFiniteNumber(value.pitchCenterCents) &&
+        optionalField(value, 'originalPitchCenterCents', isFiniteNumber) &&
+        Array.isArray(value.pitchCurveCents) &&
+        value.pitchCurveCents.every(isFiniteNumber) &&
+        isFiniteNumber(value.voicedConfidence) &&
+        Object.keys(value).every((key) =>
+            [
+                'id',
+                'startTime',
+                'endTime',
+                'pitchCenterCents',
+                'originalPitchCenterCents',
+                'pitchCurveCents',
+                'voicedConfidence',
+            ].includes(key)
+        )
+    );
+}
+
+function isKneadState(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.blobs) &&
+        value.blobs.every(isKneadBlob) &&
+        isFiniteNumber(value.retuneSpeedMs) &&
+        isFiniteNumber(value.humanizePercent) &&
+        typeof value.formantPreserve === 'boolean' &&
+        Object.keys(value).every((key) =>
+            ['blobs', 'retuneSpeedMs', 'humanizePercent', 'formantPreserve'].includes(key)
+        )
+    );
+}
+
+const optionalClipFields: Record<string, (value: unknown) => boolean> = {
+    audioBufferId: (value) => typeof value === 'string',
+    fileId: (value) => typeof value === 'string',
+    assetHash: (value) => typeof value === 'string',
+    audioOffsetBeats: isFiniteNumber,
+    midiOffsetBeats: isFiniteNumber,
+    stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
+    stretchRatio: isFiniteNumber,
+    loopEnabled: (value) => typeof value === 'boolean',
+    loopLength: isFiniteNumber,
+    followAction: (value) =>
+        value === 'stop' ||
+        value === 'play_next' ||
+        value === 'play_previous' ||
+        value === 'play_random' ||
+        value === 'play_first' ||
+        value === 'play_last',
+    generating: (value) => typeof value === 'boolean',
+    isGhost: (value) => typeof value === 'boolean',
+    isInlineEditing: (value) => typeof value === 'boolean',
+    parentClipId: (value) => typeof value === 'string',
+    isLinkedInstance: (value) => typeof value === 'boolean',
+    sourceKeyRoot: isFiniteNumber,
+    sourceScaleName: (value) => typeof value === 'string',
+    overrides: (value) => isRecord(value) && Object.values(value).every((entry) => typeof entry === 'boolean'),
+    kneadState: isKneadState,
+};
+
+const requiredClipFields = new Set([
+    'id',
+    'trackId',
+    'name',
+    'startBeat',
+    'endBeat',
+    'type',
+    'fadeInBeats',
+    'fadeOutBeats',
+    'gain',
+    'color',
+    'locked',
+    'muted',
+]);
+
+function hasValidClipFields(value: Record<string, unknown>): boolean {
+    return Object.entries(value).every(
+        ([key, field]) =>
+            requiredClipFields.has(key) || (Object.hasOwn(optionalClipFields, key) && optionalClipFields[key]!(field))
+    );
+}
+
+function isRetiredTakeLane(value: unknown, clipId: string): boolean {
+    if (
+        !isRecord(value) ||
+        typeof value.laneIndex !== 'number' ||
+        !Number.isSafeInteger(value.laneIndex) ||
+        value.laneIndex < 0
+    ) {
+        return false;
+    }
+    const lane = decodeExactTakeLaneSnapshots([value.lane])?.[0];
+    if (!lane) {
+        return false;
+    }
+    return (
+        optionalField(
+            value,
+            'retiredTakeIds',
+            (ids) =>
+                Array.isArray(ids) &&
+                ids.every(
+                    (id) =>
+                        typeof id === 'string' && lane.takes.some((take) => take.id === id && take.clipId === clipId)
+                )
+        ) && Object.keys(value).every((key) => ['laneIndex', 'lane', 'retiredTakeIds'].includes(key))
+    );
+}
+
+function isRetiredTakeLanes(value: unknown, clipId: string): boolean {
+    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId));
+}
+
 function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolean {
     return (
         isRecord(value) &&
@@ -29,13 +158,13 @@ function isClipSnapshot(value: unknown, clipId: string, trackId: string): boolea
         Number.isFinite(value.endBeat) &&
         value.endBeat > value.startBeat &&
         (value.type === 'audio' || value.type === 'midi') &&
-        typeof value.fadeInBeats === 'number' &&
-        typeof value.fadeOutBeats === 'number' &&
-        typeof value.gain === 'number' &&
+        isFiniteNumber(value.fadeInBeats) &&
+        isFiniteNumber(value.fadeOutBeats) &&
+        isFiniteNumber(value.gain) &&
         typeof value.color === 'string' &&
         typeof value.locked === 'boolean' &&
         typeof value.muted === 'boolean' &&
-        hasFiniteNumbers(value)
+        hasValidClipFields(value)
     );
 }
 
@@ -77,7 +206,7 @@ export function isRestoreClipSessionPayload(value: unknown): boolean {
         value.trackId.length > 0 &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null || isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId)) &&
-        Array.isArray(value.retiredTakeLanes) &&
+        isRetiredTakeLanes(value.retiredTakeLanes, value.clipId) &&
         hasFiniteNumbers(value)
     );
 }
@@ -136,8 +265,7 @@ export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolea
         isRestoreClipPlacementSessionPayload(redo) &&
         inverse.expected.trackId === action.trackId &&
         inverse.expected.startBeat === action.startBeat &&
-        inverse.expected.endBeat - inverse.expected.startBeat ===
-            inverse.replacement.endBeat - inverse.replacement.startBeat &&
+        inverse.expected.endBeat === action.startBeat + (inverse.replacement.endBeat - inverse.replacement.startBeat) &&
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected)
     );
@@ -167,7 +295,7 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         value.rightClipId !== value.clipId &&
         isSplitSnapshot(value.expected, value.clipId, value.rightClipId) &&
         isSplitSnapshot(value.replacement, value.clipId, value.rightClipId) &&
-        (value.retiredTakeLanes === undefined || Array.isArray(value.retiredTakeLanes))
+        (value.retiredTakeLanes === undefined || isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId))
     );
 }
 

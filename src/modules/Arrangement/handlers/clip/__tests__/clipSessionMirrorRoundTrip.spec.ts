@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
@@ -29,6 +32,7 @@ import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
@@ -122,6 +126,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         clearHandlerRegistry();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        takeLaneStore.set({ lanes: [] });
         const track = TrackDummy.create({
             id: TRACK_ID,
             name: 'Keys',
@@ -136,6 +141,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
     afterEach(() => {
         clearHandlerRegistry();
+        takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         workspaceStore.set({ ...defaultWorkspaceState });
@@ -395,9 +401,18 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             name: 'removeClip malformed snapshot',
             action: { type: 'removeClip' as const, payload: { clipId: 'clip-a' } },
             corrupt: (entry: unknown) => {
-                (
-                    entry as { inverseAction: { payload: { clipSnapshot: { type: string } } } }
-                ).inverseAction.payload.clipSnapshot.type = 'other';
+                const payload = (
+                    entry as {
+                        inverseAction: {
+                            payload: {
+                                clipSnapshot: { type: string };
+                                ripplePlan: { removedClips: { type: string }[] };
+                            };
+                        };
+                    }
+                ).inverseAction.payload;
+                payload.clipSnapshot.type = 'other';
+                payload.ripplePlan.removedClips[0]!.type = 'other';
             },
         },
     ])(
@@ -419,4 +434,198 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(trackStore.value).toEqual(projectBefore);
         }
     );
+
+    it('fractional move retains exact captured geometry through hydration, undo, and redo', async () => {
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'clip-a', trackId: TRACK_ID, startBeat: 0.1 } },
+            { source: 'manual' }
+        );
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0.1, endBeat: 4.1 });
+        expect(undoStore.value?.past).toHaveLength(1);
+        await vi.waitFor(() => expect(sessionStorage.getItem(UNDO_SESSION_KEY)).not.toBeNull());
+        expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1);
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: 4 });
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'clip-a'
+            )
+        ).toMatchObject({ startBeat: 0, endBeat: 4 });
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0.1, endBeat: 4.1 });
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'clip-a'
+            )
+        ).toMatchObject({ startBeat: 0.1, endBeat: 4.1 });
+    });
+
+    it.each([false, true])('split restores later right-fragment take after redo with hydration=%s', async (reload) => {
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        if (reload) {
+            hydrateProductionContracts();
+        }
+        const lanes = [
+            {
+                id: 'peer-lane',
+                trackId: TRACK_ID,
+                takes: [
+                    {
+                        id: 'peer-take',
+                        clipId: 'clip-right',
+                        name: 'peer take',
+                        startBeat: 2,
+                        endBeat: 4,
+                        selected: true,
+                    },
+                ],
+                activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'peer-take' }],
+            },
+        ];
+        takeLaneStore.set({ lanes });
+        flushAutomergeStorageWrites();
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(1);
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future as unknown[]).length).toBe(
+                1
+            )
+        );
+        if (reload) {
+            hydrateProductionContracts();
+        }
+        expect(undoStore.value?.future).toHaveLength(1);
+        await redo();
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toMatchObject({ startBeat: 2, endBeat: 4 });
+        expect({
+            projection: takeLaneStore.value?.lanes,
+            authority: getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes,
+        }).toEqual({ projection: lanes, authority: lanes });
+    });
+
+    it.each([
+        {
+            name: 'audio offset',
+            corrupt: (clip: Record<string, unknown>) => {
+                clip.audioOffsetBeats = 'older-file-offset';
+            },
+        },
+        {
+            name: 'nested pitch curve',
+            corrupt: (clip: Record<string, unknown>) => {
+                clip.kneadState = {
+                    blobs: [
+                        {
+                            id: 'blob-a',
+                            startTime: 0,
+                            endTime: 1,
+                            pitchCenterCents: 12,
+                            pitchCurveCents: ['bad'],
+                            voicedConfidence: 0.9,
+                        },
+                    ],
+                    retuneSpeedMs: 50,
+                    humanizePercent: 10,
+                    formantPreserve: true,
+                };
+            },
+        },
+    ])('rejects malformed $name capture before real undo writes', async ({ corrupt }) => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = persisted.past as {
+            inverseAction: {
+                payload: {
+                    clipSnapshot: Record<string, unknown>;
+                    ripplePlan: { removedClips: Record<string, unknown>[] };
+                };
+            };
+        }[];
+        corrupt(entries[0]!.inverseAction.payload.clipSnapshot);
+        corrupt(entries[0]!.inverseAction.payload.ripplePlan.removedClips[0]!);
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(persisted));
+        const before = structuredClone(getCrdtDoc('root'));
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(0);
+        await undo();
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+    });
+
+    it('restores valid audio, link, and pitch captures without dropping optional fields', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        const original = {
+            ...createClipFixture('clip-a', 0, 4),
+            type: 'audio' as const,
+            audioBufferId: 'buffer-a',
+            fileId: 'file-a',
+            assetHash: 'hash-a',
+            audioOffsetBeats: 0.25,
+            midiOffsetBeats: 0.5,
+            stretchMode: 'repitch' as const,
+            stretchRatio: 1.2,
+            loopEnabled: true,
+            loopLength: 4,
+            followAction: 'play_next' as const,
+            generating: false,
+            isGhost: false,
+            isInlineEditing: true,
+            parentClipId: 'parent-a',
+            isLinkedInstance: true,
+            sourceKeyRoot: 4,
+            sourceScaleName: 'major',
+            overrides: { gain: true },
+            kneadState: {
+                blobs: [
+                    {
+                        id: 'blob-a',
+                        startTime: 0,
+                        endTime: 1,
+                        pitchCenterCents: 12,
+                        originalPitchCenterCents: 10,
+                        pitchCurveCents: [0, 3],
+                        voicedConfidence: 0.9,
+                    },
+                ],
+                retuneSpeedMs: 50,
+                humanizePercent: 10,
+                formantPreserve: true,
+            },
+        };
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-a' ? original : clip)),
+            })),
+        });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
+        );
+        hydrateProductionContracts();
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(original);
+        expect(
+            getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === 'clip-a'
+            )
+        ).toEqual(original);
+    });
 });

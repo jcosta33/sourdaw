@@ -67,6 +67,7 @@ describe('handleRestoreClipPlacement', () => {
         // document itself held.
         expect(mocks.moveClip).toHaveBeenCalledWith('clip-1', 'track-1', 2, undefined, false, {
             historicalPlacement: true,
+            historicalEndBeat: 10,
         });
         expect(mocks.restoreClipAutomationMoveState).toHaveBeenCalledWith(
             'clip-1',

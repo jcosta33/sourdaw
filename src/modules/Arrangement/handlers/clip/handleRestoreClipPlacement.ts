@@ -98,7 +98,7 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
             action.payload.replacement.startBeat,
             undefined,
             false,
-            { historicalPlacement: true }
+            { historicalPlacement: true, historicalEndBeat: action.payload.replacement.endBeat }
         );
         if (
             !moved ||
