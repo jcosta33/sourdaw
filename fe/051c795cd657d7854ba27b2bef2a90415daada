@@ -9,6 +9,8 @@ scripts/__tests__/checkStancesRecord.spec.ts
   s_97ab82e0b4f10c::t_ec75993c7901bb 184-185
   s_97ab82e0b4f10c::t_e52010e794c933 42
   s_97ab82e0b4f10c::t_41a7c0b6ee2be6 49
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_97ab82e0b4f10c::t_ccffc9b2851fbb 533
 ---
 {
   "schema_version": "authorship/3.0.0",

@@ -1,0 +1,27 @@
+scripts/__tests__/deliveryRiskPlanLoss.spec.ts
+  s_97ab82e0b4f10c::t_a2a719c57f6726 1-8,12-63,132-147,155-158,166-168,223-224
+  s_97ab82e0b4f10c::t_00e396fe2e5f37 10,159-165
+  s_97ab82e0b4f10c::t_b8e63c82452a9c 9,11,148-154,169-222
+scripts/deliverPullRequest.ts
+  s_97ab82e0b4f10c::t_54020e715a5a7f 136-138
+  s_97ab82e0b4f10c::t_a179346d68207a 154-162,174-177,180-181,183-185,190-195,3686
+  s_97ab82e0b4f10c::t_97a1bf50e2bcf6 135,187-189
+.agents/skills/review-stances/review-authorization.md
+  s_97ab82e0b4f10c::t_67283bc060ba52 1-11,16-18,22-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80f28bfd1a06ac085d20eececa37144132ba870f",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
