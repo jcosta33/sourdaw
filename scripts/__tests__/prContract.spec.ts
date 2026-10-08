@@ -51,6 +51,8 @@ import {
     ENGLISH_WORD_HEADS,
     GATE_CHECK_STATUSES,
     MERGE_DAW_NOUNS,
+    MERGE_TAIL_PREPOSITIONS,
+    NOUN_PHRASE_DETERMINERS,
     STATUS_ADVERBS,
     STEP_VERB_HEADS,
     SUITE_OR_PIPELINE_VERDICT_VERBS,
@@ -1315,7 +1317,7 @@ describe('product-scope test instructions', () => {
     );
 
     /** The nouns that make `Gate` the check anywhere, spec-owned on purpose: changing any member reddens the equality pin. */
-    const CHECK_RUN_NOUNS_UNDER_TEST = ['job', 'jobs', 'workflow', 'workflows'];
+    const CHECK_RUN_NOUNS_UNDER_TEST = ['check', 'job', 'jobs', 'workflow', 'workflows'];
 
     it('pins the nouns that make Gate the check wherever they sit behind it', () => {
         expect(CHECK_RUN_NOUNS).toEqual(CHECK_RUN_NOUNS_UNDER_TEST);
@@ -1331,13 +1333,18 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
-    it('passes the Gate check box and the Gate checking the sidechain', () => {
-        // `check` sat in CHECK_RUN_NOUNS against its own rule — only words that cannot be a verb
-        // qualify (#4822). Removing it publishes the check-box step and the device checking its
-        // sidechain; the compound reported with a verdict or a status refuses again through the
-        // composed `Gate check` report, so the trade the removal accepted for "the Gate check
-        // passed" is gone.
-        for (const step of ['Tick the Gate check box.', 'Let the Gate check the sidechain.']) {
+    it('passes the Gate check box, the Gate checkbox, and the Gate checking the sidechain', () => {
+        // `check` anchors `Gate` as the check noun in every sentence shape, so the two step uses of
+        // the compound are carved out by the match shape, not the noun list: the `check box` /
+        // `checkbox` control behind `Gate`, and the verb `check(s)/checked` with a
+        // determiner-marked object. Everything else behind `Gate check` refuses again.
+        for (const step of [
+            'Tick the Gate check box.',
+            'Tick the Gate checkbox.',
+            'Tick both Gate checkboxes.',
+            'Let the Gate check the sidechain.',
+            'Confirm the Gate checked the input once.',
+        ]) {
             expect(narratingTestInstructionSegments(step)).toEqual([]);
             expect(() => assertObservableTestInstructions(step)).not.toThrow();
         }
@@ -1364,6 +1371,42 @@ describe('product-scope test instructions', () => {
             expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
         }
     );
+
+    it.each([
+        ['a state predicate', 'The Gate check is pending.', ['The Gate check is pending']],
+        ['a past state predicate', 'The Gate check was skipped.', ['The Gate check was skipped']],
+        ['an intransitive verdict', 'The Gate check succeeded.', ['The Gate check succeeded']],
+        ['a timeout verdict', 'The Gate check timed out.', ['The Gate check timed out']],
+        ['a cancellation verdict', 'The Gate check was cancelled.', ['The Gate check was cancelled']],
+        ['an imperative lead', 'Make sure the Gate check passed.', ['Make sure the Gate check passed']],
+        ['an imperative over a status', 'Confirm the Gate check stays green.', ['Confirm the Gate check stays green']],
+        ['a trailing time adverbial', 'The Gate check passed this morning.', ['The Gate check passed this morning']],
+        [
+            'a trailing revision adverbial',
+            'The Gate check passed on the newest head.',
+            ['The Gate check passed on the newest head'],
+        ],
+        ['an upper-case verdict', 'The Gate check PASSED.', ['The Gate check PASSED']],
+        ['a mixed-case status', 'The Gate check is Green.', ['The Gate check is Green']],
+    ])(
+        'refuses %s: the noun anchor holds in every sentence shape and letter case',
+        (_label, instructions, segments) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it('refuses the device sentence the old noun list let publish: `The Gate check fails on quiet passages.`', () => {
+        // Deliberate flip (#4822 rework): with `check` anchoring the compound in every shape, this
+        // sentence reads as the check reporting a verdict, not the device failing on audio — the
+        // noun reading no longer depends on the verb form. A device step keeps its verb shapes
+        // (`the Gate fails to close`, `the Gate is failing to close`); only the bare compound
+        // naming a check verdict flips.
+        const instructions = 'The Gate check fails on quiet passages.';
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['The Gate check fails on quiet passages']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
 
     /** The verdict verbs a suite or the pipeline reports with, spec-owned on purpose: changing any member reddens the equality pin. */
     const SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST = [
@@ -1459,10 +1502,62 @@ describe('product-scope test instructions', () => {
         expect(CHECK_CONTEXT_CLAUSES).toEqual(CHECK_CONTEXT_CLAUSES_UNDER_TEST);
     });
 
-    /** The DAW material that keeps a `before merging` tail the step's own operation, spec-owned on purpose. */
-    const MERGE_DAW_NOUNS_UNDER_TEST = ['stem', 'stems', 'bus', 'buses', 'track', 'tracks'];
+    /** The determiners a merge object may open with, spec-owned on purpose: changing any member reddens the equality pin. */
+    const NOUN_PHRASE_DETERMINERS_UNDER_TEST = [
+        'the',
+        'a',
+        'an',
+        'this',
+        'that',
+        'these',
+        'those',
+        'its',
+        'his',
+        'her',
+        'their',
+        'your',
+    ];
 
-    it('pins the DAW material a delivery-clause tail may name', () => {
+    it('pins the determiners an English noun phrase opens with', () => {
+        expect(NOUN_PHRASE_DETERMINERS).toEqual(NOUN_PHRASE_DETERMINERS_UNDER_TEST);
+    });
+
+    /** The prepositions that end a merge object, spec-owned on purpose: changing any member reddens the equality pin. */
+    const MERGE_TAIL_PREPOSITIONS_UNDER_TEST = [
+        'after',
+        'at',
+        'before',
+        'by',
+        'for',
+        'from',
+        'in',
+        'into',
+        'on',
+        'onto',
+        'through',
+        'to',
+        'with',
+    ];
+
+    it('pins the prepositions that end a merge object inside a delivery clause', () => {
+        expect(MERGE_TAIL_PREPOSITIONS).toEqual(MERGE_TAIL_PREPOSITIONS_UNDER_TEST);
+    });
+
+    /** The DAW material a merge object may name, spec-owned on purpose: changing any member reddens the equality pin. */
+    const MERGE_DAW_NOUNS_UNDER_TEST = [
+        'bus',
+        'buses',
+        'clip',
+        'clips',
+        'stem',
+        'stems',
+        'take',
+        'takes',
+        'track',
+        'tracks',
+    ];
+
+    it('pins the DAW material a merge object may name', () => {
         expect(MERGE_DAW_NOUNS).toEqual(MERGE_DAW_NOUNS_UNDER_TEST);
     });
 
@@ -1473,11 +1568,17 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
-    it('passes a pipeline reported clean before merging stems: a delivery clause counts only on a tail naming no DAW material', () => {
-        // `before merging` followed by what merges — here the stems — is the step's own operation,
-        // so the clause counts only where the tail after `merging` names no DAW material (#4822).
-        const step = 'Confirm the pipeline is clean before merging the stems.';
-
+    it.each([
+        ['the stems', 'Confirm the pipeline is clean before merging the stems.'],
+        ['the buses', 'Confirm the pipeline is clean before merging the buses.'],
+        ['the tracks', 'Confirm the pipeline is clean before merging the tracks.'],
+        ['the clips', 'Confirm the pipeline is clean before merging the clips.'],
+        ['the takes', 'Confirm the pipeline is clean before merging the takes.'],
+        ['the vocal stems', 'Confirm the pipeline is clean before merging the vocal stems.'],
+        ['the bass bus takes', 'Confirm the pipeline is clean before merging the bass bus takes.'],
+    ])('passes a pipeline reported clean before merging %s: the merge object names DAW material', (_noun, step) => {
+        // The clause reads its merge object — the noun phrase directly behind `merging` — so audio
+        // material there keeps it the step's own operation (#4822).
         expect(narratingTestInstructionSegments(step)).toEqual([]);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
@@ -1487,10 +1588,32 @@ describe('product-scope test instructions', () => {
         ['the PR', 'The suite passed before merging the PR.'],
         ['anything', 'The suite passed before merging anything.'],
         ['again', 'The suite passed before merging again.'],
-    ])('refuses a suite verdict before merging %s: the tail names no DAW material', (_noun, instructions) => {
+    ])('refuses a suite verdict before merging %s: the merge object names no DAW material', (_noun, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
+
+    it.each([
+        [
+            'a DAW noun beyond the merge object',
+            'The suite passed before merging this to the master track.',
+            ['The suite passed before merging this to the master track'],
+        ],
+        [
+            'a DAW noun inside the destination phrase',
+            'The suite passed before merging the branch into the release track.',
+            ['The suite passed before merging the branch into the release track'],
+        ],
+    ])(
+        'refuses %s: a DAW noun later in the tail no longer rescues the merge object',
+        (_label, instructions, segments) => {
+            // The tail reads the merge object only — an optional determiner, then its words up to the
+            // first tail preposition — so `master track` and `release track` riding behind `to`/`into`
+            // stop rescuing a delivery clause whose object (`this`, `the branch`) is no DAW material.
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
 
     it.each([
         'Gate is green.',

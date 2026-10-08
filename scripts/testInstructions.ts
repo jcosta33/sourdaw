@@ -23,6 +23,8 @@ import {
     OBSERVATION_CUE_STEMS,
     GATE_CHECK_STATUSES,
     MERGE_DAW_NOUNS,
+    MERGE_TAIL_PREPOSITIONS,
+    NOUN_PHRASE_DETERMINERS,
     REMAINDER_VOCABULARY,
     STATUS_ADVERBS,
     STATUS_LINKING_VERBS,
@@ -707,17 +709,35 @@ function phraseAlternation(phrases: readonly string[]): string {
 }
 
 /**
+ * A `before merging` clause read by its merge object, as a pattern fragment: the noun phrase
+ * directly behind `merging` — an optional determiner, then the object's words up to the first tail
+ * preposition (`the branch into the release track` merges the branch) or the end of the tail
+ * (`the bass bus takes` merges the takes). Every object word carries the DAW exclusion, so one DAW
+ * noun in the object ends the match and keeps the clause the step's own operation (`before merging
+ * the stems`, `before merging the clips`), while `before merging the branch`, `before merging this
+ * to the master track`, `before merging again`, and a bare `before merging` are delivery. The
+ * object's prepositional phrase rides along to the close without rescuing it: a DAW noun beyond
+ * the object (`into the release track`) no longer forgives the clause.
+ */
+const MERGE_DELIVERY_CLAUSE_SOURCE =
+    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})` +
+    `(?:\\s+(?:${NOUN_PHRASE_DETERMINERS.join('|')})\\b)?` +
+    `(?:\\s+(?!${MERGE_TAIL_PREPOSITIONS.map((preposition) => `${preposition}\\b`).join('|')})` +
+    `(?!${MERGE_DAW_NOUNS.map((noun) => `${noun}\\b`).join('|')})\\S+)*` +
+    `(?:\\s+(?:${MERGE_TAIL_PREPOSITIONS.join('|')})\\b(?:\\s+\\S+)*)?` +
+    `\\W*$`;
+
+/**
  * The check context a verdict may be tied to (`on this head`, `for the latest push`, `before
  * merging`), as a pattern fragment with its leading whitespace: only a check has a head, a push, or
- * a pull request to pass on. A delivery clause counts only where it closes the segment on a tail
- * naming no DAW material — `before merging the stems` merges audio and stays the step's own
- * operation, while `before merging the branch` or `before merging again` is delivery padded past
- * the end anchor.
+ * a pull request to pass on. A delivery clause counts only where it closes the segment on a merge
+ * object naming no DAW material — `before merging the stems` merges audio and stays the step's own
+ * operation, while `before merging the branch` or `before merging this to the master track` is
+ * delivery padded past the end anchor.
  */
 const CHECK_CONTEXT_SOURCE =
     `\\s+(?:(?:${CHECK_CONTEXT_PREPOSITIONS.join('|')})\\s+)?(?:${phraseAlternation(CHECK_CONTEXT_DETERMINERS)})` +
-    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_OBJECTS)})\\b` +
-    `|\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})(?:\\s+(?!${MERGE_DAW_NOUNS.join('|')})\\b\\S+)*\\W*$`;
+    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_OBJECTS)})\\b|${MERGE_DELIVERY_CLAUSE_SOURCE}`;
 
 /**
  * A pattern for `subject` followed by `verdict` read as a status report, not as a DAW step that
@@ -725,10 +745,10 @@ const CHECK_CONTEXT_SOURCE =
  * article `the` and followed by nothing but an optional status adverb (`Gate is green`, `The suite
  * is green again`), or the verdict is tied to a check context anywhere in the step (`Confirm Gate
  * is green on the latest push`, `make sure the suite passed before merging`) — a delivery clause
- * only where it closes the segment on a tail naming no DAW material, since `before merging the
- * stems` is the step's own operation while `before merging the branch` is delivery with padding.
- * The same words anywhere else describe the device or the plugin: `lower the threshold until the
- * Gate turns green`, `confirm the Levain suite passes`.
+ * only where it closes the segment on a merge object naming no DAW material, since `before merging
+ * the stems` is the step's own operation while `before merging the branch` is delivery with
+ * padding. The same words anywhere else describe the device or the plugin: `lower the threshold
+ * until the Gate turns green`, `confirm the Levain suite passes`.
  */
 function statusReport(subject: string, verdict: string, flags = ''): RegExp {
     const report = `${subject}${verdict}(?:\\s+(?:${STATUS_ADVERBS.join('|')}))?`;
@@ -736,12 +756,36 @@ function statusReport(subject: string, verdict: string, flags = ''): RegExp {
 }
 
 /**
+ * The `check box` control behind `Gate`, as a pattern fragment: a hardware UI control
+ * (`Tick the Gate check box`), not the repository's check. The closed spellings `checkbox`/
+ * `checkboxes` need no carve-out — the word boundary behind the anchored noun never fires
+ * inside them.
+ */
+const GATE_CHECK_BOX_SOURCE = `check\\s+box(?:es)?\\b`;
+
+/**
+ * The Gate checking a signal, as a pattern fragment: the verb form of `check` followed by a
+ * determiner-marked object (`let the Gate check the sidechain`, `the Gate checks the sidechain`).
+ * A bare word behind the verb form (`the Gate check passed`) is no object, so the compound noun
+ * reading holds.
+ */
+const GATE_CHECK_VERB_SOURCE = `(?:checks?|checked|checking)\\s+(?:${NOUN_PHRASE_DETERMINERS.join('|')})\\b`;
+
+/**
  * The repository's own check names that read as the check wherever they sit, matched
  * case-sensitively as the proper nouns they are. `HeavyGate` names nothing else, so it matches
  * bare. `Gate` is also the DAW's noise-gate device, so anywhere in a step it names the check only
- * with a noun from `CHECK_RUN_NOUNS` directly behind it (`the Gate job passed`).
+ * with a noun from `CHECK_RUN_NOUNS` directly behind it (`the Gate check passed`, `the Gate job
+ * passed`). The noun anchor holds in every sentence shape, so a state predicate (`the Gate check
+ * is pending`), an imperative lead (`make sure the Gate check passed`), a trailing adverbial
+ * (`the Gate check passed this morning`), and any letter case (`the Gate check PASSED`) refuse
+ * alike. Two step uses of the compound stay out, carved by the match shape rather than the noun
+ * list: the `check box` control (`Tick the Gate check box`) and the device checking a
+ * determiner-marked signal (`let the Gate check the sidechain`).
  */
-const REPOSITORY_CHECK_NAMES = new RegExp(`\\bHeavyGate\\b|\\bGate\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b`);
+const REPOSITORY_CHECK_NAMES = new RegExp(
+    `\\bHeavyGate\\b|\\bGate\\s+(?!${GATE_CHECK_BOX_SOURCE})(?!${GATE_CHECK_VERB_SOURCE})(?:${CHECK_RUN_NOUNS.join('|')})\\b`
+);
 
 /**
  * `Gate` reported with a status over `GATE_CHECK_STATUSES` (`Gate is green`, `Gate is green on this
@@ -761,19 +805,6 @@ const SUITE_OR_PIPELINE_STATUS_REPORT = statusReport(
     '(?:suites?|pipeline)',
     `(?:${STATUS_PHRASE}|\\s+(?:${SUITE_OR_PIPELINE_VERDICT_VERBS.join('|')})\\b)`,
     'i'
-);
-
-/**
- * The compound `Gate check` — the repository's check named as a noun phrase — reported with a
- * status or a verdict verb (`The Gate check is green`, `The Gate check passed`), whole-sentence or
- * tied to a check context. The step's own uses of the compound stay out: a noun behind `check`
- * (`Tick the Gate check box`) and the device checking its signal (`Let the Gate check the
- * sidechain`) name no report. Matched case-sensitively, like the proper noun `Gate` itself, so a
- * lower-case gate stays the device.
- */
-const GATE_CHECK_COMPOUND_REPORT = statusReport(
-    'Gate\\s+check',
-    `(?:${STATUS_PHRASE}|\\s+(?:${SUITE_OR_PIPELINE_VERDICT_VERBS.join('|')})\\b)`
 );
 
 /**
@@ -805,7 +836,6 @@ function namesTestSuite(segment: string): boolean {
         CI_WORD.test(segment) ||
         REPOSITORY_CHECK_NAMES.test(plain) ||
         GATE_STATUS_REPORT.test(plain) ||
-        GATE_CHECK_COMPOUND_REPORT.test(plain) ||
         SUITE_OR_PIPELINE_STATUS_REPORT.test(plain)
     );
 }

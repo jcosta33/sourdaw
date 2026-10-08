@@ -474,13 +474,16 @@ export const GATE_CHECK_STATUSES = ['green'];
 
 /**
  * The nouns that make `Gate` the repository's check rather than the DAW device wherever they sit
- * behind it: `the Gate jobs`, `the Gate workflow`. Only words that cannot be a verb qualify:
- * `Tick the Gate check box`, `let the Gate check the sidechain`, `the Gate checks the sidechain`,
- * `the Gate runs before the compressor`, and `let the Gate run for a bar` describe the step or the
- * device, so `check`, `checks`, `run`, and `runs` stay out. Exported so the specs can pin the
+ * behind it: `the Gate check`, `the Gate jobs`, `the Gate workflow`. `check` anchors the compound
+ * noun phrase in every sentence shape — state predicates, imperatives, adverbials, any letter case —
+ * so the anchor never depends on the sentence's verb; the step's own uses of the compound (the
+ * `check box` control, the device checking a signal) are carved out by the match shape in
+ * `testInstructions.ts`, not here. The other verb-form nouns stay out: `the Gate checks the
+ * sidechain`, `the Gate runs before the compressor`, and `let the Gate run for a bar` describe the
+ * device, and `checks`, `run`, and `runs` are verb forms. Exported so the specs can pin the
  * inventory: changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_RUN_NOUNS = ['job', 'jobs', 'workflow', 'workflows'];
+export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'workflow', 'workflows'];
 
 /**
  * The verdict verbs a suite or the pipeline reports with: `the suite passed`, `the pipeline
@@ -519,13 +522,63 @@ export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 
 export const CHECK_CONTEXT_CLAUSES = ['before merging'];
 
 /**
- * The DAW material a step can merge: audio stems, buses, and tracks, in both numbers. A `before
- * merging` clause that closes on a tail naming one of these is the step's own operation (`before
- * merging the stems`), so only a tail naming none of them is delivery. Closed on purpose: an open
- * noun list would let branch-and-delivery words launder past the clause again. Exported so the
- * specs can pin the inventory: changing any member reddens the equality pin and that member's case.
+ * The determiners an English noun phrase opens with: the articles, the demonstratives, and the
+ * possessive determiners. One list feeds two object readers so they cannot disagree — the verb
+ * sense of `Gate check` (`let the Gate check the sidechain`) and the merge object of a `before
+ * merging` clause (`before merging the stems`) — both read the object behind a verb as this
+ * determiner followed by the noun phrase. Exported so the specs can pin the inventory: changing
+ * any member reddens the equality pin and that member's case.
  */
-export const MERGE_DAW_NOUNS = ['stem', 'stems', 'bus', 'buses', 'track', 'tracks'];
+export const NOUN_PHRASE_DETERMINERS = [
+    'the',
+    'a',
+    'an',
+    'this',
+    'that',
+    'these',
+    'those',
+    'its',
+    'his',
+    'her',
+    'their',
+    'your',
+];
+
+/**
+ * The prepositions that end a merge object inside a `before merging` tail: everything up to the
+ * first of them is the noun phrase being merged (`the branch into the release track` merges the
+ * branch), and whatever follows rides along without rescuing it. Closed on purpose: an open
+ * preposition list would let delivery words launder past the object. Exported so the specs can pin
+ * the inventory: changing any member reddens the equality pin and that member's case.
+ */
+export const MERGE_TAIL_PREPOSITIONS = [
+    'after',
+    'at',
+    'before',
+    'by',
+    'for',
+    'from',
+    'in',
+    'into',
+    'on',
+    'onto',
+    'through',
+    'to',
+    'with',
+];
+
+/**
+ * The DAW material a step can merge: stems, buses, tracks, clips, and takes, in both numbers. A
+ * `before merging` clause counts as delivery only when the merge object — the noun phrase directly
+ * behind `merging`, before the first tail preposition — names none of these (`before merging the
+ * stems` merges audio and stays the step's own operation, while `before merging the branch` or
+ * `before merging this to the master track` is delivery). Closed on purpose, kept in step with the
+ * `TEST_MODIFIED_NOUNS` DAW nouns by hand: a derived plural would need irregular `buses`/`mixes`
+ * rules, and the merge reading takes only material a step can merge, not every noun a test can
+ * modify. Exported so the specs can pin the inventory: changing any member reddens the equality
+ * pin and that member's case.
+ */
+export const MERGE_DAW_NOUNS = ['bus', 'buses', 'clip', 'clips', 'stem', 'stems', 'take', 'takes', 'track', 'tracks'];
 
 /**
  * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
