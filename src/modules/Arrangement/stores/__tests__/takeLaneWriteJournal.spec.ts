@@ -79,7 +79,7 @@ describe('takeLaneWriteJournal', () => {
                     automationLaneId: undefined,
                     takes: firstLane.takes.map((take) => {
                         if (take.id === 'take-a') {
-                            return { ...take, name: 'A local', sourceOffsetBeats: 2 };
+                            return { ...take, name: 'A local', sourceOffsetBeats: 2, sourceOffsetSeconds: 1 };
                         }
                         return structuredClone(take);
                     }),
@@ -113,7 +113,11 @@ describe('takeLaneWriteJournal', () => {
             throw new Error('Expected the field delta to replay');
         }
         expect(replay.value?.lanes[0]).not.toHaveProperty('automationLaneId');
-        expect(replay.value?.lanes[0]?.takes[0]).toMatchObject({ name: 'A local', sourceOffsetBeats: 2 });
+        expect(replay.value?.lanes[0]?.takes[0]).toMatchObject({
+            name: 'A local',
+            sourceOffsetBeats: 2,
+            sourceOffsetSeconds: 1,
+        });
         expect(replay.value?.lanes[0]?.activeCompRegions).toEqual(authority.lanes[0]?.activeCompRegions);
         expect(replay.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');
     });

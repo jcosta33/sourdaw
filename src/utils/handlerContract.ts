@@ -135,6 +135,7 @@ export type ClipStateSnapshot = {
     readonly fileId?: string;
     readonly assetHash?: string;
     readonly audioOffsetBeats?: number;
+    readonly audioOffsetSeconds?: number;
     readonly midiOffsetBeats?: number;
     readonly fadeInBeats: number;
     readonly fadeOutBeats: number;
@@ -528,6 +529,7 @@ export type TakeSnapshot = {
     endBeat: number;
     selected: boolean;
     sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {

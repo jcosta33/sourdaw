@@ -66,6 +66,8 @@ describe('sanitize_take_lane_store_state', () => {
                             startBeat: 0,
                             endBeat: 4,
                             selected: true,
+                            sourceOffsetBeats: 4,
+                            sourceOffsetSeconds: 2,
                         },
                     ],
                     activeCompRegions: [{ startBeat: 0, endBeat: 2, takeId: 'take-1' }],

@@ -47,6 +47,13 @@ type TakeFieldOperation =
           readonly takeId: string;
           readonly expected: OptionalNumberValue;
           readonly replacement: OptionalNumberValue;
+      }
+    | {
+          readonly kind: 'take-source-offset-seconds-field';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: OptionalNumberValue;
+          readonly replacement: OptionalNumberValue;
       };
 
 export type TakeLaneWriteOperation =
@@ -137,7 +144,7 @@ function optionalString(source: TakeLane, field: 'automationLaneId'): OptionalSt
     return { present: false };
 }
 
-function optionalNumber(source: Take, field: 'sourceOffsetBeats'): OptionalNumberValue {
+function optionalNumber(source: Take, field: 'sourceOffsetBeats' | 'sourceOffsetSeconds'): OptionalNumberValue {
     if (Object.hasOwn(source, field) && source[field] !== undefined) {
         return { present: true, value: source[field] };
     }
@@ -183,16 +190,18 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
             replacement: next.selected,
         });
     }
-    const beforeOffset = optionalNumber(before, 'sourceOffsetBeats');
-    const nextOffset = optionalNumber(next, 'sourceOffsetBeats');
-    if (!valuesEqual(beforeOffset, nextOffset)) {
-        operations.push({
-            kind: 'take-source-offset-field',
-            laneId,
-            takeId: before.id,
-            expected: beforeOffset,
-            replacement: nextOffset,
-        });
+    for (const field of ['sourceOffsetBeats', 'sourceOffsetSeconds'] as const) {
+        const beforeOffset = optionalNumber(before, field);
+        const nextOffset = optionalNumber(next, field);
+        if (!valuesEqual(beforeOffset, nextOffset)) {
+            operations.push({
+                kind: field === 'sourceOffsetBeats' ? 'take-source-offset-field' : 'take-source-offset-seconds-field',
+                laneId,
+                takeId: before.id,
+                expected: beforeOffset,
+                replacement: nextOffset,
+            });
+        }
     }
     return operations;
 }
@@ -421,15 +430,16 @@ function applyTakeFieldOperation(
         return undefined;
     }
     let replacementTake: Take;
-    if (operation.kind === 'take-source-offset-field') {
-        if (!valuesEqual(optionalNumber(take, 'sourceOffsetBeats'), operation.expected)) {
+    if (operation.kind === 'take-source-offset-field' || operation.kind === 'take-source-offset-seconds-field') {
+        const field = operation.kind === 'take-source-offset-field' ? 'sourceOffsetBeats' : 'sourceOffsetSeconds';
+        if (!valuesEqual(optionalNumber(take, field), operation.expected)) {
             return undefined;
         }
         replacementTake = cloneValue(take);
         if (operation.replacement.present) {
-            replacementTake.sourceOffsetBeats = operation.replacement.value;
+            replacementTake[field] = operation.replacement.value;
         } else {
-            delete replacementTake.sourceOffsetBeats;
+            delete replacementTake[field];
         }
     } else if (operation.kind === 'take-selected-field') {
         if (take.selected !== operation.expected) {

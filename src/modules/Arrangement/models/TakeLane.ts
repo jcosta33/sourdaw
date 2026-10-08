@@ -14,6 +14,8 @@ export type Take = {
      * manual takes, and takes predating the field.
      */
     sourceOffsetBeats?: number;
+    /** Source depth from the recording's first sample; authoritative when present. */
+    sourceOffsetSeconds?: number;
 };
 
 export type TakeLane = {
