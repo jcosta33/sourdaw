@@ -1,3 +1,5 @@
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
+
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
@@ -186,44 +188,61 @@ function createSampleBankHandshake(
 }
 
 /**
+ * The release loop each port still has running, settled when the worklet
+ * reports the displaced bank freed or the processor ends. A load that follows
+ * waits on it, so its `beginSampleBank` finds the worklet's retired slot empty
+ * instead of freeing the whole bank in one call.
+ */
+const runningReleases = new WeakMap<MessagePort, Promise<void>>();
+
+/**
  * Ask the worklet to free the bank this load's commit displaced, one bounded
  * step per message, re-asking while it answers that more is left. The commit
- * itself frees nothing, and nothing waits on this: the load has already
- * resolved. A port that closes, or a processor that ends, stops the loop; the
- * next `beginSampleBank` frees whatever is left.
+ * itself frees nothing, and nothing in this load waits on the loop: it has
+ * already resolved. A port that closes, or a processor that ends, stops the
+ * loop; the next load waits for it (`runningReleases`).
  */
 function releaseRetiredBank(nodePort: MessagePort, loadToken: number): void {
-    function stop(): void {
-        nodePort.removeEventListener('message', onMessage);
-    }
-    function request(): void {
-        try {
-            nodePort.postMessage({ type: 'releaseRetiredBank', loadToken });
-        } catch {
-            stop();
+    const finished = new Promise<void>((resolve) => {
+        function stop(): void {
+            nodePort.removeEventListener('message', onMessage);
+            resolve();
         }
-    }
-    function onMessage(event: MessageEvent<unknown>): void {
-        const message = event.data;
-        if (!isRecord(message)) {
-            return;
+        function request(): void {
+            try {
+                nodePort.postMessage({ type: 'releaseRetiredBank', loadToken });
+            } catch {
+                stop();
+            }
         }
-        if (message.type === 'disposed' || message.type === 'error') {
-            stop();
-            return;
+        function onMessage(event: MessageEvent<unknown>): void {
+            const message = event.data;
+            if (!isRecord(message)) {
+                return;
+            }
+            if (message.type === 'disposed' || message.type === 'error') {
+                stop();
+                return;
+            }
+            if (message.type !== 'retiredBankReleased' || message.loadToken !== loadToken) {
+                return;
+            }
+            if (message.done === true) {
+                stop();
+                return;
+            }
+            request();
         }
-        if (message.type !== 'retiredBankReleased' || message.loadToken !== loadToken) {
-            return;
-        }
-        if (message.done === true) {
-            stop();
-            return;
-        }
-        request();
-    }
 
-    nodePort.addEventListener('message', onMessage);
-    request();
+        nodePort.addEventListener('message', onMessage);
+        request();
+    });
+    runningReleases.set(nodePort, finished);
+    void finished.then(() => {
+        if (runningReleases.get(nodePort) === finished) {
+            runningReleases.delete(nodePort);
+        }
+    });
 }
 
 export type LoadInstrumentFromManifestInput = {
@@ -297,6 +316,14 @@ export async function loadInstrumentFromManifest({
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
     try {
+        // Hold this load's `beginSampleBank` until the bank the previous load
+        // displaced is fully freed, a bounded step at a time; begin would
+        // otherwise free what is left in one call on the render thread. An
+        // abort ends the wait (the promise itself never rejects).
+        await raceAbortSignal(runningReleases.get(nodePort) ?? Promise.resolve(), signal).catch(() => undefined);
+        if (signal?.aborted) {
+            return undefined;
+        }
         const loadToken = allocateBankLoadToken();
         handshake = createSampleBankHandshake(nodePort, loadToken, signal);
         nodePort.postMessage({
@@ -384,10 +411,10 @@ export async function loadInstrumentFromManifest({
         // type) it can match.
         //
         // Grouped with the other staging messages for readability, not because
-        // the position matters: `LevainEngine::add_legato_transition` pushes
-        // into the pending bank the same way `add_zone` does, and
-        // `commit_sample_bank` rebuilds the whole transition store from that
-        // list, so a message landing either side of `buildZoneMap` still takes.
+        // the position matters: `LevainEngine::add_legato_transition` adds to
+        // the pending bank's transition store the same way `add_zone` adds to
+        // its zone map, and `commit_sample_bank` swaps that store in, so a
+        // message landing either side of `buildZoneMap` still takes.
         // `loadToken` is what makes a transition from an abandoned load stale.
         for (const transition of bank.legatoTransitions) {
             signal?.throwIfAborted();

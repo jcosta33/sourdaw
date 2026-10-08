@@ -48,12 +48,17 @@ otherwise. The replacement contract has two parts:
   `max_entries` PCM entries per call and reports when the slot is empty. A pool a sibling instance
   still shares is only released by decrementing its count. The host sends one
   `releaseRetiredBank` message per step, after `sampleBankLoaded`, and repeats it while the worklet
-  answers that more remains. `begin_sample_bank` also frees whatever is left, so the slot is empty by
-  the time the next bank commits.
+  answers that more remains. The loader holds the next load's `beginSampleBank` on that port until
+  the loop reports done, so begin finds the slot empty and frees nothing.
+- **`begin_sample_bank` frees a leftover bank in one call.** That is only a safety net for a host
+  that does not wait for the loop, such as one that supersedes a load before the release finishes
+  and then talks to the engine directly. The call is unbounded: it frees the whole bank. The loader
+  does not reach it.
 
-Release still runs on the render thread. What changes is where: never inside the commit and never in
-`process()`, in steps bounded to a fraction of a quantum (freeing 6,000 samples in one call measured
-about 2.3 ms on the shipped wasm under Node, against a 2.67 ms quantum at 48 kHz).
+Release still runs on the render thread. What changes is where: not inside the commit, not in
+`process()`, and, through the loader, in steps bounded to a fraction of a quantum (freeing 6,000
+samples in one call measured about 2.3 ms on the shipped wasm under Node, against a 2.67 ms quantum
+at 48 kHz). The one unbounded free is the safety net above.
 
 ## Consequences
 

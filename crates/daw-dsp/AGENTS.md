@@ -46,8 +46,9 @@ sibling `proof-chamber` crate guards its own in `tests/reverb_process_rt.rs`.
 `LevainEngine::commit_sample_bank` runs in the worklet's message handler, on the render thread. It
 swaps the zone map, PCM pool and legato store with the staged bank's and parks the displaced bank in
 one retired slot, so it neither allocates nor frees. `release_retired_bank(max_entries)` frees the
-slot in bounded steps from a message of its own, and `begin_sample_bank` frees what is left. A commit
-that finds the slot occupied returns false and leaves the bank staged. `device_process_rt.rs` guards
+slot in bounded steps from a message of its own; the host must run it to done before the next
+`begin_sample_bank`, which otherwise frees whatever is left in one unbounded call (a safety net, not
+a path to rely on). A commit that finds the slot occupied returns false and leaves the bank staged. `device_process_rt.rs` guards
 the commit with `assert_no_alloc`, which also aborts on a free; `levain_bank_retirement.rs` counts
 allocations to show the frees land in the release. Add nothing to the commit that builds, pushes or
 drops ([ADR 0051](../../.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md)).

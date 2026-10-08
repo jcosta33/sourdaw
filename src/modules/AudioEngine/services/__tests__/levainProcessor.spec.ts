@@ -824,6 +824,9 @@ describe('LevainProcessor message handling', () => {
             const proc = await commitBank(1);
             send(proc, { type: 'beginSampleBank', bankKey: 'release-bank-2', instrumentId: 'violin', loadToken: 2 });
             send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+            // Load 2 committed, so its own retired bank is the one waiting and
+            // load 1's request is stale rather than merely unmatched.
+            expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
             calls.length = 0;
 
             send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
