@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_1c08b47ac3792f::t_2d75fe363c3670 88-93,103,108
+src/modules/AiRuntime/AGENTS.md
+  s_1c08b47ac3792f::t_c556682d6d8662 49
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_58e78ca7f6cbd3 9
+  s_1c08b47ac3792f::t_e1d8fbe4cbd52e 1126-1143,1161-1177,1179-1181,1183-1193,1197-1217
+  s_1c08b47ac3792f::t_b03e6b69c0a6f4 1144-1160
+  s_1c08b47ac3792f::t_4e5aafb40a62b8 1194-1196
+  s_1c08b47ac3792f::t_79006a94c2f311 1178,1182
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_65f7a0854cc43a 539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d29d99a7b4b3d9b8336f8a91ca8ced85a05bc62b",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
