@@ -324,11 +324,9 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. Call with no arguments to list every available device type as { id, name }; a later turn's context omits that list. A large descriptor's full receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone. page: { index: true } returns the type's compact parameter index — { id, name } for every parameter — in one receipt; then read only the parameters the request needs in one call with parameterIds (up to ${String(
+            `Read the bounded versioned factory manifest for built-in and scanned devices; read evidence, not plugin-state authority. No arguments lists the device types as { id, name }. A full receipt can exceed the per-call budget (tool-receipt-too-large); then request that type alone. page: { index: true } returns the compact parameter index ({ id, name } each) in one call; parameterIds (up to ${String(
                 DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT
-            )} ids of that type), which returns their full bounds, legal value sets and guidance. To read contiguous parameter windows instead, use page: { cursor, limit } (limit up to ${String(
-                DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT
-            )}) and follow nextCursor until it is null.`,
+            )} ids) reads just those parameters with bounds and legal sets. Windows: page: { cursor, limit }, follow nextCursor until null.`,
             {
                 types: {
                     type: 'array',
