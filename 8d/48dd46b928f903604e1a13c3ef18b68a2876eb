@@ -1,0 +1,26 @@
+.agents/skills/review-stances/test-validity.md
+  s_d257b09300b1ad::t_a20fa12a442775 104-111
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_d257b09300b1ad::t_3c45ae3aa2411b 1-167
+  s_d257b09300b1ad::t_d980cfd56619aa 168-171
+tests/e2e/smoke.spec.ts
+  s_d257b09300b1ad::t_d70b6ef273d4ac 4-10,295
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_d257b09300b1ad::t_2b969a8958cdb4 4-9,151,171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d48dd46b928f903604e1a13c3ef18b68a2876eb",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
