@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     parseSpecDurations,
@@ -7,6 +12,14 @@ import {
     specDurationsFromReport,
 } from '../e2eShardPartition';
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
+
+const folders: string[] = [];
+
+afterEach(() => {
+    for (const folder of folders.splice(0)) {
+        rmSync(folder, { recursive: true, force: true });
+    }
+});
 
 function spec(name: string): string {
     return `tests/e2e/${name}.spec.ts`;
@@ -83,6 +96,47 @@ describe('duration-balanced browser shards', () => {
             { id: 1, specs: [slow] },
             { id: 2, specs: [...specs].sort() },
         ]);
+    });
+});
+
+describe('planned browser matrix', () => {
+    it('partitions the plan command output by the committed durations', () => {
+        const root = mkdtempSync(join(tmpdir(), 'e2e-shard-plan-'));
+        folders.push(root);
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        const recorded = [...readSpecDurations().keys()].sort().slice(0, 30);
+        const inventory = [SMOKE_SPEC, ...recorded];
+        for (const path of inventory) {
+            mkdirSync(join(root, dirname(path)), { recursive: true });
+            writeFileSync(join(root, path), '// browser fixture\n');
+        }
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Shard test']);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        writeFileSync(join(root, 'src/app/bootstrap.ts'), '// product change\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'change product']);
+
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                BASE_SHA: base,
+                HEAD_SHA: git(['rev-parse', 'HEAD']),
+                GITHUB_OUTPUT: join(root, 'output'),
+            },
+        });
+
+        expect(result.status, result.stderr).toBe(0);
+        const balanced = selectValidationPlan(['src/app/bootstrap.ts'], inventory, readSpecDurations()).matrix;
+        // Guards the fixture: the recorded files must partition differently from equal weights.
+        expect(balanced).not.toEqual(selectValidationPlan(['src/app/bootstrap.ts'], inventory).matrix);
+        expect(JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')).matrix).toEqual(balanced);
     });
 });
 
