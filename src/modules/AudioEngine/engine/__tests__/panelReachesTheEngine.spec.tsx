@@ -1,12 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { initCrumbsModePush } from '#/app/initCrumbsModePush';
+import { eventBus } from '#/app/registerDependencies';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
+import { setCrumbsEventBus } from '#/modules/Crumbs/stores';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -283,8 +286,9 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
         // The control surface `wasmDeviceRegistry` publishes on the rendering
         // Crumbs node (`AudioEngineState.ts:336`). `setMode` sat on it with zero
         // callers for the whole life of the mode defect — the node was always
-        // reachable, nothing reached it. `sendCrumbsModeToEngine` is what does
-        // now, and this records what it was told.
+        // reachable, nothing reached it. The app seam's `crumbs.modeChanged`
+        // subscription (`initCrumbsModePush`) is what reaches it now, and this
+        // records what it was told.
         crumbsControls: {
             ready: true,
             noteOn: () => {},
@@ -427,6 +431,21 @@ describe('Crumbs panel edits reach the node in the track strip', () => {
                 describe: () => ({ label: 'noop', inverseAction: null }),
             }),
         });
+    });
+
+    // The mode push rides the app seam's `crumbs.modeChanged` subscription, so
+    // this describe connects the same two wires `bootstrap.ts` does: the Crumbs
+    // module's outbound emitter is pointed at a bus (`setCrumbsEventBus`;
+    // unset means silent by design, which is exactly the red this case showed
+    // before the wiring existed), and the real strip traversal is registered
+    // on that same bus. `registerDependencies` is the composition root's real
+    // bus and carries no bootstrap side effects. Like the handler registry
+    // above, this is once-per-file: nothing in this file emits the signal
+    // except a mode switch, and the traversal reads the harness fresh per
+    // event.
+    beforeAll(() => {
+        setCrumbsEventBus(eventBus);
+        initCrumbsModePush(eventBus);
     });
 
     afterAll(() => {

@@ -640,4 +640,73 @@ describe('applyModulationToEngine', () => {
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
         });
     });
+
+    // #4790: the base a modulator combines onto reads the per-track compensated
+    // device read beat (#4684's map), but the modulator phase itself evaluated
+    // at the raw playhead — a tempo-synced LFO ran D beats early relative to
+    // the automation curve and the audio beneath it. The phase must read the
+    // same beat the base read for that target track.
+    describe('modulator phase rides the compensated device read beat, not the playhead', () => {
+        // Square LFO, period 4: high on [0, 2), low on [2, 4). With amount 0.5
+        // over the 0..1000 cutoff range the delta is 500 per unit of depth on
+        // the persisted 500 base, so the written value reads the phase
+        // directly: 1000 high half, 500 low half.
+        function seedSquareLfo(): void {
+            modulationStore.set({
+                modulators: [
+                    {
+                        id: 'lfo1',
+                        name: 'LFO',
+                        trackId: 't1',
+                        kind: 'lfo',
+                        config: { kind: 'lfo', waveform: 'square', rate: 4, sync: true, phase: 0, depth: 1 },
+                        mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0.5 }],
+                        enabled: true,
+                    },
+                ],
+            });
+        }
+
+        it('lands a square LFO edge at the compensated read beat, not the playhead', () => {
+            seedSquareLfo();
+            // Playhead 2.5 is past the square's falling edge at beat 2 (low
+            // half); the compensated read beat 1.5 (1 beat of PDC at this
+            // tempo) is still before it (high half).
+            const readBeats = new Map([['t1', 1.5]]);
+
+            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(1000);
+        });
+
+        it('keeps the playhead clock for a track whose read beat equals it (no compensation)', () => {
+            seedSquareLfo();
+            const readBeats = new Map([['t1', 2.5]]);
+
+            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
+        });
+
+        it('keeps the playhead clock when no read-beat map is passed (existing callers)', () => {
+            seedSquareLfo();
+
+            applyModulationToEngine(2.5);
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
+        });
+
+        it('keeps the playhead clock for a track the map has no entry for', () => {
+            seedSquareLfo();
+            const readBeats = new Map([['other-track', 1.5]]);
+
+            applyModulationToEngine(2.5, undefined, new Map(), readBeats);
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(500);
+        });
+    });
 });
