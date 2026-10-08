@@ -1,0 +1,32 @@
+src/modules/Automation/useCases/index.ts
+  s_1f0dcd815e8946::t_cb6bfdf3ffab7e 27
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_cb6bfdf3ffab7e 321-322,338
+  s_1f0dcd815e8946::t_33cf5302e21365 301
+  s_1f0dcd815e8946::t_51d136a9302ded 96,109-112,308-313,328-331,339-341,346-408
+  s_1f0dcd815e8946::t_35a7564df7fa50 9,95,97-108,113-114,161,171,298-300,302-307,314-320,323-327,332-337,342-345
+  s_1f0dcd815e8946::t_0cde2c408e82e3 409
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1f0dcd815e8946::t_9af0e20f8934b9 1
+  s_1f0dcd815e8946::t_cb6bfdf3ffab7e 199
+src/modules/Automation/useCases/automation/isExactAutomationLaneSnapshots.ts
+  s_1f0dcd815e8946::t_cb6bfdf3ffab7e 1-15
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_cc1e465727f974 169-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8e4424a0477a897d3a053e96e8ba77ceaaab514",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
