@@ -913,8 +913,8 @@
             "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
-              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },
           {
@@ -959,8 +959,8 @@
             "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
-              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },
           {
@@ -998,8 +998,8 @@
             "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
             "with": {
               "path": "~/.cargo/registry/index",
-              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}",
-              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-\n"
+              "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
+              "restore-keys": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-\n"
             }
           },
           {

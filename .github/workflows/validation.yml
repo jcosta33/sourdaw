@@ -740,15 +740,20 @@ jobs:
       # rust-cache it shadows whatever index state the job cache carried, and
       # because post steps run in reverse order its save completes before
       # rust-cache's registry cleanup touches the index, so it always
-      # archives a complete one.
+      # archives a complete one. The key is scoped per job (`github.job`)
+      # because the two macOS jobs' consultation sets differ — the test
+      # builds compile dev-dependencies the addon's release build skips —
+      # and actions/cache skips its post-save on an exact hit, so a key
+      # shared across jobs would let whichever job's post ran first fix the
+      # archived index for both, starving the other under a complete hit.
       - name: Cache the cargo registry index
         id: cargo-index
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-index-${{ runner.os }}-${{ runner.arch }}-
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       # Offline exactly when both layers matched their exact keys: rust-cache's
       # `cache-hit` is true only on a full key match and actions/cache sets
@@ -802,9 +807,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-index-${{ runner.os }}-${{ runner.arch }}-
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       - name: Test the audio crates
         env:
@@ -844,9 +849,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-index-${{ runner.os }}-${{ runner.arch }}-
+            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
