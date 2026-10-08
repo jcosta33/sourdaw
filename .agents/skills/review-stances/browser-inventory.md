@@ -11,3 +11,7 @@ Use this lesson when a change selects browser files, partitions their execution,
 ## Escape lesson from PR #4854
 
 PR #4854 introduced `scripts/prValidationScope.ts` with a `.spec.ts`/`.spec.tsx` predicate in both `listSpecs` and selected argument validation. `playwright.config.ts` left Playwright's default `testMatch` in force, which also admits `.test.*` and JS/TS variants. A new `tests/e2e/new-default.test.ts` therefore reached Playwright but did not enter the required PR matrix. The missing review probe was a filename-admission comparison from Playwright's collector through planning to execution arguments; existing planner fixtures used only `.spec.ts` names. A disposable Git fixture adding `.test.ts` and invoking `plan` exposes the omission before browser launch.
+
+## Escape lesson from PR #5056
+
+PR #5056 reused Vitest's case-sensitive filename regex for Playwright's default glob and matched `__tests__` with a case-sensitive ignore regex. Playwright's installed matcher accepts `tests/e2e/nested/fourth.TEST.ts` and ignores `tests/e2e/__TESTS__/ignored.test.ts`; the planner did the reverse. The browser-inventory stance checked extension families and directory exclusion but missed glob case behavior. Plant both case variants in a disposable Git planner fixture, compare with the installed Playwright matcher, and prove direct selection, broad inventory, and literal runner arguments. Keep Vitest's case-sensitive collection contract separate.

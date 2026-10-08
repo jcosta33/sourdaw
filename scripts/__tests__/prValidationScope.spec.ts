@@ -409,6 +409,7 @@ describe('required affected verification', () => {
         'tests/e2e/editor.spec.cts',
         'tests/e2e/editor.test.mtsx',
         'tests/e2e/nested/editor.spec.tsx',
+        'tests/e2e/nested/fourth.TEST.ts',
     ])('selects a changed Playwright filename %s directly', (spec) => {
         const inventory = [...INVENTORY, spec];
         const plan = selectValidationPlan([spec], inventory);
@@ -427,6 +428,7 @@ describe('required affected verification', () => {
     it.each([
         'tests/e2e/__tests__/nested.test.ts',
         'tests/e2e/nested/__tests__/case.spec.ts',
+        'tests/e2e/__TESTS__/ignored.test.ts',
         'tests/e2e/nested/node_modules/dependency.test.ts',
         'tests/e2e/helper.ts',
         'tests/e2e/case.spec.ts.bak',
@@ -443,8 +445,10 @@ describe('required affected verification', () => {
         const root = temporaryRoot();
         const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
         mkdirSync(join(root, 'tests/e2e/nested/__tests__'), { recursive: true });
+        mkdirSync(join(root, 'tests/e2e/__TESTS__'), { recursive: true });
         writeFileSync(join(root, SMOKE_SPEC), '// smoke fixture\n');
         writeFileSync(join(root, 'tests/e2e/nested/__tests__/excluded.test.ts'), '// excluded fixture\n');
+        writeFileSync(join(root, 'tests/e2e/__TESTS__/ignored.test.ts'), '// excluded fixture\n');
         mkdirSync(join(root, 'tests/e2e/fake.spec.ts'));
         git(['init', '--quiet']);
         git(['config', 'user.email', 'ci@example.invalid']);
@@ -456,6 +460,7 @@ describe('required affected verification', () => {
             'tests/e2e/new-default.test.ts',
             'tests/e2e/another.spec.js',
             'tests/e2e/nested/third.test.mtsx',
+            'tests/e2e/nested/fourth.TEST.ts',
         ];
         for (const spec of added) {
             writeFileSync(join(root, spec), '// new Playwright test\n');
@@ -473,6 +478,7 @@ describe('required affected verification', () => {
         expect(allSelected(plan)).toEqual(added.sort());
         expect(plan.reasons).toEqual([
             { path: 'tests/e2e/another.spec.js', reason: 'changed browser spec' },
+            { path: 'tests/e2e/nested/fourth.TEST.ts', reason: 'changed browser spec' },
             { path: 'tests/e2e/nested/third.test.mtsx', reason: 'changed browser spec' },
             { path: 'tests/e2e/new-default.test.ts', reason: 'changed browser spec' },
         ]);
@@ -560,6 +566,19 @@ describe('required affected verification', () => {
         expect(new RegExp(argument).test(join(root, spec))).toBe(true);
         expect(new RegExp(argument).test(join(root, 'tests/e2e/nested/a111x.test.mjs'))).toBe(false);
         expect(() => selectedSpecArguments([directory], root)).toThrow('invalid or missing');
+    });
+
+    it('accepts a mixed-case Playwright filename as a literal selected argument', () => {
+        const root = temporaryRoot();
+        const spec = 'tests/e2e/nested/a[1]+.TEST.ts';
+        mkdirSync(join(root, 'tests/e2e/nested'), { recursive: true });
+        writeFileSync(join(root, spec), '');
+        const argument = selectedSpecArguments([spec], root).at(0);
+        if (argument === undefined) {
+            throw new Error('Expected a Playwright file argument');
+        }
+        expect(new RegExp(argument).test(join(root, spec))).toBe(true);
+        expect(new RegExp(argument).test(join(root, 'tests/e2e/nested/a111.TEST.ts'))).toBe(false);
     });
 
     it('anchors literal arguments so regex metacharacters cannot broaden selected files', () => {
