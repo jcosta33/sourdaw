@@ -1,0 +1,19 @@
+tests/e2e/monoModulationInput.spec.ts
+  s_1f0dcd815e8946::t_7a5d5034d69e60 3-4,6-8,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4accb908b83e25a60c6ed769479fe06fa5a9c80a",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
