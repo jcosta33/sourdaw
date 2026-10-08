@@ -71,6 +71,11 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
+const ROOT_DEPENDENCY_INSTALL_COMMAND =
+    'sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium';
+const USER_BROWSER_INSTALL_COMMAND = 'timeout --kill-after=15s 3m pnpm exec playwright install chromium';
+// Three attempts at the 8m dependency and 3m download caps, plus backoff.
+const BROWSER_INSTALL_WORST_CASE_MINUTES = 34;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // A cancelled upstream job must still reach the required assertion. GitHub
@@ -692,22 +697,36 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
     }
 }
 
+// apt-get runs as root through sudo, where a timeout owned by the runner user
+// cannot signal it: the stalled apt would survive as an orphan holding its lock
+// and every later attempt would fail on it. The root half is therefore bounded
+// from the root side, and the user-side browser download separately.
+function assertBoundedBrowserInstall(job: UnknownRecord, label: string): void {
+    const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
+    if (!installRun.includes('for attempt in 1 2 3')) {
+        throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
+    }
+    if (installRun.includes('--with-deps')) {
+        throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
+    }
+    if (!installRun.includes(ROOT_DEPENDENCY_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound the root dependency install from the root side with sudo timeout`);
+    }
+    if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
+        throw new Error(`${label} must bound the browser download with its own timeout`);
+    }
+    const timeoutMinutes = job['timeout-minutes'];
+    if (typeof timeoutMinutes !== 'number' || timeoutMinutes <= BROWSER_INSTALL_WORST_CASE_MINUTES) {
+        throw new Error(`${label} must have a job limit that holds three bounded install attempts`);
+    }
+}
+
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    const installStep = stepNamed(smoke, 'Install Playwright browsers');
-    const installRun = stringAt(installStep, 'run');
-    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
-        throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
-    }
-    if (!installRun.includes('for attempt in 1 2 3')) {
-        throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
-    }
-    if (!installRun.includes('timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium')) {
-        throw new Error('the offline smoke job must bound each browser install attempt so a stalled download retries');
-    }
+    assertBoundedBrowserInstall(smoke, 'the offline smoke job');
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -3050,6 +3069,83 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('bounds both halves of every Linux browser install and keeps three attempts inside the job limit', () => {
+        const installs = [
+            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
+            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
+            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
+        ];
+        const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
+            'sudo env "PATH=$PATH" timeout --kill-after=15s 8m ',
+            'sudo '
+        );
+        const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
+
+        for (const { label, workflow, job } of installs) {
+            const check = (candidate: UnknownRecord): void => {
+                assertBoundedBrowserInstall(jobAt(candidate, job), label);
+            };
+            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
+                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
+                change(jobAt(clone, job));
+                return clone;
+            };
+            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
+                mutate(name, (target) => {
+                    const step = stepNamed(target, 'Install Playwright browsers');
+                    step.run = rewrite(stringAt(step, 'run'));
+                });
+
+            expect(() => check(workflow)).not.toThrow();
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded root', (run) =>
+                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, unwrappedRoot)
+                    )
+                )
+            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('runner-owned root timeout', (run) =>
+                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, rootRunAsRunner)
+                    )
+                )
+            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('unbounded browser download', (run) =>
+                        run.replace(USER_BROWSER_INSTALL_COMMAND, 'pnpm exec playwright install chromium')
+                    )
+                )
+            ).toThrow(`${label} must bound the browser download with its own timeout`);
+
+            expect(() =>
+                check(
+                    rewriteInstall(
+                        'coupled dependencies',
+                        (run) => `${run}\npnpm exec playwright install --with-deps chromium`
+                    )
+                )
+            ).toThrow(`${label} must not install system dependencies through the runner-user browser install`);
+
+            expect(() =>
+                check(
+                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
+                )
+            ).toThrow(`${label} must retry browser and dependency installation against mirror outages`);
+
+            const shortLimit = mutate('short job limit', (target) => {
+                target['timeout-minutes'] = 20;
+            });
+            expect(() => check(shortLimit)).toThrow(
+                `${label} must have a job limit that holds three bounded install attempts`
+            );
+        }
+    });
+
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -3071,23 +3167,6 @@ describe('health gates workflow contract', () => {
             'pnpm exec playwright install --with-deps chromium';
         expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
             'the offline smoke job must retry browser and dependency installation against mirror outages'
-        );
-
-        const unboundedInstall = asRecord(structuredClone(validationWorkflow), 'unbounded install validationWorkflow');
-        const unboundedInstallStep = stepNamed(jobAt(unboundedInstall, 'smoke'), 'Install Playwright browsers');
-        unboundedInstallStep.run = stringAt(unboundedInstallStep, 'run').replace('timeout --kill-after=15s 5m ', '');
-        expect(() => assertOfflineSmokeJob(unboundedInstall)).toThrow(
-            'the offline smoke job must bound each browser install attempt so a stalled download retries'
-        );
-
-        const missingDepsInstall = asRecord(
-            structuredClone(validationWorkflow),
-            'missing deps install validationWorkflow'
-        );
-        stepNamed(jobAt(missingDepsInstall, 'smoke'), 'Install Playwright browsers').run =
-            'for attempt in 1 2 3; do pnpm exec playwright install chromium; done';
-        expect(() => assertOfflineSmokeJob(missingDepsInstall)).toThrow(
-            'the offline smoke job must install Playwright chromium with system dependencies'
         );
 
         const eventGatedDiffScan = asRecord(

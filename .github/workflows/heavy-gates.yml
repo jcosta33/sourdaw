@@ -52,14 +52,25 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Without this the suite cannot start: nothing else in the repository
-      # installs a browser, and there is no postinstall hook that would. Each
-      # attempt is capped at five minutes (a healthy install takes under 40s and
-      # a degraded one 161s) so a stalled download costs one attempt, not the
-      # job's hour; a timed-out attempt is a failed one.
+      # installs a browser, and there is no postinstall hook that would.
+      #
+      # The install is split so each half can be bounded by the user that owns
+      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
+      # run as the runner user cannot signal it and would leave apt holding its
+      # lock for the next attempt. So the system dependencies run under
+      # `sudo timeout` and the browser download under its own `timeout`; a
+      # timed-out attempt is a failed one and the loop continues. Whole-step
+      # times from 2026-09-18 to 2026-10-08: at most 49s until 2026-10-05, then
+      # a median of 23s but a tail to 836s while the Ubuntu mirrors were
+      # degraded on 2026-10-06 to 2026-10-08. Where logs split the phases the
+      # tail was all dependencies and the browser download never exceeded 12s.
+      # Caps of 8m and 3m keep three attempts near 34 minutes, inside this
+      # job's hour.
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if timeout --kill-after=15s 5m pnpm exec playwright install --with-deps chromium; then
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+              timeout --kill-after=15s 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
