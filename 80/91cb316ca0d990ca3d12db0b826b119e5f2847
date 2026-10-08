@@ -1,0 +1,27 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_ce70f819c5e477 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2bfd55a4393d7c::t_2d90a51710954a 1
+public/wasm/manifest.json
+  s_2bfd55a4393d7c::t_6ca91af103858e 12,17-18,21
+release/open-source-inventory.json
+  s_2bfd55a4393d7c::t_0221781a4b54c8 1344,1350,1769
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2bfd55a4393d7c::t_9def3ad2d6626c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8091cb316ca0d990ca3d12db0b826b119e5f2847",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
