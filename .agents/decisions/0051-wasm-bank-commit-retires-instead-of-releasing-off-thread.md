@@ -48,8 +48,13 @@ otherwise. The replacement contract has two parts:
   `max_entries` PCM entries per call and reports when the slot is empty. A pool a sibling instance
   still shares is only released by decrementing its count. The host sends one
   `releaseRetiredBank` message per step, after `sampleBankLoaded`, and repeats it while the worklet
-  answers that more remains. The loader holds the next load's `beginSampleBank` on that port until
-  the loop reports done, so begin finds the slot empty and frees nothing.
+  answers that more remains. Every load registers with its port before it posts
+  `beginSampleBank`, and the next load's begin waits until every earlier load on that port is over:
+  the worklet's terminal answer for a bank that did not commit (an aborted load whose commit is
+  still in flight counts as committing until the worklet says otherwise), or the end of the release
+  loop for one that did. Begin then finds the slot empty and frees nothing. If the processor ended
+  meanwhile (it faulted or was disposed, and drops every later message), the waiting load rejects
+  with the same "processor ended" error the handshake uses and posts nothing.
 - **`begin_sample_bank` frees a leftover bank in one call.** That is only a safety net for a host
   that does not wait for the loop, such as one that supersedes a load before the release finishes
   and then talks to the engine directly. The call is unbounded: it frees the whole bank. The loader
