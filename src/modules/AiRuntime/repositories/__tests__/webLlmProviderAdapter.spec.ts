@@ -335,24 +335,27 @@ describe('WebLLM provider artifact admission', () => {
         expect(() => getWebLlmContextWindowSize('mutable-or-unknown-model')).toThrow(/no context window/);
     });
 
-    // The manifest records web-llm's published VRAM figure at its own window: the weights, the
-    // runtime workspace, and the KV cache for that window. Every token the model loads beyond it adds
-    // its KV cache: K and V for 8 KV heads × 128 dimensions at 2 bytes (q4f16 keeps the cache in
-    // float16) in each layer — 28 in Qwen3-1.7B, 36 in Qwen3-4B (its MLC config) and Qwen3-8B.
+    // The manifest records web-llm's published VRAM figure, in MiB, at its own window: the weights,
+    // the runtime workspace, and the KV cache for that window. Every token the model loads beyond it
+    // adds its KV cache: K and V for 8 KV heads × 128 dimensions at 2 bytes (q4f16 keeps the cache in
+    // float16) in each layer — 28 in Qwen3-1.7B, 36 in Qwen3-4B (its MLC config) and Qwen3-8B. The
+    // picker states decimal gigabytes, like the download size beside it, rounded up to a tenth.
     it.each([
-        { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMb: 2_484.66 },
-        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMb: 7_463.59 },
-        { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMb: 6_271.78 },
-    ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMb }) => {
-        const kvCacheMbPerToken = (2 * 8 * 128 * 2 * layers) / (1024 * 1024);
+        { modelId: 'Qwen3-1.7B-q4f16_1-MLC', layers: 28, vramMib: 2_484.66, shown: '~2.7 GB' },
+        { modelId: 'Qwen3-4B-q4f16_1-MLC', layers: 36, vramMib: 7_463.59, shown: '~7.9 GB' },
+        { modelId: 'Qwen3-8B-q4f16_1-MLC', layers: 36, vramMib: 6_271.78, shown: '~6.6 GB' },
+    ])('publishes the memory need of $modelId for the window it loads with', ({ modelId, layers, vramMib, shown }) => {
+        const bytesPerMib = 1024 * 1024;
+        const kvCacheMibPerToken = (2 * 8 * 128 * 2 * layers) / bytesPerMib;
         const model = getWebLlmArtifactManifestModel(modelId);
         const loadedWindow = getWebLlmContextWindowSize(modelId);
-        const derivedMb =
-            model.engine.vramRequiredMb + (loadedWindow - model.engine.contextWindowSize) * kvCacheMbPerToken;
-        const halfGigabytes = Math.ceil(derivedMb / 500) / 2;
+        const derivedMib =
+            model.engine.vramRequiredMb + (loadedWindow - model.engine.contextWindowSize) * kvCacheMibPerToken;
+        const gigabytes = (derivedMib * bytesPerMib) / 1e9;
 
-        expect(derivedMb).toBeCloseTo(vramMb, 2);
-        expect(WEBLLM_MODELS.find((entry) => entry.id === modelId)?.ramUsage).toBe(`~${halfGigabytes.toFixed(1)} GB`);
+        expect(derivedMib).toBeCloseTo(vramMib, 2);
+        expect(`~${(Math.ceil(gigabytes * 10) / 10).toFixed(1)} GB`).toBe(shown);
+        expect(WEBLLM_MODELS.find((entry) => entry.id === modelId)?.ramUsage).toBe(shown);
     });
 
     it('cryptographically binds every release artifact-set digest to its exact manifest entries', async () => {

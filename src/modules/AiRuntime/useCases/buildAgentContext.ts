@@ -29,12 +29,72 @@ const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
 const MAX_REJECTION_CANDIDATES = 8;
+/** The characters the capability data may take in `capability_schemas`, hosted and local alike. */
+const MAX_CAPABILITY_DATA_LENGTH = 8_192;
 /**
  * What a local model reads when the capped sections left part of the project out. The hosted
  * project context restates everything; the local one restates none of it, so the model is told
  * where the rest is.
  */
-const CONTEXT_SECTION_OMISSIONS = `untrusted_project_data lists at most ${String(MAX_CONTEXT_TARGETS)} tracks, ${String(MAX_SELECTED_CLIPS)} clips and ${String(MAX_CONTEXT_TARGETS)} sends on each, and ${String(MAX_CONTEXT_TARGETS)} sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.`;
+const PROJECT_SECTION_OMISSIONS = `untrusted_project_data lists at most ${String(MAX_CONTEXT_TARGETS)} tracks, ${String(MAX_SELECTED_CLIPS)} clips and ${String(MAX_CONTEXT_TARGETS)} sends on each, and ${String(MAX_CONTEXT_TARGETS)} sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.`;
+/**
+ * The order the local message keeps whole capability entries in when they do not all fit. The
+ * creative interpretation catalog comes first: every request may need it, and the creative
+ * interpretation tool admits only its candidates. The workflow capabilities, each present only
+ * when the request reaches its workflow, follow in a fixed order. Every key ranks, so a new
+ * capability cannot be added without a place in the order.
+ */
+const LOCAL_CAPABILITY_RANK = {
+    creativeInterpretationCatalog: 0,
+    articulationTransferCapability: 1,
+    backingVocalPlateCapability: 2,
+    bassProcessingCopyCapability: 3,
+    drumRoutingCapability: 4,
+    drumRenderComparisonCapability: 5,
+    drumPreviewBranchesCapability: 6,
+    midiOverlapTransformCapability: 7,
+    sidechainRoutingCapability: 8,
+    sharedVocalFxBusesCapability: 9,
+    stemImportCapability: 10,
+    syncopatedArpeggioCapability: 11,
+    wholeProjectVibeMixCapability: 12,
+} satisfies Record<keyof LlmActionCapabilityData, number>;
+
+function isRankedCapability(key: string): key is keyof typeof LOCAL_CAPABILITY_RANK {
+    return Object.hasOwn(LOCAL_CAPABILITY_RANK, key);
+}
+
+/**
+ * The capability data a local message carries: whole entries, in rank order, while the serialized
+ * object stays within the capability budget. An entry that does not fit is left out whole and
+ * named, never cut mid-value, and smaller entries after it may still fit.
+ */
+function selectLocalCapabilities(capabilityData: LlmActionCapabilityData | undefined): {
+    serialized: string;
+    omitted: string[];
+} {
+    const rankedKeys = Object.keys(LOCAL_CAPABILITY_RANK)
+        .filter(isRankedCapability)
+        .sort((left, right) => LOCAL_CAPABILITY_RANK[left] - LOCAL_CAPABILITY_RANK[right]);
+    const kept: Record<string, unknown> = {};
+    const omitted: string[] = [];
+    for (const key of rankedKeys) {
+        const value = capabilityData?.[key];
+        if (value === undefined) {
+            continue;
+        }
+        if (stableJson({ ...kept, [key]: value }).length <= MAX_CAPABILITY_DATA_LENGTH) {
+            kept[key] = value;
+        } else {
+            omitted.push(key);
+        }
+    }
+    return { serialized: stableJson(capabilityData === undefined ? null : kept), omitted };
+}
+
+function describeOmittedCapabilities(omitted: readonly string[]): string {
+    return `capability_schemas.availableCapabilities leaves out ${omitted.join(', ')}, too large for the local window; no tool returns capability data, so plan without ${omitted.length === 1 ? 'it' : 'them'} or ask for a hosted model.`;
+}
 
 function isRelevantLock(
     lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
@@ -433,7 +493,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
           }
         : null;
 
-    const availableCapabilities = stableJson(input.capabilityData ?? null).slice(0, 8_192);
+    const availableCapabilities = stableJson(input.capabilityData ?? null).slice(0, MAX_CAPABILITY_DATA_LENGTH);
     const leadingSections = [
         `run_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}`,
         `user_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}`,
@@ -454,13 +514,30 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     // The local message carries every section a model grounds targets and capabilities in. It
     // leaves out three things the local model reads elsewhere: the fixed policy and the tool names,
     // which its system prompt already spells, and the selected track's second copy, which repeats
-    // a selectable target the selection already names by id.
+    // a selectable target the selection already names by id. It carries the capability data as
+    // whole entries and counts the sections the project data left out, and closes with every
+    // omission it made and where to read the rest, if anywhere.
     const { selectedTrack: _selectedTrackCopy, ...localProjectPayload } = revisionPayload.projectPayload;
+    const localCapabilities = selectLocalCapabilities(input.capabilityData);
+    const contextOmissions = [
+        projectData.truncated ? PROJECT_SECTION_OMISSIONS : null,
+        localCapabilities.omitted.length === 0 ? null : describeOmittedCapabilities(localCapabilities.omitted),
+    ].filter((omission) => omission !== null);
     const localSections = [
         ...leadingSections,
-        `capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities })}`,
+        `capability_schemas:\n${stableJson({ trust: 'untrusted_project_data', availableCapabilities: localCapabilities.serialized })}`,
         ...trailingSections,
-        `untrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: localProjectPayload })}`,
+        `untrusted_project_data:\n${stableJson({
+            snapshotIdentity: snapshot.identity,
+            mode: evidence.delta.mode,
+            // The hosted payload's bytes are fixed and its project context lists every section, so
+            // only the local payload counts the sections it left out.
+            data: {
+                ...localProjectPayload,
+                omittedSectionCount: Math.max(0, (input.context.sections?.length ?? 0) - projectData.sections.length),
+            },
+        })}`,
+        `context_omissions:\n${stableJson(contextOmissions)}`,
     ].join('\n\n');
     // A delta turn carries no project context; a full turn closes with it, and the local profile
     // of it states only what the sections above leave out.
@@ -472,7 +549,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
                   context: input.context,
                   projectRevision: input.projectRevision,
                   profile,
-                  contextSectionOmissions: projectData.truncated ? CONTEXT_SECTION_OMISSIONS : null,
                   ...input.capabilityData,
               })}`;
 

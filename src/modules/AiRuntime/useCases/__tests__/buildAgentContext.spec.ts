@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
 
@@ -701,7 +702,7 @@ describe('buildAgentContext', () => {
             const { selectedTrack: _selectedTrackCopy, ...hostedTargets } = hostedProject.data;
             expect(parseMessageSection(built.localMessage, 'untrusted_project_data')).toEqual({
                 ...hostedProject,
-                data: hostedTargets,
+                data: { ...hostedTargets, omittedSectionCount: 0 },
             });
         }
 
@@ -752,7 +753,6 @@ describe('buildAgentContext', () => {
                     'loopStart',
                     'metronomeEnabled',
                     'metronomeVolume',
-                    'omittedFromContextSections',
                     'productionBrief',
                     'punchInBeat',
                     'punchInEnabled',
@@ -805,25 +805,105 @@ describe('buildAgentContext', () => {
         type ProjectSectionData = {
             truncated: boolean;
             targetCount: number;
-            selectableTargets: Array<{ omittedClipCount: number }>;
+            omittedSectionCount: number;
+            omittedAutomationLaneCount: number;
+            selectableTargets: Array<{ omittedClipCount: number; omittedSendCount: number }>;
         };
 
+        const PROJECT_OMISSION_NOTE =
+            'untrusted_project_data lists at most 64 tracks, 16 clips and 64 sends on each, and 64 sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.';
+
+        function contextOmissionsOf(message: string): string[] {
+            return parseMessageSection(message, 'context_omissions') as string[];
+        }
+
+        const plannedProject = (trackCount: number, clipsPerTrack?: number) =>
+            createPlanningProject({ ...context, availableDeviceTypes: catalogue }, trackCount, clipsPerTrack);
+
+        // Each row crosses exactly one cap on a track other than the selected one, so the clause of
+        // `truncated` it relies on is the only one that can raise the note.
+        const withSections = (count: number): ProjectContext => ({
+            ...fiveTrackProject,
+            sections: Array.from({ length: count }, (_, index) => ({
+                id: planningFixtureIds.section(index),
+                name: `Part ${String(index + 1)}`,
+                startBeat: index * 4,
+                endBeat: index * 4 + 4,
+            })),
+        });
+        const withLanes = (count: number): ProjectContext => ({
+            ...fiveTrackProject,
+            automationLanes: Array.from({ length: count }, (_, index) => ({
+                id: `lane-${String(index + 1)}`,
+                trackId: planningFixtureIds.track(1),
+                parameterId: `param-${String(index + 1)}`,
+                name: `Lane ${String(index + 1)}`,
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                points: [],
+            })),
+        });
+        function withTrackChanged(
+            trackIndex: number,
+            change: (track: ProjectContextTrack) => ProjectContextTrack
+        ): ProjectContextTrack[] {
+            return fiveTrackProject.tracks.map((track, index) => {
+                if (index !== trackIndex) {
+                    return track;
+                }
+                return change(track);
+            });
+        }
+        const withSends = (count: number): ProjectContext => ({
+            ...fiveTrackProject,
+            tracks: withTrackChanged(1, (track) => ({
+                ...track,
+                sends: Array.from({ length: count }, (_, sendIndex) => ({
+                    busId: `bus-${String(sendIndex + 1)}`,
+                    level: 0.5,
+                    preFader: false,
+                })),
+            })),
+        });
+
         // The context sections cap what they list; the local project context does not restate the
-        // rest, so it must say what was left out and where to read it.
+        // rest, so the local message must say what was left out and where to read it.
         it.each([
             {
                 label: 'a track with 30 clips',
-                project: createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 2, 30),
+                project: plannedProject(2, 30),
                 omitted: (data: ProjectSectionData) => {
                     expect(data.selectableTargets[0]?.omittedClipCount).toBe(14);
                 },
             },
             {
                 label: 'a 70-track project',
-                project: createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 70),
+                project: plannedProject(70),
                 omitted: (data: ProjectSectionData) => {
                     expect(data.selectableTargets).toHaveLength(64);
                     expect(data.targetCount).toBe(70);
+                },
+            },
+            {
+                label: 'a project with 65 sections',
+                project: withSections(65),
+                omitted: (data: ProjectSectionData) => {
+                    expect(data.omittedSectionCount).toBe(1);
+                },
+            },
+            {
+                label: 'a project with 65 automation lanes',
+                project: withLanes(65),
+                omitted: (data: ProjectSectionData) => {
+                    expect(data.omittedAutomationLaneCount).toBe(1);
+                },
+            },
+            {
+                label: 'a track with 65 sends',
+                project: withSends(65),
+                omitted: (data: ProjectSectionData) => {
+                    expect(data.selectableTargets[1]?.omittedSendCount).toBe(1);
                 },
             },
         ])('names project.query for what the capped sections leave out of $label', ({ project, omitted }) => {
@@ -834,15 +914,107 @@ describe('buildAgentContext', () => {
             };
             expect(projectData.data.truncated).toBe(true);
             omitted(projectData.data);
-            expect(projectContextOf(built.localMessage).omittedFromContextSections).toBe(
-                'untrusted_project_data lists at most 64 tracks, 16 clips and 64 sends on each, and 64 sections and automation lanes, and its omitted counts and targetCount say what it left out; read the rest with project.query.'
+            expect(contextOmissionsOf(built.localMessage)).toEqual([PROJECT_OMISSION_NOTE]);
+        });
+
+        it.each([
+            { label: 'the whole project', project: fiveTrackProject },
+            { label: '64 sections', project: withSections(64) },
+            { label: '64 automation lanes', project: withLanes(64) },
+            { label: '64 sends on a track', project: withSends(64) },
+        ])('states no omission when the capped sections list $label', ({ project }) => {
+            const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'tidy', context: project });
+
+            expect(contextOmissionsOf(built.localMessage)).toEqual([]);
+        });
+
+        // A vibe mix protects every locked clip, so its capability grows with the session; past the
+        // capability budget it cannot ride along whole.
+        function vibeMixProject(lockedClipCount: number): ProjectContext {
+            const busTemplate = fiveTrackProject.tracks[0]!;
+            const bus = (id: string, name: string) => ({
+                ...busTemplate,
+                id,
+                name,
+                kind: 'bus',
+                clips: [],
+                clipCount: 0,
+            });
+            const fixtureSections = fiveTrackProject.sections ?? [];
+            return {
+                ...fiveTrackProject,
+                sections: [
+                    ...fixtureSections,
+                    { id: planningFixtureIds.section(5), name: 'Chorus 2', startBeat: 112, endBeat: 144 },
+                ],
+                tracks: [
+                    ...withTrackChanged(4, (track) => ({
+                        ...track,
+                        clips: Array.from({ length: lockedClipCount }, (_, clipIndex) => ({
+                            ...track.clips[0]!,
+                            id: planningFixtureIds.clip(4, clipIndex),
+                            name: `Pad take ${String(clipIndex + 1)}`,
+                            locked: true,
+                        })),
+                    })),
+                    bus(planningFixtureIds.track(90), 'Drum Bus'),
+                    bus(planningFixtureIds.track(91), 'Bass Bus'),
+                    { ...bus(planningFixtureIds.track(92), 'Master'), kind: 'master' },
+                ],
+            };
+        }
+
+        function capabilitiesFor(project: ProjectContext) {
+            const scope = getWholeProjectVibeMixScope(project, 'revision-1');
+            if (scope === null) {
+                throw new Error('Expected the vibe-mix workflow to scope this project.');
+            }
+            return { ...capabilityData, wholeProjectVibeMixCapability: scope.capability };
+        }
+
+        it('keeps whole capability entries and names the one too large for the local window', () => {
+            const project = vibeMixProject(250);
+            const capabilities = capabilitiesFor(project);
+            expect(JSON.stringify(capabilities.wholeProjectVibeMixCapability).length).toBeGreaterThan(8_192);
+
+            const built = buildAgentContext({
+                fixedPolicy: 'policy',
+                prompt: 'make the second chorus hit harder',
+                context: project,
+                capabilityData: capabilities,
+            });
+
+            const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
+                availableCapabilities: string;
+            };
+            const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
+            expect(kept).toEqual({ creativeInterpretationCatalog: capabilities.creativeInterpretationCatalog });
+            expect(contextOmissionsOf(built.localMessage)).toContain(
+                'capability_schemas.availableCapabilities leaves out wholeProjectVibeMixCapability, too large for the local window; no tool returns capability data, so plan without it or ask for a hosted model.'
             );
         });
 
-        it('states no omission when the capped sections list the whole project', () => {
-            const built = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+        it('keeps every capability entry, in rank order, when they all fit', () => {
+            const project = vibeMixProject(3);
+            const capabilities = capabilitiesFor(project);
 
-            expect(projectContextOf(built.localMessage).omittedFromContextSections).toBeNull();
+            const built = buildAgentContext({
+                fixedPolicy: 'policy',
+                prompt: 'make the second chorus hit harder',
+                context: project,
+                capabilityData: {
+                    wholeProjectVibeMixCapability: capabilities.wholeProjectVibeMixCapability,
+                    ...capabilityData,
+                },
+            });
+
+            const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
+                availableCapabilities: string;
+            };
+            const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
+            expect(Object.keys(kept)).toEqual(['creativeInterpretationCatalog', 'wholeProjectVibeMixCapability']);
+            expect(kept).toEqual(capabilities);
+            expect(contextOmissionsOf(built.localMessage)).toEqual([]);
         });
 
         // Each brief field the context sections do not carry reaches the local model; a field
