@@ -1,0 +1,16 @@
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  h_beb54bf43b47b7 356-429
+src/modules/Crumbs/useCases/reconcileCrumbsDeviceStateFromProject.ts
+  h_beb54bf43b47b7 4,19-42,72-103,130-131,154-156,181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f165c6d56edd50aba097f37d67852b04479a626f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
