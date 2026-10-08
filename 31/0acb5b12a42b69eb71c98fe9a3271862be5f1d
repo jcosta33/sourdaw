@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_1c08b47ac3792f::t_c0a4d71d0ada07 5-6
+  s_1c08b47ac3792f::t_9d6a455c00eafd 1032-1044,1051-1056
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_66ddfc3b9e6de3 539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "310acb5b12a42b69eb71c98fe9a3271862be5f1d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
