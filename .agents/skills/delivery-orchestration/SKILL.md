@@ -429,11 +429,22 @@ leaves an accepted finding without its public comment binding; a legacy bundle
 without a risk plan publishes and accepts exactly as before.
 
 `pnpm review:reconstruct <pr>` is read-only: it rebuilds every governed round
-from public channels alone — reviews, review comments, and `sourdaw-repair-v1`
-marker replies — and shadow-compares each head's local dossier against the
+from public channels alone — reviews, review comments, author
+`sourdaw-repair-v1` marker replies, and reviewer confirmations — and
+shadow-compares each head's local dossier against the
 reconstruction (recorded review id, recommendation, and every finding's public
 comment binding). Mismatches are logged and counted, never gated; the command
 fails only on unreadable public data or a corrupt local record.
+
+Author V1 replies reconstruct as repair records. Historical reviewer V1 replies
+remain readable as confirmations, while new confirmations use one canonical
+`sourdaw-repair-confirmation-v1` marker containing the pull request, thread,
+confirmation head, and SHA-256 digest of the entire canonical author record.
+The digest binds the complete evidence and summary without repeating those bytes.
+Reconstruction places confirmations beside, not inside, a finding's repair list
+and requires their digest to match an author record bound to that pull request,
+thread, and root finding. This remains structural evidence, not independent
+proof that a runtime repair is true.
 
 ### APPROVE: compact-v1 evidence
 
@@ -536,7 +547,15 @@ supersedes, a thread already carrying a
 confirmation for a different record or a duplicated identical confirmation, a
 rebound identity, a mismatched finding, or a commit outside the reviewed range
 resolves nothing and reports the refusal, leaving the operator to fix the
-ambiguity and re-run. Both commands are lock-free and idempotent by their
+ambiguity and re-run. New reviewer replies carry only a canonical
+`sourdaw-repair-confirmation-v1` whole-record digest binding; the full V1 record
+stays in the author's reply. One historical full-record reviewer confirmation
+remains readable for exact replay. Mixed, duplicated, malformed, or stale
+reviewer markers refuse the whole batch before posting or resolving. After a
+partial post-success and resolve failure, replay recognizes the same record on
+a descendant live head, logs `repair-confirmation-replayed:<pr>:<thread>`, and
+resolves without posting a second confirmation.
+Both commands are lock-free and idempotent by their
 deterministic ids, and re-running after a partial pass ignores already-resolved
 threads and completes the remainder. `review:resolve` remains only for legacy
 roots, where it posts only its bare `Done` as author bot and resolves against

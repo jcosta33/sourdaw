@@ -29,6 +29,10 @@
  * own, one bounded step each, answered by
  * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
  * commit, the abort or `process()`.
+ *
+ * A faulted processor drops every message except these two, which it answers
+ * by posting its `error` again, so a host that began listening after the fault
+ * still learns that no answer will come.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -191,6 +195,8 @@ class LevainProcessor extends AudioWorkletProcessor {
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    // The message of the fault that set `_faulted`, posted again to a host that asks after it.
+    _faultMessage: string | null = null;
     _disposed = false;
     _bypassed = false;
     _pendingMessages: LevainMsg[] = [];
@@ -219,6 +225,10 @@ class LevainProcessor extends AudioWorkletProcessor {
                 return;
             }
             if (this._disposed) {
+                return;
+            }
+            if (this._faulted && (msg.type === 'beginSampleBank' || msg.type === 'releaseRetiredBank')) {
+                this._answerAfterFault();
                 return;
             }
             try {
@@ -407,11 +417,19 @@ class LevainProcessor extends AudioWorkletProcessor {
 
     _faultWithError(error: unknown): void {
         this._faulted = true;
+        this._faultMessage = error instanceof Error ? error.message : String(error);
         this._leaveBankLoad(error);
-        this.port.postMessage({
-            type: 'error',
-            message: error instanceof Error ? error.message : String(error),
-        });
+        this.port.postMessage({ type: 'error', message: this._faultMessage });
+    }
+
+    /**
+     * A faulted processor drops every message, so a host that registered its
+     * port listener after the fault posted `error` never saw it. A load that
+     * begins, or a release loop that asks, gets the fault posted again: that
+     * is the only way either sees that no answer will come.
+     */
+    _answerAfterFault(): void {
+        this.port.postMessage({ type: 'error', message: this._faultMessage });
     }
 
     _dispose(): void {

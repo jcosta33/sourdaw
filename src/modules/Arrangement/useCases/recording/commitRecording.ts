@@ -1,6 +1,38 @@
 import { executeAppAction } from '#/modules/Command/useCases';
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 
+import { clipEntrySeconds } from '../../models/TempoTimeline';
 import { type Clip } from '../../stores/trackStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
+
+import { placeRecordingClipStart } from './placeRecordingClipStart';
+import { placeRecordingTakes } from './placeRecordingTakes';
+
+/** Where a captured recording's media truly begins, as the capture terminal measured it. */
+type RecordedCapture = {
+    /** The beat the recorder opened the clip on, which every staged take was minted against. */
+    provisionalStartBeat: number;
+    /** The song time the capture's first sample sounds on, pre-roll lead and latency included. */
+    mediaOriginSeconds: number;
+};
+
+/**
+ * Open a captured clip where its loop passes require. The capture terminal has
+ * already placed it on its media origin or, under pre-roll, on the record
+ * point; a loop recording begun inside the loop opens earlier still, at its
+ * first pass. The offset is then rewritten in the unit the readers seek in —
+ * the capture's lead-in before the clip's first beat in seconds, converted at
+ * the tempo governing that beat — and is negative when the clip opens before
+ * its media begins.
+ */
+function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
+    const startBeat = placeRecordingClipStart(clip.id, clip.startBeat);
+    if (startBeat === clip.startBeat) {
+        return clip;
+    }
+    const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
+    return { ...clip, startBeat, audioOffsetBeats: (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60 };
+}
 
 /**
  * Commit one completed recording gesture as a single semantic unit.
@@ -13,6 +45,13 @@ import { type Clip } from '../../stores/trackStore';
  * so one undo removes the clip together with the takes that name it and one redo
  * restores the same clip identity, placement, and take membership.
  *
+ * An audio capture terminal hands in where its media truly begins. The clip is
+ * placed against its loop passes first, then the staged takes are placed
+ * against that committed clip's media origin, both before the dispatch so they
+ * land in the one entry, which captures the live lane state. A MIDI recording
+ * keeps the clip it opened, its passes bounded by that clip's start, and
+ * commits without a capture.
+ *
  * Deliberately `executeAppAction`, not `executeUserAppAction`: every caller
  * attaches its own rejection handler that retires the provisional recording and
  * tells the user, and the user-facing wrapper resolves a conflict-class refusal
@@ -20,6 +59,19 @@ import { type Clip } from '../../stores/trackStore';
  * would leave the staged clip, take, and notes behind with no entry and call it
  * a success (#4439). The wrapper keeps that behaviour for every other action.
  */
-export async function commitRecording(clip: Clip): Promise<void> {
-    await executeAppAction({ type: 'commitRecording', payload: { clip } });
+export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
+    if (capture === undefined) {
+        await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        return;
+    }
+    const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
+    placeRecordingTakes({
+        clipId: clip.id,
+        recordPointBeat: capture.provisionalStartBeat,
+        mediaOriginSeconds: capture.mediaOriginSeconds,
+        clipMediaOriginSeconds:
+            readSecondsAtBeat({ beat: placed.startBeat }) -
+            clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
+    });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
 }

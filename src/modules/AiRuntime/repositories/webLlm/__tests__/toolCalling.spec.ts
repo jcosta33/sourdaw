@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { generateWebLlmCompletion } from '../generateWebLlmCompletion';
 import { generateWebLlmToolCalls } from '../toolCalling';
 
@@ -75,6 +76,7 @@ describe('generateWebLlmToolCalls', () => {
             maxTokens: undefined,
             signal: controller.signal,
             requireComplete: true,
+            enableThinking: false,
         });
     });
 
@@ -89,6 +91,7 @@ describe('generateWebLlmToolCalls', () => {
             maxTokens: 8192,
             signal: undefined,
             requireComplete: true,
+            enableThinking: false,
         });
     });
 
@@ -104,6 +107,25 @@ describe('generateWebLlmToolCalls', () => {
             maxTokens: 8192,
             signal: controller.signal,
             requireComplete: true,
+            enableThinking: false,
         });
+    });
+
+    it('sends the serialized planning prompt the budget measured, with the estimate to log against', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
+        const tools = [
+            {
+                type: 'function' as const,
+                function: { name: 'addTrack', description: 'Adds a track.', parameters: { type: 'object' } },
+            },
+        ];
+
+        await generateWebLlmToolCalls('sys', 'user', tools, 4096, undefined, 3210);
+
+        const [systemPrompt, userMessage, options] = vi.mocked(generateWebLlmCompletion).mock.calls[0] ?? [];
+        expect(systemPrompt).toBe(serializeWebLlmToolPlanningPrompt('sys', tools));
+        expect(systemPrompt).toContain('- addTrack: Adds a track. {"type":"object"}');
+        expect(userMessage).toBe('user');
+        expect(options).toMatchObject({ maxTokens: 4096, enableThinking: false, estimatedPromptTokens: 3210 });
     });
 });

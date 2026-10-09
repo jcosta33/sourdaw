@@ -5,6 +5,7 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
+import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
 import { retireWebLlmEngine } from './retireWebLlmEngine';
 import { unloadWebLlmEngine } from './unloadWebLlmEngine';
 import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
@@ -145,7 +146,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
                                                 });
                                             },
                                         },
-                                        { context_window_size: 8192 }
+                                        { context_window_size: getWebLlmContextWindowSize(targetModel) }
                                     ),
                             });
                         } finally {
