@@ -41,6 +41,17 @@ export type MidiGlobalTimeCommand =
           targetClipId: string;
           splitBeat: number;
           discardBeforeBeat?: number;
+          /**
+           * Media windows of the source clip that stay on the source clip in
+           * addition to the stored-position distribution (#5112): a comped
+           * loop-pass clip's left fragment plays pass media stored deeper in
+           * the shared note array than the cut, so notes overlapping a played
+           * window are kept whole — in their own coordinates, beside whatever
+           * the boundary distribution below does with them. The fragments'
+           * selection windows never read the duplicate copies, and the
+           * whole-note copy is what the unsplit comped clip sounds.
+           */
+          retainOnSourceWindows?: readonly { start: number; end: number }[];
       }
     | {
           type: 'remove-clips';
@@ -338,6 +349,15 @@ function splitSourceNotes(
             return { status: 'rejected' };
         }
 
+        // Retention first, on top of the stored-position distribution: a note
+        // overlapping a played window stays whole on the source clip in its own
+        // coordinates (#5112). The chain below still runs, so the right
+        // fragment's rebased copy — which its own comp fragments read — is
+        // unaffected.
+        if (command.retainOnSourceWindows?.some((window) => note.startBeat < window.end && noteEnd > window.start)) {
+            leftNotes.push(note);
+        }
+
         if (command.discardBeforeBeat !== undefined) {
             if (noteEnd <= command.discardBeforeBeat) {
                 leftNotes.push(note);
@@ -534,6 +554,13 @@ function transformSplit(
         return { status: 'rejected', state };
     }
     if (command.discardBeforeBeat !== undefined && !Number.isFinite(command.discardBeforeBeat)) {
+        return { status: 'rejected', state };
+    }
+    if (
+        command.retainOnSourceWindows?.some(
+            (window) => !Number.isFinite(window.start) || !Number.isFinite(window.end) || window.start >= window.end
+        )
+    ) {
         return { status: 'rejected', state };
     }
 

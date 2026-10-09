@@ -3,17 +3,20 @@ import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
+import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
+import { captureClipMoveTakeReKeyTransitions } from '../comping/captureClipMoveTakeReKey';
 
 export function nudgeClip(clipId: string, beats: number): boolean {
     if (!Number.isFinite(beats)) {
         return false;
     }
 
+    let original: ReturnType<typeof findClipById> = null;
     try {
         const state = getTrackState();
         if (state) {
-            const target = findClipById({ clipId, tracks: state.tracks });
-            if (target?.clip.locked) {
+            original = findClipById({ clipId, tracks: state.tracks });
+            if (original?.clip.locked) {
                 return false;
             }
         }
@@ -38,6 +41,22 @@ export function nudgeClip(clipId: string, beats: number): boolean {
     // re-validation finding as moveClip, ledger M-025 family).
     if (didWrite && appliedDelta !== 0) {
         shiftClipAutomation(clipId, appliedDelta);
+        // #5100 — a nudge is a same-host move: the comped clip's takes and
+        // comp regions re-key onto the applied (post-clamp) span, and the
+        // inverse nudge re-enters here with the negated delta to restore them.
+        if (original) {
+            const takeReKeyTransitions = captureClipMoveTakeReKeyTransitions({
+                trackId: original.trackId,
+                clipId,
+                fromStartBeat: original.clip.startBeat,
+                fromEndBeat: original.clip.endBeat,
+                toStartBeat: original.clip.startBeat + appliedDelta,
+                toEndBeat: original.clip.endBeat + appliedDelta,
+            });
+            if (takeReKeyTransitions.length > 0) {
+                applyTakeReKeyTransitions(takeReKeyTransitions);
+            }
+        }
     }
 
     return didWrite;

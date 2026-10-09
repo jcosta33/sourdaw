@@ -36,7 +36,11 @@ describe('handleSplitClip', () => {
             payload: { clipId: 'c1', beat: 2.5 },
         });
 
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 2.5, undefined, undefined, undefined);
+        // The re-key holder rides the options object (#5048); without a prior
+        // describe() there is no pending capture, so it carries undefined.
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 2.5, undefined, undefined, undefined, {
+            reKeyedTakeLanes: undefined,
+        });
         expect(result).toEqual({ status: 'written' });
     });
 
@@ -117,12 +121,15 @@ describe('handleSplitClip', () => {
                 payload: { clipId: 'c1', rightClipId: 'right-clip', expected: previous, replacement: next },
             },
         });
-        // The undo leg fills this array in place and the redo reads it, so both
-        // payloads must carry the SAME instance or the legs disagree (#4521).
+        // The undo leg fills these arrays in place and the redo reads them, so
+        // both payloads must carry the SAME instances or the legs disagree
+        // (#4521, #5048).
         const inverse = desc.inverseAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
         const redo = desc.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
         expect(inverse.payload.retiredTakeLanes).toEqual([]);
         expect(inverse.payload.retiredTakeLanes).toBe(redo.payload.retiredTakeLanes);
+        expect(inverse.payload.reKeyedTakeLanes).toEqual([]);
+        expect(inverse.payload.reKeyedTakeLanes).toBe(redo.payload.reKeyedTakeLanes);
     });
 
     it('describes the actual zero-crossing-adjusted split beat', async () => {
@@ -177,7 +184,9 @@ describe('handleSplitClip', () => {
         expect(action.payload.resolvedBeat).toBe(4.125);
 
         await handleSplitClip.execute(action);
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125);
+        const reKeyedTakeLanes = (description.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>)
+            .payload.reKeyedTakeLanes;
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125, { reKeyedTakeLanes });
     });
 
     it('is undoable', () => {

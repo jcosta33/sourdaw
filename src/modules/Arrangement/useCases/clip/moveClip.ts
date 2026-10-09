@@ -4,6 +4,9 @@ import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
+import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
+import { captureClipMoveTakeReKeyTransitions } from '../comping/captureClipMoveTakeReKey';
+import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { isClipDropCompatible } from './isClipDropCompatible';
 
@@ -82,12 +85,35 @@ export function moveClip(
         return false;
     }
 
+    // #5100 — the comping travels with the clip: takes and comp regions are
+    // timeline-anchored, so the moved clip's lane re-keys onto the new span the
+    // same way Delete Time re-keys regions (#4841). The undo/redo replays of
+    // this use case (restoreClipPlacement, restoreClipMoves) pass through here
+    // with the reverse geometry, so the same capture restores what the forward
+    // move shifted. A cross-host move would have to migrate the lane to the
+    // target track — no route owns that, so the comp stays behind, as before.
+    let takeReKeyTransitions: readonly TakeReKeyLaneTransition[] = [];
+    if (sameHost) {
+        takeReKeyTransitions = captureClipMoveTakeReKeyTransitions({
+            trackId: sourceTrackId,
+            clipId,
+            fromStartBeat: oldStartBeat,
+            fromEndBeat: oldStartBeat + (movedClip.endBeat - movedClip.startBeat),
+            toStartBeat: movedClip.startBeat,
+            toEndBeat: movedClip.endBeat,
+        });
+    }
+
     setTrackState({
         ...state,
         tracks: tracksWithoutClip.map((time) =>
             time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
         ),
     });
+
+    if (takeReKeyTransitions.length > 0) {
+        applyTakeReKeyTransitions(takeReKeyTransitions);
+    }
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
     const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
