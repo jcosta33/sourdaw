@@ -690,6 +690,32 @@ describe('projectStripCarriers', () => {
         expect(carrier).toEqual({ carrier: 'web', reason: 'output path loops' });
     });
 
+    // The send walk carries its own memory of where it has been: a loop closed
+    // by sends alone, with every output going to the master, has no output
+    // edge to stop it.
+    it('answers a loop closed by sends alone with a reason instead of recursing forever', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                    createTrack({
+                        id: 'bus-1',
+                        kind: 'bus',
+                        sends: [{ busId: 'bus-2', level: 0.5, preFader: false }],
+                    }),
+                    createTrack({
+                        id: 'bus-2',
+                        kind: 'bus',
+                        sends: [{ busId: 'bus-1', level: 0.5, preFader: true }],
+                    }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'web', reason: 'output path loops' });
+    });
+
     // A project can route a bus back into the track feeding it. The recursion
     // has to stop rather than run the stack out.
     it('answers a routing cycle with a reason instead of recursing forever', () => {
