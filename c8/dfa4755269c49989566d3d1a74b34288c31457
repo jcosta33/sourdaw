@@ -1,0 +1,89 @@
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_2bfd55a4393d7c::t_a739ae90d8cf52 93-97
+  s_2bfd55a4393d7c::t_2cc80e62626b59 16
+src/modules/Toaster/AGENTS.md
+  s_2bfd55a4393d7c::t_3a8dc10a18149f 24
+  s_2bfd55a4393d7c::t_7ea47e14f08c3c 7
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_2bfd55a4393d7c::t_88759e91b4da6b 320
+  s_2bfd55a4393d7c::t_a236a3c8accc0a 304-306
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_2bfd55a4393d7c::t_ed96f6399a2a42 6
+  s_2bfd55a4393d7c::t_3c8b254ea08f7c 91
+  s_2bfd55a4393d7c::t_e51647c653eee3 24
+  s_2bfd55a4393d7c::t_9a0d32c5386008 88-90
+  s_2bfd55a4393d7c::t_f4fd98c19e7946 141-156
+src/modules/Toaster/useCases/index.ts
+  s_2bfd55a4393d7c::t_1efc67173d2a7a 2
+src/modules/AudioEngine/AGENTS.md
+  s_2bfd55a4393d7c::t_0bedbe8682ce98 49
+src/modules/Toaster/useCases/__tests__/toasterRemovalDuringLoad.spec.ts
+  s_2bfd55a4393d7c::t_dd4cbf890600f1 82-85,91-92,98-109
+  s_2bfd55a4393d7c::t_a3e6e879b35176 24
+  s_2bfd55a4393d7c::t_ef1efb97d032ac 139
+  s_2bfd55a4393d7c::t_4291aa69e0ee7a 153,159-192
+  s_2bfd55a4393d7c::t_212f11ac32e37e 56
+  s_97ab82e0b4f10c::t_252eff75c61d68 110
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_2bfd55a4393d7c::t_242da419cdd655 101
+src/modules/Toaster/useCases/__tests__/disposeToasterDevice.spec.ts
+  s_2bfd55a4393d7c::t_e93e485e558523 5
+  s_2bfd55a4393d7c::t_c5b6b503439cf1 184-216
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_2bfd55a4393d7c::t_a892ff0b1c74b6 50
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_2bfd55a4393d7c::t_bae261ea32a8bb 409-412
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_2bfd55a4393d7c::t_525d8dc4a7a769 93
+  s_2bfd55a4393d7c::t_187e39f3ffbdb9 165-167
+src/modules/Toaster/useCases/disposeEveryToasterDevice.ts
+  s_2bfd55a4393d7c::t_0f5aef1c36f310 1-27
+src/modules/AudioEngine/repositories/__tests__/toasterRemovalDuringDeviceLoad.spec.ts
+  s_2bfd55a4393d7c::t_83f544a2c23d77 128-132
+  s_2bfd55a4393d7c::t_ec5c9e7e43c685 213-296
+  s_2bfd55a4393d7c::t_a469328e007700 81-111,113
+  s_2bfd55a4393d7c::t_712f9988e4250b 112
+  s_2bfd55a4393d7c::t_c6163ec36e7c98 133-134,297-298
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_2bfd55a4393d7c::t_4dcb54fb3618ca 143
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_2bfd55a4393d7c::t_20ed0f4b66d055 1748
+  s_2bfd55a4393d7c::t_8934b837e75a78 1956
+  s_2bfd55a4393d7c::t_2603efa4b371b2 2670
+  s_2bfd55a4393d7c::t_9083a04adf6302 1976
+  s_2bfd55a4393d7c::t_644a294d98c427 1966
+  s_2bfd55a4393d7c::t_32347f73de3a17 1798-1802,1808-1811
+  s_2bfd55a4393d7c::t_cf390be120c281 108-114
+  s_2bfd55a4393d7c::t_e66d93840f3c17 1977-1979,2673
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_2bfd55a4393d7c::t_d404e9f46e6fe8 1601-1603,1605-1608
+  s_2bfd55a4393d7c::t_c6025f12b3ee91 9
+  s_2bfd55a4393d7c::t_802f6194c4361e 1329,1331-1345,1609
+  s_2bfd55a4393d7c::t_a9f6e9a1038d39 1360-1362
+  s_2bfd55a4393d7c::t_a1eca71a197f62 1408-1409,1411
+  s_2bfd55a4393d7c::t_89ebd25fba3c13 1604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8dfa4755269c49989566d3d1a74b34288c31457",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
