@@ -214,8 +214,13 @@ function ownerProjections() {
     });
 }
 
-function syncPeerTakes(edit: (project: { takeLanes: NonNullable<typeof takeLaneStore.value> }) => void): void {
-    const current = getCrdtDoc<{ takeLanes: NonNullable<typeof takeLaneStore.value> }>('root');
+type PeerProject = {
+    takeLanes: NonNullable<typeof takeLaneStore.value>;
+    tracks: NonNullable<typeof trackStore.value>;
+};
+
+function syncPeerProject(edit: (project: PeerProject) => void): void {
+    const current = getCrdtDoc<PeerProject>('root');
     if (!current) {
         throw new Error('Expected a shared project genesis');
     }
@@ -223,6 +228,7 @@ function syncPeerTakes(edit: (project: { takeLanes: NonNullable<typeof takeLaneS
     let peer = Automerge.change(Automerge.clone(current), edit);
     let localSync = Automerge.initSyncState();
     let peerSync = Automerge.initSyncState();
+    expect(Automerge.getActorId(peer)).not.toBe(Automerge.getActorId(local));
     expect(Automerge.getHeads(peer)).not.toEqual(Automerge.getHeads(local));
     for (let round = 0; round < 16; round += 1) {
         let message: Uint8Array | null;
@@ -242,7 +248,22 @@ function syncPeerTakes(edit: (project: { takeLanes: NonNullable<typeof takeLaneS
             return;
         }
     }
-    throw new Error('Peer take edit did not converge');
+    throw new Error('Peer project edit did not converge');
+}
+
+function reloadSavedProject(): void {
+    flushAutomergeStorageWrites();
+    const current = getCrdtDoc('root');
+    if (!current) {
+        throw new Error('Expected a project to save');
+    }
+    const saved = Automerge.save(current);
+    const loaded = Automerge.load(saved);
+    expect(loaded).toEqual(current);
+    expect(Automerge.getHeads(loaded)).toEqual(Automerge.getHeads(current));
+    replaceCrdtDocInLineage({ id: 'root', doc: loaded });
+    projectCrdtToStores({ resetProjections: true });
+    hydrateProductionContracts();
 }
 
 async function persistRemovalWithDistinctOwners(grouped = false) {
@@ -423,9 +444,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
     it('restores only the removed owner from a genuine saved gain, warp, and multiple automation capture', async () => {
         const { original } = await persistRemovalWithDistinctOwners();
+        reloadSavedProject();
         const removedRaw = structuredClone(getCrdtDoc('root'));
         const removedOwners = ownerProjections();
-        hydrateProductionContracts();
         expect(undoHistoryStore.value?.past).toHaveLength(1);
         expect(undoHistoryStore.value?.future).toEqual([]);
 
@@ -454,6 +475,92 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     describe.each([false, true])('saved removal owner freshness with grouped=%s', (grouped) => {
+        it.each([0, 1])(
+            'rejects a foreign automation track owner in captured lane %s before hydration and Undo',
+            async (laneIndex) => {
+                const { saved, plan } = await persistRemovalWithDistinctOwners(grouped);
+                const otherTrack = createTrack({ id: 'other-track', name: 'Other track', kind: 'midi' });
+                trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
+                if (!Array.isArray(plan.clipAutomationLanes) || !isRecord(plan.clipAutomationLanes[laneIndex])) {
+                    throw new Error('Expected a captured removal automation lane');
+                }
+                expect(plan.clipAutomationLanes[laneIndex].trackId).toBe(TRACK_ID);
+                plan.clipAutomationLanes[laneIndex].trackId = otherTrack.id;
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+
+                reloadSavedProject();
+                expect(undoHistoryStore.value?.past).toEqual([]);
+                expect(undoHistoryStore.value?.future).toEqual([]);
+                const beforeRaw = structuredClone(getCrdtDoc('root'));
+                const beforeHeads = Automerge.getHeads(getCrdtDoc('root')!);
+                const beforeOwners = ownerProjections();
+                const beforeHistory = structuredClone(undoHistoryStore.value);
+
+                expect((await undo()).headConsumed).toBe(false);
+                expect(getCrdtDoc('root')).toEqual(beforeRaw);
+                expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(beforeHeads);
+                projectCrdtToStores({ resetProjections: true });
+                expect(ownerProjections()).toEqual(beforeOwners);
+                expect(undoHistoryStore.value).toEqual(beforeHistory);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+                if (grouped) {
+                    expect(clipOnTrack(TRACK_ID, 'clip-c')).toBeUndefined();
+                }
+            }
+        );
+
+        it('refuses a later clip identity recreated by a synced peer on another track before any replay write', async () => {
+            await persistRemovalWithDistinctOwners(grouped);
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+            const peerTrack = createTrack({ id: 'peer-track', name: 'Peer track', kind: 'midi' });
+            const peerClip = {
+                ...createClipFixture('clip-a', 12.5, 16.75),
+                trackId: peerTrack.id,
+                name: 'Peer recreation',
+            };
+            peerTrack.clips = [peerClip];
+            syncPeerProject((project) => {
+                project.tracks.tracks.push(peerTrack);
+            });
+            expect(clipOnTrack(peerTrack.id, 'clip-a')).toEqual(peerClip);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            const beforeRaw = structuredClone(getCrdtDoc('root'));
+            const beforeHeads = Automerge.getHeads(getCrdtDoc('root')!);
+            const beforeOwners = ownerProjections();
+            const beforeHistory = structuredClone(undoHistoryStore.value);
+            const writes = [
+                vi.spyOn(trackStore, 'set'),
+                vi.spyOn(midiStore, 'set'),
+                vi.spyOn(gainEnvelopeStore, 'set'),
+                vi.spyOn(warpStateStore, 'set'),
+                vi.spyOn(automationStore, 'set'),
+                vi.spyOn(takeLaneStore, 'set'),
+                vi.spyOn(undoHistoryStore, 'set'),
+            ];
+            try {
+                expect((await undo()).headConsumed).toBe(false);
+                expect(getCrdtDoc('root')).toEqual(beforeRaw);
+                expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(beforeHeads);
+                expect(ownerProjections()).toEqual(beforeOwners);
+                expect(undoHistoryStore.value).toEqual(beforeHistory);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+                if (grouped) {
+                    expect(clipOnTrack(TRACK_ID, 'clip-c')).toBeUndefined();
+                }
+                for (const write of writes) {
+                    expect(write).not.toHaveBeenCalled();
+                }
+            } finally {
+                for (const write of writes) {
+                    write.mockRestore();
+                }
+            }
+            projectCrdtToStores({ resetProjections: true });
+            expect(ownerProjections()).toEqual(beforeOwners);
+            expect(clipOnTrack(peerTrack.id, 'clip-a')).toEqual(peerClip);
+        });
+
         it('restores captured target owners while keeping later peer owners and current selection and ghosts', async () => {
             midiStore.set({
                 probabilitySeed: 1,
@@ -464,7 +571,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 pitchBendByClipId: { 'clip-a': [{ id: 'captured-pb', value: 0.2, beat: 0, channel: 1 }] },
             });
             const { original } = await persistRemovalWithDistinctOwners(grouped);
-            hydrateProductionContracts();
+            reloadSavedProject();
             const peer = createTrack({ id: 'peer-track', name: 'Peer track', kind: 'audio' });
             const ghost = { ...createClipFixture('current-ghost', 16, 20), isGhost: true };
             trackStore.set({
@@ -1517,7 +1624,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             takes: [placed],
             activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: placed.id }],
         };
-        syncPeerTakes((project) => {
+        syncPeerProject((project) => {
             project.takeLanes.lanes.push(lane);
         });
         expect((await undo()).headConsumed).toBe(true);
@@ -1574,7 +1681,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             sourceOffsetBeats: 8,
             selected: true,
         };
-        syncPeerTakes((project) => {
+        syncPeerProject((project) => {
             project.takeLanes.lanes.push({
                 id: 'peer-lane',
                 trackId: TRACK_ID,
@@ -1600,7 +1707,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             endBeat: 2,
             selected: true,
         };
-        syncPeerTakes((project) => {
+        syncPeerProject((project) => {
             project.takeLanes.lanes.push({
                 id: 'peer-lane',
                 trackId: TRACK_ID,

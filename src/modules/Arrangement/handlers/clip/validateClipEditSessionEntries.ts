@@ -187,7 +187,7 @@ function isRippleDeleteShift(value: unknown, removedClipId: string): boolean {
     );
 }
 
-function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string): boolean {
+function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: string, trackId: string): boolean {
     if (!isRecord(value)) {
         return false;
     }
@@ -201,7 +201,7 @@ function isRippleDeleteCapture(value: unknown, clipSnapshot: unknown, clipId: st
         satellites !== null &&
         satellites.every((entry) => entry.clipId === clipId) &&
         isExactAutomationLaneSnapshots(value.clipAutomationLanes) &&
-        value.clipAutomationLanes.every((lane) => lane.clipId === clipId)
+        value.clipAutomationLanes.every((lane) => lane.clipId === clipId && lane.trackId === trackId)
     );
 }
 
@@ -213,7 +213,8 @@ export function isRestoreClipSessionPayload(value: unknown): boolean {
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
-        (value.ripplePlan === null || isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId)) &&
+        (value.ripplePlan === null ||
+            isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
         isRetiredTakeLanes(value.retiredTakeLanes, value.clipId, value.trackId) &&
         hasFiniteNumbers(value)
     );

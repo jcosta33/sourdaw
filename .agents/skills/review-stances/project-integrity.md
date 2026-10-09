@@ -240,6 +240,22 @@ owner while preserving its take and placement fields. Fresh hydration must disca
 before Undo or Redo writes. Keep rich, fractional, empty, and historical captures and the later
 surviving selected take controls; shape validation alone does not prove containing-owner authority.
 
+The #5064 repair at `7ea9bd75d5` bound captured removal automation to the removed clip but
+still admitted a different containing track. Produce a real two-lane removal, change only
+each captured lane's `trackId` to another existing track in separate attacks, save and reload
+the document, and hydrate fresh production history. Require rejection of the complete single
+entry or group before real Undo can write redirected automation. Prior foreign-clip and
+shape attacks did not change this second ownership relation.
+
+The same head checked removal replay absence only inside the captured track. After a genuine
+remove/save/reload/hydrate cycle, synchronize a separate actor's valid recreation of that clip
+identity on another track. Both single and grouped Undo must refuse with raw document and
+heads, fresh owner projections, and complete history unchanged; in a group, spy on owner
+writes to prove an earlier independent inverse never executes. Prior late MIDI, gain, warp,
+and automation attacks left the clip rectangle absent everywhere, so they missed this live
+identity-to-containing-track relation. Keep the genuine captures, fractional and placed-pass
+controls, and later selected-survivor/disjoint-comp replay controls.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

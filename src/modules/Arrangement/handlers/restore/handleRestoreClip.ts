@@ -21,10 +21,13 @@ type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 
 function restoreStateMatches(action: RestoreClipAction): boolean {
     // The restore re-appends `clipSnapshot` as-is, so it assumes the owning track
-    // is present and the removed clip is still absent — re-appending onto a clip
-    // that is somehow back would duplicate its id.
-    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
-    if (track === undefined || track.clips.some((clip) => clip.id === action.payload.clipId)) {
+    // is present and the removed clip is absent from every track. A peer may
+    // recreate the same identity under another owner after removal.
+    const tracks = getTrackStoreState()?.tracks ?? [];
+    if (
+        !tracks.some((track) => track.id === action.payload.trackId) ||
+        tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId))
+    ) {
         return false;
     }
     const { clipId, ripplePlan } = action.payload;
