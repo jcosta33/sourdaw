@@ -104,6 +104,23 @@ function parseTsx(value: string): ts.SourceFile {
     return ts.createSourceFile(CANDIDATE_PATH, value, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 }
 
+function commentsWithRoutes(file: ts.SourceFile): string[] {
+    const comments: string[] = [];
+    const visit = (node: ts.Node, route: string): void => {
+        const leadingTrivia = file.text.slice(node.pos, node.getStart(file));
+        for (const comment of leadingTrivia.match(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g) ?? []) {
+            comments.push(`${route}:leading:${comment}`);
+        }
+        for (const range of ts.getTrailingCommentRanges(file.text, node.end) ?? []) {
+            comments.push(`${route}:trailing:${file.text.slice(range.pos, range.end)}`);
+        }
+        let childIndex = 0;
+        ts.forEachChild(node, (child) => visit(child, `${route}.${childIndex++}`));
+    };
+    visit(file, 'root');
+    return comments;
+}
+
 function printedAst(file: ts.SourceFile, allowed: { start: number; end: number }[]): string {
     const transformed = ts.transform(file, [
         (context) => {
@@ -136,6 +153,9 @@ function printedAst(file: ts.SourceFile, allowed: { start: number; end: number }
 function astComparison(before: string, after: string): { admitted: boolean; routes: string[] } {
     const oldFile = parseTsx(before);
     const newFile = parseTsx(after);
+    if (canonical(commentsWithRoutes(oldFile)) !== canonical(commentsWithRoutes(newFile))) {
+        return { admitted: false, routes: ['rejected: changed comments'] };
+    }
     const routes: string[] = [];
     const oldAllowed: { start: number; end: number }[] = [];
     const newAllowed: { start: number; end: number }[] = [];

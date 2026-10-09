@@ -63,7 +63,11 @@ describe('E2E selection shadow', () => {
             baseText.replace('aria-label="Needle tuner display"', 'aria-label="Pitch needle"'),
             'JSXAttribute[aria-label]',
         ],
-        ['comment trivia', `/* shadow note */\n${baseText}`, 'trivia'],
+        [
+            'whitespace trivia',
+            baseText.replace('const hz = Math.round(value);', 'const hz  = Math.round(value);'),
+            'trivia',
+        ],
     ])('keeps the full inventory for unproved obligations despite %s', (_name, changed, route) => {
         const report = measureShadow(fixture({ candidateHead: changed }));
         expect(report.shadowOnly).toBe(true);
@@ -73,6 +77,26 @@ describe('E2E selection shadow', () => {
         expect(report.liveSelectedSpecs).toHaveLength(313);
         expect(report.obligationDispositions).toHaveLength(313);
         expect(report.astRoutes.join(' ')).toContain(route);
+    });
+
+    it.each([
+        ['ordinary comment', `/* shadow note */\n${baseText}`],
+        ['existing comment text', baseText.replace('// Whole hertz:', '// Rounded hertz:')],
+        ['trailing comment', `${baseText}\n/* shadow note */`],
+        ['comment beside a masked static attribute', baseText.replace('className="', 'className=/* shadow note */"')],
+        [
+            'compiler-significant comment',
+            baseText.replace(
+                'setA4Reference(deviceId, hz, true);',
+                '/* @__PURE__ */ setA4Reference(deviceId, hz, true);'
+            ),
+        ],
+    ])('rejects a changed %s', (_name, changed) => {
+        expect(changed).not.toBe(baseText);
+        const report = measureShadow(fixture({ candidateHead: changed }));
+        expect(report.candidateSpecs).toHaveLength(313);
+        expect(report.fallbackReasons).toContain('candidate-ast-not-presentation-only');
+        expect(report.astRoutes).toContain('rejected: changed comments');
     });
 
     it('refuses a direct-witness producer missing from the evaluated source tree', () => {
