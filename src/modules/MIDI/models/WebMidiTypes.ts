@@ -108,6 +108,8 @@ export type ActiveNoteData = {
     grandBouleDeviceId?: string;
     /** When the note was sent to a Levain instance, stores the device ID for noteOff routing */
     levainDeviceId?: string;
+    /** When the note was sent to a Crumbs instance, stores the device ID for noteOff routing */
+    crumbsDeviceId?: string;
     /** The device a native session voiced this note on, so the release goes to the same body. */
     nativeDeviceId?: string;
     /**

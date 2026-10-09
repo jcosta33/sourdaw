@@ -12,6 +12,8 @@ const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 const start_faust_note = vi.hoisted(() => vi.fn<(...args: unknown[]) => () => void>());
+const schedule_device_key_on = vi.hoisted(() => vi.fn());
+const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
@@ -37,6 +39,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         context: audio_clock,
         ensureTrackStrip: ensure_track_strip,
         getTrackStrip: get_track_strip,
+        scheduleDeviceKeyOn: schedule_device_key_on,
+        scheduleDeviceKeyOff: schedule_device_key_off,
     },
     getCompensationDelay: () => 0,
     getDefaultBendRangeSemitones: () => 48,
@@ -1330,6 +1334,190 @@ describe('handleWebMidiNoteOn', () => {
                 isNoteOn: true,
             });
             expect(toaster_note_on).not.toHaveBeenCalled();
+        });
+    });
+
+    // A key reaches the first instrument in chain order, the one sequenced
+    // playback, the export and audition voice, with Yeast in the chain or not.
+    describe('the receiving instrument', () => {
+        function single_track(devices: Array<Record<string, unknown>>) {
+            return () => ({ tracks: [{ id: 'track-1', devices }], selectedTrackId: 'track-1' });
+        }
+
+        /** One ready note surface per worklet instrument kind, each with its own spies. */
+        function instrument_strip() {
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const nodes = {
+                levain: { type: 'levain', deviceId: 'lev-1', levainControls: voice() },
+                fermenter: { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: voice() },
+                grandBoule: { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: voice() },
+                crumbs: { type: 'builtin-crumbs', deviceId: 'crumbs-1', crumbsControls: voice() },
+            };
+            const strip = { gainNode: {}, deviceNodes: Object.values(nodes) };
+            ensure_track_strip.mockReturnValue(strip);
+            get_track_strip.mockReturnValue(strip);
+            return nodes;
+        }
+
+        it.each([
+            { name: 'levain ahead of a fermenter', second: { id: 'ferm-1', type: 'fermenter' } },
+            { name: 'levain ahead of a grand boule', second: { id: 'gb-1', type: 'grand-boule' } },
+        ])('plays a $name on the levain', async ({ second }) => {
+            const nodes = instrument_strip();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({ getTrackStoreState: single_track([{ id: 'lev-1', type: 'levain' }, second]) })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledWith(60, 100, LIVE_DISPATCH_FRAME, 0);
+            expect(nodes.fermenter.fermenterControls.noteOn).not.toHaveBeenCalled();
+            expect(nodes.grandBoule.grandBouleControls.noteOn).not.toHaveBeenCalled();
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.levainDeviceId).toBe('lev-1');
+        });
+
+        it('plays a crumbs ahead of a levain on the crumbs and releases the same voice', async () => {
+            const nodes = instrument_strip();
+            const getTrackStoreState = single_track([
+                { id: 'crumbs-1', type: 'builtin-crumbs' },
+                { id: 'lev-1', type: 'levain' },
+            ]);
+            const noteOff = handleWebMidiNoteOff._factory({
+                ...make_dependencies({ getTrackStoreState }),
+                getCompensationDelay: () => 0,
+                stepRecordNoteOff: () => {},
+            });
+            const noteOn = handleWebMidiNoteOn._factory(make_dependencies({ getTrackStoreState }));
+
+            await noteOn(0, 60, 100);
+
+            expect(nodes.crumbs.crumbsControls.noteOn).toHaveBeenCalledWith(60, 100, LIVE_DISPATCH_FRAME, 0);
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+
+            await noteOff(0, 60);
+
+            expect(nodes.crumbs.crumbsControls.noteOff).toHaveBeenCalledWith(60, expect.any(Number), 0);
+            expect(nodes.levain.levainControls.noteOff).not.toHaveBeenCalled();
+        });
+
+        it('plays nothing for a bypassed receiving instrument', async () => {
+            const nodes = instrument_strip();
+            const schedule_note = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'lev-1', type: 'levain', bypassed: true },
+                        { id: 'ferm-1', type: 'fermenter', bypassed: false },
+                    ]),
+                    scheduleNote: schedule_note,
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+            expect(nodes.fermenter.fermenterControls.noteOn).not.toHaveBeenCalled();
+            expect(schedule_note).not.toHaveBeenCalled();
+        });
+
+        const generated_note_on = async (): Promise<TestMidiEvent[]> => [
+            { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+        ];
+
+        it('voices Yeast-generated notes on a drum kit ahead of a levain, never on the levain', async () => {
+            const nodes = instrument_strip();
+            const schedule_drum_kit_note = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
+                        { id: 'lev-1', type: 'levain' },
+                        { id: 'yeast-1', type: 'yeast' },
+                    ]),
+                    processRealtimeMidiInput: generated_note_on,
+                    getDrumKitDefByIndex: (index: number) => ({ id: `kit-def-${index}` }),
+                    scheduleDrumKitNote: schedule_drum_kit_note,
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(schedule_drum_kit_note).toHaveBeenCalledWith(
+                audio_clock,
+                {},
+                { id: 'kit-def-0' },
+                67,
+                96_240 / 48_000,
+                100
+            );
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('voices Yeast-generated notes on a levain ahead of a fermenter, never on the fermenter', async () => {
+            const nodes = instrument_strip();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'lev-1', type: 'levain' },
+                        { id: 'ferm-1', type: 'fermenter' },
+                        { id: 'yeast-1', type: 'yeast' },
+                    ]),
+                    processRealtimeMidiInput: generated_note_on,
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledWith(67, 100, 96_240, 0);
+            expect(nodes.fermenter.fermenterControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('keys Yeast-generated notes on a faust instrument ahead of a levain on and off at their frames', async () => {
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            schedule_device_key_on.mockClear();
+            schedule_device_key_off.mockClear();
+            const nodes = instrument_strip();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'faust-1', type: 'faust-epiano' },
+                        { id: 'lev-1', type: 'levain' },
+                        { id: 'yeast-1', type: 'yeast' },
+                    ]),
+                    processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                        { timeSamples: 96_240, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                        { timeSamples: 96_480, kind: { type: 'noteOff', channel: 0, note: 67 } },
+                    ],
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(schedule_device_key_on).toHaveBeenCalledWith('track-1', 'faust-1', 67, 100, 96_240 / 48_000);
+            expect(schedule_device_key_off).toHaveBeenCalledWith('track-1', 'faust-1', 67, 0, 96_480 / 48_000);
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+        });
+
+        it('voices no Yeast-generated note on a bypassed receiving instrument', async () => {
+            const nodes = instrument_strip();
+            const schedule_note = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: single_track([
+                        { id: 'lev-1', type: 'levain', bypassed: true },
+                        { id: 'ferm-1', type: 'fermenter', bypassed: false },
+                        { id: 'yeast-1', type: 'yeast', bypassed: false },
+                    ]),
+                    processRealtimeMidiInput: generated_note_on,
+                    scheduleNote: schedule_note,
+                })
+            );
+
+            await fn(0, 60, 100);
+
+            expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
+            expect(nodes.fermenter.fermenterControls.noteOn).not.toHaveBeenCalled();
+            expect(schedule_note).not.toHaveBeenCalled();
         });
     });
 });

@@ -392,7 +392,11 @@ export async function scheduleTrackClips({
         }
     }
 
-    const { receiver, instrumentEntry } = selectOfflineNoteReceiver(track.devices, deviceEntries);
+    const {
+        receiver,
+        instrumentEntry,
+        silent: receiverSilent,
+    } = selectOfflineNoteReceiver(track.devices, deviceEntries);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';
     const toasterDeviceId = isToaster ? instrumentEntry.deviceId : null;
@@ -536,6 +540,11 @@ export async function scheduleTrackClips({
     }
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
+        // A bypassed receiver plays nothing, as it does live; no note is handed
+        // to an instrument, so none is counted either.
+        if (receiverSilent) {
+            return;
+        }
         for (const note of notes) {
             checkCallerAbort();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {

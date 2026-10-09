@@ -1,5 +1,9 @@
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { type NoteReceivingInstrument, resolveNoteReceivingInstrument } from '#/utils/deviceTypeMatching';
+import {
+    isBypassedNoteReceiver,
+    type NoteReceivingInstrument,
+    resolveNoteReceivingInstrument,
+} from '#/utils/deviceTypeMatching';
 
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 
@@ -13,6 +17,12 @@ type OfflineNoteReceiver<TDevice> = Readonly<{
      * track on the fallback synth, as a chain with no instrument always has.
      */
     instrumentEntry: DeviceNodeEntry | undefined;
+    /**
+     * True when the receiver is bypassed: the render plays none of the track's
+     * notes. The chain builds no node for a bypassed device, so without this the
+     * missing entry would read as a failed load and reach the fallback synth.
+     */
+    silent: boolean;
 }>;
 
 /**
@@ -22,16 +32,19 @@ type OfflineNoteReceiver<TDevice> = Readonly<{
  * "the first entry with a note surface", which would hand a drum-first chain's
  * notes to the instrument behind the kit.
  */
-export function selectOfflineNoteReceiver<TDevice extends { id: string; type: string }>(
+export function selectOfflineNoteReceiver<TDevice extends { id: string; type: string; bypassed?: boolean }>(
     devices: readonly TDevice[],
     deviceEntries: readonly DeviceNodeEntry[]
 ): OfflineNoteReceiver<TDevice> {
     const receiver = resolveNoteReceivingInstrument(devices, isFaustInstrumentModule);
+    if (isBypassedNoteReceiver(receiver)) {
+        return { receiver, instrumentEntry: undefined, silent: true };
+    }
     if (!receiver || receiver.kind === 'drum' || receiver.kind === 'builtin-synth') {
-        return { receiver, instrumentEntry: undefined };
+        return { receiver, instrumentEntry: undefined, silent: false };
     }
     const instrumentEntry = deviceEntries.find(
         (entry) => entry.deviceId === receiver.device.id && entry.instrumentControls !== undefined
     );
-    return { receiver, instrumentEntry };
+    return { receiver, instrumentEntry, silent: false };
 }

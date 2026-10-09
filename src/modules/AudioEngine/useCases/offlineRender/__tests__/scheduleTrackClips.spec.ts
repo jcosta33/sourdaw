@@ -2003,3 +2003,109 @@ describe('scheduleTrackClips — export cancellation is caller-owned', () => {
         expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('scheduleTrackClips — the receiving instrument', () => {
+    type ChainDevice = { id: string; type: string; bypassed?: boolean };
+
+    function chainEntry(device: ChainDevice): DeviceNodeEntry {
+        const entry = makeInstrumentEntry();
+        entry.deviceId = device.id;
+        entry.deviceType = device.type;
+        return entry;
+    }
+
+    /**
+     * Render one note on a track holding `devices`, with a chain entry for each of
+     * `builtDevices` — the node-backed devices `buildDeviceChain` built, in chain
+     * order. A drum kit, a bypassed device or one that failed to load has none.
+     */
+    async function renderNote(
+        devices: readonly ChainDevice[],
+        builtDevices: readonly ChainDevice[]
+    ): Promise<PendingWorkletEvent[]> {
+        const track = makeMidiTrack();
+        track.devices = devices.map((device): Track['devices'][number] => ({
+            id: device.id,
+            name: device.type,
+            type: device.type,
+            bypassed: device.bypassed ?? false,
+            parameterValues: { kit: 0 },
+        }));
+        const entries = builtDevices.map(chainEntry);
+        const events: PendingWorkletEvent[] = [];
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi: makeMidi(),
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents: events,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, entries]]),
+        });
+        return events;
+    }
+
+    const levain = { id: 'levain-1', type: 'levain' };
+    const fermenter = { id: 'fermenter-1', type: 'fermenter' };
+    const drum808 = { id: 'drum-1', type: 'builtin-drum-machine-808' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue({ name: '808' });
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        mocks.resolveDrumKit.mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+    });
+
+    // The kit is the first instrument, so it takes the notes even though the
+    // chain built a note surface for the Levain behind it.
+    it('renders an 808 ahead of a levain on the kit, never on the levain', async () => {
+        const events = await renderNote([drum808, levain], [levain]);
+
+        expect(mocks.scheduleDrumKitNote).toHaveBeenCalledTimes(1);
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+    });
+
+    // Live playback, live input and audition send nothing to a bypassed
+    // instrument's node and nothing past it; the render must not hand the part
+    // to the default synth because the chain built no node for it.
+    it('renders nothing for a bypassed first instrument', async () => {
+        const events = await renderNote([{ ...levain, bypassed: true }, fermenter], [fermenter]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+        expect(mocks.scheduleDrumKitNote).not.toHaveBeenCalled();
+    });
+
+    // The receiver is matched to its chain entry by id. A receiver that failed
+    // to load has no entry, and the track then plays the fallback synth, as a
+    // chain with no instrument does and as live playback does for a missing
+    // node; the instrument behind the receiver never takes its notes.
+    it('renders a receiver that failed to load on the fallback synth, never on the instrument behind it', async () => {
+        const events = await renderNote([levain, fermenter], [fermenter]);
+
+        expect(events).toEqual([]);
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[2]).toBe(60);
+    });
+});

@@ -25,7 +25,7 @@ import {
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
+import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -1231,6 +1231,12 @@ export async function scheduleMidiNotes(
                           }),
                   }
                 : null;
+            // A bypassed receiver plays none of the track's notes, as the export
+            // renders none: the toaster a child's pads reach is that child's
+            // receiver, and the track's own receiver otherwise.
+            const receiverBypassed = toasterTarget
+                ? toasterTarget.device.bypassed
+                : isBypassedNoteReceiver(resolvePlaybackNoteReceiver(track.devices));
 
             const workletSynthDevice = toasterRoute
                 ? null
@@ -1437,6 +1443,9 @@ export async function scheduleMidiNotes(
                         }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
+                        if (receiverBypassed) {
+                            continue;
+                        }
                         if (toasterRoute) {
                             const pad = toasterRoute.pad >= 0 ? toasterRoute.pad : resolveToasterPadIndex(pitch);
                             if (pad !== null) {

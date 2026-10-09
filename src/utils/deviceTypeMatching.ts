@@ -149,3 +149,15 @@ export function resolveNoteReceivingInstrument<TDevice extends { type: string }>
     }
     return builtinSynth;
 }
+
+/**
+ * Whether the track's receiving instrument is bypassed. A bypassed instrument
+ * keeps its place as the receiver, as a deactivated instrument does in a DAW:
+ * the notes stop at it, so neither an instrument behind it nor the fallback
+ * voice plays them, and every route leaves the track silent.
+ */
+export function isBypassedNoteReceiver(
+    receiver: NoteReceivingInstrument<{ type: string; bypassed?: boolean }> | null
+): boolean {
+    return receiver?.device.bypassed === true;
+}

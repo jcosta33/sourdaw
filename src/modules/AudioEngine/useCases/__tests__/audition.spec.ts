@@ -27,6 +27,11 @@ const PASSTHROUGH_DSP = 'process = _,_;';
 const FAUST_INSTRUMENT_TYPE = registerFaustDSP('Osc', PASSTHROUGH_DSP, [], true).id;
 const FAUST_EFFECT_TYPE = registerFaustDSP('Audition Fixture Reverb', PASSTHROUGH_DSP, [], false).id;
 
+/** The production 808 definition, so a drum receiver would have a real kit to voice. */
+const { getDrumKitDefByIndex: productionDrumKitDefByIndex } =
+    await vi.importActual<typeof import('#/modules/Synth/useCases')>('#/modules/Synth/useCases');
+const KIT_808_DEF = productionDrumKitDefByIndex(0);
+
 type MockToasterControls = {
     ready: boolean;
     noteOn: (pad: number, velocity: number, pitch: number) => void;
@@ -40,6 +45,7 @@ type MockDeviceNode = {
     fermenterControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
     grandBouleControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
     levainControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
+    crumbsControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
 };
 
 type MockTrackStrip = {
@@ -560,6 +566,113 @@ describe('playAuditionNote device dispatch', () => {
         expect(noteOn).toHaveBeenCalledWith(55, 80);
         stop();
         expect(noteOff).toHaveBeenCalledWith(55);
+    });
+
+    // The first instrument in chain order takes the note, as playback, export
+    // and live input voice it: a kit behind Levain is not the receiver.
+    it('auditions a levain ahead of an 808 on the levain, never the kit', () => {
+        scheduleKitNote.mockClear();
+        expect(KIT_808_DEF).not.toBeNull();
+        getDrumKitDefByIndex.mockReturnValue(KIT_808_DEF);
+        const noteOn = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'lev-d', type: 'levain', levainControls: { ready: true, noteOn, noteOff: vi.fn() } },
+        ]);
+        setTrack({
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [
+                        { id: 'lev-d', type: 'levain', parameterValues: {} },
+                        { id: 'drum-d', type: 'builtin-drum-machine-808', parameterValues: { kit: 0 } },
+                    ],
+                    parentId: null,
+                },
+            ],
+        });
+
+        playAuditionNote('tk', 55, 80);
+
+        expect(noteOn).toHaveBeenCalledWith(55, 80);
+        expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+        expect(scheduleKitNote).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+    });
+
+    it('auditions a crumbs ahead of a levain on the crumbs and releases the same voice', () => {
+        const crumbsNoteOn = vi.fn();
+        const crumbsNoteOff = vi.fn();
+        const levainNoteOn = vi.fn();
+        setStrip('tk', [
+            {
+                deviceId: 'crumbs-d',
+                type: 'builtin-crumbs',
+                crumbsControls: { ready: true, noteOn: crumbsNoteOn, noteOff: crumbsNoteOff },
+            },
+            {
+                deviceId: 'lev-d',
+                type: 'levain',
+                levainControls: { ready: true, noteOn: levainNoteOn, noteOff: vi.fn() },
+            },
+        ]);
+        setTrack({
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [
+                        { id: 'crumbs-d', type: 'builtin-crumbs', parameterValues: {} },
+                        { id: 'lev-d', type: 'levain', parameterValues: {} },
+                    ],
+                    parentId: null,
+                },
+            ],
+        });
+
+        const stop = playAuditionNote('tk', 48, 90);
+
+        expect(crumbsNoteOn).toHaveBeenCalledWith(48, 90);
+        expect(levainNoteOn).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+        stop();
+        expect(crumbsNoteOff).toHaveBeenCalledWith(48);
+    });
+
+    // A bypassed instrument is silent on every route: the note neither reaches
+    // the instrument behind it nor falls back to the default synth.
+    it('plays nothing for a bypassed receiving instrument', () => {
+        const levainNoteOn = vi.fn();
+        const fermenterNoteOn = vi.fn();
+        setStrip('tk', [
+            {
+                deviceId: 'lev-d',
+                type: 'levain',
+                levainControls: { ready: true, noteOn: levainNoteOn, noteOff: vi.fn() },
+            },
+            {
+                deviceId: 'fermenter-d',
+                type: 'fermenter',
+                fermenterControls: { ready: true, noteOn: fermenterNoteOn, noteOff: vi.fn() },
+            },
+        ]);
+        setTrack({
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [
+                        { id: 'lev-d', type: 'levain', bypassed: true, parameterValues: {} },
+                        { id: 'fermenter-d', type: 'fermenter', parameterValues: {} },
+                    ],
+                    parentId: null,
+                },
+            ],
+        });
+
+        const stop = playAuditionNote('tk', 55, 80);
+
+        expect(() => stop()).not.toThrow();
+        expect(levainNoteOn).not.toHaveBeenCalled();
+        expect(fermenterNoteOn).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
     });
 });
 

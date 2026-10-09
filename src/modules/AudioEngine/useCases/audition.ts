@@ -6,6 +6,7 @@ import {
     scheduleKitNote,
     getSynthParamsFromDevices,
 } from '#/modules/Synth/useCases';
+import { isBypassedNoteReceiver } from '#/utils/deviceTypeMatching';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
@@ -21,6 +22,7 @@ type AuditionDeviceParameterValues = Record<string, number> & {
 type AuditionDevice = {
     id: string;
     type: string;
+    bypassed?: boolean;
     parameterValues: AuditionDeviceParameterValues;
 };
 
@@ -46,6 +48,10 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         toasterParentTrack !== undefined
     );
     const receivingDevice = receiver?.device;
+
+    if (isBypassedNoteReceiver(receiver)) {
+        return () => {};
+    }
 
     if (receiver?.kind === 'drum') {
         const drumDevice = receiver.device;
@@ -156,6 +162,20 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
                 dn.levainControls?.noteOff(pitch);
             };
         }
+    }
+
+    if (receivingDevice?.type === 'builtin-crumbs') {
+        const crumbsDevice = receivingDevice;
+        const dn = strip.deviceNodes.find(
+            (data) => data.deviceId === crumbsDevice.id || data.type === 'builtin-crumbs'
+        );
+        if (dn?.crumbsControls?.ready) {
+            dn.crumbsControls.noteOn(pitch, velocity);
+            return () => {
+                dn.crumbsControls?.noteOff(pitch);
+            };
+        }
+        return () => {};
     }
 
     // Same instrument test the live scheduler and the offline chain builder use.

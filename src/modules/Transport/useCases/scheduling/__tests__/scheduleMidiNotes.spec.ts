@@ -190,6 +190,11 @@ const PASSTHROUGH_DSP = 'process = _,_;';
 const FAUST_INSTRUMENT_TYPE = registerFaustDSP('Synth', PASSTHROUGH_DSP, [], true).id;
 const FAUST_EFFECT_TYPE = registerFaustDSP('Parity Fixture Reverb', PASSTHROUGH_DSP, [], false).id;
 
+/** The production 808 definition, so a drum device on a chain has a real kit to voice. */
+const { getDrumKitDefByIndex: productionDrumKitDefByIndex } =
+    await vi.importActual<typeof import('#/modules/Synth/useCases')>('#/modules/Synth/useCases');
+const KIT_808_DEF = productionDrumKitDefByIndex(0);
+
 describe('scheduleMidiNotes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1599,6 +1604,84 @@ describe('scheduleMidiNotes', () => {
             // The resolved kit (not the kit-def) carries the note duration, so the
             // call reaches scheduleKitNote rather than the one-shot drumKitDef path.
             expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // The first instrument in chain order receives the notes, as the export,
+        // live input and audition voice them: a kit behind Levain is not the
+        // receiver, however the kit resolves.
+        it('sends a levain ahead of an 808 to the levain, never the kit', async () => {
+            expect(KIT_808_DEF).not.toBeNull();
+            vi.mocked(getDrumKitDefByIndex).mockReturnValue(KIT_808_DEF);
+            const noteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', parameterValues: {} },
+                    { id: 'drum-1', type: 'builtin-drum-machine-808', parameterValues: { kit: 0 } },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 110 }] },
+                ccByClipId: {},
+            };
+
+            try {
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+            } finally {
+                vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            }
+
+            expect(noteOn).toHaveBeenCalledOnce();
+            expect(noteOn.mock.calls[0]?.[0]).toBe(36);
+            expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+            expect(scheduleKitNote).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        // A bypassed instrument keeps the notes and plays none, as a deactivated
+        // instrument does in a DAW and as the export renders it: neither the
+        // instrument behind it nor the default synth takes them.
+        it('plays nothing for a bypassed receiving instrument', async () => {
+            const levainNoteOn = vi.fn();
+            const fermenterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                {
+                    type: 'levain',
+                    deviceId: 'levain-1',
+                    levainControls: { noteOn: levainNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+                {
+                    type: 'fermenter',
+                    deviceId: 'fermenter-1',
+                    fermenterControls: { noteOn: fermenterNoteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [
+                    { id: 'levain-1', type: 'levain', bypassed: true, parameterValues: {} },
+                    { id: 'fermenter-1', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 90 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(levainNoteOn).not.toHaveBeenCalled();
+            expect(fermenterNoteOn).not.toHaveBeenCalled();
             expect(scheduleNote).not.toHaveBeenCalled();
         });
 
