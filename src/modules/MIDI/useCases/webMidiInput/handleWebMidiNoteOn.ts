@@ -147,6 +147,7 @@ export const handleWebMidiNoteOn = inject({
 
             const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
             if (instrumentTrack && yeastDevice) {
+                noteData.yeastDeviceId = yeastDevice.id;
                 const sampleTime = dispatchFrame;
                 let processedEvents;
                 try {
@@ -228,6 +229,14 @@ export const handleWebMidiNoteOn = inject({
                             voiceChannel,
                             release
                         );
+                        // Recorded on the note as well, so its key-up can still
+                        // release the voice when the chain no longer holds the
+                        // Yeast that would send the note-off.
+                        (noteData.yeastGeneratedVoices ??= []).push({
+                            channel: voiceChannel,
+                            noteInstanceId: generatedId,
+                            pitch,
+                        });
                     }
                 };
                 // Generated notes reach the receiving instrument the key itself
@@ -334,12 +343,15 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
+            // Each branch below addresses the receiver's node, or the first node of
+            // its kind when the receiver's own is not built, and records the node it
+            // played: the key-up and panic release by that id alone.
             if (receivingDevice?.type === 'fermenter') {
                 const fermenterDevice = receivingDevice;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: fermenterDevice.id, type: 'fermenter' });
                 if (deviceNode?.fermenterControls?.ready) {
                     deviceNode.fermenterControls.noteOn(note, velocity, dispatchFrame, channel);
-                    noteData.fermenterDeviceId = fermenterDevice.id;
+                    noteData.fermenterDeviceId = deviceNode.deviceId;
                 }
                 return;
             }
@@ -360,7 +372,7 @@ export const handleWebMidiNoteOn = inject({
                     }
                     if (pad >= 0 && pad < 16) {
                         deviceNode.toasterControls.noteOn(pad, velocity, pitchNote, dispatchFrame);
-                        noteData.toasterRoute = { deviceId: toasterDevice.id, pad };
+                        noteData.toasterRoute = { deviceId: deviceNode.deviceId, pad };
                     }
                 }
                 return;
@@ -370,13 +382,14 @@ export const handleWebMidiNoteOn = inject({
                 const grandBouleDevice = receivingDevice;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
                 if (deviceNode?.grandBouleControls?.ready) {
-                    const grandBouleStore = createGrandBouleStore(grandBouleDevice.id);
+                    const playedDeviceId = deviceNode.deviceId;
+                    const grandBouleStore = createGrandBouleStore(playedDeviceId);
                     const calibration = grandBouleStore.value?.midiCalibration;
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
                     deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
-                    noteData.grandBouleDeviceId = grandBouleDevice.id;
+                    noteData.grandBouleDeviceId = playedDeviceId;
                     void deps.eventBus.emit('midi.noteOn', {
-                        deviceId: grandBouleDevice.id,
+                        deviceId: playedDeviceId,
                         midiNote: note,
                         velocity: finalVelocity,
                     });
@@ -389,8 +402,7 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
                 if (deviceNode?.levainControls?.ready) {
                     deviceNode.levainControls.noteOn(note, velocity, dispatchFrame, channel);
-                    noteData.levainDeviceId = levainDevice.id;
-                    return;
+                    noteData.levainDeviceId = deviceNode.deviceId;
                 }
                 return;
             }
@@ -400,7 +412,7 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: crumbsDevice.id, type: 'builtin-crumbs' });
                 if (deviceNode?.crumbsControls?.ready) {
                     deviceNode.crumbsControls.noteOn(note, velocity, dispatchFrame, channel);
-                    noteData.crumbsDeviceId = crumbsDevice.id;
+                    noteData.crumbsDeviceId = deviceNode.deviceId;
                 }
                 return;
             }

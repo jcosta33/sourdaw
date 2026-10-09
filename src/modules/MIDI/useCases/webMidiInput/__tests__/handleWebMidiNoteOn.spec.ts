@@ -60,6 +60,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { releaseAllActiveNotes } = await import('../../../repositories/webMidi/releaseAllActiveNotes');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
 
@@ -1518,6 +1519,184 @@ describe('handleWebMidiNoteOn', () => {
             expect(nodes.levain.levainControls.noteOn).not.toHaveBeenCalled();
             expect(nodes.fermenter.fermenterControls.noteOn).not.toHaveBeenCalled();
             expect(schedule_note).not.toHaveBeenCalled();
+        });
+    });
+
+    // The key-up releases every voice its note-on started from what the note
+    // recorded, whatever the chain holds when the key comes up: with the Yeast
+    // gone, no rack is left to send the generated voices their note-offs.
+    describe('a key-up after the chain lost the Yeast its note-on went through', () => {
+        type Instrument = { id: string; type: string };
+
+        /** Strike a key through Yeast, remove Yeast from the chain, then lift the key. */
+        async function strike_remove_yeast_and_lift(
+            instrument: Instrument,
+            generated: (input: RealtimeMidiInput) => TestMidiEvent
+        ): Promise<void> {
+            let devices: Instrument[] = [{ id: 'y', type: 'yeast' }, instrument];
+            const getTrackStoreState = () => ({ tracks: [{ id: 'track-1', devices }], selectedTrackId: 'track-1' });
+            const noteOn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState,
+                    processRealtimeMidiInput: async (input: RealtimeMidiInput) => [generated(input)],
+                })
+            );
+            const noteOff = handleWebMidiNoteOff._factory({
+                ...make_dependencies({ getTrackStoreState }),
+                getCompensationDelay: () => 0,
+                stepRecordNoteOff: () => {},
+            });
+
+            await noteOn(0, 60, 100);
+            devices = [instrument];
+            await noteOff(0, 60);
+        }
+
+        /** A generated note-on carrying the key's own note instance. */
+        const generated_from_key =
+            (note: number) =>
+            (input: RealtimeMidiInput): TestMidiEvent => ({
+                timeSamples: 96_240,
+                noteInstanceId: input.noteInstanceId,
+                kind: { type: 'noteOn', channel: 0, note, velocity: 100 },
+            });
+
+        function keyboard_strip() {
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const nodes = {
+                levain: { type: 'levain', deviceId: 'lev-1', levainControls: voice() },
+                crumbs: { type: 'builtin-crumbs', deviceId: 'crumbs-1', crumbsControls: voice() },
+                toaster: { type: 'toaster', deviceId: 'toaster-1', toasterControls: voice() },
+            };
+            const strip = { gainNode: {}, deviceNodes: Object.values(nodes) };
+            ensure_track_strip.mockReturnValue(strip);
+            get_track_strip.mockReturnValue(strip);
+            return nodes;
+        }
+
+        it('keys a Faust voice off', async () => {
+            faust_instrument_types.value = new Set(['faust-epiano']);
+            schedule_device_key_on.mockClear();
+            schedule_device_key_off.mockClear();
+            keyboard_strip();
+
+            await strike_remove_yeast_and_lift({ id: 'f', type: 'faust-epiano' }, generated_from_key(67));
+
+            expect(schedule_device_key_on).toHaveBeenCalledExactlyOnceWith('track-1', 'f', 67, 100, 96_240 / 48_000);
+            expect(schedule_device_key_off).toHaveBeenCalledExactlyOnceWith('track-1', 'f', 67, 0, expect.any(Number));
+        });
+
+        it('releases a Crumbs voice', async () => {
+            const nodes = keyboard_strip();
+
+            await strike_remove_yeast_and_lift({ id: 'crumbs-1', type: 'builtin-crumbs' }, generated_from_key(67));
+
+            expect(nodes.crumbs.crumbsControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+            expect(nodes.crumbs.crumbsControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+        });
+
+        it('releases a Levain voice', async () => {
+            const nodes = keyboard_strip();
+
+            await strike_remove_yeast_and_lift({ id: 'lev-1', type: 'levain' }, generated_from_key(67));
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+        });
+
+        it('releases a Toaster pad', async () => {
+            const nodes = keyboard_strip();
+
+            // Note 36 is the low bank's first pad.
+            await strike_remove_yeast_and_lift({ id: 'toaster-1', type: 'toaster' }, generated_from_key(36));
+
+            expect(nodes.toaster.toasterControls.noteOn).toHaveBeenCalledExactlyOnceWith(0, 100, 60, 96_240);
+            expect(nodes.toaster.toasterControls.noteOff).toHaveBeenCalledExactlyOnceWith(0, expect.any(Number));
+        });
+
+        it('releases a voice Yeast started with no note instance of its own', async () => {
+            const nodes = keyboard_strip();
+
+            await strike_remove_yeast_and_lift({ id: 'lev-1', type: 'levain' }, () => ({
+                timeSamples: 96_240,
+                kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 },
+            }));
+
+            expect(nodes.levain.levainControls.noteOn).toHaveBeenCalledExactlyOnceWith(67, 100, 96_240, 0);
+            expect(nodes.levain.levainControls.noteOff).toHaveBeenCalledExactlyOnceWith(67, expect.any(Number), 0);
+        });
+    });
+
+    // Note-off and panic release the very node the note-on played. With two
+    // Crumbs and the receiver's own node not yet built, the note plays the
+    // other Crumbs; a lookup by kind after the receiver's node is built would
+    // release the receiver instead, and a lookup by the receiver's id would
+    // release a node that never sounded.
+    describe('a Crumbs note played on another Crumbs node than the receiver', () => {
+        function two_crumbs() {
+            const voice = () => ({ ready: true, noteOn: vi.fn(), noteOff: vi.fn() });
+            const receiverNode = { type: 'builtin-crumbs', deviceId: 'crumbs-a', crumbsControls: voice() };
+            const otherNode = { type: 'builtin-crumbs', deviceId: 'crumbs-b', crumbsControls: voice() };
+            const strip = { gainNode: {}, deviceNodes: [otherNode] as Array<typeof otherNode> };
+            ensure_track_strip.mockReturnValue(strip);
+            get_track_strip.mockReturnValue(strip);
+            const getTrackStoreState = crumbs_pair_tracks;
+            return {
+                receiverNode,
+                otherNode,
+                /** The receiver's node finishes building, ahead of the other in strip order. */
+                buildReceiver: () => strip.deviceNodes.unshift(receiverNode),
+                noteOn: handleWebMidiNoteOn._factory(make_dependencies({ getTrackStoreState })),
+                noteOff: handleWebMidiNoteOff._factory({
+                    ...make_dependencies({ getTrackStoreState }),
+                    getCompensationDelay: () => 0,
+                    stepRecordNoteOff: () => {},
+                }),
+            };
+        }
+
+        /** The receiver `crumbs-a` ahead of `crumbs-b` in the chain. */
+        function crumbs_pair_tracks() {
+            return {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        devices: [
+                            { id: 'crumbs-a', type: 'builtin-crumbs' },
+                            { id: 'crumbs-b', type: 'builtin-crumbs' },
+                        ],
+                    },
+                ],
+                selectedTrackId: 'track-1',
+            };
+        }
+
+        it('releases the played node on key-up', async () => {
+            const crumbs = two_crumbs();
+
+            await crumbs.noteOn(0, 60, 100);
+            crumbs.buildReceiver();
+            await crumbs.noteOff(0, 60);
+
+            expect(crumbs.otherNode.crumbsControls.noteOn).toHaveBeenCalledExactlyOnceWith(
+                60,
+                100,
+                LIVE_DISPATCH_FRAME,
+                0
+            );
+            expect(crumbs.otherNode.crumbsControls.noteOff).toHaveBeenCalledExactlyOnceWith(60, expect.any(Number), 0);
+            expect(crumbs.receiverNode.crumbsControls.noteOff).not.toHaveBeenCalled();
+        });
+
+        it('releases the played node on panic', async () => {
+            const crumbs = two_crumbs();
+
+            await crumbs.noteOn(0, 60, 100);
+            crumbs.buildReceiver();
+            releaseAllActiveNotes({ getTrackStrip: get_track_strip, releaseNativeNote: () => {} });
+
+            expect(crumbs.otherNode.crumbsControls.noteOff).toHaveBeenCalledExactlyOnceWith(60);
+            expect(crumbs.receiverNode.crumbsControls.noteOff).not.toHaveBeenCalled();
         });
     });
 });

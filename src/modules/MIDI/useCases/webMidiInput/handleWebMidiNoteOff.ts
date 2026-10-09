@@ -10,7 +10,7 @@ import {
 } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
-import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
@@ -41,6 +41,36 @@ function clipDistance(clip: RecordedClip, beat: number): number {
 /** The clip whose span sits nearest the beat, earlier clip winning a tie. */
 function nearestClip(clips: RecordedClip[], beat: number): RecordedClip {
     return clips.reduce((best, clip) => (clipDistance(clip, beat) < clipDistance(best, beat) ? clip : best));
+}
+
+/**
+ * Release every voice a Yeast note-on started when the chain no longer holds
+ * that Yeast (removed, or its track gone): no rack is left to send the
+ * note-offs, so a held voice would otherwise sound until panic. Generated
+ * voices release through the shared registry, which skips any already ended.
+ */
+function releaseVoicesWithoutYeast(
+    noteData: ActiveNoteData,
+    yeastDeviceId: string,
+    sampleFrame: number,
+    releaseVelocity: number
+): void {
+    const routeId = `${noteData.instrumentTrackId}:${yeastDeviceId}`;
+    for (const voice of noteData.yeastGeneratedVoices ?? []) {
+        pendingYeastRelease.releaseEvent({
+            routeId,
+            trackId: noteData.instrumentTrackId,
+            noteInstanceId: voice.noteInstanceId,
+            channel: voice.channel,
+            pitch: voice.pitch,
+            sampleFrame,
+            releaseVelocity,
+        });
+    }
+    for (const release of noteData.yeastVoiceReleases?.values() ?? []) {
+        release(sampleFrame, releaseVelocity);
+    }
+    noteData.yeastVoiceReleases?.clear();
 }
 
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
@@ -132,7 +162,15 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         const instrumentTrackState = deps.getTrackStoreState();
         const instrumentTrack = instrumentTrackState?.tracks.find((candidate) => candidate.id === instrumentTrackId);
 
-        const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
+        // The release goes through the Yeast the note-on went through, never
+        // through one the chain gained since.
+        const yeastDeviceId = noteData.yeastDeviceId;
+        const yeastDevice = instrumentTrack?.devices.find(
+            (device) => yeastDeviceId !== undefined && device.id === yeastDeviceId && device.type === 'yeast'
+        );
+        if (yeastDeviceId !== undefined && yeastDevice === undefined) {
+            releaseVoicesWithoutYeast(noteData, yeastDeviceId, dispatchFrame, releaseVelocity);
+        }
         if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
             const sampleTime = dispatchFrame;

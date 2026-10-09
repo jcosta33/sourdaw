@@ -187,6 +187,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -230,6 +231,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -282,6 +284,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -333,6 +336,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -403,6 +407,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -542,6 +547,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-1',
         });
 
         await fn(0, 60);
@@ -597,6 +603,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
+            yeastDeviceId: 'yeast-a',
             yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
@@ -1726,6 +1733,7 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
                 instrumentTrackId: 'track-1',
                 startTime: 0,
                 startBeat: 0,
+                yeastDeviceId: 'yeast-1',
             });
             channelToNote.set(MEMBER_CHANNEL, olderKey);
             at(1);
