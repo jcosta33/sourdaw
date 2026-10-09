@@ -1,0 +1,28 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1f0dcd815e8946::t_f6aa1ce0f42d4f 1-2,7,13,29-65,69-73,76-99,104,107-109,116-127,131-133,138-149,161-169,171-175,177-181,183-189,198,215,220-221,233,244-246,249,258-269,277-280,282,286-292,299,302-303,305-308,311-312,318-327,329,331-333,338,346-362,364-387,393-401,406-415,417-426,428-430,432-446,450,454-470,474-479,483-485
+  s_1f0dcd815e8946::t_d6e6edb3e3b865 3-6,8-12,14-28,66-68,74-75,100-103,105-106,110-115,128-130,134-137,150-160,170,176,182,190-197,199-214,216-219,222-232,234-243,247-248,250-257,270-276,281,283-285,293-298,300-301,304,309-310,313-317,328,330,334-337,339-345,363,388-392,402-405,416,427,431,447-449,451-453,471-473,482
+  s_1f0dcd815e8946::t_4fc156f2d5f875 480-481,486-501
+.agents/skills/review-stances/audio-source-time.md
+  s_1f0dcd815e8946::t_ca3a0867a63d47 30-56
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_1f0dcd815e8946::t_36f3b219f2926a 836-842,861,871-881,889
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_1f0dcd815e8946::t_e8b2289e98fa5a 5,20-28,65-66,115,1193,1302,1337,1355,1357-1358,1360-1361,1368,1372,1377-1385,1391-1464,1472,1474-1475,1477-1478,1485,1487,1506,1517,1544,1556,1558,1567
+  s_1f0dcd815e8946::t_585901420418db 1488,1516,1520,1524,1532,1539,1545,1557,1561,1576,1635-1637,1640
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5a8b1ca9e5da2e4af93cf9769164d366eb9fd6b",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
