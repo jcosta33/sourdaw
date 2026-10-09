@@ -1,5 +1,6 @@
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
+import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
 
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -96,6 +97,10 @@ export function duplicateClipCore(
         stretchRatio: clip.stretchRatio,
         loopEnabled: clip.loopEnabled,
         loopLength: clip.loopLength,
+        // The copy is the same looped clip elsewhere: the anchor shifts to the
+        // copy's placement so the loop window and pass count read identically
+        // (#4988). An unanchored source copies unanchored.
+        loopOriginBeat: shiftLoopOrigin(clip, startBeat - clip.startBeat),
         followAction: clip.followAction,
     });
     if (!newClip) {

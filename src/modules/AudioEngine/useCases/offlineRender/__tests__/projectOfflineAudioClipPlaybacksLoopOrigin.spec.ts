@@ -111,3 +111,27 @@ describe('projectOfflineAudioClipPlaybacks without a loop anchor (legacy project
         expect(readEndSec).toBeCloseTo(2.5, 9);
     });
 });
+
+describe('projectOfflineAudioClipPlaybacks with a stale anchor while the loop is off', () => {
+    it('degenerates to the single pre-change read', () => {
+        // The clip was looped, trimmed one beat, then unlooped: `setClipLoop`
+        // deliberately keeps the anchor at 0, and with the loop off the pass
+        // length is the full visual 16 beats. The stale anchor must be inert —
+        // the anchored projection would split every pass into region tail and
+        // wrapped head around a boundary nothing loops on, replaying the
+        // file's head at the tail. One playback, reading the offset.
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip: { ...CLIP_BASE, loopEnabled: false, loopOriginBeat: 0 },
+            bufferDurationSeconds: 4,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => beat * 0.5,
+            resolveTempoAtBeat: () => 120,
+        });
+
+        expect(playbacks).toHaveLength(1);
+        expect(playbacks[0]).toMatchObject({ startSec: 0.5, bufferOffsetSec: 0.5, playDuration: 3.5 });
+    });
+});

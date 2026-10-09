@@ -9,10 +9,13 @@ import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '../clipLoo
  * notes at source 0 and 4.5 — after a start trim by one beat the 4.5 note
  * must stay out of every pass, and the head note must stay in at its wrapped
  * phase. A clip without an anchor admits everything below the loop length,
- * exactly the pre-anchor law.
+ * exactly the pre-anchor law — and so does a clip whose stale anchor dates
+ * from a past loop enable, because `setClipLoop` keeps the anchor while the
+ * loop is off and the readers must treat it as absent there.
  */
 
-const ANCHORED_CLIP = { startBeat: 1, loopOriginBeat: 0, loopLengthBeats: 4 } as const;
+const ANCHORED_CLIP = { startBeat: 1, loopOriginBeat: 0, loopLengthBeats: 4, loopEnabled: true } as const;
+const STALE_ANCHOR_LOOP_OFF_CLIP = { startBeat: 1, loopOriginBeat: 0, loopLengthBeats: 4, loopEnabled: false } as const;
 
 describe('resolveClipLoopOriginAdvance', () => {
     it('measures the trim advance from the anchor', () => {
@@ -20,7 +23,11 @@ describe('resolveClipLoopOriginAdvance', () => {
     });
 
     it('advances zero for a clip without an anchor', () => {
-        expect(resolveClipLoopOriginAdvance({ startBeat: 7, loopOriginBeat: undefined })).toBe(0);
+        expect(resolveClipLoopOriginAdvance({ startBeat: 7, loopOriginBeat: undefined, loopEnabled: true })).toBe(0);
+    });
+
+    it('advances zero for a stale anchor while the loop is off', () => {
+        expect(resolveClipLoopOriginAdvance(STALE_ANCHOR_LOOP_OFF_CLIP)).toBe(0);
     });
 });
 
@@ -38,7 +45,7 @@ describe('isBeatInClipLoopWindow', () => {
     it('keeps the window anchored when the offset wraps past the loop length', () => {
         // Five beats trimmed: the offset wrapped to 1 and #5022 shifted the
         // stored notes down by 4, so the relative starts are source − 5.
-        const clip = { startBeat: 5, loopOriginBeat: 0, loopLengthBeats: 4 } as const;
+        const clip = { startBeat: 5, loopOriginBeat: 0, loopLengthBeats: 4, loopEnabled: true } as const;
         expect(isBeatInClipLoopWindow({ ...clip, relativeBeat: -5 })).toBe(true); // source 0
         expect(isBeatInClipLoopWindow({ ...clip, relativeBeat: -0.5 })).toBe(false); // source 4.5
     });
@@ -49,9 +56,15 @@ describe('isBeatInClipLoopWindow', () => {
     });
 
     it('admits everything below the loop length for a clip without an anchor', () => {
-        const legacy = { startBeat: 1, loopOriginBeat: undefined, loopLengthBeats: 4 } as const;
+        const legacy = { startBeat: 1, loopOriginBeat: undefined, loopLengthBeats: 4, loopEnabled: true } as const;
         expect(isBeatInClipLoopWindow({ ...legacy, relativeBeat: -10 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...legacy, relativeBeat: 3.5 })).toBe(true);
         expect(isBeatInClipLoopWindow({ ...legacy, relativeBeat: 4 })).toBe(false);
+    });
+
+    it('falls back to the pre-anchor law for a stale anchor while the loop is off', () => {
+        expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: -10 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: 3.5 })).toBe(true);
+        expect(isBeatInClipLoopWindow({ ...STALE_ANCHOR_LOOP_OFF_CLIP, relativeBeat: 4 })).toBe(false);
     });
 });

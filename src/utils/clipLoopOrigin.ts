@@ -13,16 +13,53 @@
  *
  * An absent field derives an advance of zero, which reproduces the
  * pre-anchor behavior exactly — legacy projects read as they always did.
+ *
+ * The anchor is inert while the loop is off (`setClipLoop` deliberately keeps
+ * it for a later enable to restamp), so these readers treat it as absent
+ * whenever `loopEnabled` is not true: a stale anchor from a past enable must
+ * not wrap an unlooped clip's read at a boundary nothing loops on.
  */
 
 export type ClipLoopOriginInput = Readonly<{
     startBeat: number;
     loopOriginBeat: number | undefined;
+    /** The anchor reads only while the loop is on; otherwise it is absent. */
+    loopEnabled: boolean;
 }>;
 
 /** How far start trims have advanced this clip's head past its loop anchor. */
-export function resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat }: ClipLoopOriginInput): number {
-    return startBeat - (loopOriginBeat ?? startBeat);
+export function resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled }: ClipLoopOriginInput): number {
+    if (loopEnabled !== true || loopOriginBeat === undefined) {
+        return 0;
+    }
+    return startBeat - loopOriginBeat;
+}
+
+/**
+ * The source-anchored start the occurrence index and comping resolvers stamp:
+ * the anchor's start while the loop is on, the clip's own start otherwise —
+ * the pre-anchor reading — so a stale anchor from a past enable never
+ * re-rolls a de-looped clip's passes.
+ */
+export function resolveLoopAnchoredStartBeat({ startBeat, loopOriginBeat, loopEnabled }: ClipLoopOriginInput): number {
+    return loopEnabled === true && loopOriginBeat !== undefined ? loopOriginBeat : startBeat;
+}
+
+type ClipLoopOriginShiftInput = Readonly<{
+    loopOriginBeat?: number;
+}>;
+
+/**
+ * The loop anchor after a whole-clip relocation by `deltaBeats` — a drag,
+ * nudge, ripple shift, time-operation shift, or a duplicate or paste placed
+ * elsewhere. A relocation changes neither the content offset nor the loop
+ * phase, so the anchor rides the same delta and the advance
+ * (`startBeat - loopOriginBeat`) — the loop window and the per-pass occurrence
+ * count with it — is preserved exactly. A clip with no anchor stays
+ * unanchored, which reads as an advance of zero.
+ */
+export function shiftLoopOrigin({ loopOriginBeat }: ClipLoopOriginShiftInput, deltaBeats: number): number | undefined {
+    return loopOriginBeat === undefined ? undefined : loopOriginBeat + deltaBeats;
 }
 
 type ClipLoopWindowMembershipInput = Readonly<{
@@ -34,6 +71,8 @@ type ClipLoopWindowMembershipInput = Readonly<{
     startBeat: number;
     loopOriginBeat: number | undefined;
     loopLengthBeats: number;
+    /** The anchor reads only while the loop is on; otherwise it is absent. */
+    loopEnabled: boolean;
 }>;
 
 /**
@@ -45,16 +84,20 @@ type ClipLoopWindowMembershipInput = Readonly<{
  * with, carried backwards by the trim advance in the offset-relative
  * coordinate: `[−advance, loopLength − advance)`. Notes at or past the region
  * end stay out of every pass however far the clip is trimmed.
+ *
+ * Without an anchor — absent, or present-but-stale while the loop is off —
+ * the window falls back to the pre-anchor law.
  */
 export function isBeatInClipLoopWindow({
     relativeBeat,
     startBeat,
     loopOriginBeat,
     loopLengthBeats,
+    loopEnabled,
 }: ClipLoopWindowMembershipInput): boolean {
-    if (loopOriginBeat === undefined) {
+    if (loopOriginBeat === undefined || loopEnabled !== true) {
         return relativeBeat < loopLengthBeats;
     }
-    const windowFloorBeat = -resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat });
+    const windowFloorBeat = -resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled });
     return relativeBeat >= windowFloorBeat && relativeBeat < windowFloorBeat + loopLengthBeats;
 }

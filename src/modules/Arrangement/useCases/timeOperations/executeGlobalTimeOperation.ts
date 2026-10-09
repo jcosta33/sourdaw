@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { shiftLoopOrigin } from '#/utils/clipLoopOrigin';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -855,6 +856,10 @@ function insertClipGeometry(clip: Clip, operation: InsertGlobalTimeOperation): C
             ...clip,
             startBeat: clip.startBeat + operation.durationBeats,
             endBeat: clip.endBeat + operation.durationBeats,
+            // The whole clip relocates past the insert without touching its
+            // content offset; the loop anchor rides the same delta so the
+            // shift cannot re-roll which passes sound (#4988).
+            loopOriginBeat: shiftLoopOrigin(clip, operation.durationBeats),
         };
     }
     return {
@@ -943,6 +948,10 @@ function prepareDeletedTracks(
                     ...clip,
                     startBeat: clip.startBeat - duration,
                     endBeat: clip.endBeat - duration,
+                    // The whole clip relocates ahead of the deleted range
+                    // without touching its content offset; the loop anchor
+                    // rides the same delta (#4988).
+                    loopOriginBeat: shiftLoopOrigin(clip, -duration),
                 });
                 continue;
             }
@@ -1078,6 +1087,10 @@ function prepareDuplicatedTracks(
                 id: identity.targetClipId,
                 startBeat: clip.startBeat + duration,
                 endBeat: clip.endBeat + duration,
+                // The copy carries the source's loop anchor shifted to its own
+                // placement: a copy is the same looped clip elsewhere, so its
+                // window and pass count must read identically (#4988).
+                loopOriginBeat: shiftLoopOrigin(clip, duration),
             });
             if (clip.type === 'midi') {
                 copies.push({ sourceClipId: clip.id, newClipId: identity.targetClipId });

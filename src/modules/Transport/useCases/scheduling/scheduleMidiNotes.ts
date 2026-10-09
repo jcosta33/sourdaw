@@ -1327,6 +1327,7 @@ export async function scheduleMidiNotes(
                             startBeat: clip.startBeat,
                             loopOriginBeat: clip.loopOriginBeat,
                             loopLengthBeats: loopLen,
+                            loopEnabled: clip.loopEnabled ?? false,
                         })
                     ) {
                         continue;

@@ -1,6 +1,7 @@
 import { type GainEnvelopeSeriesPoint, type Track } from '#/modules/Arrangement/stores';
 // Not `#/modules/Arrangement/useCases` — same cycle law as `scheduleTrackClips`.
 import { envelopeGainDbToLinear } from '#/utils/clipGainEnvelopeSchedule';
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -171,10 +172,15 @@ export function projectOfflineAudioClipPlaybacks(
     // only that entry — subtracting the trim advance recovers the region the
     // offset originally named. The pass reads that region cyclically, entering
     // at the advance's phase, so material past the region end stays unheard
-    // however far the clip is trimmed. An unanchored clip advances zero, which
-    // puts the region at the offset itself and the entry at the region head:
-    // exactly the pre-anchor read, one segment per pass.
-    const loopAdvanceBeats = clip.startBeat - (clip.loopOriginBeat ?? clip.startBeat);
+    // however far the clip is trimmed. An unanchored clip — or a stale-anchored
+    // one with the loop off, the anchor being inert there — advances zero,
+    // which puts the region at the offset itself and the entry at the region
+    // head: exactly the pre-anchor read, one segment per pass.
+    const loopAdvanceBeats = resolveClipLoopOriginAdvance({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     const regionStartBeats = clipAudioOffsetBeats - loopAdvanceBeats;
     const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
 

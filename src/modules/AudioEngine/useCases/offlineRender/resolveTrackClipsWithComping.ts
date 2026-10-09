@@ -1,4 +1,5 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
 
@@ -180,7 +181,11 @@ export function resolveTrackClipsWithComping(
             // placement: a start trim must not re-roll which passes sound
             // (#4988). Unanchored clips anchor at their current start, which is
             // exactly the pre-anchor reading.
-            sourceStartBeat: clip.loopOriginBeat ?? clip.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -190,7 +195,11 @@ export function resolveTrackClipsWithComping(
             ...clip,
             regionStartBeat: clip.startBeat,
             regionEndBeat: clip.endBeat,
-            sourceStartBeat: clip.loopOriginBeat ?? clip.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -251,7 +260,11 @@ export function resolveTrackClipsWithComping(
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.loopOriginBeat ?? clip.startBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
             });
         }
     }

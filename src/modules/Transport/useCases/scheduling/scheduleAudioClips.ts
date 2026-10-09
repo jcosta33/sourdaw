@@ -20,6 +20,7 @@ import {
     envelopeGainDbToLinear,
     foldGainCurveAnchorsToAudibleStart,
 } from '#/utils/clipGainEnvelopeSchedule';
+import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -297,11 +298,17 @@ export function scheduleAudioClips(
                 // advances only that entry, so subtracting the advance from it
                 // recovers the region. An entry past the pass head splits the
                 // pass into two contiguous segments — the region tail, then
-                // its wrapped head. An unanchored clip advances zero, which
-                // puts the region at the offset and the entry at the region
-                // head: exactly the pre-anchor read, one segment per pass.
+                // its wrapped head. An unanchored clip — or a stale-anchored
+                // one with the loop off, the anchor being inert there —
+                // advances zero, which puts the region at the offset and the
+                // entry at the region head: exactly the pre-anchor read, one
+                // segment per pass.
                 const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
-                const loopAdvanceBeats = clip.startBeat - (clip.loopOriginBeat ?? clip.startBeat);
+                const loopAdvanceBeats = resolveClipLoopOriginAdvance({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled,
+                });
                 const regionStartBeats = clipAudioOffsetBeats - loopAdvanceBeats;
                 const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
                 const headSegmentEndBeats = Math.min(iterDurationBeats, loopLen - regionEntryBeats);

@@ -1,3 +1,5 @@
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
@@ -22,8 +24,13 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             // The pass count measures from the loop anchor, not the current
             // placement: a start trim must not re-roll which passes sound
             // (#4988). Unanchored clips anchor at their current start, which is
-            // exactly the pre-anchor reading.
-            sourceStartBeat: context.loopOriginBeat ?? context.startBeat,
+            // exactly the pre-anchor reading — and a stale anchor from a past
+            // enable is inert while the loop is off.
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -33,7 +40,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.loopOriginBeat ?? context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -98,7 +109,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.loopOriginBeat ?? clip.startBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
             });
         }
     }

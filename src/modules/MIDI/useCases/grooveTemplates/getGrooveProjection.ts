@@ -85,6 +85,7 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
                     startBeat: clipStartBeat,
                     loopOriginBeat,
                     loopLengthBeats,
+                    loopEnabled,
                 })
             ) {
                 return [];

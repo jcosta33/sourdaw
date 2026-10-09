@@ -204,4 +204,38 @@ describe('scheduleAudioClips loop-origin anchored passes', () => {
         expect(sources).toHaveLength(4);
         expect(sources[0]!.start).toHaveBeenCalledWith(0.5, 0.5, 2);
     });
+
+    it('schedules the single pre-change read for a loop-off clip with a stale anchor', () => {
+        // The clip was looped, trimmed one beat, then unlooped: `setClipLoop`
+        // deliberately keeps the anchor at 0, and with the loop off the pass
+        // length is the full visual 16 beats. The stale anchor must be inert —
+        // the anchored two-segment read would wrap the pass around a boundary
+        // nothing loops on, replaying the file's head at the tail.
+        const sources: Array<ReturnType<typeof makeFakeSource>> = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const fake = makeFakeSource();
+            sources.push(fake);
+            return fake as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 4 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([trimmedLoopedClip({ loopEnabled: false })] as never);
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'audio',
+                    muted: false,
+                    clips: [],
+                    freezeState: { status: 'active', frozenBufferId: null },
+                },
+            ],
+        };
+
+        scheduleAudioClips(0, 32, 0, new Set(), new Set(), [], defaultTransportState);
+
+        // The pre-change read: one source for the whole pass, reading the
+        // offset [1, 5) and stopping at the buffer end.
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start).toHaveBeenCalledWith(0.5, 0.5, 3.5);
+    });
 });

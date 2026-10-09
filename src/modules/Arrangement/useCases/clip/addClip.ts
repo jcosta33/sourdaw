@@ -27,6 +27,8 @@ export function addClip(input: {
     stretchRatio?: number;
     loopEnabled?: boolean;
     loopLength?: number;
+    /** Optional source-clip loop anchor to preserve when duplicating or pasting (#4988). */
+    loopOriginBeat?: number;
     followAction?: FollowAction;
 }): Clip | null {
     const state = getTrackState();
@@ -89,6 +91,7 @@ export function addClip(input: {
         stretchRatio: input.stretchRatio,
         loopEnabled: input.loopEnabled,
         loopLength: input.loopLength,
+        loopOriginBeat: input.loopOriginBeat,
         followAction: input.followAction,
         isGhost: input.isGhost,
     };

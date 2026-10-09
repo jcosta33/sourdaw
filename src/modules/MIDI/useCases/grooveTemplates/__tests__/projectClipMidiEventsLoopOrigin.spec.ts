@@ -24,6 +24,8 @@ function projectPass(input: {
     midiOffsetBeats: number;
     loopOriginBeat: number | undefined;
     events: readonly GateEvent[];
+    loopEnabled?: boolean;
+    loopLengthBeats?: number;
 }): Array<{ id: string; startBeat: number }> {
     return projectClipMidiEvents({
         events: input.events,
@@ -31,9 +33,9 @@ function projectPass(input: {
         clipStartBeat: input.clipStartBeat,
         clipEndBeat: input.clipStartBeat + 16,
         iterationStartBeat: input.iterationStartBeat,
-        loopLengthBeats: 4,
+        loopLengthBeats: input.loopLengthBeats ?? 4,
         midiOffsetBeats: input.midiOffsetBeats,
-        loopEnabled: true,
+        loopEnabled: input.loopEnabled ?? true,
         loopOriginBeat: input.loopOriginBeat,
         clipGrooveAlreadyApplied: true,
     }).map((event) => ({ id: event.id, startBeat: event.startBeat }));
@@ -129,5 +131,46 @@ describe('projectClipMidiEvents without a loop anchor (legacy projects)', () => 
         expect(projected.map((event) => event.id)).toEqual(['head', 'late']);
         expect(projected[0]?.startBeat).toBe(4);
         expect(projected[1]?.startBeat).toBe(4.5);
+    });
+});
+
+describe('projectClipMidiEvents with a stale anchor while the loop is off', () => {
+    beforeEach(() => {
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+    });
+
+    it('admits the tail notes the stale anchor wrongly dropped', () => {
+        // The clip was looped, trimmed one beat, then unlooped: `setClipLoop`
+        // deliberately keeps the anchor at 0. With the loop off the window
+        // length is the clip's full visual 16 beats, and the anchored law's
+        // ceiling at relative 3 would drop every note past it — exactly the
+        // last advance-beats of material an unlooped once-trimmed clip still
+        // plays. The tail note (source 16.5, relative 14.5) must sound.
+        const projected = projectPass({
+            clipStartBeat: 1,
+            iterationStartBeat: 1,
+            midiOffsetBeats: 1,
+            loopOriginBeat: 0,
+            loopEnabled: false,
+            loopLengthBeats: 16,
+            events: [{ id: 'tail', startBeat: 15.5, duration: 0.5, velocity: 80 }],
+        });
+        expect(projected).toEqual([{ id: 'tail', startBeat: 15.5 }]);
+    });
+
+    it('reads exactly like an absent anchor', () => {
+        // Inert means indistinguishable: the same pass through a stale anchor
+        // and through no anchor projects identically.
+        const shared = {
+            clipStartBeat: 1,
+            iterationStartBeat: 1,
+            midiOffsetBeats: 1,
+            loopEnabled: false,
+            loopLengthBeats: 16,
+            events: [IN_LOOP_NOTE, PAST_LOOP_NOTE],
+        } as const;
+        expect(projectPass({ ...shared, loopOriginBeat: 0 })).toEqual(
+            projectPass({ ...shared, loopOriginBeat: undefined })
+        );
     });
 });
