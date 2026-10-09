@@ -1,3 +1,4 @@
+import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
 import { applyGrooveTemplate } from './applyGrooveTemplate';
@@ -122,7 +123,9 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
             const firstSegments = createSegment(wrappedStartBeat, firstEndBeat);
             const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
-            if (remainingDuration <= 0) {
+            // On a non-dyadic grid the first segment's end misses the note's end by float noise,
+            // so a note that stops at or before the loop end still leaves a remainder of that size.
+            if (remainingDuration <= SAME_BEAT_TOLERANCE) {
                 return firstSegments;
             }
             const wrappedSegments = createSegment(iterationStartBeat, iterationStartBeat + remainingDuration);
