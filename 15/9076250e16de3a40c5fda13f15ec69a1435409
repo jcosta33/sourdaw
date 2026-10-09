@@ -1,0 +1,61 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_97ab82e0b4f10c::t_037b74d96d55b2 4026-4031,4036-4040,4047,4054
+scripts/e2eSelectionShadow.ts
+  s_97ab82e0b4f10c::t_f37613f88fb080 475-480,482
+  s_97ab82e0b4f10c::t_f3c9b019a4b6e1 13
+  s_97ab82e0b4f10c::t_21cf6434b47e2e 11
+  s_97ab82e0b4f10c::t_322578a3d7a28b 474,481,540-590
+  s_97ab82e0b4f10c::t_5093594c47a55a 607-608
+  s_97ab82e0b4f10c::t_5b2d6d02c7e0ee 10,12,14-15
+  s_97ab82e0b4f10c::t_263551c90bd350 454
+  s_97ab82e0b4f10c::t_47b83840b757cd 9,591-592
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_97ab82e0b4f10c::t_26c4e2a2578f58 100-108,121,129-130,135,144-145,147
+  s_1f0dcd815e8946::t_cd0b344c50cf39 99
+.agents/skills/review-stances/browser-inventory.md
+  s_97ab82e0b4f10c::t_af12a992e6810c 19-22
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_07b81fd08478b2 1,5,21,121,130-134,136-149,151-167,169-171,173-174,176-181,191-192,194-196,198,209-212,215-216,220-221,223-227,229-231,234-236,245,252-254,309-310,312-316,318-328,330-339,364-366
+  s_97ab82e0b4f10c::t_0ac6f7ea30accb 6,237-241
+  s_97ab82e0b4f10c::t_9967a6ccac8ca4 123-129,183-186,199-208,243
+  s_97ab82e0b4f10c::t_77ef94f054a6d9 135,197,213,222
+  s_97ab82e0b4f10c::t_250ba6acbddc0e 175
+  s_97ab82e0b4f10c::t_263551c90bd350 122,172,193,217-218,356-363
+  s_97ab82e0b4f10c::t_7ea1485fb80975 182,187-190,219,233,244,317,340-355
+  s_97ab82e0b4f10c::t_83f80d482ace6d 168,251
+  s_97ab82e0b4f10c::t_fd51d5e6af8072 232
+  s_97ab82e0b4f10c::t_9a36a6d572e639 150
+  s_97ab82e0b4f10c::t_483f13130eb56e 311,329
+  s_97ab82e0b4f10c::t_8edbbc521bef58 214,228,242,246-250
+.github/workflows/health-gates.yml
+  s_97ab82e0b4f10c::t_56bb385d053ee3 71-77,86,92,94,102-103
+scripts/e2eSelectionShadowCompatibility.ts
+  s_97ab82e0b4f10c::t_f3c9b019a4b6e1 12
+  s_97ab82e0b4f10c::t_21cf6434b47e2e 1-11,13-175
+scripts/healthGateWorkflowContract.ts
+  s_97ab82e0b4f10c::t_037b74d96d55b2 153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "159076250e16de3a40c5fda13f15ec69a1435409",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
