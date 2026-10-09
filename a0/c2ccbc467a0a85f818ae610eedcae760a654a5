@@ -1,0 +1,30 @@
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_97ab82e0b4f10c::t_0a2352d0d2e5e1 553-560,571,579
+  s_97ab82e0b4f10c::t_2ce08d38897cbc 561-570,572-578,580-608
+scripts/reviewRepair.ts
+  s_97ab82e0b4f10c::t_288e45ae9edf7e 592-594,634-639,678
+  s_97ab82e0b4f10c::t_83c89638c24e98 679-681
+.agents/skills/review-stances/public-repair-records.md
+  s_97ab82e0b4f10c::t_aac3a33d1fe68b 32-35,89-98
+scripts/__tests__/reviewRepair.spec.ts
+  s_97ab82e0b4f10c::t_a7f3d79a54213d 454-484
+  s_97ab82e0b4f10c::t_8181e38bdc7917 485-486
+scripts/confirmReviewRepairs.ts
+  s_97ab82e0b4f10c::t_eeff95a599d10d 88,195,199-208,234,242-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0c2ccbc467a0a85f818ae610eedcae760a654a5",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
