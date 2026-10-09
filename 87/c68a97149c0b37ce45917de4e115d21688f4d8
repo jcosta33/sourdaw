@@ -1,0 +1,23 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_4c8cd08893b364::t_fd64efa34c586d 914,916,945,947-949
+  s_4c8cd08893b364::t_8a8be7e03cfa19 933,934
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_4c8cd08893b364::t_5a0f7f628ff554 199-209,214-223,226
+  s_4c8cd08893b364::t_091a4e340e1c9f 210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87c68a97149c0b37ce45917de4e115d21688f4d8",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
