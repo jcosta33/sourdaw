@@ -140,22 +140,18 @@ function readConfirmedCommit(
 }
 
 /**
- * A direct commit's batch: the run's receipt no confirmation of the run claims, since every later
- * batch of a run is proposed and receipted through its own confirmation. Its commands are the ones
- * the history recorded under its revert group.
+ * A direct commit's batch: the run's receipt for the very batch the message was stamped with when
+ * that batch began executing. A run can commit several batches directly, each from its own message,
+ * so no other receipt of the run stands in for it. Its commands are the ones the history recorded
+ * under its revert group.
  */
 function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
-    if (message.agentRunId === undefined || message.projectId !== sources.projectId) {
+    const { agentRunId: runId, agentBatchId: batchId } = message;
+    if (runId === undefined || batchId === undefined || message.projectId !== sources.projectId) {
         return null;
     }
-    const runId = message.agentRunId;
-    const confirmedBatchIds = new Set(
-        sources.confirmations.flatMap((candidate) =>
-            candidate.runId === runId && candidate.batchId !== null ? [candidate.batchId] : []
-        )
-    );
     const run = sources.runs.find((candidate) => candidate.runId === runId);
-    const receipt = run?.receipts.find((candidate) => !confirmedBatchIds.has(candidate.workId));
+    const receipt = run?.receipts.find((candidate) => candidate.workId === batchId);
     if (receipt === undefined) {
         return null;
     }
@@ -172,8 +168,8 @@ function readDirectCommit(message: ChatMessage, sources: ThreadContextSources): 
 /**
  * The commit a thread message reports, if it reports one. A message that carries confirmations
  * reports the batch of the one whose receipt its run holds; with no such receipt it reports none,
- * whatever receipts the run holds for other batches. A message without one reports the direct
- * commit of the run it was written for.
+ * whatever receipts the run holds for other batches. A message without one reports the batch it
+ * committed directly, if it was stamped with one.
  */
 function readCommitAt(message: ChatMessage, sources: ThreadContextSources): ThreadContext['lastCommit'] {
     const confirmations = sources.confirmations.filter((candidate) => candidate.assistantMessageId === message.id);

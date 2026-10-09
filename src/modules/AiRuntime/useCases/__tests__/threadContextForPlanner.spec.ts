@@ -212,9 +212,9 @@ function pendingCommandBatch(projectId: string) {
     };
 }
 
-/** A command message the chat stamped for a run in the open project. */
-function commandMessage(id: string, runId: string, projectId = OPEN_PROJECT) {
-    return message(id, 'assistant', 'Executed.', { agentRunId: runId, projectId });
+/** A command message the chat stamped for a run in the open project, and the batch it committed directly. */
+function commandMessage(id: string, runId: string, projectId = OPEN_PROJECT, batchId = `${runId}:batch-1`) {
+    return message(id, 'assistant', 'Executed.', { agentRunId: runId, agentBatchId: batchId, projectId });
 }
 
 const CONTEXT_INPUT = { fixedPolicy: 'policy', prompt: 'a bit less', context, projectRevision: 'revision-1' };
@@ -559,7 +559,120 @@ describe('thread context for the planner', () => {
             expect(threadWith('proposed', ['run-mixed:batch-1'])).toEqual(['command:run-mixed:batch-1']);
         });
 
-        it('reports the unclaimed receipt for a direct commit, though a confirmed batch of its run is listed first', () => {
+        describe('a run that commits later batches directly, each from its own message', () => {
+            const BATCH_1 = 'run-scheduled:batch-1';
+            const BATCH_2 = 'run-scheduled:batch-2';
+            const ACTION_GROUPS = [
+                { groupId: BATCH_1, reverted: false, actions: [{ actionType: 'muteTrack', label: 'Mute Layer 1' }] },
+                { groupId: BATCH_2, reverted: false, actions: [{ actionType: 'muteTrack', label: 'Mute Layer 2' }] },
+            ];
+
+            /** The first batch's message and confirmations: committed directly, or through its confirmation. */
+            function firstBatchOf(firstBatch: 'direct' | 'confirmed') {
+                if (firstBatch === 'direct') {
+                    return {
+                        message: commandMessage('assistant-1', 'run-scheduled', OPEN_PROJECT, BATCH_1),
+                        confirmations: [],
+                    };
+                }
+                return {
+                    message: message('assistant-1', 'assistant', 'Batch 1 of 2 executed.', {
+                        agentRunId: 'run-scheduled',
+                        projectId: OPEN_PROJECT,
+                    }),
+                    confirmations: [
+                        confirmation({
+                            runId: 'run-scheduled',
+                            assistantMessageId: 'assistant-1',
+                            status: 'executed',
+                            batchId: BATCH_1,
+                        }),
+                    ],
+                };
+            }
+
+            function scheduledThread(input: {
+                firstBatch: 'direct' | 'confirmed';
+                past: readonly string[];
+                future?: readonly string[];
+                receipts?: readonly string[];
+            }) {
+                const first = firstBatchOf(input.firstBatch);
+                return buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute every layer track'),
+                            first.message,
+                            commandMessage('assistant-2', 'run-scheduled', OPEN_PROJECT, BATCH_2),
+                        ],
+                        confirmations: first.confirmations,
+                        runs: [
+                            {
+                                runId: 'run-scheduled',
+                                receipts: (input.receipts ?? [BATCH_1, BATCH_2]).map((batch) =>
+                                    receipt('run-scheduled', batch)
+                                ),
+                            },
+                        ],
+                        actionGroups: ACTION_GROUPS,
+                        pastGroupIds: new Set(input.past),
+                        futureGroupIds: new Set(input.future ?? []),
+                    })
+                )?.lastCommit;
+            }
+
+            it('reports the newest directly committed batch by its own receipt and commands', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1, BATCH_2] })).toEqual({
+                    runId: 'run-scheduled',
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'standing',
+                    commands: [{ name: 'muteTrack', label: 'Mute Layer 2' }],
+                    measuredDeltas: [],
+                });
+            });
+
+            it('reports the newest direct batch undone after it alone was undone, never the earlier one standing', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1], future: [BATCH_2] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'undone',
+                    commands: [{ label: 'Mute Layer 2' }],
+                });
+            });
+
+            it('reports a later direct batch after a confirmed first batch', () => {
+                expect(scheduledThread({ firstBatch: 'confirmed', past: [BATCH_1, BATCH_2] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_2}`],
+                    standing: 'standing',
+                    commands: [{ label: 'Mute Layer 2' }],
+                });
+            });
+
+            it('falls back to the earlier direct batch when the later one committed nothing', () => {
+                expect(scheduledThread({ firstBatch: 'direct', past: [BATCH_1], receipts: [BATCH_1] })).toMatchObject({
+                    receiptIds: [`command:${BATCH_1}`],
+                    commands: [{ label: 'Mute Layer 1' }],
+                });
+            });
+
+            it('reads no direct commit from a run message stamped with no batch, though its run holds a receipt', () => {
+                const thread = buildThreadContext(
+                    sources({
+                        messages: [
+                            message('user-1', 'user', 'mute the pad'),
+                            message('assistant-1', 'assistant', 'Executing...', {
+                                agentRunId: 'run-unstamped',
+                                projectId: OPEN_PROJECT,
+                            }),
+                        ],
+                        runs: [{ runId: 'run-unstamped', receipts: [receipt('run-unstamped')] }],
+                    })
+                );
+
+                expect(thread).toBeNull();
+            });
+        });
+
+        it('reports the batch a direct commit was stamped with, though another batch of its run is listed first', () => {
             const thread = buildThreadContext(
                 sources({
                     messages: [
