@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getTempoAtBeat } from '../../../models/TempoMap';
+import { getBarBeatAtPosition } from '../../../models/TimeSignatureMap';
+
 import type { TempoChange, TempoMapStoreState } from '../../../stores/tempoMapStore';
 import type { TimeSignatureChange, TimeSignatureMapStoreState } from '../../../stores/timeSignatureMapStore';
 
@@ -20,6 +23,7 @@ vi.mock('../../../stores/timeSignatureMapStore', async (importOriginal) => {
 const { tempoMapStore } = await import('../../../stores/tempoMapStore');
 const { timeSignatureMapStore } = await import('../../../stores/timeSignatureMapStore');
 const { prepareTimelineMapTimeOperation } = await import('../prepareTimelineMapTimeOperation');
+const { prepareTimelineMapStateRestore } = await import('../prepareTimelineMapStateRestore');
 
 type PrepareInput = Parameters<typeof prepareTimelineMapTimeOperation>[0];
 type TimelineMapTimeOperation = PrepareInput['operation'];
@@ -186,6 +190,451 @@ describe('prepareTimelineMapTimeOperation', () => {
         expect(timeSignatureMapStore.value?.changes[1]).not.toBe(signatureEnd);
     });
 
+    describe('delete carries the tempo and meter in force at the span end forward to its start', () => {
+        function deleteTime(startBeat: number, endBeat: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat, endBeat },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        // The bar number differs after a cut that removes whole bars; the position inside the bar must not.
+        function positionInBar(changes: TimeSignatureChange[], beat: number): { beat: number; tick: number } {
+            const { beat: beatInBar, tick } = getBarBeatAtPosition(changes, beat, 4, 4);
+            return { beat: beatInBar, tick };
+        }
+
+        function tempoEvents(): Array<[number, number]> {
+            return (tempoMapStore.value?.changes ?? []).map(({ beat, tempo }) => [beat, tempo]);
+        }
+
+        function meterEvents(): Array<[number, number]> {
+            return (timeSignatureMapStore.value?.changes ?? []).map(({ beat, numerator }) => [beat, numerator]);
+        }
+
+        it('inserts the tempo of a change inside the span at the span start, so later material keeps it', () => {
+            setStoreStates(tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(9.5, 10.5);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [9.5, 60],
+            ]);
+        });
+
+        it('opens the carried meter where the first old downbeat lands, so material after the cut keeps its bars', () => {
+            const capturedMeters = [timeSignatureChange('a', 0, 4), timeSignatureChange('b', 10, 3)];
+            setStoreStates(tempoState([]), timeSignatureState(capturedMeters));
+
+            deleteTime(9.5, 10.5);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [12, 3],
+            ]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            for (const [oldBeat, newBeat] of [
+                [13, 12],
+                [16, 15],
+            ] as const) {
+                const position = positionInBar(after, newBeat);
+                expect(position).toEqual(positionInBar(capturedMeters, oldBeat));
+                expect(position).toEqual({ beat: 1, tick: 0 });
+            }
+        });
+
+        it('opens the carried meter on the span start when the span ends exactly on an old downbeat', () => {
+            const capturedMeters = [timeSignatureChange('a', 0, 4), timeSignatureChange('b', 10, 3)];
+            setStoreStates(tempoState([]), timeSignatureState(capturedMeters));
+
+            deleteTime(8, 13);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [8, 3],
+            ]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            for (const [oldBeat, newBeat] of [
+                [13, 8],
+                [16, 11],
+            ] as const) {
+                expect(positionInBar(after, newBeat)).toEqual(positionInBar(capturedMeters, oldBeat));
+            }
+        });
+
+        it('gives beat 0 the tempo in force at the span end when the span starts at 0', () => {
+            setStoreStates(tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(0, 8);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [2, 60],
+            ]);
+        });
+
+        it('gives beat 0 the meter in force at the span end when the span starts at 0', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('a', 0, 4), timeSignatureChange('b', 10, 3)])
+            );
+
+            deleteTime(0, 8);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [2, 3],
+            ]);
+        });
+
+        it('keeps the governing tempo when the only change lies inside a span that starts at 0', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 2, 100)]),
+                timeSignatureState([timeSignatureChange('m', 2, 3)])
+            );
+
+            deleteTime(0, 8);
+
+            expect(tempoEvents()).toEqual([[0, 100]]);
+            expect(meterEvents()).toEqual([[0, 3]]);
+        });
+
+        it('keeps the first change governing the lead-in when the span removes it', () => {
+            setStoreStates(tempoState([tempoChange('a', 5, 100), tempoChange('b', 10, 60)]), timeSignatureState([]));
+
+            deleteTime(4, 8);
+
+            expect(tempoEvents()).toEqual([
+                [4, 100],
+                [6, 60],
+            ]);
+        });
+
+        it('carries the last of several changes inside the span', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 0, 100),
+                    tempoChange('b', 3, 110),
+                    tempoChange('c', 4, 120),
+                    tempoChange('d', 5, 130),
+                    tempoChange('e', 12, 90),
+                ]),
+                timeSignatureState([
+                    timeSignatureChange('m-a', 0, 4),
+                    timeSignatureChange('m-b', 3, 5),
+                    timeSignatureChange('m-c', 4, 6),
+                    timeSignatureChange('m-d', 5, 7),
+                    timeSignatureChange('m-e', 12, 3),
+                ])
+            );
+
+            deleteTime(3.5, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [3, 110],
+                [3.5, 130],
+                [9.5, 90],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [3, 5],
+                [3.5, 7],
+                [9.5, 3],
+            ]);
+        });
+
+        it('adds no duplicate when the span ends exactly on a change', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 0, 120), tempoChange('b', 6, 90)]),
+                timeSignatureState([timeSignatureChange('m-a', 0, 4), timeSignatureChange('m-b', 6, 3)])
+            );
+
+            deleteTime(4, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [4, 90],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [4, 3],
+            ]);
+            expect(tempoMapStore.value?.changes[1]?.id).toBe('b');
+            expect(timeSignatureMapStore.value?.changes[1]?.id).toBe('m-b');
+        });
+
+        it('adds nothing when the value in force at the span end already holds before its start', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 0, 120), tempoChange('b', 5, 90), tempoChange('c', 8, 120)]),
+                timeSignatureState([
+                    timeSignatureChange('m-a', 0, 4),
+                    timeSignatureChange('m-b', 5, 3),
+                    timeSignatureChange('m-c', 8, 4),
+                ])
+            );
+
+            deleteTime(4, 12);
+
+            expect(tempoEvents()).toEqual([[0, 120]]);
+            expect(meterEvents()).toEqual([[0, 4]]);
+        });
+
+        it('re-opens the same meter where an old downbeat lands when the cut would shift the bar phase', () => {
+            const capturedMeters = [
+                timeSignatureChange('m-a', 0, 4),
+                timeSignatureChange('m-b', 5, 3),
+                timeSignatureChange('m-c', 7, 4),
+            ];
+            setStoreStates(tempoState([]), timeSignatureState(capturedMeters));
+
+            deleteTime(4, 8);
+
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [7, 4],
+            ]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(positionInBar(after, 7)).toEqual(positionInBar(capturedMeters, 11));
+        });
+
+        it('keeps the tempo ramp in motion when the value at the span end matches the value before its start', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 0, 120),
+                    { id: 'b', beat: 5, tempo: 100, curve: 'linear' },
+                    tempoChange('c', 10, 200),
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(4, 6);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 120, 'instant'],
+                [4, 120, 'linear'],
+                [8, 200, 'instant'],
+            ]);
+            expect([4, 5, 6, 7].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([120, 140, 160, 180]);
+        });
+
+        it('carries the value a ramp reached at the span end and keeps its slope', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    { id: 'b', beat: 10, tempo: 200, curve: 'instant' },
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(4, 6);
+
+            expect(tempoMapStore.value?.changes.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 100, 'linear'],
+                [4, 160, 'linear'],
+                [8, 200, 'instant'],
+            ]);
+        });
+
+        it('carries the held tempo when the remaining map is still ramping at the span start', () => {
+            setStoreStates(
+                tempoState([
+                    { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                    tempoChange('b', 5, 150),
+                    tempoChange('c', 10, 200),
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(4, 6);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 100, 'linear'],
+                [4, 150, 'instant'],
+                [8, 200, 'instant'],
+            ]);
+            expect([4, 5, 6, 7].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([150, 150, 150, 150]);
+        });
+
+        it('keeps the lead-in tempo when the span removes the first change', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 4, 100), tempoChange('b', 5, 80), tempoChange('c', 12, 140)]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [2, 80],
+                [8, 140],
+            ]);
+        });
+
+        it('carries the span-end tempo past a kept lead-in that would otherwise read at the span start', () => {
+            setStoreStates(
+                tempoState([tempoChange('a', 4, 80), tempoChange('b', 6, 180), tempoChange('c', 10, 180)]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 8);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo }) => [beat, tempo])).toEqual([
+                [0, 80],
+                [2, 180],
+                [4, 180],
+            ]);
+            expect([0, 1, 2, 3].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([80, 80, 180, 180]);
+        });
+
+        it('carries the span-end tempo past a kept lead-in when a ramp follows the cut', () => {
+            setStoreStates(
+                tempoState([
+                    tempoChange('a', 4, 80),
+                    tempoChange('b', 6, 180),
+                    { id: 'c', beat: 10, tempo: 180, curve: 'linear' },
+                    tempoChange('d', 14, 120),
+                ]),
+                timeSignatureState([])
+            );
+
+            deleteTime(2, 8);
+
+            const after = tempoMapStore.value?.changes ?? [];
+            expect(after.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
+                [0, 80, 'instant'],
+                [2, 180, 'instant'],
+                [4, 180, 'linear'],
+                [8, 120, 'instant'],
+            ]);
+            expect([2, 3].map((beat) => getTempoAtBeat(after, beat, 120))).toEqual([180, 180]);
+        });
+
+        it('keeps the lead-in tempo when the change at the span end becomes the first change', () => {
+            setStoreStates(tempoState([tempoChange('a', 4, 100), tempoChange('b', 6, 80)]), timeSignatureState([]));
+
+            deleteTime(2, 6);
+
+            expect(tempoEvents()).toEqual([
+                [0, 100],
+                [2, 80],
+            ]);
+        });
+
+        it('carries the implied meter of an empty map, so later bars keep their downbeats', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+
+            deleteTime(1, 2);
+
+            expect(meterEvents()).toEqual([[3, 4]]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(positionInBar(after, 3)).toEqual(positionInBar([], 4));
+            expect(positionInBar(after, 7)).toEqual(positionInBar([], 8));
+        });
+
+        it('carries the implied meter in force before the first explicit change', () => {
+            const capturedMeters = [timeSignatureChange('a', 10, 3)];
+            setStoreStates(tempoState([]), timeSignatureState(capturedMeters));
+
+            deleteTime(1, 2);
+
+            expect(meterEvents()).toEqual([
+                [3, 4],
+                [9, 3],
+            ]);
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(positionInBar(after, 3)).toEqual(positionInBar(capturedMeters, 4));
+        });
+
+        it('carries no implied meter when the cut removes whole bars', () => {
+            setStoreStates(tempoState([]), timeSignatureState([]));
+
+            const transaction = expectClosedWithoutWrite({ type: 'delete', startBeat: 1, endBeat: 5 });
+
+            expect(transaction.status).toBe('ready');
+        });
+
+        it('falls back to the span start when the first old downbeat lands on the next change', () => {
+            setStoreStates(
+                tempoState([]),
+                timeSignatureState([timeSignatureChange('a', 0, 4), timeSignatureChange('b', 12, 3)])
+            );
+
+            deleteTime(9, 10);
+
+            // A later downbeat of 4/4 would sit past the 3/4 change that already opens its own bar.
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [11, 3],
+            ]);
+        });
+
+        it('restores the exact previous maps on undo and re-creates the carried maps on redo', () => {
+            const capturedTempo = tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]);
+            const capturedTimeSignature = timeSignatureState([
+                timeSignatureChange('m-a', 0, 4),
+                timeSignatureChange('m-b', 10, 3),
+            ]);
+            setStoreStates(capturedTempo, capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat: 9.5, endBeat: 10.5 },
+            });
+            const plan = transaction.inversePlan;
+            if (!plan) {
+                throw new Error('Expected a changed delete to produce an inverse plan');
+            }
+
+            expect(transaction.apply()).toBe(true);
+            const appliedTempo = tempoMapStore.value;
+            const appliedTimeSignature = timeSignatureMapStore.value;
+            expect(tempoEvents()).toEqual([
+                [0, 120],
+                [9.5, 60],
+            ]);
+            expect(meterEvents()).toEqual([
+                [0, 4],
+                [12, 3],
+            ]);
+
+            const undo = prepareTimelineMapStateRestore(plan);
+            expect(undo.apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(capturedTempo);
+            expect(timeSignatureMapStore.value).toEqual(capturedTimeSignature);
+
+            const redo = prepareTimelineMapStateRestore({
+                version: 1,
+                expected: plan.replacement,
+                replacement: plan.expected,
+            });
+            expect(redo.apply()).toBe(true);
+            expect(tempoMapStore.value).toEqual(appliedTempo);
+            expect(timeSignatureMapStore.value).toEqual(appliedTimeSignature);
+        });
+
+        it('reverts the transaction to the exact captured state identities', () => {
+            const capturedTempo = tempoState([tempoChange('a', 0, 120), tempoChange('b', 10, 60)]);
+            const capturedTimeSignature = timeSignatureState([
+                timeSignatureChange('m-a', 0, 4),
+                timeSignatureChange('m-b', 10, 3),
+            ]);
+            setStoreStates(capturedTempo, capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat: 9.5, endBeat: 10.5 },
+            });
+
+            expect(transaction.apply()).toBe(true);
+            expect(transaction.revert()).toBe(true);
+
+            expect(tempoMapStore.value).toBe(capturedTempo);
+            expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
+        });
+    });
+
     it.each([
         { type: 'insert' as const, atBeat: Number.NaN, durationBeats: 1 },
         { type: 'insert' as const, atBeat: -1, durationBeats: 1 },
@@ -255,7 +704,8 @@ describe('prepareTimelineMapTimeOperation', () => {
         },
         {
             name: 'delete',
-            operation: { type: 'delete' as const, startBeat: 0, endBeat: 1 },
+            // Four beats is one bar of the implied 4/4, so the cut keeps every bar phase and carries no meter.
+            operation: { type: 'delete' as const, startBeat: 0, endBeat: 4 },
         },
     ])('reports no change when finite $name arithmetic rounds to the original beats', ({ operation }) => {
         const tempo = tempoChange('tempo', Number.MAX_VALUE);

@@ -280,20 +280,43 @@ describe('LevainProcessor message handling', () => {
     it('suppresses process() output while bypassed', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init' });
-        send(proc, { type: 'bypass', bypassed: true });
-        calls.length = 0;
+        expect(proc.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
 
-        const output = makeChannels(2, FRAMES);
-        proc.process([], [output]);
+        // Verify processor is working: with bypass off, process() calls the engine
+        // and writes the mock engine's seeded output (0.1 / 0.2).
+        const outputWorking = makeChannels(2, FRAMES);
+        proc.process([], [outputWorking]);
+
+        expect({
+            silent: outputWorking.map((channel) => channel.every((sample) => sample === 0)),
+            engineProcessCalls,
+        }).toEqual({
+            silent: [false, false],
+            engineProcessCalls: 1,
+        });
+
+        // Verify the seeded values match the mock engine output.
+        for (const sample of outputWorking[0]!) {
+            expect(sample).toBeCloseTo(0.1, 6);
+        }
+        for (const sample of outputWorking[1]!) {
+            expect(sample).toBeCloseTo(0.2, 6);
+        }
+
+        // Now verify bypass silences output and prevents engine calls.
+        send(proc, { type: 'bypass', bypassed: true });
+        const engineCallsBefore = engineProcessCalls;
+        const outputBypassed = makeChannels(2, FRAMES);
+        proc.process([], [outputBypassed]);
 
         // The mock engine renders 0.1 / 0.2 into the output when `process` runs, so
         // a bypassed block that still reaches the engine leaves audible samples.
         // The output stays silent anyway if the return moves after the engine
         // call, which is why the engine's own call count is asserted too.
         expect({
-            silent: output.map((channel) => channel.every((sample) => sample === 0)),
+            silent: outputBypassed.map((channel) => channel.every((sample) => sample === 0)),
             engineProcessCalls,
-        }).toEqual({ silent: [true, true], engineProcessCalls: 0 });
+        }).toEqual({ silent: [true, true], engineProcessCalls: engineCallsBefore });
     });
 
     it('loads a sample and forwards addSample args to the instance', async () => {

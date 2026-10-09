@@ -108,6 +108,7 @@ export { getTrackStrip } from './engineAccess/getTrackStrip';
 export { getToasterDeviceControls } from './engineAccess/getToasterDeviceControls';
 export { ensureTrackStrip } from './engineAccess/ensureTrackStrip';
 export { removeTrackStrip } from './engineAccess/removeTrackStrip';
+export { deactivateTrackStrip } from './engineAccess/deactivateTrackStrip';
 export { getAudioTime } from './engineAccess/getAudioTime';
 export { ensureBusStrip } from './engineAccess/ensureBusStrip';
 export { removeBusStrip } from './engineAccess/removeBusStrip';

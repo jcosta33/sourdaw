@@ -175,6 +175,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     matchesRuntimeDeviceChainTopology: vi.fn(() => true),
     removeBusStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(() => null),
