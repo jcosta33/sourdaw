@@ -93,21 +93,57 @@ export async function createLevainNode(
     let destroyed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
+    let portClosed = false;
+    let drainingDisposal = false;
+
+    // The port stays open from `destroy()` until the worklet has freed what the
+    // disposed processor held, or can no longer answer: it reported an error,
+    // or the context closed and took the worklet scope with it.
+    const closePort = (): void => {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        ctx.removeEventListener('statechange', handleContextStateChange);
+        node.port.close();
+    };
+    function handleContextStateChange(): void {
+        if (ctx.state === 'closed') {
+            closePort();
+        }
+    }
+    const requestDisposalRelease = (): void => {
+        node.port.postMessage({ type: 'releaseDisposedBanks' });
+    };
+
     node.port.onmessage = (event: MessageEvent<unknown>) => {
-        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+        const data: unknown = event.data;
+        const type = data && typeof data === 'object' && 'type' in data ? data.type : undefined;
+        if (type === 'disposed') {
             handshake.reject(new Error('LevainNode disposed before initialization completed'));
-            node.port.close();
+            if (!drainingDisposal) {
+                drainingDisposal = true;
+                requestDisposalRelease();
+            }
+            return;
+        }
+        if (drainingDisposal) {
+            // One bounded step per message keeps each free a fraction of a render quantum.
+            if (type === 'disposedBanksReleased' && data && typeof data === 'object' && 'done' in data) {
+                if (data.done === true) {
+                    closePort();
+                } else {
+                    requestDisposalRelease();
+                }
+            } else if (type === 'error') {
+                closePort();
+            }
             return;
         }
         const outcome = handshake.onMessage(event);
-        if (
-            outcome === 'late' &&
-            event.data &&
-            typeof event.data === 'object' &&
-            'type' in event.data &&
-            event.data.type === 'error'
-        ) {
-            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+        if (outcome === 'late' && type === 'error') {
+            const message =
+                data && typeof data === 'object' && 'message' in data ? String(data.message) : 'Unknown error';
             logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', message);
             onFault?.(message);
         }
@@ -219,6 +255,11 @@ export async function createLevainNode(
         }
         destroyed = true;
         disconnect();
+        ctx.addEventListener('statechange', handleContextStateChange);
+        if (ctx.state === 'closed') {
+            closePort();
+            return;
+        }
         node.port.postMessage({ type: 'dispose' });
     };
 

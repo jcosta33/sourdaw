@@ -20,6 +20,7 @@
  *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
  *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
  *   { type: 'releaseRetiredBank', loadToken }
+ *   { type: 'releaseDisposedBanks' }
  *   { type: 'dispose' }
  *
  * Committing a bank (`buildZoneMap`) builds the zone map in that message, then
@@ -29,6 +30,12 @@
  * own, one bounded step each, answered by
  * `retiredBankReleased { loadToken, done }`. Nothing frees a bank inside the
  * commit, the abort or `process()`.
+ *
+ * A disposed processor frees nothing in `dispose`. The host then sends
+ * `releaseDisposedBanks`, the only message a disposed processor still honours,
+ * one bounded step per message, answered by `disposedBanksReleased { done }`:
+ * a step releases the retired bank, else retires the sounding bank, else (both
+ * slots empty) frees the engine, which then holds nothing bank-sized.
  *
  * A faulted processor drops every message except these two, which it answers
  * by posting its `error` again, so a host that began listening after the fault
@@ -161,6 +168,7 @@ type LevainMsg =
     | LevainAddLegatoTransitionMsg
     | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
     | { type: 'releaseRetiredBank'; loadToken: number }
+    | { type: 'releaseDisposedBanks' }
     | { type: 'dispose' };
 
 type LevainQueued =
@@ -190,6 +198,13 @@ const inFlightBanks = new Map<string, InFlightBank>();
  */
 const RETIRED_BANK_RELEASE_ENTRIES = 256;
 
+/**
+ * Disposed processors whose engine still holds a bank, kept reachable so
+ * neither the processor nor its engine is collected (and its finalizer run, in
+ * one unbounded free) before the host's paced release reaches done.
+ */
+const drainingProcessors = new Set<LevainProcessor>();
+
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
@@ -198,6 +213,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     // The message of the fault that set `_faulted`, posted again to a host that asks after it.
     _faultMessage: string | null = null;
     _disposed = false;
+    // Set when a disposal-release step threw: the engine can no longer be
+    // trusted, so it is never freed from here.
+    _disposalPoisoned = false;
     _bypassed = false;
     _pendingMessages: LevainMsg[] = [];
     _queue: LevainQueued[] = [];
@@ -222,6 +240,12 @@ class LevainProcessor extends AudioWorkletProcessor {
             const msg = event.data;
             if (msg.type === 'dispose') {
                 this._dispose();
+                return;
+            }
+            if (msg.type === 'releaseDisposedBanks') {
+                if (this._disposed) {
+                    this._releaseDisposedBanks();
+                }
                 return;
             }
             if (this._disposed) {
@@ -438,6 +462,9 @@ class LevainProcessor extends AudioWorkletProcessor {
             return;
         }
         this._disposed = true;
+        if (this._instance) {
+            drainingProcessors.add(this);
+        }
         this._pendingMessages = [];
         this._queue = [];
         this._queueHead = 0;
@@ -451,6 +478,41 @@ class LevainProcessor extends AudioWorkletProcessor {
         } finally {
             this.port.postMessage({ type: 'disposed' });
         }
+    }
+
+    /**
+     * One bounded step of emptying a disposed engine, in the order that leaves
+     * nothing bank-sized for `free()`: release the retired bank, retire the
+     * sounding one, and only then free the engine. The answer is `done` once
+     * the engine is gone, or poisoned by a throwing step and left unfreed.
+     */
+    _releaseDisposedBanks(): void {
+        const inst = this._instance;
+        if (!inst || this._disposalPoisoned) {
+            this._finishDisposalRelease();
+            return;
+        }
+        try {
+            if (inst.has_retired_bank()) {
+                inst.release_retired_bank(RETIRED_BANK_RELEASE_ENTRIES);
+            } else if (!inst.retire_sample_bank()) {
+                this._instance = null;
+                inst.free();
+                this._finishDisposalRelease();
+                return;
+            }
+        } catch (error) {
+            console.error('LevainProcessor disposal release failed:', error);
+            this._disposalPoisoned = true;
+            this._finishDisposalRelease();
+            return;
+        }
+        this.port.postMessage({ type: 'disposedBanksReleased', done: false });
+    }
+
+    _finishDisposalRelease(): void {
+        drainingProcessors.delete(this);
+        this.port.postMessage({ type: 'disposedBanksReleased', done: true });
     }
 
     _leaveBankLoad(error: unknown): void {
