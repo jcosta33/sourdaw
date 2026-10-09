@@ -520,7 +520,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(setLevainEngineReady).toHaveBeenCalledWith({ deviceId: 'lev-2', isReady: false });
             expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
             expect(result.destroy).toHaveBeenCalledOnce();
-            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-2');
+            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-2', result.workletNode.port);
             expect(onRuntimeRecovery).toHaveBeenCalledOnce();
             expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
         });
@@ -573,7 +573,55 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(() => loaded.controller?.destroy?.()).not.toThrow();
             expect(result.destroy).toHaveBeenCalledTimes(1);
-            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-3');
+            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-3', result.workletNode.port);
+        });
+
+        it.each([
+            ['dispose', (node: BuiltinDeviceNode) => node.dispose?.()],
+            ['controller.destroy', (node: BuiltinDeviceNode) => node.controller?.destroy?.()],
+            ['levainControls.destroy', (node: BuiltinDeviceNode) => node.levainControls?.destroy()],
+        ])('%s destroys the node and releases the registration its own port made', async (_route, tearDown) => {
+            const result = makeLevainResult();
+            factoryMocks.createLevainNode.mockResolvedValue(result);
+            const registerLevainDevice = vi.fn(() => Promise.resolve<DeviceContentLoadOutcome>('ready'));
+            const unregisterLevainDevice = vi.fn();
+            setAudioDeviceRuntimeSink({ registerLevainDevice, unregisterLevainDevice });
+            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-route' });
+
+            await requireDescriptor('levain').create(deps).loadPromise;
+            expect(registerLevainDevice).toHaveBeenCalledWith(
+                expect.objectContaining({ deviceId: 'lev-route', port: result.workletNode.port })
+            );
+            tearDown(lastLoadedNode(deps.onLoaded));
+
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(unregisterLevainDevice).toHaveBeenCalledOnce();
+            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-route', result.workletNode.port);
+        });
+
+        it("names the rejected node's own port when a stale node is disposed after a newer one registered", async () => {
+            const newer = makeLevainResult();
+            const stale = makeLevainResult();
+            factoryMocks.createLevainNode.mockResolvedValueOnce(newer).mockResolvedValueOnce(stale);
+            const registerLevainDevice = vi.fn(() => Promise.resolve<DeviceContentLoadOutcome>('ready'));
+            const unregisterLevainDevice = vi.fn();
+            setAudioDeviceRuntimeSink({ registerLevainDevice, unregisterLevainDevice });
+            const newerDeps = createDeps({ deviceType: 'levain', deviceId: 'lev-same' });
+            await requireDescriptor('levain').create(newerDeps).loadPromise;
+            const staleDeps = createDeps({
+                deviceType: 'levain',
+                deviceId: 'lev-same',
+                onLoaded: vi.fn(() => false),
+            });
+
+            await requireDescriptor('levain').create(staleDeps).loadPromise;
+            expect(registerLevainDevice).toHaveBeenCalledOnce();
+            lastLoadedNode(staleDeps.onLoaded).dispose?.();
+
+            expect(stale.destroy).toHaveBeenCalledOnce();
+            expect(unregisterLevainDevice).toHaveBeenCalledOnce();
+            expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-same', stale.workletNode.port);
+            expect(unregisterLevainDevice).not.toHaveBeenCalledWith('lev-same', newer.workletNode.port);
         });
     });
 
