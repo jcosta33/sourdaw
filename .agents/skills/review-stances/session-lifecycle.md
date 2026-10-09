@@ -192,3 +192,12 @@ disconnects, stops or reacquisitions on refusal, and read the raw committed docu
 edge disconnect and last-owner stop. Preserve a direct On admitted before its mode flush while an
 unrelated owned publication occurs. Reverting the admitted-interest sweep or committed-absence
 fence must fail the corresponding real capture probe.
+
+Monitoring capability comes from Arrangement's `getTrackEligibility(...).acceptsMonitoring`, not
+from a recorder-owned list of kinds. PR #5091's first repair incorrectly treated bus, master and
+folder On as ineligible while the real toggle admitted them. Tests asserting those wrong closures
+passed without proving admission. Start a bus through the real Auto-to-On toggle, publish play and
+stop, and require saved On, admitted interest and its source edge to survive; repeat for every
+owner-supported kind, including permission still pending. Off and true ineligibility (VCA) must
+release only that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Controlled
+gain-node ports prove ownership, not actual folder-strip creation or hardware audio.

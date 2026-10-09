@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { isTrackInputMonitored } from '../../repositories/audioRecorder/isTrackInputMonitored';
@@ -101,7 +101,10 @@ export function reconcileAutoInputMonitoring(): void {
     for (const track of tracks) {
         presentIds.add(track.id);
         if (track.kind !== 'audio') {
-            if ((track.kind !== 'midi' || track.inputMonitoring !== 'on') && interestedIds.has(track.id)) {
+            if (
+                (!getTrackEligibility(track.kind).acceptsMonitoring || track.inputMonitoring !== 'on') &&
+                interestedIds.has(track.id)
+            ) {
                 closeEdge(track.id);
             }
             continue;
