@@ -63,6 +63,12 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
 ## Standing probes
 
+- Cross-module mocks are dependencies too. PR #5165's recorder placement fixture reached the real
+  processor and Command path but mocked eight private Transport functions; hosted Module boundaries
+  rejected those edges before merge. Trace each controlled dependency to an existing public port,
+  preserve the actual producer and caller path, and require the original timing, PCM and Undo/Redo
+  assertions to survive with the foreign private functions running. A green focused spec does not
+  discharge the hosted boundary check.
 - An aggregation test claiming a stored report route must use the production reader's filename and
   assert that both input records were admitted. An ignored artifact can make a boundary control pass
   while never reaching the claimed addition. For TypeSafe usage, prove stored scan plus verification

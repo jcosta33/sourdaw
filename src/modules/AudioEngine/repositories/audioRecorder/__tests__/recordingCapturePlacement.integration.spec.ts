@@ -81,6 +81,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         getAudioContext: () => context,
         resumeEngine: () => Promise.resolve(),
         nativeLiveGraphSessionOffered: () => true,
+        startNativeLiveGraphSession: async (): Promise<
+            Awaited<ReturnType<typeof real.startNativeLiveGraphSession>>
+        > => {
+            hardware.rollStarts++;
+            await hardware.rollGate;
+            return { outcome: 'started', runtimeRevision: 1, reports: [] };
+        },
         getCompensationDelay: () => 0,
         stopAllScheduled: vi.fn(),
         refreshSidechainAlignment: vi.fn(),
@@ -90,25 +97,18 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         readNativeEnginePlayheadSeconds: () => null,
     };
 });
-vi.mock('#/modules/Transport/useCases/transportControls/startNativeSessionAtBeat', () => ({
-    startNativeSessionAtBeat: () => {
-        hardware.rollStarts++;
-        return hardware.rollGate;
-    },
-}));
-vi.mock('#/modules/Transport/useCases/scheduling/scheduleMidiNotes', () => ({
-    scheduleMidiNotes: () => Promise.resolve(),
-}));
-vi.mock('#/modules/Transport/useCases/scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
-vi.mock('#/modules/Transport/useCases/scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
-vi.mock('#/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation', () => ({
-    applyAutomation: () => new Set(),
-}));
-vi.mock('#/modules/Transport/useCases/scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains: vi.fn() }));
-vi.mock('#/modules/Transport/useCases/transportControls/panicYeastRuntime', () => ({
-    panicYeastRuntime: () => Promise.resolve(),
-}));
-vi.mock('#/modules/Transport/useCases/ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases', async (original) => {
+    const real = await original<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...real,
+        projectTrackToLiveStrip: (): ReturnType<typeof real.projectTrackToLiveStrip> => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'recorder-placement-fixture' },
+            runtimeRevision: 1,
+        }),
+    };
+});
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Automation/useCases', async (original) => ({
     ...(await original<typeof import('#/modules/Automation/useCases')>()),
