@@ -21,6 +21,7 @@ const REVIEW_TOOLING = new Set([
     'publishLane',
     'publishReview',
     'reconcileTrackerIssue',
+    'reconstructReviewRounds',
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
@@ -31,6 +32,7 @@ const REVIEW_TOOLING = new Set([
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
     'semanticReview',
@@ -55,6 +57,11 @@ const REVIEW_TOOLING = new Set([
     'trustedGithubWriteBootstrap',
     'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const RELEASE_TOOLING_METADATA = new Set([
+    'release/open-source-inventory.json',
+    'release/dependency-license-proofs.json',
 ]);
 
 const SEMANTIC_REVIEW_TOOLING = new Set([
@@ -129,6 +136,9 @@ function needsCodeql(path: string): boolean {
 }
 
 function isReviewTooling(path: string): boolean {
+    if (RELEASE_TOOLING_METADATA.has(path)) {
+        return true;
+    }
     if (path.startsWith('scripts/semanticReview/')) {
         return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
     }

@@ -232,7 +232,7 @@ describe('renderOffline — cancelling an in-flight render', () => {
         await rejection;
         expect(context.resumeCount).toBe(1);
         expect(context.renderCompleted).toBe(false);
-        // A freeze or bounce beside this render reads this flag; the stop was this render's alone.
+        // An export beside this render reads this flag; the stop was this render's alone.
         expect(exportCancellationState.cancelFlag).toBe(false);
         expect(() => checkCancel()).not.toThrow();
     });

@@ -85,6 +85,7 @@ type WebFileHandle = {
     createWritable: () => Promise<{
         write: (data: Uint8Array) => Promise<void>;
         close: () => Promise<void>;
+        abort: () => Promise<void>;
     }>;
 };
 
@@ -451,6 +452,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setProgress(0);
         setStatusText('Heating the offline oven...');
 
+        // Set once the export's last file is being committed: the browser save's close, or the
+        // dispatch of the final native write. From then on the export has succeeded and a Cancel no
+        // longer decides its outcome, so the export ends in exactly one of the two states.
+        let committed = false;
+        const endedCancelled = (): boolean => cancelledRef.current && !committed;
+
         try {
             // Restore audio buffers from IndexedDB before rendering.
             // The primary CRDT load path (loadProject → projectCrdtToStores) does not
@@ -500,7 +507,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 buffer: AudioBuffer,
                 name: string,
                 fractionOffset: number,
-                fractionRange: number
+                fractionRange: number,
+                isFinalBuffer: boolean
             ) => {
                 // Normalize once, before the format loop, so every
                 // requested format is encoded from identical audio.
@@ -545,17 +553,29 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         fileData = await encodeWav(buffer, bd, passProgress, ditherOptions);
                     }
 
+                    // A Cancel pressed while this format was encoding stops here: the encoder
+                    // finished, but nothing of it may reach disk.
+                    if (cancelledRef.current) {
+                        return;
+                    }
+
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
                     const finalFileName = `${name}.${freq}`;
 
+                    // The export's last file: once its write is dispatched nothing is left to stop, and a
+                    // native write cannot be recalled, so the export has succeeded whatever Cancel does next.
+                    const isFinalFile = isFinalBuffer && currentPass === formatList.length - 1;
+
                     if (isNativeProjectRuntimeAvailable()) {
                         if (mode === 'stems' && nativeDirPath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioStemFile({
                                 bytes: uint8Data,
                                 directoryPath: nativeDirPath,
                                 fileName: finalFileName,
                             });
                         } else if (nativeFilePath) {
+                            committed = committed || isFinalFile;
                             await writeNativeAudioMixdownFile({
                                 bytes: uint8Data,
                                 format: freq,
@@ -683,7 +703,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const stemOffset = 50 + (doneStems / totalStems) * 50;
                     const stemRange = 50 / totalStems;
 
-                    await serializeAudio(buffer, safeTName, stemOffset, stemRange);
+                    await serializeAudio(buffer, safeTName, stemOffset, stemRange, doneStems === totalStems - 1);
                     doneStems++;
                 }
             } else {
@@ -720,10 +740,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
 
                 // We map the remaining 40% of the progress bar to encoding the mixdown
-                await serializeAudio(buffer, baseName, 60, 40);
+                await serializeAudio(buffer, baseName, 60, 40, true);
             }
 
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
                 return;
             }
 
@@ -751,7 +771,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 if (webFileHandle) {
                     // File System Access Method
                     const writable = await webFileHandle.createWritable();
+                    // A Cancel pressed while the file was being opened or written must not commit it:
+                    // closing a writable is what makes the file appear, so a cancelled one is aborted.
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
                     await writable.write(finalBytes);
+                    if (cancelledRef.current) {
+                        await writable.abort();
+                        return;
+                    }
+                    committed = true;
                     await writable.close();
                 } else {
                     // Fallback
@@ -770,9 +801,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
             }, 2500);
         } catch (error) {
-            if (cancelledRef.current) {
-                setStatusText('Oven turned off.');
-            } else {
+            // A Cancel's own failure is reported by the finally below.
+            if (!endedCancelled()) {
                 const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
@@ -782,7 +812,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
         } finally {
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
+                // Every Cancel exit before the commit ends here, whether it threw or returned: the
+                // export is reported as cancelled, so the bar must not keep the encoder's last
+                // figure, and 100 would show the finished state. Native files written before the
+                // Cancel stay on disk; the Cancel only stops the formats or stems after them.
+                setProgress(0);
+                setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);
             } else {
                 // Success or error — both unblock the button immediately.

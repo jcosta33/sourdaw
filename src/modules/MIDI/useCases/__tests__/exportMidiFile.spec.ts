@@ -411,6 +411,45 @@ describe('downloadMidiFile — Standard MIDI File binary encoding', () => {
         expect(hex).toContain('8360903c6401803c00');
     });
 
+    it('writes a pedal on a sub-tick note start tick that follows its true end behind the release', () => {
+        // The note ends at 1.0002 but releases on tick 481, and the pedal pressed at
+        // 1.0004 rounds onto the start tick 480. Playback posts the release before the
+        // pedal, so the pedal must not precede the release and hold the note.
+        const sliver: MidiNote = { id: 'sliver', pitch: 62, startBeat: 1, duration: 0.0002, velocity: 100 };
+        const pedal = cc('pedal', 64, 127, 1.0004);
+
+        const files = permutations<MidiNote | MidiCC>([sliver, pedal]).map((rows) => exportedRowsHex(rows));
+
+        expect(new Set(files).size).toBe(1);
+        // on 62 at tick 480 (83 60), off at 481 (01), pedal behind it (00 b0 40 7f).
+        expect(files[0]).toContain('8360903e6401803e0000b0407f');
+    });
+
+    it('writes a strike of another pitch on a sub-tick note start tick after the release', () => {
+        // The strike at 1.0004 rounds onto the sliver's start tick. Playback releases
+        // the sliver at 1.0002 before the strike sounds, so a mono synth retriggers;
+        // the file must not hold the sliver under the strike as a legato glide.
+        const sliver: MidiNote = { id: 'sliver', pitch: 60, startBeat: 1, duration: 0.0002, velocity: 100 };
+        const strike: MidiNote = { id: 'strike', pitch: 64, startBeat: 1.0004, duration: 1, velocity: 100 };
+
+        const files = permutations([sliver, strike]).map((notes) => exportedHex(notes, []));
+
+        expect(new Set(files).size).toBe(1);
+        // on 60 at tick 480, off at 481, then the strike behind the release.
+        expect(files[0]).toContain('8360903c6401803c0000904064');
+    });
+
+    it('keeps a pedal on a sub-tick note start tick before its true end ahead of the release', () => {
+        // The pedal at 1.0001 follows the strike but precedes the true end (1.0004), so
+        // playback holds the note under it and the file keeps the pedal on the start tick.
+        const sliver: MidiNote = { id: 'sliver', pitch: 60, startBeat: 1, duration: 0.0004, velocity: 100 };
+        const pedal = cc('pedal', 64, 127, 1.0001);
+
+        const hex = exportedHex([sliver], [pedal]);
+
+        expect(hex).toContain('8360903c6400b0407f01803c00');
+    });
+
     it('does not write a note of no duration, which playback does not sound', () => {
         downloadMidiFile({
             clipName: 'C',
