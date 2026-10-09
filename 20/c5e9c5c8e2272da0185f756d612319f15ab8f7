@@ -1,0 +1,59 @@
+src/app/captureCommandBatchPreflightState.ts
+  s_1f0dcd815e8946::t_c172d5875d15a7 469-470,481-486
+  s_1f0dcd815e8946::t_4da63ea8157ed3 111-117,120,129-131,133,144-163
+  s_1f0dcd815e8946::t_5e7b6f33c29202 497-498
+  s_1f0dcd815e8946::t_a8879278df8427 164-165
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_1f0dcd815e8946::t_33eb13e9383fa1 8,30-31
+.agents/skills/review-stances/correctness.md
+  s_1f0dcd815e8946::t_3bcc02076578f9 71-84
+src/modules/Arrangement/useCases/comping/retiredTakeLaneOwnersMatchStore.ts
+  s_1f0dcd815e8946::t_33eb13e9383fa1 1-16
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_3bcc02076578f9 284-296
+  s_1f0dcd815e8946::t_85ca2ea1b4eb27 259-283
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  s_1f0dcd815e8946::t_7de0486d7f0458 10,79-87
+  s_1f0dcd815e8946::t_2ae3f2b14b1619 88-94
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_1f0dcd815e8946::t_c964751a697d98 46,290-309,311,382-384
+  s_1f0dcd815e8946::t_3a40dce86e3dee 121,289,310,380-381,385-391
+  s_1f0dcd815e8946::t_bb7ab7d1bb52e8 392-394
+src/app/__tests__/agentProjectRepairInspection.spec.ts
+  s_1f0dcd815e8946::t_57f4f2d8202c3d 1,7,12,144-173
+  s_1f0dcd815e8946::t_e037f3c1ae06bf 174-178,262-317
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_1f0dcd815e8946::t_33eb13e9383fa1 12,14,44-45,68
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_1f0dcd815e8946::t_569cd3e137a4d4 6,181,242-245,254-260
+  s_1f0dcd815e8946::t_c964751a697d98 246-253
+  s_1f0dcd815e8946::t_687d2b6b8fdbdf 261-262
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_1f0dcd815e8946::t_0c34aff7ccc9b3 299-307,339
+  s_1f0dcd815e8946::t_33eb13e9383fa1 298,308-338,340-344,346-347
+  s_1f0dcd815e8946::t_14aa4ef35e9130 345,358
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_1f0dcd815e8946::t_d4fa06384e805f 1901-1904,1909
+  s_1f0dcd815e8946::t_c97fb279722d41 1368-1371,1827,1886,1965
+  s_1f0dcd815e8946::t_b511d4df189539 1291-1346,1349-1351,1353-1354,1356-1367,1372-1386,1388-1402,1404,1409-1418,1423-1428,1431-1441,1804-1826,1828-1839,1841-1848,1850,1852-1879,1881-1885,1887-1900,1905-1908,1910-1912,1915-1922,1924,1929-1953,1955-1958,1960-1962,1968-1970
+  s_1f0dcd815e8946::t_042b9f825c16db 269-319
+  s_1f0dcd815e8946::t_7eef6453111d0b 1803,1840,1849,1851,1880,1913-1914,1923,1978-1979
+  s_1f0dcd815e8946::t_7fbea820fccf7d 1285-1290,1347-1348,1352,1355,1387,1403,1405-1406
+  s_1f0dcd815e8946::t_5c5626b63d3bfa 1407-1408,1419-1422,1429-1430,1442-1446,1534,1925-1928,1954,1959,1963-1964,1966-1967,1971-1977,2091,2102,2116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20c5e9c5c8e2272da0185f756d612319f15ab8f7",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
