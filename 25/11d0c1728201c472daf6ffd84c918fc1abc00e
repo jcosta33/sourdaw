@@ -1,0 +1,73 @@
+src/modules/AudioEngine/useCases/audioRecorder/inputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_627c031ab781e9 1-10
+src/modules/AudioEngine/useCases/audioRecorder/forgetAllInputMonitoringAdmissions.ts
+  s_1f0dcd815e8946::t_d1c897edc7dac7 1-5
+src/modules/AudioEngine/useCases/audioRecorder/admitInputMonitoring.ts
+  s_1f0dcd815e8946::t_627c031ab781e9 1-24
+src/modules/AudioEngine/useCases/audioRecorder/stopTrackInputMonitoring.ts
+  s_1f0dcd815e8946::t_d1c897edc7dac7 3,6
+  s_1f0dcd815e8946::t_627c031ab781e9 4
+src/modules/AudioEngine/useCases/audioRecorder/stopInputMonitoring.ts
+  s_1f0dcd815e8946::t_627c031ab781e9 4
+  s_1f0dcd815e8946::t_d1c897edc7dac7 3,6
+src/modules/AudioEngine/useCases/audioRecorder/readChangedInputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_627c031ab781e9 1-12
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoring.ts
+  s_1f0dcd815e8946::t_7c64c015105d2d 1-2,12,15,45-48,59-65,88-92,101-120,148-161
+src/modules/AudioEngine/useCases/audioRecorder/startInputMonitoring.ts
+  s_1f0dcd815e8946::t_45e471fa5a789e 7
+  s_1f0dcd815e8946::t_ae003660026e1f 1-3,6,11-31
+  s_1f0dcd815e8946::t_d1897f6ead7ee7 8
+src/modules/AudioEngine/useCases/audioRecorder/rearmCommittedTrackInputMonitoring.ts
+  s_1f0dcd815e8946::t_ae003660026e1f 1-2,5,15,17,19-22
+src/modules/AudioEngine/useCases/audioRecorder/forgetInputMonitoringAdmission.ts
+  s_1f0dcd815e8946::t_d1c897edc7dac7 1-5
+src/modules/AudioEngine/useCases/audioRecorder/reconcileAutoInputMonitoring.ts
+  s_1f0dcd815e8946::t_ae003660026e1f 10,12,49-77,98-104,140,159-163
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_147fecae9b06b1 210-219
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_8e69d53ae8d837 229-244
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/inputMonitoring.spec.ts
+  s_1f0dcd815e8946::t_1208fcdffb26d3 3-4,6,37-38,200-247
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_70c886f5f4b26b 19,67,113,121-122,162-163,166-171,261-440,563-586,692-747,749-780,783,787-794,819-821,830-832
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopInputMonitoring.spec.ts
+  s_2bfd55a4393d7c::t_58f229cca5a23b 114-150
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession.ts
+  s_1f0dcd815e8946::t_86728151a35be8 43
+src/modules/AudioEngine/repositories/audioRecorder/releaseMonitorCapture.ts
+  s_1f0dcd815e8946::t_aeffd7e67f34df 1-2,18
+src/modules/AudioEngine/repositories/audioRecorder/releaseTrackMonitorEdge.ts
+  s_1f0dcd815e8946::t_f4bd1ea2c986dc 1-2,24-35
+src/modules/AudioEngine/repositories/audioRecorder/stopInputMonitoring.ts
+  s_1f0dcd815e8946::t_c552b8dffd1ee9 1-2,24,29,31,33,38
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.storeOnlyMode.spec.ts
+  s_1f0dcd815e8946::t_1f1bfa0ea12bcf 137-199
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startInputMonitoring.spec.ts
+  s_1f0dcd815e8946::t_f46586bb5909b0 3-5,23-32,39,46,53,60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2511d0c1728201c472daf6ffd84c918fc1abc00e",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
