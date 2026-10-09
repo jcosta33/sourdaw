@@ -1,0 +1,42 @@
+.github/workflows/validation.yml
+  s_1f0dcd815e8946::t_610177db24c0a4 731-742,754
+.github/workflows/cargo-dependency-seed.yml
+  s_1f0dcd815e8946::t_dcc7106388c251 1-84,88-92,94,96-101
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_1f0dcd815e8946::t_c22cb2b3991252 1274
+  s_1f0dcd815e8946::t_1b08752c410637 177,1292-1295,1299,1306-1311,1315-1320,1336-1342,1355-1357,4369,4373-4376,4381-4384,4394-4397
+  s_1f0dcd815e8946::t_3e484fc11b5509 1286
+  s_1f0dcd815e8946::t_2f2f8861908484 4358-4368,4370-4372,4377-4380,4385-4393,4398-4403
+  s_1f0dcd815e8946::t_7e1543e144855e 180
+  s_1f0dcd815e8946::t_6d684b1f1facf7 175-176,181-183,1273,1275-1285,1287-1291,1296-1298,1300-1305,1312-1314,1321-1335,1343-1354,1358-1362
+  s_1f0dcd815e8946::t_799a97e87c4368 444,1368,1380,1394,1424
+  s_97ab82e0b4f10c::t_cef18868691ee1 1363-1364
+scripts/healthGateWorkflowContract.ts
+  s_1f0dcd815e8946::t_f7bddb13581a51 42,70,100-117,186
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1f0dcd815e8946::t_a22555f33f4c3d 3,954-962,971-972,2622-2706,2709-2721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e10b2a86514d2f1461287bef03c518c12ed59b37",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
