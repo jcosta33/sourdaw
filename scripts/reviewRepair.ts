@@ -589,7 +589,9 @@ function confirmationRefusal(
  * a rerun may skip one already-posted reply, but resolving duplicates would settle twice-confirmed state.
  */
 export type ReviewerConfirmationState = { alreadyPosted: boolean; refusal?: string };
-type ReviewerConfirmationContext = Pick<RepairConfirmation, 'pr' | 'head' | 'isAncestor'>;
+type ReviewerConfirmationContext = Pick<RepairConfirmation, 'pr' | 'head' | 'isAncestor'> & {
+    authorReplyId: number;
+};
 
 /**
  * Shared selection/replay inspection for admitted reviewer confirmation markers. A single matching
@@ -629,6 +631,12 @@ export function reviewerConfirmationState(
                 return { alreadyPosted: false, refusal: DIFFERENT_RECORD_CONFIRMATION_REFUSAL };
             }
         }
+        if (reply.id <= confirmation.authorReplyId) {
+            return {
+                alreadyPosted: false,
+                refusal: 'reviewer confirmation does not follow the selected author repair',
+            };
+        }
         confirmations += 1;
     }
     if (confirmations > 1) {
@@ -667,7 +675,10 @@ export function selectEligibleRepairs(input: {
         assertReviewRepairRecord(found.candidate.record);
         const reason =
             confirmationRefusal(input, thread, found.candidate.record) ??
-            reviewerConfirmationState(thread, found.candidate.record, input.reviewerNodeId, input).refusal;
+            reviewerConfirmationState(thread, found.candidate.record, input.reviewerNodeId, {
+                ...input,
+                authorReplyId: found.candidate.replyId,
+            }).refusal;
         if (reason !== undefined) {
             refused.push({ thread: thread.thread, reason });
             continue;

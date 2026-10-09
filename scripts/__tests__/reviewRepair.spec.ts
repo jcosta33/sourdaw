@@ -451,6 +451,39 @@ describe('selectEligibleRepairs', () => {
         });
     });
 
+    it.each([
+        ['compact', 9_001, false],
+        ['compact', 9_002, false],
+        ['compact', 9_003, true],
+        ['legacy', 9_001, false],
+        ['legacy', 9_002, false],
+        ['legacy', 9_003, true],
+    ] as const)('requires %s reviewer confirmation %i to follow the selected author reply', (format, id, admitted) => {
+        const record = repairRecord();
+        const reviewerBody =
+            format === 'compact' ? renderReviewRepairConfirmationMarker(record, HEAD) : renderReviewRepairReply(record);
+        const thread = threadState({
+            // The array places the author first even when the reviewer comment ID is earlier.
+            replies: [repairReply(9_002, record), { id, body: reviewerBody, authorNodeId: FOREIGN_NODE_ID }],
+        });
+        const selection = selectRepairs([thread]);
+        if (admitted) {
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record, replyId: 9_002 }],
+                refused: [],
+                ignored: [],
+            });
+        } else {
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [
+                    { thread: THREAD, reason: 'reviewer confirmation does not follow the selected author repair' },
+                ],
+                ignored: [],
+            });
+        }
+    });
+
     it('should refuse a finding that does not match the thread root', () => {
         const record = repairRecord({ finding: { ...VALID_RECORD.finding, commentId: 9_999 } });
         const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);

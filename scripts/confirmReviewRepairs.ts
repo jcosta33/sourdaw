@@ -85,7 +85,7 @@ export type ConfirmReviewRepairsCoordinatorDependencies = {
 
 export type ConfirmReviewRepairsArgs = { number?: number; head?: string; help: boolean };
 
-type ConfirmRepair = { thread: string; record: ReviewRepairRecord };
+type ConfirmRepair = { thread: string; record: ReviewRepairRecord; replyId: number };
 
 /**
  * `addPullRequestReviewThreadReply` is the mutation that names a thread; `resolveReviewThread` is the
@@ -192,10 +192,20 @@ export function confirmReviewRepairs(
     const confirmed: ConfirmRepair[] = selection.eligible.map((entry) => ({
         thread: entry.thread,
         record: entry.record,
+        replyId: entry.replyId,
     }));
     const threadsById = new Map(threads.map((thread) => [thread.thread, thread] as const));
     for (const entry of confirmed) {
-        if (confirmationAlreadyPosted(threadsById.get(entry.thread), entry.record, number, head, port.isAncestor)) {
+        if (
+            confirmationAlreadyPosted(
+                threadsById.get(entry.thread),
+                entry.record,
+                entry.replyId,
+                number,
+                head,
+                port.isAncestor
+            )
+        ) {
             port.log(`repair-confirmation-replayed:${number}:${entry.thread}`);
         } else {
             port.postConfirmation(
@@ -221,6 +231,7 @@ export function confirmReviewRepairs(
 function confirmationAlreadyPosted(
     thread: ReviewRepairThreadState | undefined,
     record: ReviewRepairRecord,
+    authorReplyId: number,
     pr: number,
     head: string,
     isAncestor: (commit: string, head: string) => boolean
@@ -228,7 +239,12 @@ function confirmationAlreadyPosted(
     if (thread === undefined) {
         return false;
     }
-    return reviewerConfirmationState(thread, record, REVIEWER_BOT_NODE_ID, { pr, head, isAncestor }).alreadyPosted;
+    return reviewerConfirmationState(thread, record, REVIEWER_BOT_NODE_ID, {
+        pr,
+        head,
+        isAncestor,
+        authorReplyId,
+    }).alreadyPosted;
 }
 
 type Gh = (args: string[]) => string;

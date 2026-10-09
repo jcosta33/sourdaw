@@ -29,6 +29,10 @@ author reviews governed rounds.
   containing those separators at the same logging boundary.
 - Retain the ordinary eligible and idempotent flows. Use offline injected ports for these probes;
   they establish local admission and mutation ordering, not live GitHub behavior or repair truth.
+- For both compact and legacy confirmations, make the selected author repair comment ID precede
+  the reviewer confirmation ID through selection and replay. Shuffle reply arrays, test earlier
+  and equal IDs, and put an invalid later thread after a valid one; the whole batch must refuse
+  before any confirmation post or resolution. Preserve valid descendant-head replay exactly once.
 
 ## Escape: a foreign marker becomes a publication blocker
 
@@ -82,3 +86,13 @@ one author repair and a separate confirmation linked to that digest. It also rep
 confirmation after a resolve failure and refuses mixed or doubled confirmations before any remote
 mutation. The historical final-head bundles for #4411 and #4565 are unavailable, so their precise
 stance and reviewer tier cannot be established; no historical tier is inferred here.
+
+## Escape: a reviewer marker predates its selected author repair
+
+[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced live confirmation
+replay. A matching reviewer marker with comment ID 9001 could be treated as confirmation of a
+selected author record with ID 9002, because the selected reply ID was dropped before both live
+admission and replay. The missing probe compares public comment IDs for compact and legacy
+markers through every route, regardless of array order, and asserts a later invalid thread
+aborts the full batch without mutations. The historical final-head bundle is unavailable, so
+its exact stance and reviewer tier remain unknown.

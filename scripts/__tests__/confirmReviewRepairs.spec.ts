@@ -550,6 +550,62 @@ describe('confirmReviewRepairs', () => {
         expect(mutations.map((entry) => entry.kind)).toEqual(['resolve']);
     });
 
+    it.each([
+        ['compact', 9_001],
+        ['compact', 9_002],
+        ['legacy', 9_001],
+        ['legacy', 9_002],
+    ] as const)(
+        'refuses an earlier or equal %s reviewer marker %i in a later thread before any batch mutation',
+        (format, reviewerId) => {
+            const record = recordFor({
+                thread: SECOND_THREAD,
+                finding: {
+                    commentId: SECOND_ROOT_COMMENT_ID,
+                    path: SECOND_FINDING_PATH,
+                    line: FINDING_LINE,
+                    side: 'RIGHT',
+                },
+            });
+            const reviewerBody =
+                format === 'compact' ? renderReviewRepairConfirmationMarker(record, HEAD) : authorRecordReply(record);
+            const invalid = subjectThread({
+                thread: SECOND_THREAD,
+                rootCommentId: SECOND_ROOT_COMMENT_ID,
+                rootPath: SECOND_FINDING_PATH,
+                replies: [
+                    { id: SECOND_ROOT_COMMENT_ID, body: 'Another defect.', authorNodeId: REVIEWER_BOT_NODE_ID },
+                    { id: 9_002, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID },
+                    { id: reviewerId, body: reviewerBody, authorNodeId: REVIEWER_BOT_NODE_ID },
+                ],
+            });
+            const { port, mutations, logs } = fakePort(HEAD, [subjectThread(), invalid]);
+            expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+            expect(logs).toContain(
+                `repair-refused:${PR}:${SECOND_THREAD}:reviewer confirmation does not follow the selected author repair`
+            );
+            expect(mutations).toEqual([]);
+        }
+    );
+
+    it.each(['compact', 'legacy'] as const)('replays a later %s reviewer marker once', (format) => {
+        const record = recordFor();
+        const reviewerBody =
+            format === 'compact' ? renderReviewRepairConfirmationMarker(record, HEAD) : authorRecordReply(record);
+        const thread = subjectThread({
+            replies: [
+                { id: ROOT_COMMENT_ID, body: 'Defect. Consequence. Fix.', authorNodeId: REVIEWER_BOT_NODE_ID },
+                { id: 9_001, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID },
+                { id: 9_002, body: reviewerBody, authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const { port, mutations, logs } = fakePort(HEAD, [thread]);
+        expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [THREAD] });
+        expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [] });
+        expect(mutations.map((entry) => entry.kind)).toEqual(['resolve']);
+        expect(logs).toContain(`repair-confirmation-replayed:${PR}:${THREAD}`);
+    });
+
     it('should keep the client mutation ids stable across runs', () => {
         const { port, mutations } = fakePort();
         confirmReviewRepairs(PR, HEAD, port);
