@@ -1,0 +1,35 @@
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_2bfd55a4393d7c::t_e6251c9ba51ad1 490,496,508-512
+  s_2bfd55a4393d7c::t_04db56fad4cc53 491-495
+  s_97ab82e0b4f10c::t_b26015ed28b8bf 497-507
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_02c0bf2108f361 10
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_2bfd55a4393d7c::t_44c0364e219d1c 272-273,276-277
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_2bfd55a4393d7c::t_07bc8c36900272 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9aeba42e82c9513bdd63c20af6eae25370c66fdb",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
