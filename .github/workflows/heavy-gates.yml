@@ -26,7 +26,7 @@ jobs:
     name: Affected end-to-end ${{ matrix.id }}
     if: fromJSON(inputs.matrix).include[0] != null
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.matrix) }}
@@ -54,24 +54,38 @@ jobs:
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
       #
-      # A healthy install takes 20 to 70 seconds, but one attempt has stalled
-      # for 10 minutes without exiting (#5072): each part of an attempt is
-      # bounded at 2 minutes and the step at 3 attempts x 4 minutes plus
-      # 15 seconds of backoff, rounded up.
+      # The install is split so each half can be bounded by the user that owns
+      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
+      # run as the runner user cannot signal it and would leave apt holding its
+      # lock for the next attempt. So the system dependencies run under
+      # `sudo timeout` and the browser download under its own `timeout`; a
+      # timed-out attempt is a failed one and the loop continues.
+      #
+      # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
+      # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
+      # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
+      # while the browser download never exceeded 56s. The 8m dependency cap
+      # therefore also kills the rare install that is slowly making progress
+      # (15 of about 4300) and retries it, relying on apt resuming its partial
+      # downloads; it is the price of failing a genuine stall, which prints
+      # nothing after `apt-get update` for an hour, within minutes.
+      #
+      # Limit: apt runs dpkg in its own session, which the group signal of
+      # `timeout` does not reach. A cap that expires while dpkg is unpacking,
+      # seconds after the downloads finish, can leave dpkg holding its lock
+      # and fail the next attempt; the attempt after that retries.
+      #
+      # Three timed-out attempts take 34 minutes, inside this step's 35, which this job's limit holds
+      # together with the longest observed shard.
       - name: Install Playwright browsers
-        timeout-minutes: 13
+        timeout-minutes: 35
         run: |
           for attempt in 1 2 3; do
-            # `--with-deps` would run apt-get under sudo, which an unprivileged
-            # timeout cannot signal and sudo does not relay SIGKILL to: a stall
-            # would outlive the deadline holding the apt lock. So the system
-            # dependencies run under a root `timeout`, and the browser download
-            # under an unprivileged one. sudo resets PATH, which the pnpm shim
-            # needs to find node, hence `env "PATH=$PATH"` and the direct bin.
             # GNU timeout kills the whole process group at the deadline. A TERM
-            # grace period ends if the parent exits while a child survives.
-            if sudo env "PATH=$PATH" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \
-              && timeout --signal=KILL 2m pnpm exec playwright install chromium; then
+            # grace period ends if pnpm exits while an installer child survives,
+            # so the browser download is killed outright; apt gets a TERM first.
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -181,7 +195,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Bounded like the retried install above: a stalled download fails in
+      # minutes rather than holding the job to its limit. Installs on this
+      # runner took 24s at the 99th percentile and 103s at most from
+      # 2026-09-20 to 2026-10-08.
       - name: Install Chromium
+        timeout-minutes: 5
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission

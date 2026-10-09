@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-08 — a shutdown timing assertion measured more than its budget (introduced by PR #2976)
+
+A native CI run for PR #5064 completed plugin reclamation but failed the test's `elapsed < 250 ms`
+assertion at 252.790917 ms. The production budget charges only measured sleep during scheduler
+polling; the test timed the whole synchronous shutdown cascade and a separate releasing thread.
+The source of that run's extra wall time is unknown.
+
+Blind spot: a wall-clock bound on a larger operation cannot distinguish a slow unrelated cascade
+step or thread scheduling from a polling regression. Probe the private wait seam with a retained
+runtime: require the first requested poll to be exactly 2 ms, release the runtime in that callback,
+return a synthetic 252.790917 ms wait, and require reclamation with no second wait. Hold the runtime
+through a synthetic 502 ms wait in a companion case and require one poll plus an abandoned report.
+Mutating the request to the full budget, deferring the sweep until the end, or charging requested
+instead of measured time must turn the respective case red.
+
 ### 2026-10-07 — a retryable Playwright install could hang forever (introduced by PR #4228; tracked by #5047)
 
 PR #4228 added three attempts and backoff around `playwright install --with-deps`, but only a returned

@@ -13,6 +13,9 @@ vi.mock('../commitCrumbsDeviceState', () => ({
     commitCrumbsDeviceState: mocks.commitCrumbsDeviceState,
 }));
 
+// The paired-reconcile hold is the real module: the subscriber reads it, and
+// these cases drive it directly to pin the suppression contract.
+import { beginCrumbsPairedReconcile, endCrumbsPairedReconcile } from '../../stores/sampleLoadGate';
 import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
 
 function makeState(mode = 'sampler', filePath?: string, sampleId?: string) {
@@ -123,5 +126,53 @@ describe('initCrumbsDeviceStatePersistence', () => {
         // Re-add dev-1 with same state → first sight (no commit).
         notify({ 'dev-1': makeState('sampler', 'a.wav', 's1') });
         expect(mocks.commitCrumbsDeviceState).not.toHaveBeenCalled();
+    });
+
+    // #4764: a reconcile-initiated mode apply changes the key while its paired
+    // sample load is unsettled, and the activeSample beside the new mode is
+    // still the stale local one — committing would mirror it over the peer's
+    // document reference. The suppression defers rather than swallows: the
+    // baseline stays at the last committed key, so the device's next
+    // unsuppressed pass commits the full settled state. Every notify carries
+    // both devices: a partial instances object drops the absent device's
+    // baseline (first sight again), which would mask the suppression.
+    it('holds the commit while a paired reconcile is unsettled and commits the full state on release', () => {
+        const getSubscriber = captureSubscriber();
+        vi.clearAllMocks();
+        initCrumbsDeviceStatePersistence();
+        const notify = getSubscriber();
+
+        notify({
+            'dev-1': makeState('sampler', 'a.wav', 's1'),
+            'dev-2': makeState('sampler', 'a.wav', 's1'),
+        });
+        beginCrumbsPairedReconcile('dev-1');
+        beginCrumbsPairedReconcile('dev-2');
+        vi.clearAllMocks();
+
+        // The paired mode applies: new modes beside the still-stale samples.
+        notify({
+            'dev-1': makeState('slicer', 'a.wav', 's1'),
+            'dev-2': makeState('slicer', 'a.wav', 's1'),
+        });
+        expect(mocks.commitCrumbsDeviceState).not.toHaveBeenCalled();
+
+        endCrumbsPairedReconcile('dev-2');
+        notify({
+            'dev-1': makeState('slicer', 'a.wav', 's1'),
+            'dev-2': makeState('slicer', 'a.wav', 's1'),
+        });
+        // The released device commits; the still-held one stays quiet.
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledTimes(1);
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledWith('dev-2');
+
+        endCrumbsPairedReconcile('dev-1');
+        notify({
+            'dev-1': makeState('slicer', 'a.wav', 's1'),
+            'dev-2': makeState('slicer', 'a.wav', 's1'),
+        });
+        // And the held device commits the full state once released.
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenCalledTimes(2);
+        expect(mocks.commitCrumbsDeviceState).toHaveBeenLastCalledWith('dev-1');
     });
 });

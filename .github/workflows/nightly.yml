@@ -6,9 +6,11 @@ name: Nightly
 # This workflow never runs on a pull request. The required `Gate` check is minted
 # only by `.github/workflows/health-gates.yml`. No job here may be named `Gate`.
 #
-# A scheduled or dispatched run answers "is this revision of main healthy", then
-# promotes that same SHA if every validation leg succeeded, the SHA is still the
-# tip of `main`, and production does not already serve it.
+# A scheduled run validates the `main` revision selected for that run; a manual
+# promotion also runs only from `main`. After every validation leg succeeds, the
+# train promotes that same SHA if production does not already serve it. The
+# production revision step refuses a candidate that does not descend from the
+# revision currently served; it does not re-resolve the latest `main` tip.
 
 on:
   schedule:
@@ -307,17 +309,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
-      # Retried as in validation.yml: a healthy install takes 9 to 18 seconds,
-      # so each attempt is bounded at 3 minutes (#5072).
+      # Retried and bounded as in validation.yml, which records why each
+      # attempt is capped at 8 minutes and the step at 30 (#5072).
       - name: Install ALSA development headers
         shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            # `sudo timeout` so the deadline signal comes from root and reaches
-            # apt-get; an unprivileged timeout cannot signal root processes.
-            if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
@@ -565,7 +565,7 @@ jobs:
     needs: decide
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -597,24 +597,38 @@ jobs:
 
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
-      # A healthy install takes 20 to 70 seconds, but one attempt has stalled
-      # for 10 minutes without exiting (#5072): each part of an attempt is
-      # bounded at 2 minutes and the step at 3 attempts x 4 minutes plus
-      # 15 seconds of backoff, rounded up.
+      #
+      # The install is split so each half can be bounded by the user that owns
+      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
+      # run as the runner user cannot signal it and would leave apt holding its
+      # lock for the next attempt. So the system dependencies run under
+      # `sudo timeout` and the browser download under its own `timeout`; a
+      # timed-out attempt is a failed one and the loop continues. GNU timeout
+      # signals its whole process group, but its TERM grace period ends when
+      # the direct child exits while a grandchild survives, so the browser
+      # download is killed outright and apt gets a TERM first.
+      #
+      # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
+      # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
+      # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
+      # while the browser download never exceeded 56s. The 8m dependency cap
+      # therefore also kills the rare install that is slowly making progress
+      # (15 of about 4300) and retries it, relying on apt resuming its partial
+      # downloads; it is the price of failing a genuine stall, which prints
+      # nothing after `apt-get update` for an hour, within minutes.
+      #
+      # Limit: apt runs dpkg in its own session, which the group signal of
+      # `timeout` does not reach. A cap that expires while dpkg is unpacking,
+      # seconds after the downloads finish, can leave dpkg holding its lock
+      # and fail the next attempt; the attempt after that retries.
+      #
+      # Three timed-out attempts take 34 minutes, which this job's limit holds
+      # together with the longest observed shard.
       - name: Install Playwright browsers
-        timeout-minutes: 13
         run: |
           for attempt in 1 2 3; do
-            # `--with-deps` would run apt-get under sudo, which an unprivileged
-            # timeout cannot signal and sudo does not relay SIGKILL to: a stall
-            # would outlive the deadline holding the apt lock. So the system
-            # dependencies run under a root `timeout`, and the browser download
-            # under an unprivileged one. sudo resets PATH, which the pnpm shim
-            # needs to find node, hence `env "PATH=$PATH"` and the direct bin.
-            # GNU timeout kills the whole process group at the deadline; a TERM
-            # grace period would end if the parent exited while a child lived.
-            if sudo env "PATH=$PATH" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \
-              && timeout --signal=KILL 2m pnpm exec playwright install chromium; then
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -675,7 +689,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Bounded like the retried install elsewhere: a stalled download fails in
+      # minutes rather than holding the job to its limit. Installs on this
+      # runner took 24s at the 99th percentile and 103s at most from
+      # 2026-09-20 to 2026-10-08.
       - name: Install Chromium
+        timeout-minutes: 5
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
@@ -728,8 +747,8 @@ jobs:
   codeql:
     name: CodeQL
     needs: decide
-    # Minutes rather than seconds, so this runs on the nightly train rather
-    # than on every pull request. PR Gate does not skip-pass this job.
+    # Nightly analysis covers the scheduled train revision; eligible pull
+    # requests run separate scope-selected CodeQL analysis in Health gates.
     if: needs.decide.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -1094,9 +1113,10 @@ jobs:
     # tree otherwise carries the ~971 MiB `public/samples` payload that this
     # job has no use for.
     if: ${{ failure() && github.event_name == 'schedule' }}
-    # `deploy-web` is here for the same reason as every validation leg: a
-    # nightly deployment that fails where nobody looks is the blind spot this
-    # reporter exists to close.
+    # `e2e-report` can fail while merging or uploading reports after `e2e`
+    # succeeds. Keep it as a direct dependency so failure() admits this job and
+    # toJSON(needs) includes the report failure in the issue body. The deploy
+    # and native-job dependency policies remain owned by their respective jobs.
     needs:
       [
         static,
@@ -1110,6 +1130,7 @@ jobs:
         native-windows,
         desktop-measure,
         e2e,
+        e2e-report,
         browser-ai-webgpu,
         codeql,
         secrets,

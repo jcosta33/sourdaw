@@ -21,7 +21,9 @@ import { hydrateYeastState } from '#/modules/Yeast/useCases';
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../../stores/missingMediaStore';
 
+import { activeAgentRunsCancellerRef } from './activeAgentRunCancellationState';
 import { agentMeasurementArtifactsClearerRef } from './agentMeasurementArtifactClearingState';
+import { agentSectionRenderArtifactsClearerRef } from './agentSectionRenderArtifactsClearingState';
 
 type ResetModuleStoresToDefaultInput = {
     createNewMidiProbabilitySeed?: boolean;
@@ -43,6 +45,16 @@ export function resetModuleStoresToDefault({
     // which re-derive it) or is `newProject`, which has no media to miss — so
     // clearing here is what stops a closed project's count from outliving it.
     missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
+    // An agent run in flight is bound to the project being torn down: cancel it
+    // first, so its renders abort through the run's own cancellation machinery
+    // and free the process-wide render lock for the incoming project (#4783).
+    // The canceller is the composition-root-registered seam — AiRuntime imports
+    // this module's barrel, so the reverse import would close a cycle.
+    activeAgentRunsCancellerRef.current?.();
+    // Retained agent section renders describe the project being torn down; clear
+    // them (and their expiry timer) through the composition-root-registered seam
+    // (#4767) — same seam shape as the measurement clearer directly below.
+    agentSectionRenderArtifactsClearerRef.current?.();
     // Retained measurement renders describe the project being torn down; clear them (and their
     // expiry timer) through the composition-root-registered seam — see
     // `agentMeasurementArtifactClearingState.ts` for why this cannot be a direct barrel import.

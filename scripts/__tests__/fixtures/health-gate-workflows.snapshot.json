@@ -175,7 +175,7 @@
         "name": "Affected end-to-end ${{ matrix.id }}",
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": "${{ fromJSON(inputs.matrix) }}"
@@ -210,8 +210,8 @@
           },
           {
             "name": "Install Playwright browsers",
-            "timeout-minutes": 13,
-            "run": "for attempt in 1 2 3; do\n  # `--with-deps` would run apt-get under sudo, which an unprivileged\n  # timeout cannot signal and sudo does not relay SIGKILL to: a stall\n  # would outlive the deadline holding the apt lock. So the system\n  # dependencies run under a root `timeout`, and the browser download\n  # under an unprivileged one. sudo resets PATH, which the pnpm shim\n  # needs to find node, hence `env \"PATH=$PATH\"` and the direct bin.\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if the parent exits while a child survives.\n  if sudo env \"PATH=$PATH\" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \\\n    && timeout --signal=KILL 2m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "timeout-minutes": 35,
+            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -336,6 +336,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {
@@ -762,7 +763,7 @@
         "needs": "decide",
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 20,
+        "timeout-minutes": 45,
         "steps": [
           {
             "name": "Checkout",
@@ -789,8 +790,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "timeout-minutes": 13,
-            "run": "for attempt in 1 2 3; do\n  # `--with-deps` would run apt-get under sudo, which an unprivileged\n  # timeout cannot signal and sudo does not relay SIGKILL to: a stall\n  # would outlive the deadline holding the apt lock. So the system\n  # dependencies run under a root `timeout`, and the browser download\n  # under an unprivileged one. sudo resets PATH, which the pnpm shim\n  # needs to find node, hence `env \"PATH=$PATH\"` and the direct bin.\n  # GNU timeout kills the whole process group at the deadline; a TERM\n  # grace period would end if the parent exited while a child lived.\n  if sudo env \"PATH=$PATH\" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \\\n    && timeout --signal=KILL 2m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -864,8 +864,8 @@
           {
             "name": "Install ALSA development headers",
             "shell": "bash",
-            "timeout-minutes": 10,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  # `sudo timeout` so the deadline signal comes from root and reaches\n  # apt-get; an unprivileged timeout cannot signal root processes.\n  if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1451,8 +1451,8 @@
           {
             "name": "Install ALSA development headers",
             "shell": "bash",
-            "timeout-minutes": 10,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  # `sudo timeout` so the deadline signal comes from root and reaches\n  # apt-get; an unprivileged timeout cannot signal root processes.\n  if sudo timeout --signal=KILL 3m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "timeout-minutes": 30,
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1648,7 +1648,7 @@
         "needs": "decide",
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 60,
+        "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
           "matrix": {
@@ -1698,8 +1698,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "timeout-minutes": 13,
-            "run": "for attempt in 1 2 3; do\n  # `--with-deps` would run apt-get under sudo, which an unprivileged\n  # timeout cannot signal and sudo does not relay SIGKILL to: a stall\n  # would outlive the deadline holding the apt lock. So the system\n  # dependencies run under a root `timeout`, and the browser download\n  # under an unprivileged one. sudo resets PATH, which the pnpm shim\n  # needs to find node, hence `env \"PATH=$PATH\"` and the direct bin.\n  # GNU timeout kills the whole process group at the deadline; a TERM\n  # grace period would end if the parent exited while a child lived.\n  if sudo env \"PATH=$PATH\" timeout --signal=KILL 2m node_modules/.bin/playwright install-deps chromium \\\n    && timeout --signal=KILL 2m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -1762,6 +1761,7 @@
           },
           {
             "name": "Install Chromium",
+            "timeout-minutes": 5,
             "run": "pnpm exec playwright install chromium"
           },
           {
@@ -2063,6 +2063,7 @@
           "native-windows",
           "desktop-measure",
           "e2e",
+          "e2e-report",
           "browser-ai-webgpu",
           "codeql",
           "secrets",

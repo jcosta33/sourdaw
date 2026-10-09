@@ -485,6 +485,19 @@ export function applyAutomation(currentBeat: number): Set<string> {
         for (const time of tracks) {
             automationState.trackIndex.set(time.id, time);
         }
+        // #4790: seed every track whose device chain sits behind a PDC delay,
+        // lane or no lane. The lane loop below records read beats only for
+        // tracks that own a device-family lane, so a lane-less compensated
+        // track had no entry and `applyModulationToEngine` evaluated its
+        // modulators on that track at the raw playhead — an LFO with no
+        // automation beneath it ran D beats ahead of the audio it shapes.
+        // `compensatedBeatFor` memoizes per tick, so tracks the lane loop also
+        // covers set the same value twice rather than recompute it.
+        for (const track of tracks) {
+            if (compensationFor(track.id) > 0) {
+                deviceReadBeatByTrack.set(track.id, compensatedBeatFor(track.id));
+            }
+        }
     }
     if (trackSnapshotReplaced) {
         forgetBypassStateOfAbsentDevices();
