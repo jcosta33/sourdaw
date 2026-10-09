@@ -46,6 +46,7 @@ import {
 } from './reviewRoundEscalation.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
+import type { ReviewState } from './pullRequestReviewState.ts';
 import type { DeliveryAuthorization, ReviewDocument } from './reviewDocumentParser.ts';
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
@@ -430,6 +431,16 @@ export function recordedPublicationReplay(
     return recorded;
 }
 
+function assertCompleteReviewerIdentityForBinding(state: ReviewState, reviewId: number): void {
+    if (
+        state.latestReviewerCommitOid === null ||
+        state.latestReviewerCommitOid === undefined ||
+        (state.latestReviewerStateOnHead === 'APPROVED' && state.latestReviewerReviewDatabaseId === null)
+    ) {
+        fail(`review ${reviewId} has incomplete reviewer approval identity; retry when the live state is complete`);
+    }
+}
+
 /**
  * Appends the landed publication's public ids to the head's dossier (#3375, spec #3367 AC-004):
  * one `review-published` and one `finding-published` per posted comment, matched to the review
@@ -504,6 +515,7 @@ export function recordPublicationBindings(
             );
         }
         const state = port.reviewState(number, head);
+        assertCompleteReviewerIdentityForBinding(state, reviewId);
         if (
             state.latestReviewerStateOnHead === 'APPROVED' &&
             state.latestReviewerReviewDatabaseId === reviewId &&
