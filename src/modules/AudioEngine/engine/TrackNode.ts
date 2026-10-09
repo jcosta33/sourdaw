@@ -6,6 +6,7 @@ import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRun
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
+import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { createHostedPluginControls, type HostedPluginControls } from './hostedPluginControls';
 import { findReleasedWasmDescriptor } from './wasmDeviceRegistry';
 
@@ -1325,7 +1326,23 @@ export class TrackNode {
         return true;
     }
 
+    /** Removes a device that has left the project, and announces that it left. */
     public removeDevice(deviceId: string): boolean {
+        return this.detachDevice(deviceId, true);
+    }
+
+    // `audioDevice.removed` tells the owning modules a device left the project,
+    // so they drop its sessions and the edits queued while it loaded. Only the
+    // callers that know the device is leaving announce it: a removal, a chain
+    // replacement for the ids missing from its result, and a removed track's
+    // strip. The node itself never does, because the engine also tears nodes
+    // down for its own reasons (runtime recovery, timeout, rollback, a graph
+    // reset) while the device stays in the project, whatever its load state.
+    private announceDeviceLeftProject(device: BuiltinDeviceNode): void {
+        getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId: device.deviceId, deviceType: device.type });
+    }
+
+    private detachDevice(deviceId: string, leavesProject: boolean): boolean {
         this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
@@ -1340,6 +1357,9 @@ export class TrackNode {
         }
 
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
+        if (leavesProject) {
+            this.announceDeviceLeftProject(dn);
+        }
         try {
             this.deps.onDeviceRemoved?.(this.trackId, dn);
             this.destroyPublishedDeviceNode(dn);
@@ -1385,8 +1405,10 @@ export class TrackNode {
         if (delta.operation === 'replace-device-chain') {
             let changed = false;
             try {
+                // The replacement rebuilds every slot, but an id the new chain
+                // keeps is the same device staying in the project.
                 for (const device of [...this.strip.deviceNodes]) {
-                    changed = this.removeDevice(device.deviceId) || changed;
+                    changed = this.detachDevice(device.deviceId, !afterIds.has(device.deviceId)) || changed;
                 }
                 for (const device of delta.after.devices) {
                     const added = this.addDevice(
@@ -1572,20 +1594,17 @@ export class TrackNode {
             }
         }
         for (const dn of this.strip.deviceNodes) {
-            if (dn.controller) {
-                dn.controller.destroy?.();
-            } else if (dn.dispose) {
-                dn.dispose();
-            }
-            for (const n of dn.nodes) {
-                try {
-                    n.disconnect();
-                } catch {
-                    // Intentionally empty: a node already detached from the graph
-                    // throws on disconnect() during teardown; safe to ignore.
-                }
-            }
+            this.destroyPublishedDeviceNode(dn);
         }
         this.strip.deviceNodes = [];
+    }
+
+    /** Disposes the strip of a track that left the project, announcing each device it held as leaving too. */
+    public disposeLeavingProject(): void {
+        const devices = [...this.strip.deviceNodes];
+        this.dispose();
+        for (const device of devices) {
+            this.announceDeviceLeftProject(device);
+        }
     }
 }

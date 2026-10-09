@@ -13,6 +13,10 @@ describe('describePlanningOutcome', () => {
         ).toBe('The mix peaks at -1.2 dBFS.');
     });
 
+    it.each(['', '  \n '])('has nothing to say for an answer whose text is %j', (text) => {
+        expect(describePlanningOutcome({ kind: 'answer', text, evidence: [] })).toBeNull();
+    });
+
     it('surfaces a denied outcome reason verbatim', () => {
         expect(
             describePlanningOutcome({

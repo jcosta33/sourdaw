@@ -406,21 +406,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            // Signal teardown so the Toaster module disposes the device:
-                            // stop the sequencer, note-repeat and 16-Levels sessions and
-                            // cancel any queued rAF pad-param flush, then delete the store
-                            // record. Emitted (not called directly) to keep the boundary
-                            // acyclic — AudioEngine must not statically import the Toaster
-                            // useCases barrel, whose closure reaches back into AudioEngine
-                            // (would be a no-circular error). The Toaster subscriber runs
-                            // disposeToasterDevice synchronously on this emit, mirroring the
-                            // audioDevice.loaded hydration path. A bare store delete (the
-                            // prior behavior) left a running:true sequencer re-arming ghost
-                            // hits after the device was gone.
-                            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
-                        },
+                        // Destroying the node announces nothing: the engine also
+                        // destroys it for recovery and rollback while the device
+                        // stays in the project. The track announces a removal.
+                        destroy: result.destroy,
                     },
                     toasterControls: {
                         ready: true,
@@ -1681,9 +1670,10 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             if (placeholder.grandBouleControls) {
                 placeholder.grandBouleControls.setParam = () => {};
             }
+            // The failed stand-in stays in the chain, so the device has not left
+            // the project and its failure announces no removal.
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
-            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {

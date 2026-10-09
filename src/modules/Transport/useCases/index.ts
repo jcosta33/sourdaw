@@ -24,7 +24,6 @@ export { createMusicalPositionProjector } from './createMusicalPositionProjector
 export { createSamplePositionProjector } from './createSamplePositionProjector';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
-export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';
 export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapStateRestore';
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';

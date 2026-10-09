@@ -9,7 +9,12 @@
 export type ProjectSnapshot = {
     /** Canonical project identity that owned this snapshot at capture time. */
     ownerProjectId: string;
-    /** Serialized project state (tracks, clips, transport, markers, etc.) */
+    /**
+     * Serialized project state (tracks, clips, transport, markers, tempo map,
+     * take lanes, etc.). Fields added over time (tempoMap, takeLanes since
+     * #5108) are absent from payloads written before they existed; restoring
+     * such a payload tolerates the omission and holds the live state for it.
+     */
     data: string;
     /** Byte size of the snapshot */
     size: number;

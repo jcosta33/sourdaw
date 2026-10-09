@@ -36,16 +36,11 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         throw new Error(parsed.reason);
     }
     const envelope = parsed.envelope;
-    const applicationAssignedIds = new Set(
-        envelope.commands.flatMap((command) => command.applicationAssignedIds.map((assigned) => assigned.value))
-    );
+    // The divergence targets already exclude ids the batch itself creates; a target some
+    // command assigns while an earlier command references it stays fingerprinted, because
+    // that reference is to a pre-existing object, not to the creation.
     const targetIds = [
-        ...new Set([
-            ...getVersionedCommandBatchDivergenceTargetIds(envelope).filter(
-                (targetId) => !applicationAssignedIds.has(targetId)
-            ),
-            ...envelope.scope.protectedTargetIds,
-        ]),
+        ...new Set([...getVersionedCommandBatchDivergenceTargetIds(envelope), ...envelope.scope.protectedTargetIds]),
     ];
     const preflight = commandBatchPreflightPort.capture({ assetReferences: [], targetIds });
     if (!preflight) {

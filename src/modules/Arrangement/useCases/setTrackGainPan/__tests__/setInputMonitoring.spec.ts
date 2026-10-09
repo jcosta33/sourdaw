@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     startInputMonitoring: vi.fn(),
     stopInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
+    reconcileAutoInputMonitoring: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
@@ -26,6 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startInputMonitoring: mocks.startInputMonitoring,
     stopInputMonitoring: mocks.stopInputMonitoring,
     stopTrackInputMonitoring: mocks.stopTrackInputMonitoring,
+    reconcileAutoInputMonitoring: mocks.reconcileAutoInputMonitoring,
 }));
 
 describe('setInputMonitoring', () => {
@@ -70,12 +72,19 @@ describe('setInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('sets monitoring to AUTO and stops that track’s listening edge only', () => {
+    it('sets monitoring to AUTO and hands the listening edge to the Auto owner', () => {
         setInputMonitoring('t1', 'auto');
 
-        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
-        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.reconcileAutoInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+    });
+
+    it.each(['on', 'off'] as const)('does not reconcile Auto when setting %s', (mode) => {
+        setInputMonitoring('t1', mode);
+
+        expect(mocks.reconcileAutoInputMonitoring).not.toHaveBeenCalled();
     });
 
     it.each(['on', 'auto'] as const)(

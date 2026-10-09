@@ -10,7 +10,7 @@
  *    (#3105, #3107), but `setTempo`, `setTimeSignature`, and every tempo-map
  *    or meter-map writer (`addTempoChange`, `updateTempoChange`,
  *    `removeTempoChange`, `replaceTempoMap`, `shiftTimelineMapsAfterBeat`,
- *    `deleteTimelineMapsTimeRange`, `addTimeSignatureChange`,
+ *    `prepareTimelineMapTimeOperation`, `addTimeSignatureChange`,
  *    `removeTimeSignatureChange`, `replaceTimeSignatureMap`) called nothing
  *    native at all — a tempo, ramp, or meter edit made during a live session
  *    left the engine running the map it had when the session started (or
