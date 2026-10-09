@@ -61,16 +61,17 @@ test.describe('Responsive transport bar', () => {
                     })
                     .filter((control) => control.width > 0 && control.height > 0);
                 const intersections = controls.flatMap((control, index) =>
-                    controls
-                        .slice(index + 1)
-                        .flatMap((candidate) =>
+                    controls.slice(index + 1).flatMap((candidate) => {
+                        const overlaps =
                             control.left < candidate.right &&
                             control.right > candidate.left &&
                             control.top < candidate.bottom &&
-                            control.bottom > candidate.top
-                                ? [`${control.name} / ${candidate.name}`]
-                                : []
-                        )
+                            control.bottom > candidate.top;
+                        if (overlaps) {
+                            return [`${control.name} / ${candidate.name}`];
+                        }
+                        return [];
+                    })
                 );
                 const escaped = controls
                     .filter((control) => control.left < headerBounds.left || control.right > headerBounds.right)
