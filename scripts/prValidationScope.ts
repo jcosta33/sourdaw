@@ -26,10 +26,21 @@ const REVIEW_TOOLING = new Set([
     'recoverDeliveryLock',
     'recoverPublishReviewLock',
     'repairReviewFinding',
+    'resolveThread',
     'reviewApprovalFormat',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
+    'reviewDossierChain',
+    'reviewDossierPublication',
+    'reviewDossierReassessed',
+    'reviewDossierSemanticAssessment',
+    'reviewDossierViews',
+    'reviewPublicationBinding',
+    'reviewPublicationLegacyIncidents',
+    'reviewPublicationReceiptAdoption',
+    'reviewPublicationRecoveryReceipt',
+    'reviewPublicationRemoteInspection',
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
@@ -50,6 +61,9 @@ const REVIEW_TOOLING = new Set([
     'pullRequestMutationLock',
     'pruneLane',
     'removeLane',
+    'retargetCapabilityPlan',
+    'retargetCapabilitySnapshot',
+    'rulesetHardening',
     'stackedLanes',
     'stampLaneIdentity',
     'supersedePullRequest',
@@ -58,6 +72,14 @@ const REVIEW_TOOLING = new Set([
     'trustedGithubWriteBootstrap',
     'typesafeRequest',
     'trackerIssueReconciliation',
+]);
+
+const REVIEW_TOOLING_SPEC_ONLY = new Set([
+    'deliveryRiskPlanLoss',
+    'orchestratorReviewState',
+    'recoverDeliveryLockGeneral',
+    'recoverPublishReviewLockReceiptReplay',
+    'threeRoleTransitions',
 ]);
 
 const RELEASE_TOOLING_METADATA = new Set([
@@ -146,9 +168,18 @@ function isReviewTooling(path: string): boolean {
     if (path.startsWith('scripts/semanticReviewMeasurement/')) {
         return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
-    const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
-    const scriptName = match?.[1];
-    return scriptName !== undefined && REVIEW_TOOLING.has(scriptName);
+    const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
+    if (source !== undefined) {
+        return REVIEW_TOOLING.has(source);
+    }
+    const spec = /^scripts\/__tests__\/([A-Za-z0-9]+)\.spec\.ts$/.exec(path)?.[1];
+    if (spec === undefined) {
+        return false;
+    }
+    if (REVIEW_TOOLING_SPEC_ONLY.has(spec)) {
+        return true;
+    }
+    return REVIEW_TOOLING.has(spec.replace(/\d+$/, ''));
 }
 
 function isSpec(path: string): boolean {

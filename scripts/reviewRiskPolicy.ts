@@ -120,6 +120,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewDossierViews.ts',
     'scripts/reviewPublicationBinding.ts',
     'scripts/reviewPublicationLegacyIncidents.ts',
+    'scripts/reviewPublicationReceiptAdoption.ts',
     'scripts/reviewPublicationRecoveryReceipt.ts',
     'scripts/reviewPublicationRemoteInspection.ts',
     'scripts/reviewRepair.ts',

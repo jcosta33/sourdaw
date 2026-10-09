@@ -1088,6 +1088,7 @@ describe('package scripts and gitignore', () => {
             'prepareReview.ts',
             'publishReview.ts',
             'recoverPublishReviewLock.ts',
+            'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
             'reviewDocumentParser.ts',
             'reviewerModelDiversity.ts',
@@ -1158,6 +1159,7 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverPublishReviewLock.ts',
+            'scripts/reviewPublicationReceiptAdoption.ts',
             'scripts/reconstructReviewRounds.ts',
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
@@ -1365,10 +1367,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:publish:recover' as const,
                 entry: 'scripts/recoverPublishReviewLock.ts',
-                required: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/reviewPublicationReceiptAdoption.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/recoverPublishReviewLock.ts',
+                    'scripts/reviewPublicationReceiptAdoption.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',

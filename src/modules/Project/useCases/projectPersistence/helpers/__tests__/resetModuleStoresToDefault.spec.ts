@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { agentMeasurementArtifactStore, agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
+import { defaultToasterState, toasterStore } from '#/modules/Toaster/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
 const mocks = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     grinderTelemetryStoreSet: vi.fn(),
     arrangementStoreSet: vi.fn(),
     hydrateYeastState: vi.fn(),
+    disposeEveryToasterDevice: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -83,6 +85,10 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     return { ...actual, setSidechainRoutes: mocks.setSidechainRoutes };
 });
 
+vi.mock('#/modules/Toaster/useCases', () => ({
+    disposeEveryToasterDevice: mocks.disposeEveryToasterDevice,
+}));
+
 vi.mock('#/modules/Grinder/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Grinder/stores')>();
     return {
@@ -132,6 +138,22 @@ describe('resetModuleStoresToDefault', () => {
         mocks.grinderTelemetryStoreSet.mockClear();
         mocks.arrangementStoreSet.mockClear();
         mocks.hydrateYeastState.mockClear();
+        mocks.disposeEveryToasterDevice.mockReset();
+    });
+
+    // The graph reset before a switch announces no device removal, so the
+    // switch itself ends the outgoing Toasters, reading the records it disposes.
+    it('ends the outgoing Toasters before clearing their records', () => {
+        toasterStore.set({ 'toast-1': defaultToasterState });
+        const recordsAtDisposal: string[][] = [];
+        mocks.disposeEveryToasterDevice.mockImplementation(() => {
+            recordsAtDisposal.push(Object.keys(toasterStore.value ?? {}));
+        });
+
+        resetModuleStoresToDefault();
+
+        expect(recordsAtDisposal).toEqual([['toast-1']]);
+        expect(toasterStore.value).toEqual({});
     });
 
     it('clears the missing-media record, so a closed project cannot keep counting', () => {
