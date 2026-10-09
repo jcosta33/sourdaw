@@ -11307,11 +11307,20 @@ describe('opaque bearer source and caller admission', () => {
     const path = 'src/modules/Project/__tests__/header.spec.ts';
     const clean = 'it("ordinary", () => { expect(1).toBe(1); });\n';
     const unsafe = `const header = '${header}';\n`;
+    const opaqueProse = ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' ');
+    const unsafeProse = `const note = '${opaqueProse}';\n`;
+    const unsafeSources = [
+        { shape: 'header', text: unsafe },
+        { shape: 'hyphenated-prose', text: unsafeProse },
+    ];
 
     it('opaque bearer source and JSON values reject all candidates without echoing material', () => {
         const values = [
             header,
             unsafe,
+            opaqueProse,
+            unsafeProse,
+            JSON.stringify({ nested: [{ value: opaqueProse }] }),
             ...[
                 ['abcde', 'fghij', 'klmnop'].join('.'),
                 ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join(''),
@@ -11371,41 +11380,42 @@ describe('opaque bearer source and caller admission', () => {
         expect(effect.fetch).not.toHaveBeenCalled();
     }
 
-    it.each(['before', 'after', 'fallback'] as const)(
-        'opaque bearer scan %s withholding has zero effects',
-        async (side) => {
-            const effect = effects();
-            const blobs: Record<string, string> = {};
-            const line = side === 'fallback' ? 99 : 1;
-            let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine: line }] };
-            if (side === 'before') {
-                blobs[`${MERGE_BASE}:${path}`] = unsafe;
-                hunk = { path, before: [{ startLine: 1, endLine: 1 }], after: [] };
-            } else {
-                blobs[`${HEAD}:${path}`] = unsafe;
-            }
-            const source = fakeSource({
-                files: [changedFile(path, { kind: side === 'before' ? 'deleted' : 'added' })],
-                blobs,
-                hunks: new Map([[path, hunk]]),
-            });
-            const input = scanPorts(effect.provider, source, fixedClock(1_000));
-            const result = await runScan({ ...input, ports: { ...input.ports, cache: effect.cache } });
-            expect(result.report.scope.excluded).toContainEqual({
-                path,
-                reason: side === 'fallback' ? 'no-admissible-evidence' : 'credential-shaped-content-excluded',
-            });
-            expect(result.report.scope.truncated).toContainEqual({
-                path,
-                reason: 'evidence-withheld-credential-shaped',
-            });
-            expect(result.report.limitations.join(' ')).toContain('withheld');
-            expect(result.report.scope.assessed).toBe(0);
-            expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
-            expect(result.report.scope.cacheHits).toBe(0);
-            expectZero(effect);
+    it.each(
+        (['before', 'after', 'fallback'] as const).flatMap((side) =>
+            unsafeSources.map((source) => ({ side, ...source }))
+        )
+    )('opaque bearer scan $shape $side withholding has zero effects', async ({ side, text }) => {
+        const effect = effects();
+        const blobs: Record<string, string> = {};
+        const line = side === 'fallback' ? 99 : 1;
+        let hunk: PathHunks = { path, before: [], after: [{ startLine: line, endLine: line }] };
+        if (side === 'before') {
+            blobs[`${MERGE_BASE}:${path}`] = text;
+            hunk = { path, before: [{ startLine: 1, endLine: 1 }], after: [] };
+        } else {
+            blobs[`${HEAD}:${path}`] = text;
         }
-    );
+        const source = fakeSource({
+            files: [changedFile(path, { kind: side === 'before' ? 'deleted' : 'added' })],
+            blobs,
+            hunks: new Map([[path, hunk]]),
+        });
+        const input = scanPorts(effect.provider, source, fixedClock(1_000));
+        const result = await runScan({ ...input, ports: { ...input.ports, cache: effect.cache } });
+        expect(result.report.scope.excluded).toContainEqual({
+            path,
+            reason: side === 'fallback' ? 'no-admissible-evidence' : 'credential-shaped-content-excluded',
+        });
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'evidence-withheld-credential-shaped',
+        });
+        expect(result.report.limitations.join(' ')).toContain('withheld');
+        expect(result.report.scope.assessed).toBe(0);
+        expect(result.report.usage).toMatchObject({ logicalRequests: 0, networkAttempts: 0 });
+        expect(result.report.scope.cacheHits).toBe(0);
+        expectZero(effect);
+    });
 
     it('opaque bearer scan placeholder admits a clean independent unit beside a withheld unit', async () => {
         const safePath = 'src/modules/Project/__tests__/ordinary.spec.ts';
@@ -11459,9 +11469,9 @@ describe('opaque bearer source and caller admission', () => {
         });
     }
 
-    it('opaque bearer verify evidence withholding has zero effects', async () => {
+    it.each(unsafeSources)('opaque bearer verify $shape evidence withholding has zero effects', async ({ text }) => {
         const effect = effects();
-        const result = await verify(finding(), unsafe, effect);
+        const result = await verify(finding(), text, effect);
         expect(result.report.findingAssessments).toEqual([]);
         expect(result.report.scope.truncated).toContainEqual({ path, reason: 'evidence-withheld-credential-shaped' });
         expect(result.report.limitations.join(' ')).toContain('withheld');
@@ -11480,6 +11490,7 @@ describe('opaque bearer source and caller admission', () => {
     const findingLiterals = [
         { shape: 'alphanumeric', value: header },
         { shape: 'header-tail', value: `${header} expired` },
+        { shape: 'hyphenated-prose', value: opaqueProse },
         {
             shape: 'dotted-tail',
             value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),

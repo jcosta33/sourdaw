@@ -99,9 +99,15 @@ an uppercase name ending `_PLACEHOLDER` is deliberately treated as documentation
 using that marker is an accepted residual. Other underscore-bearing values receive no name exemption.
 Generic secret-assignment reference rules remain separate.
 
-The prose heuristic admits a case-sensitive lowercase hyphenated compound only between surrounding
-ordinary words, as in a reviewer noting Bearer credential-shaped examples. The same compound alone,
-quoted as a scheme, or in an Authorization header must be refused. A lowercase hyphenated opaque value
-embedded in that prose shape remains indistinguishable and is a bounded residual, not sanitization of
-arbitrary source. Pair the exact prose sentence with a valid matching-cache read and zero provider or
-fetch calls; keep dotted/alphabetic literals with trailing words as refusal controls.
+Only the explicit case-sensitive documentation descriptor `credential-shaped` receives a prose-context
+exemption between surrounding ordinary words. The same descriptor alone, quoted as a scheme, or in an
+Authorization header must be refused. Arbitrary lowercase hyphenated values remain literals even
+between ordinary words: a broad alphabet-and-context exemption admitted runtime-composed opaque
+material through the stance builder and SDK delegate. Restore that broad exemption on a committed
+head and require the source, finding, complete-envelope and stance refusal cases to fail.
+
+Actual credential material equal to the explicit descriptor in that prose context remains an accepted
+documentation-marker residual, like the explicit placeholder marker above; this is not semantic prose
+classification or sanitization of arbitrary source. Pair the exact descriptive sentence with a valid
+matching-cache read and zero provider or fetch calls; keep dotted/alphabetic literals with trailing
+words as refusal controls.

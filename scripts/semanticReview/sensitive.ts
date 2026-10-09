@@ -312,9 +312,9 @@ function hasOpaqueBearerValue(text: string): boolean {
         if (PLACEHOLDER_VALUE.test(value) || /^[A-Z][A-Z0-9_]*_PLACEHOLDER$/u.test(value)) {
             continue;
         }
-        // A lowercase compound between prose words describes the scheme rather than supplying it.
+        // Only this explicit documentation descriptor receives the prose-context exemption.
         if (
-            /^[a-z]+(?:-[a-z]+)+$/u.test(value) &&
+            value === 'credential-shaped' &&
             /\b[A-Za-z]+[ \t]+$/u.test(text.slice(0, match.index)) &&
             /^[ \t]+[A-Za-z]+\b/u.test(text.slice(match.index + match[0].length))
         ) {

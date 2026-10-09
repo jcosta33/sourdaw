@@ -583,6 +583,10 @@ describe('opaque bearer stance admission', () => {
         { shape: 'alphabetic', value: ['Bearer', ['AbCdEfGh', 'IjKlMnOp', 'QrStUvWx'].join('')].join(' ') },
         { shape: 'header-tail', value: `${header} expired` },
         {
+            shape: 'hyphenated-prose',
+            value: ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' '),
+        },
+        {
             shape: 'dotted-tail',
             value: ['finding: Bearer', ['abcde', 'fghij', 'klmnop'].join('.'), 'was logged'].join(' '),
         },

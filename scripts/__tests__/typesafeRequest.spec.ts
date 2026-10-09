@@ -470,6 +470,10 @@ describe('opaque bearer complete request admission', () => {
         { shape: 'quoted-hyphenated', value: `'${['Bearer', 'credential-shaped'].join(' ')}'` },
         { shape: 'header-hyphenated', value: ['Authorization:', 'Bearer', 'credential-shaped'].join(' ') },
         { shape: 'uppercase-underscore', value: ['Bearer', ['ABCD1234', 'EFGH5678'].join('_')].join(' ') },
+        {
+            shape: 'hyphenated-prose',
+            value: ['Reviewer saw Bearer', ['qzxvpmrt', 'ncbwksjg'].join('-'), 'expire'].join(' '),
+        },
     ];
     const positions = ['state', 'instructions', 'criteria', 'key', 'questionName', 'criterionKey', 'model'] as const;
     function payload(position: (typeof positions)[number], value: string) {
