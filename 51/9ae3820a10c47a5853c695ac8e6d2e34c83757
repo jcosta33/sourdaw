@@ -1,0 +1,33 @@
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_4c8cd08893b364::t_52fa56ea4058f7 626-964,967
+  s_4c8cd08893b364::t_a506574ff1479c 319-321,330-335
+  s_4c8cd08893b364::t_05ac1892158e51 356-361
+  s_4c8cd08893b364::t_8a1de3b9fa9f38 46-47
+  s_4c8cd08893b364::t_f8e600b3b6e256 294-318,326,329,342,345-346,353,372-373
+  s_4c8cd08893b364::t_3852832fa938aa 965-966,968
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_4c8cd08893b364::t_aa9b9100471deb 19-26
+  s_4c8cd08893b364::t_7e87cfa48df9c6 328-341
+  s_4c8cd08893b364::t_58d0fba86ccc02 1-4
+crates/sourdaw-native/tests/fixtures/sub_frame_tempo_step_maps.json
+  s_4c8cd08893b364::t_0962c88d9f290b 1-9
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_4c8cd08893b364::t_a55481b472b871 11-14
+  s_4c8cd08893b364::t_f504141d3088a0 232-235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "519ae3820a10c47a5853c695ac8e6d2e34c83757",
+  "prompts": {},
+  "sessions": {
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
