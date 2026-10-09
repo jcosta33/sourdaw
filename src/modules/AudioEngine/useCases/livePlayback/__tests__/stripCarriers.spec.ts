@@ -625,6 +625,71 @@ describe('projectStripCarriers', () => {
         expect(carrier).toEqual({ carrier: 'native' });
     });
 
+    // #5067. The native engine plays a bus's send into the bus it lands on, so
+    // a bus's sends are paths out of it like its output: a track reaching an
+    // unrepresentable bus that way would be heard through it minus the device.
+    it('leaves a track whose bus sends into a bus the engine cannot build on Web Audio', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                    createTrack({
+                        id: 'bus-1',
+                        kind: 'bus',
+                        sends: [{ busId: 'bus-2', level: 0.5, preFader: false }],
+                    }),
+                    createTrack({
+                        id: 'bus-2',
+                        kind: 'bus',
+                        name: 'Plate',
+                        devices: [createDevice({ id: 'd', type: 'builtin-reverb' })],
+                    }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'web', reason: 'output path through "Plate" holds builtin-reverb' });
+    });
+
+    it('keeps a track native when its bus sends into a bus the engine can build', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                    createTrack({
+                        id: 'bus-1',
+                        kind: 'bus',
+                        sends: [{ busId: 'bus-2', level: 0.5, preFader: false }],
+                    }),
+                    createTrack({ id: 'bus-2', kind: 'bus', devices: [nativeDevice('d')] }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    it('answers a loop a bus send closes with a reason instead of recursing forever', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                    createTrack({
+                        id: 'bus-1',
+                        kind: 'bus',
+                        sends: [{ busId: 'bus-2', level: 0.5, preFader: false }],
+                    }),
+                    createTrack({ id: 'bus-2', kind: 'bus', outputId: 'bus-1' }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'web', reason: 'output path loops' });
+    });
+
     // A project can route a bus back into the track feeding it. The recursion
     // has to stop rather than run the stack out.
     it('answers a routing cycle with a reason instead of recursing forever', () => {

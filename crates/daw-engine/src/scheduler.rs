@@ -809,6 +809,20 @@ pub enum GraphCommand {
         track_id: usize,
         bus_id: usize,
     },
+    /// Add a send from the bus `source_bus_id` into the bus `bus_id`, on the
+    /// contract [`GraphCommand::AddSend`] gives a track's: the same taps, the
+    /// same owned compensation delay, and the same cycle refusal.
+    AddBusSend {
+        source_bus_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    },
+    RemoveBusSend {
+        source_bus_id: usize,
+        bus_id: usize,
+    },
     AddBus(Box<TimelineBus>),
     RemoveBus(usize),
     SetBusOutput(usize, RouteTarget),
@@ -987,6 +1001,8 @@ impl GraphCommand {
             | Self::RemoveBusDevice { .. }
             | Self::AddSend { .. }
             | Self::RemoveSend { .. }
+            | Self::AddBusSend { .. }
+            | Self::RemoveBusSend { .. }
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..)
@@ -1041,6 +1057,8 @@ impl GraphCommand {
             | Self::RemoveBusDeviceRetired { .. }
             | Self::AddSend { .. }
             | Self::RemoveSend { .. }
+            | Self::AddBusSend { .. }
+            | Self::RemoveBusSend { .. }
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..) => true,
@@ -6902,6 +6920,27 @@ impl AudioScheduler {
                         RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
                     })
                 }
+                GraphCommand::AddBusSend {
+                    source_bus_id,
+                    bus_id,
+                    tap,
+                    level,
+                    delay,
+                } => self
+                    .timeline
+                    .add_bus_send(source_bus_id, bus_id, tap, level, delay)
+                    .map(|refused| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                    }),
+                GraphCommand::RemoveBusSend {
+                    source_bus_id,
+                    bus_id,
+                } => self
+                    .timeline
+                    .remove_bus_send(source_bus_id, bus_id)
+                    .map(|removed| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                    }),
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
                 }),
@@ -11212,6 +11251,82 @@ mod tests {
                 .expect("the refused splice must hand its line off");
             assert!(matches!(
                 &retired.timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+        }
+
+        /// A bus send's whole life on the callback: the accepted add, the
+        /// cycle refusal handing its line back, the compensation pass both
+        /// dirty, a callback rendering both buses, and the removal handing its
+        /// line off. The line is the one heap object a send owns, so it is
+        /// built control-side and must leave over the retirement ring rather
+        /// than be freed here.
+        #[test]
+        fn a_bus_send_applies_renders_and_retires_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let send_line = || Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES));
+            for command in [
+                GraphCommand::AddTrack(TimelineTrack::new(1)),
+                GraphCommand::AddBus(TimelineBus::new(50)),
+                GraphCommand::AddBus(TimelineBus::new(51)),
+                GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)),
+            ] {
+                command_tx.push(command).unwrap();
+            }
+            scheduler.update_graph();
+
+            command_tx
+                .push(GraphCommand::AddBusSend {
+                    source_bus_id: 50,
+                    bus_id: 51,
+                    tap: SendTap::PreFader,
+                    level: 0.5,
+                    delay: send_line(),
+                })
+                .unwrap();
+            // The return path closes a loop: refused, and its line must leave.
+            command_tx
+                .push(GraphCommand::AddBusSend {
+                    source_bus_id: 51,
+                    bus_id: 50,
+                    tap: SendTap::PostFader,
+                    level: 0.5,
+                    delay: send_line(),
+                })
+                .unwrap();
+            let mut left = vec![0.0; 64];
+            let mut right = vec![0.0; 64];
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.process_block(&mut left, &mut right, 64);
+            });
+            assert_eq!(
+                scheduler.timeline().bus_send_tap(50, 51),
+                Some(SendTap::PreFader)
+            );
+            assert!(matches!(
+                &retired_rx
+                    .pop()
+                    .expect("the refused send must hand its line off")
+                    .timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+
+            command_tx
+                .push(GraphCommand::RemoveBusSend {
+                    source_bus_id: 50,
+                    bus_id: 51,
+                })
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert_eq!(scheduler.timeline().bus_send_tap(50, 51), None);
+            assert!(matches!(
+                &retired_rx
+                    .pop()
+                    .expect("the removed send must hand its line off")
+                    .timeline_object,
                 Some(RetiredTimelineObject::Delay(_))
             ));
         }
@@ -18009,6 +18124,72 @@ mod timeline_tests {
             harness.render(16).0,
             vec![ALIGNED; 16],
             "past the onset every frame carries all three routes"
+        );
+    }
+
+    /// A bus's send is compensated on the law a track's is: the bus it lands
+    /// on is a summing point, and the send's own line holds it to that point's
+    /// deepest arrival.
+    ///
+    /// Bus A arrives at its own chain's latency and the track feeding bus B
+    /// directly arrives later still, so the send out of A has to wait the
+    /// difference. Left unaimed it would reach B — and the master — that many
+    /// frames early.
+    #[test]
+    fn a_bus_send_waits_for_the_deepest_arrival_at_the_bus_it_lands_on() {
+        const BUS_LATENCY: usize = 7;
+        const DIRECT_LATENCY: usize = 10;
+        const SEND_LEVEL: f32 = 0.5;
+        // Bus A's own output, its send through bus B, and the direct track.
+        const ALIGNED: f32 = 1.0 + SEND_LEVEL + 1.0;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Bus(51)));
+        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(50, effect(900), 0));
+        harness.send(set_latency(900, BUS_LATENCY));
+        insert_latent_device(&mut harness, 2, 901, DIRECT_LATENCY);
+        harness.send(GraphCommand::AddBusSend {
+            source_bus_id: 50,
+            bus_id: 51,
+            tap: SendTap::PreFader,
+            level: SEND_LEVEL,
+            delay: uncompensated(),
+        });
+
+        let bus_a = harness
+            .scheduler
+            .timeline()
+            .bus(50)
+            .expect("bus A is in the graph");
+        assert_eq!(
+            bus_a.send_delay_frames(51),
+            Some(DIRECT_LATENCY - BUS_LATENCY),
+            "the send waits for the direct track that lands on bus B later"
+        );
+        assert_eq!(
+            bus_a.output_delay_frames(),
+            DIRECT_LATENCY - BUS_LATENCY,
+            "bus A's own output waits for bus B at the master"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![ALIGNED; 16];
+        expected[..DIRECT_LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "bus A's send reaches the master through bus B on the frame every other \
+             route arrives"
         );
     }
 
