@@ -1,0 +1,27 @@
+docs/06-testing.md
+  s_d257b09300b1ad::t_32b930163d4a53 763-766
+scripts/__tests__/e2eShardPartition.spec.ts
+  s_d257b09300b1ad::t_ee20569a932027 1-145,148-157,159-163,165-170,174-176,225-226
+scripts/e2eShardPartition.ts
+  s_d257b09300b1ad::t_7dd9d5adba3dbb 3-4,7-19,23-119,126-136,143-150,158-162,164-170
+scripts/e2eSpecDurations.json
+  s_d257b09300b1ad::t_77b5134df973eb 1-315
+scripts/prValidationScope.ts
+  s_d257b09300b1ad::t_af49291f423666 6,193-207,258,324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6e7e8b9e4089af301348d861a2254734d720e97",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
