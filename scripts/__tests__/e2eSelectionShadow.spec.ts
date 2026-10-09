@@ -610,6 +610,83 @@ describe('E2E selection shadow', () => {
         expect(report.liveSelectedSpecs).toContain(extra.path);
     });
 
+    it('keeps the complete integration plan when a regular validation workflow changes', () => {
+        const extra = {
+            path: 'tests/e2e/monoModulationInput.spec.ts',
+            gitBlob: 'f'.repeat(40),
+            sha256: 'f'.repeat(64),
+            mode: '100644',
+        };
+        const integrationInventory = [...inventory, extra];
+        const validationPath = '.github/workflows/validation.yml';
+        const integrationValidationSha256 = '3edb4cafd1c0387e2e8709331639b0f7df448bbcb841bb7e5de4c113fcf4eb2b';
+        const report = measureShadow(
+            fixture({
+                integrationInventory,
+                integrationSourceHashes: {
+                    ...fixture().integrationSourceHashes,
+                    [validationPath]: integrationValidationSha256,
+                },
+                livePlan: selectValidationPlan(
+                    [candidate],
+                    integrationInventory.map((row) => row.path)
+                ),
+            })
+        );
+        expect(report.measurementStatus).toBe('complete');
+        expect(report.counts).toEqual({ inventory: 314, candidate: 314, liveSelected: 314 });
+        expect(report.candidateSpecs).toContain(extra.path);
+        expect(report.liveSelectedSpecs).toContain(extra.path);
+        expect(report.fallbackReasons).toContain(`integration-source-drift: ${validationPath}`);
+        expect(report.obligationDispositions.find((row) => row.path === extra.path)?.disposition).toBe(
+            'INTEGRATION_UNMAPPED'
+        );
+        expect(report.integrationSourceAndConfigurationSha256[validationPath]).toBe(integrationValidationSha256);
+        expect(() =>
+            measureShadow(
+                fixture({
+                    integrationInventory,
+                    integrationSourceHashes: {
+                        ...fixture().integrationSourceHashes,
+                        [validationPath]: integrationValidationSha256,
+                    },
+                    livePlan: selectValidationPlan(
+                        ['README.md'],
+                        integrationInventory.map((row) => row.path)
+                    ),
+                })
+            )
+        ).toThrow('Authoritative scope artifact disagrees');
+    });
+
+    it('refuses unbound or nonregular validation workflow identities', () => {
+        const validationPath = '.github/workflows/validation.yml';
+        expect(() =>
+            measureShadow(
+                fixture({
+                    sourceModes: { ...fixture().sourceModes, [validationPath]: '120000' },
+                })
+            )
+        ).toThrow('Integration validation policy source is missing or nonregular');
+        expect(() =>
+            measureShadow(
+                fixture({
+                    sourceHashes: { ...fixture().sourceHashes, [validationPath]: 'missing-or-nonregular' },
+                })
+            )
+        ).toThrow('Integration validation policy source is missing or nonregular');
+        expect(() =>
+            measureShadow(
+                fixture({
+                    integrationSourceHashes: {
+                        ...fixture().integrationSourceHashes,
+                        [validationPath]: 'missing-or-nonregular',
+                    },
+                })
+            )
+        ).toThrow('Integration validation policy source is missing or nonregular');
+    });
+
     it('rejects an integration plan that does not match the authenticated inventory', () => {
         const integrationInventory = [
             ...inventory,

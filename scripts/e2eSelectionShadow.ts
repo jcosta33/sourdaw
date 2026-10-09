@@ -1,3 +1,4 @@
+import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,14 +32,8 @@ type ChangedRecord = {
 };
 type SourceRow = { path: string; disposition: string; reason: string; producerRoute: string[] };
 
-export {
-    hashInventoryFile,
-    listIntegrationInventory,
-    listInventory,
-    readHeadSourceBindings,
-    readIntegrationSourceHashes,
-    verifyIntegrationCheckout,
-};
+export { hashInventoryFile, listIntegrationInventory, listInventory };
+export { readHeadSourceBindings, readIntegrationSourceHashes, verifyIntegrationCheckout };
 type ShadowInput = {
     base: string;
     head: string;
@@ -274,7 +269,6 @@ function validateMeasurementInput(input: ShadowInput): {
         'playwright.config.ts',
         '.github/workflows/health-gates.yml',
         '.github/workflows/heavy-gates.yml',
-        '.github/workflows/validation.yml',
         'package.json',
         'pnpm-lock.yaml',
     ]) {
@@ -282,6 +276,11 @@ function validateMeasurementInput(input: ShadowInput): {
             throw new Error(`Integration execution policy differs from candidate head: ${path}`);
         }
     }
+    const validationPath = '.github/workflows/validation.yml';
+    const invalidValidation = 'Integration validation policy source is missing or nonregular';
+    assert.equal(input.sourceModes[validationPath], '100644', invalidValidation);
+    assert.match(String(input.sourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
+    assert.match(String(input.integrationSourceHashes[validationPath]), /^[0-9a-f]{64}$/, invalidValidation);
     const expectedPlan = selectValidationPlan(
         paths,
         inventory.map((row) => row.path)
