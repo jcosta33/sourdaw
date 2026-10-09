@@ -236,35 +236,43 @@ describe('E2E selection shadow', () => {
         }
     });
 
-    it('falls back for an altered row, source route, collector, selector, or workflow policy', () => {
+    it('falls back for an altered inventory row', () => {
         const changed = [...inventory];
         changed[0] = { ...changed[0]!, sha256: '0'.repeat(64) };
         expect(measureShadow(fixture({ inventory: changed })).fallbackReasons[0]).toMatch(
             'inventory-certificate-drift'
         );
-        for (const path of [
-            'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
-            'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx',
-            'tests/e2e/e2eUtils.ts',
-            'scripts/vitestCollectionPatterns.ts',
-            'scripts/prValidationScope.ts',
-            'playwright.config.ts',
-            'tests/e2e/smoke.spec.ts',
-            '.github/workflows/heavy-gates.yml',
-        ]) {
-            const sourceHashes = { ...certificate.sourceHashes, [path]: '0'.repeat(64) };
-            expect(measureShadow(fixture({ sourceHashes })).fallbackReasons).toContain(
-                `route-certificate-drift: ${path}`
-            );
-        }
+    });
+
+    it.each([
+        'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
+        'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx',
+        'tests/e2e/e2eUtils.ts',
+        'scripts/vitestCollectionPatterns.ts',
+        'scripts/prValidationScope.ts',
+        'playwright.config.ts',
+        'tests/e2e/smoke.spec.ts',
+        '.github/workflows/heavy-gates.yml',
+    ])('falls back for a changed source route %s', (path) => {
+        const sourceHashes = { ...certificate.sourceHashes, [path]: '0'.repeat(64) };
+        expect(measureShadow(fixture({ sourceHashes })).fallbackReasons).toContain(`route-certificate-drift: ${path}`);
+    });
+
+    it('falls back for a changed source mode', () => {
         const sourceModes = Object.fromEntries(Object.keys(certificate.sourceHashes).map((path) => [path, '100644']));
         sourceModes['playwright.config.ts'] = '120000';
         expect(measureShadow(fixture({ sourceModes })).fallbackReasons).toContain(
             'route-certificate-drift: playwright.config.ts'
         );
+    });
+
+    it('falls back for a changed health workflow policy', () => {
         expect(measureShadow(fixture({ healthRequiredPolicySha256: '0'.repeat(64) })).fallbackReasons).toContain(
             'workflow-certificate-drift: health required policy'
         );
+    });
+
+    it('falls back for a changed source-map certificate', () => {
         expect(measureShadow(fixture({ certificateSha256: '0'.repeat(64) })).fallbackReasons).toContain(
             'source-map-certificate-drift'
         );
