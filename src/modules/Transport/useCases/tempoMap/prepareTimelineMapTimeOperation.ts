@@ -41,7 +41,7 @@ type CarryAcrossDeletionInput<TChange extends TimelineChange> = {
     endBeat: number;
 };
 
-type CarriedAcrossDeletion<TChange extends TimelineChange> = {
+type CarriedChanges<TChange extends TimelineChange> = {
     // Land before any change already on their beat.
     arrivals: TChange[];
     // Land after any change already on their beat.
@@ -50,7 +50,27 @@ type CarriedAcrossDeletion<TChange extends TimelineChange> = {
 
 type CarryAcrossDeletion<TChange extends TimelineChange> = (
     input: CarryAcrossDeletionInput<TChange>
-) => CarriedAcrossDeletion<TChange>;
+) => CarriedChanges<TChange>;
+
+type CarryAcrossInsertionInput<TChange extends TimelineChange> = {
+    original: readonly TChange[];
+    atBeat: number;
+    durationBeats: number;
+};
+
+type CarryAcrossInsertion<TChange extends TimelineChange> = (
+    input: CarryAcrossInsertionInput<TChange>
+) => CarriedChanges<TChange>;
+
+type CarryAcrossTimeOperation<TChange extends TimelineChange> = {
+    deletion: CarryAcrossDeletion<TChange>;
+    insertion: CarryAcrossInsertion<TChange>;
+};
+
+type Ramp = {
+    ramping: TempoChange;
+    target: TempoChange;
+};
 
 type PreparedChanges<TChange extends TimelineChange> =
     | { status: 'invalid' }
@@ -140,39 +160,6 @@ function isValidOperation(operation: TimelineMapTimeOperation): boolean {
     );
 }
 
-function prepareInsertedChanges<TChange extends TimelineChange>(
-    changes: readonly TChange[],
-    operation: InsertTimelineMapTimeOperation
-): PreparedChanges<TChange> {
-    let hasChanges = false;
-    const nextChanges: TChange[] = [];
-
-    for (const change of changes) {
-        if (change.beat < operation.atBeat) {
-            nextChanges.push(change);
-            continue;
-        }
-
-        const shiftedBeat = change.beat + operation.durationBeats;
-        if (!isFiniteNonNegative(shiftedBeat)) {
-            return { status: 'invalid' };
-        }
-        if (shiftedBeat === change.beat) {
-            nextChanges.push(change);
-            continue;
-        }
-
-        hasChanges = true;
-        nextChanges.push({ ...change, beat: shiftedBeat });
-    }
-
-    return {
-        status: 'valid',
-        hasChanges,
-        changes: nextChanges,
-    };
-}
-
 // The tolerance decides which side of a bound a change falls on, and nothing
 // else: a change within BEAT_EPSILON of a bound is on it. The bounds themselves
 // never move, so the span the maps lose is exactly the span the content loses.
@@ -190,6 +177,19 @@ function isPastCut(beat: number, endBeat: number): boolean {
 function shiftPastCut(beat: number, startBeat: number, endBeat: number): number {
     const shiftedBeat = beat - (endBeat - startBeat);
     return shiftedBeat - startBeat <= BEAT_EPSILON ? startBeat : shiftedBeat;
+}
+
+// Inserting time classifies against the insert point as Delete Time does against
+// its bounds: a change before it less BEAT_EPSILON is kept, and every other one
+// moves by exactly the inserted span, as content does. A change within
+// BEAT_EPSILON of the point is on it and goes exactly to the span end, so every
+// change on the point shares that beat and none sits a float step off it.
+function isOnInsertPoint(beat: number, atBeat: number): boolean {
+    return Math.abs(beat - atBeat) <= BEAT_EPSILON;
+}
+
+function shiftPastInsert(beat: number, { atBeat, durationBeats }: InsertTimelineMapTimeOperation): number {
+    return isOnInsertPoint(beat, atBeat) ? atBeat + durationBeats : beat + durationBeats;
 }
 
 // Exact: once classified, a remaining change is on the cut only by sitting
@@ -316,9 +316,16 @@ function keepLeadInTempo(
 // so the ramp is read along its line up to the start rather than held at the
 // target's tempo, which would re-aim the ramp before the cut.
 function readRampReachedAtSpanStart(original: readonly TempoChange[], startBeat: number): number | null {
+    const ramp = findRampInto(original, startBeat);
+    return ramp ? readRampValueAt(ramp, startBeat) : null;
+}
+
+// The last change kept before a bound, when it is linear, and the first change
+// after it, which it ramps toward ("arrive at the first, govern from the last").
+function findRampInto(original: readonly TempoChange[], bound: number): Ramp | null {
     let ramping: TempoChange | undefined;
     for (const change of original) {
-        if (isBeforeCut(change.beat, startBeat) && (!ramping || change.beat >= ramping.beat)) {
+        if (isBeforeCut(change.beat, bound) && (!ramping || change.beat >= ramping.beat)) {
             ramping = change;
         }
     }
@@ -331,11 +338,41 @@ function readRampReachedAtSpanStart(original: readonly TempoChange[], startBeat:
             target = change;
         }
     }
-    if (!target) {
-        return null;
-    }
-    const progress = (startBeat - ramping.beat) / (target.beat - ramping.beat);
+    return target ? { ramping, target } : null;
+}
+
+function readRampValueAt({ ramping, target }: Ramp, beat: number): number {
+    const progress = (beat - ramping.beat) / (target.beat - ramping.beat);
     return ramping.tempo + (target.tempo - ramping.tempo) * progress;
+}
+
+// Inserting time never changes the tempo before the insert point, and the
+// inserted span holds the tempo in force there. A ramp under way at the point
+// would otherwise be re-aimed at its target's shifted beat and run more slowly
+// before it, so it arrives at the point on its own slope, at an instant change
+// holding the value it reached. A target past the point is resumed from the span
+// end by a linear change holding that value, so the rest of the ramp keeps its
+// slope; a target on the point moves to the span end itself and governs from there.
+function carryTempoAcrossInsertion({
+    original,
+    atBeat,
+    durationBeats,
+}: CarryAcrossInsertionInput<TempoChange>): CarriedChanges<TempoChange> {
+    const endBeat = atBeat + durationBeats;
+    const ramp = findRampInto(original, atBeat);
+    if (endBeat === atBeat || !ramp || ramp.ramping.tempo === ramp.target.tempo) {
+        return { arrivals: [], carried: [] };
+    }
+    const reached = readRampValueAt(ramp, atBeat);
+    const arrival = createTempoChange(atBeat, reached, 'instant');
+    if (isOnInsertPoint(ramp.target.beat, atBeat)) {
+        return { arrivals: [arrival], carried: [] };
+    }
+    return { arrivals: [arrival], carried: [createTempoChange(endBeat, reached, 'linear')] };
+}
+
+function carryNothingAcrossInsertion<TChange extends TimelineChange>(): CarriedChanges<TChange> {
+    return { arrivals: [], carried: [] };
 }
 
 // Removing time never changes the tempo before the cut. A ramp that crosses the
@@ -357,7 +394,7 @@ function arriveAtSpanStart(
     return createTempoChange(input.startBeat, reached, 'instant');
 }
 
-function carryTempoAcrossDeletion(input: CarryAcrossDeletionInput<TempoChange>): CarriedAcrossDeletion<TempoChange> {
+function carryTempoAcrossDeletion(input: CarryAcrossDeletionInput<TempoChange>): CarriedChanges<TempoChange> {
     const provisional = carryTempoToSpanStart(input);
     const leadIn = keepLeadInTempo(input, provisional);
     if (leadIn) {
@@ -424,7 +461,7 @@ function readImpliedTimeSignature(): TimeSignatureChange {
 
 function carryTimeSignatureAcrossDeletion(
     input: CarryAcrossDeletionInput<TimeSignatureChange>
-): CarriedAcrossDeletion<TimeSignatureChange> {
+): CarriedChanges<TimeSignatureChange> {
     return { arrivals: [], carried: carryTimeSignatureToSpanStart(input) };
 }
 
@@ -486,17 +523,56 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
         remainingChanges.push({ ...change, beat: shiftedBeat });
     }
 
-    const { arrivals, carried } = carryAcrossDeletion({
+    const carriedChanges = carryAcrossDeletion({
         original: changes,
         remaining: remainingChanges,
         startBeat,
         endBeat,
     });
-    if (arrivals.length === 0 && carried.length === 0) {
-        return { status: 'valid', hasChanges, changes: remainingChanges };
+    return placeCarriedChanges(remainingChanges, hasChanges, carriedChanges);
+}
+
+function prepareInsertedChanges<TChange extends TimelineChange>(
+    changes: readonly TChange[],
+    operation: InsertTimelineMapTimeOperation,
+    carryAcrossInsertion: CarryAcrossInsertion<TChange>
+): PreparedChanges<TChange> {
+    let hasChanges = false;
+    const nextChanges: TChange[] = [];
+
+    for (const change of changes) {
+        if (isBeforeCut(change.beat, operation.atBeat)) {
+            nextChanges.push(change);
+            continue;
+        }
+
+        const shiftedBeat = shiftPastInsert(change.beat, operation);
+        if (!isFiniteNonNegative(shiftedBeat)) {
+            return { status: 'invalid' };
+        }
+        if (shiftedBeat === change.beat) {
+            nextChanges.push(change);
+            continue;
+        }
+
+        hasChanges = true;
+        nextChanges.push({ ...change, beat: shiftedBeat });
     }
 
-    const withArrivals = arrivals.reduce((ordered, change) => insertBeforeBeatOrder(ordered, change), remainingChanges);
+    const carriedChanges = carryAcrossInsertion({ original: changes, ...operation });
+    return placeCarriedChanges(nextChanges, hasChanges, carriedChanges);
+}
+
+function placeCarriedChanges<TChange extends TimelineChange>(
+    changes: TChange[],
+    hasChanges: boolean,
+    { arrivals, carried }: CarriedChanges<TChange>
+): PreparedChanges<TChange> {
+    if (arrivals.length === 0 && carried.length === 0) {
+        return { status: 'valid', hasChanges, changes };
+    }
+
+    const withArrivals = arrivals.reduce((ordered, change) => insertBeforeBeatOrder(ordered, change), changes);
     return {
         status: 'valid',
         hasChanges: true,
@@ -507,12 +583,12 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
 function prepareChanges<TChange extends TimelineChange>(
     changes: readonly TChange[],
     operation: TimelineMapTimeOperation,
-    carryAcrossDeletion: CarryAcrossDeletion<TChange>
+    carryAcross: CarryAcrossTimeOperation<TChange>
 ): PreparedChanges<TChange> {
     if (operation.type === 'insert') {
-        return prepareInsertedChanges(changes, operation);
+        return prepareInsertedChanges(changes, operation, carryAcross.insertion);
     }
-    return prepareDeletedChanges(changes, operation, carryAcrossDeletion);
+    return prepareDeletedChanges(changes, operation, carryAcross.deletion);
 }
 
 function prepareTimelineMapStates(operation: TimelineMapTimeOperation): PreparedTimelineMapStates {
@@ -527,16 +603,18 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         return { status: 'rejected' };
     }
 
-    const preparedTempoChanges = prepareChanges(tempoState.changes, operation, carryTempoAcrossDeletion);
+    const preparedTempoChanges = prepareChanges(tempoState.changes, operation, {
+        deletion: carryTempoAcrossDeletion,
+        insertion: carryTempoAcrossInsertion,
+    });
     if (preparedTempoChanges.status === 'invalid') {
         return { status: 'rejected' };
     }
 
-    const preparedTimeSignatureChanges = prepareChanges(
-        timeSignatureState.changes,
-        operation,
-        carryTimeSignatureAcrossDeletion
-    );
+    const preparedTimeSignatureChanges = prepareChanges(timeSignatureState.changes, operation, {
+        deletion: carryTimeSignatureAcrossDeletion,
+        insertion: carryNothingAcrossInsertion,
+    });
     if (preparedTimeSignatureChanges.status === 'invalid') {
         return { status: 'rejected' };
     }
