@@ -102,6 +102,7 @@ export async function executeImmediatePromptCommand(
         onExecutionSettlementWarning,
     } = input;
     agentRunLifecycle.transitionPhase({ runId, phase: 'executing', revision: projectRevision });
+    updateChatMessage(assistantMessageId, { agentRunId: runId, agentBatchId: parsedCommandBatch.envelope.batchId });
     const commandReceiptIdentity = `command:${runId}:${parsedCommandBatch.envelope.batchId}`;
     const commandLeaseResult = agentRunWorkLease.claim({
         runId,

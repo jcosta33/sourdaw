@@ -2799,7 +2799,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 ordering.push('cleanup-finished');
             });
         mocks.updateChatMessage.mockImplementation((_messageId, update) => {
-            if (update.content.startsWith('Planned without changing')) {
+            // An update may stamp identity alone, with no content.
+            if (typeof update.content === 'string' && update.content.startsWith('Planned without changing')) {
                 ordering.push('plan-published');
             }
         });
