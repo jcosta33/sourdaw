@@ -158,6 +158,34 @@ describe('projectEngineTransportMaps', () => {
         });
     });
 
+    it('opens one segment on a beat shared by an arrival and a governing change, stating the governing ramp', () => {
+        // The ramp from beat 0 arrives at 140 on beat 4; the change that governs
+        // from there ramps 160 -> 200 to beat 8. Both sit on one second, and the
+        // engine refuses a map whose segments do not start on strictly
+        // increasing frames.
+        tempoMapStore.set({
+            changes: [
+                tempoChange(0, 100, 'linear'),
+                { id: 'arrival', beat: 4, tempo: 140, curve: 'instant' },
+                { id: 'governing', beat: 4, tempo: 160, curve: 'linear' },
+                tempoChange(8, 200),
+            ],
+        });
+
+        const { tempo } = projectEngineTransportMaps();
+
+        const starts = tempo.map((segment) => segment.startSeconds);
+        expect(starts.every((second, index) => index === 0 || second > starts[index - 1]!)).toBe(true);
+        const cutSeconds = 6 * Math.log(1.4);
+        const cutIndex = starts.findIndex((second) => Math.abs(second - cutSeconds) < 1e-9);
+        expect(cutIndex).toBeGreaterThan(0);
+        // Before the cut the ramp tops out at the arrival tempo; the segment
+        // that opens at the cut states the 160 -> 200 ramp.
+        expect(tempo.slice(0, cutIndex).every((segment) => segment.beatsPerMinute <= 140)).toBe(true);
+        expect(tempo[cutIndex]!.beatsPerMinute).toBeGreaterThan(160);
+        expect(tempo[cutIndex]!.beatsPerMinute).toBeLessThan(200);
+    });
+
     it('integrates the meter map through the same tempo map as the tempo map itself', () => {
         tempoMapStore.set({ changes: [tempoChange(0, 120), tempoChange(4, 60)] });
         timeSignatureMapStore.set({

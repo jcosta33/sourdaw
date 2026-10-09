@@ -171,6 +171,17 @@ function segmentBeats(sorted: readonly TempoChange[], rampStep: number): number[
 }
 
 /**
+ * One change per beat, the last of those sharing it. Two changes on one beat
+ * mean "arrive at the first, govern from the last"; both land on the same
+ * second, and the engine refuses a map whose segments do not start on strictly
+ * increasing frames. The arrival is not lost: the seconds the segments start
+ * on are integrated through the full map.
+ */
+function governingPerBeat(sorted: readonly TempoChange[]): TempoChange[] {
+    return sorted.filter((change, index) => sorted[index + 1]?.beat !== change.beat);
+}
+
+/**
  * The tempo the arrangement is at, at a beat, ramps included.
  *
  * Deliberately local rather than the Transport query: this walks a list already
@@ -238,8 +249,12 @@ function projectTempo(
     // Instant changes are held to the same budget as ramp samples: a map with
     // more authored changes than the engine can hold is thinned rather than
     // truncated, and never left over the cap for the engine to refuse whole.
-    const capacity = authoredCapacity(sorted);
-    const authored = thinUniformly(sorted, capacity);
+    // Changes sharing a beat open one segment, stated by the integral through
+    // the whole map, so the beat is kept once and its governing change is the
+    // entry that stays.
+    const governing = governingPerBeat(sorted);
+    const capacity = authoredCapacity(governing);
+    const authored = thinUniformly(governing, capacity);
 
     const ramped = totalRampBeats(authored);
     const budget = capacity - authored.length;
