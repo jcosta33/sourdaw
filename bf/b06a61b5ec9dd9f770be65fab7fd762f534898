@@ -1,0 +1,97 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipMoves.spec.ts
+  s_1f0dcd815e8946::t_e0750ccebc3940 81-95
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  s_2bfd55a4393d7c::t_d062aab393977d 1,41-49
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_97ab82e0b4f10c::t_9b0bea03a6977a 76-109
+src/modules/Arrangement/stores/trackStore.ts
+  s_4c8cd08893b364::t_1c9777ffd3dbed 287-289
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_2bfd55a4393d7c::t_400e87409ca96f 30-31,94
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_1f0dcd815e8946::t_67d59468791054 3,100-103
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_4c8cd08893b364::t_e38a15799a4123 2,57-61
+src/modules/Arrangement/useCases/clipEditing/__tests__/placementLoopOrigin.spec.ts
+  s_2bfd55a4393d7c::t_39b067398b7bbe 1-441
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_1f0dcd815e8946::t_12e7bedc1bac54 2,33-41
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_2bfd55a4393d7c::t_72cca5759a29a6 4,145-148
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_97ab82e0b4f10c::t_15e6099274be24 1-2,27-33,43-47,112-116
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  s_1f0dcd815e8946::t_e3c2e4d3e9d28a 2,74-77
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_2bfd55a4393d7c::t_8dd5c20f5324df 2,64-67
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_1f0dcd815e8946::t_4b08de38e07f39 2,43-46
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  s_1f0dcd815e8946::t_1cbfa9ffb58ddd 2,79-82
+src/modules/Arrangement/useCases/timeOperations/timeOperationStateCodec.ts
+  s_97ab82e0b4f10c::t_f1a0650fd10cd0 80-83
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineAudioClipPlaybacksLoopOrigin.spec.ts
+  s_1f0dcd815e8946::t_646ff9d5ba12b7 114-137
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  s_1c08b47ac3792f::t_a61eb41225158e 4,175-183
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEventsLoopOrigin.spec.ts
+  s_1c08b47ac3792f::t_46bfb9dbb04813 27-28,36,38,136-176
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_1c08b47ac3792f::t_86ce1f322577c1 88
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  s_4c8cd08893b364::t_75c5eb81482e82 207-240
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_1f0dcd815e8946::t_b7bb9369e9175a 23,301-305,307-311
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_4f59002a44a860 1330
+src/utils/__tests__/clipLoopOrigin.spec.ts
+  s_2bfd55a4393d7c::t_98100c6a80548b 12-14,17-18,26-30,48,59,64-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfb06a61b5ec9dd9f770be65fab7fd762f534898",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4c8cd08893b364": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2284558-b0de-4d09-a7be-8a89bafa1fee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
