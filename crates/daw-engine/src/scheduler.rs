@@ -18193,6 +18193,67 @@ mod timeline_tests {
         );
     }
 
+    /// The other side of the same law: a bus send is a contributor, so when
+    /// the sending bus is the deepest arrival at the bus it lands on, it is
+    /// the send that sets that bus's depth and every other input waits for it.
+    #[test]
+    fn a_bus_send_deeper_than_the_other_inputs_sets_the_depth_of_the_bus_it_lands_on() {
+        const BUS_LATENCY: usize = 10;
+        const SEND_LEVEL: f32 = 0.5;
+        // Bus A's own output, its send through bus B, and the direct track.
+        const ALIGNED: f32 = 1.0 + SEND_LEVEL + 1.0;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Bus(51)));
+        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(50, effect(900), 0));
+        harness.send(set_latency(900, BUS_LATENCY));
+        harness.send(GraphCommand::AddBusSend {
+            source_bus_id: 50,
+            bus_id: 51,
+            tap: SendTap::PreFader,
+            level: SEND_LEVEL,
+            delay: uncompensated(),
+        });
+
+        let timeline = harness.scheduler.timeline();
+        assert_eq!(
+            timeline
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            BUS_LATENCY,
+            "the direct track waits for bus A's send at bus B"
+        );
+        assert_eq!(
+            timeline
+                .bus(50)
+                .expect("bus A is in the graph")
+                .send_delay_frames(51),
+            Some(0),
+            "the deepest arrival at bus B waits for nothing"
+        );
+
+        let (left, _) = harness.render(32);
+        let mut expected = vec![ALIGNED; 32];
+        expected[..BUS_LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "bus A's send and the direct track meet at bus B on one frame, and bus A's \
+             own output meets them at the master"
+        );
+    }
+
     /// A note the control thread stamps for one timeline frame.
     fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
         TimedMidiNote {

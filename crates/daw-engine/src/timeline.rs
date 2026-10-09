@@ -4685,6 +4685,124 @@ mod tests {
         );
     }
 
+    /// A post-fader send taps after the mute, so a muted bus feeds nothing
+    /// through it — the other half of the pre-fader row above.
+    #[test]
+    fn a_muted_bus_feeds_nothing_through_its_post_fader_send() {
+        let mut graph = bus_sending_graph(SendTap::PostFader, 0.5);
+        let mut left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut right = vec![0.0; GATE_PROBE_BLOCK];
+
+        graph.set_bus_mute(50, true);
+        render_blocks(&mut graph, 0, GATE_PROBE_BLOCK, 2, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.0; GATE_PROBE_BLOCK],
+            "the muted bus and its post-fader send are both silent"
+        );
+        assert_eq!(right, vec![0.0; GATE_PROBE_BLOCK]);
+    }
+
+    /// A post-fader send taps after the panner, on a bus exactly as on a
+    /// track: what it carries is the panned pair, not the centred one.
+    #[test]
+    fn a_post_fader_send_carries_its_strips_pan_from_a_bus_as_from_a_track() {
+        const PAN: f32 = 0.5;
+        const LEVEL: f32 = 0.5;
+        let pan_to = |target: AutomationTarget| {
+            (
+                target,
+                AutomationWrite::Append(ramp(0, 0, PAN, RampShape::Step)),
+            )
+        };
+        // The strip's own panned output plus a copy of it at the send level:
+        // a send tapped ahead of the panner would add an unpanned copy instead.
+        let (panned_left, panned_right) = pan_frame(stereo_pan_gains(PAN), 1.0, 1.0);
+        let expected_left = panned_left * (1.0 + LEVEL);
+        let expected_right = panned_right * (1.0 + LEVEL);
+
+        let mut from_bus = bus_sending_graph(SendTap::PostFader, LEVEL);
+        let (target, write) = pan_to(AutomationTarget::BusPan(50));
+        from_bus.automate(target, write);
+
+        let mut from_track = graph_with_constant_clip(1, 1.0, 4);
+        assert!(from_track.add_bus(TimelineBus::new(51)).is_none());
+        assert!(from_track
+            .add_send(1, 51, SendTap::PostFader, LEVEL, uncompensated())
+            .is_none());
+        let (target, write) = pan_to(AutomationTarget::TrackPan(1));
+        from_track.automate(target, write);
+
+        for (graph, source) in [(&mut from_bus, "bus"), (&mut from_track, "track")] {
+            let mut left = vec![0.0; 4];
+            let mut right = vec![0.0; 4];
+            graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+            for frame in 0..4 {
+                assert!(
+                    (left[frame] - expected_left).abs() < 1e-6
+                        && (right[frame] - expected_right).abs() < 1e-6,
+                    "{source}: expected ({expected_left}, {expected_right}), got ({}, {})",
+                    left[frame],
+                    right[frame]
+                );
+            }
+        }
+    }
+
+    /// A bus send's level is a mixer parameter like any other, so a locate
+    /// keeps the change the playhead passed and drops the window beyond it,
+    /// and a stop holds it where it stands. See
+    /// `a_locate_drops_the_window_beyond_it_and_keeps_what_the_playhead_passed`.
+    #[test]
+    fn a_bus_send_level_takes_the_locate_and_the_stop_laws() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let target = AutomationTarget::BusSendLevel {
+            source_bus_id: 50,
+            bus_id: 51,
+        };
+        let send_level = |graph: &mut TimelineGraph| -> RampedParam {
+            graph
+                .bus_mut(50)
+                .expect("bus A")
+                .sends
+                .iter()
+                .find(|send| send.bus_id == 51)
+                .expect("the send into bus B")
+                .level
+                .clone()
+        };
+
+        let mut located = bus_sending_graph(SendTap::PreFader, 1.0);
+        located.automate(
+            target,
+            AutomationWrite::Append(ramp(4, 0, 0.5, RampShape::Step)),
+        );
+        located.automate(
+            target,
+            AutomationWrite::Append(ramp(12, 0, 0.25, RampShape::Step)),
+        );
+        located.seek(8);
+        let mut level = send_level(&mut located);
+        assert_eq!(level.value_at(8, &mut diagnostics), 0.5);
+        assert_eq!(level.value_at(100, &mut diagnostics), 0.5);
+
+        // The stop law `a_graph_transport_stop_drops_the_automation_window_the_stop_made_stale`
+        // pins for a fader: a change stamped past the stop must not fire later.
+        let mut stopped = bus_sending_graph(SendTap::PreFader, 1.0);
+        stopped.automate(
+            target,
+            AutomationWrite::Append(ramp(8, 0, 0.25, RampShape::Step)),
+        );
+        stopped.hold_automation(4);
+        let mut level = send_level(&mut stopped);
+        assert_eq!(level.value_at(4, &mut diagnostics), 1.0);
+        assert_eq!(
+            level.value_at(100, &mut diagnostics),
+            1.0,
+            "a stop drops the send change stamped past it"
+        );
+    }
+
     #[test]
     fn a_bus_send_follows_its_level_automation() {
         let mut graph = bus_sending_graph(SendTap::PreFader, 1.0);
