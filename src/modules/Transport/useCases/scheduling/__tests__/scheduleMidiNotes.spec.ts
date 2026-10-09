@@ -1685,6 +1685,53 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).not.toHaveBeenCalled();
         });
 
+        // A bypassed Toaster with live pads plays none of the notes routed to it,
+        // whether the notes are its own track's or a child pad track's.
+        it("plays no pad for a track's own bypassed Toaster", async () => {
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = () => [
+                { type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } },
+            ];
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'toaster-1', type: 'toaster', bypassed: true, parameterValues: {} }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('plays no pad for a child track under a bypassed parent Toaster', async () => {
+            const toasterNoteOn = vi.fn();
+            engineStub.nodesFor = (trackId) =>
+                trackId === 'toaster-parent'
+                    ? [{ type: 'toaster', deviceId: 'toaster-1', toasterControls: { noteOn: toasterNoteOn } }]
+                    : [];
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                devices: [{ id: 'toaster-1', type: 'toaster', bypassed: true, parameterValues: {} }],
+            });
+            const child = midiTrack({ id: 'pad-child', parentId: 'toaster-parent', clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 100 }] },
+                ccByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(toasterNoteOn).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
         it('routes a faust-device track through scheduleFaustNote', async () => {
             const track = midiTrack({
                 clips: [midiClip()],
