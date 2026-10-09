@@ -66,6 +66,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0050](0050-fired-semantic-signals-carry-a-disposal-duty.md)                      | A fired semantic signal must be named by the round's record before a fresh publication — **supersedes 0046/0047's silent-ignore tolerance only**                                                            |
 | [0051](0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md)          | A wasm bank commit allocates and frees nothing; the displaced bank is retired and freed by a paced message — **narrows 0020 for wasm only; disposed-message clause superseded by 0052; otherwise accepted** |
 | [0052](0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md)   | A disposed wasm Levain engine drains its banks in paced steps before it is freed — **extends 0051 and supersedes its disposed-message clause**                                                              |
+| [0053](0053-freeze-pull-requests-at-five-review-rounds.md)                        | A pull request freezes at its fifth review round — **superseded 2026-09-27 by the owner's advisory warning; renumbered from the duplicate 0050**                                                            |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
