@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { decodeBacteriaBody } from '../models/BacteriaBodyIndex';
 import { fromBacteriaModAssignmentsState, rowsEqual } from '../models/BacteriaModAssignmentsState';
 import {
     type BacteriaBand,
@@ -311,6 +312,11 @@ function hydrateBandFromProject(
     const routingMode = nameAt(ROUTING_MODE_NAMES, storedBandValue('routingMode'));
     if (routingMode !== null && next.routingMode !== routingMode) {
         next = { ...next, routingMode: routingMode as BacteriaRoutingMode };
+    }
+
+    const convolutionIr = decodeBacteriaBody(storedBandValue('convolutionIr'));
+    if (convolutionIr !== null && next.convolutionIr !== convolutionIr) {
+        next = { ...next, convolutionIr };
     }
 
     return next;

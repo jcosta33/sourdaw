@@ -100,6 +100,32 @@ describe('hydrateBacteriaPatchFromProject', () => {
         expect(patch.bands[0]?.mute).toBe(true);
     });
 
+    // A reopened project shows the body each band was saved with, and an undo
+    // of a band's first body (which writes the no-body value -1) shows None.
+    it('decodes each band’s stored body index, and -1 as no body', () => {
+        seedProjectDevice({ band0_convolutionIr: 2, band1_convolutionIr: 3, band2_convolutionIr: 0 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        const bands = getBacteriaState(DEVICE_ID).patch.bands;
+        expect(bands.slice(0, 3).map((band) => band.convolutionIr)).toEqual(['metal', 'spring', 'ceramic']);
+
+        seedProjectDevice({ band0_convolutionIr: -1, band1_convolutionIr: 3, band2_convolutionIr: 0 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('');
+    });
+
+    it('leaves a band’s body alone when the stored value names no body index', () => {
+        seedProjectDevice({ band0_convolutionIr: 1 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+        seedProjectDevice({ band0_convolutionIr: 7 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+        seedProjectDevice({ band0_convolutionIr: 1.5 });
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.convolutionIr).toBe('wood');
+    });
+
     it('leaves a field alone when the stored enum index is outside its table', () => {
         seedProjectDevice({ globalRouting: 99 });
 

@@ -1253,10 +1253,10 @@ impl PluginCore {
     /// Written into the instance before it crosses the ring for the same
     /// reason as [`Self::fermenter_with_patch`]: a multi-effect's patch is its
     /// globals plus six bands' worth of the engine's own parameters per strip,
-    /// and the command ring is finite. Two of those names allocate when they
-    /// land ([`BACTERIA_CONTROL_THREAD_ONLY`]), which is a second reason this
+    /// and the command ring is finite. One of those names allocates when it
+    /// lands ([`BACTERIA_CONTROL_THREAD_ONLY`]), which is a second reason this
     /// is where the record is applied: this is the only thread allowed to run
-    /// them, and [`BacteriaBody::load_patch`] is the only door that does.
+    /// it, and [`BacteriaBody::load_patch`] is the only door that does.
     ///
     /// The ordering law here is [`BACTERIA_PATCH_PRECEDENCE`], which is empty
     /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
@@ -2667,32 +2667,30 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// The Bacteria parameter names whose `set_param` arms allocate, and which
 /// [`BacteriaBody::set_param`] therefore refuses on the audio thread.
 ///
-/// `convolutionIr` rebuilds the cabinet impulse response:
-/// `ConvolutionProcessor::set_param` calls `load_builtin`, which builds the
-/// response into a fresh `vec!` and hands it to `load_ir`, which `to_vec`s
-/// both channels and replaces both input rings
-/// (`crates/daw-dsp/src/bacteria/convolution.rs`). `phaserStages` calls
-/// `resize_with` on both all-pass chains for a count the parameter admits up
-/// to 12 where the constructor built 6, so any count above 6 reallocates
-/// (`crates/daw-dsp/src/bacteria/chorus.rs`). Every other arm in the engine's
-/// vocabulary is a scalar store, a clamp, a coefficient recompute, or an
-/// allocation-free rebuild over storage the constructor already sized.
+/// `phaserStages` calls `resize_with` on both all-pass chains for a count the
+/// parameter admits up to 12 where the constructor built 6, so any count above
+/// 6 reallocates (`crates/daw-dsp/src/bacteria/chorus.rs`). Every other arm in
+/// the engine's vocabulary is a scalar store, a clamp, a coefficient
+/// recompute, or an allocation-free rebuild over storage the constructor
+/// already sized — `convolutionIr` among them: the convolver synthesizes every
+/// built-in body when it is built and a write only chooses which one it reads
+/// (`crates/daw-dsp/src/bacteria/convolution.rs`), so the body a musician picks
+/// lands on the audio thread like any other control.
 ///
-/// Both names reach the engine two ways — bare, because an unmatched name is
+/// The name reaches the engine two ways — bare, because an unmatched name is
 /// broadcast to all six bands, and as `band{digit}_…` for one band — so the
 /// refusal compares [`bare_bacteria_param_name`] rather than the name as
 /// written.
 ///
 /// The refusal is the body's own boundary and not the wire's: no producer
-/// emits these names today, but `set-device-parameters` admits any name of
-/// the right shape, so the door a command actually arrives at is the only
-/// place that can hold the line. The control thread is where they are allowed
-/// to land, and [`BacteriaBody::load_patch`] applies them there like any other
-/// name.
+/// emits this name today, but `set-device-parameters` admits any name of the
+/// right shape, so the door a command actually arrives at is the only place
+/// that can hold the line. The control thread is where it is allowed to land,
+/// and [`BacteriaBody::load_patch`] applies it there like any other name.
 ///
-/// A live single-key write of one takes two different routes, neither of
-/// which is "held on the Web Audio fallback" as a whole. An automation write
-/// is kept off the native door entirely: `addressesParameter`
+/// A live single-key write of it takes two different routes, neither of which
+/// is "held on the Web Audio fallback" as a whole. An automation write is kept
+/// off the native door entirely: `addressesParameter`
 /// (`src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts`)
 /// refuses the name, and `readLiveAutomationWrites.ts` gates on that answer
 /// before it ever builds a native `SetParam`. A panel write is not gated the
@@ -2701,7 +2699,7 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// — so it does reach this door, and [`BacteriaBody::set_param`] is what
 /// drops it there. Either route leaves the parameter holding whatever value
 /// the record's own patch gave it.
-const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
+const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["phaserStages"];
 
 /// The Tuner parameter names [`ScoringBody`] refuses at both of its doors —
 /// the live [`ScoringBody::set_param`] and the record's
@@ -2723,8 +2721,8 @@ const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"]
 /// (`crates/scoring/src/yin.rs`, issue #4209). Arming the tracker is therefore
 /// the same hazard one hop later rather than a safe write.
 ///
-/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose two names are *allowed* on
-/// the control thread and land through [`BacteriaBody::load_patch`], these two
+/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose name is *allowed* on the
+/// control thread and lands through [`BacteriaBody::load_patch`], these two
 /// are refused on BOTH doors. The reason is not which thread may run the
 /// allocation but that neither name belongs to this device: the Tuner's
 /// descriptor (`native-scoring`,
@@ -2747,10 +2745,10 @@ const SCORING_NATIVE_REFUSED: &[&str] = &["poly", "instrument"];
 /// [`BACTERIA_CONTROL_THREAD_ONLY`] would refuse the name the engine is
 /// about to route, so it has to agree with the engine's reading exactly
 /// rather than a stricter one of its own: a version that required the
-/// underscore would read `band00convolutionIr` and `band0XphaserStages` as
+/// underscore would read `band00phaserStages` and `band0XphaserStages` as
 /// unmatched bare names and let both through, while `apply_param` reads
-/// them as band 0's `convolutionIr` and `phaserStages` all the same — digit
-/// `0`, skipped byte `0` or `X`. Not checking the sixth byte is therefore
+/// both as band 0's `phaserStages` all the same — digit `0`, skipped byte
+/// `0` or `X`. Not checking the sixth byte is therefore
 /// not a gap this helper introduces; it is the engine's own gap, and the
 /// only way to close this door on it is to stop pretending the byte is
 /// checked.
@@ -2847,10 +2845,9 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 ///
 /// Both hosts run the same `BacteriaEngine` over the same key stream, so the
 /// figure the audio thread reads is the figure the sound has:
-/// `updateDeviceParam` sends every write to both, and the only names one host
-/// admits and the other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — move no
-/// latency at all, since the impulse response's length is fixed by
-/// `load_builtin` and the phaser is an all-pass network with no group delay
+/// `updateDeviceParam` sends every write to both, and the only name one host
+/// admits and the other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — moves no
+/// latency at all, since the phaser is an all-pass network with no group delay
 /// term in the report.
 ///
 /// The TypeScript side is what stops this being counted twice. A carried
@@ -2925,7 +2922,7 @@ impl BacteriaBody {
     ///
     /// Real-time safe, and this is the door that makes it so. The name arrives
     /// inline in the command ([`BuiltinParamName`]) and the engine resolves it
-    /// by comparison, but two of its arms allocate when they land, so a name
+    /// by comparison, but one of its arms allocates when it lands, so a name
     /// in [`BACTERIA_CONTROL_THREAD_ONLY`] is dropped here rather than
     /// forwarded — with or without a `band{digit}_` prefix. Dropping it is the
     /// conservative half of the trade: the parameter keeps the value the patch
@@ -2948,11 +2945,11 @@ impl BacteriaBody {
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
     ///
-    /// Every entry lands, including the two [`BACTERIA_CONTROL_THREAD_ONLY`]
-    /// names [`Self::set_param`] refuses: this is the thread their allocating
-    /// arms are allowed to run on, so the engine is written directly rather
-    /// than through that door. A persisted record naming a cabinet impulse
-    /// response or a phaser stage count therefore builds the device it names.
+    /// Every entry lands, including the [`BACTERIA_CONTROL_THREAD_ONLY`] name
+    /// [`Self::set_param`] refuses: this is the thread its allocating arm is
+    /// allowed to run on, so the engine is written directly rather than
+    /// through that door. A persisted record naming a phaser stage count
+    /// therefore builds the device it names.
     ///
     /// Ordered through [`precedence_first`] and
     /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
@@ -12006,14 +12003,13 @@ mod tests {
         /// The patch is chosen for coverage rather than for a sound: the
         /// oversampled Smudge waveshaper on band 0, its lo-fi codec past the
         /// `codecArtifact` threshold that engages the framed transform, its
-        /// convolver over a loaded response, and the spectral and granular
+        /// convolver over a chosen body, and the spectral and granular
         /// stages on band 1 — the stages that keep buffers of their own, and
         /// so the ones an allocation could hide in. `band0_convolutionIr` is
         /// in the patch rather than left out because a convolver with no
-        /// response loaded passes its input through
-        /// (`ConvolutionProcessor::process_stereo` returns early on
-        /// `!ir_loaded`), so the stage would be named and never run; the patch
-        /// is the control-thread route those names are allowed to travel.
+        /// body chosen passes its input through
+        /// (`ConvolutionProcessor::process_stereo` returns early when no body
+        /// is chosen), so the stage would be named and never run.
         ///
         /// Eight 512-frame callbacks, because this patch reports 2048 samples
         /// of latency (band 1's spectral window is the deepest, and `Parallel`
@@ -12321,8 +12317,9 @@ mod tests {
             );
         }
 
-        /// The two allocating names are dropped when they arrive on the audio
-        /// thread, and the body renders exactly as an untouched twin.
+        /// The allocating name is dropped when it arrives on the audio
+        /// thread, in every spelling, and the body renders exactly as an
+        /// untouched twin.
         ///
         /// Sample-exact against a twin rather than merely "close": the claim
         /// is that the write never reached the engine at all, and any figure
@@ -12331,25 +12328,22 @@ mod tests {
         ///
         /// Both bodies carry a patch that makes a landed write audible — the
         /// phaser engaged at full mix with the six stages its constructor
-        /// builds, and the convolver engaged at full mix over the `wood`
-        /// response — so the refusal is what holds the two renders together.
+        /// builds — so the refusal is what holds the two renders together.
         /// That the same writes *do* change the render when they land
         /// control-side is
         /// `a_bacteria_patch_applies_the_allocating_names_control_side`; without
-        /// it this spec could pass against a pair of names the engine ignores
-        /// outright.
+        /// it this spec could pass against a name the engine ignores outright.
         ///
-        /// Both names are sent bare and `band{digit}_`-prefixed, because the
+        /// The name is sent bare and `band{digit}_`-prefixed, because the
         /// engine reaches its stages both ways — an unmatched bare name is
         /// broadcast to all six bands — so a refusal reading only the written
-        /// form would let the other spelling through. `band00convolutionIr`
+        /// form would let the other spelling through. `band00phaserStages`
         /// and `band0XphaserStages` are in the refused set for the same
         /// reason `bare_bacteria_param_name`'s doc gives: the engine reads
         /// the byte after the digit without checking it, so both read as
-        /// band 0's `convolutionIr` and `phaserStages` to `apply_param` even
-        /// though neither spells the historical underscore, and the refusal
-        /// has to catch what the engine actually routes rather than only the
-        /// `_`-separated spelling.
+        /// band 0's `phaserStages` to `apply_param` even though neither spells
+        /// the historical underscore, and the refusal has to catch what the
+        /// engine actually routes rather than only the `_`-separated spelling.
         ///
         /// Run inside the guard as well: a refusal that returned early *after*
         /// touching the engine would abort here rather than only fail the
@@ -12362,15 +12356,11 @@ mod tests {
                 ("band0_phaserEnabled", 1.0),
                 ("band0_phaserMix", 1.0),
                 ("band0_phaserStages", 6.0),
-                ("band0_convolutionEnabled", 1.0),
-                ("band0_convolutionMix", 1.0),
-                ("band0_convolutionIr", 1.0),
             ]);
             let refused = bacteria_guard_writes(&[
                 ("band0_phaserStages", 12.0),
                 ("phaserStages", 12.0),
-                ("band0_convolutionIr", 2.0),
-                ("band00convolutionIr", 2.0),
+                ("band00phaserStages", 12.0),
                 ("band0XphaserStages", 12.0),
             ]);
             let material = bacteria_guard_material(FRAMES);
@@ -12413,6 +12403,88 @@ mod tests {
                 "an allocating name reached the engine from the audio thread and moved the \
                  right channel"
             );
+        }
+
+        /// A body a musician picks while the session plays natively reaches the
+        /// engine on the audio thread, allocating nothing, and the device then
+        /// sounds exactly like one whose saved record named that body.
+        ///
+        /// The picker's write is a live `SetParam`, so it arrives at
+        /// [`BacteriaBody::set_param`]. Refused there, the native mix would go
+        /// on playing the body the record opened with until the next rebuild
+        /// while the panel showed the new one. The twin is built control-side
+        /// through [`PluginCore::bacteria_with_patch`] with `metal` in its
+        /// record, so equality says the live write landed as the record would
+        /// have; the `wood` render beside it says a write that never landed
+        /// could not pass by accident. Both spellings the engine routes are
+        /// sent, as the panel addresses one band and a bare name reaches all
+        /// six.
+        #[test]
+        fn a_bacteria_body_takes_a_body_choice_on_the_audio_thread_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let opened_with_wood = bacteria_guard_writes(&[
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionMix", 1.0),
+                ("band0_convolutionIr", 1.0),
+            ]);
+            let saved_with_metal = bacteria_guard_writes(&[
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionMix", 1.0),
+                ("band0_convolutionIr", 2.0),
+            ]);
+            let material = bacteria_guard_material(FRAMES);
+            let render = |body: &mut BacteriaBody| {
+                let mut left = material.clone();
+                let mut right = material.clone();
+                body.process(&mut left, &mut right);
+                left
+            };
+
+            for spelling in ["band0_convolutionIr", "convolutionIr"] {
+                let PluginCore::Bacteria(mut picked) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opened_with_wood, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let PluginCore::Bacteria(mut saved) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &saved_with_metal, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let PluginCore::Bacteria(mut unpicked) =
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opened_with_wood, &[])
+                else {
+                    unreachable!("bacteria_with_patch builds the bacteria variant");
+                };
+                let choice = bacteria_guard_writes(&[(spelling, 2.0)]);
+                let mut picked_left = material.clone();
+                let mut picked_right = material.clone();
+
+                assert_no_alloc(|| {
+                    for (name, value) in &choice {
+                        picked.set_param(name.as_str(), *value);
+                    }
+                    picked.process(&mut picked_left, &mut picked_right);
+                });
+
+                let saved_left = render(saved.as_mut());
+                assert!(
+                    saved_left.iter().any(|sample| *sample != 0.0),
+                    "the saved-metal twin rendered silence, so an equality against it proves nothing"
+                );
+                assert_eq!(
+                    picked_left, saved_left,
+                    "a live {spelling} write of metal did not leave the body sounding as a record \
+                     naming metal does"
+                );
+                assert_ne!(
+                    picked_left,
+                    render(unpicked.as_mut()),
+                    "metal and wood render alike, so the equality above cannot tell a landed \
+                     {spelling} write from a dropped one"
+                );
+            }
         }
 
         /// The rate every Proof guard below builds its body at, and the rate
@@ -24191,10 +24263,10 @@ mod timeline_tests {
         );
     }
 
-    /// The persisted record's route applies the two names
+    /// The persisted record's route applies the name
     /// [`BacteriaBody::set_param`] refuses on the audio thread.
     ///
-    /// The refusal is only sound if there is a thread where those names *do*
+    /// The refusal is only sound if there is a thread where that name *does*
     /// land: a body that dropped `phaserStages` everywhere would satisfy
     /// `a_bacteria_body_drops_the_allocating_names_on_the_audio_thread`
     /// while quietly rendering a saved project's phaser with the wrong stage
