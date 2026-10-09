@@ -1571,20 +1571,10 @@ export class TrackNode {
                 analyser.disconnect();
             }
         }
+        // Removing the track removes each device the same way removeDevice does,
+        // so a still-loading placeholder runs its own teardown here too.
         for (const dn of this.strip.deviceNodes) {
-            if (dn.controller) {
-                dn.controller.destroy?.();
-            } else if (dn.dispose) {
-                dn.dispose();
-            }
-            for (const n of dn.nodes) {
-                try {
-                    n.disconnect();
-                } catch {
-                    // Intentionally empty: a node already detached from the graph
-                    // throws on disconnect() during teardown; safe to ignore.
-                }
-            }
+            this.destroyPublishedDeviceNode(dn);
         }
         this.strip.deviceNodes = [];
     }

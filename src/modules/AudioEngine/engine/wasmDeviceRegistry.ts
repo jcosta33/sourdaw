@@ -320,6 +320,29 @@ const toasterDescriptor: WasmDeviceDescriptor = {
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: ToasterNodeResult | null = null;
         let runtimeFailureHandled = false;
+        // Signal teardown so the Toaster module disposes the device: stop the
+        // sequencer, note-repeat and 16-Levels sessions, cancel any queued rAF
+        // pad-param flush, delete the store record and drop the kit writes and
+        // pad selection queued while the device loaded. Emitted (not called
+        // directly) to keep the boundary acyclic — AudioEngine must not
+        // statically import the Toaster useCases barrel, whose closure reaches
+        // back into AudioEngine. The Toaster subscriber runs disposeToasterDevice
+        // synchronously on this emit, mirroring the audioDevice.loaded hydration
+        // path.
+        const notifyRemoved = (): void => {
+            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
+        };
+        // One device gets one notification. The track removes a still-loading
+        // device by disposing this placeholder, and that removal aborts the load,
+        // so it can never publish afterwards. Once a load has published, the
+        // loaded node's controller owns the notification, and the placeholder
+        // only returns as a runtime-failure stand-in that recovery replaces with
+        // a fresh load of the same device.
+        placeholder.dispose = () => {
+            if (publishedNode === null) {
+                notifyRemoved();
+            }
+        };
         const applyRuntimeFailure = (): void => {
             if (
                 runtimeFailureHandled ||
@@ -408,18 +431,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            // Signal teardown so the Toaster module disposes the device:
-                            // stop the sequencer, note-repeat and 16-Levels sessions and
-                            // cancel any queued rAF pad-param flush, then delete the store
-                            // record. Emitted (not called directly) to keep the boundary
-                            // acyclic — AudioEngine must not statically import the Toaster
-                            // useCases barrel, whose closure reaches back into AudioEngine
-                            // (would be a no-circular error). The Toaster subscriber runs
-                            // disposeToasterDevice synchronously on this emit, mirroring the
-                            // audioDevice.loaded hydration path. A bare store delete (the
-                            // prior behavior) left a running:true sequencer re-arming ghost
-                            // hits after the device was gone.
-                            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
+                            notifyRemoved();
                         },
                     },
                     toasterControls: {
