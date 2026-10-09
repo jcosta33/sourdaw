@@ -911,6 +911,42 @@ describe('ExportDialog', () => {
         }
     });
 
+    it('expects no render started and no notification when browser save-picker rejects with AbortError', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const abortError = new Error('The user aborted the save dialog.');
+        abortError.name = 'AbortError';
+        const picker = vi.fn().mockRejectedValue(abortError);
+        vi.stubGlobal('showSaveFilePicker', picker);
+
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+            // Wait for the picker to be called.
+            await waitFor(() => {
+                expect(picker).toHaveBeenCalledTimes(1);
+            });
+
+            // Wait for the picker rejection to settle through the error handler.
+            // The AbortError return should prevent export, so no render starts and button
+            // stays available (or becomes available again without entering exporting state).
+            await act(async () => {
+                // Allow async rejection to settle through the catch block.
+                await Promise.resolve();
+            });
+
+            // No render started, so renderOffline should not have been called.
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+            // No notification should be sent.
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+            // Dialog should remain ready for a new export.
+            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        } finally {
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
     // A native write cannot be recalled: the file lands at the chosen path, so the export succeeded.
     it('ends succeeded when Cancel is pressed while the last native format is being written', async () => {
         encodeWavReportingDone();
