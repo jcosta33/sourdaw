@@ -1,0 +1,19 @@
+scripts/__tests__/e2eShardPartition.spec.ts
+  s_d257b09300b1ad::t_116b7ed40dc38c 187-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e339ec574546c7c25bf84e4b58c74669d6ecbab9",
+  "prompts": {},
+  "sessions": {
+    "s_d257b09300b1ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038268a7-dacc-4cfa-a256-ef0bfa05cb63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
