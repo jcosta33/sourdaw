@@ -144,4 +144,76 @@ describe('projectClipControllerEvents', () => {
             })
         ).toEqual([]);
     });
+
+    describe('with a move stored on the closing line of the loop', () => {
+        const PASSES = 4;
+
+        function pedalEvents(loop: { start: number; length: number; offset?: number }, closingBeat?: number) {
+            const midiOffsetBeats = loop.offset ?? 0;
+            const endBeat = loop.start + PASSES * loop.length;
+            const events = projectClipControllerEvents({
+                controlChanges: [
+                    controller('down', midiOffsetBeats, 127),
+                    controller('lift', closingBeat ?? midiOffsetBeats + loop.length, 0),
+                ],
+                clip: { startBeat: loop.start, endBeat, midiOffsetBeats, loopEnabled: true, loopLength: loop.length },
+                fromBeat: loop.start - 1,
+                toBeat: endBeat + 1,
+            });
+            return { events, midiOffsetBeats };
+        }
+
+        it.each([
+            { start: 1 / 3, length: 2 },
+            { start: 1 / 6, length: 1 },
+            { start: 2 / 3, length: 4 },
+            { start: 0, length: 4 / 3 },
+        ])('holds the pedal down at every pass head of a loop of $length from $start', (loop) => {
+            const { events } = pedalEvents(loop);
+
+            expect(events.map((event) => event.value)).toEqual([127, 127, 127, 127]);
+            for (const [pass, event] of events.entries()) {
+                expect(event.beat).toBeCloseTo(loop.start + pass * loop.length, 9);
+            }
+        });
+
+        it('leaves the closing-line move out of every pass across non-dyadic starts, lengths and offsets', () => {
+            const starts = [0, 1 / 3, 1 / 6, 2 / 3, 0.1, 7 / 3, 1000 / 3, 12345.1];
+            const lengths = [1, 2, 4, 4 / 3, 0.7, 1 / 3, 5 / 6];
+            const offsets = [0, 1 / 3, 0.1];
+            let swept = 0;
+            for (const start of starts) {
+                for (const length of lengths) {
+                    for (const offset of offsets) {
+                        const { events } = pedalEvents({ start, length, offset });
+                        expect(
+                            events.map((event) => event.value),
+                            `start ${start}, loop ${length}, offset ${offset}`
+                        ).toEqual([127, 127, 127, 127]);
+                        swept++;
+                    }
+                }
+            }
+            expect(swept).toBe(starts.length * lengths.length * offsets.length);
+        });
+
+        it('leaves the closing-line move out of a clip that does not loop', () => {
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('down', 0, 127), controller('lift', 4 / 3, 0)],
+                clip: { startBeat: 2 / 3, endBeat: 2 / 3 + 4 / 3, loopEnabled: false },
+                fromBeat: 0,
+                toBeat: 4,
+            });
+
+            expect(events.map((event) => event.value)).toEqual([127]);
+        });
+
+        it('still plays a move that sits just inside the loop end on every pass', () => {
+            const loop = { start: 1 / 3, length: 2 };
+            const { events } = pedalEvents(loop, loop.length - 1e-6);
+
+            expect(events.map((event) => event.value)).toEqual([127, 0, 127, 0, 127, 0, 127, 0]);
+            expect(events[1]!.beat).toBeCloseTo(loop.start + loop.length - 1e-6, 9);
+        });
+    });
 });
