@@ -18,6 +18,7 @@ import {
     AUTHOR_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+    DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
@@ -582,6 +583,30 @@ describe('installation mint', () => {
         });
         expect(requests[0]?.body).not.toContain('administration');
         expect(requests[0]?.body).not.toContain('workflows');
+    });
+
+    it('scopes the deliver workflow mint to the author set plus workflows write only', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+            request,
+        });
+        expect(DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS).toEqual({
+            ...AUTHOR_MINT_PERMISSIONS,
+            workflows: 'write',
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+            permissions: DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+        });
+        expect(requests[0]?.body).not.toContain('issues');
+        expect(requests[0]?.body).not.toContain('administration');
     });
 
     it('refuses workflow write returned for an ordinary publishing lane', async () => {
