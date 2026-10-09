@@ -171,6 +171,43 @@ describe('inactive retarget capability plan', () => {
         expect(() => renderCapabilityPlan(alteredLimitations)).toThrow(/evidence.*changed/u);
     });
 
+    it('refuses a returned source changed after capture while its evidence digests stay fixed', () => {
+        const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        plan.sourceSha = 'b'.repeat(40);
+        expect(() => renderCapabilityPlan(plan)).toThrow(/evidence.*changed/u);
+    });
+
+    it('refuses a returned observation interval changed after capture while its evidence digests stay fixed', () => {
+        const plan = buildCapabilityPlan(observed(), SOURCE, INTERVAL);
+        requiredRecord(plan.observedAt).startedAt = '2026-10-08T00:00:00.500Z';
+        expect(() => renderCapabilityPlan(plan)).toThrow(/evidence.*changed/u);
+    });
+
+    it.each(['detail', 'effective'] as const)(
+        'marks absent required-check parameters in %s policy incomplete',
+        (surface) => {
+            const input = observed();
+            if (surface === 'detail') {
+                requiredRuleset(input).rules = [{ type: 'required_status_checks' }];
+            } else {
+                input.effectiveBranches.main = [{ type: 'required_status_checks' }];
+            }
+            const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+            expect(plan.completeObservedInventory).toBe(false);
+            expect(plan.limitations).toContain('an applicable ruleset has incomplete required status checks');
+            expect(plan.activationEligible).toBe(false);
+        }
+    );
+
+    it('keeps parameterless rules without required checks readable', () => {
+        const input = observed();
+        requiredRuleset(input).rules = [{ type: 'pull_request' }];
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
     const unreadableEffectiveMain: JsonValue[][] = [
         [
             {
@@ -389,7 +426,7 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
     });
 
-    it('marks present unreadable required status checks incomplete while accepting optional parameters and valid arrays', () => {
+    it('marks unreadable required status checks incomplete while accepting unrelated parameterless rules and valid arrays', () => {
         const malformed = observed();
         requiredRuleset(malformed).rules = [
             {
@@ -403,7 +440,7 @@ describe('inactive retarget capability plan', () => {
         expect(incomplete.activationEligible).toBe(false);
 
         const optional = observed();
-        requiredRuleset(optional).rules = [{ type: 'required_status_checks' }];
+        requiredRuleset(optional).rules = [{ type: 'pull_request' }];
         expect(buildCapabilityPlan(optional, SOURCE, INTERVAL).completeObservedInventory).toBe(true);
 
         const valid = observed();

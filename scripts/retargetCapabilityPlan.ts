@@ -187,6 +187,9 @@ function ruleLimitations(rule: JsonValue): string[] {
         return ['an applicable ruleset has unknown rule semantics'];
     }
     if (details.parameters === undefined) {
+        if (type === 'required_status_checks') {
+            return ['an applicable ruleset has incomplete required status checks'];
+        }
         return [];
     }
     const parameters = record(details.parameters, 'ruleset rule parameters');
@@ -438,12 +441,14 @@ export function buildCapabilityPlan(
     };
     const rollback = mainSelection.rulesets.map((ruleset) => captureRollback(ruleset));
     const proposal = capabilityProposal();
+    const observedAt = { startedAt: interval.startedAt, endedAt: interval.endedAt };
     const plan: RulesetDocument = {
         format: 'retarget-capability-plan-v1',
         sourceSha,
-        observedAt: { startedAt: interval.startedAt, endedAt: interval.endedAt },
+        observedAt,
         baseline,
         baselineDigest: sha256(baseline),
+        captureEnvelopeDigest: sha256({ sourceSha, observedAt, baseline }),
         originalMainSemanticDigest: sha256(mainPolicy),
         originalMainRollback: rollback,
         proposal,
