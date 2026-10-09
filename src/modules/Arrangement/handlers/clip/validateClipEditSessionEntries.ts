@@ -295,6 +295,56 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
     );
 }
 
+function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId: string, rightClipId: string): boolean {
+    if (
+        !isRecord(value.leftClip) ||
+        value.leftClip.id !== clipId ||
+        value.leftClip.trackId !== value.trackId ||
+        (value.rightClip !== null &&
+            (!isRecord(value.rightClip) ||
+                value.rightClip.id !== rightClipId ||
+                value.rightClip.trackId !== value.trackId))
+    ) {
+        return false;
+    }
+    if (value.clipAutomationLanes !== undefined) {
+        if (
+            !isExactAutomationLaneSnapshots(value.clipAutomationLanes) ||
+            !value.clipAutomationLanes.every((lane) => lane.clipId === rightClipId && lane.trackId === value.trackId)
+        ) {
+            return false;
+        }
+    }
+    if (value.clipSatellites === undefined) {
+        return true;
+    }
+    const satellites = clipSatelliteStateCodec.decodeEntries(value.clipSatellites);
+    return (
+        satellites !== null &&
+        satellites.every(
+            (entry) =>
+                (entry.clipId === clipId || entry.clipId === rightClipId) &&
+                (value.rightClip !== null ||
+                    entry.clipId !== rightClipId ||
+                    (entry.gainEnvelope === null && entry.warpState === null))
+        )
+    );
+}
+
+/** Capture ownership is structural; live owner freshness is checked at replay. */
+export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.clipId === 'string' &&
+        typeof value.rightClipId === 'string' &&
+        isRecord(value.expected) &&
+        isRecord(value.replacement) &&
+        value.expected.trackId === value.replacement.trackId &&
+        splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
+        splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId)
+    );
+}
+
 export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
     return (
         isRecord(value) &&
@@ -305,6 +355,7 @@ export function isRestoreClipSplitSessionPayload(value: unknown): boolean {
         value.rightClipId !== value.clipId &&
         isSplitSnapshot(value.expected, value.clipId, value.rightClipId) &&
         isSplitSnapshot(value.replacement, value.clipId, value.rightClipId) &&
+        clipSplitCaptureOwnersMatch(value) &&
         (value.retiredTakeLanes === undefined ||
             (isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.expected.trackId) &&
                 isRetiredTakeLanes(value.retiredTakeLanes, value.rightClipId, value.replacement.trackId)))

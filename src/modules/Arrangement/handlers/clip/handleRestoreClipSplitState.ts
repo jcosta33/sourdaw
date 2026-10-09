@@ -9,8 +9,9 @@ import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitSt
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 
-import { isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
+import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 
 type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 
@@ -40,6 +41,8 @@ function clipAutomationLanesMatch(action: RestoreClipSplitStateAction): boolean 
  *  conflict. */
 function clipSplitStateMatches(action: RestoreClipSplitStateAction): boolean {
     return (
+        clipSplitCaptureOwnersMatch(action.payload) &&
+        retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? []) &&
         clipSplitStateRestorable(action.payload) &&
         midiClipSplitStateMatches({
             sourceClipId: action.payload.clipId,
@@ -62,13 +65,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
     canReapplyAfterDivergence: () => true,
     validate: clipSplitStateMatches,
     execute: (action) => {
-        // Undefined stays permissive: split actions captured before satellites joined
-        // the snapshot decode without the field and carry no precondition to check.
-        const expectedSatellites = action.payload.expected.clipSatellites;
-        if (expectedSatellites !== undefined && !clipSatelliteEntriesMatchSnapshot(expectedSatellites)) {
-            return { status: 'conflict' };
-        }
-        if (!clipAutomationLanesMatch(action)) {
+        if (!clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
         const trackRestored = replaceClipSplitTrackState(action.payload);

@@ -256,6 +256,44 @@ and automation attacks left the clip rectangle absent everywhere, so they missed
 identity-to-containing-track relation. Keep the genuine captures, fractional and placed-pass
 controls, and later selected-survivor/disjoint-comp replay controls.
 
+PR #4519 (`00f29b9ca2865f810070253bcb46e486c15c1db5`) introduced retirement restore's
+lane-id-or-track lookup. A saved #5064 removal at `1ee740f340` could change only the
+captured lane id to another track's resident lane while retaining the correct captured
+track. Undo then restored takes and comp regions into the foreign lane. The missed
+ownership probe is identity reuse, independently of the captured track field: change the
+saved id before hydration and synchronize a separate actor's reuse after hydration. Run
+single and grouped removal Undo and split Redo; require zero owner writes, unchanged raw
+document and heads, fresh projections, and pending history. A retired id absent from live
+is valid, and a new lane for the correct track still merges while preserving its unique
+selected survivor and disjoint comp regions. Preflight the complete replay before any
+clip, MIDI, satellite, automation, or take write; refusing only the final take restore
+would leave a partial edit and consume history.
+
+The same #5064 head admitted paired split captures with foreign automation owners.
+`prepareClipSplit` captures automation for the right fragment only, and satellites for
+source and right only; the pre-split right satellite is null. Bind every optional row to
+that producer contract, using Automation's exact normalizers and the satellite codec's
+duplicate and nested-owner checks. Change the paired inverse's expected and redo's
+replacement automation owner independently by clip and track, and change paired source
+satellite outer and nested owners to an unrelated clip. Save/load the real document and
+hydrate the real history before replay; exact mirrored pairing and valid row shape do not
+prove containing ownership. Keep rich fractional captures and absent optional legacy
+fields usable. These saved-capture probes were absent from the earlier review's foreign
+retired-track attacks, which left the retired id and split owner rows unchanged.
+
+The project ID walker introduced in `83be56e84ee` treated every nested `id` as
+global. PR #3032 (`93710471aa`) scoped arrangement snapshots but retained that
+assumption for live gain envelopes. Split and duplicate preserve authored gain
+point IDs; edits address them by clipId plus pointId. A genuine rich split saved
+and binary-loaded in #5064 therefore passed audio-graph inspection but failed
+project invariants, leaving every owner projection empty and refusing Undo.
+Probe the inspector with real binary-loaded canonical gain envelopes that share
+point IDs across clips, including an ID equal to a global track ID, then drive
+the actual rich fractional split through reload and both history legs. Require
+duplicates within one envelope, global entity collisions, and repeated
+arrangement IDs to remain repair-required. The missed stance clause was the
+identity's owning namespace, not whether recursive traversal found every ID.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

@@ -68,6 +68,20 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-09 — a global ID detector rejected clip-local gain points (introduced in `83be56e84ee`; retained by PR #3032)
+
+The recursive project ID walker treated every nested `id` as globally unique.
+PR #3032 (`93710471aa`) gave arrangement snapshots separate namespaces but left
+canonical live gain points in the global set. Split and duplicate deliberately
+retain point IDs, and gain edits address clipId plus pointId. A saved rich split
+therefore failed project inspection and withheld every owner projection on reload.
+The missing invariant clause was the producer's identity scope. Binary-load old
+projects with repeated gain point IDs across clips, including a point ID equal to
+a track ID, and require normal inspection and genuine rich split Undo/Redo.
+Keep same-envelope point duplicates, global track/clip/device collisions, and
+repeated arrangement IDs repair-required; only canonical gain point rows have
+this local scope.
+
 ### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
 
 The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.

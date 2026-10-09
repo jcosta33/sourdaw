@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { type undoRippleDelete } from '../../../useCases/rippleDelete/undoRippleDelete';
 import { type updateTrack } from '../../../useCases/updateTrack';
@@ -177,6 +178,7 @@ function expectMidiRestoreFromAction(action: RestoreClipAction): number {
 describe('handleRestoreClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [createTrack({ id: 't1', name: 'Track 1', kind: 'midi' })], selectedTrackId: 't1' });
     });
 
@@ -235,6 +237,27 @@ describe('handleRestoreClip', () => {
     it('provides a description', () => {
         const desc = handleRestoreClip.describe(createRestoreClipAction());
         expect(desc.label).toBe('Restore clip');
+    });
+
+    it.each([false, true])('refuses a captured lane id owned by another track before writes, ripple=%s', (ripple) => {
+        takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 'other-track', takes: [], activeCompRegions: [] }] });
+        const action = createRestoreClipAction({
+            retiredTakeLanes: RETIRED_TAKE_LANES,
+            ripplePlan: ripple
+                ? {
+                      removedClips: [createRestoreClipAction().payload.clipSnapshot],
+                      shiftedClips: [],
+                      clipSatellites: [],
+                      clipAutomationLanes: [],
+                  }
+                : null,
+        });
+        expect(handleRestoreClip.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreClip.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+        expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+        expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
     });
 
     it('is not undoable', () => {

@@ -5,6 +5,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { clipSatelliteEntriesMatchSnapshot } from '../../stores/clipSatelliteState';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
+import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 import { updateTrack } from '../../useCases/updateTrack';
@@ -26,7 +27,8 @@ function restoreStateMatches(action: RestoreClipAction): boolean {
     const tracks = getTrackStoreState()?.tracks ?? [];
     if (
         !tracks.some((track) => track.id === action.payload.trackId) ||
-        tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId))
+        tracks.some((track) => track.clips.some((clip) => clip.id === action.payload.clipId)) ||
+        !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [])
     ) {
         return false;
     }
