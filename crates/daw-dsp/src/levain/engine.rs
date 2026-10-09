@@ -310,7 +310,9 @@ impl LevainEngine {
     // -----------------------------------------------------------------------
 
     /// Add a sample to the uniquely-owned loading bank. Returns `None` once
-    /// the bank is shared or its identifiers/byte count exceed the ABI.
+    /// the bank is shared or its identifiers/byte count exceed the ABI, and
+    /// while a chunked upload is open: that sample already holds the next id,
+    /// so adding another would take it and leave the upload unsealable.
     pub fn add_sample(
         &mut self,
         data: Vec<f32>,
@@ -319,6 +321,7 @@ impl LevainEngine {
         sample_rate: f32,
     ) -> Option<SampleId> {
         let sample_pool = match self.pending_sample_bank.as_mut() {
+            Some(pending) if pending.open_sample.is_some() => return None,
             Some(pending) => &mut pending.sample_pool,
             None => &mut self.sample_pool,
         };
@@ -415,6 +418,11 @@ impl LevainEngine {
         let Some(pool) = Arc::get_mut(&mut pending.sample_pool) else {
             return false;
         };
+        // The id the pool would assign must still be the one begun; checked
+        // before the sample is taken, so a refusal leaves it open untouched.
+        if SampleId::try_from(pool.len()) != Ok(sample_id) {
+            return false;
+        }
         let Some(open) = pending.open_sample.take() else {
             return false;
         };

@@ -371,3 +371,39 @@ fn an_abort_mid_sample_frees_nothing_and_the_release_steps_free_the_open_sample(
     );
     assert!(!instance.has_retired_bank());
 }
+
+#[test]
+fn a_whole_sample_is_refused_while_a_chunked_upload_is_open_and_the_upload_still_seals() {
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    instance.begin_sample_bank("violin-1");
+    for _ in 0..3 {
+        upload(&mut instance, &pcm(CHUNK), 1);
+    }
+    let data = pcm(CHUNK + 64);
+    let sample_id = instance
+        .begin_sample(data.len() as u32, 1, SAMPLE_RATE)
+        .expect("the staged bank takes the fourth sample");
+    assert_eq!(sample_id, 3);
+    for chunk in data.chunks(CHUNK) {
+        assert!(write_chunk(&mut instance, sample_id, chunk));
+    }
+
+    assert_eq!(
+        instance.add_sample(pcm(64), 64, 1, SAMPLE_RATE),
+        None,
+        "the open sample already holds the next id"
+    );
+
+    let seal = counted(|| instance.seal_sample(sample_id));
+    assert!(seal.value, "the open sample still seals under its own id");
+    assert_eq!(
+        (seal.allocations, seal.deallocations),
+        (0, 0),
+        "sealing must neither allocate nor free"
+    );
+    assert_eq!(
+        instance.begin_sample(64, 1, SAMPLE_RATE),
+        Some(sample_id + 1),
+        "the pool holds exactly four samples"
+    );
+}
