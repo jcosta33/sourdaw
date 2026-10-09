@@ -1,9 +1,29 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import {
+    closeSync,
+    fstatSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    openSync,
+    readFileSync,
+    realpathSync,
+    rmdirSync,
+    symlinkSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { measureShadow, parseChangedRecords, sourceQualificationReasons } from '../e2eSelectionShadow';
+import {
+    hashInventoryFile,
+    measureShadow,
+    parseChangedRecords,
+    sourceQualificationReasons,
+} from '../e2eSelectionShadow';
 import certificate from '../e2eSelectionShadowCertificate.json' with { type: 'json' };
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
 
@@ -18,6 +38,35 @@ const inventory = [
     ...certificate.rows.map((row) => ({ path: row.path, gitBlob: row.gitBlob, sha256: row.sha256, mode: '100644' })),
     { path: SMOKE_SPEC, gitBlob: 'c'.repeat(40), sha256: 'd'.repeat(64), mode: '100644' },
 ];
+
+const realInventoryFileAccess = {
+    lstat: lstatSync,
+    open: openSync,
+    fstat: fstatSync,
+    read: (file: string | number) => readFileSync(file),
+    close: closeSync,
+};
+
+function withInventoryFiles(run: (file: string, outside: string, originalHash: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadow-inventory-'));
+    const file = join(root, 'collected.spec.ts');
+    const outside = join(root, 'outside.txt');
+    const original = Buffer.from('Original collected E2E bytes\n');
+    writeFileSync(file, original);
+    writeFileSync(outside, 'Outside collected E2E bytes\n');
+    try {
+        run(file, outside, createHash('sha256').update(original).digest('hex'));
+    } finally {
+        const leaf = lstatSync(file, { throwIfNoEntry: false });
+        if (leaf?.isDirectory()) {
+            rmdirSync(file);
+        } else if (leaf) {
+            unlinkSync(file);
+        }
+        unlinkSync(outside);
+        rmdirSync(root);
+    }
+}
 
 function fixture(overrides: Record<string, unknown> = {}) {
     const rawDiff = Buffer.from(`M\0${candidate}\0`);
@@ -53,6 +102,106 @@ describe('E2E selection shadow', () => {
             { status: 'R100', oldPath: 'old.ts', newPath: 'new.ts' },
         ]);
         expect(() => parseChangedRecords('M\0bad.ts')).toThrow('NUL terminated');
+    });
+
+    it('hashes a regular inventory file and marks a preexisting symlink or directory missing', () => {
+        withInventoryFiles((file, outside, originalHash) => {
+            expect(hashInventoryFile(file, realInventoryFileAccess)).toBe(originalHash);
+            unlinkSync(file);
+            symlinkSync(outside, file);
+            expect(hashInventoryFile(file, realInventoryFileAccess)).toBe('missing');
+            unlinkSync(file);
+            mkdirSync(file);
+            expect(hashInventoryFile(file, realInventoryFileAccess)).toBe('missing');
+            rmdirSync(file);
+            expect(() => hashInventoryFile(file, realInventoryFileAccess)).toThrow();
+        });
+    });
+
+    it('does not read outside bytes when the inventory leaf becomes a symlink before open', () => {
+        withInventoryFiles((file, outside) => {
+            const swap = () => {
+                unlinkSync(file);
+                symlinkSync(outside, file);
+            };
+            const access = {
+                ...realInventoryFileAccess,
+                lstat: (path: string) => {
+                    const result = lstatSync(path);
+                    swap();
+                    return result;
+                },
+                open: (path: string, flags: number) => {
+                    swap();
+                    return openSync(path, flags);
+                },
+                read: (path: string | number) => {
+                    if (typeof path === 'string' && realpathSync(path) === realpathSync(outside)) {
+                        throw new Error('outside bytes were read');
+                    }
+                    return readFileSync(path);
+                },
+            };
+            expect(hashInventoryFile(file, access)).toBe('missing');
+            expect(lstatSync(file).isSymbolicLink()).toBe(true);
+        });
+    });
+
+    it('hashes the opened regular object when its inventory path changes afterward', () => {
+        withInventoryFiles((file, outside, originalHash) => {
+            let closed = 0;
+            const swap = () => {
+                unlinkSync(file);
+                symlinkSync(outside, file);
+            };
+            const access = {
+                ...realInventoryFileAccess,
+                lstat: (path: string) => {
+                    const result = lstatSync(path);
+                    swap();
+                    return result;
+                },
+                open: (path: string, flags: number) => {
+                    const fd = openSync(path, flags);
+                    swap();
+                    return fd;
+                },
+                read: (path: string | number) => {
+                    expect(typeof path).toBe('number');
+                    return readFileSync(path);
+                },
+                close: (fd: number) => {
+                    closeSync(fd);
+                    closed++;
+                },
+            };
+            expect(hashInventoryFile(file, access)).toBe(originalHash);
+            expect(closed).toBe(1);
+            expect(lstatSync(file).isSymbolicLink()).toBe(true);
+        });
+    });
+
+    it('closes the opened inventory descriptor when its read fails', () => {
+        withInventoryFiles((file) => {
+            const closedDescriptors: number[] = [];
+            const access = {
+                ...realInventoryFileAccess,
+                read: (_path: string | number): Buffer => {
+                    throw new Error('injected read failure');
+                },
+                close: (fd: number) => {
+                    closeSync(fd);
+                    closedDescriptors.push(fd);
+                },
+            };
+            expect(() => hashInventoryFile(file, access)).toThrow('injected read failure');
+            expect(closedDescriptors).toHaveLength(1);
+            const closedFd = closedDescriptors[0];
+            if (closedFd === undefined) {
+                throw new Error('Expected an opened inventory descriptor to close');
+            }
+            expect(() => fstatSync(closedFd)).toThrow();
+        });
     });
 
     it.each([

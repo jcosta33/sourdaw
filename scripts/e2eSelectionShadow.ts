@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -419,6 +419,37 @@ function treeEntry(ref: string, path: string): { mode: string; blob: string } | 
     return { mode: match[1] ?? '', blob: match[2] ?? '' };
 }
 
+type InventoryFileAccess = {
+    open: (file: string, flags: number) => number;
+    fstat: (fd: number) => ReturnType<typeof fstatSync>;
+    read: (fd: number) => Buffer;
+    close: (fd: number) => void;
+};
+
+const inventoryFileAccess: InventoryFileAccess = {
+    open: openSync,
+    fstat: fstatSync,
+    read: (fd) => readFileSync(fd),
+    close: closeSync,
+};
+
+export function hashInventoryFile(file: string, access: InventoryFileAccess = inventoryFileAccess): string {
+    let fd: number;
+    try {
+        fd = access.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ELOOP') {
+            return 'missing';
+        }
+        throw error;
+    }
+    try {
+        return access.fstat(fd).isFile() ? sha256(access.read(fd)) : 'missing';
+    } finally {
+        access.close(fd);
+    }
+}
+
 function listInventory(root: string, head: string): InventoryRow[] {
     const rows: InventoryRow[] = [];
     for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true, withFileTypes: true })) {
@@ -429,7 +460,7 @@ function listInventory(root: string, head: string): InventoryRow[] {
         const tree = treeEntry(head, path);
         const mode = tree?.mode ?? 'missing';
         const file = resolve(root, path);
-        const sha = entry.isFile() && lstatSync(file).isFile() ? sha256(readFileSync(file)) : 'missing';
+        const sha = entry.isFile() ? hashInventoryFile(file) : 'missing';
         rows.push({ path, gitBlob: tree?.blob ?? 'missing', sha256: sha, mode });
     }
     return rows;
