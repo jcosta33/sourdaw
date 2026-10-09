@@ -32,14 +32,16 @@
  * commit, the abort or `process()`.
  *
  * A disposed processor frees nothing in `dispose`. The host then sends
- * `releaseDisposedBanks`, the only message a disposed processor still honours,
- * one bounded step per message, answered by `disposedBanksReleased { done }`:
- * a step releases the retired bank, else retires the sounding bank, else (both
- * slots empty) frees the engine, which then holds nothing bank-sized.
+ * `releaseDisposedBanks`, one bounded step per message, answered by
+ * `disposedBanksReleased { done }`: a step releases the retired bank, else
+ * retires the sounding bank, else (both slots empty) frees the engine, which
+ * then holds nothing bank-sized. A disposed processor honours only that message
+ * and a repeated `dispose`, which it answers by posting `disposed` again.
  *
- * A faulted processor drops every message except these two, which it answers
- * by posting its `error` again, so a host that began listening after the fault
- * still learns that no answer will come.
+ * A faulted processor that has not been disposed drops every message except
+ * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
+ * `error` again, so a host that began listening after the fault still learns
+ * that no answer will come.
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
