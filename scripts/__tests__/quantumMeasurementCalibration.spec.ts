@@ -207,6 +207,155 @@ function runRemeasure(attemptSpreads: readonly number[]): unknown {
     return outcome;
 }
 
+/**
+ * Drives the runner's own post-measurement wiring — `remeasureDriftingRows`
+ * against a stub page, the substitution into `payload.results` and
+ * `calibrationAttempts`, the row analysis and the gates loop — over a
+ * three-row first pass in non-alphabetical order:
+ *
+ * - `toaster` is within the ceiling, with unsorted rates whose median differs
+ *   from their minimum (spread 80% against the median, 160% against the min);
+ * - `bacteria_smudge` is over the ceiling on its first pass and then follows
+ *   the variant's re-measure queue;
+ * - `gluten` sits exactly at the ceiling, so it is neither re-measured nor
+ *   refused.
+ *
+ * The stub serves a re-measure only from that row's queue, answering an empty
+ * `deviceIds` with every row as the page does, so re-measuring the wrong rows
+ * throws.
+ */
+function runnerWiringFixtureSource(): string {
+    const source = readFileSync(runnerPath, 'utf8');
+    const constants = extractBetween(source, 'const STATIONARITY_TOLERANCE_PCT = ', '/**\n * @param {string[]} argv');
+    const statisticalHelpers = extractBetween(source, 'function quantile(', 'function machineRecord(');
+    const reporting = extractBetween(source, 'function sig2(', '/**\n * The reference project, defined here because');
+    const wiring = extractBetween(
+        source,
+        '        const admitted = await remeasureDriftingRows(',
+        '        payload.browser = browser.version();'
+    );
+    const analysis = extractBetween(
+        source,
+        '    const calibration = calibrateQuantumMeasurementPayload(payload);',
+        '    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));'
+    );
+    const gates = extractBetween(
+        source,
+        '    // -- gates, all evaluated BEFORE anything is printed',
+        '    if (failures.length > 0) {'
+    );
+    return `
+import { writeFileSync } from 'node:fs';
+import {
+    calibrateQuantumMeasurementPayload,
+    calibrationFailureReport,
+} from ${JSON.stringify(helperUrl)};
+
+const COST_SITE = {};
+const DUTY_CYCLE = {};
+const os = { loadavg: () => [1] };
+
+${constants}
+${statisticalHelpers}
+${reporting}
+
+const ROW_IDS = ['toaster', 'bacteria_smudge', 'gluten'];
+const DRIFTING_REMEASURES = {
+    settles: [[100_000, 100_000, 140_000]],
+    stuck: [
+        [100_000, 100_000, 270_000],
+        [100_000, 100_000, 280_000],
+        [100_000, 100_000, 290_000],
+    ],
+}[process.argv[2]];
+
+const pageRow = (id, segmentRates, attempt) => ({
+    id,
+    label: id,
+    note: id + ' attempt ' + attempt,
+    samplesTicks: [20_000, 20_000, 20_000],
+    segmentIndex: [0, 1, 2],
+    segmentRates,
+    harnessFloorTicks: [1_000],
+    warmupTotalTicks: 0,
+    mainThreadWallMs: 1_000,
+    timedStartedAtMs: 0,
+    timedFinishedAtMs: 20,
+    warmVerify: { ok: true, detail: 'fixture' },
+    lateVerify: { ok: true, detail: 'fixture' },
+    zeroTickSamples: 0,
+});
+
+const remeasureQueues = {
+    bacteria_smudge: DRIFTING_REMEASURES.map((segmentRates, index) => ({ segmentRates, attempt: index + 2 })),
+};
+const calls = [];
+const page = {
+    evaluate: async (_pageFunction, config) => {
+        calls.push(config);
+        const ids = config.deviceIds.length > 0 ? config.deviceIds : ROW_IDS;
+        return {
+            results: ids.map((id) => {
+                const next = remeasureQueues[id]?.shift();
+                if (next === undefined) {
+                    throw new Error('unexpected re-measure of ' + id);
+                }
+                return pageRow(id, next.segmentRates, next.attempt);
+            }),
+        };
+    },
+};
+
+async function exercise() {
+    const tableConfig = { warmupQuanta: 4_000, measureQuanta: 20_000, segmentTargetMs: 1_000, deviceIds: [] };
+    const payload = {
+        pageCrossOriginIsolated: true,
+        userAgent: 'fixture',
+        results: [
+            pageRow('toaster', [260_000, 100_000, 200_000], 1),
+            pageRow('bacteria_smudge', [100_000, 100_000, 260_000], 1),
+            pageRow('gluten', [100_000, 250_000, 100_000], 1),
+        ],
+    };
+    let calibrationAttempts;
+    const machine = { platform: 'fixture' };
+    const options = { json: null };
+    const loadTimeline = [{ atMs: 10, load: 1 }];
+${wiring}
+${analysis}
+${gates}
+    console.log(JSON.stringify({
+        calls,
+        calibrationAttempts,
+        rows: rows.map((row) => ({
+            id: row.id,
+            note: row.note,
+            spreadPct: row.calibration.spreadPct,
+            attempts: row.calibration.attempts,
+        })),
+        failures,
+    }));
+}
+
+await exercise();
+`;
+}
+
+function runRunnerWiring(variant: 'settles' | 'stuck'): { log: string[]; outcome: unknown } {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-quantum-wiring-'));
+    temporaryDirectories.push(directory);
+    const programPath = join(directory, 'runner-wiring.mjs');
+    writeFileSync(programPath, runnerWiringFixtureSource());
+
+    const result = spawnSync(process.execPath, [programPath, variant], { encoding: 'utf8' });
+
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    const lines = result.stdout.trim().split('\n');
+    const outcome: unknown = JSON.parse(lines.at(-1) ?? '');
+    return { log: lines.slice(0, -1), outcome };
+}
+
 function input(overrides: Partial<QuantumMeasurementCalibrationInput> = {}): QuantumMeasurementCalibrationInput {
     return {
         deviceId: 'grand_boule',
@@ -296,6 +445,63 @@ describe('quantum measurement re-measure of a drifting row (#5110)', () => {
             remeasured: [],
             spreadPct: expect.closeTo(40),
             refusal: null,
+        });
+    });
+});
+
+describe('quantum runner re-measure wiring (#5110)', () => {
+    const singleRowCall = {
+        warmupQuanta: 4_000,
+        measureQuanta: 20_000,
+        segmentTargetMs: 1_000,
+        deviceIds: ['bacteria_smudge'],
+    };
+
+    it('re-measures only the drifting row and substitutes its admitted attempt in row order', () => {
+        const { log, outcome } = runRunnerWiring('settles');
+
+        expect(log).toEqual([
+            're-measuring bacteria_smudge alone: its tick rate moved 160.0% across its own timed window ' +
+                '(ceiling 150%), attempt 2 of 3',
+        ]);
+        expect(outcome).toEqual({
+            calls: [singleRowCall],
+            calibrationAttempts: [1, 2, 1],
+            rows: [
+                { id: 'toaster', note: 'toaster attempt 1', spreadPct: expect.closeTo(80), attempts: 1 },
+                {
+                    id: 'bacteria_smudge',
+                    note: 'bacteria_smudge attempt 2',
+                    spreadPct: expect.closeTo(40),
+                    attempts: 2,
+                },
+                { id: 'gluten', note: 'gluten attempt 1', spreadPct: 150, attempts: 1 },
+            ],
+            failures: [],
+        });
+    });
+
+    it('refuses the run through the gates when the drifting row stays over the ceiling', () => {
+        const { outcome } = runRunnerWiring('stuck');
+
+        expect(outcome).toEqual({
+            calls: [singleRowCall, singleRowCall],
+            calibrationAttempts: [1, 3, 1],
+            rows: [
+                { id: 'toaster', note: 'toaster attempt 1', spreadPct: expect.closeTo(80), attempts: 1 },
+                {
+                    id: 'bacteria_smudge',
+                    note: 'bacteria_smudge attempt 3',
+                    spreadPct: expect.closeTo(180),
+                    attempts: 3,
+                },
+                { id: 'gluten', note: 'gluten attempt 1', spreadPct: 150, attempts: 1 },
+            ],
+            failures: [
+                'bacteria_smudge: the tick rate moved 180.0% across its own timed window (ceiling 150%) — ' +
+                    'the segmentation is meaningless, not even a floor survives ' +
+                    '(over the ceiling on every one of 3 attempts)',
+            ],
         });
     });
 });

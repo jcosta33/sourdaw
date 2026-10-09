@@ -403,8 +403,10 @@ function parseArgs(argv) {
         json: null,
         headed: false,
         // Subset runs are for investigating one question. A partial run is not
-        // a table: its rows were taken in a different order, on a different
-        // machine state, from the ones already in `quantum-cost-table.md`.
+        // a table: its rows were taken at another moment, on a different
+        // machine state, from the ones already in `quantum-cost-table.md`. A
+        // drifting row re-measured inside one run is not a subset run; see
+        // `remeasureDriftingRows`.
         deviceIds: [],
     };
     for (let i = 0; i < argv.length; i += 1) {
@@ -554,6 +556,48 @@ function calibrationSpreadRefusal(row) {
         `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%) — the segmentation is meaningless, not even a floor survives ` +
         `(over the ceiling on every one of ${attempts} attempts)`
     );
+}
+
+/**
+ * Runs every row of the first full-table pass through
+ * `measureWithinCalibrationCeiling`, re-measuring a drifting row through a
+ * single-row call to the page, in the first pass's row order.
+ *
+ * @param {Pick<import('playwright').Page, 'evaluate'>} page
+ * @param {QuantumCostPagePayload} firstPass
+ * @param {QuantumCostTableConfig} tableConfig
+ * @returns {Promise<{ row: QuantumCostPageRow; attempts: number }[]>}
+ */
+async function remeasureDriftingRows(page, firstPass, tableConfig) {
+    /**
+     * @param {QuantumCostPageRow} previous
+     * @param {number} attempt
+     * @returns {Promise<QuantumCostPageRow>}
+     */
+    const remeasureRow = async (previous, attempt) => {
+        console.log(
+            `re-measuring ${previous.id} alone: its tick rate moved ` +
+                `${calibrationSpreadPct(previous.segmentRates).toFixed(1)}% across its own timed window ` +
+                `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%), attempt ${attempt} of ${MAX_CALIBRATION_ATTEMPTS}`
+        );
+        const rerun = await page.evaluate((config) => window.runQuantumCostTable(config), {
+            ...tableConfig,
+            deviceIds: [previous.id],
+        });
+        const [row] = rerun.results;
+        if (rerun.results.length !== 1 || row.id !== previous.id) {
+            throw new Error(
+                `re-measuring ${previous.id} returned rows ${rerun.results.map((result) => result.id).join(', ')}`
+            );
+        }
+        return row;
+    };
+    /** @type {{ row: QuantumCostPageRow; attempts: number }[]} */
+    const admitted = [];
+    for (const firstAttempt of firstPass.results) {
+        admitted.push(await measureWithinCalibrationCeiling(firstAttempt, remeasureRow));
+    }
+    return admitted;
 }
 
 /**
@@ -745,34 +789,7 @@ async function main() {
         };
         payload = await page.evaluate((config) => window.runQuantumCostTable(config), tableConfig);
 
-        /**
-         * @param {QuantumCostPageRow} previous
-         * @param {number} attempt
-         * @returns {Promise<QuantumCostPageRow>}
-         */
-        const remeasureRow = async (previous, attempt) => {
-            console.log(
-                `re-measuring ${previous.id} alone: its tick rate moved ` +
-                    `${calibrationSpreadPct(previous.segmentRates).toFixed(1)}% across its own timed window ` +
-                    `(ceiling ${MAX_CALIBRATION_SPREAD_PCT}%), attempt ${attempt} of ${MAX_CALIBRATION_ATTEMPTS}`
-            );
-            const rerun = await page.evaluate((config) => window.runQuantumCostTable(config), {
-                ...tableConfig,
-                deviceIds: [previous.id],
-            });
-            const [row] = rerun.results;
-            if (rerun.results.length !== 1 || row.id !== previous.id) {
-                throw new Error(
-                    `re-measuring ${previous.id} returned rows ${rerun.results.map((result) => result.id).join(', ')}`
-                );
-            }
-            return row;
-        };
-        /** @type {{ row: QuantumCostPageRow; attempts: number }[]} */
-        const admitted = [];
-        for (const firstAttempt of payload.results) {
-            admitted.push(await measureWithinCalibrationCeiling(firstAttempt, remeasureRow));
-        }
+        const admitted = await remeasureDriftingRows(page, payload, tableConfig);
         payload.results = admitted.map(({ row }) => row);
         calibrationAttempts = admitted.map(({ attempts }) => attempts);
 
