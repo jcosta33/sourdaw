@@ -123,6 +123,44 @@ function inspectTestProject(input: {
     };
 }
 
+type StoredArrangementDocument = {
+    arrangements: {
+        activeArrangementId: string;
+        arrangements: { id: string; tracks: { tracks: { devices: { id: string }[]; id: string }[] } }[];
+    };
+    tracks: { tracks: { devices: { id: string; parameterValues: Record<string, number> }[]; id: string }[] };
+};
+
+/**
+ * A saved project: the live `tracks` slot and the arrangement snapshot
+ * `syncCurrentArrangementToStore` wrote of it, both carrying the track `trk`
+ * and its device `dev1`.
+ */
+function seedSavedProjectWithStoredArrangement(): void {
+    automergeRepository.changeDoc<StoredArrangementDocument>('root', (draft) => {
+        draft.tracks = { tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk' }] };
+        draft.arrangements = {
+            activeArrangementId: 'arrangement-1',
+            arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [{ id: 'dev1' }], id: 'trk' }] } }],
+        };
+    });
+}
+
+/** Inspects the project the way production does: through the real fingerprint capture. */
+function inspectProjectWithCapturedFingerprints(input: {
+    projectDocument: Readonly<Record<string, unknown>>;
+    targetIds: readonly string[];
+}) {
+    return {
+        audioGraphValid: true,
+        projectInvariantsValid: true,
+        targetFingerprints: captureCommandTargetFingerprints({
+            document: input.projectDocument,
+            targetIds: input.targetIds,
+        }),
+    };
+}
+
 function seedProject(): void {
     automergeRepository.createProject('Agent concurrency');
     automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
@@ -368,6 +406,232 @@ describe('agent concurrency and compensation', () => {
                 repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
                 targetIds: ['dev1'],
             });
+        }
+    );
+
+    it('classifies a device removed from the live arrangement as deleted although a stored copy keeps it', () => {
+        const live = (devices: { id: string; parameterValues: Record<string, number> }[]) => ({
+            arrangements: {
+                arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [{ id: 'dev1' }], id: 'trk' }] } }],
+            },
+            tracks: { tracks: [{ devices, id: 'trk' }] },
+        });
+        const targetIds = getCommandDivergenceTargetIds({
+            actions: [
+                {
+                    type: 'automateParameterRange',
+                    payload: {
+                        parameterId: 'dev1:drive',
+                        range: { endBeat: 8, startBeat: 0 },
+                        trackId: 'trk',
+                        value: 0.5,
+                    },
+                },
+            ],
+            targetIds: [],
+        });
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({
+                    document: live([{ id: 'dev1', parameterValues: { drive: 0.4 } }]),
+                    targetIds,
+                }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({ document: live([]), targetIds }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({
+            kind: 'deleted-target',
+            mayReapply: false,
+            repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['dev1'] }],
+            targetIds: ['dev1'],
+        });
+    });
+
+    it('classifies a track removed from the live arrangement as deleted although a stored copy keeps it', () => {
+        const stored = { arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ devices: [], id: 'trk' }] } }] };
+        const targetIds = ['trk'];
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({
+                    document: { arrangements: stored, tracks: { tracks: [{ devices: [], id: 'trk' }] } },
+                    targetIds,
+                }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({
+                    document: { arrangements: stored, tracks: { tracks: [] } },
+                    targetIds,
+                }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({
+            kind: 'deleted-target',
+            mayReapply: false,
+            repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: ['trk'] }],
+            targetIds: ['trk'],
+        });
+    });
+
+    it('does not read an edit to only a stored arrangement copy as divergence of its target', () => {
+        const targetIds = ['trk', 'dev1'];
+        const document = (storedDrive: number) => ({
+            arrangements: {
+                arrangements: [
+                    {
+                        id: 'arrangement-1',
+                        tracks: {
+                            tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: storedDrive } }], id: 'trk' }],
+                        },
+                    },
+                ],
+            },
+            tracks: { tracks: [{ devices: [{ id: 'dev1', parameterValues: { drive: 0.4 } }], id: 'trk' }] },
+        });
+
+        expect(
+            classifyAgentProjectDivergence({
+                audioGraphValid: true,
+                baseRevision: 'revision-1',
+                baseTargetFingerprints: captureCommandTargetFingerprints({ document: document(0.4), targetIds }),
+                commandsCompatible: true,
+                currentRevision: 'revision-2',
+                currentTargetFingerprints: captureCommandTargetFingerprints({ document: document(0.9), targetIds }),
+                projectInvariantsValid: true,
+                targetIds,
+            })
+        ).toMatchObject({ kind: 'non-overlapping', mayReapply: true });
+    });
+
+    it.each([
+        [
+            'device',
+            {
+                type: 'automateParameterRange',
+                payload: {
+                    parameterId: 'dev1:drive',
+                    range: { endBeat: 8, startBeat: 0 },
+                    trackId: 'trk',
+                    value: 0.5,
+                    writeId: 'automation-range-command-1',
+                },
+            },
+            [{ argument: 'writeId', value: 'automation-range-command-1' }],
+            [
+                { argument: 'trackId', id: 'trk', scope: 'stable' },
+                { argument: 'writeId', id: 'automation-range-command-1', scope: 'stable' },
+            ],
+            [
+                { argument: 'range.endBeat', unit: 'beats' },
+                { argument: 'range.startBeat', unit: 'beats' },
+                { argument: 'value', unit: 'unitless' },
+            ],
+            [
+                { argument: 'range.endBeat', domain: 'musical', unit: 'beats', value: 8 },
+                { argument: 'range.startBeat', domain: 'musical', unit: 'beats', value: 0 },
+            ],
+            (draft: StoredArrangementDocument) => {
+                draft.tracks.tracks[0]!.devices.splice(0, 1);
+            },
+            ['dev1'],
+        ],
+        [
+            'track',
+            { type: 'setTrackGain', payload: { expectedGain: 0.8, gain: 0.6, trackId: 'trk' } },
+            [],
+            [{ argument: 'trackId', id: 'trk', scope: 'stable' }],
+            [
+                { argument: 'expectedGain', unit: 'linear-gain' },
+                { argument: 'gain', unit: 'linear-gain' },
+            ],
+            [],
+            (draft: StoredArrangementDocument) => {
+                draft.tracks.tracks.splice(0, 1);
+            },
+            ['trk'],
+        ],
+    ] satisfies [
+        string,
+        AppAction,
+        NonNullable<CreateEnvelopeInput['applicationAssignedIds']>,
+        CreateEnvelopeInput['objectReferences'],
+        CreateEnvelopeInput['parameterUnits'],
+        CreateEnvelopeInput['time'],
+        (draft: StoredArrangementDocument) => void,
+        string[],
+    ][])(
+        'names a %s removed from the live arrangement as the deleted target when a stored copy keeps it',
+        async (
+            kind,
+            action,
+            applicationAssignedIds,
+            objectReferences,
+            parameterUnits,
+            time,
+            removeFromLive,
+            deletedTargetIds
+        ) => {
+            seedProject();
+            registerCrdtStorageRuntime();
+            agentProjectInspectionPort.setProvider(inspectProjectWithCapturedFingerprints);
+            commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
+                const document = projectDocument ?? automergeRepository.getDoc<Record<string, unknown>>('root');
+                if (!document) {
+                    throw new Error('Expected project document for command preflight');
+                }
+                return {
+                    ...inspectProjectWithCapturedFingerprints({ projectDocument: document, targetIds }),
+                    availableAssetHashes: [],
+                    availableAudioBufferIds: [],
+                    lockedRanges: [],
+                    projectId: 'project-test',
+                };
+            });
+            seedSavedProjectWithStoredArrangement();
+            const execute = vi.fn();
+            const handler = {
+                describe: () => ({ inverseAction: null, label: 'Edit the saved project' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            };
+            registerHandlerMap({ automateParameterRange: handler, setTrackGain: handler });
+            const command = createVersionedCommandEnvelope({
+                action,
+                applicationAssignedIds,
+                availableDeviceVersions: {},
+                expectedEffect: `Edit the ${kind}.`,
+                normalizedProjectRevision: captureProjectRevision(),
+                objectReferences,
+                parameterUnits,
+                reason: `Edit the ${kind}.`,
+                time,
+            });
+            automergeRepository.changeDoc<StoredArrangementDocument>('root', removeFromLive);
+
+            const result = await executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(command)],
+            });
+
+            expect(result).toMatchObject({
+                divergence: {
+                    kind: 'deleted-target',
+                    mayReapply: false,
+                    repairCandidates: [{ kind: 'replan-without-deleted-target', targetIds: deletedTargetIds }],
+                    targetIds: deletedTargetIds,
+                },
+                status: 'conflicted',
+            });
+            expect(execute).not.toHaveBeenCalled();
         }
     );
 
