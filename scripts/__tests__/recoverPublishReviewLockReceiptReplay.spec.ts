@@ -162,6 +162,8 @@ function remote(
         unresolvedThreads?: number;
         extraComment?: boolean;
         driftAfterFirst?: boolean;
+        laterReviewerState?: string;
+        laterReviewerHead?: string;
     } = {}
 ) {
     const state = { posts: 0, inspections: 0 };
@@ -180,6 +182,30 @@ function remote(
             return JSON.stringify({ state: prState, headRefOid: liveHead, labels: [] });
         }
         if (args[0] === 'api' && args[1] === 'graphql') {
+            // The later decision arrives after both exact REST inspections, before authority is read.
+            if (input.laterReviewerState !== undefined && state.inspections < 2) {
+                throw new Error('later review state read before two exact publication inspections');
+            }
+            const reviewStateNodes = [
+                {
+                    id: `PRR_${reviewId}`,
+                    databaseId: reviewId,
+                    state: 'APPROVED',
+                    submittedAt: '2026-10-06T19:46:57Z',
+                    author: { login: 'reviewer[bot]', __typename: 'Bot', id: review.user.node_id },
+                    commit: { oid: head },
+                },
+            ];
+            if (input.laterReviewerState !== undefined) {
+                reviewStateNodes.push({
+                    id: `PRR_${reviewId + 1}`,
+                    databaseId: reviewId + 1,
+                    state: input.laterReviewerState,
+                    submittedAt: '2026-10-06T19:47:57Z',
+                    author: { login: 'reviewer[bot]', __typename: 'Bot', id: review.user.node_id },
+                    commit: { oid: input.laterReviewerHead ?? head },
+                });
+            }
             return JSON.stringify({
                 data: {
                     repository: {
@@ -187,16 +213,7 @@ function remote(
                             id: 'PR_fixture',
                             headRefOid: liveHead,
                             reviews: {
-                                nodes: [
-                                    {
-                                        id: `PRR_${reviewId}`,
-                                        databaseId: reviewId,
-                                        state: 'APPROVED',
-                                        submittedAt: '2026-10-06T19:46:57Z',
-                                        author: { login: 'reviewer[bot]', __typename: 'Bot', id: review.user.node_id },
-                                        commit: { oid: head },
-                                    },
-                                ],
+                                nodes: reviewStateNodes,
                                 pageInfo: { hasPreviousPage: false, startCursor: null },
                             },
                             reviewThreads: {
@@ -350,6 +367,33 @@ describe('already recovered landed receipt binds its modern dossier', () => {
 
         expect(publishedReviewId(dossier(root))).toBe(reviewId);
         expect(deliveryAuthorization(dossier(root))).toBeUndefined();
+    });
+
+    it.each([
+        { label: 'a change request', laterReviewerState: 'CHANGES_REQUESTED' },
+        { label: 'a comment', laterReviewerState: 'COMMENTED' },
+        { label: 'a dismissal', laterReviewerState: 'DISMISSED' },
+        { label: 'another same-head approval', laterReviewerState: 'APPROVED' },
+        {
+            label: 'a newer approval on another head',
+            laterReviewerState: 'APPROVED',
+            laterReviewerHead: 'c'.repeat(40),
+        },
+    ])('binds an old approval after $label without new delivery authority', async (input) => {
+        const { root, ownerOid } = fixture();
+        const github = remote(input);
+        const before = dossier(root);
+
+        await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
+
+        const bound = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
+        expect(publishedReviewId(dossier(root))).toBe(reviewId);
+        expect(deliveryAuthorization(dossier(root))).toBeUndefined();
+        expect(dossier(root).events.slice(0, before.events.length)).toEqual(before.events);
+        await expect(recover(root, ownerOid, github.gh)).resolves.toBe(0);
+        expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(bound);
+        expect(publishReview(number, port(root, github.gh))).toBe(reviewId);
+        expect(github.state.posts).toBe(0);
     });
 
     it.each([

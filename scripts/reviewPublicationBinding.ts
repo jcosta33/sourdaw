@@ -435,8 +435,9 @@ export function recordedPublicationReplay(
  * one `review-published` and one `finding-published` per posted comment, matched to the review
  * document positionally after a path/line/side correspondence check. An APPROVE for a plan-carrying
  * bundle then appends one `delivery-authorized` event in the same write, binding the just-posted
- * reviewer review to the dossier digest when no review threads remain unresolved — the reviewer
- * publication is the delivery authorization (#4584). When the escalation gate consumed
+ * reviewer review to the dossier digest when that review remains the latest independent approval
+ * on the head and no review threads remain unresolved — the reviewer publication is the delivery
+ * authorization (#4584). When the escalation gate consumed
  * a reassessment, one `review-reassessed` event records its observed count, threshold, action and
  * reason in that same write. The record was persisted before the POST; this binding is the record's
  * only post-write step, and it re-validates the whole chain before persisting. Legacy bundles carry
@@ -503,7 +504,11 @@ export function recordPublicationBindings(
             );
         }
         const state = port.reviewState(number, head);
-        if (state.unresolvedThreads === 0) {
+        if (
+            state.latestReviewerStateOnHead === 'APPROVED' &&
+            state.latestReviewerReviewDatabaseId === reviewId &&
+            state.unresolvedThreads === 0
+        ) {
             postPublication.push({
                 kind: 'delivery-authorized',
                 reviewId,
@@ -539,7 +544,8 @@ export function recordPublicationBindings(
  * landed review hidden from the public rounds, so it sees the count the posting run saw and yields
  * the reassessment that run consumed. A dossier already binding this review is left unchanged.
  * An approval recovered after the pull request's head moved or merged binds no delivery
- * authorization. An open current approval binds authority only with zero unresolved threads.
+ * authorization. An open current approval binds authority only while it remains the latest
+ * independent reviewer approval on that head with zero unresolved threads.
  * Every other step reads only the bundle and the review's own public record.
  */
 export function recordRecoveredPublicationBindings(
