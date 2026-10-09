@@ -53,7 +53,8 @@ const mocks = vi.hoisted(() => ({
     verifyAudioBufferReferences: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     stopTrackInputMonitoring: vi.fn(),
 
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
