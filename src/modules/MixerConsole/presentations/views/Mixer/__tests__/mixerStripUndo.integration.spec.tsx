@@ -277,6 +277,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackPeakLevel: vi.fn(() => 0),
     getMasterPeakLevel: vi.fn(() => 0),
     removeTrackStrip: vi.fn(),
+    deactivateTrackStrip: vi.fn(),
     ensureTrackStrip: vi.fn(),
     addDeviceToStrip: vi.fn(),
     updateDeviceBypass: vi.fn(),
