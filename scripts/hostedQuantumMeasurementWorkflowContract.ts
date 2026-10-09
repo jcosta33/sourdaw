@@ -122,13 +122,15 @@ function assertStepIsBlocking(step: UnknownRecord): void {
 // download of the .deb, then apt-get install. A timeout owned by the runner
 // user cannot signal that sudo'd tree, so the whole install runs under a
 // root-side timeout and a stalled mirror fails an attempt instead of holding
-// the job to its limit.
+// the job to its limit. The install is forced because sudo's env_reset drops
+// CI, and without CI or --force Playwright skips a channel the runner image
+// already ships, leaving the image's older Chrome in place.
 const CHROME_INSTALL_ATTEMPTS = 3;
 const CHROME_INSTALL_CAP_MINUTES = 5;
 const CHROME_INSTALL_KILL_AFTER_SECONDS = 15;
 // The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
 const CHROME_INSTALL_BACKOFF_SECONDS = 5 + 10;
-const CHROME_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${CHROME_INSTALL_KILL_AFTER_SECONDS}s ${CHROME_INSTALL_CAP_MINUTES}m node_modules/.bin/playwright install chrome`;
+const CHROME_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${CHROME_INSTALL_KILL_AFTER_SECONDS}s ${CHROME_INSTALL_CAP_MINUTES}m node_modules/.bin/playwright install --force chrome`;
 const CHROME_INSTALL_RUN = [
     'for attempt in 1 2 3; do',
     `  if ${CHROME_INSTALL_COMMAND}; then`,
@@ -166,6 +168,11 @@ function assertBoundedChromeInstall(install: UnknownRecord): void {
     ) {
         throw new Error(
             'Hosted quantum measurement workflow must retain three Google Chrome install attempts that fail after the third'
+        );
+    }
+    if (!run.includes('playwright install --force chrome')) {
+        throw new Error(
+            'Hosted quantum measurement workflow must retain the forced Google Chrome install, since sudo drops CI and the runner image already ships Chrome'
         );
     }
     if (!run.includes(CHROME_INSTALL_COMMAND)) {

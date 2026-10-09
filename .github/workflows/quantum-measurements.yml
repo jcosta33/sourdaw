@@ -94,6 +94,13 @@ jobs:
       # continues. The browser lands in /opt/google/chrome, where the
       # measurement harness finds it through `channel: 'chrome'`.
       #
+      # `--force`: sudo's env_reset drops CI, which `env "PATH=$PATH"` does not
+      # restore, and without CI or --force Playwright skips a non-hermetic
+      # channel that already exists. The runner image ships Chrome, so the
+      # install would print "chrome is already installed", exit 0 and measure
+      # the image's older build (run 37875876946 measured 154.0.8037.97 while a
+      # base-workflow run the same day installed 155.0.8059.39).
+      #
       # Cap: from 56 successful runs between 2026-09-29 and 2026-10-09 this
       # step took 16s to 83s (median 23s), so 5m is more than three times the
       # slowest healthy install while failing a genuine stall within minutes.
@@ -106,7 +113,7 @@ jobs:
         timeout-minutes: 20
         run: |
           for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 5m node_modules/.bin/playwright install chrome; then
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
