@@ -60,6 +60,7 @@ import { buildDossier } from '../reviewDossierChain.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
+    completedStances,
     deliveryAuthorization,
     discardedDispositions,
     publishedFindings,
@@ -73,6 +74,7 @@ import {
     inspectReviewPublicationRemote,
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
+import { planReviewRisk } from '../reviewRiskPolicy.ts';
 import {
     REASSESSMENT_FILE_NAME,
     REVIEW_ROUND_ESCALATION_THRESHOLD,
@@ -4984,6 +4986,7 @@ describe('fresh reviewer dossier publication', () => {
             stances: [
                 { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
                 { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
             ],
             evidence: [
                 {
@@ -5009,6 +5012,99 @@ describe('fresh reviewer dossier publication', () => {
         });
         const record: unknown = JSON.parse(canonical);
         return record;
+    }
+
+    function stanceAdmission(dossier: unknown, recorded?: unknown): unknown {
+        if (typeof recorded === 'object' && recorded !== null && 'format' in recorded) {
+            return recorded;
+        }
+        const source = dossier as {
+            format: string;
+            stances?: { stance: string; reviewerModel: string; exhaustion?: string }[];
+        };
+        const draws =
+            source.format === 'dossier-v1' ? completedStances(parseReviewDossier(dossier)) : (source.stances ?? []);
+        const rows = (
+            recorded as { stances: { stance: string; admittedBy?: string; admission?: string }[] } | undefined
+        )?.stances;
+        const names = rows?.map((row) => row.stance) ?? [...new Set(draws.map((draw) => draw.stance))];
+        return {
+            format: 'stances-admission-v1',
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            stances: names.map((stance) => ({
+                stance,
+                admittedBy:
+                    rows?.find((row) => row.stance === stance)?.admittedBy ??
+                    rows?.find((row) => row.stance === stance)?.admission ??
+                    `the ${stance} failure can escape review`,
+                draws: draws
+                    .filter((draw) => draw.stance === stance)
+                    .map((draw) => ({
+                        reviewerModel: draw.reviewerModel,
+                        ...(draw.exhaustion === undefined ? {} : { exhaustion: draw.exhaustion }),
+                        baselineProbe: {
+                            spec: 'scripts/__tests__/publishReview.spec.ts',
+                            mutation: `revert the ${stance} guard`,
+                            observed: 'the named spec failed on the mutation',
+                            result: 'mutation-detected',
+                        },
+                    })),
+            })),
+        };
+    }
+
+    type AdmissionRecord = {
+        format: string;
+        pr: number;
+        headSha: string;
+        baseSha: string;
+        stances: {
+            stance: string;
+            admittedBy: string;
+            draws: {
+                reviewerModel: string;
+                exhaustion?: string;
+                baselineProbe: { spec: string; mutation: string; observed: string; result: string };
+            }[];
+        }[];
+    };
+
+    function validAdmission(dossier: unknown = dossierInput()): AdmissionRecord {
+        return stanceAdmission(dossier) as AdmissionRecord;
+    }
+
+    function expectStructuralRefusal(input: {
+        record: unknown;
+        dossier?: unknown;
+        plan?: ReviewRiskPlan;
+        reason: RegExp;
+    }): void {
+        const fixture = dossierFixture({
+            plan: input.plan ?? riskPlan(),
+            stances: input.record,
+            dossier: input.dossier ?? dossierInput(),
+        });
+        const journal = vi.fn();
+        try {
+            const message = refusalMessage(() =>
+                publishReview(number, fixture.port, {
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                })
+            );
+            expect(message).toMatch(input.reason);
+            expect(fixture.writes).toEqual([]);
+            expect(journal).not.toHaveBeenCalled();
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
     }
 
     const reviewDocument = {
@@ -5131,8 +5227,13 @@ describe('fresh reviewer dossier publication', () => {
         if (input.plan !== undefined) {
             writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(input.plan));
         }
-        if (input.stances !== undefined) {
-            writeFileSync(join(bundle, 'stances.json'), JSON.stringify(input.stances));
+        const freshInput = (input.dossier as { format?: string } | undefined)?.format === 'dossier-input-v1';
+        if (input.stances !== null && (input.stances !== undefined || (input.plan !== undefined && freshInput))) {
+            let admission = stanceAdmission(input.dossier);
+            if (input.stances !== undefined) {
+                admission = stanceAdmission(input.dossier, input.stances);
+            }
+            writeFileSync(join(bundle, 'stances.json'), JSON.stringify(admission));
         }
         if (input.dossier !== undefined) {
             writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(input.dossier));
@@ -5295,6 +5396,264 @@ describe('fresh reviewer dossier publication', () => {
         },
     ];
 
+    it('refuses a fresh plan-carrying review without the caller stance admission before any side effect', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: null,
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'lost review', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'weak probe', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale replay', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        const journal = vi.fn();
+        try {
+            expect(() =>
+                publishReview(number, fixture.port, {
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                })
+            ).toThrow(/stances\.json/u);
+            expect(fixture.writes).toEqual([]);
+            expect(journal).not.toHaveBeenCalled();
+            expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        ['zero', 0],
+        ['two', 2],
+    ] as const)('refuses %s unique stances before all publication side effects', (_label, count) => {
+        const entries = (dossierInput().stances as Record<string, unknown>[]).slice(0, count);
+        const dossier = dossierInput({ stances: entries });
+        expectStructuralRefusal({
+            record: validAdmission(dossier),
+            dossier,
+            reason: new RegExp(`at least three unique task risk stances; found ${count}`, 'u'),
+        });
+    });
+
+    it('refuses duplicate stance rows even when the row count is three', () => {
+        const entries = (dossierInput().stances as Record<string, unknown>[]).slice(0, 2);
+        const dossier = dossierInput({ stances: entries });
+        const record = validAdmission(dossier);
+        record.stances.push(structuredClone(record.stances[0]!));
+        expectStructuralRefusal({ record, dossier, reason: /duplicates stance "correctness"/u });
+    });
+
+    it.each([
+        [
+            'pr',
+            (record: AdmissionRecord) => {
+                record.pr = 43;
+            },
+            /review stances admission pr mismatch/u,
+        ],
+        [
+            'head',
+            (record: AdmissionRecord) => {
+                record.headSha = 'e'.repeat(40);
+            },
+            /review stances admission headSha mismatch/u,
+        ],
+        [
+            'base',
+            (record: AdmissionRecord) => {
+                record.baseSha = 'e'.repeat(40);
+            },
+            /review stances admission baseSha mismatch/u,
+        ],
+        [
+            'format',
+            (record: AdmissionRecord) => {
+                record.format = 'older';
+            },
+            /review stances admission format mismatch/u,
+        ],
+        [
+            'missing probe',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws = [];
+            },
+            /missing baseline probe for stance "correctness"/u,
+        ],
+        [
+            'duplicate probe',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws.push(structuredClone(record.stances[0]!.draws[0]!));
+            },
+            /duplicates baseline probe for stance "correctness"/u,
+        ],
+        [
+            'extra probe',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws.push({
+                    ...structuredClone(record.stances[0]!.draws[0]!),
+                    reviewerModel: 'unrecorded-model',
+                });
+            },
+            /extra baseline probe/u,
+        ],
+        [
+            'missing spec',
+            (record: AdmissionRecord) => {
+                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'spec');
+            },
+            /baselineProbe\.spec must be a non-blank string/u,
+        ],
+        [
+            'missing mutation',
+            (record: AdmissionRecord) => {
+                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'mutation');
+            },
+            /baselineProbe\.mutation must be a non-blank string/u,
+        ],
+        [
+            'missing observed',
+            (record: AdmissionRecord) => {
+                Reflect.deleteProperty(record.stances[0]!.draws[0]!.baselineProbe, 'observed');
+            },
+            /baselineProbe\.observed must be a non-blank string/u,
+        ],
+        [
+            'unsafe spec',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.spec = `ghp_${'A'.repeat(24)}`;
+            },
+            /baselineProbe\.spec.*GitHub token/u,
+        ],
+        [
+            'malformed mutation',
+            (record: AdmissionRecord) => {
+                Reflect.set(record.stances[0]!.draws[0]!.baselineProbe, 'mutation', 42);
+            },
+            /baselineProbe\.mutation must be a non-blank string/u,
+        ],
+        [
+            'unsafe mutation',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.mutation = `ghp_${'B'.repeat(24)}`;
+            },
+            /baselineProbe\.mutation.*GitHub token/u,
+        ],
+        [
+            'malformed observed',
+            (record: AdmissionRecord) => {
+                Reflect.set(record.stances[0]!.draws[0]!.baselineProbe, 'observed', 42);
+            },
+            /baselineProbe\.observed must be a non-blank string/u,
+        ],
+        [
+            'unsafe observed',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.observed = `ghp_${'C'.repeat(24)}`;
+            },
+            /baselineProbe\.observed.*GitHub token/u,
+        ],
+        [
+            'multiline mutation',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.mutation = 'revert guard\nthen run';
+            },
+            /baselineProbe\.mutation.*line separator/u,
+        ],
+        [
+            'unknown result',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.result = 'passed';
+            },
+            /baselineProbe\.result must be mutation-detected, still-green or not-run/u,
+        ],
+        [
+            'still green',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.result = 'still-green';
+            },
+            /baseline probe.*reported still-green/u,
+        ],
+        [
+            'not run',
+            (record: AdmissionRecord) => {
+                record.stances[0]!.draws[0]!.baselineProbe.result = 'not-run';
+            },
+            /baseline probe.*reported not-run/u,
+        ],
+    ] as const)('refuses a %s sidecar before all publication side effects', (_label, change, reason) => {
+        const record = validAdmission();
+        change(record);
+        expectStructuralRefusal({ record, reason });
+    });
+
+    it.each([
+        ['native-security', ['correctness', 'security-platform', 'test-validity']],
+        ['realtime-audio', ['correctness', 'realtime-audio', 'test-validity']],
+        ['undo', ['correctness', 'project-integrity-undo', 'test-validity']],
+    ] as const)('requires one strongest completed draw for %s', (riskClass, requiredStances) => {
+        let plan = riskPlan({ riskClasses: [riskClass], requiredStances: [...requiredStances] });
+        if (riskClass === 'native-security') {
+            plan = planReviewRisk({
+                pr: number,
+                headSha: head,
+                baseSha: base,
+                paths: [
+                    {
+                        path: 'scripts/reviewStructuralAdmission.ts',
+                        group: 'handwritten',
+                        added: 1,
+                        deleted: 0,
+                        binary: false,
+                    },
+                ],
+            });
+        }
+        expect(plan.riskClasses).toContain(riskClass);
+        const standardDraws = (dossierInput().stances as Record<string, unknown>[]).map((draw) => ({
+            ...draw,
+            modelTier: 'standard',
+        }));
+        const dossier = dossierInput({ stances: standardDraws });
+        expectStructuralRefusal({
+            plan,
+            dossier,
+            record: validAdmission(dossier),
+            reason: /requires a completed strongest draw for specialist risk/u,
+        });
+
+        const strongest = dossierInput({
+            stances: [{ ...standardDraws[0], modelTier: 'strongest' }, ...standardDraws.slice(1)],
+        });
+        const fixture = dossierFixture({ plan, dossier: strongest, stances: validAdmission(strongest) });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('admits three completed standard draws for a nonspecial plan', () => {
+        const dossier = dossierInput({
+            stances: (dossierInput().stances as Record<string, unknown>[]).map((draw) => ({
+                ...draw,
+                modelTier: 'standard',
+            })),
+        });
+        const fixture = dossierFixture({ plan: riskPlan(), dossier, stances: validAdmission(dossier) });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('publishes a matching plan and dossier, writing the canonical record beside review.json', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
@@ -5308,12 +5667,28 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.writes).toHaveLength(2);
             expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
             expect(fixture.writes[1]?.path).toBe(join(fixture.bundle, 'dossier.json'));
+            expect(fixture.writes[0]?.contents).toBe(
+                buildReviewDossier({
+                    plan: riskPlan(),
+                    raw: dossierInput(),
+                    discarded: [{ finding: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' }],
+                    comments: [],
+                    recommendation: 'approve',
+                }).canonical
+            );
+            expect(fixture.posted.review).toEqual({
+                number,
+                commitId: head,
+                event: 'APPROVE',
+                body: renderReviewDocumentBody(reviewDocument),
+                comments: [],
+            });
 
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.headSha).toBe(head);
             expect(persisted.baseSha).toBe(base);
             expect(persisted.recommendation).toBe('approve');
-            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(persisted.requiredStances).toEqual(['correctness', 'stale binding', 'test-validity']);
             // An APPROVE carries no inline comments, so it accepts no findings and binds only the
             // review, plus the delivery authorization the reviewer publication itself records.
             expect(acceptedFindings(persisted)).toEqual([]);
@@ -5479,12 +5854,15 @@ describe('fresh reviewer dossier publication', () => {
         });
 
         it('refuses a persisted canonical record with no publication event that never acknowledges the assessment', () => {
+            const historical = persistedDossier([
+                { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+            ]);
             const fixture = dossierFixture({
                 plan: riskPlan(),
-                dossier: persistedDossier([
-                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-                ]),
+                dossier: historical,
+                stances: stanceAdmission(historical),
                 semanticCi: deliveredSemanticCi(),
             });
             try {
@@ -5614,6 +5992,7 @@ describe('fresh reviewer dossier publication', () => {
                             admittedBy: `${FIRED_TOKEN}: a reordered take insert drops a buffered frame`,
                         },
                         { stance: 'test-validity' },
+                        { stance: 'stale binding' },
                     ],
                 },
                 dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is the stance this round attacked' }),
@@ -6592,7 +6971,7 @@ describe('fresh reviewer dossier publication', () => {
             headSha: head,
             baseSha: base,
             riskClasses: ['small'],
-            requiredStances: ['correctness', 'test-validity'],
+            requiredStances: ['correctness', 'stale binding', 'test-validity'],
             events: [
                 {
                     kind: 'stance-completed',
@@ -6604,6 +6983,13 @@ describe('fresh reviewer dossier publication', () => {
                 {
                     kind: 'stance-completed',
                     stance: 'test-validity',
+                    reviewerModel: 'review-model',
+                    modelTier: 'standard',
+                    outcome: 'clean',
+                },
+                {
+                    kind: 'stance-completed',
+                    stance: 'stale binding',
                     reviewerModel: 'review-model',
                     modelTier: 'standard',
                     outcome: 'clean',
@@ -6636,10 +7022,15 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('publishes a bundle holding an unpublished pre-field record with no impact', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalPersistedDossier() });
+        const historical = canonicalPersistedDossier();
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, stances: stanceAdmission(historical) });
         try {
+            writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(parseReviewDossier(historical)));
+            const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
+            expect(serializeReviewDossier(parseReviewDossier(JSON.parse(before)))).toBe(before);
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.calls).toContain('post');
+            expect(fixture.writes).toHaveLength(1);
             expect(publishedReviewId(parseReviewDossier(fixture.readDossier()))).toBe(99);
         } finally {
             removeTemporaryDirectory(fixture.root);
@@ -7042,6 +7433,7 @@ describe('fresh reviewer dossier publication', () => {
                         baselineProbe: { spec: 'queue.spec.ts', mutation: 'revert the ordering guard' },
                     },
                     { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
                 ],
             },
             dossier: dossierInput(),
@@ -7051,7 +7443,7 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.posted.review?.event).toBe('APPROVE');
             expect(fixture.writes).toHaveLength(2);
             const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(persisted.requiredStances).toEqual(['correctness', 'stale binding', 'test-validity']);
             expect(publishedReviewId(persisted)).toBe(99);
         } finally {
             removeTemporaryDirectory(fixture.root);
@@ -7073,6 +7465,7 @@ describe('fresh reviewer dossier publication', () => {
                         },
                     },
                     { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
                 ],
                 note: 'failure-mode admissions and probe results are caller evidence the gate never reads',
             },
@@ -7080,6 +7473,7 @@ describe('fresh reviewer dossier publication', () => {
                 stances: [
                     { stance: gateStance, reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
         });
@@ -7088,7 +7482,7 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.posted.review?.event).toBe('APPROVE');
             expect(fixture.writes).toHaveLength(2);
             const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual([gateStance, 'test-validity']);
+            expect(persisted.requiredStances).toEqual([gateStance, 'stale binding', 'test-validity']);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7107,6 +7501,7 @@ describe('fresh reviewer dossier publication', () => {
                         outcome: 'blocker-found',
                     },
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
         });
@@ -7114,12 +7509,12 @@ describe('fresh reviewer dossier publication', () => {
             expect(publishReview(number, fixture.port)).toBe(99);
             const persisted = parseReviewDossier(fixture.readDossier());
             // The stance set is the dispatch; the second draw extends model diversity, not the count.
-            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(persisted.requiredStances).toEqual(['correctness', 'stale binding', 'test-validity']);
             expect(
                 persisted.events
                     .filter((event) => event.kind === 'stance-completed')
                     .map((event) => event.reviewerModel)
-            ).toEqual(['review-model', 'review-model-2', 'review-model']);
+            ).toEqual(['review-model', 'review-model-2', 'review-model', 'review-model']);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7132,6 +7527,7 @@ describe('fresh reviewer dossier publication', () => {
                 stances: [
                     { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
                     { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
                 ],
             },
             dossier: dossierInput({
@@ -7144,13 +7540,18 @@ describe('fresh reviewer dossier publication', () => {
                         outcome: 'clean',
                     },
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
         });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(parseReviewDossier(fixture.readDossier()).requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(parseReviewDossier(fixture.readDossier()).requiredStances).toEqual([
+                'correctness',
+                'stale binding',
+                'test-validity',
+            ]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -7198,6 +7599,7 @@ describe('fresh reviewer dossier publication', () => {
                         exhaustion: 'every other harness on this machine was committed to another lane',
                     },
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
         });
@@ -7289,6 +7691,7 @@ describe('fresh reviewer dossier publication', () => {
                         exhaustion: 'every other harness on this machine was committed to another lane',
                     },
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
             remoteReviews: { 99: landedReview },
@@ -7318,6 +7721,7 @@ describe('fresh reviewer dossier publication', () => {
                 stances: [
                     { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
                     { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
+                    { stance: 'stale binding', admission: 'a moved head can retain an old authorization' },
                 ],
             },
             dossier: dossierInput({
@@ -7329,6 +7733,7 @@ describe('fresh reviewer dossier publication', () => {
                         modelTier: 'standard',
                         outcome: 'clean',
                     },
+                    { stance: 'stale binding', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
         });
@@ -7336,7 +7741,7 @@ describe('fresh reviewer dossier publication', () => {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
             const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual(['correctness', 'security-platform']);
+            expect(persisted.requiredStances).toEqual(['correctness', 'security-platform', 'stale binding']);
             expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
         } finally {
             removeTemporaryDirectory(fixture.root);
@@ -7360,7 +7765,7 @@ describe('fresh reviewer dossier publication', () => {
             // test-validity — which differs from the plan's, so a gate answering to the plan's
             // requiredStances instead of the record would publish this dossier and turn this red.
             expect(message).toMatch(
-                /stances do not match stances\.json: missing \[security-platform\], extra \[test-validity\]/u
+                /stances do not match stances\.json: missing \[security-platform\], extra \[test-validity, stale binding\]/u
             );
             expect(fixture.calls).not.toContain('post');
             expect(fixture.posted.review).toBeUndefined();
@@ -7385,9 +7790,10 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('publishes a dossier whose dispatched stances differ from the plan menu when no stances.json exists', () => {
+    it('refuses a fresh dossier without stances.json even when its names differ from the plan menu', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
+            stances: null,
             dossier: dossierInput({
                 stances: [
                     { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
@@ -7395,11 +7801,11 @@ describe('fresh reviewer dossier publication', () => {
             }),
         });
         try {
-            expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.posted.review?.event).toBe('APPROVE');
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(persisted.requiredStances).toEqual(['correctness']);
-            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
+            expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(
+                /missing review stances admission/u
+            );
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.writes).toEqual([]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

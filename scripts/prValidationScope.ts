@@ -44,6 +44,7 @@ const REVIEW_TOOLING = new Set([
     'reviewerModelDiversity',
     'reviewRoundEscalation',
     'reviewRiskPolicy',
+    'reviewStructuralAdmission',
     'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',

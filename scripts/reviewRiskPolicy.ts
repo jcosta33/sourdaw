@@ -125,6 +125,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewPublicationRemoteInspection.ts',
     'scripts/reviewRepair.ts',
     'scripts/reviewRiskPolicy.ts',
+    'scripts/reviewStructuralAdmission.ts',
     'scripts/reviewRoundEscalation.ts',
     'scripts/reviewShadowStatus.ts',
     'scripts/reviewerModelDiversity.ts',
