@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { transportStore } from '#/modules/Transport/stores';
 
-import { type TakeLane } from '../../models/TakeLane';
+import { placeTakeOnClipMedia, type TakeLane } from '../../models/TakeLane';
 import { type Clip } from '../../models/Track';
 import { sanitize_take_lane_store_state, type TakeLaneStoreState } from '../../stores/takeLaneStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { resolveClipsWithComping } from '../resolveComping';
 
 const mocks = vi.hoisted(() => ({
@@ -142,31 +143,6 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
         expectCompedAsMain(resolveClipsWithComping('t1', [clip]), resolveCompFragmentsAsMain(loaded.lanes[0]!, clip));
     });
 
-    // A pass commit placed on its clip's media origin plays the material main's
-    // law gives the same depth, wherever an edit has since put the clip, as
-    // long as the clip starts on or after that origin.
-    it.each([
-        { name: 'as recorded', clip: recording(1, 10) },
-        { name: 'moved', clip: recording(5, 14) },
-        { name: 'slipped', clip: recording(1, 10, 0.5) },
-        { name: 'start trimmed past a region', clip: recording(2.5, 10, 1.5) },
-    ])('plays a pass placed on its media origin as main played its depth when the clip is $name', ({ clip }) => {
-        const lane = savedByMain.lanes[0]!;
-        // Two beats a second at the session's 120 BPM.
-        const placed = {
-            ...lane,
-            takes: lane.takes.map((take) => {
-                if (take.sourceOffsetBeats === undefined) {
-                    return take;
-                }
-                return { ...take, passAnchorSeconds: 0, passDepthSeconds: take.sourceOffsetBeats / 2 };
-            }),
-        };
-        mocks.takeLaneStoreValue.value = { lanes: [placed] };
-
-        expectCompedAsMain(resolveClipsWithComping('t1', [clip]), resolveCompFragmentsAsMain(lane, clip));
-    });
-
     // Every fragment main's resolver produces for these clips, worked by hand
     // from its law: a comped fragment enters the media at the clip's own offset
     // plus its distance from `clip.startBeat - sourceOffsetBeats`, a gap at the
@@ -216,6 +192,99 @@ describe('resolveClipsWithComping on a project saved before pass placement exist
         );
 
         expect(resolved).toEqual(asMain);
+    });
+});
+
+/**
+ * The same loop recorded today: commit places each pass on the clip's media,
+ * from the record point at beat 1 at 120 BPM with no pre-roll or latency, so
+ * the capture and the clip's media both begin 0.5 s into the song.
+ */
+function placedByCommit(): TakeLaneStoreState {
+    const lane = savedByMain.lanes[0]!;
+    const capture = {
+        recordPointBeat: 1,
+        mediaOriginSeconds: 0.5,
+        clipMediaOriginSeconds: 0.5,
+        timeline: liveTempoTimeline,
+    };
+    return { lanes: [{ ...lane, takes: lane.takes.map((take) => placeTakeOnClipMedia(take, capture)) }] };
+}
+
+/** The media offset each resolved fragment over a span carries, or nothing where none covers it. */
+function offsetsOver(resolved: readonly Clip[], spans: readonly { startBeat: number; endBeat: number }[]) {
+    return spans.map(({ startBeat, endBeat }) => ({
+        startBeat,
+        endBeat,
+        audioOffsetBeats: resolved.find((fragment) => fragment.startBeat === startBeat && fragment.endBeat === endBeat)
+            ?.audioOffsetBeats,
+    }));
+}
+
+describe('resolveClipsWithComping on a loop pass placed at commit', () => {
+    it('places each pass where its lap began: half a second into the clip’s media', () => {
+        const placements = placedByCommit().lanes[0]!.takes.map((take) => [
+            take.passAnchorSeconds,
+            take.passDepthSeconds,
+        ]);
+
+        // Take 2's lap began one beat into the capture, Take 3's a loop later.
+        expect(placements).toEqual([
+            [undefined, undefined],
+            [0.5, 0.5],
+            [0.5, 2.5],
+        ]);
+    });
+
+    // Main entered each pass a beat deeper than its lap began, measuring its
+    // depth from the clip start (the record point) rather than from where the
+    // lap sounds (the loop start), so it played what was captured a beat late.
+    // A placed pass sounds its lap on the beats it was played over, and never
+    // before its own material, wherever an edit has since put the clip.
+    it.each([
+        {
+            name: 'as recorded',
+            clip: recording(1, 10),
+            comped: [
+                { startBeat: 2, endBeat: 3, audioOffsetBeats: 1 },
+                { startBeat: 3, endBeat: 6, audioOffsetBeats: 6 },
+            ],
+            silentAt: [],
+        },
+        {
+            // The lap now begins at beat 6, past the region's end.
+            name: 'moved to beat 5',
+            clip: recording(5, 14),
+            comped: [],
+            silentAt: [5, 5.5],
+        },
+        {
+            name: 'slipped half a beat',
+            clip: recording(1, 10, 0.5),
+            comped: [
+                { startBeat: 2, endBeat: 3, audioOffsetBeats: 1.5 },
+                { startBeat: 3, endBeat: 6, audioOffsetBeats: 6.5 },
+            ],
+            silentAt: [],
+        },
+        {
+            name: 'start trimmed past a region',
+            clip: recording(2.5, 10, 1.5),
+            comped: [
+                { startBeat: 2.5, endBeat: 3, audioOffsetBeats: 1.5 },
+                { startBeat: 3, endBeat: 6, audioOffsetBeats: 6 },
+            ],
+            silentAt: [],
+        },
+    ])('plays each pass from what its lap captured when the clip is $name', ({ clip, comped, silentAt }) => {
+        mocks.takeLaneStoreValue.value = placedByCommit();
+
+        const resolved = resolveClipsWithComping('t1', [clip]);
+
+        expect(offsetsOver(resolved, comped)).toEqual(comped);
+        for (const beat of silentAt) {
+            expect(resolved.find((fragment) => fragment.startBeat <= beat && beat < fragment.endBeat)).toBeUndefined();
+        }
     });
 });
 
