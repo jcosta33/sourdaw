@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { type Clip } from '../../models/Track';
 import { type Take } from '../../models/TakeLane';
+import { type Clip } from '../../models/Track';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
 
