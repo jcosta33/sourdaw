@@ -304,6 +304,59 @@ describe('inactive retarget capability plan', () => {
         expect(plan.activationEligible).toBe(false);
     });
 
+    it.each(
+        [
+            [{ context: 'Gate', app_id: { unreadable: true } }],
+            [{ context: 'Gate', app_id: '42' }],
+            [{ context: 'Gate' }],
+            [{ app_id: 42 }],
+            [null],
+            { context: 'Gate', app_id: 42 },
+            null,
+        ].map((checks) => ({ checks }))
+    )('marks malformed present exact-main check bindings incomplete', ({ checks }) => {
+        const input: CapabilityObservation = {
+            ...observed(),
+            exactMainProtection: {
+                url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+                required_status_checks: {
+                    url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection/required_status_checks',
+                    contexts_url:
+                        'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection/required_status_checks/contexts',
+                    strict: false,
+                    contexts: ['Gate'],
+                    checks,
+                },
+                enforce_admins: { enabled: false },
+                required_pull_request_reviews: null,
+                restrictions: null,
+            },
+        };
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(false);
+        expect(plan.limitations).toContain('exact main classic protection is incomplete');
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
+    it.each([42, null])('accepts exact-main check binding %s and preserves disabled proposal', (appId) => {
+        const input: CapabilityObservation = {
+            ...observed(),
+            exactMainProtection: {
+                url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection',
+                required_status_checks: { contexts: ['Gate'], checks: [{ context: 'Gate', app_id: appId }] },
+                enforce_admins: { enabled: false },
+                required_pull_request_reviews: null,
+                restrictions: null,
+            },
+        };
+        const plan = buildCapabilityPlan(input, SOURCE, INTERVAL);
+        expect(plan.completeObservedInventory).toBe(true);
+        expect(plan.limitations).toEqual([]);
+        expect(plan.activationEligible).toBe(false);
+        expect(renderCapabilityPlan(plan)).toBe(canonicalJson(plan));
+    });
+
     it('selects main rollback by include and exclude roles, not selector text', () => {
         const input = observed();
         const selected = requiredRuleset(input);

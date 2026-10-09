@@ -439,6 +439,55 @@ describe('bounded capability capture', () => {
         expect(disposed).toHaveBeenCalledOnce();
     });
 
+    it('prints incomplete exact-main classic binding after two stable CLI captures', () => {
+        const { port } = fakePort();
+        const disposed = vi.fn();
+        const printed: string[] = [];
+        let exactReads = 0;
+        const protection = {
+            ...EXACT_MAIN_PROTECTION,
+            required_status_checks: {
+                url: 'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection/required_status_checks',
+                contexts_url:
+                    'https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection/required_status_checks/contexts',
+                strict: false,
+                contexts: ['Gate'],
+                checks: [{ context: 'Gate', app_id: { unreadable: true } }],
+            },
+        };
+        const result = runRetargetCapabilityPlanCli([], {
+            sourceCheck: () => SOURCE,
+            primaryRoot: () => '/primary',
+            authenticate: () => ({
+                minted: { actorNodeId: USER.node_id },
+                session: { configDir: '/unused', env: {}, dispose: disposed },
+            }),
+            readPort: () => ({
+                ...port,
+                exactMainProtection: () => {
+                    exactReads += 1;
+                    return protection;
+                },
+            }),
+            now: () => '2026-10-08T00:00:00.000Z',
+            print: (value) => printed.push(value),
+        });
+        expect(result).toBe(0);
+        expect(exactReads).toBe(2);
+        expect(printed).toHaveLength(1);
+        const output = printed[0];
+        if (output === undefined) {
+            throw new Error('expected one emitted capability plan');
+        }
+        const emitted: unknown = JSON.parse(output);
+        expect(emitted).toMatchObject({
+            completeObservedInventory: false,
+            limitations: ['exact main classic protection is incomplete'],
+            activationEligible: false,
+        });
+        expect(disposed).toHaveBeenCalledOnce();
+    });
+
     it.each(['detail', 'effective'] as const)(
         'does not certify two equal captures with absent required-check parameters in %s policy',
         (surface) => {

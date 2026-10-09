@@ -124,6 +124,24 @@ function nullableRecord(value: JsonValue | undefined): value is RulesetDocument 
     return value === null || (typeof value === 'object' && !Array.isArray(value));
 }
 
+function classicCheckBindingsComplete(value: JsonValue | undefined): boolean {
+    if (value === undefined) {
+        return true;
+    }
+    return (
+        jsonArray(value) &&
+        value.every(
+            (check) =>
+                check !== null &&
+                !Array.isArray(check) &&
+                typeof check === 'object' &&
+                typeof check.context === 'string' &&
+                check.context.length > 0 &&
+                (check.app_id === null || Number.isSafeInteger(check.app_id))
+        )
+    );
+}
+
 function exactMainProtectionComplete(value: JsonValue | null): boolean {
     if (value === null || Array.isArray(value) || typeof value !== 'object') {
         return false;
@@ -143,7 +161,9 @@ function exactMainProtectionComplete(value: JsonValue | null): boolean {
     }
     return (
         (checks === null ||
-            (jsonArray(checks.contexts) && checks.contexts.every((context) => typeof context === 'string'))) &&
+            (jsonArray(checks.contexts) &&
+                checks.contexts.every((context) => typeof context === 'string') &&
+                classicCheckBindingsComplete(checks.checks))) &&
         (admins === null || typeof admins.enabled === 'boolean') &&
         (reviews === null || Number.isSafeInteger(reviews.required_approving_review_count)) &&
         (restrictions === null ||
