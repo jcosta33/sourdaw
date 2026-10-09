@@ -501,6 +501,19 @@ describe('exportMidiClip writes what the clip plays', () => {
         });
     });
 
+    it('writes no pedal lift on a pass head for a lift stored on the closing line of the loop', () => {
+        const events = exportClip(
+            { startBeat: 1 / 3, endBeat: 1 / 3 + 8, loopEnabled: true, loopLength: 2 },
+            [note('n', 0, 1.5)],
+            [sustain('down', 0, 127), sustain('lift', 2, 0)]
+        );
+
+        const pedals = events.filter((event) => event.kind === 'cc');
+        expect(pedals.map((event) => [event.tick, event.data2])).toEqual(
+            [0, 1, 2, 3].map((pass) => [Math.round((1 / 3 + 2 * pass) * TICKS_PER_BEAT), 127])
+        );
+    });
+
     it('writes a controller ahead of a note struck at the same content beat when the slip projects them a float apart', () => {
         const clip = { startBeat: 0.1, endBeat: 4.1, midiOffsetBeats: 1 / 3 };
         const [played] = projectClipMidiEvents({
