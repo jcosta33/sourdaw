@@ -22,12 +22,13 @@ dispatch.
 
 ## Lessons from escapes
 
-### 2026-10-09 — recovered publication used an earlier PR state for delivery authority (introduced via PR #5032)
+### 2026-10-09 — publication used an earlier PR state for delivery authority (introduced via PR #4586)
 
-PR #5032 added the recovered publication binding route. It passed the PR state and head from its
-second exact publication inspection into the binder, then the binder read complete approval state
-without rechecking whether the PR was still open at that head. The missing authority-state probe
-was a merge, close, or head move after both inspections but before `delivery-authorized` was added.
+PR #4586 first appended `delivery-authorized` after reading review state without a final PR state
+and head read. Its recorded stances attacked wrong digest or head binding and unsolicited or
+duplicate authorization, but did not admit a late PR state transition. PR #5032 extended that
+vulnerable binder to recovered publications; its recovery-authority stance and moved-head probe
+covered a head already moved at inspection, not a merge, close, or move after both inspections.
 
 Probe that would have caught it: hold the landed review exact across both inspections, change the
 PR state or head before the final authorization read, and require a publication-only dossier with

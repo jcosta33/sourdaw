@@ -6,11 +6,13 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
-### 2026-10-09 — recovery tests fixed PR state for the whole run (introduced by PR #5032)
+### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
 
-The #5032 recovery spec varied a moved head before reconciliation, but its remote kept state and
-head constant through both inspections and the later dossier write. It did not exercise the
-authority decision when the PR changed after the exact historical receipt was established.
+PR #4586 introduced the authority append with a publication fixture whose PR reader always
+returned `OPEN` at the same head. Its recorded test-validity stance asked whether reverting the
+writer would stay green, but did not mutate PR state after approval inspection. PR #5032 extended the
+same binder to recovery; its moved-head fixture changed the head before reconciliation and held
+it constant through the two inspections and later dossier write.
 
 Probe that would have caught it: make the first two inspections return the same open head, then
 return merged, closed, or another head on the next PR read. Assert the publication binds without
