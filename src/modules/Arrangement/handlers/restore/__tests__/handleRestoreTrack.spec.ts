@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
         finalizeSidechainRestore: vi.fn(),
         ensureBusStrip: vi.fn(),
         projectTrackToLiveStrip: vi.fn(),
-        rearmInputMonitoring: vi.fn(async () => undefined),
+        rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
         publishTrackAdded: vi.fn(),
         refreshToasterPadBindings: vi.fn(),
         restoreAutomationLanes: vi.fn<(laneSnapshots: readonly unknown[]) => void>(),
@@ -68,8 +68,8 @@ vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
-vi.mock('../../../useCases/rearmInputMonitoring', () => ({
-    rearmInputMonitoring: mocks.rearmInputMonitoring,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    rearmCommittedTrackInputMonitoring: mocks.rearmCommittedTrackInputMonitoring,
 }));
 
 vi.mock('../../../useCases/publishTrackAdded', () => ({
@@ -310,11 +310,11 @@ describe('handleRestoreTrack', () => {
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
         expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
         expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
-        expect(mocks.rearmInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.rearmCommittedTrackInputMonitoring).not.toHaveBeenCalled();
     });
 
     it.each(['afterCommit', 'afterAmbiguousCommit'] as const)(
-        'rearms only the current restored owner after strip rebuilding in %s',
+        'delegates current committed admission after strip rebuilding in %s',
         async (hook) => {
             const restored = TrackDummy.create({
                 id: 'track-1',
@@ -338,20 +338,22 @@ describe('handleRestoreTrack', () => {
 
             await result?.[hook]?.();
 
-            expect(mocks.rearmInputMonitoring).toHaveBeenCalledExactlyOnceWith([restored]);
+            expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith(restored.id);
             expect(
                 requireCallOrder(mocks.projectTrackToLiveStrip.mock.invocationCallOrder, 'strip rebuilding')
-            ).toBeLessThan(requireCallOrder(mocks.rearmInputMonitoring.mock.invocationCallOrder, 'monitor rearm'));
+            ).toBeLessThan(
+                requireCallOrder(mocks.rearmCommittedTrackInputMonitoring.mock.invocationCallOrder, 'monitor rearm')
+            );
         }
     );
 
-    it('does not rearm an absent owner after a normal commit callback', async () => {
+    it('leaves owner admission to the committed reader after a normal commit callback', async () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
         const result = await handleRestoreTrack.execute(createRestoreTrackAction());
 
         await result?.afterCommit?.();
 
-        expect(mocks.rearmInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledExactlyOnceWith('track-1');
     });
 
     it('restores original ordering, selection, and survivor routing snapshots', async () => {

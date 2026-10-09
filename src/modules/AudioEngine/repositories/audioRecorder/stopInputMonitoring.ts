@@ -1,4 +1,8 @@
-import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
+import {
+    inputMonitoringAdmissionChecks,
+    inputMonitoringSession,
+    type MonitorCaptureKey,
+} from './inputMonitoringSession';
 import { releaseMonitorCapture } from './releaseMonitorCapture';
 
 /**
@@ -25,5 +29,6 @@ export function stopInputMonitoring(): void {
         releaseMonitorCapture(key);
     }
     inputMonitoringSession.trackKeys.clear();
+    inputMonitoringAdmissionChecks.clear();
     inputMonitoringSession.pendingRequests.clear();
 }

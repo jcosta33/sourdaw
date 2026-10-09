@@ -40,6 +40,12 @@ export const inputMonitoringSession = createHmrPersistentState<InputMonitoringSe
     })
 );
 
+/** Keep pending restore fences through HMR without replacing an existing capture session. */
+export const inputMonitoringAdmissionChecks = createHmrPersistentState<Map<string, () => boolean>>(
+    'audioEngine.inputMonitoringAdmission.v1',
+    () => new Map()
+);
+
 /**
  * Every track interested in one key right now: the edge owners of its settled
  * capture plus the tracks still waiting on its in-flight acquisition.

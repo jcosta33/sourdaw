@@ -13,6 +13,14 @@ export function initInputMonitoringProjectAccess(): void {
                 sanitizeTrackSnapshot(document.tracks).tracks.some((track) => track.id === trackId)
             );
         },
+        readTrack: (trackId) => {
+            const document = getCrdtDoc(DOC_PREFIX_ROOT);
+            if (!document) {
+                return null;
+            }
+            const track = sanitizeTrackSnapshot(document.tracks).tracks.find((candidate) => candidate.id === trackId);
+            return track ? { inputMonitoring: track.inputMonitoring, inputId: track.inputId } : null;
+        },
         subscribe: (listener) =>
             subscribeToCrdtChanges((docId) => {
                 if (docId === undefined || docId === DOC_PREFIX_ROOT) {

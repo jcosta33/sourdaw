@@ -199,3 +199,11 @@ then inspect the live source edge and capture stream as well as persisted member
 Refused and isolated-preview restores must acquire nothing; published-but-throwing restoration
 may rearm only the committed, still-present owner. A denied device must not turn restored project
 truth or successful Undo into a failure. See the paired lifecycle probe in `session-lifecycle.md`.
+
+The restoration repair in PR #5091 (`319cc5b5f8`) still read the optimistic store after
+awaited strip effects. Hold a second real storage transaction projecting On over a committed
+Off restoration, then abort it: neither normal nor ambiguous restore may request capture,
+retain an owner, or connect an edge. Change the committed selected input during the strip
+await and while permission is pending; admission must use current committed intent and a late
+grant must attach only current owners of that input. Include a shared pending survivor and
+last-owner removal so rejecting one stale restore cannot orphan another owner's capture.

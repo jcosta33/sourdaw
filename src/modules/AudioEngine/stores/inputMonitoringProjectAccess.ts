@@ -1,6 +1,7 @@
 /** Committed-project access supplied by the composition root; this port stores no project data. */
 export type InputMonitoringProjectAccess = {
     hasTrack: (trackId: string) => boolean;
+    readTrack: (trackId: string) => { inputMonitoring: 'auto' | 'on' | 'off'; inputId: string | null } | null;
     subscribe: (listener: () => void) => () => void;
 };
 
@@ -13,6 +14,13 @@ export function setInputMonitoringProjectAccess(next: InputMonitoringProjectAcce
 /** An isolated runtime without a provider has no committed owner to veto teardown. */
 export function hasCommittedInputMonitoringTrack(trackId: string): boolean {
     return provider?.hasTrack(trackId) ?? false;
+}
+
+/** Read current committed intent, never an optimistic store projection. */
+export function readCommittedInputMonitoringTrack(
+    trackId: string
+): ReturnType<InputMonitoringProjectAccess['readTrack']> {
+    return provider?.readTrack(trackId) ?? null;
 }
 
 export function subscribeToInputMonitoringProjectChanges(listener: () => void): () => void {

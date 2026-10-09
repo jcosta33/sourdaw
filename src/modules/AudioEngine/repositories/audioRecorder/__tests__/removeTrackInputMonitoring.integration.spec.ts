@@ -385,6 +385,200 @@ describe('track deletion releases the input monitor at Command commit', () => {
         expect(undoHistoryStore.value?.past).toEqual([]);
     });
 
+    it.each([false, true])(
+        'does not admit optimistic On while restoring saved Off, ambiguous=%s',
+        async (ambiguous) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected track state');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({ ...track, inputMonitoring: 'off' })),
+            });
+            flushAutomergeStorageWrites();
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            expect(getUserMedia).not.toHaveBeenCalled();
+
+            let abortOptimistic: (() => void) | undefined;
+            engine.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
+                const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                    const live = trackStore.value;
+                    if (!live) {
+                        throw new Error('Expected restored track state');
+                    }
+                    trackStore.set({
+                        ...live,
+                        tracks: live.tracks.map((track) =>
+                            track.id === 'a' ? { ...track, inputMonitoring: 'on' } : track
+                        ),
+                    });
+                });
+                if (transaction.status === 'threw') {
+                    throw transaction.error;
+                }
+                abortOptimistic = transaction.abort;
+                expect(getUserMedia).not.toHaveBeenCalled();
+                return { acceptance: 'accepted', application: 'applied' };
+            });
+
+            let observedRequests = -1;
+            let observedOwners: string[] = [];
+            let observedConnections = -1;
+            try {
+                if (ambiguous) {
+                    const entry = undoHistoryStore.value?.past.at(-1);
+                    if (!entry || entry.kind !== 'action' || entry.inverseAction?.type !== 'restoreTrack') {
+                        throw new Error('Expected the real track deletion inverse');
+                    }
+                    failAfterPublication = true;
+                    await expect(executeAppAction(entry.inverseAction)).rejects.toThrow();
+                    failAfterPublication = false;
+                } else {
+                    await undo();
+                }
+                observedRequests = getUserMedia.mock.calls.length;
+                observedOwners = monitorOwners();
+                observedConnections = source.connect.mock.calls.length;
+            } finally {
+                abortOptimistic?.();
+            }
+
+            const committedModes = getCrdtDoc<{ tracks: { tracks: Array<{ id: string; inputMonitoring: string }> } }>(
+                'root'
+            )?.tracks.tracks;
+            expect(committedModes?.find((track) => track.id === 'a')?.inputMonitoring).toBe('off');
+            expect(observedConnections).toBe(0);
+            expect(observedOwners).toEqual([]);
+            expect(observedRequests).toBe(0);
+        }
+    );
+
+    it('reads the current committed input after restored strip effects', async () => {
+        await executeAppAction({ type: 'removeAllTracks', payload: undefined });
+        engine.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
+            mutateCrdtDoc({
+                id: 'root',
+                changeFn: (document) => {
+                    const slot = document.tracks;
+                    if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                        throw new Error('Expected restored tracks');
+                    }
+                    const track = slot.tracks.find((candidate: { id: string }) => candidate.id === 'a');
+                    if (!track) {
+                        throw new Error('Expected restored owner A');
+                    }
+                    track.inputId = 'committed-input';
+                },
+            });
+            return { acceptance: 'accepted', application: 'applied' };
+        });
+
+        await undo();
+
+        expect(getUserMedia).toHaveBeenCalledWith({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                deviceId: { exact: 'committed-input' },
+            },
+        });
+        expect(inputMonitoringSession.trackKeys.get('a')).toBe('committed-input');
+        expect(source.connect).toHaveBeenCalledWith(gains.get('a'));
+        expect(docTrackIds()).toEqual(['a', 'b']);
+    });
+
+    it.each(['off', 'input'] as const)('fences a pending restored grant after committed %s changes', async (change) => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected tracks before restoring pending owner');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => (track.id === 'b' ? { ...track, inputMonitoring: 'off' } : track)),
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+        const pending = deferredGrant();
+        let requested: (() => void) | undefined;
+        const requestStarted = new Promise<void>((resolve) => {
+            requested = resolve;
+        });
+        getUserMedia.mockImplementation(() => {
+            requested?.();
+            return pending.request;
+        });
+        const restore = undo();
+        await requestStarted;
+        expect(monitorOwners()).toEqual(['a']);
+        mutateCrdtDoc({
+            id: 'root',
+            changeFn: (document) => {
+                const slot = document.tracks;
+                if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                    throw new Error('Expected restored tracks');
+                }
+                for (const track of slot.tracks) {
+                    if (change === 'off') {
+                        track.inputMonitoring = 'off';
+                    } else {
+                        track.inputId = 'new-input';
+                    }
+                }
+            },
+        });
+        pending.grant(stream);
+        await expect(restore).resolves.toEqual({ headConsumed: true });
+        expect(monitorOwners()).toEqual([]);
+        expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+        expect(docTrackIds()).toEqual(['a', 'b']);
+        expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
+        expect(inputTrack.stop).toHaveBeenCalledOnce();
+    });
+
+    it.each([false, true])(
+        'fences only the restored pending owner while sharing capture, deleteSurvivor=%s',
+        async (deleteSurvivor) => {
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: 'a' } });
+            const pending = deferredGrant();
+            getUserMedia.mockReturnValue(pending.request);
+            const survivorStart = startInputMonitoring('b', null);
+            const restore = undo();
+            await vi.waitFor(() => expect(monitorOwners()).toEqual(['a', 'b']));
+            expect(getUserMedia).toHaveBeenCalledOnce();
+            mutateCrdtDoc({
+                id: 'root',
+                changeFn: (document) => {
+                    const slot = document.tracks;
+                    if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                        throw new Error('Expected restored tracks');
+                    }
+                    const track = slot.tracks.find((candidate: { id: string }) => candidate.id === 'a');
+                    if (!track) {
+                        throw new Error('Expected restored owner A');
+                    }
+                    track.inputId = 'new-input';
+                },
+            });
+            if (deleteSurvivor) {
+                await executeAppAction({ type: 'removeTrack', payload: { trackId: 'b' } });
+            }
+            pending.grant(stream);
+            await restore;
+            expect(await survivorStart).toBe(!deleteSurvivor);
+            expect(monitorOwners()).toEqual(deleteSurvivor ? [] : ['b']);
+            expect(source.connect).not.toHaveBeenCalledWith(gains.get('a'));
+            expect(inputTrack.stop).toHaveBeenCalledTimes(deleteSurvivor ? 1 : 0);
+            expect(docTrackIds()).toEqual(deleteSurvivor ? ['a'] : ['a', 'b']);
+            if (deleteSurvivor) {
+                expect(engine.createMediaStreamSource).not.toHaveBeenCalled();
+            } else {
+                expect(source.connect).toHaveBeenCalledExactlyOnceWith(gains.get('b'));
+            }
+        }
+    );
+
     it('does not reconnect or recreate a deleted strip when permission arrives after commit', async () => {
         const pending = deferredGrant();
         getUserMedia.mockReturnValue(pending.request);

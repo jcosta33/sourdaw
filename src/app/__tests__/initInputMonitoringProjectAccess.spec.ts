@@ -68,13 +68,28 @@ describe('initInputMonitoringProjectAccess', () => {
     it('reads each committed root afresh and treats a missing root or track slot as no owner', () => {
         const access = registeredAccess();
         expect(access.hasTrack('a')).toBe(false);
+        expect(access.readTrack('a')).toBeNull();
         publishCommittedTrack('a');
         expect(access.hasTrack('a')).toBe(true);
+        expect(access.readTrack('a')).toEqual({ inputMonitoring: 'auto', inputId: null });
+        mutateCrdtDoc({
+            id: 'root',
+            changeFn: (document) => {
+                const slot = document.tracks;
+                if (!slot || typeof slot !== 'object' || !('tracks' in slot) || !Array.isArray(slot.tracks)) {
+                    throw new Error('Expected committed tracks');
+                }
+                slot.tracks[0].inputMonitoring = 'on';
+                slot.tracks[0].inputId = 'chosen-input';
+            },
+        });
+        expect(access.readTrack('a')).toEqual({ inputMonitoring: 'on', inputId: 'chosen-input' });
         publishCommittedTrack('b');
         expect(access.hasTrack('a')).toBe(false);
         expect(access.hasTrack('b')).toBe(true);
         removeCrdtDoc('root');
         expect(access.hasTrack('b')).toBe(false);
+        expect(access.readTrack('b')).toBeNull();
     });
 
     it('subscribes only when the owner requests it, filters other documents, and disposes its listener', () => {

@@ -1,6 +1,7 @@
 import { audioEngine } from '../createWebAudioEngine';
 
 import {
+    inputMonitoringAdmissionChecks,
     inputMonitoringSession,
     monitorOwnersFor,
     type MonitorCapture,
@@ -21,7 +22,19 @@ import { stopStreamTracks } from './stopStreamTracks';
  * stopping one track's monitoring can never disconnect another. Idempotent per
  * track and key — a track already monitoring this key only re-ensures its edge.
  */
-export async function startInputMonitoring(trackId: string, inputId: string | null = null): Promise<boolean> {
+export async function startInputMonitoring(
+    trackId: string,
+    inputId: string | null = null,
+    isCurrent?: () => boolean
+): Promise<boolean> {
+    if (isCurrent && !isCurrent()) {
+        return false;
+    }
+    if (isCurrent) {
+        inputMonitoringAdmissionChecks.set(trackId, isCurrent);
+    } else {
+        inputMonitoringAdmissionChecks.delete(trackId);
+    }
     const key = inputId;
     const previousKey = inputMonitoringSession.trackKeys.get(trackId);
     if (previousKey !== undefined && previousKey !== key) {
@@ -41,6 +54,7 @@ export async function startInputMonitoring(trackId: string, inputId: string | nu
         return inputMonitoringSession.captures.get(key)?.monitorEdges.has(trackId) === true;
     } catch {
         inputMonitoringSession.trackKeys.delete(trackId);
+        inputMonitoringAdmissionChecks.delete(trackId);
         return false;
     }
 }
@@ -80,6 +94,14 @@ function settleCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     }
     inputMonitoringSession.pendingRequests.delete(key);
     const interested = monitorOwnersFor(key);
+    for (const trackId of interested) {
+        const isCurrent = inputMonitoringAdmissionChecks.get(trackId);
+        if (isCurrent && !isCurrent()) {
+            interested.delete(trackId);
+            inputMonitoringSession.trackKeys.delete(trackId);
+            inputMonitoringAdmissionChecks.delete(trackId);
+        }
+    }
     if (interested.size === 0) {
         stopStreamTracks(stream);
         return;
@@ -103,6 +125,7 @@ function refuseCaptureGrant(key: MonitorCaptureKey, request: Promise<MediaStream
     inputMonitoringSession.pendingRequests.delete(key);
     for (const trackId of monitorOwnersFor(key)) {
         inputMonitoringSession.trackKeys.delete(trackId);
+        inputMonitoringAdmissionChecks.delete(trackId);
     }
 }
 
