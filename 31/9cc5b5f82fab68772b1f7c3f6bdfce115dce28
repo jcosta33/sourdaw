@@ -1,0 +1,27 @@
+.agents/skills/review-stances/project-integrity.md
+  s_1f0dcd815e8946::t_3f14b3410fab6b 192-201
+.agents/skills/review-stances/session-lifecycle.md
+  s_1f0dcd815e8946::t_2e1aac291dd7bc 205-220
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_1f0dcd815e8946::t_340843483630ad 30,71-74,313-354
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_1f0dcd815e8946::t_43d878e74a136f 15,155,199,219-226
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts
+  s_1f0dcd815e8946::t_5f02a94bb73641 6,18-19,28-32,41-46,75-76,105,108-109,114-119,131-133,157-160,174,251-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "319cc5b5f82fab68772b1f7c3f6bdfce115dce28",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
