@@ -1,0 +1,66 @@
+.github/workflows/health-gates.yml
+  s_97ab82e0b4f10c::t_9241e4c35e27f5 64-70,91-92
+scripts/healthGateWorkflowContract.ts
+  s_97ab82e0b4f10c::t_33dce3036c2ca6 132
+scripts/__tests__/e2eSelectionShadow.spec.ts
+  s_97ab82e0b4f10c::t_0f877a3731d88c 586-589,593,605
+  s_97ab82e0b4f10c::t_cd3300446ac139 78-80,99-110,616-621,626-628,630-632
+  s_97ab82e0b4f10c::t_19ff13679b6fbe 124,140
+  s_97ab82e0b4f10c::t_67cce97d78c5bc 117-122
+  s_97ab82e0b4f10c::t_b944cca4082b01 126-128,131,135
+  s_97ab82e0b4f10c::t_b1ee2a86a0ec70 30,168,174,183-185,187-189
+  s_97ab82e0b4f10c::t_da1890355f9136 26,170,191
+  s_97ab82e0b4f10c::t_7631b94449cb5e 606-615,622-625,629,633-643,653-660
+  s_97ab82e0b4f10c::t_e839746a764ab9 157-158
+  s_97ab82e0b4f10c::t_a0811e13bf2036 175-182,192-199
+  s_97ab82e0b4f10c::t_6d001f493f0256 578-585,590-592,594-604,661-662
+  s_97ab82e0b4f10c::t_7298495727c34f 129
+  s_97ab82e0b4f10c::t_f81d644d2f53b6 29
+  s_97ab82e0b4f10c::t_3485ae08d890dc 125,130
+  s_97ab82e0b4f10c::t_d833562c7cac38 1,12,25,32,81-98,111-116,163-167,169,171-173,186,190,200-204
+  s_97ab82e0b4f10c::t_aeab98c8c84586 146
+  s_97ab82e0b4f10c::t_7f9104c45611b7 644-652
+  s_97ab82e0b4f10c::t_6989986d937959 663-670
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_97ab82e0b4f10c::t_33dce3036c2ca6 3601-3606,3619-3624
+scripts/e2eSelectionShadowIntegration.ts
+  s_97ab82e0b4f10c::t_5b9fadd22f9bae 148-154,161,163-168
+  s_97ab82e0b4f10c::t_0e3f04ee5ea80c 1-9,22-74,83-89,91-93,97-98,102-105,107-131,146-147,169-175,177-184
+  s_97ab82e0b4f10c::t_bd479894b8568b 75-82,94-96,99-101,106,132-145,176
+  s_97ab82e0b4f10c::t_f81d644d2f53b6 162
+  s_97ab82e0b4f10c::t_8166e3ed4fa522 10,20-21
+  s_97ab82e0b4f10c::t_149ddfaf2316c6 11-19
+  s_97ab82e0b4f10c::t_f32356870168a4 90,155-160
+scripts/e2eSelectionShadow.ts
+  s_97ab82e0b4f10c::t_cd3300446ac139 261-264,447-457,507-512,514-523
+  s_97ab82e0b4f10c::t_a0811e13bf2036 550-553
+  s_97ab82e0b4f10c::t_aeab98c8c84586 379-380,548
+  s_97ab82e0b4f10c::t_297ce94d899981 15,38
+  s_97ab82e0b4f10c::t_8166e3ed4fa522 17,258-259
+  s_97ab82e0b4f10c::t_24b9b4f0a5165b 45,50,52,240-248,260,265,267-271,296-302,431,433-440,444-446,464,469,471,480
+  s_97ab82e0b4f10c::t_011b4fad60bb02 534
+  s_97ab82e0b4f10c::t_0e3f04ee5ea80c 16,554
+  s_97ab82e0b4f10c::t_3706f731316867 34-37,39-41,375-378
+  s_97ab82e0b4f10c::t_ebcdeaaf1e15b7 272,524,527-530,571,576,578
+  s_97ab82e0b4f10c::t_7f9104c45611b7 273-282
+  s_97ab82e0b4f10c::t_7298495727c34f 64
+  s_97ab82e0b4f10c::t_4faece4afebcbd 2-3,10-14,18-21,33
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_97ab82e0b4f10c::t_14a9f5909025ae 88-97,129-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83cce010b3064742e5d7f7077b5b1f007718574c",
+  "prompts": {},
+  "sessions": {
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
