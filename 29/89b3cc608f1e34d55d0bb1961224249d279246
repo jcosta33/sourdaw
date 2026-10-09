@@ -1,0 +1,90 @@
+src/modules/MIDI/AGENTS.md
+  s_2bfd55a4393d7c::t_9bb793f50d3f70 8
+src/modules/Transport/AGENTS.md
+  s_2bfd55a4393d7c::t_a434b07607a89f 10
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_2bfd55a4393d7c::t_7eca08ac3ccd32 167,169-173,175-178,180-183,186-188,191-195
+  s_2bfd55a4393d7c::t_5bb52e608be819 28
+  s_2bfd55a4393d7c::t_a36fbbc63a17bf 1235
+  s_2bfd55a4393d7c::t_d8240da55a1c95 53
+  s_2bfd55a4393d7c::t_567ede58011ebc 84-85,90-98
+  s_2bfd55a4393d7c::t_df9219d74e735e 151,158
+  s_2bfd55a4393d7c::t_776715b6473dd3 1005-1009
+  s_2bfd55a4393d7c::t_e8b47287479066 106-108,121
+  s_97ab82e0b4f10c::t_3da2edff94eb7a 1236-1237,1258-1259,1263
+src/modules/Transport/useCases/scheduling/resolvePlaybackNoteReceiver.ts
+  s_2bfd55a4393d7c::t_e68f76f8b41f00 1,3-8,12-13
+  s_2bfd55a4393d7c::t_61b8cf0c78fb29 2,9-11
+src/modules/MIDI/useCases/index.ts
+  s_2bfd55a4393d7c::t_901ffcbe5dbd08 181
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_2bfd55a4393d7c::t_496f4ba418a00b 988-992
+  s_2bfd55a4393d7c::t_d86a3f9d2371c2 962,964-966
+src/modules/AudioEngine/useCases/resolveAuditionNoteReceiver.ts
+  s_2bfd55a4393d7c::t_42f6213b3910fa 1-19
+src/modules/AudioEngine/useCases/audition.ts
+  s_2bfd55a4393d7c::t_5ce57481ebb9d1 97-98,109-110
+  s_2bfd55a4393d7c::t_b451f618b3f444 166-167
+  s_2bfd55a4393d7c::t_8f1d192aa21146 41-43,48,50-51
+  s_2bfd55a4393d7c::t_a9c2118d717348 150-151
+  s_2bfd55a4393d7c::t_fb4ea3fc40637c 136-137
+  s_2bfd55a4393d7c::t_a3586eac32cca5 39-40,44-46
+  s_2bfd55a4393d7c::t_51e3fedcc3fcfa 120-121
+  s_2bfd55a4393d7c::t_467dd96126f7fb 14
+src/utils/deviceTypeMatching.ts
+  s_2bfd55a4393d7c::t_ecc885547a5a8e 3-4,6-8
+  s_2bfd55a4393d7c::t_ecc17f772593dc 67-89,91-151
+  s_97ab82e0b4f10c::t_133d7f1782c070 90
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_2bfd55a4393d7c::t_a4aa2138012124 395
+  s_2bfd55a4393d7c::t_398f49d90a0198 477-478,481-483
+  s_2bfd55a4393d7c::t_e95e59bad66af0 55
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_2bfd55a4393d7c::t_73b5202f12b332 407
+  s_2bfd55a4393d7c::t_a75ed82185a0b0 460-461,472-489,492,495,513-515,520-522
+  s_2bfd55a4393d7c::t_c57ea966112b86 442-443
+  s_2bfd55a4393d7c::t_dddc660c364f72 5
+  s_2bfd55a4393d7c::t_f1ca01a80e426a 405-406,408-411,420-421
+  s_2bfd55a4393d7c::t_3bb92577b993ca 26
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_2bfd55a4393d7c::t_4aed3048ba542f 1504-1507
+src/modules/MIDI/useCases/webMidiInput/resolveLiveInputNoteReceiver.ts
+  s_2bfd55a4393d7c::t_7c40e68b6d63ea 1-19
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_2bfd55a4393d7c::t_05f65b54564175 851
+  s_2bfd55a4393d7c::t_b417bdd39d4398 544
+  s_2bfd55a4393d7c::t_de418317e73979 1663
+src/modules/Transport/useCases/index.ts
+  s_2bfd55a4393d7c::t_5be653bdf38ed0 9
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineNoteReceiver.ts
+  s_2bfd55a4393d7c::t_0bbd1e405120ac 1-37
+src/modules/AudioEngine/useCases/__tests__/noteReceiverRouteParity.spec.ts
+  s_2bfd55a4393d7c::t_b54874ef119a00 88,90
+  s_2bfd55a4393d7c::t_e93ce4dac97dac 76
+  s_2bfd55a4393d7c::t_0580ee53ca76e5 1-27,42-43,45-75,77-87,89,91-120
+  s_2bfd55a4393d7c::t_3109b16374b00c 28-41,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2989b3cc608f1e34d55d0bb1961224249d279246",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97ab82e0b4f10c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a8-c88e-72d0-84e8-5aa3bdd667a2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
