@@ -19,6 +19,7 @@ type ChangedRecord = {
     newMode: string | null;
 };
 type InventoryRow = { path: string; gitBlob: string; sha256: string; mode: string };
+type SourceRow = { path: string; disposition: string; reason: string; producerRoute: string[] };
 type ShadowInput = {
     base: string;
     head: string;
@@ -36,7 +37,8 @@ type ShadowInput = {
 
 const CANDIDATE_PATH = certificate.candidatePath;
 const WITNESS = 'DIRECT_TUNER_WITNESS';
-const CERTIFICATE_SHA256 = '8dea8e35dd881069750d9aadb5c335956d67e8422a70561b0dda0474af144f5d';
+const UNPROVEN = 'SOURCE_ONLY_UNPROVEN';
+const CERTIFICATE_SHA256 = '906c986190c48180e234cbb0fb1adb15f3a08b2a2e4631c966e32006b843b9ba';
 const ALLOWED_ATTRIBUTES = new Set(['className', 'title', 'detail', 'label', 'aria-label', 'aria-live', 'aria-atomic']);
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -233,6 +235,30 @@ function validateMeasurementInput(input: ShadowInput): { inventory: InventoryRow
     return { inventory, full, live: expectedPlan.matrix.include.flatMap((group) => group.specs).sort() };
 }
 
+export function sourceQualificationReasons(
+    rows: readonly SourceRow[],
+    boundSources: Readonly<Record<string, string>>
+): string[] {
+    const reasons: string[] = [];
+    for (const row of rows) {
+        if (row.disposition === UNPROVEN) {
+            reasons.push(`source-map-unproved-obligation: ${row.path}`);
+        }
+    }
+    const witnessRows = rows.filter((row) => row.disposition === WITNESS);
+    for (const row of witnessRows) {
+        for (const route of row.producerRoute) {
+            const path = /^([^:]+):\d+(?:-\d+)?$/.exec(route)?.[1];
+            if (!path) {
+                reasons.push(`source-map-producer-route-invalid: ${row.path}`);
+            } else if (path !== CANDIDATE_PATH && !Object.hasOwn(boundSources, path)) {
+                reasons.push(`source-map-producer-unbound: ${path}`);
+            }
+        }
+    }
+    return [...new Set(reasons)];
+}
+
 function certificateReasons(input: ShadowInput, inventory: InventoryRow[], full: string[]): string[] {
     const reasons: string[] = [];
     const certifiedRows = certificate.rows;
@@ -258,13 +284,16 @@ function certificateReasons(input: ShadowInput, inventory: InventoryRow[], full:
         witnessRows.length !== 2 ||
         certifiedRows.some(
             (row) =>
-                (row.disposition !== WITNESS && row.disposition !== 'BOUNDED_SOURCE_EXCLUSION') ||
+                (row.disposition !== WITNESS &&
+                    row.disposition !== 'BOUNDED_SOURCE_EXCLUSION' &&
+                    row.disposition !== UNPROVEN) ||
                 !row.reason ||
                 row.producerRoute.length === 0
         )
     ) {
         reasons.push('source-map-certificate-invalid');
     }
+    reasons.push(...sourceQualificationReasons(certifiedRows, certificate.sourceHashes));
     for (const [path, expected] of Object.entries(certificate.sourceHashes)) {
         if (input.sourceHashes[path] !== expected || input.sourceModes[path] !== '100644') {
             reasons.push(`route-certificate-drift: ${path}`);
@@ -277,6 +306,20 @@ function certificateReasons(input: ShadowInput, inventory: InventoryRow[], full:
         reasons.push('source-map-certificate-drift');
     }
     return reasons;
+}
+
+function candidateAstReady(
+    input: ShadowInput,
+    onlyCandidate: boolean
+): input is ShadowInput & { candidateBase: string; candidateHead: string } {
+    return (
+        onlyCandidate &&
+        input.records[0]?.oldMode === '100644' &&
+        input.records[0]?.newMode === '100644' &&
+        input.candidateBase !== null &&
+        input.candidateHead !== null &&
+        sha256(input.candidateBase) === certificate.candidatePreimageSha256
+    );
 }
 
 function candidateDecision(input: ShadowInput, reasons: string[]): string[] {
@@ -301,7 +344,7 @@ function candidateDecision(input: ShadowInput, reasons: string[]): string[] {
     if (onlyCandidate && (input.candidateBase === null || input.candidateHead === null)) {
         reasons.push('candidate-source-missing');
     }
-    if (reasons.length === 0 && input.candidateBase !== null && input.candidateHead !== null) {
+    if (candidateAstReady(input, onlyCandidate)) {
         const comparison = astComparison(input.candidateBase, input.candidateHead);
         astRoutes.push(...comparison.routes);
         if (!comparison.admitted) {

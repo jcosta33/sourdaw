@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { measureShadow, parseChangedRecords } from '../e2eSelectionShadow';
+import { measureShadow, parseChangedRecords, sourceQualificationReasons } from '../e2eSelectionShadow';
 import certificate from '../e2eSelectionShadowCertificate.json' with { type: 'json' };
 import { selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
 
@@ -64,14 +64,52 @@ describe('E2E selection shadow', () => {
             'JSXAttribute[aria-label]',
         ],
         ['comment trivia', `/* shadow note */\n${baseText}`, 'trivia'],
-    ])('records the two source witnesses for %s while comparing with the broad live plan', (_name, changed, route) => {
+    ])('keeps the full inventory for unproved obligations despite %s', (_name, changed, route) => {
         const report = measureShadow(fixture({ candidateHead: changed }));
         expect(report.shadowOnly).toBe(true);
         expect(report.measurementStatus).toBe('complete');
-        expect(report.candidateSpecs).toEqual(['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts']);
+        expect(report.candidateSpecs).toHaveLength(313);
+        expect(report.fallbackReasons).toContain('source-map-unproved-obligation: tests/e2e/additionalUi.spec.ts');
         expect(report.liveSelectedSpecs).toHaveLength(313);
         expect(report.obligationDispositions).toHaveLength(313);
         expect(report.astRoutes.join(' ')).toContain(route);
+    });
+
+    it('refuses a direct-witness producer missing from the evaluated source tree', () => {
+        const producer = 'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx';
+        const sourceHashes = Object.fromEntries(
+            Object.entries(certificate.sourceHashes).filter(([path]) => path !== producer)
+        );
+        const report = measureShadow(fixture({ sourceHashes }));
+        expect(report.candidateSpecs).toHaveLength(313);
+        expect(report.fallbackReasons).toContain(
+            'route-certificate-drift: src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx'
+        );
+    });
+
+    it('requires every declared direct-witness producer to be bound by the fixed map', () => {
+        const producer = 'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx';
+        const witness = certificate.rows.find((row) => row.disposition === 'DIRECT_TUNER_WITNESS');
+        if (!witness) {
+            throw new Error('Missing frozen direct witness');
+        }
+        const bound = Object.fromEntries(
+            Object.entries(certificate.sourceHashes).filter(([path]) => path !== producer)
+        );
+        expect(sourceQualificationReasons([witness], bound)).toContain(`source-map-producer-unbound: ${producer}`);
+    });
+
+    it('distinguishes a synthetic qualified exclusion from an unproved source trace', () => {
+        const row = {
+            path: 'tests/e2e/example.spec.ts',
+            disposition: 'BOUNDED_SOURCE_EXCLUSION',
+            reason: 'Synthetic verified source exclusion',
+            producerRoute: ['tests/e2e/example.spec.ts:1-4'],
+        };
+        expect(sourceQualificationReasons([row], { 'tests/e2e/example.spec.ts': 'a'.repeat(64) })).toEqual([]);
+        expect(sourceQualificationReasons([{ ...row, disposition: 'SOURCE_ONLY_UNPROVEN' }], {})).toEqual([
+            'source-map-unproved-obligation: tests/e2e/example.spec.ts',
+        ]);
     });
 
     it.each([
@@ -180,6 +218,7 @@ describe('E2E selection shadow', () => {
         );
         for (const path of [
             'src/modules/WorkspaceShell/presentations/views/AppShell.tsx',
+            'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx',
             'scripts/vitestCollectionPatterns.ts',
             'scripts/prValidationScope.ts',
             'playwright.config.ts',
