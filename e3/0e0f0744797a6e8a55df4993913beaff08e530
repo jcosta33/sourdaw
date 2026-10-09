@@ -1,0 +1,14 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e30e0f0744797a6e8a55df4993913beaff08e530",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
