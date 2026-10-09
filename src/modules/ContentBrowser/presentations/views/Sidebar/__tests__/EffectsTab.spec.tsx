@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 
 import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { EffectsTab } from '../EffectsTab';
@@ -276,5 +277,48 @@ describe('EffectsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: /crust/i }));
 
         await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith(null));
+    });
+
+    describe('Audio FX category placement', () => {
+        // The real admitted catalog, not a fixture: the defect was the
+        // classifier dropping the `native-scoring` descriptor the sidebar
+        // actually receives (#5086).
+        const scoringDescriptor = getPlatformPlugins().find((plugin) => plugin.id === 'native-scoring');
+        if (!scoringDescriptor) {
+            throw new Error('native-scoring missing from the admitted plugin catalog');
+        }
+
+        it('routes Scoring into Utility by its full catalog id', () => {
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[
+                        scoringDescriptor,
+                        createPlugin({ id: 'builtin-gain', name: 'Gain' }),
+                        createPlugin({ id: 'builtin-reverb', name: 'Reverb' }),
+                    ]}
+                    currentRoute={{ id: 'effects-audiofx-utility', title: 'Utility' }}
+                />
+            );
+
+            expect(screen.getByRole('button', { name: /scoring/i })).toBeInTheDocument();
+            // The stripped-key fallback still classifies builtin ids: Gain
+            // belongs here, Reverb belongs to Time & Space.
+            expect(screen.getByRole('button', { name: /gain/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /reverb/i })).not.toBeInTheDocument();
+        });
+
+        it('keeps Scoring out of Other', () => {
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[scoringDescriptor]}
+                    currentRoute={{ id: 'effects-audiofx-other', title: 'Other' }}
+                />
+            );
+
+            expect(screen.queryByRole('button', { name: /scoring/i })).not.toBeInTheDocument();
+            expect(screen.getByText('Empty category.')).toBeInTheDocument();
+        });
     });
 });

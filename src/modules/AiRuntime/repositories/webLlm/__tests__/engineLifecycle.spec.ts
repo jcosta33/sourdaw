@@ -14,9 +14,15 @@ const {
     terminateWorkerMock,
     MockLlmWorker,
     workerInstances,
+    BUDGET_CONTEXT_WINDOW_SIZE,
+    MANIFEST_CONTEXT_WINDOW_SIZE,
 } = vi.hoisted(() => {
     const workerInstances: EventTarget[] = [];
     return {
+        // Distinct from each other and from every shipped window, so the engine can only load the
+        // window the planning budget reads, never the digested manifest's.
+        BUDGET_CONTEXT_WINDOW_SIZE: 12_345,
+        MANIFEST_CONTEXT_WINDOW_SIZE: 4_321,
         admissionGate: { webLlm: true },
         artifactAdmissionMock: vi.fn(),
         mockLogger: {
@@ -53,7 +59,11 @@ vi.mock('../webLlmArtifactAdmission', () => ({
 vi.mock('../webLlmArtifactManifest', () => ({
     getWebLlmArtifactManifestModel: (modelId: string) => ({
         artifactSetDigest: `digest:${modelId}`,
+        engine: { contextWindowSize: MANIFEST_CONTEXT_WINDOW_SIZE },
     }),
+}));
+vi.mock('../getWebLlmContextWindowSize', () => ({
+    getWebLlmContextWindowSize: () => BUDGET_CONTEXT_WINDOW_SIZE,
 }));
 vi.mock('../../llmWorker?worker', () => ({
     default: MockLlmWorker,
@@ -234,7 +244,7 @@ describe('WebLLM engineLifecycle injectables', () => {
             expect.anything(),
             'test-model',
             expect.objectContaining({ appConfig }),
-            { context_window_size: 8192 }
+            { context_window_size: BUDGET_CONTEXT_WINDOW_SIZE }
         );
         expect(engineState.activeArtifactSetDigest).toBe('digest:test-model');
     });

@@ -1,3 +1,5 @@
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
+
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
@@ -35,6 +37,16 @@ function allocateBankLoadToken(): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
+}
+
+/** The worklet's own end-of-life messages: `error` after a fault, `disposed` after teardown. */
+function isProcessorEnd(message: Record<string, unknown>): boolean {
+    return message.type === 'disposed' || message.type === 'error';
+}
+
+function processorEndedError(message: Record<string, unknown>): Error {
+    const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+    return new Error(`Levain processor ended during sample-bank loading${detail}`);
 }
 
 function createSampleBankHandshake(
@@ -97,9 +109,8 @@ function createSampleBankHandshake(
         if (!isRecord(message)) {
             return;
         }
-        if (message.type === 'disposed' || message.type === 'error') {
-            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
-            reject(new Error(`Levain processor ended during sample-bank loading${detail}`));
+        if (isProcessorEnd(message)) {
+            reject(processorEndedError(message));
             return;
         }
         if (message.loadToken !== loadToken) {
@@ -185,6 +196,89 @@ function createSampleBankHandshake(
     };
 }
 
+/**
+ * What a port's loads have in common. `tail` settles when the newest load that
+ * registered is over, and every load registers before it posts
+ * `beginSampleBank`, so a load that waits on `tail` waits for every load that
+ * can still commit. A load is over when the worklet has given its terminal
+ * answer for a bank that did not commit, or when the release loop of a bank
+ * that did has finished. `processorEnded` keeps the first end-of-life message:
+ * a processor that faulted or was disposed drops every later message, so no
+ * later load can complete.
+ */
+type PortLoads = {
+    tail: Promise<void>;
+    processorEnded: Error | null;
+};
+
+const portLoads = new WeakMap<MessagePort, PortLoads>();
+
+function portLoadsOf(nodePort: MessagePort): PortLoads {
+    const known = portLoads.get(nodePort);
+    if (known) {
+        return known;
+    }
+    const created: PortLoads = { tail: Promise.resolve(), processorEnded: null };
+    nodePort.addEventListener('message', (event: MessageEvent<unknown>) => {
+        const message = event.data;
+        if (isRecord(message) && isProcessorEnd(message)) {
+            created.processorEnded ??= processorEndedError(message);
+        }
+    });
+    portLoads.set(nodePort, created);
+    return created;
+}
+
+/**
+ * Ask the worklet to free the bank this load retired, one bounded step per
+ * message, re-asking while it answers that more is left, then call `onOver`.
+ * The retired bank is the one a commit displaced, or the staged bank an abort
+ * discarded; neither the commit nor the abort frees anything, and the load
+ * that started this does not wait on the loop: it has already settled. The
+ * port delivers this after any `abortSampleBank` the load posted, so the
+ * request always finds the bank retired. A closed port, or a processor that
+ * has ended or ends meanwhile, stops the loop too: it drops every message, so
+ * no answer would come and every later load on the port would wait for it.
+ */
+function releaseRetiredBank(nodePort: MessagePort, loads: PortLoads, loadToken: number, onOver: () => void): void {
+    function stop(): void {
+        nodePort.removeEventListener('message', onMessage);
+        onOver();
+    }
+    function request(): void {
+        try {
+            nodePort.postMessage({ type: 'releaseRetiredBank', loadToken });
+        } catch {
+            stop();
+        }
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (isProcessorEnd(message)) {
+            stop();
+            return;
+        }
+        if (message.type !== 'retiredBankReleased' || message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.done === true) {
+            stop();
+            return;
+        }
+        request();
+    }
+
+    if (loads.processorEnded) {
+        onOver();
+        return;
+    }
+    nodePort.addEventListener('message', onMessage);
+    request();
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
@@ -253,9 +347,33 @@ export async function loadInstrumentFromManifest({
     }
 
     const bank = lease.bank;
+    // Register with the port before anything is posted, so a load that starts
+    // while this one may still commit waits for it (see `PortLoads`).
+    const loads = portLoadsOf(nodePort);
+    const previous = loads.tail;
+    const over = Promise.withResolvers<void>();
+    loads.tail = over.promise;
+    // Set once `beginSampleBank` is posted: from then on the worklet holds a
+    // bank for this token that someone must free, whether the load commits or not.
+    let postedLoadToken: number | null = null;
+    let releaseStarted = false;
     let handshake: SampleBankHandshake | null = null;
     let completed = false;
     try {
+        // Hold this load's `beginSampleBank` until every earlier load on the
+        // port is over, the bank the last one displaced fully freed a bounded
+        // step at a time; begin would otherwise free what is left in one call
+        // on the render thread. An abort ends the wait (the promise itself
+        // never rejects).
+        await raceAbortSignal(previous, signal).catch(() => undefined);
+        if (signal?.aborted) {
+            return undefined;
+        }
+        if (loads.processorEnded) {
+            // The processor drops every message from here on, so a begin
+            // would never be answered.
+            throw loads.processorEnded;
+        }
         const loadToken = allocateBankLoadToken();
         handshake = createSampleBankHandshake(nodePort, loadToken, signal);
         nodePort.postMessage({
@@ -264,6 +382,7 @@ export async function loadInstrumentFromManifest({
             instrumentId: bank.instrumentId,
             loadToken,
         });
+        postedLoadToken = loadToken;
 
         const uploadRequired = await handshake.uploadRequired;
         signal?.throwIfAborted();
@@ -343,10 +462,10 @@ export async function loadInstrumentFromManifest({
         // type) it can match.
         //
         // Grouped with the other staging messages for readability, not because
-        // the position matters: `LevainEngine::add_legato_transition` pushes
-        // into the pending bank the same way `add_zone` does, and
-        // `commit_sample_bank` rebuilds the whole transition store from that
-        // list, so a message landing either side of `buildZoneMap` still takes.
+        // the position matters: `LevainEngine::add_legato_transition` adds to
+        // the pending bank's transition store the same way `add_zone` adds to
+        // its zone map, and `commit_sample_bank` swaps that store in, so a
+        // message landing either side of `buildZoneMap` still takes.
         // `loadToken` is what makes a transition from an abandoned load stale.
         for (const transition of bank.legatoTransitions) {
             signal?.throwIfAborted();
@@ -380,10 +499,24 @@ export async function loadInstrumentFromManifest({
         handshake.markZoneMapPosted();
         await handshake.completed;
         completed = true;
+        releaseStarted = true;
+        releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
         return bank;
     } finally {
         if (handshake && !completed) {
             handshake.cancel();
+        }
+        if (!releaseStarted) {
+            if (postedLoadToken === null) {
+                // It never posted a begin: it is over once the loads before it are.
+                over.resolve(previous);
+            } else {
+                // The worklet retired the bank this load staged when it aborted
+                // it, or committed it before the abort arrived. Either way the
+                // load is over only once that bank is freed, and the port
+                // delivers this request after the abort.
+                releaseRetiredBank(nodePort, loads, postedLoadToken, over.resolve);
+            }
         }
         lease.release();
     }
