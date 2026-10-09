@@ -1,0 +1,19 @@
+base.txt
+  s_1f0dcd815e8946::t_99d85e180715e3 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b43f8ef28d7ac1ad480cce697358047e7ff316e",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Fixture <fixture@example.com>"
+    }
+  }
+}
