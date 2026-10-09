@@ -1708,7 +1708,8 @@
             ],
             "paths": [
                 "scripts/semanticReview/**",
-                "scripts/semanticReview.ts"
+                "scripts/semanticReview.ts",
+                "scripts/typesafeRequest.ts"
             ],
             "sources": [
                 "https://api.typesafe.ai"
@@ -2352,7 +2353,7 @@
         },
         {
             "surface": "semantic-review-egress",
-            "file": "scripts/semanticReview/provider.ts",
+            "file": "scripts/typesafeRequest.ts",
             "value": "https://api.typesafe.ai"
         },
         {
