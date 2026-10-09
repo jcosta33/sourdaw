@@ -466,6 +466,66 @@ function readDossier(root: string) {
 
 /** Runs the real publish against the fake until its POST lands and the comment read then fails. */
 function crashAfterPost(root: string, remote: ReturnType<typeof fakeGitHub>): void {
+    const draws = [
+        {
+            stance: 'reply review mistaken for the landed review',
+            admittedBy: 'reply-only COMMENTED reviews precede the landed CHANGES_REQUESTED review',
+            mutation: 'treat a reply-only COMMENTED review as the landed review',
+            modelTier: 'strongest',
+            outcome: 'blocker-found',
+        },
+        {
+            stance: 'landed comment binding drifts',
+            admittedBy: 'a posted comment changes body or line before binding',
+            mutation: 'skip the exact landed comment comparison',
+            modelTier: 'standard',
+            outcome: 'clean',
+        },
+        {
+            stance: 'landed review identity changes',
+            admittedBy: 'the landed review id changes between the two recovery inspections',
+            mutation: 'skip the second-inspection review id comparison',
+            modelTier: 'standard',
+            outcome: 'clean',
+        },
+    ] as const;
+    const bundle = bundlePath(root);
+    writeFileSync(
+        join(bundle, 'dossier.json'),
+        JSON.stringify({
+            ...dossierInput('request-changes'),
+            stances: draws.map(({ stance, modelTier, outcome }) => ({
+                stance,
+                reviewerModel: 'review-model',
+                modelTier,
+                outcome,
+            })),
+        })
+    );
+    writeFileSync(
+        join(bundle, 'stances.json'),
+        JSON.stringify({
+            format: 'stances-admission-v1',
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            stances: draws.map(({ stance, admittedBy, mutation }) => ({
+                stance,
+                admittedBy,
+                draws: [
+                    {
+                        reviewerModel: 'review-model',
+                        baselineProbe: {
+                            spec: 'scripts/__tests__/recoverPublishReviewLock5008.spec.ts',
+                            mutation,
+                            observed: 'the named recovery spec failed on the targeted mutation',
+                            result: 'mutation-detected',
+                        },
+                    },
+                ],
+            })),
+        })
+    );
     remote.state.failCommentReadsAfterPost = 1;
     expect(() => publishReview(number, publicationPort(root, remote.gh))).toThrow(/transient comment listing failure/);
     expect(remote.state.posts).toBe(1);
@@ -686,6 +746,32 @@ describe('review-publication recovery of a landed review among thread-reply revi
         await expect(
             recoverWith(fixture.root, fixture.ownerOid, remote.gh, (inspection) =>
                 inspection === 1 ? remote.gh : drifted.gh
+            )
+        ).rejects.toThrow(/remote state changed during reconciliation/);
+        expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
+        expect(lockOid(fixture.root)).not.toBeUndefined();
+    });
+
+    it('refuses and leaves the dossier unbound when the exact review carries another id by the second inspection', async () => {
+        const fixture = fixtureFor({ planCarrying: true });
+        const remote = fakeGitHub({ posted: false });
+        crashAfterPost(fixture.root, remote);
+        const reissuedReviewId = landedReviewId + 1;
+        const reissued = fakeGitHub({
+            posted: true,
+            reviews: [...prePublicationReviews(), { ...landedReview('request-changes'), id: reissuedReviewId }],
+            comments: [
+                ...prePublicationComments(),
+                ...landedComments('request-changes').map((comment) => ({
+                    ...comment,
+                    pull_request_review_id: reissuedReviewId,
+                })),
+            ],
+        });
+
+        await expect(
+            recoverWith(fixture.root, fixture.ownerOid, remote.gh, (inspection) =>
+                inspection === 1 ? remote.gh : reissued.gh
             )
         ).rejects.toThrow(/remote state changed during reconciliation/);
         expect(publishedReviewId(readDossier(fixture.root))).toBeUndefined();
