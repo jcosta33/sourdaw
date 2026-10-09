@@ -666,6 +666,42 @@ describe('prepareTimelineMapTimeOperation', () => {
             ]);
         });
 
+        it('treats a change a float step before the span start as a change on it', () => {
+            const ramps = (): TempoChange[] => [
+                { id: 'a', beat: 0, tempo: 100, curve: 'linear' },
+                { id: 'b', beat: 4, tempo: 150, curve: 'linear' },
+                { id: 'c', beat: 10, tempo: 200, curve: 'instant' },
+            ];
+            setStoreStates(tempoState(ramps()), timeSignatureState([]));
+            deleteTime(4, 6);
+            const exact = tempoMapStore.value?.changes ?? [];
+
+            setStoreStates(tempoState(ramps()), timeSignatureState([]));
+            deleteTime(4 + 1e-9, 6);
+            const nearby = tempoMapStore.value?.changes ?? [];
+
+            expect(nearby.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual(
+                exact.map(({ beat, tempo, curve }) => [beat, tempo, curve])
+            );
+            const [beat5, beat6, beat7] = [5, 6, 7].map((beat) => getTempoAtBeat(nearby, beat, 120));
+            expect(beat5).toBeCloseTo(175, 9);
+            expect(beat6).toBeCloseTo(183.3333333, 6);
+            expect(beat7).toBeCloseTo(191.6666667, 6);
+        });
+
+        it('keeps later downbeats where they were when a carried meter sits a float step before the next span start', () => {
+            deleteTime(3, 23 / 3);
+            deleteTime(10 / 3, 5.4);
+
+            // The first cut leaves its carried change a float step below 10/3, where the second cut starts.
+            const after = timeSignatureMapStore.value?.changes ?? [];
+            expect(meterEvents()).toHaveLength(1);
+            expect(meterEvents()[0]?.[0]).toBeCloseTo(79 / 15, 9);
+            for (const downbeat of [79 / 15, 139 / 15]) {
+                expect(positionInBar(after, downbeat)).toEqual({ beat: 1, tick: 0 });
+            }
+        });
+
         it('carries the implied meter of an empty map, so later bars keep their downbeats', () => {
             setStoreStates(tempoState([]), timeSignatureState([]));
 

@@ -180,11 +180,18 @@ describe('projectEngineTransportMaps', () => {
         const cutSeconds = 6 * Math.log(1.4);
         const cutIndex = starts.findIndex((second) => Math.abs(second - cutSeconds) < 1e-9);
         expect(cutIndex).toBeGreaterThan(0);
-        // Before the cut the ramp tops out at the arrival tempo; the segment
-        // that opens at the cut states the 160 -> 200 ramp.
+        // Before the cut the ramp tops out at the arrival tempo.
         expect(tempo.slice(0, cutIndex).every((segment) => segment.beatsPerMinute <= 140)).toBe(true);
-        expect(tempo[cutIndex]!.beatsPerMinute).toBeGreaterThan(160);
-        expect(tempo[cutIndex]!.beatsPerMinute).toBeLessThan(200);
+        // The governing 160 -> 200 ramp is sampled after the cut, so beats 4..8 are
+        // several segments and not one step at the arrival.
+        const afterCut = tempo.slice(cutIndex);
+        expect(afterCut.length).toBeGreaterThan(4);
+        // The segment opening at the cut states the mean of the ramp's first quarter-beat step.
+        const firstStepMean = 2.5 / Math.log(162.5 / 160);
+        expect(afterCut[0]!.beatsPerMinute).toBeCloseTo(firstStepMean, 6);
+        const afterTempos = afterCut.map((segment) => segment.beatsPerMinute);
+        expect(afterTempos.every((value, index) => index === 0 || value > afterTempos[index - 1]!)).toBe(true);
+        expect(afterTempos.at(-1)).toBe(200);
     });
 
     it('projects a Delete Time over a non-dyadic span onto strictly increasing segment starts stating the change at the cut', () => {
@@ -204,6 +211,59 @@ describe('projectEngineTransportMaps', () => {
         const startFrames = tempo.map((segment) => Math.round(segment.startSeconds * 48_000));
         expect(startFrames.every((frame, index) => index === 0 || frame > startFrames[index - 1]!)).toBe(true);
         expect(tempo.at(-1)?.beatsPerMinute).toBe(200);
+    });
+
+    describe('a Delete Time projected onto strictly increasing engine frames', () => {
+        const SAMPLE_RATE = 48_000;
+
+        function deleteTime(startBeat: number, endBeat: number): void {
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'delete', startBeat, endBeat },
+            });
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+        }
+
+        function frames(segments: readonly { startSeconds: number }[]): number[] {
+            return segments.map((segment) => Math.round(segment.startSeconds * SAMPLE_RATE));
+        }
+
+        function expectStrictlyIncreasing(values: readonly number[]): void {
+            expect(values.every((frame, index) => index === 0 || frame > values[index - 1]!)).toBe(true);
+        }
+
+        it('opens no ramp sample on the frame of the instant change it ramps toward', () => {
+            tempoMapStore.set({ changes: [tempoChange(4, 100, 'linear'), tempoChange(5, 140)] });
+
+            deleteTime(1 / 3, 4);
+
+            const startFrames = frames(projectEngineTransportMaps().tempo);
+            expect(startFrames.length).toBeGreaterThan(1);
+            expectStrictlyIncreasing(startFrames);
+        });
+
+        it('opens no ramp sample a float step below the shifted change it ramps toward', () => {
+            tempoMapStore.set({ changes: [tempoChange(0, 163, 'linear'), tempoChange(29 / 7, 54)] });
+
+            deleteTime(0, 8 / 7);
+
+            const startFrames = frames(projectEngineTransportMaps().tempo);
+            expect(startFrames.length).toBeGreaterThan(1);
+            expectStrictlyIncreasing(startFrames);
+        });
+
+        it('opens one meter segment where a carried meter sits a float step after beat zero', () => {
+            timeSignatureMapStore.set({ changes: [{ id: 'ts-0', beat: 0, numerator: 2, denominator: 16 }] });
+            tempoMapStore.set({ changes: [tempoChange(0, 84)] });
+
+            deleteTime(0, 8 / 3);
+            deleteTime(0, 19 / 3);
+
+            const { timeSignature } = projectEngineTransportMaps();
+            expectStrictlyIncreasing(frames(timeSignature));
+            expect(timeSignature).toHaveLength(1);
+            expect(timeSignature[0]?.startSeconds).toBe(0);
+        });
     });
 
     it('opens one segment where two changes sit a float step apart', () => {

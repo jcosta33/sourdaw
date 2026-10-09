@@ -427,29 +427,49 @@ function carryTimeSignatureToSpanStart(input: CarryAcrossDeletionInput<TimeSigna
     return [createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator)];
 }
 
+// A bound within BEAT_EPSILON of a change is that change's beat: a float step
+// off it is no distinction, and every comparison below would otherwise read the
+// change as inside or outside the span by accident of rounding.
+function snapToChangeBeat(changes: readonly TimelineChange[], beat: number): number {
+    let snapped = beat;
+    let distance = BEAT_EPSILON;
+    for (const change of changes) {
+        const gap = Math.abs(change.beat - beat);
+        if (gap <= distance) {
+            snapped = change.beat;
+            distance = gap;
+        }
+    }
+    return snapped;
+}
+
 function prepareDeletedChanges<TChange extends TimelineChange>(
     changes: readonly TChange[],
     operation: DeleteTimelineMapTimeOperation,
     carryAcrossDeletion: CarryAcrossDeletion<TChange>
 ): PreparedChanges<TChange> {
-    const durationBeats = operation.endBeat - operation.startBeat;
+    const startBeat = snapToChangeBeat(changes, operation.startBeat);
+    const endBeat = snapToChangeBeat(changes, operation.endBeat);
+    if (endBeat <= startBeat) {
+        return { status: 'valid', hasChanges: false, changes: [...changes] };
+    }
+    const durationBeats = endBeat - startBeat;
     let hasChanges = false;
     const remainingChanges: TChange[] = [];
 
     for (const change of changes) {
-        if (change.beat >= operation.startBeat && change.beat < operation.endBeat) {
+        if (change.beat >= startBeat && change.beat < endBeat) {
             hasChanges = true;
             continue;
         }
-        if (change.beat < operation.endBeat) {
+        if (change.beat < endBeat) {
             remainingChanges.push(change);
             continue;
         }
 
         const subtractedBeat = change.beat - durationBeats;
         // A non-dyadic span leaves the shift one float step off startBeat; exact-beat readers need it on startBeat.
-        const shiftedBeat =
-            Math.abs(subtractedBeat - operation.startBeat) <= BEAT_EPSILON ? operation.startBeat : subtractedBeat;
+        const shiftedBeat = Math.abs(subtractedBeat - startBeat) <= BEAT_EPSILON ? startBeat : subtractedBeat;
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
         }
@@ -465,8 +485,8 @@ function prepareDeletedChanges<TChange extends TimelineChange>(
     const { arrivals, carried } = carryAcrossDeletion({
         original: changes,
         remaining: remainingChanges,
-        startBeat: operation.startBeat,
-        endBeat: operation.endBeat,
+        startBeat,
+        endBeat,
     });
     if (arrivals.length === 0 && carried.length === 0) {
         return { status: 'valid', hasChanges, changes: remainingChanges };
