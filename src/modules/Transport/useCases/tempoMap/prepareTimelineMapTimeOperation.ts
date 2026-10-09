@@ -202,18 +202,54 @@ function carryTempoAcrossDeletion({ original, remaining, startBeat, endBeat }: C
         return null;
     }
     const tempoAtEnd = getTempoAtBeat(original, endBeat, governingAtEnd.tempo);
-    if (remaining.length > 0 && getTempoAtBeat(remaining, startBeat, tempoAtEnd) === tempoAtEnd) {
+    const rampStartsInsideSpan = governingAtEnd.curve === 'linear' && governingAtEnd.beat >= startBeat;
+    const rampContinuesPastEnd = original.some((change) => change.beat > endBeat);
+    // A ramp that begins inside the span and is still in motion at its end only
+    // survives as a ramp when the carried change keeps it, even where the value
+    // happens to match: without it the remaining map reads flat up to the next change.
+    const carriesRamp = rampStartsInsideSpan && rampContinuesPastEnd;
+    if (!carriesRamp && remaining.length > 0 && getTempoAtBeat(remaining, startBeat, tempoAtEnd) === tempoAtEnd) {
         return null;
     }
     return createTempoChange(startBeat, tempoAtEnd, governingAtEnd.curve);
 }
 
-function carryTimeSignatureAcrossDeletion({
-    original,
-    remaining,
-    startBeat,
-    endBeat,
-}: CarryAcrossDeletionInput<TimeSignatureChange>) {
+function meterBarBeats(change: TimeSignatureChange): number {
+    return (change.numerator * 4) / change.denominator;
+}
+
+function isMeterBarStart(change: TimeSignatureChange, beat: number): boolean {
+    const bars = (beat - change.beat) / meterBarBeats(change);
+    return Math.abs(bars - Math.round(bars)) * meterBarBeats(change) <= BEAT_EPSILON;
+}
+
+// Bars are counted from the change that opens them, so material after the cut
+// keeps its bar positions only if the carried meter opens where an old downbeat
+// of the governing meter lands once the span is gone. Between the span start and
+// that beat the meter before the span continues, as a partial bar. Null when no
+// downbeat of the governing meter falls before the next change.
+function findShiftedDownbeat(
+    governing: TimeSignatureChange,
+    { original, remaining, startBeat, endBeat }: CarryAcrossDeletionInput<TimeSignatureChange>
+): number | null {
+    const barBeats = meterBarBeats(governing);
+    const nextChange = Math.min(
+        Infinity,
+        ...original.filter((change) => change.beat > endBeat).map(({ beat }) => beat)
+    );
+    let downbeat = governing.beat + Math.ceil((endBeat - governing.beat - BEAT_EPSILON) / barBeats) * barBeats;
+    while (downbeat < nextChange - BEAT_EPSILON) {
+        const shifted = downbeat - (endBeat - startBeat);
+        if (shifted >= startBeat - BEAT_EPSILON && !hasChangeAtBeat(remaining, shifted)) {
+            return Math.max(shifted, startBeat);
+        }
+        downbeat += barBeats;
+    }
+    return null;
+}
+
+function carryTimeSignatureAcrossDeletion(input: CarryAcrossDeletionInput<TimeSignatureChange>) {
+    const { original, remaining, startBeat, endBeat } = input;
     if (hasChangeAtBeat(remaining, startBeat)) {
         return null;
     }
@@ -221,14 +257,18 @@ function carryTimeSignatureAcrossDeletion({
     if (!governingAtEnd) {
         return null;
     }
-    const governingBeforeStart = lastChangeAtOrBefore(remaining, startBeat);
+    const shiftedDownbeat = findShiftedDownbeat(governingAtEnd, input);
+    const carriedBeat = shiftedDownbeat ?? startBeat;
+    const governingAtCarriedBeat = lastChangeAtOrBefore(remaining, carriedBeat);
     if (
-        governingBeforeStart?.numerator === governingAtEnd.numerator &&
-        governingBeforeStart.denominator === governingAtEnd.denominator
+        governingAtCarriedBeat &&
+        governingAtCarriedBeat.numerator === governingAtEnd.numerator &&
+        governingAtCarriedBeat.denominator === governingAtEnd.denominator &&
+        (shiftedDownbeat === null || isMeterBarStart(governingAtCarriedBeat, carriedBeat))
     ) {
         return null;
     }
-    return createTimeSignatureChange(startBeat, governingAtEnd.numerator, governingAtEnd.denominator);
+    return createTimeSignatureChange(carriedBeat, governingAtEnd.numerator, governingAtEnd.denominator);
 }
 
 function prepareDeletedChanges<TChange extends TimelineChange>(
