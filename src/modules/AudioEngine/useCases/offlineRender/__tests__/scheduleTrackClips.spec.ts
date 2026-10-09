@@ -541,7 +541,7 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
         const drumKit = { name: 'Acoustic' };
         mocks.resolveDrumKit.mockReturnValue(drumKit);
 
-        await runSchedule({ useLegacyScheduler: true, clipGain: 0.35 });
+        await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-machine-analog', clipGain: 0.35 });
 
         expect(mocks.scheduleKitNote).toHaveBeenCalledWith(
             expect.anything(),
@@ -848,6 +848,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             ])
         );
         const entry = makeInstrumentEntry();
+        entry.deviceId = 'toaster-1';
         entry.deviceType = 'toaster';
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -1659,7 +1660,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         // must not manufacture one for it.
         const arrivals = await dispatchOneNote(
             { pressure: 127, slide: 1, pitchBend: 4_096 },
-            { deviceType: 'crumbs', withExpressionSurface: false }
+            { deviceType: 'builtin-crumbs', withExpressionSurface: false }
         );
 
         expect({ order: arrivals.order, expression: arrivals.expression }).toEqual({

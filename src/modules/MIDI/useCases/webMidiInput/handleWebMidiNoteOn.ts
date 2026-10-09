@@ -2,8 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
-import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
-import { isDrumDevice, resolveDrumKitBy } from '#/utils/deviceTypeMatching';
+import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -24,6 +23,7 @@ import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
+import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 
 /**
@@ -402,8 +402,13 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
-            if (fermenterDevice) {
+            // The key reaches the track's receiving instrument, the one sequenced
+            // playback and the export voice; each branch below only delivers to it.
+            const receiver = resolveLiveInputNoteReceiver(instrumentTrack?.devices ?? [], toasterChildPad !== null);
+            const receivingDevice = receiver?.device;
+
+            if (receivingDevice?.type === 'fermenter') {
+                const fermenterDevice = receivingDevice;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: fermenterDevice.id, type: 'fermenter' });
                 if (deviceNode?.fermenterControls?.ready) {
                     deviceNode.fermenterControls.noteOn(note, velocity, dispatchFrame, channel);
@@ -412,8 +417,8 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            const toasterDevice = instrumentTrack?.devices.find((device) => device.type === 'toaster');
-            if (toasterDevice) {
+            if (receiver?.kind === 'toaster') {
+                const toasterDevice = receiver.device;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: toasterDevice.id, type: 'toaster' });
                 if (deviceNode?.toasterControls) {
                     let pad = toasterChildPad;
@@ -434,8 +439,8 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            const grandBouleDevice = instrumentTrack?.devices.find((device) => device.type === 'grand-boule');
-            if (grandBouleDevice) {
+            if (receivingDevice?.type === 'grand-boule') {
+                const grandBouleDevice = receivingDevice;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
                 if (deviceNode?.grandBouleControls?.ready) {
                     const grandBouleStore = createGrandBouleStore(grandBouleDevice.id);
@@ -452,8 +457,8 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
-            if (levainDevice) {
+            if (receivingDevice?.type === 'levain') {
+                const levainDevice = receivingDevice;
                 const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
                 if (deviceNode?.levainControls?.ready) {
                     deviceNode.levainControls.noteOn(note, velocity, dispatchFrame, channel);
@@ -464,50 +469,33 @@ export const handleWebMidiNoteOn = inject({
             }
 
             let oscillator: (OscillatorNode & { _env?: GainNode }) | null = null;
-            const synthDevice = instrumentTrack?.devices.find(
-                (device) => isDrumDevice(device.type) || device.type.startsWith('builtin-synth')
-            );
-
-            if (synthDevice) {
-                if (isDrumDevice(synthDevice.type)) {
-                    // The same drum device and kit index sequenced playback, audition and
-                    // export resolve; only the kit lookups differ.
-                    const trackDevices = instrumentTrack?.devices ?? [];
-                    const kitDefinition = resolveDrumKitBy(trackDevices, deps.getDrumKitDefByIndex);
-                    if (kitDefinition) {
-                        deps.scheduleDrumKitNote(
-                            engine.context,
-                            strip.gainNode,
-                            kitDefinition,
-                            note,
-                            dispatchTime,
-                            velocity
-                        );
-                    } else {
-                        const kit = resolveDrumKitBy(trackDevices, deps.getDrumKitByIndex);
-                        if (kit) {
-                            oscillator = deps.scheduleKitNote(
-                                engine.context,
-                                strip.gainNode,
-                                kit,
-                                note,
-                                dispatchTime,
-                                60,
-                                velocity
-                            );
-                        }
-                    }
-                } else {
-                    const synthParams = deps.getSynthParamsForTrack(targetTrackId);
-                    oscillator = deps.scheduleNote(
+            if (receiver?.kind === 'drum') {
+                // The same drum device and kit index sequenced playback, audition and
+                // export resolve; only the kit lookups differ.
+                const trackDevices = instrumentTrack?.devices ?? [];
+                const kitDefinition = resolveDrumKitBy(trackDevices, deps.getDrumKitDefByIndex);
+                if (kitDefinition) {
+                    deps.scheduleDrumKitNote(
                         engine.context,
                         strip.gainNode,
+                        kitDefinition,
                         note,
                         dispatchTime,
-                        HOLD_UNTIL_NOTE_OFF_SECONDS,
-                        velocity,
-                        synthParams
+                        velocity
                     );
+                } else {
+                    const kit = resolveDrumKitBy(trackDevices, deps.getDrumKitByIndex);
+                    if (kit) {
+                        oscillator = deps.scheduleKitNote(
+                            engine.context,
+                            strip.gainNode,
+                            kit,
+                            note,
+                            dispatchTime,
+                            60,
+                            velocity
+                        );
+                    }
                 }
 
                 if (oscillator) {
@@ -522,15 +510,16 @@ export const handleWebMidiNoteOn = inject({
             // back the release that gates it off. Without this branch the note fell
             // through to the default-parameter builtin synth below, so monitoring
             // played a different instrument from playback and the offline render
-            // (issue #3726). It sits after the builtin devices so a track carrying
-            // both keeps its existing builtin voice, and only the Faust-only track
-            // is rescued from the fallback.
-            const faustDevice = instrumentTrack?.devices.find((device) => isFaustInstrumentModule(device.type));
-            if (faustDevice) {
+            // (issue #3726).
+            if (receiver?.kind === 'faust') {
+                const faustDevice = receiver.device;
                 noteData.faustRelease = startFaustNote(instrumentTrackId, faustDevice.id, note, velocity, dispatchTime);
                 return;
             }
 
+            // The built-in synth, set from the track's synth device when it is the
+            // receiver and from its defaults when the chain holds no instrument
+            // live input can voice.
             const synthParams = deps.getSynthParamsForTrack(targetTrackId);
             oscillator = deps.scheduleNote(
                 engine.context,

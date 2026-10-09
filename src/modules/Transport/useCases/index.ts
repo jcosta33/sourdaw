@@ -6,6 +6,7 @@ export { repairRuntimeGraphFromProject } from './repairRuntimeGraphFromProject';
 export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
+export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 export { readNativeEngineCursorBeats } from './playheadScheduler/readNativeEngineCursorBeats';
 

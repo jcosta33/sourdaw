@@ -1,5 +1,4 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import {
     scheduleNote,
     getDrumKitDefByIndex,
@@ -12,6 +11,7 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 import { startFaustNote } from './faustScheduler/startFaustNote';
+import { resolveAuditionNoteReceiver } from './resolveAuditionNoteReceiver';
 
 type AuditionDeviceParameterValues = Record<string, number> & {
     kit?: number;
@@ -36,12 +36,19 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
     const trackCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
     const track = trackCandidates?.find((candidate) => candidate.id === trackId);
-    const drumDevice = track?.devices.find(
-        (data) =>
-            data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
+    const parentId = track?.parentId;
+    const parentTrack = trackCandidates?.find((candidate) => Boolean(parentId) && candidate.id === parentId);
+    const toasterParentTrack = parentTrack?.devices.some((data) => data.type === 'toaster') ? parentTrack : undefined;
+    // The note reaches the receiving instrument playback, export and live input
+    // voice; each branch below only delivers to it.
+    const receiver = resolveAuditionNoteReceiver(
+        toasterParentTrack?.devices ?? track?.devices ?? [],
+        toasterParentTrack !== undefined
     );
+    const receivingDevice = receiver?.device;
 
-    if (drumDevice) {
+    if (receiver?.kind === 'drum') {
+        const drumDevice = receiver.device;
         const kitIndex = drumDevice.parameterValues.kit ?? drumDevice.parameterValues.kitId ?? 0;
         const kitDef = getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
@@ -87,8 +94,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         };
     }
 
-    const fermenterDevice = track?.devices.find((data) => data.type === 'fermenter');
-    if (fermenterDevice) {
+    if (receivingDevice?.type === 'fermenter') {
+        const fermenterDevice = receivingDevice;
         const dn = strip.deviceNodes.find((data) => data.deviceId === fermenterDevice.id || data.type === 'fermenter');
         if (dn?.fermenterControls?.ready) {
             dn.fermenterControls.noteOn(pitch, velocity);
@@ -99,21 +106,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    let isToasterChild = false;
-    let toasterParentTrack: AuditionTrack | undefined;
-    if (track?.parentId) {
-        const parentCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
-        toasterParentTrack = parentCandidates?.find((candidate) => candidate.id === track.parentId);
-        if (toasterParentTrack?.devices.some((data) => data.type === 'toaster')) {
-            isToasterChild = true;
-        }
-    }
-
-    const toasterDevice =
-        track?.devices.find((data) => data.type === 'toaster') ||
-        toasterParentTrack?.devices.find((data) => data.type === 'toaster');
-
-    if (toasterDevice) {
+    if (receiver?.kind === 'toaster') {
+        const toasterDevice = receiver.device;
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
         const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
 
@@ -123,9 +117,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;
 
-            if (isToasterChild && toasterParentTrack) {
-                const childCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
-                const children = childCandidates?.filter((time) => time.parentId === toasterParentTrack.id) || [];
+            if (toasterParentTrack) {
+                const children = trackCandidates?.filter((time) => time.parentId === toasterParentTrack.id) || [];
                 const childPad = children.findIndex((time) => time.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;
@@ -140,8 +133,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    const grandBouleDevice = track?.devices.find((data) => data.type === 'grand-boule');
-    if (grandBouleDevice) {
+    if (receivingDevice?.type === 'grand-boule') {
+        const grandBouleDevice = receivingDevice;
         const dn = strip.deviceNodes.find(
             (data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule'
         );
@@ -154,8 +147,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    const levainDevice = track?.devices.find((data) => data.type === 'levain');
-    if (levainDevice) {
+    if (receivingDevice?.type === 'levain') {
+        const levainDevice = receivingDevice;
         const dn = strip.deviceNodes.find((data) => data.deviceId === levainDevice.id || data.type === 'levain');
         if (dn?.levainControls?.ready) {
             dn.levainControls.noteOn(pitch, velocity);
@@ -170,9 +163,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     // note into the first Faust *effect* on the track — `startFaustNote` writes
     // freq/gain/gate params a reverb has no address for — and the early return
     // below then skipped the builtin-synth fallback, so the preview was silent.
-    const faustDevice = track?.devices.find((data) => isFaustInstrumentModule(data.type));
-    if (faustDevice) {
-        return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
+    if (receiver?.kind === 'faust') {
+        return startFaustNote(trackId, receiver.device.id, pitch, velocity, now);
     }
 
     const synthParams = getSynthParamsFromDevices(track?.devices ?? []);

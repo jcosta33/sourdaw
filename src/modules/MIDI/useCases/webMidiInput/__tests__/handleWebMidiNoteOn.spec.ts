@@ -959,10 +959,11 @@ describe('handleWebMidiNoteOn', () => {
             expect(activeNotes.has(createWebMidiNoteKey(0, 64))).toBe(false);
         });
 
-        it('keeps a builtin synth device ahead of a Faust instrument on the same track', async () => {
+        it('plays the Faust instrument added after the track default builtin synth, as playback and export do', async () => {
             faust_instrument_types.value = new Set(['faust-rhodes']);
-            const oscillator = { _env: { gain: {} } };
-            const schedule_note = vi.fn(() => oscillator);
+            const release = vi.fn();
+            start_faust_note.mockReturnValue(release);
+            const schedule_note = vi.fn();
             const fn = handleWebMidiNoteOn._factory(
                 make_dependencies({
                     getTrackStoreState: () => ({
@@ -984,10 +985,11 @@ describe('handleWebMidiNoteOn', () => {
 
             await fn(0, 60, 100);
 
-            expect(schedule_note).toHaveBeenCalledTimes(1);
-            expect(start_faust_note).not.toHaveBeenCalled();
-            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.osc).toBe(oscillator);
-            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.faustRelease).toBeUndefined();
+            expect(schedule_note).not.toHaveBeenCalled();
+            expect(start_faust_note).toHaveBeenCalledTimes(1);
+            expect(start_faust_note.mock.calls[0]?.[1]).toBe('faust-1');
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.osc).toBeUndefined();
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.faustRelease).toBe(release);
         });
     });
 
