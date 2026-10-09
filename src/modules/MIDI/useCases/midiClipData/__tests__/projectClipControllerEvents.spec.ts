@@ -216,4 +216,135 @@ describe('projectClipControllerEvents', () => {
             expect(events[1]!.beat).toBeCloseTo(loop.start + loop.length - 1e-6, 9);
         });
     });
+
+    describe('across back-to-back scheduler windows on non-dyadic clips', () => {
+        const STEPS = [0.25, 1 / 3, 1];
+        const STARTS = [2 / 3, 1 / 3, 1 / 7, 7 / 3];
+        const OFFSETS = [0, 1 / 7, 1 / 3, 0.25];
+        const LOOPS = [2, 1, 4 / 3, 1 / 3];
+        const PASS_BEATS = 8;
+
+        type Clip = Parameters<typeof projectClipControllerEvents>[0]['clip'];
+
+        function clipOf(start: number, offset: number, loop: number, length = PASS_BEATS): Clip {
+            return {
+                startBeat: start,
+                endBeat: start + length,
+                midiOffsetBeats: offset,
+                loopEnabled: true,
+                loopLength: loop,
+            };
+        }
+
+        /** What a scheduler stepping `[a, a + step)` from `origin` hands the controller projection, window by window. */
+        function steppedEvents(controlChanges: readonly MidiCC[], clip: Clip, step: number, origin: number) {
+            const events: MidiCC[] = [];
+            let from = origin;
+            while (from < clip.endBeat + 2 * step) {
+                const to = from + step;
+                events.push(...projectClipControllerEvents({ controlChanges, clip, fromBeat: from, toBeat: to }));
+                from = to;
+            }
+            return events;
+        }
+
+        function wholeClip(controlChanges: readonly MidiCC[], clip: Clip) {
+            return projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: clip.startBeat - 1,
+                toBeat: clip.endBeat + 1,
+            });
+        }
+
+        it('loses no head row at the window boundary on the clip start', () => {
+            const controlChanges = [controller('down', 1 / 7, 127)];
+            const clip = clipOf(2 / 3, 1 / 7, 2);
+
+            const before = projectClipControllerEvents({ controlChanges, clip, fromBeat: 0, toBeat: 2 / 3 });
+            const after = projectClipControllerEvents({ controlChanges, clip, fromBeat: 2 / 3, toBeat: 1 });
+
+            expect(before.length + after.length).toBe(1);
+        });
+
+        it('emits every pass head row exactly once in any chain of windows', () => {
+            let swept = 0;
+            for (const start of STARTS) {
+                for (const offset of OFFSETS) {
+                    for (const loop of LOOPS) {
+                        const controlChanges = [controller('down', offset, 127)];
+                        const clip = clipOf(start, offset, loop);
+                        const expected = wholeClip(controlChanges, clip).map((event) => event.beat);
+                        expect(expected).toHaveLength(Math.ceil(PASS_BEATS / loop));
+                        for (const step of STEPS) {
+                            for (const origin of [0, start - step, start - 2 * step]) {
+                                const emitted = steppedEvents(controlChanges, clip, step, origin).map(
+                                    (event) => event.beat
+                                );
+                                expect(
+                                    emitted.sort((left, right) => left - right),
+                                    `start ${start}, offset ${offset}, loop ${loop}, step ${step}, origin ${origin}`
+                                ).toEqual(expected);
+                                swept++;
+                            }
+                        }
+                    }
+                }
+            }
+            expect(swept).toBe(STARTS.length * OFFSETS.length * LOOPS.length * STEPS.length * 3);
+        });
+
+        it('lets go of a held pedal on a trimmed loop and leaves nothing on the clip end', () => {
+            const controlChanges = [controller('press', 0, 127), controller('lift', 0.6, 0)];
+            const clip: Clip = {
+                startBeat: 2 / 3,
+                endBeat: 2,
+                midiOffsetBeats: 0.5,
+                loopEnabled: true,
+                loopLength: 1 / 3,
+            };
+
+            expect(projectClipControllerEvents({ controlChanges, clip, fromBeat: 2, toBeat: 3 })).toEqual([]);
+        });
+
+        it('places no event at or after the clip end on any window of a trimmed loop', () => {
+            let swept = 0;
+            for (const start of STARTS) {
+                for (const offset of OFFSETS) {
+                    for (const loop of LOOPS) {
+                        for (const length of [2, 3.5, 5]) {
+                            const controlChanges = [controller('press', 0, 127), controller('lift', offset + 1e-4, 0)];
+                            const clip = clipOf(start, offset, loop, length);
+                            for (const step of STEPS) {
+                                const events = steppedEvents(controlChanges, clip, step, start - step);
+                                const late = events.filter((event) => event.beat >= clip.endBeat - 1e-9);
+                                expect(
+                                    late,
+                                    `start ${start}, offset ${offset}, loop ${loop}, length ${length}, step ${step}`
+                                ).toEqual([]);
+                                expect(events.at(-1)?.value, 'the sustain ends released').toBe(0);
+                                swept++;
+                            }
+                        }
+                    }
+                }
+            }
+            expect(swept).toBe(STARTS.length * OFFSETS.length * LOOPS.length * 3 * STEPS.length);
+        });
+
+        it('still plays the head row of a genuine short final pass', () => {
+            const controlChanges = [controller('down', 0, 127)];
+            const clip: Clip = {
+                startBeat: 0,
+                endBeat: 4 + 1e-6,
+                midiOffsetBeats: 0,
+                loopEnabled: true,
+                loopLength: 2,
+            };
+
+            const events = projectClipControllerEvents({ controlChanges, clip, fromBeat: 0, toBeat: 8 });
+
+            expect(events.map((event) => event.beat)).toEqual([0, 2, 4]);
+        });
+    });
 });
