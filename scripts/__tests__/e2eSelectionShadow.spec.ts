@@ -119,7 +119,15 @@ function withIntegrationCheckout(
 }
 
 function withShadowCliCheckouts(
-    capability: 'absent' | 'present' | 'malformed' | 'partial' | 'deleted' | 'invalid-scope',
+    capability:
+        | 'absent'
+        | 'present'
+        | 'malformed'
+        | 'partial'
+        | 'deleted'
+        | 'merge-deleted'
+        | 'integration-matcher'
+        | 'invalid-scope',
     run: (
         result: ReturnType<typeof spawnSync>,
         report: Record<string, unknown>,
@@ -172,7 +180,7 @@ function withShadowCliCheckouts(
         mkdirSync(join(repository, 'tests/e2e'), { recursive: true });
         writeFileSync(join(repository, SMOKE_SPEC), 'smoke\n');
         writeFileSync(join(repository, 'tests/e2e/example.spec.ts'), 'example\n');
-        if (!['absent', 'invalid-scope'].includes(capability)) {
+        if (!['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
             copyControl();
         }
         commit('base');
@@ -191,13 +199,44 @@ function withShadowCliCheckouts(
                 unlinkSync(join(repository, path));
             }
         }
-        const head = commit('candidate');
+        commit('candidate');
+        if (capability === 'merge-deleted') {
+            git('checkout', '-q', '-b', 'declared', 'main');
+            copyControl();
+            commit('declared second parent');
+            git('checkout', '-q', 'candidate');
+            git(
+                '-c',
+                'user.name=Shadow Test',
+                '-c',
+                'user.email=shadow@example.invalid',
+                'merge',
+                '-q',
+                '--no-ff',
+                '-s',
+                'ours',
+                '-m',
+                'candidate merge omits declared capability',
+                'declared'
+            );
+        }
+        const head = git('rev-parse', 'HEAD');
         git('checkout', '-q', 'main');
-        if (capability === 'absent' || capability === 'invalid-scope') {
+        if (['absent', 'merge-deleted', 'integration-matcher', 'invalid-scope'].includes(capability)) {
             copyControl();
         }
         writeFileSync(join(repository, 'integration.txt'), 'integration\n');
         const control = commit('control');
+        if (capability === 'integration-matcher') {
+            const config = join(repository, 'playwright.config.ts');
+            const source = readFileSync(config, 'utf8');
+            writeFileSync(
+                config,
+                source.replace("testDir: './tests/e2e',", "testDir: './tests/e2e',\n    testMatch: '**/*.check.ts',")
+            );
+            writeFileSync(join(repository, 'tests/e2e/integration-required.check.ts'), 'integration policy spec\n');
+            commit('integration collection policy');
+        }
         git(
             '-c',
             'user.name=Shadow Test',
@@ -437,6 +476,22 @@ describe('E2E selection shadow', () => {
             expect(result.status).toBe(1);
             expect(report.measurementStatus).toBe('failed');
             expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
+        });
+    }, 30_000);
+
+    it('fails when a candidate merge deletes capability declared by its second parent', () => {
+        withShadowCliCheckouts('merge-deleted', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/Declared shadow capability is missing or nonregular/);
+        });
+    }, 30_000);
+
+    it('fails when integration changes Playwright collection policy for an older head', () => {
+        withShadowCliCheckouts('integration-matcher', (result, report) => {
+            expect(result.status, JSON.stringify({ stderr: result.stderr, report })).toBe(1);
+            expect(report.measurementStatus).toBe('failed');
+            expect(report.failureReason).toMatch(/playwright\.config\.ts/);
         });
     }, 30_000);
 

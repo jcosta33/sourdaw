@@ -87,7 +87,10 @@ export function candidateShadowCapability(
     readHeadSourceBindings(controlRoot, base, CONTROL_SOURCE_PATHS, CONTROL_SOURCE_PATHS);
     const entries = SHADOW_CAPABILITY_PATHS.map((path) => ({ path, entry: treeEntry(head, path, root) }));
     if (entries.every(({ entry }) => entry === null)) {
-        const history = git(['log', '-1', '--format=%H', head, '--', ...SHADOW_CAPABILITY_PATHS], root)
+        const history = git(
+            ['log', '--full-history', '-1', '--format=%H', head, '--', ...SHADOW_CAPABILITY_PATHS],
+            root
+        )
             .toString('utf8')
             .trim();
         if (history === '') {
@@ -149,6 +152,7 @@ export function unsupportedShadowReport(input: {
         throw new Error('Full browser inventory is empty');
     }
     for (const path of [
+        'playwright.config.ts',
         'scripts/prValidationScope.ts',
         'scripts/vitestCollectionPatterns.ts',
         'scripts/e2eShardPartition.ts',
