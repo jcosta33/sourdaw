@@ -61,7 +61,7 @@
  * ── What the fixture holds, and what it deliberately does not ─────────────
  *
  * Ordinary clips (one with user fades, one looping), a frozen track, a shaped
- * bus, a track→bus send, a bus routed into a track, and the two clips whose
+ * bus, a track→bus send, a bus→bus send, a bus routed into a track, and the two clips whose
  * fade endpoints fall outside their own sound — a clip slipped left of its
  * material, and a clip longer than its material.
  *
@@ -72,8 +72,7 @@
  * playback are a later slice, and the export's recorder would otherwise emit
  * `write-parameter` commands the live producer has no counterpart for. Master
  * gain is unity, because the export applies it after the render, outside the
- * projection under test. No bus-sourced send: both producers drop it, so it
- * would compare nothing.
+ * projection under test.
  *
  * ── The frozen leg's oracle ───────────────────────────────────────────────
  *
@@ -406,7 +405,10 @@ function frozenTrack(leg: 'live' | 'export'): Track {
  *   into the shaped bus.
  * - **track-b** — a looping clip whose loop length is shorter than its
  *   material, routed into the bus rather than to master.
- * - **bus-1** — panned and faded: the shaped bus.
+ * - **bus-1** — panned and faded: the shaped bus, with a post-fader send into
+ *   bus-2.
+ * - **bus-2** — panned the other way, fed only by bus-1's send: a bus-sourced
+ *   send both producers emit (#5067).
  * - **track-c** — what the bus is routed into, which is bus→track routing, and
  *   which carries no clips of its own.
  * - **track-frozen** — see {@link frozenTrack}.
@@ -458,7 +460,16 @@ function fixtureTracks(leg: 'live' | 'export', extraTracks: readonly Track[] = [
                 }),
             ],
         }),
-        createTrack({ id: 'bus-1', name: 'Shaped Bus', kind: 'bus', gain: 0.9, pan: 34, outputId: 'track-c' }),
+        createTrack({
+            id: 'bus-1',
+            name: 'Shaped Bus',
+            kind: 'bus',
+            gain: 0.9,
+            pan: 34,
+            outputId: 'track-c',
+            sends: [{ busId: 'bus-2', level: 0.45, preFader: false }] as Track['sends'],
+        }),
+        createTrack({ id: 'bus-2', name: 'Parallel Bus', kind: 'bus', gain: 0.85, pan: -25 }),
         createTrack({ id: 'track-c', name: 'Bus Return', gain: 0.8, pan: 0 }),
         frozenTrack(leg),
         createTrack({

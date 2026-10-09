@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-09 — authority tests fixed PR state for the whole run (introduced by PR #4586)
+
+PR #4586 introduced the authority append with a publication fixture whose PR reader always
+returned `OPEN` at the same head. Its recorded test-validity stance asked whether reverting the
+writer would stay green, but did not mutate PR state after approval inspection. PR #5032 extended the
+same binder to recovery; its moved-head fixture changed the head before reconciliation and held
+it constant through the two inspections and later dossier write.
+
+Probe that would have caught it: make the first two inspections return the same open head, then
+return merged, closed, or another head on the next PR read. Assert the publication binds without
+`delivery-authorized`, replay is byte-identical, and no second POST occurs. Revert only the live
+PR-state check and require these cases to fail; retain an open current-head approval control.
+
 ### 2026-10-09 — cold navigation expired before its warmup allowance (introduced by PR #3222)
 
 The E2E global warmup gave the launch overlay 180 seconds but left the preceding `page.goto('/')`
@@ -284,6 +297,18 @@ and cache counters to survive without being added twice.
 Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
 
 Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
+### 2026-10-09 — a landed recovery receipt left a modern dossier unbound (issue #5111)
+
+An absent-lock replay returned success from its receipt before authenticating or inspecting the
+landed review. The fresh-owner recovery test exercised a different branch, so it did not prove
+historical receipt adoption or native publication replay.
+
+Probe that would have caught it: start with an exact landed version-2 receipt, no lock, and a modern
+unbound dossier; require two stable exact remote reads, one append-only publication binding, and a
+second recovery plus native publish replay with no new POST. Restore the old early return and require
+the owning assertion to fail. On a merged PR, require publication binding without retrospective
+delivery authorization; on an open current approval, require zero unresolved threads for authority.
 
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 

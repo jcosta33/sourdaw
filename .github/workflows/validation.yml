@@ -728,6 +728,18 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Main's seed archives the actual Linux Rust graph after rust-cache
+      # restores. An exact dependency hit can run offline even when the
+      # compiled-target cache misses; a miss or partial restore stays online.
+      - name: Cache Cargo dependencies
+        id: cargo-deps
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
+
       - name: Install server dependencies
         working-directory: server
         run: npm ci
@@ -739,6 +751,7 @@ jobs:
       - name: Server and Rust workspace health gates
         env:
           CARGO_HTTP_MULTIPLEXING: 'false'
+          CARGO_NET_OFFLINE: ${{ steps.cargo-deps.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: pnpm health:server:full
 
   native-macos:
@@ -776,7 +789,8 @@ jobs:
       # run — invisible while the network held, and fatal when a macOS runner
       # could not reach index.crates.io and `cargo test` died resolving serde
       # (#5094; run 37773587894, job 113299796465). This second layer caches
-      # ~/.cargo/registry/index under its own Cargo.lock key: restored after
+      # ~/.cargo/registry/index under a key for Cargo.lock, every manifest,
+      # Cargo config, and toolchain: restored after
       # rust-cache it shadows whatever index state the job cache carried, and
       # because post steps run in reverse order its save completes before
       # rust-cache's registry cleanup touches the index, so it always
@@ -791,9 +805,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry/index
-          key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+            cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
       # Offline exactly when both layers matched their exact keys: rust-cache's
       # `cache-hit` is true only on a full key match and actions/cache sets
