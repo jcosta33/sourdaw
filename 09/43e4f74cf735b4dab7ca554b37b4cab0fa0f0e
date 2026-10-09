@@ -1,0 +1,169 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_1f0dcd815e8946::t_0bc27502d9f97d 5,20-23,70-71
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_1f0dcd815e8946::t_e91a105a459ed4 1-118
+.agents/decisions/README.md
+  s_1f0dcd815e8946::t_d0782f4e64b14a 17-68
+.agents/skills/delivery-orchestration/SKILL.md
+  s_1f0dcd815e8946::t_220b484549b198 662-677
+crates/daw-dsp/AGENTS.md
+  s_1f0dcd815e8946::t_024bf956db5b65 61-67
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_1f0dcd815e8946::t_c36cd85b2c8962 18-22,144-152,219-233,237,265-435,490-512
+crates/daw-dsp/src/levain/engine.rs
+  s_1f0dcd815e8946::t_2c8a0ee0365570 91-106,407-434,2119-2157
+crates/daw-dsp/src/levain/mod.rs
+  s_1f0dcd815e8946::t_0adae5da5c71c3 185-192
+crates/daw-dsp/tests/levain_bank_retirement.rs
+  s_1f0dcd815e8946::t_77845b8e1438ef 10-13,37,48,60,66,72,82,85-88,90-92,102-103,326-439
+crates/daw-engine/src/scheduler.rs
+  s_1f0dcd815e8946::t_782a13f4820efd 812-825,1004-1005,1060-1061,6923-6943,11258-11333,18130-18424
+crates/daw-engine/src/timeline.rs
+  s_1f0dcd815e8946::t_6ef71bc9df585a 32-33,139-142,145-151,1185,1192,1237,1371-1376,1385,1409,1427-1435,1555-1562,2124-2149,2153,2157,2162,2174-2175,2189-2207,2211,2216,2221-2227,2238-2246,2357-2365,2413-2415,2489-2492,2494-2502,2504,2588-2596,2647-2656,2777,2807,2870-2892,2900-2918,3278,3285,3296,4598-4908
+crates/sourdaw-native/src/commands/graph.rs
+  s_1f0dcd815e8946::t_573ab5474f21d5 145-153,1465-1470,3444,3446-3470,3496-3504,4111-4112,4116-4121,10935-10960,10962-11040,11053-11054,11056,11059,11062-11124
+evidence/agent-campaign/manifest.json
+  s_1f0dcd815e8946::t_1af4cbb1efe285 10,286,623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_e386b8b4be1093 1,821-827,990-1038,1082-1084,1166
+public/wasm/daw-dsp/daw_dsp.js
+  s_1f0dcd815e8946::t_774a91fe1b96cc 1741-1751
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1f0dcd815e8946::t_7af4e5b1392de9 1,5-53,97-99,181
+public/wasm/manifest.json
+  s_1f0dcd815e8946::t_7ff4163d7c2ecb 12,15-18,20-21
+release/open-source-inventory.json
+  s_1f0dcd815e8946::t_6fad83ed02c769 1210,1344,1350,1770
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_1f0dcd815e8946::t_5c8057d2085672 36,695-720,930-1322
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_1f0dcd815e8946::t_a3dd29375529b2 64-87,163-166,181-182,273-278,558-581,630-648
+scripts/reviewPublicationBinding.ts
+  s_1f0dcd815e8946::t_68c5ea19ec13d2 37,382-383,390-391,419,586-589
+scripts/reviewPublicationReceiptAdoption.ts
+  s_1f0dcd815e8946::t_c0f77e3668b117 18-22,172,188-194,212,214
+scripts/reviewPublicationRemoteInspection.ts
+  s_1f0dcd815e8946::t_fbcd1ded0a123c 1,5-6,285-365
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_1f0dcd815e8946::t_e7700a88d3926d 394-415
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  s_1f0dcd815e8946::t_0252125b172fdd 269-270,272-273,276-277
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_1f0dcd815e8946::t_077897c0ef4472 82
+src/modules/AudioEngine/AGENTS.md
+  s_1f0dcd815e8946::t_0ece2f7ccf46bd 35
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_1f0dcd815e8946::t_38ac552fefd46a 96-127,129-131,133-149,153-155,267-271
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_1f0dcd815e8946::t_03981e6caefb4c 102,104-157,167-173,175-181,184-306
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_1f0dcd815e8946::t_4b40e5eb812c84 523,576-624
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_1f0dcd815e8946::t_3730b0773cf6bc 62-66
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_1f0dcd815e8946::t_d8996fe09b6ccc 532-544,551,560,572
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_1f0dcd815e8946::t_1a65a51d07702a 15-16
+src/modules/AudioEngine/services/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_1f0dcd815e8946::t_f5911edd5e8241 1-357
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_1f0dcd815e8946::t_b6110c28e16a6e 23,34-48,177,207-213,222-224,251-256,456-461,473-475,491-525
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_1f0dcd815e8946::t_116595fcd9aebe 507-537
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_1f0dcd815e8946::t_b13f5c43f4611e 64,75,408-411,463-472
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_1f0dcd815e8946::t_794406a485d00b 326,328-329,336-339,342,348-349,353-362
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_1f0dcd815e8946::t_03399847fcc6a2 628-718
+src/modules/AudioEngine/useCases/livePlayback/admittedSendBusIds.ts
+  s_1f0dcd815e8946::t_b1b05669aecb5d 2,12-15
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_1f0dcd815e8946::t_3fa491a00600c0 74-76,200,202-208
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_1f0dcd815e8946::t_c9b4c4429d4449 279-285,296-297,304-315
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_1f0dcd815e8946::t_85c2c5015635bc 2-3,123,169
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_1f0dcd815e8946::t_f64058e2330f18 252-255,257,277-279,281-282
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_1f0dcd815e8946::t_1bc8969c31e2f5 176-179
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_1f0dcd815e8946::t_ff0cf6d6c7914f 46-48,155
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1f0dcd815e8946::t_d169f18677db8b 1,821-827,990-1038,1082-1084,1166
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_1f0dcd815e8946::t_296e9eeb646e1a 1918-1928
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_1f0dcd815e8946::t_83b138cde05931 914-949
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  s_1f0dcd815e8946::t_04a8df775435a8 199-226
+src/modules/Command/AGENTS.md
+  s_1f0dcd815e8946::t_97f66f60f01378 32
+src/modules/Command/useCases/__tests__/captureCommandTargetFingerprints.spec.ts
+  s_1f0dcd815e8946::t_531a7bf162bff7 12,103-233
+src/modules/Command/useCases/__tests__/getCommandDivergenceTargetIds.spec.ts
+  s_1f0dcd815e8946::t_ed613b1788d4d9 1-54
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_1f0dcd815e8946::t_4102be596d7bbd 85-101,106-111
+src/modules/Command/useCases/getCommandDivergenceTargetIds.ts
+  s_1f0dcd815e8946::t_a14e50d21eca58 1,57-70,83-86
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_1f0dcd815e8946::t_de006fcab4ebc8 16,23,55-56,126-163,367-637,1068-1163
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_1f0dcd815e8946::t_37ba753a903dac 206-209,242-244,376
+src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts
+  s_1f0dcd815e8946::t_7e375e3dfb5e40 36-37,41
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_1f0dcd815e8946::t_ec54b3982afb52 213-214,221,445-446,449,493,700-701,703,824-825,827,875-876,886
+src/modules/Levain/useCases/levainParamBridge/__tests__/unregisterLevainDevice.spec.ts
+  s_1f0dcd815e8946::t_06d3a12603cea2 3-9,18-45,50,53-56,59-103
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_1f0dcd815e8946::t_21830bcb965dfe 411-419
+src/modules/Levain/useCases/levainParamBridge/unregisterLevainDevice.ts
+  s_1f0dcd815e8946::t_6ff7ad05f8e419 3-4
+src/modules/Transport/AGENTS.md
+  s_1f0dcd815e8946::t_3472cf263ba4e0 22-23
+src/modules/Transport/models/TempoMap.ts
+  s_1f0dcd815e8946::t_06518793f72821 137-148,151-152,156,230-231,236-237
+src/modules/Transport/models/__tests__/TempoMap.spec.ts
+  s_1f0dcd815e8946::t_757e66ef51c701 300-336
+src/modules/Transport/useCases/tempoMap/__tests__/addTempoChange.spec.ts
+  s_1f0dcd815e8946::t_c87109aa7eada9 82-105
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimeLaw.property.spec.ts
+  s_1f0dcd815e8946::t_791e3e0116a6d8 1-477
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_1f0dcd815e8946::t_c6ee1d506ce408 424,435-436,438,442-464,467-486,501,505,509-602,669-890,916-927,993-1022
+src/modules/Transport/useCases/tempoMap/__tests__/projectEngineTransportMaps.spec.ts
+  s_1f0dcd815e8946::t_bf7622cbe9fbf1 8,162-315
+src/modules/Transport/useCases/tempoMap/addTempoChange.ts
+  s_1f0dcd815e8946::t_b24ca30c49c5ec 10-12
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_1f0dcd815e8946::t_854edfed48ab6a 44-53,176-196,198,223-230,253-260,271,299-300,312-360,363-371,373,375-379,411,425-431,459-462,467-468,471-472,476,489,492-493,495,499,503
+src/modules/Transport/useCases/tempoMap/projectEngineTransportMaps.ts
+  s_1f0dcd815e8946::t_0247682d36963b 39,166-167,174-189,258-263,281-282,284-285,304-308,316,329
+src/modules/Yeast/models/MidiEvent.ts
+  s_1f0dcd815e8946::t_c66f9e86604bea 143,146,151,154-158
+src/modules/Yeast/models/__tests__/MidiEvent.spec.ts
+  s_1f0dcd815e8946::t_15b7358f9577fb 106-126
+src/utils/__tests__/automationDeviceTarget.spec.ts
+  s_1f0dcd815e8946::t_973dd46e041280 7,12-25
+src/utils/automationDeviceTarget.ts
+  s_1f0dcd815e8946::t_c33e8c52d34bfe 18-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0943e4f74cf735b4dab7ca554b37b4cab0fa0f0e",
+  "prompts": {},
+  "sessions": {
+    "s_1f0dcd815e8946": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11839-d545-7440-b271-ef9fa44c203d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
